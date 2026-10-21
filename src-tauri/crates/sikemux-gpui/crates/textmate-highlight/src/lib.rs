@@ -28,7 +28,7 @@ pub fn highlight(
         .collect();
     let mut document = Document::new(library.session(language)?, None);
     document.reset(lines.len());
-    document.tokenize(styles, |line| lines[line], usize::MAX);
+    document.tokenize(styles, |line| lines[line], lines.len());
     Some(
         (0..lines.len())
             .map(|line| document.spans(line).to_vec())

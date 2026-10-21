@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 
 use irosashi::{ScopeListId, Session, StateStack, TokenizeOptions};
 
@@ -13,7 +14,8 @@ pub struct Span {
     pub style: Style,
 }
 
-/// Lines still to tokenize: from `next`, and at least through `through`.
+/// Lines still to tokenize: from `next`, and at least through `through`, an edit's
+/// last line.
 #[derive(Clone, Copy)]
 struct Pending {
     next: usize,
@@ -21,12 +23,17 @@ struct Pending {
 }
 
 /// A text's lines with the tokenizer state each one starts in, so an edit retokenizes
-/// from the edited line until a line ends in the state it ended in before.
+/// from the edited line until a line ends in the state it ended in before. Lines are
+/// tokenized only as far as asked, so a long text never read to its end costs only
+/// what was read.
 pub struct Document {
     session: Session,
     options: TokenizeOptions,
     states: Vec<StateStack>,
     spans: Vec<Vec<Span>>,
+    /// Lines before this one have been tokenized at least once, so the state each
+    /// one ends in is known.
+    frontier: usize,
     pending: Option<Pending>,
     styles: HashMap<ScopeListId, Style>,
 }
@@ -41,6 +48,7 @@ impl Document {
             options: TokenizeOptions { max_line_length },
             states: vec![initial],
             spans: Vec::new(),
+            frontier: 0,
             pending: None,
             styles: HashMap::new(),
         }
@@ -55,9 +63,10 @@ impl Document {
         let initial = self.session.initial_state();
         self.states = vec![initial; lines + 1];
         self.spans = vec![Vec::new(); lines];
+        self.frontier = 0;
         self.pending = (lines > 0).then_some(Pending {
             next: 0,
-            through: lines - 1,
+            through: 0,
         });
     }
 
@@ -89,6 +98,11 @@ impl Document {
                 new_end
             }
         };
+        self.frontier = if self.frontier > old_end {
+            shift(self.frontier)
+        } else {
+            self.frontier.min(start)
+        };
         let pending = match self.pending {
             Some(pending) => Pending {
                 next: shift(pending.next).min(start),
@@ -105,22 +119,25 @@ impl Document {
         });
     }
 
-    pub fn is_pending(&self) -> bool {
-        self.pending.is_some()
+    /// The first line still to tokenize, if any.
+    pub fn pending_line(&self) -> Option<usize> {
+        self.pending.map(|pending| pending.next)
     }
 
-    /// Tokenizes at most `budget` pending lines, reading each through `line`, and says
-    /// whether any are still pending.
+    /// Tokenizes the pending lines before line `until`, reading each through `line`,
+    /// and returns the lines it tokenized. It stops early where an edit settles, so
+    /// call it again while lines before `until` are pending.
     pub fn tokenize<L: AsRef<str>>(
         &mut self,
         styles: &Styles,
         mut line: impl FnMut(usize) -> L,
-        budget: usize,
-    ) -> bool {
+        until: usize,
+    ) -> Range<usize> {
         let Some(mut pending) = self.pending else {
-            return false;
+            return 0..0;
         };
-        for _ in 0..budget {
+        let first = pending.next;
+        while pending.next < until.min(self.spans.len()) {
             let index = pending.next;
             let text = line(index);
             let text = text.as_ref();
@@ -147,16 +164,26 @@ impl Document {
                 }
             }
             self.spans[index] = spans;
-            let settled = index >= pending.through && self.states[index + 1] == result.state;
+            let known = index + 1 < self.frontier;
+            let settled =
+                known && index >= pending.through && self.states[index + 1] == result.state;
             self.states[index + 1] = result.state;
             pending.next += 1;
-            if settled || pending.next == self.spans.len() {
+            self.frontier = self.frontier.max(pending.next);
+            if settled {
+                pending.next = self.frontier;
+            }
+            if pending.next == self.spans.len() {
                 self.pending = None;
-                return false;
+                return first..index + 1;
+            }
+            if settled {
+                self.pending = Some(pending);
+                return first..index + 1;
             }
         }
         self.pending = Some(pending);
-        true
+        first..pending.next
     }
 
     /// The styled runs of `line`, empty for a line not tokenized yet.

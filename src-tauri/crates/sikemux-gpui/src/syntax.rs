@@ -6,7 +6,6 @@ use std::cell::{Ref, RefCell};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::Duration;
 
 use gpui_kit::base::input::{
     EditorState, FoldRange, HighlightStyleResolver, InputEdit, InputHighlighter,
@@ -17,6 +16,7 @@ use gpui_kit::{
     UnderlineStyle, Window,
 };
 use textmate_highlight::{Document, Library, Span, Style, Styles};
+use tokio::sync::Notify;
 
 use sikemux_wire::theme::ThemeHighlight;
 
@@ -27,16 +27,21 @@ static GRAMMARS: &[u8] = include_bytes!("../assets/grammars.bin");
 
 /// Longer lines are left in the text colour, as in today's editor.
 const MAX_LINE_LENGTH: usize = 3_000;
-/// Documents up to this size are retokenized on the keystroke; larger ones in the
-/// background once typing pauses.
-const SYNC_MAX_BYTES: usize = 64 * 1024;
-const DEBOUNCE: Duration = Duration::from_millis(150);
+/// Documents up to this size are tokenized whole; larger ones only as far down as
+/// drawing has reached, and this many lines past it.
+const WHOLE_MAX_BYTES: usize = 64 * 1024;
+const AHEAD: usize = 200;
+/// An edit that leaves at most this many lines to retokenize is done on the
+/// keystroke; more go to the background.
+const SYNC_MAX_LINES: usize = 400;
 /// Lines tokenized between letting go of the document, so drawing never waits long.
-const BACKGROUND_CHUNK: usize = 200;
+const BACKGROUND_CHUNK: usize = 100;
 
 struct Shared {
     library: Library,
     styles: Styles,
+    /// The roles whose text holds no code: braces inside them are not folded.
+    quiet: Vec<u16>,
 }
 
 fn shared() -> &'static Shared {
@@ -44,7 +49,16 @@ fn shared() -> &'static Shared {
     SHARED.get_or_init(|| {
         let library = Library::new(INDEX, GRAMMARS).expect("the generated syntax bundle reads");
         let styles = Styles::new(library.theme_rules());
-        Shared { library, styles }
+        let quiet = ["string", "comment"]
+            .iter()
+            .filter_map(|name| styles.roles().iter().position(|role| role == name))
+            .map(|index| index as u16)
+            .collect();
+        Shared {
+            library,
+            styles,
+            quiet,
+        }
     })
 }
 
@@ -187,31 +201,100 @@ pub fn highlighters(cx: &App) -> InputHighlighterFactory {
     })
 }
 
+/// A line's braces in order, `true` for an opening one, outside strings and comments,
+/// and its indent, so folds are worked out without reading the lines again.
+#[derive(Clone, Default)]
+struct Shape {
+    braces: Box<[bool]>,
+    indent: Option<u32>,
+}
+
 struct Model {
     text: Rope,
     document: Option<Document>,
     /// Whether the grammar is loading, so later updates leave the document to the load.
     loading: bool,
+    shapes: Vec<Shape>,
+    /// How many lines from the top drawing needs tokenized.
+    wanted: usize,
+    folding: bool,
     folds: Vec<FoldRange>,
 }
 
 impl Model {
-    fn tokenize(&mut self, budget: usize) -> bool {
-        let Self { text, document, .. } = self;
-        let Some(document) = document else {
-            return true;
+    /// Pending lines still to tokenize before the ones drawing needs.
+    fn behind(&self) -> usize {
+        let Some(document) = &self.document else {
+            return 0;
         };
-        document.tokenize(
-            &shared().styles,
-            |row| {
-                let line = text.slice_line(row).to_string();
-                match line.strip_suffix('\r') {
-                    Some(line) => line.to_owned(),
-                    None => line,
-                }
-            },
-            budget,
-        )
+        let until = self.wanted.min(document.line_count());
+        document
+            .pending_line()
+            .map_or(0, |next| until.saturating_sub(next))
+    }
+
+    fn tokenize(&mut self, until: usize) {
+        let Self {
+            text,
+            document,
+            shapes,
+            ..
+        } = self;
+        let Some(document) = document else {
+            return;
+        };
+        while document.pending_line().is_some_and(|next| next < until) {
+            let done = document.tokenize(&shared().styles, |row| line_text(text, row), until);
+            if done.is_empty() {
+                break;
+            }
+            for row in done {
+                shapes[row] = shape(&line_text(text, row), document.spans(row));
+            }
+        }
+    }
+
+    fn edit(&mut self, edit: InputEdit) {
+        let (start, old_end, new_end) = (
+            edit.start_position.row,
+            edit.old_end_position.row,
+            edit.new_end_position.row,
+        );
+        if let Some(document) = &mut self.document {
+            document.edit(start, old_end, new_end);
+        }
+        let fresh = std::iter::repeat_n(Shape::default(), new_end - start + 1);
+        if start >= self.shapes.len() {
+            self.shapes.resize(start, Shape::default());
+            self.shapes.extend(fresh);
+        } else {
+            let old_end = old_end.min(self.shapes.len() - 1).max(start);
+            self.shapes.splice(start..=old_end, fresh);
+        }
+    }
+
+    fn reset(&mut self) {
+        let lines = self.text.lines_len();
+        if let Some(document) = &mut self.document {
+            document.reset(lines);
+        }
+        self.shapes = vec![Shape::default(); lines];
+    }
+
+    fn refold(&mut self) {
+        self.folds = if self.folding {
+            folds(&self.shapes)
+        } else {
+            Vec::new()
+        };
+    }
+}
+
+fn line_text(text: &Rope, row: usize) -> String {
+    let line = text.slice_line(row).to_string();
+    match line.strip_suffix('\r') {
+        Some(line) => line.to_owned(),
+        None => line,
     }
 }
 
@@ -221,12 +304,39 @@ fn lock(model: &Mutex<Model>) -> MutexGuard<'_, Model> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Loads the grammar on a document's first highlight, then tokenizes as far as
+/// drawing needs, a chunk at a time so drawing never waits on it for long. Gives the
+/// folds when the document has them.
+fn catch_up(model: &Mutex<Model>, language: &str) -> Option<Vec<FoldRange>> {
+    if lock(model).loading {
+        let session = shared().library.session(language);
+        let mut model = lock(model);
+        model.loading = false;
+        model.document = Some(Document::new(session?, Some(MAX_LINE_LENGTH)));
+        model.reset();
+    }
+    loop {
+        let mut model = lock(model);
+        let Some(next) = model.document.as_ref()?.pending_line() else {
+            break;
+        };
+        let until = model.wanted.min(model.text.lines_len());
+        if next >= until {
+            break;
+        }
+        model.tokenize((next + BACKGROUND_CHUNK).min(until));
+    }
+    let mut model = lock(model);
+    model.refold();
+    model.folding.then(|| model.folds.clone())
+}
+
 struct Highlighter {
     language: SharedString,
     model: Arc<Mutex<Model>>,
     palette: Palette,
-    folding: bool,
-    task: Option<Task<()>>,
+    wake: Arc<Notify>,
+    worker: Option<Task<()>>,
 }
 
 impl Highlighter {
@@ -237,50 +347,37 @@ impl Highlighter {
                 text: Rope::new(),
                 document: None,
                 loading: false,
+                shapes: Vec::new(),
+                wanted: AHEAD,
+                folding: false,
                 folds: Vec::new(),
             })),
             palette,
-            folding: false,
-            task: None,
+            wake: Arc::default(),
+            worker: None,
         }
     }
 
-    /// Finishes the pending lines away from the main thread, loading the grammar first
-    /// if this is the document's first highlight, then hands the editor its folds.
-    fn finish_in_background(
-        &mut self,
-        debounce: bool,
-        window: &mut Window,
-        cx: &mut Context<EditorState>,
-    ) {
+    /// Starts the worker that catches the document up away from the main thread
+    /// whenever it is woken, then repaints the editor and gives it the folds.
+    fn start_worker(&mut self, window: &mut Window, cx: &mut Context<EditorState>) {
         let model = self.model.clone();
         let language = self.language.clone();
-        let folding = self.folding;
-        self.task = Some(cx.spawn_in(window, async move |editor, cx| {
-            if debounce {
-                cx.background_executor().timer(DEBOUNCE).await;
-            }
+        let wake = self.wake.clone();
+        self.worker = Some(cx.spawn_in(window, async move |editor, cx| loop {
+            wake.notified().await;
+            let model = model.clone();
+            let language = language.clone();
             let folds = cx
                 .background_executor()
-                .spawn(async move {
-                    if lock(&model).loading {
-                        let session = shared().library.session(&language);
-                        let mut model = lock(&model);
-                        model.loading = false;
-                        let mut document = Document::new(session?, Some(MAX_LINE_LENGTH));
-                        document.reset(model.text.lines_len());
-                        model.document = Some(document);
-                    }
-                    while lock(&model).tokenize(BACKGROUND_CHUNK) {}
-                    let mut model = lock(&model);
-                    model.folds = if folding { folds(&model) } else { Vec::new() };
-                    Some(model.folds.clone())
-                })
+                .spawn(async move { catch_up(&model, &language) })
                 .await;
-            if let Some(folds) = folds {
-                let _ = editor.update(cx, |editor, cx| {
-                    editor.apply_highlighter_fold_candidates(folds, cx)
-                });
+            let updated = editor.update(cx, |editor, cx| match folds {
+                Some(folds) => editor.apply_highlighter_fold_candidates(folds, cx),
+                None => cx.notify(),
+            });
+            if updated.is_err() {
+                break;
             }
         }));
     }
@@ -299,39 +396,35 @@ impl InputHighlighter for Highlighter {
         window: &mut Window,
         cx: &mut Context<EditorState>,
     ) {
-        self.folding = folding;
+        if self.worker.is_none() {
+            self.start_worker(window, cx);
+        }
         let mut model = lock(&self.model);
         model.text = text.clone();
-        let lines = text.lines_len();
-        let loaded = match (&mut model.document, edit) {
-            (Some(document), Some(edit)) if document.line_count() > 0 => {
-                document.edit(
-                    edit.start_position.row,
-                    edit.old_end_position.row,
-                    edit.new_end_position.row,
-                );
-                true
-            }
-            (Some(document), _) => {
-                document.reset(lines);
-                true
-            }
-            (None, _) => false,
-        };
-        if !loaded {
-            if model.loading {
+        model.folding = folding;
+        if text.len() <= WHOLE_MAX_BYTES {
+            model.wanted = usize::MAX;
+        } else if model.wanted == usize::MAX {
+            model.wanted = AHEAD;
+        }
+        match (&model.document, edit) {
+            (Some(document), Some(edit)) if document.line_count() > 0 => model.edit(edit),
+            (Some(_), _) => model.reset(),
+            (None, _) => {
+                model.loading = true;
+                drop(model);
+                self.wake.notify_one();
                 return;
             }
-            model.loading = true;
         }
-        if loaded && text.len() <= SYNC_MAX_BYTES {
-            self.task = None;
-            model.tokenize(usize::MAX);
-            model.folds = if folding { folds(&model) } else { Vec::new() };
+        if model.behind() > SYNC_MAX_LINES {
+            drop(model);
+            self.wake.notify_one();
             return;
         }
-        drop(model);
-        self.finish_in_background(loaded, window, cx);
+        let until = model.wanted;
+        model.tokenize(until);
+        model.refold();
     }
 
     fn styles(
@@ -339,14 +432,20 @@ impl InputHighlighter for Highlighter {
         range: &Range<usize>,
         _: &dyn HighlightStyleResolver,
     ) -> Vec<(Range<usize>, HighlightStyle)> {
-        let model = lock(&self.model);
+        let mut model = lock(&self.model);
         let palette = self.palette.styles();
         let plain = resolve(Style::default(), &palette);
         let mut runs = Vec::new();
         let mut cursor = range.start;
+        let first = model.text.offset_to_point(range.start).row;
+        let last = model.text.offset_to_point(range.end).row;
+        if model.wanted <= last + AHEAD / 2 {
+            model.wanted = last + AHEAD;
+        }
+        if model.behind() > 0 {
+            self.wake.notify_one();
+        }
         if let Some(document) = &model.document {
-            let first = model.text.offset_to_point(range.start).row;
-            let last = model.text.offset_to_point(range.end).row;
             for row in first..=last.min(document.line_count().saturating_sub(1)) {
                 let line_start = model.text.line_start_offset(row);
                 for span in document.spans(row) {
@@ -374,75 +473,69 @@ impl InputHighlighter for Highlighter {
     }
 }
 
-/// Folds between matching braces outside strings and comments, or, in a document
-/// with none, over each block indented deeper than the line that opens it.
-fn folds(model: &Model) -> Vec<FoldRange> {
-    let Some(document) = &model.document else {
-        return Vec::new();
-    };
-    let roles = shared().styles.roles();
-    let quiet: Vec<u16> = ["string", "comment"]
-        .iter()
-        .filter_map(|name| {
-            roles
-                .iter()
-                .position(|role| role == name)
-                .map(|index| index as u16)
-        })
-        .collect();
-    let lines = document.line_count();
+/// A line's shape: its braces outside strings and comments, and its indent.
+fn shape(line: &str, spans: &[Span]) -> Shape {
+    let quiet = &shared().quiet;
+    let mut span = spans.iter().peekable();
+    let mut braces = Vec::new();
+    for (at, character) in line.char_indices() {
+        if character != '{' && character != '}' {
+            continue;
+        }
+        while span
+            .peek()
+            .is_some_and(|candidate| candidate.end as usize <= at)
+        {
+            span.next();
+        }
+        let inside = span.peek().is_some_and(|candidate| {
+            candidate.start as usize <= at
+                && candidate
+                    .style
+                    .role
+                    .is_some_and(|role| quiet.contains(&role))
+        });
+        if !inside {
+            braces.push(character == '{');
+        }
+    }
+    let trimmed = line.trim_start();
+    Shape {
+        braces: braces.into(),
+        indent: (!trimmed.is_empty()).then(|| (line.len() - trimmed.len()) as u32),
+    }
+}
+
+/// Folds between matching braces, or, in a document with none, over each block
+/// indented deeper than the line that opens it.
+fn folds(shapes: &[Shape]) -> Vec<FoldRange> {
     let mut opened = Vec::new();
     let mut ranges = Vec::new();
-    for row in 0..lines {
-        let line = model.text.slice_line(row).to_string();
-        let spans = document.spans(row);
-        let mut span = spans.iter().peekable();
-        for (at, character) in line.char_indices() {
-            while span
-                .peek()
-                .is_some_and(|candidate: &&Span| candidate.end as usize <= at)
-            {
-                span.next();
-            }
-            let inside = span.peek().is_some_and(|candidate| {
-                candidate.start as usize <= at
-                    && candidate
-                        .style
-                        .role
-                        .is_some_and(|role| quiet.contains(&role))
-            });
-            match character {
-                '{' if !inside => opened.push(row),
-                '}' if !inside => {
-                    if let Some(start) =
-                        opened.pop().filter(|start| row.saturating_sub(*start) >= 2)
-                    {
-                        ranges.push(FoldRange::new(start, row));
-                    }
-                }
-                _ => {}
+    let mut braced = false;
+    for (row, shape) in shapes.iter().enumerate() {
+        for &open in shape.braces.iter() {
+            braced = true;
+            if open {
+                opened.push(row);
+            } else if let Some(start) = opened.pop().filter(|start| row - start >= 2) {
+                ranges.push(FoldRange::new(start, row));
             }
         }
     }
-    if ranges.is_empty() {
-        ranges = indent_folds(&model.text, lines);
+    if !braced {
+        ranges = indent_folds(shapes);
     }
     ranges.sort_by_key(|range| range.start_line);
     ranges.dedup_by_key(|range| range.start_line);
     ranges
 }
 
-fn indent_folds(text: &Rope, lines: usize) -> Vec<FoldRange> {
-    let indent = |row: usize| {
-        let line = text.slice_line(row).to_string();
-        let trimmed = line.trim_start();
-        (!trimmed.is_empty()).then(|| line.len() - trimmed.len())
-    };
+fn indent_folds(shapes: &[Shape]) -> Vec<FoldRange> {
     let mut ranges = Vec::new();
-    let mut open: Vec<(usize, usize)> = Vec::new();
+    let mut open: Vec<(usize, u32)> = Vec::new();
     let mut last = 0usize;
-    for row in 0..lines {
-        let Some(depth) = indent(row) else { continue };
+    for (row, shape) in shapes.iter().enumerate() {
+        let Some(depth) = shape.indent else { continue };
         while open.last().is_some_and(|(_, opened)| depth <= *opened) {
             let (start, _) = open.pop().unwrap_or_default();
             if last.saturating_sub(start) >= 2 {
