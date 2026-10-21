@@ -43,7 +43,7 @@ describe("a workload's page", () => {
         fireEvent.click(await screen.findByRole("button", { name: "Roll back to revision 3" }));
         await waitFor(() => expect(api.act).toHaveBeenCalledWith(scope, "undo", "web", "Deployment", undefined, 3));
         const asked = host.confirmDialog.mock.calls[0][0];
-        expect(asked.body).toContain("nginx:1.27.3-alpine to nginx:1.27-alpine");
+        expect(asked.body).toContain("nginx goes from 1.27.3-alpine to 1.27-alpine.");
         expect(asked.body).toContain("kubectl apply");
         expect(asked.commands[0].command).toBe("kubectl --context kind-dev --namespace shop rollout undo deployment/web --to-revision=3");
         expect(host.notify).toHaveBeenCalledWith("success", "deployment.apps/web rolled back");
@@ -83,7 +83,14 @@ describe("a workload's page", () => {
 describe("what an undo changes", () => {
     it("names the images it goes back to, or says they stay the same", () => {
         const [live, , restart, first] = WEB_HISTORY.revisions;
-        expect(imageChange(live, first)).toBe("Images go from nginx:1.27.3-alpine to nginx:alpine.");
+        expect(imageChange(live, first)).toBe("nginx goes from 1.27.3-alpine to alpine.");
+        expect(imageChange({ ...live, images: ["redis:7"] }, first)).toBe("Images go from redis:7 to nginx:alpine.");
+        expect(
+            imageChange(
+                { ...live, images: ["europe-docker.pkg.dev/acme/shop/api:4.13.0"] },
+                { ...first, images: ["europe-docker.pkg.dev/acme/shop/api"] },
+            ),
+        ).toBe("api goes from 4.13.0 to latest.");
         expect(imageChange(restart, first)).toMatch(/same as now/);
     });
 });

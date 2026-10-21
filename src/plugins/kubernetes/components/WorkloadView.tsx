@@ -11,11 +11,22 @@ import { YamlView } from "./YamlView";
 
 type WorkloadTab = "history" | "yaml";
 
+/** An image's repository and tag; one with no tag runs latest. */
+function repositoryAndTag(image: string): [string, string] {
+    const colon = image.lastIndexOf(":");
+    return colon > image.lastIndexOf("/") ? [image.slice(0, colon), image.slice(colon + 1)] : [image, "latest"];
+}
+
 /** What an undo changes, image by image, so the person sees what they'd be going back to. */
 export function imageChange(from: Revision | undefined, to: Revision): string {
     const before = (from?.images ?? []).map(shortImage);
     const after = to.images.map(shortImage);
     if (before.join() === after.join()) return "Its images are the same as now; only the rest of its template differs.";
+    if (before.length === 1 && after.length === 1) {
+        const [was, wasTag] = repositoryAndTag(before[0]);
+        const [will, willTag] = repositoryAndTag(after[0]);
+        if (was === will) return `${was.slice(was.lastIndexOf("/") + 1)} goes from ${wasTag} to ${willTag}.`;
+    }
     return `Images go from ${before.join(", ") || "none"} to ${after.join(", ") || "none"}.`;
 }
 
@@ -33,7 +44,7 @@ export function WorkloadView({
     onBack: () => void;
 }) {
     const [tab, setTab] = useState<WorkloadTab>("history");
-    const history = useResourceEnabled(active && tab === "history", kubeHistoryR, scope, kind, name);
+    const history = useResourceEnabled(active, kubeHistoryR, scope, kind, name);
     const live = history.data;
 
     return (
