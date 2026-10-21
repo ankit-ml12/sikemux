@@ -14,7 +14,6 @@ use std::time::Duration;
 use serde::Serialize;
 use sikemux_core::protocol::{BuildChannel, SessionId, SpawnTarget, TerminalSpawn};
 use sikemux_process::sync::Locked;
-use sikemux_pty::launch::PtyDirectCommand;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
@@ -235,6 +234,10 @@ pub async fn host_sign_in(
     .await
 }
 
+fn single_quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 /// Runs `remote` on the SSH host `alias` in a terminal the page shows, and
 /// approves for the account the sign-in code it prints there.
 async fn sign_in_over_ssh(
@@ -255,12 +258,8 @@ async fn sign_in_over_ssh(
                 cols,
                 rows,
                 cwd: None,
-                startup: None,
-                direct_command: Some(PtyDirectCommand {
-                    program: "ssh".into(),
-                    args: vec!["-t".into(), "--".into(), alias.clone(), remote],
-                    profile: None,
-                }),
+                startup: Some(format!("ssh -t -- {alias} {}", single_quoted(&remote))),
+                direct_command: None,
                 context: None,
                 env: Default::default(),
                 continues: None,
