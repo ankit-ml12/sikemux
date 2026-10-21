@@ -348,7 +348,7 @@ async fn open(
         .map_err(|error| error.to_string())
         .and_then(|request| {
             core.window
-                .call(WindowCall::Open { request }, "open files", wait)
+                .call(WindowCall::Open { request }, "open files", wait, None)
         }) {
         Ok(call) => call,
         Err(message) => {

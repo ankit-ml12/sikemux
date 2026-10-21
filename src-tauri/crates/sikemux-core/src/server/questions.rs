@@ -1579,6 +1579,7 @@ fn tell_window(core: &Arc<Core>) {
         WindowCall::Harness { request },
         "show agents' questions",
         false,
+        None,
     ) else {
         return;
     };

@@ -124,6 +124,19 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
+            // The core sends agents' window calls, such as their browser's, to
+            // whichever Sikemux window the person brought forward last.
+            if let tauri::WindowEvent::Focused(true) = event {
+                use tauri::Manager;
+                if let Some(client) = window
+                    .try_state::<PtyManager>()
+                    .and_then(|manager| manager.current_client())
+                {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = client.register_window().await;
+                    });
+                }
+            }
             // Terminals, terminal agents, tasks and chat agents live in the
             // core and keep running after the window closes; the next launch
             // reattaches them.

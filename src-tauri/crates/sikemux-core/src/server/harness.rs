@@ -477,12 +477,17 @@ async fn answer_of(
 }
 
 async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> {
+    let in_window = ["browser.", "sim."]
+        .iter()
+        .any(|prefix| request.method.starts_with(prefix));
+    let pinned = request.agent_id.as_deref().filter(|_| in_window);
     let call = core.window.call(
         WindowCall::Harness {
             request: serde_json::to_value(&request).map_err(|error| error.to_string())?,
         },
         purpose(&request.method),
         false,
+        pinned,
     )?;
     answer_of(core, call, CORE_REPLY_TIMEOUT, no_answer(&request.method)).await
 }

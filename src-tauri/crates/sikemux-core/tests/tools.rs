@@ -439,15 +439,16 @@ async fn a_call_waiting_on_a_window_that_leaves_fails_and_a_new_window_takes_ove
         .await
         .expect("asked");
     let (replacement, _player) = open_window(&core).await;
-    assert_eq!(
-        pending.await.unwrap(),
-        Err("Sikemux's window closed before it answered".into())
-    );
     let opened = call(&endpoint, &project, "ui.open", json!({ "kind": "diff" }))
         .await
         .unwrap();
     assert_eq!(opened["kind"], "diff");
     drop(silent);
+    drop(silent_events);
+    assert_eq!(
+        pending.await.unwrap(),
+        Err("Sikemux's window closed before it answered".into())
+    );
     assert!(
         window_open(&endpoint),
         "the old window leaving does not close the new one"
