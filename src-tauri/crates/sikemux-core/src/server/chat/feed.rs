@@ -669,7 +669,10 @@ impl Replay {
         let Some(subagent) = text("/update/subagentSessionId") else {
             return;
         };
-        let known = self.spawns.iter_mut().find(|spawn| spawn.subagent == subagent);
+        let known = self
+            .spawns
+            .iter_mut()
+            .find(|spawn| spawn.subagent == subagent);
         match session_update_kind(&event.payload) {
             Some("subagent_spawned") => {
                 let (None, Some(parent)) = (known, text("/sessionId")) else {

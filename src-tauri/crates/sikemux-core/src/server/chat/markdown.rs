@@ -39,8 +39,10 @@ const LEAVES_OPEN: [&str; 10] = [
 const MAX_TREE_BYTES: usize = 4 * 1024 * 1024;
 
 static LETTER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?s)<(agent-message|question-answer) [^>]*>\n(.*?)\n</(?:agent-message|question-answer)>")
-        .expect("letter pattern")
+    Regex::new(
+        r"(?s)<(agent-message|question-answer) [^>]*>\n(.*?)\n</(?:agent-message|question-answer)>",
+    )
+    .expect("letter pattern")
 });
 
 /// The tree of each message from another agent a prompt is made of, in order,

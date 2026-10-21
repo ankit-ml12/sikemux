@@ -248,7 +248,17 @@ function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movabl
 
 /** Moves a chat that has started to another of the person's accounts, even in
     the middle of a turn. Its menu is the rail's, without signing in or out. */
-export function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; profile: ProviderProfile; running: boolean; disabled: boolean }) {
+export function AccountPicker({
+    agent,
+    profile,
+    running,
+    disabled,
+}: {
+    agent: Agent;
+    profile: ProviderProfile;
+    running: boolean;
+    disabled: boolean;
+}) {
     const [movable, load] = useMovable(agent, profile);
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const trigger = useRef<HTMLButtonElement>(null);
