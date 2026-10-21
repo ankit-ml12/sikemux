@@ -19,7 +19,9 @@ only the rows in view, anchored to the bottom.
   `Update`, `DropFrom`, `Keep`, `Prepend` and `Reset`. They are applied
   together when it next draws, at most once a frame. Rows added above never
   move what the reader sees. While the reader is at the end, the end stays
-  in view. Near the top it calls `on_reach_top` for an earlier page.
+  in view. Near the top it calls `on_reach_top` for an earlier page. It
+  emits `EmptyChanged` when it comes to hold rows or comes to hold none, for
+  a host that draws something else in an empty transcript's place.
 - The reader selects text across rows by dragging or shift-clicking, and ⌘C
   copies it: the `Copy` action, bound in the `Transcript` key context by
   `init`, which the app calls once. A copy reads the rows' own markdown,

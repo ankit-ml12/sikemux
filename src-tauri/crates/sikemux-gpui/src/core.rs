@@ -188,6 +188,13 @@ pub enum ChatAsk {
     Cancel {
         agent: String,
     },
+    /// A sent message written again: the chat rewinds to it and sends `text` in its place.
+    Edit {
+        agent: String,
+        message: String,
+        text: String,
+        paths: Vec<String>,
+    },
     /// The person's answer to a tool's request for permission; none turns it down.
     Permission {
         agent: String,
@@ -484,6 +491,19 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
                     .map_err(|error| error.to_string()),
             );
             return;
+        }
+        ChatAsk::Edit {
+            agent,
+            message,
+            text,
+            paths,
+        } => {
+            return report(
+                "edit a message in",
+                client
+                    .acp_edit(agent, message, text, paths, Vec::new())
+                    .await,
+            )
         }
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
         ChatAsk::Permission {

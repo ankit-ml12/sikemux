@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui::{
-    actions, div, list, px, AnyElement, App, ClipboardItem, Context, FocusHandle, FollowMode,
-    InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
+    actions, div, list, px, AnyElement, App, ClipboardItem, Context, EventEmitter, FocusHandle,
+    FollowMode, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
     MouseDownEvent, MouseMoveEvent, ParentElement, Point, Render, SharedString, Styled, Window,
 };
 
@@ -132,7 +132,7 @@ impl<R: Row> Transcript<R> {
     pub fn extend(&mut self, changes: impl IntoIterator<Item = Change<R>>, cx: &mut Context<Self>) {
         self.queue.extend(changes);
         if self.queue.len() >= MOST_QUEUED {
-            self.apply();
+            self.apply(cx);
         }
         cx.notify();
     }
@@ -142,7 +142,8 @@ impl<R: Row> Transcript<R> {
         self.rows.iter().rposition(|row| row.id() == id)
     }
 
-    fn apply(&mut self) {
+    fn apply(&mut self, cx: &mut Context<Self>) {
+        let was_empty = self.rows.is_empty();
         for change in std::mem::take(&mut self.queue) {
             let end = self.rows.len();
             match change {
@@ -195,6 +196,9 @@ impl<R: Row> Transcript<R> {
                     self.asked_earlier = false;
                 }
             }
+        }
+        if self.rows.is_empty() != was_empty {
+            cx.emit(EmptyChanged(self.rows.is_empty()));
         }
     }
 
@@ -287,9 +291,14 @@ impl<R: Row> Transcript<R> {
     }
 }
 
+/// The transcript came to hold rows, or came to hold none, as `0` says.
+pub struct EmptyChanged(pub bool);
+
+impl<R: Row> EventEmitter<EmptyChanged> for Transcript<R> {}
+
 impl<R: Row> Render for Transcript<R> {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.apply();
+        self.apply(cx);
         self.shown.borrow_mut().clear();
         let span = self.span();
         let this = cx.entity();

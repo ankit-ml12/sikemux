@@ -16,7 +16,9 @@ use gpui_kit::{
     Radians, SharedString, StatefulInteractiveElement, Styled, StyledText, Subscription,
     Transformation, WeakEntity, Window,
 };
-use gpui_transcript::{Change, CodeColours, CodeRuns, Markdown, Pen, Row, Style, Transcript};
+use gpui_transcript::{
+    Change, CodeColours, CodeRuns, EmptyChanged, Markdown, Pen, Row, Style, Transcript,
+};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
@@ -34,6 +36,7 @@ use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 mod attach;
+mod edit;
 mod live;
 mod mention;
 mod tools;
@@ -239,7 +242,8 @@ actions!(
         MenuUp,
         MenuDown,
         MenuPick,
-        MenuClose
+        MenuClose,
+        CancelEdit
     ]
 );
 
@@ -276,6 +280,7 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("tab", MenuPick, Some("ComposerMenu > Input")),
         KeyBinding::new("enter", MenuPick, Some("ComposerMenu > Input")),
         KeyBinding::new("escape", MenuClose, Some("ComposerMenu > Input")),
+        KeyBinding::new("escape", CancelEdit, Some("MessageEditor > Input")),
     ]);
     cx.bind_keys(bindings);
 }
@@ -303,6 +308,9 @@ struct Reading {
     subagents: HashMap<String, Vec<ChatRow>>,
     /// A turn is running, so the last row's run of calls stays open.
     running: bool,
+    /// The chat takes a sent message written again.
+    editable: bool,
+    editing: Option<edit::Editing>,
 }
 
 impl Reading {
@@ -317,9 +325,13 @@ impl Reading {
 /// subagents' rows, and where in the core's changes it has got to.
 pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
+    /// The stage draws the welcome in an empty chat's place, so it hears when that changes.
+    _emptied: Subscription,
     head: Map<String, Value>,
     /// The head as last changed, read once for each change.
     state: Option<ChatHead>,
+    /// The head changed since the window last drew what stands around the rows.
+    head_moved: bool,
     reader: Entity<Reading>,
     /// Opened calls whose detail is older than the call, to ask the core for again.
     wanted: Vec<String>,
@@ -415,6 +427,7 @@ struct Pick {
 impl Chat {
     pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
         let reader = cx.new(|_| Reading::default());
+        let stage = bench.clone();
         let looks = Looks::new(
             Tokens::get(cx),
             provider,
@@ -448,10 +461,17 @@ impl Chat {
                 bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
             })
         });
+        let emptied = cx.subscribe(&transcript, move |_, _: &EmptyChanged, cx| {
+            stage
+                .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
+                .ok();
+        });
         Chat {
             transcript,
+            _emptied: emptied,
             head: Map::new(),
             state: None,
+            head_moved: false,
             reader,
             wanted: Vec::new(),
             mark: None,
@@ -507,13 +527,14 @@ impl Chat {
             .ok()
             .and_then(|head| head.as_object().cloned())
             .unwrap_or_default();
-        let (running, subagents) = (view.head.running, rows_by_session(view.subagents));
+        let subagents = rows_by_session(view.subagents);
         self.reader.update(cx, |reading, cx| {
-            reading.running = running;
             reading.subagents = subagents;
             cx.notify();
         });
         self.state = Some(view.head);
+        self.head_moved = true;
+        self.follow_head(cx);
         self.older_before = view.older_before;
         self.asked_earlier = false;
         let rows = view.rows.into_iter().map(ChatRow::new).collect();
@@ -535,6 +556,28 @@ impl Chat {
     /// The tool calls whose detail to ask the core for again.
     pub fn wanted(&mut self) -> Vec<String> {
         std::mem::take(&mut self.wanted)
+    }
+
+    /// Keeps what the rows draw of how the chat stands in step with its head.
+    fn follow_head(&self, cx: &mut App) {
+        let running = self.running();
+        let editable = self.state.as_ref().is_some_and(|head| {
+            head.capabilities["editing"] == true
+                && head.connection == ChatConnection::Ready
+                && !head.running
+        });
+        self.reader.update(cx, |reading, cx| {
+            if (reading.running, reading.editable) != (running, editable) {
+                reading.running = running;
+                reading.editable = editable;
+                cx.notify();
+            }
+        });
+    }
+
+    /// Whether the head changed since this was last asked.
+    pub fn take_head_moved(&mut self) -> bool {
+        std::mem::take(&mut self.head_moved)
     }
 
     pub fn running(&self) -> bool {
@@ -592,13 +635,8 @@ impl Chat {
                     let mut head = Value::Object(std::mem::take(&mut self.head));
                     merge(&mut head, &set);
                     self.state = serde_json::from_value(head.clone()).ok();
-                    let running = self.running();
-                    self.reader.update(cx, |reading, cx| {
-                        if reading.running != running {
-                            reading.running = running;
-                            cx.notify();
-                        }
-                    });
+                    self.head_moved = true;
+                    self.follow_head(cx);
                     self.head = head.as_object().cloned().unwrap_or_default();
                 }
                 ChatChange::View { view } => {
@@ -2374,15 +2412,38 @@ fn row(
     let content = if lettered {
         letters(row, pen, looks, window, cx)
     } else if user {
-        div()
-            .max_w(relative(0.8))
-            .px(px(12.))
-            .py(px(8.))
-            .border_1()
-            .border_color(looks.line)
-            .rounded(theme::RADIUS_3)
-            .bg(looks.bubble)
-            .children(parts)
+        let editing = looks
+            .reading
+            .editing
+            .as_ref()
+            .filter(|editing| editing.is(&message.id));
+        match editing {
+            Some(editing) => div().w_full().flex().justify_end().child(edit::editor(
+                &looks.agent,
+                editing,
+                looks,
+            )),
+            None => {
+                let group = SharedString::from(format!("sent:{}", message.id));
+                div()
+                    .group(group.clone())
+                    .max_w(relative(0.8))
+                    .flex()
+                    .flex_col()
+                    .items_end()
+                    .child(
+                        div()
+                            .px(px(12.))
+                            .py(px(8.))
+                            .border_1()
+                            .border_color(looks.line)
+                            .rounded(theme::RADIUS_3)
+                            .bg(looks.bubble)
+                            .children(parts),
+                    )
+                    .child(edit::sent_actions(&group, message, looks))
+            }
+        }
     } else {
         div()
             .flex()

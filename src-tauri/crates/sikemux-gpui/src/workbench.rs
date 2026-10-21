@@ -9,8 +9,8 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Image,
-    ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
@@ -76,6 +76,8 @@ pub struct Workbench {
     pub asks: mpsc::UnboundedSender<Ask>,
     /// The chats of the agents with a tab open, by agent id.
     pub chats: HashMap<String, Chat>,
+    /// Text handed to agents whose composer is not made yet, put in once it is.
+    deliveries: HashMap<String, String>,
     /// What agents asked the person, and the assumptions they went on.
     pub questions: Vec<Question>,
     pub terminals: terminal::Terminals,
@@ -251,6 +253,7 @@ impl Workbench {
             filter_text: String::new(),
             asks,
             chats: HashMap::new(),
+            deliveries: HashMap::new(),
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             focus: cx.focus_handle(),
@@ -324,6 +327,13 @@ impl Workbench {
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
                     ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
+                }
+                let restage = self
+                    .chats
+                    .get_mut(&agent)
+                    .is_some_and(Chat::take_head_moved);
+                if restage {
+                    self.parts.redraw(&self.parts.stage, cx);
                 }
                 return;
             }
@@ -487,15 +497,18 @@ impl Workbench {
                 },
             )
         };
-        let keeping = cx.subscribe_in(
-            &secret,
-            window,
-            move |bench, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    bench.keep_secret(&agent, window, cx);
-                }
-            },
-        );
+        let keeping = {
+            let agent = agent.clone();
+            cx.subscribe_in(
+                &secret,
+                window,
+                move |bench, _, event: &InputEvent, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        bench.keep_secret(&agent, window, cx);
+                    }
+                },
+            )
+        };
         chat.composer = Some(Composing {
             draft,
             secret,
@@ -505,6 +518,59 @@ impl Workbench {
             earlier: Vec::new(),
             _heard: [sending, keeping],
         });
+        if let Some(text) = self.deliveries.remove(&agent) {
+            self.deliver(&agent, text, window, cx);
+        }
+    }
+
+    /// Hands `agent` text from elsewhere in the app, such as a terminal's selection: it goes
+    /// at the end of the draft after a blank line, and the agent's tab comes to the front
+    /// with the draft focused.
+    pub fn deliver(
+        &mut self,
+        agent: &str,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let project = self.view.as_ref().and_then(|view| {
+            let saved = view
+                .workspace
+                .agents
+                .iter()
+                .find(|saved| saved.id == agent)?;
+            Some(saved.project.clone())
+        });
+        if let Some(project) = project {
+            self.call(
+                "openTab",
+                json!({ "project": project, "kind": "agent", "target": agent }),
+            );
+        }
+        let Some(draft) = self
+            .chats
+            .get(agent)
+            .and_then(|chat| Some(chat.composer.as_ref()?.draft.clone()))
+        else {
+            self.deliveries
+                .entry(agent.to_owned())
+                .and_modify(|held| *held = format!("{held}\n\n{text}"))
+                .or_insert(text);
+            return;
+        };
+        draft.update(cx, |draft, cx| {
+            let held = draft.value();
+            let value = if held.trim().is_empty() {
+                text
+            } else {
+                format!("{}\n\n{text}", held.trim_end())
+            };
+            let end = value.len();
+            draft.set_value(value, window, cx);
+            draft.set_selected_range(end..end, cx);
+        });
+        draft.read(cx).focus_handle(cx).focus(window, cx);
+        cx.notify();
     }
 
     /// Keeps what the empty draft of the chat in front says in step with how the chat stands.
