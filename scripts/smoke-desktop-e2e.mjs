@@ -343,10 +343,10 @@ function openCore(path) {
               message?.type === "event" &&
               message.event.kind === "chat" &&
               message.event.agentId === agentId &&
-              accept(message.event.event)
+              accept(message.event.changes)
             );
           }, timeout);
-          return frame ? control(frame).event.event : null;
+          return frame ? control(frame).event.changes : null;
         },
         close: () => socket.destroy(),
       });
@@ -1017,11 +1017,8 @@ async function exerciseChatKeepsGoing(fakeAgent) {
     5_000,
   );
   if (
-    !(await core.chatEvent(
-      CHAT_AGENT_ID,
-      (event) =>
-        event.kind === "session_update" &&
-        chatSaid(event.payload).includes("holding"),
+    !(await core.chatEvent(CHAT_AGENT_ID, (changes) =>
+      chatSaid(changes).includes("holding"),
     ))
   )
     fail("the chat turn did not start", desktopLog);
@@ -1055,33 +1052,28 @@ async function exerciseChatKeepsGoing(fakeAgent) {
   desktop = launchDesktop();
   await waitForBroker(desktop);
   const watcher = await openCore(coreSocket);
-  const attachment = await attachChat(watcher);
-  const replay = chatSaid(attachment.replay);
+  const { view } = await attachChat(watcher);
+  const replay = chatSaid(view);
   if (
-    attachment.start.sessionId !== sessionId ||
-    !attachment.running ||
+    view.head.sessionId !== sessionId ||
+    !view.head.running ||
     !replay.includes("held")
   )
     fail(`the replay lost the chat: ${replay.slice(0, 2_000)}`, desktopLog);
-  const request = attachment.replay.find(
-    (event) => event.kind === "permission_request",
-  );
+  const [request] = view.head.permissions;
   if (!request) fail("the waiting permission request was not replayed");
   await watcher.request(
     {
       op: "acpPermissionReply",
       agentId: CHAT_AGENT_ID,
-      requestId: request.payload.requestId,
+      requestId: request.requestId,
       optionId: "allow",
     },
     5_000,
   );
   if (
-    !(await watcher.chatEvent(
-      CHAT_AGENT_ID,
-      (event) =>
-        event.kind === "session_update" &&
-        chatSaid(event.payload).includes("answered allow"),
+    !(await watcher.chatEvent(CHAT_AGENT_ID, (changes) =>
+      chatSaid(changes).includes("answered allow"),
     ))
   )
     fail("the answered permission did not reach the chat", desktopLog);
@@ -1097,8 +1089,8 @@ async function expectChatResumed(sessionId) {
   const watcher = await openCore(coreSocket);
   const attachment = await attachChat(watcher);
   if (
-    attachment.start.sessionId !== sessionId ||
-    !chatSaid(attachment.replay).includes("answered allow")
+    attachment.view.head.sessionId !== sessionId ||
+    !chatSaid(attachment.view).includes("answered allow")
   )
     fail(
       `the update did not resume the chat on its session: ${JSON.stringify(attachment).slice(0, 2_000)}`,
