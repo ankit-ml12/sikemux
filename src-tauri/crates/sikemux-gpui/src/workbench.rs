@@ -29,7 +29,9 @@ use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question, Sent};
 use crate::codehost::{Area, HostArea, OpenArea};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
-use crate::desk::{NewPage, NewSimulator, ToggleDesk};
+use crate::desk::{
+    FocusAddress, NewPage, NewSimulator, PageBack, PageForward, ReloadPage, ToggleDesk,
+};
 use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
@@ -2623,6 +2625,12 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, _| bench.toggle_front_desk()))
             .on_action(cx.listener(|bench, _: &NewPage, _, _| bench.new_front_page()))
+            .on_action(cx.listener(|bench, _: &FocusAddress, window, cx| {
+                bench.focus_front_address(window, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &ReloadPage, _, _| bench.reload_front_page()))
+            .on_action(cx.listener(|bench, _: &PageBack, _, _| bench.step_front_page(-1)))
+            .on_action(cx.listener(|bench, _: &PageForward, _, _| bench.step_front_page(1)))
             .on_action(cx.listener(|bench, _: &NewSimulator, _, cx| {
                 bench.front_simulator();
                 bench.parts.redraw(&bench.parts.stage, cx);

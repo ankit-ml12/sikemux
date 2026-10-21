@@ -1,13 +1,18 @@
 //! A tab's views side by side, as the core's layout splits them.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Bounds, Context, CursorStyle, DragMoveEvent, EmptyView,
-    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    canvas, div, px, AnyElement, App, AppContext, Bounds, Context, CursorStyle, DragMoveEvent,
+    EmptyView, Focusable, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
-use sikemux_wire::protocol::{Pane, PaneKind, SplitDir, Tab};
+use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab, TerminalSpawn};
+use tokio::sync::oneshot;
 
 use crate::drag::DraggedTab;
 use crate::workbench::{Strip, Workbench};
@@ -17,6 +22,19 @@ use crate::{desk, home, terminal, ui};
 pub const GAP: f32 = 10.;
 /// The least a pane is squeezed to by a divider.
 const MIN_PANE: f32 = 160.;
+/// How far one press of a resize key moves a divider, and the least it leaves the pane beside,
+/// in thousandths of the split.
+const RESIZE_STEP: u16 = 40;
+const LEAST_SHARE: u16 = 50;
+
+/// Which way from the view in focus a key moves the focus or a divider.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Towards {
+    Left,
+    Right,
+    Up,
+    Down,
+}
 
 /// What only this window decides about a tab's views.
 #[derive(Default)]
@@ -26,6 +44,10 @@ pub struct Panes {
     resizing: Option<Resizing>,
     /// Where a tab dragged over a view would go beside it.
     aimed: Option<Aimed>,
+    /// The view that fills its tab for now, by id.
+    pub zoomed: Option<String>,
+    /// Where each view of the tab in front was last drawn, by id.
+    drawn: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
 }
 
 /// A tab dragged over a view: the side of the view it would take, which the view lights.
@@ -106,7 +128,88 @@ pub fn tab(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    pane(bench, &tab.id, &tab.pane, window, cx)
+    bench.panes.drawn.borrow_mut().clear();
+    let zoomed = bench
+        .panes
+        .zoomed
+        .as_deref()
+        .and_then(|id| view_in(&tab.pane, id));
+    pane(bench, &tab.id, zoomed.unwrap_or(&tab.pane), window, cx)
+}
+
+fn view_in<'a>(pane: &'a Pane, view: &str) -> Option<&'a Pane> {
+    match pane {
+        Pane::View { id, .. } => (id == view).then_some(pane),
+        Pane::Split { panes, .. } => panes.iter().find_map(|child| view_in(child, view)),
+    }
+}
+
+fn first_view(pane: &Pane) -> Option<&str> {
+    match pane {
+        Pane::View { id, .. } => Some(id),
+        Pane::Split { panes, .. } => panes.first().and_then(first_view),
+    }
+}
+
+/// The splits from the tab's top down to `view`, each with which of its panes holds it.
+fn path_to<'a>(pane: &'a Pane, view: &str, path: &mut Vec<(&'a Pane, usize)>) -> bool {
+    match pane {
+        Pane::View { id, .. } => id == view,
+        Pane::Split { panes, .. } => panes.iter().enumerate().any(|(at, child)| {
+            path.push((pane, at));
+            let found = path_to(child, view, path);
+            if !found {
+                path.pop();
+            }
+            found
+        }),
+    }
+}
+
+/// The view nearest `from` that lies wholly `towards` it and shares some of its span across,
+/// weighing how far off centre it sits half as much as how far away it is.
+fn neighbour(
+    drawn: &HashMap<String, Bounds<Pixels>>,
+    from: &str,
+    towards: Towards,
+) -> Option<String> {
+    let a = drawn.get(from)?;
+    let centre = a.center();
+    let mut best: Option<(f32, &String)> = None;
+    for (id, b) in drawn {
+        if id == from {
+            continue;
+        }
+        let rows_meet = b.top() < a.bottom() && b.bottom() > a.top();
+        let columns_meet = b.left() < a.right() && b.right() > a.left();
+        let (beyond, distance, off) = match towards {
+            Towards::Left => (
+                rows_meet && b.right() <= a.left() + px(1.),
+                a.left() - b.right(),
+                b.center().y - centre.y,
+            ),
+            Towards::Right => (
+                rows_meet && b.left() >= a.right() - px(1.),
+                b.left() - a.right(),
+                b.center().y - centre.y,
+            ),
+            Towards::Up => (
+                columns_meet && b.bottom() <= a.top() + px(1.),
+                a.top() - b.bottom(),
+                b.center().x - centre.x,
+            ),
+            Towards::Down => (
+                columns_meet && b.top() >= a.bottom() - px(1.),
+                b.top() - a.bottom(),
+                b.center().x - centre.x,
+            ),
+        };
+        let score = f32::from(distance) + f32::from(off).abs() * 0.5;
+        if beyond && best.is_none_or(|(least, _)| score < least) {
+            best = Some((score, id));
+        }
+    }
+    best.map(|(_, id)| id.clone())
 }
 
 fn pane(
@@ -146,6 +249,17 @@ fn pane(
                     bench.drop_split(&dropping, dropped, cx);
                 }))
                 .child(view(bench, tab, id, *kind, target, window, cx))
+                .child({
+                    let (drawn, view) = (Rc::clone(&bench.panes.drawn), id.clone());
+                    canvas(
+                        move |bounds, _, _| {
+                            drawn.borrow_mut().insert(view, bounds);
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full()
+                })
                 .children(aimed.map(|side| preview(side, cx)))
                 .into_any_element()
         }
@@ -374,6 +488,177 @@ impl Workbench {
             "sizes": resizing.sizes,
         });
         self.call("resizeSplit", strip.with(params));
+    }
+
+    /// The view in focus in the tab in front, else its first.
+    fn focused_view(&self) -> Option<String> {
+        let tab = self.tab()?;
+        self.panes
+            .focused
+            .clone()
+            .filter(|id| view_in(&tab.pane, id).is_some())
+            .or_else(|| first_view(&tab.pane).map(str::to_owned))
+    }
+
+    /// A fresh shell in the project's folder beside the view in focus: to its right for a
+    /// row, below it for a column. It takes the shell the core started ahead when it can.
+    pub fn split_front(&mut self, dir: SplitDir, cx: &mut Context<Self>) {
+        let (Some(strip), Some(tab), Some(pane), Some(project)) = (
+            self.strip(),
+            self.tab().map(|tab| tab.id.clone()),
+            self.focused_view(),
+            self.project()
+                .map(|project| (project.id.clone(), project.path.clone())),
+        ) else {
+            return;
+        };
+        let side = match dir {
+            SplitDir::Row => "right",
+            SplitDir::Column => "bottom",
+        };
+        let asks = self.asks.clone();
+        cx.spawn(async move |bench, cx| {
+            let (project, path) = project;
+            let spare =
+                crate::core::request(&asks, "takeSpareShell", json!({ "project": project }))
+                    .await
+                    .ok()
+                    .and_then(|taken| {
+                        serde_json::from_value::<SessionId>(taken["id"].clone()).ok()
+                    });
+            let session = match spare {
+                Some(session) => session,
+                None => {
+                    let (started, session) = oneshot::channel();
+                    let spawn = TerminalSpawn {
+                        cols: 80,
+                        rows: 24,
+                        cwd: Some(path.to_string_lossy().into_owned()),
+                        ..TerminalSpawn::default()
+                    };
+                    let _ = asks.send(crate::core::Ask::Spawn {
+                        spawn: Box::new(spawn),
+                        started,
+                    });
+                    match session.await {
+                        Ok(Ok(session)) => session,
+                        Ok(Err(error)) => {
+                            eprintln!("sikemux: no shell for the split: {error}");
+                            return;
+                        }
+                        Err(_) => return,
+                    }
+                }
+            };
+            let _ = bench.update(cx, |bench, _| {
+                bench.panes.zoomed = None;
+                bench.split_pane(
+                    &strip,
+                    &tab,
+                    &pane,
+                    side,
+                    PaneKind::Terminal,
+                    &session.to_string(),
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Moves the focus to the view beside the one in focus, as the views were last drawn.
+    pub fn focus_towards(&mut self, towards: Towards, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(from) = self.focused_view() else {
+            return;
+        };
+        let Some(to) = neighbour(&self.panes.drawn.borrow(), &from, towards) else {
+            return;
+        };
+        self.panes.focused = Some(to.clone());
+        self.focus_view(&to, window, cx);
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Puts the keys in the view `id` of the tab in front: a terminal's screen or a chat's draft.
+    fn focus_view(&self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Pane::View { kind, target, .. }) =
+            self.tab().and_then(|tab| view_in(&tab.pane, id))
+        else {
+            return;
+        };
+        match kind {
+            PaneKind::Terminal => {
+                let focus = target
+                    .parse::<SessionId>()
+                    .ok()
+                    .and_then(|session| self.terminals.focus(session));
+                if let Some(focus) = focus {
+                    window.focus(focus, cx);
+                }
+            }
+            PaneKind::Agent => {
+                if let Some(composing) = self
+                    .chats
+                    .get(target)
+                    .and_then(|chat| chat.composer.as_ref())
+                {
+                    composing.draft.read(cx).focus_handle(cx).focus(window, cx);
+                }
+            }
+            _ => self.focus.focus(window, cx),
+        }
+    }
+
+    /// Moves the divider beside the view in focus `towards`, growing the view: along the
+    /// nearest split that runs that way, into the pane beyond it.
+    pub fn resize_towards(&mut self, towards: Towards) {
+        let (Some(strip), Some(tab), Some(view)) = (self.strip(), self.tab(), self.focused_view())
+        else {
+            return;
+        };
+        let across = matches!(towards, Towards::Left | Towards::Right);
+        let mut path = Vec::new();
+        if !path_to(&tab.pane, &view, &mut path) {
+            return;
+        }
+        let along = path.iter().rev().find_map(|(split, at)| match split {
+            Pane::Split { id, dir, sizes, .. } if (*dir == SplitDir::Row) == across => {
+                Some((id.clone(), sizes.clone(), *at))
+            }
+            _ => None,
+        });
+        let Some((split, mut sizes, at)) = along else {
+            return;
+        };
+        let beyond = match towards {
+            Towards::Right | Towards::Down => at + 1,
+            Towards::Left | Towards::Up if at > 0 => at - 1,
+            _ => return,
+        };
+        let Some(&spare) = sizes.get(beyond) else {
+            return;
+        };
+        let total: u32 = sizes.iter().map(|&size| u32::from(size)).sum();
+        let scale = |thousandths: u16| (u32::from(thousandths) * total / 1000) as u16;
+        let give = scale(RESIZE_STEP).min(spare.saturating_sub(scale(LEAST_SHARE)));
+        if give == 0 {
+            return;
+        }
+        sizes[at] += give;
+        sizes[beyond] -= give;
+        let params = json!({ "tab": tab.id, "split": split, "sizes": sizes });
+        self.call("resizeSplit", strip.with(params));
+    }
+
+    /// Lets the view in focus fill its tab, or puts the tab's other views back.
+    pub fn toggle_zoom(&mut self, cx: &mut Context<Self>) {
+        self.panes.zoomed = match self.panes.zoomed.take() {
+            Some(_) => None,
+            None => self
+                .tab()
+                .filter(|tab| matches!(tab.pane, Pane::Split { .. }))
+                .and_then(|_| self.focused_view()),
+        };
+        self.parts.redraw(&self.parts.stage, cx);
     }
 
     /// Puts a view of `kind` showing `target` beside the view `pane` of `tab`.

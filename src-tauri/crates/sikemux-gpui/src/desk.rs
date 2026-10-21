@@ -39,6 +39,22 @@ pub struct NewPage;
 #[action(name = "simulator.new")]
 pub struct NewSimulator;
 
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "browser.address")]
+pub struct FocusAddress;
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "browser.reload")]
+pub struct ReloadPage;
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "browser.back")]
+pub struct PageBack;
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "browser.forward")]
+pub struct PageForward;
+
 /// The browser engine and what the desks show of it.
 pub struct Desks {
     engine: Option<Arc<BrowserManager>>,
@@ -375,6 +391,72 @@ impl Workbench {
             self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
         }
         self.new_page(&agent);
+    }
+
+    /// The front agent, while its desk is open on its pages.
+    fn front_pages(&self) -> Option<String> {
+        let (tab, _, agent) = self.front_agent()?;
+        self.desk_of(&tab, &agent)?;
+        let kind = self.desks.kinds.get(&agent).copied().unwrap_or_default();
+        (kind == DeskKind::Pages).then_some(agent)
+    }
+
+    /// Closes what the front desk shows, its page or its simulator, and says whether it had one
+    /// to close; with neither, ⌘W closes the tab as it would anywhere else.
+    pub fn close_shown_page(&mut self) -> bool {
+        let Some((tab, _, agent)) = self.front_agent() else {
+            return false;
+        };
+        if self.desk_of(&tab, &agent).is_none() {
+            return false;
+        }
+        match self.desks.kinds.get(&agent).copied().unwrap_or_default() {
+            DeskKind::Simulator => {
+                self.show_kind(&agent, DeskKind::Pages);
+                true
+            }
+            DeskKind::Pages => {
+                let shown = self
+                    .desks
+                    .strips
+                    .get(&agent)
+                    .and_then(|strip| strip.active_tab_id.clone());
+                match shown {
+                    Some(page) => {
+                        self.with_engine(|engine| engine.close_tab(&agent, &page));
+                        true
+                    }
+                    None => false,
+                }
+            }
+        }
+    }
+
+    /// Puts the front desk's address in the person's hands, all of it selected to type over.
+    pub fn focus_front_address(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(page) = self
+            .front_pages()
+            .and_then(|agent| self.desks.pages.get(&agent))
+        else {
+            return;
+        };
+        page.address.update(cx, |address, cx| {
+            address.focus(window, cx);
+            address.select_all(window, cx);
+        });
+    }
+
+    pub fn reload_front_page(&self) {
+        if let Some(agent) = self.front_pages() {
+            self.with_engine(|engine| engine.reload(&agent));
+        }
+    }
+
+    /// Steps the front desk's page back or forward through its history.
+    pub fn step_front_page(&self, by: i32) {
+        if let Some(agent) = self.front_pages() {
+            self.with_engine(|engine| engine.history(&agent, by));
+        }
     }
 
     /// A desk opened on an agent with no pages starts on a blank one, ready for an address.
