@@ -280,6 +280,7 @@ fn tab(id: String, kind: PaneKind, target: String) -> Tab {
         id: id.clone(),
         title: None,
         pane: Pane::View { id, kind, target },
+        preview: false,
     }
 }
 
@@ -322,22 +323,42 @@ pub(crate) struct OpenTab {
     kind: PaneKind,
     target: String,
     title: Option<String>,
+    /// Opens it to look at, in place of the strip's tab opened that way.
+    #[serde(default)]
+    preview: bool,
 }
 
 /// Brings the tab showing `target` to the front, opening one at the end of
-/// the strip when none does. Answers its id.
+/// the strip when none does, or in place of the strip's preview when it
+/// opens to look at. A tab brought forward to keep is kept. Answers its id.
 pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
     edit(core, |layout| {
         layout.active_project = Some(params.project.clone());
         layout.active_host = None;
         let strip = strip(layout, &params.project)?;
-        let id = match strip
+        let shown = strip
             .tabs
             .iter()
-            .find(|tab| holds(&tab.pane, params.kind, &params.target))
-        {
-            Some(tab) => tab.id.clone(),
-            None => {
+            .position(|tab| holds(&tab.pane, params.kind, &params.target));
+        let replaced = strip.tabs.iter().position(|tab| tab.preview);
+        let id = match (shown, replaced) {
+            (Some(at), _) => {
+                let tab = &mut strip.tabs[at];
+                tab.preview &= params.preview;
+                tab.id.clone()
+            }
+            (None, Some(at)) if params.preview => {
+                let tab = &mut strip.tabs[at];
+                let view = format!("view-{}", uuid::Uuid::new_v4().simple());
+                tab.pane = Pane::View {
+                    id: view,
+                    kind: params.kind,
+                    target: params.target,
+                };
+                tab.title = params.title;
+                tab.id.clone()
+            }
+            (None, _) => {
                 if strip.tabs.len() >= MAX_TABS {
                     return Err("that project already has as many tabs as the core keeps".into());
                 }
@@ -347,6 +368,7 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
                     params.target,
                 );
                 opened.title = params.title;
+                opened.preview = params.preview;
                 let id = opened.id.clone();
                 strip.tabs.push(opened);
                 id
@@ -464,6 +486,20 @@ pub(crate) fn close_tab(core: &Core, params: TabParams) -> CoreResult<()> {
         super::workspace::close(core, &agents)?;
     }
     Ok(())
+}
+
+/// Keeps a tab opened to look at, so the next one opens beside it.
+pub(crate) fn keep_tab(core: &Core, params: TabParams) -> CoreResult<()> {
+    edit(core, |layout| {
+        let strip = strip_of(layout, &params)?;
+        let tab = strip
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == params.tab)
+            .ok_or("that tab is not open")?;
+        tab.preview = false;
+        Ok(())
+    })
 }
 
 pub(crate) fn activate_tab(core: &Core, params: TabParams) -> CoreResult<()> {

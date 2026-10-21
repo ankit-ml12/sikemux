@@ -1019,10 +1019,24 @@ impl Workbench {
 
     /// Brings the file's editor tab to the front, opening one when none shows it.
     pub fn open_file(&self, path: &Path) {
+        self.show_file(path, false);
+    }
+
+    /// Opens the file's editor to look at, in place of the one opened that way last.
+    pub fn preview_file(&self, path: &Path) {
+        self.show_file(path, true);
+    }
+
+    fn show_file(&self, path: &Path, preview: bool) {
         if let Some(project) = self.project() {
             self.call(
                 "openTab",
-                json!({ "project": project.id, "kind": "files", "target": path.to_string_lossy() }),
+                json!({
+                    "project": project.id,
+                    "kind": "files",
+                    "target": path.to_string_lossy(),
+                    "preview": preview,
+                }),
             );
         }
     }
@@ -1256,6 +1270,11 @@ impl Workbench {
     /// Moves a tab to `to` in its strip, counted as the strip is now.
     pub fn move_tab(&self, strip: &Strip, tab: &str, to: usize) {
         self.call("moveTab", strip.with(json!({ "tab": tab, "to": to })));
+    }
+
+    /// Keeps a tab opened to look at, so the next one opens beside it.
+    pub fn keep_tab(&self, strip: &Strip, tab: &str) {
+        self.call("keepTab", strip.with(json!({ "tab": tab })));
     }
 
     /// Opens a terminal to an SSH host, in that host's strip.

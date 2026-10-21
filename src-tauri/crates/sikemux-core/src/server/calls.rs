@@ -190,6 +190,7 @@ calls! { core, client, params;
     "agentUsage": Full, any_program => answer(agent_accounts::usage(&core, parse(params)?).await?),
     "agentUsages": Watch, any_program => answer(agent_accounts::usages(&core).await),
     "openTab": Full => answer(super::layout::open_tab(&core, parse(params)?)?),
+    "keepTab": Full => answer(super::layout::keep_tab(&core, parse(params)?)?),
     "closeTab": Full => answer(super::layout::close_tab(&core, parse(params)?)?),
     "activateTab": Full => answer(super::layout::activate_tab(&core, parse(params)?)?),
     "moveTab": Full => answer(super::layout::move_tab(&core, parse(params)?)?),

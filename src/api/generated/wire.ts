@@ -622,6 +622,11 @@ export interface Tab {
     /** What the person named it; clients name an unnamed tab from its pane. */
     title: string | null;
     pane: Pane;
+    /**
+     * Opened to look at, by a single click: the next such tab takes its
+     * place, until the person keeps it.
+     */
+    preview?: boolean;
 }
 
 /** What a tab shows: one view, or several side by side. */

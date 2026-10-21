@@ -764,6 +764,9 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             document.dirty = dirty;
             cx.notify();
         }
+        if dirty {
+            keep_preview(bench, &watched);
+        }
         gutter::changed(&watched, bench, cx);
         blame::typed(bench, &watched, cx);
     });
@@ -960,6 +963,25 @@ async fn write_file(
         }
         upload = written["upload"].as_str().map(str::to_owned);
         rest = after;
+    }
+}
+
+/// Keeps the tab showing `path` when it was opened only to look at, as an
+/// edit there means the person is working in it.
+fn keep_preview(bench: &Workbench, path: &Path) {
+    let Some(strip) = bench.strip() else {
+        return;
+    };
+    let target = path.to_string_lossy();
+    let previewed = bench.tabs(&strip).iter().find(|tab| {
+        tab.preview
+            && matches!(
+                &tab.pane,
+                Pane::View { kind: PaneKind::Files, target: shown, .. } if *shown == target
+            )
+    });
+    if let Some(tab) = previewed {
+        bench.keep_tab(&strip, &tab.id);
     }
 }
 

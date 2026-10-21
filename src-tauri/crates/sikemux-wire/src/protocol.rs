@@ -1908,6 +1908,10 @@ pub struct Tab {
     #[serde(default)]
     pub title: Option<String>,
     pub pane: Pane,
+    /// Opened to look at, by a single click: the next such tab takes its
+    /// place, until the person keeps it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub preview: bool,
 }
 
 /// What a tab shows: one view, or several side by side.
