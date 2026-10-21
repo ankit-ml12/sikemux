@@ -41,6 +41,7 @@ mod rail;
 pub mod search;
 pub mod settings;
 mod share;
+mod sim_frame;
 mod sim_pane;
 #[cfg(target_os = "macos")]
 mod sim_screen;

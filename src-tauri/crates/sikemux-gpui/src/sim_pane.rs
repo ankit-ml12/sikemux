@@ -10,10 +10,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use gpui::{Bounds, Pixels, Point, ScrollDelta, ScrollWheelEvent, TouchPhase};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, px, AnyElement, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    SharedString, Styled, Window,
+    canvas, div, img, px, relative, AnyElement, Context, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Map, Value};
 use sikemux_process::sync::Locked;
@@ -21,6 +22,7 @@ use sikemux_simulator::{tools, Host, SimulatorManager, WATCH_ENDED_EVENT};
 use tokio::sync::mpsc;
 
 use crate::icons::Icon;
+use crate::sim_frame::{self, Chrome, Rect};
 use crate::sim_screen::{Decoder, Picture};
 use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
@@ -62,8 +64,14 @@ struct Device {
 struct Screen {
     picture: Picture,
     watch: Arc<AtomicU64>,
-    /// The device's size in points, which touches are measured in.
+    /// The device's size in points as it is turned, which touches are measured in.
     size: Option<(f32, f32)>,
+    /// Which way the device is held, as the helper names it.
+    orientation: String,
+    /// The device's own frame, once the helper has drawn it.
+    chrome: Option<Rc<Chrome>>,
+    /// The side button the person is holding down.
+    held: Option<String>,
     /// Where the screen was last drawn, to turn the pointer into device points.
     drawn: Rc<Cell<Bounds<Pixels>>>,
     input: mpsc::UnboundedSender<Input>,
@@ -328,20 +336,22 @@ impl Workbench {
         {
             let (engine, udid, agent) =
                 (Arc::clone(&engine), device.udid.clone(), agent.to_owned());
-            let asked = request("screen", &udid, Map::new());
             cx.spawn(async move |bench, cx| {
-                let answer = crate::desk::run(async move { engine.window_call(asked).await }).await;
-                let Some(Ok(screen)) = answer else {
-                    return;
+                let ask = |kind: &str| {
+                    let (engine, asked) = (Arc::clone(&engine), request(kind, &udid, Map::new()));
+                    crate::desk::run(async move { engine.window_call(asked).await })
                 };
-                let measured = (
-                    screen["width"].as_f64().unwrap_or(0.) as f32,
-                    screen["height"].as_f64().unwrap_or(0.) as f32,
-                );
+                let (chrome, mask) = (ask("chrome").await, ask("mask").await);
+                let mask = mask.and_then(Result::ok);
+                let read = chrome.and_then(Result::ok).and_then(|chrome| {
+                    Chrome::read(
+                        &chrome["chrome"],
+                        mask.as_ref().and_then(|mask| mask["mask"].as_str()),
+                    )
+                });
                 let _ = bench.update(cx, |bench, cx| {
                     if let Some(screen) = bench.sims.screens.get_mut(&agent) {
-                        screen.size =
-                            Some(measured).filter(|(width, height)| *width > 0. && *height > 0.);
+                        screen.chrome = read.map(Rc::new);
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);
                 });
@@ -354,12 +364,104 @@ impl Workbench {
                 picture,
                 watch,
                 size: None,
+                orientation: String::new(),
+                chrome: None,
+                held: None,
                 drawn: Rc::new(Cell::new(Bounds::default())),
                 input,
                 pressed: None,
                 focus: cx.focus_handle(),
                 fresh,
             },
+        );
+        self.read_screen(agent, cx);
+    }
+
+    /// Reads how large the agent's device is and which way it is held, for touches and its frame.
+    fn read_screen(&self, agent: &str, cx: &mut Context<Self>) {
+        let Some(device) = self.sims.attached.get(agent) else {
+            return;
+        };
+        let (engine, agent) = (Arc::clone(&self.sims.engine), agent.to_owned());
+        let asked = request("screen", &device.udid, Map::new());
+        cx.spawn(async move |bench, cx| {
+            let answer = crate::desk::run(async move { engine.window_call(asked).await }).await;
+            let Some(Ok(screen)) = answer else {
+                return;
+            };
+            let measured = (
+                screen["width"].as_f64().unwrap_or(0.) as f32,
+                screen["height"].as_f64().unwrap_or(0.) as f32,
+            );
+            let orientation = screen["orientation"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
+            let _ = bench.update(cx, |bench, cx| {
+                if let Some(screen) = bench.sims.screens.get_mut(&agent) {
+                    screen.size =
+                        Some(measured).filter(|(width, height)| *width > 0. && *height > 0.);
+                    screen.orientation = orientation;
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Turns the agent's device to the next way of holding it, then reads its screen again.
+    fn turn_device(&self, agent: &str, cx: &mut Context<Self>) {
+        let Some(udid) = self
+            .sims
+            .attached
+            .get(agent)
+            .map(|device| device.udid.clone())
+        else {
+            return;
+        };
+        let (engine, agent) = (Arc::clone(&self.sims.engine), agent.to_owned());
+        cx.spawn(async move |bench, cx| {
+            let turned = crate::desk::run(async move {
+                let now = engine.orientation(&udid, None).await.unwrap_or_default();
+                let next = match now.as_str() {
+                    "portrait" => "landscapeLeft",
+                    "landscapeLeft" => "portraitUpsideDown",
+                    "portraitUpsideDown" => "landscapeRight",
+                    _ => "portrait",
+                };
+                engine.orientation(&udid, Some(next.into())).await
+            })
+            .await;
+            if turned.is_some() {
+                let _ = bench.update(cx, |bench, cx| bench.read_screen(&agent, cx));
+            }
+        })
+        .detach();
+    }
+
+    /// Presses or lets go of one of the device's side buttons, as the frame shows them.
+    fn side_button(&mut self, agent: &str, name: &str, down: bool) {
+        let button = match name {
+            "action" => "action",
+            "volume-up" => "volumeUp",
+            "volume-down" => "volumeDown",
+            "power" => "lock",
+            _ => return,
+        };
+        let Some(screen) = self.sims.screens.get_mut(agent) else {
+            return;
+        };
+        match down {
+            true if self.sims.acting.contains(agent) => return,
+            true => screen.held = Some(name.to_owned()),
+            false if screen.held.as_deref() != Some(name) => return,
+            false => screen.held = None,
+        }
+        let phase = if down { "down" } else { "up" };
+        self.device_request(
+            agent,
+            "button",
+            fields([("button", button.into()), ("phase", phase.into())]),
         );
     }
 
@@ -622,29 +724,11 @@ pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Any
             cx,
         ))
         .child({
-            let engine = Arc::clone(&bench.sims.engine);
-            let udid = bench
-                .sims
-                .attached
-                .get(agent)
-                .map(|device| device.udid.clone());
+            let turning = agent.to_owned();
             IconButton::new("sim-rotate", Icon::Rotate, "Turn the device")
                 .glyph(13.)
-                .disabled(acting || udid.is_none())
-                .on_click(move |_, _, _| {
-                    let (engine, udid) = (Arc::clone(&engine), udid.clone());
-                    crate::desk::spawn(async move {
-                        let Some(udid) = udid else { return };
-                        let now = engine.orientation(&udid, None).await.unwrap_or_default();
-                        let next = match now.as_str() {
-                            "portrait" => "landscapeLeft",
-                            "landscapeLeft" => "portraitUpsideDown",
-                            "portraitUpsideDown" => "landscapeRight",
-                            _ => "portrait",
-                        };
-                        let _ = engine.orientation(&udid, Some(next.into())).await;
-                    });
-                })
+                .disabled(acting || !bench.sims.holds(agent))
+                .on_click(cx.listener(move |bench, _, _, cx| bench.turn_device(&turning, cx)))
         })
         .into_any_element()
 }
@@ -693,50 +777,159 @@ pub fn body(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyE
         agent.to_owned(),
         agent.to_owned(),
     );
+    let live = div()
+        .id(SharedString::from(format!("sim-screen-{agent}")))
+        .track_focus(&focus)
+        .key_context("SimulatorScreen")
+        .overflow_hidden()
+        .bg(gpui::black())
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |bench, event, window, cx| bench.press(&down, event, window, cx)),
+        )
+        .on_mouse_move(cx.listener(move |bench, event, _, _| bench.drag(&moved, event)))
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |bench, event: &MouseUpEvent, _, _| {
+                bench.lift(&up, Some(event.position))
+            }),
+        )
+        .on_mouse_up_out(
+            MouseButton::Left,
+            cx.listener(move |bench, _, _, _| bench.lift(&out, None)),
+        )
+        .on_scroll_wheel(cx.listener(move |bench, event, _, _| bench.scroll(&wheel, event)))
+        .on_key_down(cx.listener(move |bench, event, _, cx| bench.type_into(&keys, event, cx)))
+        .child(
+            canvas(move |bounds, _, _| drawn.set(bounds), |_, _, _, _| {})
+                .absolute()
+                .size_full(),
+        )
+        .children(picture);
+    let framed = bench.preferences().simulator_frame;
+    let frame = framed
+        .then(|| screen.chrome.as_ref().zip(screen.size))
+        .flatten()
+        .map(|(chrome, size)| chrome.turned(sim_frame::turn_degrees(&screen.orientation), size));
+    let device = match frame {
+        Some(frame) => framed_device(
+            agent,
+            live,
+            &frame,
+            screen.held.as_deref(),
+            bench.sims.acting(agent),
+            cx,
+        ),
+        None => live
+            .h_full()
+            .max_w_full()
+            .aspect_ratio(ratio)
+            .rounded(px(28.))
+            .into_any_element(),
+    };
     div()
         .size_full()
         .p(px(16.))
         .flex()
         .items_center()
         .justify_center()
-        .child(
+        .child(device)
+        .into_any_element()
+}
+
+/// `rect` placed in a frame `size` points across, in shares of it, so it scales with the frame.
+fn place<E: Styled>(element: E, rect: Rect, size: (f32, f32)) -> E {
+    element
+        .absolute()
+        .left(relative(rect.x / size.0))
+        .top(relative(rect.y / size.1))
+        .w(relative(rect.w / size.0))
+        .h(relative(rect.h / size.1))
+}
+
+/// The live screen inside the device's own frame: the side buttons under the bezel, sliding
+/// out under the pointer, then the bezel, the screen, and the bezel again where its outline
+/// covers the screen's corners.
+fn framed_device(
+    agent: &str,
+    live: gpui::Stateful<gpui::Div>,
+    frame: &sim_frame::Turned,
+    held: Option<&str>,
+    acting: bool,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let size = frame.size;
+    let buttons = frame.buttons.iter().map(|button| {
+        let pressed = held == Some(button.name.as_str());
+        let within = |rect: Rect| (rect, (button.clip.w, button.clip.h));
+        let (rest, clip) = within(button.rest);
+        let (out, _) = within(button.out);
+        let image = match (pressed, &button.image_down) {
+            (true, Some(down)) => down.clone(),
+            _ => button.image.clone(),
+        };
+        let group = SharedString::from(format!("sim-side-{agent}-{}", button.name));
+        let (press, lift, gone) = (
+            (agent.to_owned(), button.name.clone()),
+            (agent.to_owned(), button.name.clone()),
+            (agent.to_owned(), button.name.clone()),
+        );
+        place(
             div()
-                .id(SharedString::from(format!("sim-screen-{agent}")))
-                .track_focus(&focus)
-                .key_context("SimulatorScreen")
-                .h_full()
-                .max_w_full()
-                .aspect_ratio(ratio)
-                .rounded(px(28.))
+                .id(group.clone())
+                .group(group.clone())
                 .overflow_hidden()
-                .bg(gpui::black())
+                .when(!acting, |side| side.cursor_pointer())
+                .tooltip(ui::tooltip(button.title.clone()))
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |bench, event, window, cx| {
-                        bench.press(&down, event, window, cx)
+                    cx.listener(move |bench, _, _, cx| {
+                        bench.side_button(&press.0, &press.1, true);
+                        bench.parts.redraw(&bench.parts.stage, cx);
                     }),
                 )
-                .on_mouse_move(cx.listener(move |bench, event, _, _| bench.drag(&moved, event)))
                 .on_mouse_up(
                     MouseButton::Left,
-                    cx.listener(move |bench, event: &MouseUpEvent, _, _| {
-                        bench.lift(&up, Some(event.position))
+                    cx.listener(move |bench, _, _, cx| {
+                        bench.side_button(&lift.0, &lift.1, false);
+                        bench.parts.redraw(&bench.parts.stage, cx);
                     }),
                 )
                 .on_mouse_up_out(
                     MouseButton::Left,
-                    cx.listener(move |bench, _, _, _| bench.lift(&out, None)),
+                    cx.listener(move |bench, _, _, cx| {
+                        bench.side_button(&gone.0, &gone.1, false);
+                        bench.parts.redraw(&bench.parts.stage, cx);
+                    }),
                 )
-                .on_scroll_wheel(cx.listener(move |bench, event, _, _| bench.scroll(&wheel, event)))
-                .on_key_down(
-                    cx.listener(move |bench, event, _, cx| bench.type_into(&keys, event, cx)),
-                )
-                .child(
-                    canvas(move |bounds, _, _| drawn.set(bounds), |_, _, _, _| {})
-                        .absolute()
-                        .size_full(),
-                )
-                .children(picture),
+                .child({
+                    let shown = if pressed { out } else { rest };
+                    place(img(image), shown, clip).when(!acting && !pressed, |slide| {
+                        slide.group_hover(group, move |style| {
+                            style
+                                .left(relative(out.x / clip.0))
+                                .top(relative(out.y / clip.1))
+                        })
+                    })
+                }),
+            button.clip,
+            size,
+        )
+    });
+    let (bezel_at, bezel) = &frame.bezel;
+    div()
+        .relative()
+        .h_full()
+        .max_w_full()
+        .aspect_ratio(size.0 / size.1)
+        .children(buttons)
+        .child(place(img(bezel.clone()), *bezel_at, size))
+        .child(place(live, frame.screen, size))
+        .children(
+            frame
+                .cap
+                .clone()
+                .map(|cap| place(img(cap), frame.screen, size)),
         )
         .into_any_element()
 }
