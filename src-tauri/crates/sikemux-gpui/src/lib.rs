@@ -3,6 +3,7 @@
 mod agents;
 mod battery;
 mod chat;
+pub mod composer;
 mod faces;
 pub mod core;
 mod home;

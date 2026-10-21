@@ -75,6 +75,8 @@ pub struct Tokens {
     pub surface_sunken: Hsla,
     pub surface: Hsla,
     pub surface_raised: Hsla,
+    /// What a chat's composer and its docked strips are filled with.
+    pub surface_composer: Hsla,
     pub surface_overlay: Hsla,
     pub surface_hover: Hsla,
     pub surface_chosen: Hsla,
@@ -123,6 +125,7 @@ impl Tokens {
             surface_sunken: hex(palette.bg_dim).into(),
             surface: base.into(),
             surface_raised: gray(7.).into(),
+            surface_composer: mix_srgb(gray(7.), hex(palette.bg_dim), 0.55).into(),
             surface_overlay: gray(4.).into(),
             surface_hover: tint(ink, 0.06).into(),
             surface_chosen: tint(ink, 0.09).into(),

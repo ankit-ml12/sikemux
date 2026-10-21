@@ -33,7 +33,6 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         let pane = ui::pane(cx).child(terminal::pane(bench, &cx.entity(), session, window));
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
-    let t = Tokens::get(cx).clone();
     let project = bench.project();
     let agent = bench.agent();
     let header = agent.as_ref().zip(project).map(|(agent, project)| pane_header(bench, agent, &project.id));
@@ -42,46 +41,46 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         let pane = ui::pane(cx).child(chat::pane(&agent, chat, &bench.asks, cx)).children(header);
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
-    div().flex_1().min_w_0().child(
-        ui::pane(cx)
-            .child(
-                div().size_full().flex().justify_center().child(
-                    div()
-                        .w_full()
-                        .max_w(px(756.))
-                        .mx(px(22.))
-                        .pt(px(70.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(32.))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .gap(px(6.))
-                                .child(div().mb(px(6.)).child(match &agent {
-                                    Some(agent) => ui::agent_mark(agent, 40., cx),
-                                    None => ui::mark("claude", 40.),
-                                }))
-                                .child(
-                                    ui::text(project.map(|project| project.name.clone()).unwrap_or_default(), 16., FontWeight::SEMIBOLD)
-                                        .text_color(t.text_primary),
-                                ),
-                        )
-                        .children(bench.read("activity").map(|summary| {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(24.))
-                                .when(!is_empty(&summary["totals"]), |activity| activity.child(overview(&summary["totals"], cx)))
-                                .child(calendar(summary, bench.metric, cx))
-                        })),
-                ),
-            )
-            .children(header),
-    )
-    .into_any_element()
+    div()
+        .flex_1()
+        .min_w_0()
+        .child(ui::pane(cx).child(div().size_full().flex().justify_center().child(welcome(bench, agent.as_ref(), cx))).children(header))
+        .into_any_element()
+}
+
+/// What a chat opens on before its first message: the agent's face, the project, and what
+/// its agents did in it.
+pub fn welcome(bench: &Workbench, agent: Option<&AgentRow>, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let project = bench.project();
+    div()
+        .w_full()
+        .max_w(px(756.))
+        .mx(px(22.))
+        .pt(px(70.))
+        .flex()
+        .flex_col()
+        .gap(px(32.))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(6.))
+                .child(div().mb(px(6.)).child(match agent {
+                    Some(agent) => ui::agent_mark(agent, 40., cx),
+                    None => ui::mark("claude", 40.),
+                }))
+                .child(ui::text(project.map(|project| project.name.clone()).unwrap_or_default(), 16., FontWeight::SEMIBOLD).text_color(t.text_primary)),
+        )
+        .children(bench.read("activity").map(|summary| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(24.))
+                .when(!is_empty(&summary["totals"]), |activity| activity.child(overview(&summary["totals"], cx)))
+                .child(calendar(summary, bench.metric, cx))
+        }))
 }
 
 fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoElement {
@@ -298,7 +297,7 @@ fn plural(count: f64, word: &str) -> String {
     format!("{} {word}{}", whole(count), if count == 1. { "" } else { "s" })
 }
 
-fn compact(value: f64) -> String {
+pub fn compact(value: f64) -> String {
     let (scaled, unit) = match value {
         v if v >= 1e9 => (v / 1e9, "B"),
         v if v >= 1e6 => (v / 1e6, "M"),
@@ -309,7 +308,7 @@ fn compact(value: f64) -> String {
     if rounded.fract() == 0. { format!("{rounded:.0}{unit}") } else { format!("{rounded:.1}{unit}") }
 }
 
-fn money(usd: f64) -> String {
+pub fn money(usd: f64) -> String {
     if usd >= 1000. { format!("${}", whole(usd)) } else { format!("${usd:.2}") }
 }
 
