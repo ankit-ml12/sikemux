@@ -36,6 +36,9 @@
   and the end-to-end runs. Do not weaken or delete them to get a change through.
 - When a change breaks an existing test, decide whether the behaviour it pins was meant
   to change. Update the test only if so; otherwise fix the code.
+- Run every Rust build and check with rustup's Rust first on `PATH` (`cargo --version`
+  shows the version in `rust-toolchain.toml`). Homebrew's older Rust ignores that file,
+  so clippy there can pass code CI rejects.
 
 ## Speed and size
 
@@ -84,8 +87,8 @@
   rather than on a typed UniFFI record. A request the phone needs is a method of the
   core's `Call` (`sikemux-core/src/server/calls.rs`), never a new wire request or bridge
   method, and a released method is never removed or renamed. ADR 0010 records why.
-- Phone builds need rustup's Rust first on `PATH`; Homebrew's Rust ignores
-  `rust-toolchain.toml` and has no phone targets.
+- Phone builds need rustup's Rust first on `PATH` as well; Homebrew's has no phone
+  targets.
 - The bindings `uniffi-bindgen-react-native` generates are build output; do not commit or
   hand-edit them.
 - Phone screens are designed in `mobile/design/screens.src.html` before they are built, and
