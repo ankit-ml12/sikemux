@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     renameAgent: vi.fn(),
     typed: vi.fn(),
     terminalProps: vi.fn(),
-    screen: [] as string[],
+    ptyCall: vi.fn(async (_id: number, _method: string) => ({ draft: "" })),
     addAgent: vi.fn(),
     state: {
         deskPanes: {} as Record<string, string>,
@@ -27,22 +27,25 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./AgentChatPane", () => ({ AgentChatPane: mocks.chatPane }));
 vi.mock("../terminal/TerminalPane", async () => {
     const { registerTextInsert } = await import("../state/textInsertRegistry");
-    const { registerScreen } = await import("../state/terminalScreens");
+    const reported = new WeakSet<HTMLElement>();
     return {
-        TerminalPane: (props: object) => {
+        TerminalPane: (props: { onPtySession?: (id: number) => void }) => {
             mocks.terminalProps(props);
             return (
                 <div
                     ref={(element) => {
                         if (!element) return;
                         registerTextInsert(element, mocks.typed);
-                        registerScreen(element, () => mocks.screen);
+                        if (reported.has(element)) return;
+                        reported.add(element);
+                        props.onPtySession?.(7);
                     }}
                 />
             );
         },
     };
 });
+vi.mock("../api/core", async (importOriginal) => ({ ...(await importOriginal<object>()), ptyCall: mocks.ptyCall }));
 vi.mock("../state/store", () => ({
     useStore: (select: (state: typeof mocks.state) => unknown) => select(mocks.state),
     getState: () => mocks.state,
@@ -155,15 +158,16 @@ it("brings what was typed in the TUI's input box back to the chat", async () => 
             draft = text;
         },
     });
-    mocks.screen = ["⏺ Done.", "────────────────", "❯ write the migration", "  and its rollback", "────────────────", "  ⏵⏵ bypass permissions on"];
+    mocks.ptyCall.mockResolvedValue({ draft: "write the migration\nand its rollback" });
     render(<AgentSurface agent={agent} session={session} visible />);
     fireEvent.click(screen.getByRole("button", { name: /TUI/ }));
     await vi.waitFor(() => expect(screen.getByRole("button", { name: /GUI/ })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: /GUI/ }));
 
     await vi.waitFor(() => expect(draft).toBe("write the migration\nand its rollback"));
+    expect(mocks.ptyCall).toHaveBeenCalledWith(7, "promptDraft");
     stop();
-    mocks.screen = [];
+    mocks.ptyCall.mockResolvedValue({ draft: "" });
 });
 
 it("keeps Pi in its terminal, since it has no ACP mode", () => {

@@ -311,6 +311,11 @@ calls! { core, client, params;
         }
         answer(json!({}))
     },
+    "promptDraft": Full => {
+        let params: SessionParams = parse(params)?;
+        let session = core.session(params.id).ok_or("that terminal is not on this host")?;
+        answer(json!({ "draft": super::session::prompt_draft(&session) }))
+    },
     "reconnectSsh": Full => {
         let params: SessionParams = parse(params)?;
         let session = core.session(params.id).ok_or("that terminal is not on this host")?;

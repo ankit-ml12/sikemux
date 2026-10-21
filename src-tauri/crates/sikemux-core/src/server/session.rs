@@ -971,6 +971,12 @@ pub(crate) fn type_when_ready(session: &Arc<Session>, bytes: Vec<u8>) {
     });
 }
 
+/// What is typed in the input box of the agent's TUI the session shows.
+pub(crate) fn prompt_draft(session: &Session) -> String {
+    let rows = session.screen.locked().terminal.read_rows();
+    super::prompt_draft::read(&rows.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
 /// Connects an ssh terminal again when it has given up and sits at the local
 /// shell's prompt.
 pub(crate) fn reconnect_ssh(session: &Session) {

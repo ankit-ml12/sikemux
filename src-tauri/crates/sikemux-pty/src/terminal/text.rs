@@ -143,6 +143,36 @@ impl Terminal {
         contents
     }
 
+    /// The screen row by row as a person reads it, with dim text such as an
+    /// empty prompt's placeholder left out.
+    pub fn read_rows(&self) -> Vec<String> {
+        let grid = self.term.grid();
+        let cols = self.term.columns();
+        (0..self.term.screen_lines())
+            .map(|line| {
+                let row = &grid[Line(line as i32)];
+                let mut text = String::new();
+                for column in 0..cols {
+                    let cell = &row[Column(column)];
+                    if cell
+                        .flags
+                        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                    {
+                        continue;
+                    }
+                    if cell.flags.contains(Flags::DIM) {
+                        text.push(' ');
+                    } else {
+                        text.push(cell.c);
+                        text.extend(cell.zerowidth().into_iter().flatten());
+                    }
+                }
+                text.truncate(text.trim_end().len());
+                text
+            })
+            .collect()
+    }
+
     pub fn find(
         &self,
         query: &str,

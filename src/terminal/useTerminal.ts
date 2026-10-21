@@ -1,7 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { currentTerminalTheme, registerTerminal } from "../themes/bus";
 import { currentTerminalFontSize, registerTerminalFontSize } from "./fontSize";
-import { registerScreen } from "../state/terminalScreens";
 import { stageMoving, whenStageStill } from "../state/nativeViews";
 import { performanceTelemetry } from "../lib/performance";
 import type { PtyShellMetadataSnapshot } from "./ptyController";
@@ -121,7 +120,6 @@ export function useTerminal(opts: {
     useEffect(() => {
         if (!shouldMount) return;
         const host = hostRef.current!;
-        const unregisterScreen = registerScreen(host, () => viewRef.current?.screenRows() ?? []);
         let disposed = false;
         let cleanup = () => {};
         let restartTimer: number | null = null;
@@ -293,7 +291,6 @@ export function useTerminal(opts: {
             if (restartTimer !== null) window.clearTimeout(restartTimer);
             if (stableTimer !== null) window.clearTimeout(stableTimer);
             delete host.dataset.terminalOutput;
-            unregisterScreen();
             cleanup();
         };
     }, [shouldMount, hostRef, ptyController]);

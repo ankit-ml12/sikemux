@@ -12,7 +12,6 @@ import {
     MODE_MOUSE_ANY,
     MODE_MOUSE_DRAG,
     MODE_MOUSE_MOTION,
-    STYLE_DIM,
     TerminalGrid,
     decodeFrame,
     decodeLines,
@@ -21,7 +20,6 @@ import {
     type GridPoint,
     type Mods,
     type MouseButton,
-    type Row,
     type TerminalInput,
 } from "./grid";
 import { isTerminalFindShortcut, type TerminalSearchOptions } from "./interactions";
@@ -708,26 +706,6 @@ export class TerminalView {
         this.dropMatches();
         this.anchor = this.head = null;
         void invoke("pty_clear", { id: this.pid }).catch(() => {});
-    }
-
-    /** What the screen shows, row by row, with dim text such as an empty prompt's placeholder left out. */
-    screenRows(): string[] {
-        const header = this.grid.header;
-        const rows: string[] = [];
-        for (let index = 0; index < header.rows; index++) {
-            const row: Row | undefined = this.grid.line(this.viewTop + index);
-            if (!row) {
-                rows.push("");
-                continue;
-            }
-            const cells = rowCells(row, header.cols);
-            for (const span of row.spans) {
-                if (!(span.style.flags & STYLE_DIM)) continue;
-                for (let col = span.col; col < span.col + span.width && col < cells.length; col++) cells[col] = " ";
-            }
-            rows.push(cells.join("").trimEnd());
-        }
-        return rows;
     }
 
     // Find

@@ -52,6 +52,7 @@ mod preferences;
 mod prepare;
 mod project_files;
 mod project_roots;
+mod prompt_draft;
 mod questions;
 mod remote;
 mod sandbox;
