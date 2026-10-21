@@ -50,15 +50,21 @@ impl Workbench {
         }
     }
 
-    /// The first host when a project is in front, else the first project.
+    /// The first place of the next group the rail shows: projects, hosts, then terminals.
     pub fn next_group(&self) {
+        let group = |strip: &Strip| match strip {
+            Strip::Project(_) => 0,
+            Strip::Host(_) => 1,
+            Strip::Terminals => 2,
+        };
         let open = self.strips_in_order();
-        let on_host = matches!(self.strip(), Some(Strip::Host(_)));
-        let other = open
+        let now = self.strip().as_ref().map_or(0, group);
+        let next = open
             .iter()
-            .find(|strip| matches!(strip, Strip::Host(_)) != on_host);
-        if let Some(other) = other {
-            self.show_strip(other);
+            .filter(|strip| group(strip) != now)
+            .min_by_key(|strip| (group(strip) + 3 - now) % 3);
+        if let Some(next) = next {
+            self.show_strip(next);
         }
     }
 
@@ -67,7 +73,7 @@ impl Workbench {
             return;
         };
         let project = match &strip {
-            Strip::Host(_) => {
+            Strip::Host(_) | Strip::Terminals => {
                 let tabs: Vec<String> =
                     self.tabs(&strip).iter().map(|tab| tab.id.clone()).collect();
                 return self.close_tabs(&strip, &tabs);

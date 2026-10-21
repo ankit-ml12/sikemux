@@ -7,7 +7,7 @@ use gpui_kit::{
     div, px, Anchor, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
 
 use crate::codehost::{Area, OpenArea};
@@ -85,8 +85,12 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                     Group::new("Terminals", "no terminals")
                         .actions(actions(
                             None,
-                            [IconButton::new("add-terminal", Icon::Plus, "New terminal")
-                                .on_click(cx.listener(|bench, _, _, _| bench.new_terminal()))],
+                            [
+                                IconButton::new("add-terminal", Icon::Plus, "New terminal")
+                                    .on_click(
+                                        cx.listener(|bench, _, _, _| bench.new_loose_terminal()),
+                                    ),
+                            ],
                             cx,
                         ))
                         .children(terminals(bench, cx)),
@@ -211,17 +215,28 @@ pub(crate) fn plugin_mark(id: &str) -> Option<Icon> {
     })
 }
 
-/// Terminals started outside every project.
-fn terminals(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+/// Terminals started outside every project, each opening in the terminals' strip.
+fn terminals(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let live = Tokens::get(cx).live;
+    let front = (bench.strip() == Some(Strip::Terminals))
+        .then(|| bench.tab().and_then(|tab| tabs::first_view(&tab.pane)))
+        .flatten()
+        .filter(|(kind, _)| *kind == PaneKind::Terminal)
+        .map(|(_, target)| target.clone());
     bench
         .loose_terminals()
         .into_iter()
         .map(|session| {
+            let id = session.id.to_string();
             Row::new(
-                SharedString::from(format!("terminal-{}", session.id)),
+                SharedString::from(format!("terminal-{id}")),
                 session.rail_name.clone().unwrap_or_default(),
             )
+            .chosen(front.as_ref() == Some(&id))
+            .on_click(cx.listener(move |bench, _, _, _| {
+                let params = json!({ "kind": PaneKind::Terminal, "target": id });
+                bench.call("openTab", Strip::Terminals.with(params));
+            }))
             .mark(16., ui::icon(Icon::Terminal, 13.).text_color(live))
             .quiet()
             .into_any_element()

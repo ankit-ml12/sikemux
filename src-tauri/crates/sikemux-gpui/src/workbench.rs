@@ -176,21 +176,24 @@ pub struct CiRepo {
     pub branch: String,
 }
 
-/// Whose tabs a strip holds: a project's, or those of an SSH host shown instead of one.
+/// Whose tabs a strip holds: a project's, those of an SSH host shown instead of one, or
+/// the terminals of no project.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Strip {
     Project(String),
     Host(String),
+    Terminals,
 }
 
 impl Strip {
     /// `params` naming this strip, as the core's tab calls take it.
     pub(crate) fn with(&self, mut params: Value) -> Value {
         let (key, id) = match self {
-            Strip::Project(id) => ("project", id),
-            Strip::Host(alias) => ("host", alias),
+            Strip::Project(id) => ("project", json!(id)),
+            Strip::Host(alias) => ("host", json!(alias)),
+            Strip::Terminals => ("terminals", json!(true)),
         };
-        params[key] = json!(id);
+        params[key] = id;
         params
     }
 }
@@ -2179,19 +2182,31 @@ impl Workbench {
         }
     }
 
+    /// Opens a terminal in the project in front, or among the terminals of no project while
+    /// those are in front.
     pub fn new_terminal(&self) {
-        if let Some(project) = self.project() {
-            self.call("newTerminal", json!({ "project": project.id }));
+        match (self.strip(), self.project()) {
+            (Some(Strip::Terminals), _) => self.new_loose_terminal(),
+            (_, Some(project)) => self.call("newTerminal", json!({ "project": project.id })),
+            _ => {}
         }
+    }
+
+    pub fn new_loose_terminal(&self) {
+        self.call("newTerminal", Strip::Terminals.with(json!({})));
     }
 
     pub fn activate_project(&self, id: &str) {
         self.call("activateProject", json!({ "project": id }));
     }
 
-    /// The strip in front: the SSH host shown instead of a project, else the project in front.
+    /// The strip in front: the terminals or SSH host shown instead of a project, else the
+    /// project in front.
     pub fn strip(&self) -> Option<Strip> {
         let layout = &self.view.as_ref()?.layout;
+        if layout.terminals_in_front {
+            return Some(Strip::Terminals);
+        }
         match layout
             .active_host
             .as_ref()
@@ -2209,6 +2224,7 @@ impl Workbench {
         match strip {
             Strip::Project(id) => layout.projects.get(id),
             Strip::Host(alias) => layout.hosts.get(alias),
+            Strip::Terminals => Some(&layout.terminals),
         }
     }
 
@@ -2635,8 +2651,8 @@ impl Render for Workbench {
             )
             .on_action(cx.listener(|bench, _: &crate::places::NextGroup, _, _| bench.next_group()))
             .on_action(
-                cx.listener(|bench, _: &crate::places::FocusTerminals, _, cx| {
-                    bench.show_rail_page(RailPage::Terminals, cx)
+                cx.listener(|bench, _: &crate::places::FocusTerminals, _, _| {
+                    bench.call("showTerminals", json!({}))
                 }),
             )
             .on_action(

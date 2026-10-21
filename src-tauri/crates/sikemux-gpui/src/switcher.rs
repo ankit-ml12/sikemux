@@ -8,6 +8,8 @@ use gpui_kit::{
     Styled, Window,
 };
 
+use serde_json::json;
+
 use crate::chat::tilde;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -70,18 +72,22 @@ pub struct Switcher {
 }
 
 impl Workbench {
-    /// Every project in the rail's order, then the SSH hosts with a strip open.
+    /// Every project in the rail's order, then the SSH hosts with a strip open, then the
+    /// terminals of no project when one is open.
     pub(crate) fn strips_in_order(&self) -> Vec<Strip> {
         let projects = self
             .projects()
             .iter()
             .map(|project| Strip::Project(project.id.clone()));
-        let hosts = self
-            .view
-            .as_ref()
-            .map(|view| view.layout.hosts.keys().cloned().collect::<Vec<_>>())
+        let layout = self.view.as_ref().map(|view| &view.layout);
+        let hosts = layout
+            .map(|layout| layout.hosts.keys().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
-        projects.chain(hosts.into_iter().map(Strip::Host)).collect()
+        let terminals = layout.is_some_and(|layout| !layout.terminals.tabs.is_empty());
+        projects
+            .chain(hosts.into_iter().map(Strip::Host))
+            .chain(terminals.then_some(Strip::Terminals))
+            .collect()
     }
 
     /// Steps `by` places on: in the switcher while a modifier is held, else at once.
@@ -154,6 +160,7 @@ impl Workbench {
                     None => self.open_ssh_terminal(alias),
                 }
             }
+            Strip::Terminals => self.call("showTerminals", json!({})),
         }
     }
 }
@@ -172,6 +179,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                 None => (Icon::Folder, id.clone().into(), SharedString::default()),
             },
             Strip::Host(alias) => (Icon::Server, alias.clone().into(), "SSH".into()),
+            Strip::Terminals => (Icon::Terminal, "Terminals".into(), "~".into()),
         };
         let chosen = place == switcher.at;
         div()

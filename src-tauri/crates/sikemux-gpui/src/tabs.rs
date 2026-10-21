@@ -745,7 +745,7 @@ fn strip_tab(
     let shown = match view {
         Some((PaneKind::Agent, target)) => match match strip {
             Strip::Project(project) => bench.agents_of(project),
-            Strip::Host(_) => Vec::new(),
+            Strip::Host(_) | Strip::Terminals => Vec::new(),
         }
         .into_iter()
         .find(|agent| &agent.id == target)
@@ -840,7 +840,7 @@ impl TabMenu {
                 .iter()
                 .find(|project| &project.id == id)
                 .map(|project| project.path.clone()),
-            Strip::Host(_) => None,
+            Strip::Host(_) | Strip::Terminals => None,
         };
         let file = view
             .filter(|(kind, _)| *kind == PaneKind::Files)
