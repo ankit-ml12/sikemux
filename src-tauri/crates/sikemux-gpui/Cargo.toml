@@ -15,6 +15,7 @@ name = "sikemux"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 flate2 = "1"
@@ -23,12 +24,14 @@ gpui = { package = "gpui-pre", version = "=0.3.9" }
 gpui-kit = { version = "=0.8.0", default-features = false, features = ["component"] }
 gpui-terminal-grid = { path = "crates/gpui-terminal-grid" }
 gpui-transcript = { path = "crates/gpui-transcript", features = ["fork"] }
+lsp-types = "0.97"
 memchr = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
 sikemux-core = { path = "../sikemux-core" }
 sikemux-host = { path = "../sikemux-host", default-features = false }
+sikemux-markdown = { path = "../sikemux-markdown" }
 sikemux-process = { path = "../sikemux-process" }
 sikemux-client = { path = "../sikemux-client" }
 sikemux-wire = { path = "../sikemux-wire" }
@@ -39,7 +42,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 core-foundation = "0.10"
 
 [dev-dependencies]
-anyhow = "1"
 sikemux-fold = { path = "../sikemux-fold" }
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["test-support", "bench-support"] }

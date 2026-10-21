@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::component::input::{
     Editor, EditorState, Input, InputEvent, InputState, Position, Replace,
@@ -14,6 +15,7 @@ use gpui_kit::{
     Window,
 };
 use serde_json::{json, Value};
+use sikemux_wire::protocol::{Pane, PaneKind};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::core::{self, Ask};
@@ -21,6 +23,10 @@ use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
+
+mod insights;
+mod lsp;
+mod preview;
 
 /// Opens a file in the editor with the cursor at a line, counted from 0, and
 /// a column, or the line's first character that is not blank when there is
@@ -33,7 +39,17 @@ pub struct OpenAt {
     pub column: Option<u32>,
 }
 
-actions!(editor, [Save, GoToLine, CloseGoToLine]);
+actions!(
+    editor,
+    [
+        Save,
+        GoToLine,
+        CloseGoToLine,
+        NavigateBack,
+        NavigateForward,
+        ClosePeek
+    ]
+);
 
 const CONTEXT: &str = "FileEditor";
 /// How many times a read starts again when the file moves under it.
@@ -45,6 +61,10 @@ const DEFAULT_TEXT_SCALE: f64 = 1.;
 const MIN_TEXT_SCALE: f64 = 0.7;
 const MAX_TEXT_SCALE: f64 = 2.;
 const TEXT_SCALE_STEP: f64 = 0.1;
+/// How many places back ⌘[ remembers.
+const MAX_HISTORY: usize = 128;
+/// The most places a peek lists.
+const MAX_PEEKED: usize = 300;
 
 pub fn install(cx: &mut App) {
     let save = if cfg!(target_os = "macos") {
@@ -59,7 +79,11 @@ pub fn install(cx: &mut App) {
         KeyBinding::new(save, Save, Some(CONTEXT)),
         KeyBinding::new(keys("cmd-alt-g", "ctrl-alt-g"), GoToLine, Some(CONTEXT)),
         KeyBinding::new("escape", CloseGoToLine, Some("GoToLine > Input")),
+        KeyBinding::new("escape", ClosePeek, Some("peek > Input")),
+        KeyBinding::new("escape", ClosePeek, Some("peek")),
         KeyBinding::new(keys("cmd-h", "ctrl-h"), Replace, text),
+        KeyBinding::new(keys("cmd-[", "ctrl-["), NavigateBack, text),
+        KeyBinding::new(keys("cmd-]", "ctrl-]"), NavigateForward, text),
         // The app's own search across the project keeps ⇧⌘F, which Kit's editor takes for replace.
         KeyBinding::new(keys("cmd-shift-f", "ctrl-shift-f"), gpui::NoAction, text),
     ]);
@@ -73,6 +97,10 @@ pub struct Editors {
     reveal: Option<OpenAt>,
     /// The window the editors draw in, which reading and reloading update.
     window: Option<AnyWindowHandle>,
+    /// Where the editor was before each jump, and where ⌘[ came back from.
+    back: Vec<OpenAt>,
+    forward: Vec<OpenAt>,
+    insights: insights::Insights,
 }
 
 struct Document {
@@ -87,6 +115,13 @@ struct Document {
     notice: Option<Notice>,
     /// The field asking which line to go to, while it is open.
     goto: Option<(Entity<InputState>, Subscription)>,
+    /// The language server the file is open with, once it is.
+    served: Option<lsp::Served>,
+    /// The places a symbol leads to when there is more than one.
+    peek: Option<Peek>,
+    /// Whether it shows its text or, for markdown, how it reads, and that rendering.
+    mode: preview::Mode,
+    rendered: Option<Rc<gpui_transcript::Markdown>>,
     _changes: Subscription,
 }
 
@@ -95,17 +130,14 @@ enum Notice {
     Failed(String),
     /// The disk moved on under unsaved edits; reloading drops them.
     Conflict(String),
+    /// Whether the language servers of the project, by its folder, may run.
+    Trust(String),
 }
 
 impl Editors {
     /// Whether the file has edits not yet saved.
     pub fn is_dirty(&self, path: &Path) -> bool {
         self.open.get(path).is_some_and(|document| document.dirty)
-    }
-
-    /// Asks for the file to open with its cursor at a line once it is read.
-    pub fn reveal(&mut self, at: OpenAt) {
-        self.reveal = Some(at);
     }
 
     /// The files the core keeps watching for changes on disk.
@@ -143,18 +175,33 @@ pub fn pane(
         }
     }
     let size = px((FONT_SIZE as f64 * text_scale(bench)) as f32);
+    let project = lsp::project_of(bench, &path);
     let this = this.clone();
     let saving = path.clone();
     div()
         .size_full()
         .flex()
         .flex_col()
-        .key_context(CONTEXT)
+        .key_context(match document.peek {
+            Some(_) => "FileEditor peek",
+            None => CONTEXT,
+        })
         .on_action(
             window.listener_for(&this, move |bench, _: &Save, window, cx| {
                 save(bench, &saving, window, cx)
             }),
         )
+        .on_action(
+            window.listener_for(&this, |bench, _: &NavigateBack, _, cx| {
+                step(bench, true, cx)
+            }),
+        )
+        .on_action(
+            window.listener_for(&this, |bench, _: &NavigateForward, _, cx| {
+                step(bench, false, cx)
+            }),
+        )
+        .on_action(window.listener_for(&this, |bench, _: &ClosePeek, _, cx| close_peeks(bench, cx)))
         .on_action({
             let path = path.clone();
             window.listener_for(&this, move |bench, _: &GoToLine, window, cx| {
@@ -205,16 +252,283 @@ pub fn pane(
                     ),
             )
         })
+        .when(
+            preview::first_mode(&path) == preview::Mode::Preview,
+            |pane| pane.child(preview::toolbar(&this, &path, document.mode, cx)),
+        )
+        .map(|pane| match (document.mode, document.rendered.clone()) {
+            (preview::Mode::Preview, Some(markdown)) => {
+                pane.child(div().flex_1().min_h_0().child(preview::Body {
+                    path: path.clone(),
+                    markdown,
+                }))
+            }
+            _ => pane.child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .font_family(theme::MONO)
+                    .text_size(size)
+                    .text_color(t.text_primary)
+                    .child(Editor::new(&document.state).bordered(false).h_full()),
+            ),
+        })
+        .when_some(document.peek.as_ref(), |pane, peek| {
+            pane.child(peek_panel(&this, peek, cx))
+        })
+        .child(insights::bar(
+            bench,
+            &this,
+            &path,
+            project.as_deref().map(Path::new),
+            cx,
+        ))
+        .into_any_element()
+}
+
+/// The places a symbol leads to, by file, with each line's text once read.
+struct Peek {
+    title: SharedString,
+    places: Vec<Place>,
+}
+
+struct Place {
+    at: OpenAt,
+    text: Option<SharedString>,
+}
+
+/// Opens `to`, remembering where the editor in front was so ⌘[ comes back.
+pub fn go(bench: &mut Workbench, to: OpenAt, cx: &mut Context<Workbench>) {
+    if let Some(here) = here(bench, cx) {
+        bench.editors.back.push(here);
+        if bench.editors.back.len() > MAX_HISTORY {
+            bench.editors.back.remove(0);
+        }
+        bench.editors.forward.clear();
+    }
+    show(bench, to, cx);
+}
+
+fn show(bench: &mut Workbench, at: OpenAt, cx: &mut Context<Workbench>) {
+    let path = at.path.clone();
+    bench.editors.reveal = Some(at);
+    bench.open_file(&path);
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Where the cursor is in the editor in front.
+fn here(bench: &Workbench, cx: &App) -> Option<OpenAt> {
+    let path = bench.front_file()?;
+    let position = bench
+        .editors
+        .open
+        .get(&path)?
+        .state
+        .read(cx)
+        .cursor_position();
+    Some(OpenAt {
+        path,
+        line: position.line,
+        column: Some(position.character),
+    })
+}
+
+/// Goes back to where the editor was before its last jump, or forward again.
+fn step(bench: &mut Workbench, back: bool, cx: &mut Context<Workbench>) {
+    let taken = match back {
+        true => bench.editors.back.pop(),
+        false => bench.editors.forward.pop(),
+    };
+    let Some(to) = taken else {
+        return;
+    };
+    if let Some(here) = here(bench, cx) {
+        match back {
+            true => bench.editors.forward.push(here),
+            false => bench.editors.back.push(here),
+        }
+    }
+    show(bench, to, cx);
+}
+
+/// Lists the places a symbol leads to under the editor of `path`, and reads
+/// each one's line.
+fn peek(
+    bench: &mut Workbench,
+    path: &Path,
+    title: &str,
+    places: Vec<OpenAt>,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(document) = bench.editors.open.get_mut(path) else {
+        return;
+    };
+    let places: Vec<Place> = places
+        .into_iter()
+        .take(MAX_PEEKED)
+        .map(|at| Place { at, text: None })
+        .collect();
+    let mut files: Vec<PathBuf> = places.iter().map(|place| place.at.path.clone()).collect();
+    files.dedup();
+    document.peek = Some(Peek {
+        title: title.to_owned().into(),
+        places,
+    });
+    bench.parts.redraw(&bench.parts.stage, cx);
+    let (asks, peeked) = (bench.asks.clone(), path.to_owned());
+    cx.spawn(async move |bench, cx| {
+        for file in files {
+            let Ok((text, _)) = read_file(asks.clone(), file.to_string_lossy().into_owned()).await
+            else {
+                continue;
+            };
+            let lines: Vec<&str> = text.lines().collect();
+            let _ = bench.update(cx, |bench, cx| {
+                let Some(peek) = bench
+                    .editors
+                    .open
+                    .get_mut(&peeked)
+                    .and_then(|document| document.peek.as_mut())
+                else {
+                    return;
+                };
+                for place in peek.places.iter_mut().filter(|place| place.at.path == file) {
+                    let line = lines
+                        .get(place.at.line as usize)
+                        .copied()
+                        .unwrap_or_default();
+                    place.text = Some(line.trim().to_owned().into());
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            });
+        }
+    })
+    .detach();
+}
+
+fn close_peeks(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    for document in bench.editors.open.values_mut() {
+        document.peek = None;
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// The panel under an editor listing the places a symbol leads to, by file.
+fn peek_panel(
+    this: &Entity<Workbench>,
+    peek: &Peek,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let mut rows: Vec<AnyElement> = Vec::new();
+    let mut file: Option<&Path> = None;
+    for (index, place) in peek.places.iter().enumerate() {
+        if file != Some(place.at.path.as_path()) {
+            file = Some(place.at.path.as_path());
+            let name = place
+                .at
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+            let folder = place
+                .at
+                .path
+                .parent()
+                .map(|folder| folder.to_string_lossy().into_owned());
+            rows.push(
+                div()
+                    .flex()
+                    .gap(px(8.))
+                    .px(px(12.))
+                    .pt(px(6.))
+                    .child(div().text_color(t.text_primary).children(name))
+                    .child(div().text_color(t.text_tertiary).children(folder))
+                    .into_any_element(),
+            );
+        }
+        let (this, at) = (this.clone(), place.at.clone());
+        rows.push(
+            div()
+                .id(("peek", index))
+                .flex()
+                .gap(px(12.))
+                .h(px(24.))
+                .items_center()
+                .px(px(12.))
+                .cursor_pointer()
+                .hover(move |style| style.bg(t.surface_hover))
+                .on_click(move |_, _, cx| {
+                    let at = at.clone();
+                    this.update(cx, |bench, cx| {
+                        close_peeks(bench, cx);
+                        go(bench, at, cx);
+                    })
+                })
+                .child(
+                    div()
+                        .w(px(40.))
+                        .text_right()
+                        .text_color(t.text_tertiary)
+                        .child((place.at.line + 1).to_string()),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .text_color(t.text_secondary)
+                        .children(place.text.clone()),
+                )
+                .into_any_element(),
+        );
+    }
+    div()
+        .flex()
+        .flex_col()
+        .max_h(px(320.))
+        .border_t_1()
+        .border_color(t.border)
+        .font_family(theme::MONO)
+        .text_size(px(12.))
         .child(
             div()
-                .flex_1()
-                .min_h_0()
-                .font_family(theme::MONO)
-                .text_size(size)
-                .text_color(t.text_primary)
-                .child(Editor::new(&document.state).bordered(false).h_full()),
+                .flex()
+                .items_center()
+                .h(px(30.))
+                .px(px(12.))
+                .gap(px(8.))
+                .border_b_1()
+                .border_color(t.border)
+                .child(
+                    div()
+                        .text_color(t.text_secondary)
+                        .child(peek.title.to_uppercase()),
+                )
+                .child(
+                    div()
+                        .text_color(t.text_tertiary)
+                        .child(peek.places.len().to_string()),
+                )
+                .child(div().flex_1())
+                .child(
+                    ui::IconButton::new("peek-close", crate::icons::Icon::Close, "Close — esc")
+                        .small()
+                        .on_click({
+                            let this = this.clone();
+                            move |_, _, cx| this.update(cx, close_peeks)
+                        }),
+                ),
         )
-        .into_any_element()
+        .child(
+            div()
+                .id("peek-places")
+                .flex()
+                .flex_col()
+                .overflow_y_scroll()
+                .pb(px(6.))
+                .children(rows),
+        )
 }
 
 /// Opens the field asking which line to go to, as `line` or `line:column`
@@ -288,15 +602,80 @@ fn notice_bar(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let (text, reload): (SharedString, bool) = match notice {
-        Notice::Failed(error) => (error.into(), false),
-        Notice::Conflict(error) => (
+    let text: SharedString = match &notice {
+        Notice::Failed(error) => error.clone().into(),
+        Notice::Conflict(error) => {
             format!("{name} has an external change. Your editor buffer was preserved. {error}")
-                .into(),
-            true,
-        ),
+                .into()
+        }
+        Notice::Trust(project) => {
+            let folder = Path::new(project).file_name().map_or_else(
+                || project.clone(),
+                |name| name.to_string_lossy().into_owned(),
+            );
+            format!(
+                "Start language servers for {folder}? They can run code from this project, such as its build scripts and installed tools. Only allow this for projects you trust."
+            )
+            .into()
+        }
     };
-    let (this, path) = (this.clone(), path.to_owned());
+    let button =
+        |id: &'static str,
+         label: &'static str,
+         variant,
+         run: Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>| {
+            let this = this.clone();
+            ui::Button::new(id, label, variant).on_click(move |_, window, cx| {
+                let run = run.clone();
+                this.update(cx, |bench, cx| run(bench, window, cx))
+            })
+        };
+    let reload = {
+        let path = path.to_owned();
+        button(
+            "editor-reload",
+            "Reload disk",
+            ui::Variant::Outline,
+            Rc::new(move |bench, window, cx| {
+                if let Some(document) = bench.editors.open.get_mut(&path) {
+                    document.notice = None;
+                    document.dirty = false;
+                    document.version = None;
+                }
+                read(bench, path.clone(), window, cx);
+            }),
+        )
+    };
+    let answers = match &notice {
+        Notice::Trust(project) => {
+            let answer = |allowed: bool| {
+                let (path, project) = (path.to_owned(), project.clone());
+                Rc::new(
+                    move |bench: &mut Workbench,
+                          window: &mut Window,
+                          cx: &mut Context<Workbench>| {
+                        lsp::trust(bench, path.clone(), project.clone(), allowed, window, cx)
+                    },
+                )
+                    as Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>
+            };
+            vec![
+                button("editor-trust", "Allow", ui::Variant::Primary, answer(true)),
+                button(
+                    "editor-distrust",
+                    "Don't allow",
+                    ui::Variant::Outline,
+                    answer(false),
+                ),
+            ]
+        }
+        Notice::Conflict(_) => vec![reload],
+        Notice::Failed(_) => Vec::new(),
+    };
+    let tone = match notice {
+        Notice::Trust(_) => t.text_primary,
+        _ => t.warn,
+    };
     div()
         .flex()
         .items_center()
@@ -311,27 +690,11 @@ fn notice_bar(
             div()
                 .flex_1()
                 .min_w_0()
-                .text_color(t.warn)
+                .text_color(tone)
                 .font_weight(FontWeight::MEDIUM)
                 .child(text),
         )
-        .when(reload, |bar| {
-            bar.child(
-                ui::Button::new("editor-reload", "Reload disk", ui::Variant::Outline).on_click(
-                    move |_, window, cx| {
-                        let path = path.clone();
-                        this.update(cx, |bench, cx| {
-                            if let Some(document) = bench.editors.open.get_mut(&path) {
-                                document.notice = None;
-                                document.dirty = false;
-                                document.version = None;
-                            }
-                            read(bench, path, window, cx);
-                        })
-                    },
-                ),
-            )
-        })
+        .children(answers)
 }
 
 /// Makes the editor for `path` and reads the file into it.
@@ -359,11 +722,13 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
         if !matches!(event, InputEvent::Change) {
             return;
         }
+        let asks = bench.asks.clone();
         let Some(document) = bench.editors.open.get_mut(&watched) else {
             return;
         };
         let text = state.read(cx).value();
         let dirty = text.len() != document.saved.len() || text.as_ref() != document.saved;
+        lsp::changed(document, &asks, cx);
         if dirty != document.dirty {
             document.dirty = dirty;
             cx.notify();
@@ -379,6 +744,10 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             dirty: false,
             notice: None,
             goto: None,
+            served: None,
+            peek: None,
+            mode: preview::first_mode(&path),
+            rendered: None,
             _changes: changes,
         },
     );
@@ -432,9 +801,11 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
     cx.spawn_in(window, async move |bench, cx| {
         let read = read_file(asks, name).await;
         let _ = bench.update_in(cx, |bench, window, cx| {
+            let asks = bench.asks.clone();
             let Some(document) = bench.editors.open.get_mut(&path) else {
                 return;
             };
+            let first = !document.loaded;
             match read {
                 Ok((_, version)) if document.version.as_ref() == Some(&version) => {}
                 Ok(_) if document.dirty => {
@@ -451,8 +822,15 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
                     document.loaded = true;
                     document.dirty = false;
                     document.notice = None;
+                    if document.mode == preview::Mode::Preview {
+                        document.rendered = Some(Rc::new(preview::render(&document.saved)));
+                    }
+                    lsp::changed(document, &asks, cx);
                 }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
+            }
+            if first && document.loaded {
+                lsp::attach(bench, path.clone(), window, cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -484,6 +862,7 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
             };
             match saved {
                 Ok(version) => {
+                    lsp::saved(document, &text, &bench.asks);
                     document.dirty = document.state.read(cx).value().as_ref() != text;
                     document.saved = text;
                     document.version = Some(version);
@@ -535,6 +914,54 @@ async fn write_file(
     }
 }
 
+/// Lets go of every file with no unsaved edits that no tab shows any more.
+pub fn keep(bench: &mut Workbench) {
+    let mut shown = Vec::new();
+    if let Some(view) = &bench.view {
+        let strips = view
+            .layout
+            .projects
+            .values()
+            .chain(view.layout.hosts.values());
+        for tab in strips.flat_map(|strip| &strip.tabs) {
+            files_in(&tab.pane, &mut shown);
+        }
+    }
+    let gone: Vec<PathBuf> = bench
+        .editors
+        .open
+        .iter()
+        .filter(|(path, document)| !document.dirty && !shown.contains(*path))
+        .map(|(path, _)| path.clone())
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    for path in gone {
+        if let Some(document) = bench.editors.open.remove(&path) {
+            lsp::closed(&document, &bench.asks);
+        }
+    }
+    show_files(&bench.editors, &bench.asks);
+}
+
+fn files_in(pane: &Pane, found: &mut Vec<PathBuf>) {
+    match pane {
+        Pane::View {
+            kind: PaneKind::Files,
+            target,
+            ..
+        } => found.push(PathBuf::from(target)),
+        Pane::View { .. } => {}
+        Pane::Split { panes, .. } => panes.iter().for_each(|pane| files_in(pane, found)),
+    }
+}
+
+/// Reads again the problems of files whose language server said they changed.
+pub fn diagnostics_changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workbench>) {
+    insights::diagnostics_changed(bench, paths, cx);
+}
+
 /// Files that changed on disk: clean editors take the new text, and one with
 /// unsaved edits says the disk moved on when its version did.
 pub fn changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workbench>) {
@@ -568,9 +995,10 @@ fn place_cursor(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(document) = bench.editors.open.get(&at.path) else {
+    let Some(document) = bench.editors.open.get_mut(&at.path) else {
         return;
     };
+    document.mode = preview::Mode::Source;
     document.state.update(cx, |state, cx| {
         let column = at.column.unwrap_or_else(|| {
             let text = state.value();
@@ -579,6 +1007,32 @@ fn place_cursor(
         });
         state.set_cursor_position(Position::new(at.line, column), window, cx);
     });
+}
+
+/// Shows the file's text, or how its markdown reads, rendered from what the
+/// editor holds now.
+fn show_mode(
+    bench: &mut Workbench,
+    path: &Path,
+    mode: preview::Mode,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(document) = bench.editors.open.get_mut(path) else {
+        return;
+    };
+    document.mode = mode;
+    match mode {
+        preview::Mode::Preview => {
+            let text = document.state.read(cx).value();
+            document.rendered = Some(Rc::new(preview::render(&text)));
+            document.goto = None;
+        }
+        preview::Mode::Source => document
+            .state
+            .update(cx, |state, cx| state.focus(window, cx)),
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
 }
 
 /// The editors' text scale the person chose.

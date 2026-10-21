@@ -225,6 +225,7 @@ impl Workbench {
         ));
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
+        let _ = asks.send(Ask::Follow("lsp"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
                 break;
@@ -309,6 +310,7 @@ impl Workbench {
                     |id| sessions.iter().any(|session| session.id == id),
                     &self.asks,
                 );
+                crate::editor::keep(self);
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
@@ -460,6 +462,13 @@ impl Workbench {
                 }
                 if topic == "files" {
                     crate::editor::changed(self, paths.as_deref().unwrap_or_default(), cx);
+                }
+                if topic == "lsp" {
+                    crate::editor::diagnostics_changed(
+                        self,
+                        paths.as_deref().unwrap_or_default(),
+                        cx,
+                    );
                 }
                 if topic == "git" {
                     cx.emit(crate::git::Changed { project, paths });
@@ -1600,10 +1609,11 @@ impl Render for Workbench {
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
-            .on_action(cx.listener(|bench, open: &OpenAt, _, _| {
-                bench.editors.reveal(open.clone());
-                bench.open_file(&open.path);
-            }))
+            .on_action(
+                cx.listener(|bench, open: &OpenAt, _, cx| {
+                    crate::editor::go(bench, open.clone(), cx)
+                }),
+            )
             .flex()
             .flex_col()
             .pt(px(6.))
