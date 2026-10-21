@@ -100,10 +100,13 @@ export function chatDriver(type: AgentType): ChatDriver | null {
     return entry(type)?.chat ?? null;
 }
 
-/** Whether the core can ask the agent for a commit message. */
-export function writesCommitMessages(type: string): boolean {
-    return entry(type)?.commitMessages === true;
+/** The models the core can ask the agent for a commit message with, its default first; none when it writes none. */
+export function commitModels(type: string): readonly string[] {
+    return entry(type)?.commitModels ?? [];
 }
+
+/** The agents that write commit messages. */
+export const commitWriterTypes = (): AgentType[] => typesWhere((agent) => agent.commitModels.length > 0);
 
 /** The agents offered first, before anything else is installed. */
 export const featuredAgentTypes = (): AgentType[] => typesWhere((agent) => agent.featured);

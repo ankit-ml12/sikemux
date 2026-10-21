@@ -43,8 +43,9 @@ pub(crate) struct CatalogAgent {
     pub relocatable_sessions: bool,
     /// It can start without asking for permissions.
     pub bypass: bool,
-    /// The core can ask it for a commit message.
-    pub commit_messages: bool,
+    /// The models the core can ask it for a commit message with, the default first;
+    /// none when it cannot write one.
+    pub commit_models: Vec<&'static str>,
     /// The reasoning efforts its CLI takes.
     pub efforts: Vec<&'static str>,
     /// Its official install command; none when it has none to run.
@@ -71,7 +72,7 @@ pub(crate) fn view() -> Vec<CatalogAgent> {
             resumes_by_path: agent.resumes_by_path,
             relocatable_sessions: agent.relocatable_sessions,
             bypass: agent.bypass,
-            commit_messages: agent.commit_model.is_some(),
+            commit_models: agent.commit_models.to_vec(),
             efforts: agent.efforts.to_vec(),
             install: agent.install,
             login: agent.login.map(<[_]>::to_vec),

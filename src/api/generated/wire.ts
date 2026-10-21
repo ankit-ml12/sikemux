@@ -1859,8 +1859,11 @@ export interface CatalogAgent {
     relocatableSessions: boolean;
     /** It can start without asking for permissions. */
     bypass: boolean;
-    /** The core can ask it for a commit message. */
-    commitMessages: boolean;
+    /**
+     * The models the core can ask it for a commit message with, the default first;
+     * none when it cannot write one.
+     */
+    commitModels: string[];
     /** The reasoning efforts its CLI takes. */
     efforts: string[];
     /** Its official install command; none when it has none to run. */

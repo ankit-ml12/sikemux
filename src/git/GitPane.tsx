@@ -83,8 +83,8 @@ import { ShellAccount } from "../codehost/components/Bits";
 import type { Notification } from "../codehost/api";
 import { SkeletonRows } from "../ui/Skeleton";
 import { EmptyState } from "../ui/Panel";
-import { AI_MODELS, GIT_HELP, GIT_PANEL_BY_KEY, defaultAiModel } from "./gitPaneConstants";
-import { agentLabel, type AgentType } from "../agents/catalog";
+import { GIT_HELP, GIT_PANEL_BY_KEY } from "./gitPaneConstants";
+import { agentLabel, commitModels, commitWriterTypes } from "../agents/catalog";
 import { filterByQuery, isInRange } from "./gitPaneLogic";
 import { basename as basenameOf, dirname, joinPath } from "../lib/paths";
 import { openUrl } from "../api/system";
@@ -475,12 +475,12 @@ function GitWorkbench({
     const openAgentMenu = (anchor: HTMLElement) =>
         openMenuAt(
             anchor,
-            (Object.keys(AI_MODELS) as AgentType[]).flatMap((provider, i) => [
+            commitWriterTypes().flatMap((provider, i) => [
                 ...(i > 0 ? [{ sep: true }] : []),
-                ...AI_MODELS[provider].map((model) => ({
+                ...commitModels(provider).map((model) => ({
                     label: `${agentLabel(provider)} · ${model}`,
                     icon: <AgentIcon type={provider} size={13} className={`agent-glyph ${provider}`} />,
-                    hint: provider === aiProvider && model === aiModel ? "✓" : undefined,
+                    hint: provider === aiProvider && model === (aiModel || commitModels(aiProvider)[0]) ? "✓" : undefined,
                     run: () => useGitWorkbench.setState({ provider, model }),
                 })),
             ]),
@@ -1552,7 +1552,7 @@ function GitWorkbench({
                 busy={!!busy}
                 generating={generating}
                 stagedCount={files.filter(isStaged).length}
-                agentLabel={`${agentLabel(aiProvider)} · ${(aiModel || defaultAiModel(aiProvider)).replace(/^[^/]+\//, "")}`}
+                agentLabel={`${agentLabel(aiProvider)} · ${(aiModel || commitModels(aiProvider)[0] || "").replace(/^[^/]+\//, "")}`}
                 messageRef={messageRef}
                 onCommit={doCommit}
                 onGenerate={generateCommitMessage}

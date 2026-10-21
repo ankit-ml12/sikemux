@@ -3,7 +3,7 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 import { git } from "../api/git";
 import { runGitCmd } from "./git";
 import { errorText } from "../lib/format";
-import { DEFAULT_AI_PROVIDER, defaultAiModel } from "../git/gitPaneConstants";
+import { DEFAULT_AI_PROVIDER } from "../git/gitPaneConstants";
 import type { AgentType } from "../agents/catalog";
 
 interface Operation {
@@ -64,7 +64,7 @@ function coalescedStorage(): StateStorage {
 const draftStorage = coalescedStorage();
 
 export const useGitWorkbench = create<GitWorkbenchState>()(
-    persist(() => ({ drafts: {}, operations: {}, provider: DEFAULT_AI_PROVIDER, model: defaultAiModel(DEFAULT_AI_PROVIDER) }), {
+    persist(() => ({ drafts: {}, operations: {}, provider: DEFAULT_AI_PROVIDER, model: "" }), {
         name: "sikemux.git.workbench",
         partialize: ({ drafts, provider, model }) => ({ drafts, provider, model }),
         storage: createJSONStorage(() => draftStorage),

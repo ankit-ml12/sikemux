@@ -25,7 +25,7 @@ impl GitAiProvider {
             .and_then(|kind| {
                 Some(Self {
                     kind,
-                    default_model: kind.entry().commit_model?,
+                    default_model: kind.entry().commit_models.first()?,
                 })
             })
             .ok_or_else(|| format!("unknown local AI provider: {name}"))

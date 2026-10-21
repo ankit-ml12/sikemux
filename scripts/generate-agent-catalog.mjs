@@ -160,9 +160,16 @@ for (const agent of agents) {
     fail(
       "home.private must be absent or { config, emptyConfig, sessionStore, sessionStoreIsFolder }",
     );
-  if (agent.commitMessages !== null && !isName(agent.commitMessages?.model))
+  if (
+    agent.commitMessages !== null &&
+    !(
+      Array.isArray(agent.commitMessages?.models) &&
+      agent.commitMessages.models.length > 0 &&
+      agent.commitMessages.models.every(isName)
+    )
+  )
     fail(
-      "commitMessages must be null or { model } it writes commit messages with",
+      "commitMessages must be null or { models } it writes commit messages with, the default first",
     );
   if (agent.providers !== null && !PROVIDERS.includes(agent.providers))
     fail(`providers must be null or ${PROVIDERS.join(" | ")}`);
@@ -196,7 +203,7 @@ const entries = agents.map((agent) => ({
   brand: agent.brand,
   ...Object.fromEntries(FLAGS.map((flag) => [flag, agent[flag]])),
   bypass: agent.terminal.bypass !== null,
-  commitMessages: agent.commitMessages !== null,
+  commitModels: agent.commitMessages?.models ?? [],
   efforts: agent.efforts,
   install: agent.install,
   login: agent.login,
@@ -302,7 +309,7 @@ ${privateField}
         brand: ${rustString(agent.brand)},
 ${FLAGS.map((flag) => `        ${snake(flag)}: ${agent[flag]},`).join("\n")}
         bypass: ${terminal.bypass !== null},
-        commit_model: ${rustOption(agent.commitMessages?.model, rustString)},
+${rustList(8, "commit_models", agent.commitMessages?.models ?? [])}
 ${rustList(8, "efforts", agent.efforts)}
         install: ${rustOption(agent.install, rustString)},
         login: ${rustOption(agent.login, (login) => `&[${login.map(rustString).join(", ")}]`)},
@@ -412,8 +419,8 @@ pub struct AgentEntry {
     pub brand: &'static str,
 ${FLAGS.map((flag) => `    pub ${snake(flag)}: bool,`).join("\n")}
     pub bypass: bool,
-    /// The model it writes commit messages with, when it can.
-    pub commit_model: Option<&'static str>,
+    /// The models it writes commit messages with, the default first; none when it cannot.
+    pub commit_models: &'static [&'static str],
     /// The reasoning efforts the CLI's own flag takes.
     pub efforts: &'static [&'static str],
     /// Its official install command, which puts it where its own updater expects.
