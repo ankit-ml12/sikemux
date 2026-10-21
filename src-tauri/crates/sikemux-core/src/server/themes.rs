@@ -7,7 +7,8 @@ use std::sync::OnceLock;
 use base64::Engine;
 use sikemux_wire::grid::TerminalColors;
 use sikemux_wire::theme::{
-    Theme, ThemeChrome, ThemeEditor, ThemeHighlight, ThemeSource, ThemeSummary, ThemeTerminal,
+    Palette, Theme, ThemeChrome, ThemeEditor, ThemeHighlight, ThemeSource, ThemeSummary,
+    ThemeTerminal,
 };
 
 use crate::protocol::{Preferences, DEFAULT_THEME_ID};
@@ -55,6 +56,51 @@ pub(crate) fn resolve(preferences: &Preferences) -> Theme {
         .expect("the default theme is in the catalogue")
 }
 
+/// The picked theme with the colours worked out from it for drawing.
+pub(crate) fn palette(preferences: &Preferences) -> Palette {
+    let theme = resolve(preferences);
+    let c = &theme.chrome;
+    let readable_on = |color: &str, grounds: &[&str]| readable_css(color, grounds, &c.ink, 4.6);
+    let all = [c.bg.as_str(), c.bg_dim.as_str(), c.bg_raised.as_str()];
+    let near = [c.bg.as_str(), c.bg_raised.as_str()];
+    let tone = |dark: &str, light: &str| {
+        if theme.dark {
+            dark.to_owned()
+        } else {
+            light.to_owned()
+        }
+    };
+    Palette {
+        ink_muted: readable_on(&c.ink_dim, &all),
+        danger: readable_on(&c.danger, &all),
+        live: readable_on(&tone("#78dca1", "#247345"), &near),
+        warn: readable_on(&tone("#e9ba6c", "#875508"), &near),
+        cmd: theme.highlight.function.clone(),
+        git_modified: readable_on(&tone("#e2c08d", "#875508"), &all),
+        git_untracked: readable_on(&tone("#73c991", "#247345"), &all),
+        git_added: readable_on(&tone("#81b88b", "#247345"), &all),
+        git_deleted: readable_on(&tone("#ed806b", "#aa3824"), &all),
+        git_renamed: readable_on(&tone("#94b1ef", "#345bad"), &all),
+        theme,
+    }
+}
+
+/// [`readable`] for CSS colours; any that is not `#rgb` or `#rrggbb` gives `ink`.
+fn readable_css(color: &str, grounds: &[&str], ink: &str, minimum: f64) -> String {
+    let parsed = (
+        hex(color),
+        hex(ink),
+        grounds
+            .iter()
+            .map(|ground| hex(ground))
+            .collect::<Option<Vec<_>>>(),
+    );
+    match parsed {
+        (Some(color), Some(ink), Some(grounds)) => css(readable(color, &grounds, ink, minimum)),
+        _ => ink.to_owned(),
+    }
+}
+
 /// Every theme to pick from: the person's own first, then Sikemux's, then Ghostty's.
 pub(crate) fn summaries(preferences: &Preferences) -> Vec<ThemeSummary> {
     let catalogue = catalogue();
@@ -79,7 +125,10 @@ fn summary(theme: &Theme, source: ThemeSource) -> ThemeSummary {
         bg: theme.chrome.bg.clone(),
         line: theme.chrome.line.clone(),
         acc: theme.chrome.acc.clone(),
-        swatches: [&t.red, &t.green, &t.yellow, &t.blue, &t.magenta, &t.cyan].map(Clone::clone),
+        swatches: [&t.red, &t.green, &t.yellow, &t.blue, &t.magenta, &t.cyan]
+            .into_iter()
+            .cloned()
+            .collect(),
     }
 }
 
@@ -113,15 +162,11 @@ pub(crate) fn terminal_colors(theme: &Theme) -> TerminalColors {
     }
 }
 
-/// `#rgb` or `#rrggbb`, ignoring any alpha after it.
+/// `#rgb`, `#rrggbb` or `#rrggbbaa`, ignoring the alpha.
 fn hex(color: &str) -> Option<[u8; 3]> {
     let digits = color.trim().strip_prefix('#')?;
     let digits: String = match digits.len() {
-        3 | 4 => digits
-            .chars()
-            .take(3)
-            .flat_map(|digit| [digit, digit])
-            .collect(),
+        3 => digits.chars().flat_map(|digit| [digit, digit]).collect(),
         6 | 8 => digits[..6].to_owned(),
         _ => return None,
     };

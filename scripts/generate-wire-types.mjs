@@ -100,6 +100,8 @@ const TS_ROOTS = [
   "ToolDetail",
   "CoreChangeTopic",
   "Preferences",
+  "Palette",
+  "ThemeSummary",
   "ProjectBoard",
   "HostInfo",
   "RemoteStatus",

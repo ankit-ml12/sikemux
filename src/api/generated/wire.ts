@@ -1307,6 +1307,43 @@ export interface ThemeTerminal {
     brightWhite: string;
 }
 
+/**
+ * The picked theme with the colours every app works out from it, nudged
+ * until they read on the theme's grounds.
+ */
+export interface Palette {
+    theme: Theme;
+    /** Text that recedes: labels, hints, timestamps. */
+    inkMuted: string;
+    danger: string;
+    /** Running, connected, passing. */
+    live: string;
+    /** Waiting on the person, or at risk. */
+    warn: string;
+    /** Commands and the names of things that run. */
+    cmd: string;
+    gitModified: string;
+    gitUntracked: string;
+    gitAdded: string;
+    gitDeleted: string;
+    gitRenamed: string;
+}
+
+/** A theme as a picker lists it: its name, where it comes from and its colours at a glance. */
+export interface ThemeSummary {
+    id: string;
+    name: string;
+    dark: boolean;
+    source: ThemeSource;
+    bg: string;
+    line: string;
+    acc: string;
+    /** The terminal's red, green, yellow, blue, magenta and cyan. */
+    swatches: string[];
+}
+
+export type ThemeSource = "custom" | "sikemux" | "ghostty";
+
 /** A board as the app and devices read it. */
 export interface ProjectBoard {
     project: string;

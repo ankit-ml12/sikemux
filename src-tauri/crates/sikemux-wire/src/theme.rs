@@ -105,7 +105,7 @@ pub struct ThemeSummary {
     pub line: String,
     pub acc: String,
     /// The terminal's red, green, yellow, blue, magenta and cyan.
-    pub swatches: [String; 6],
+    pub swatches: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,4 +115,26 @@ pub enum ThemeSource {
     Custom,
     Sikemux,
     Ghostty,
+}
+
+/// The picked theme with the colours every app works out from it, nudged
+/// until they read on the theme's grounds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Palette {
+    pub theme: Theme,
+    /// Text that recedes: labels, hints, timestamps.
+    pub ink_muted: String,
+    pub danger: String,
+    /// Running, connected, passing.
+    pub live: String,
+    /// Waiting on the person, or at risk.
+    pub warn: String,
+    /// Commands and the names of things that run.
+    pub cmd: String,
+    pub git_modified: String,
+    pub git_untracked: String,
+    pub git_added: String,
+    pub git_deleted: String,
+    pub git_renamed: String,
 }
