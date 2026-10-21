@@ -18,7 +18,7 @@ use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
-    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, PermissionAsk, SubagentCard, SubagentState,
+    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, LetterKind, PartTree, PermissionAsk, SubagentCard, SubagentState,
     WorkFold,
 };
 use sikemux_wire::protocol::{ChatAttachment, ChatMark, MidTurnSend};
@@ -93,12 +93,16 @@ fn text_of(part: &ChatPart) -> Option<(&str, Option<&PartTree>)> {
 
 impl ChatRow {
     fn new(message: ChatMessage) -> ChatRow {
-        let docs = message
-            .parts
-            .iter()
-            .filter_map(|part| text_of(part).map(|(text, md)| Doc::new(part.id(), text, md)))
-            .collect();
-        ChatRow { message, docs }
+        let mut row = ChatRow { message, docs: Vec::new() };
+        row.read_docs();
+        row
+    }
+
+    /// The markdown of each text part, and of each message another agent sent, which the row draws in place of its text.
+    fn read_docs(&mut self) {
+        let parts = self.message.parts.iter().filter_map(|part| text_of(part).map(|(text, md)| Doc::new(part.id(), text, md)));
+        let letters = self.message.letters.iter().enumerate().filter(|(_, letter)| letter.kind == LetterKind::Message);
+        self.docs = parts.chain(letters.map(|(ix, letter)| Doc::new(&letter_doc(ix), &letter.text, None))).collect();
     }
 
     fn doc(&self, part: &str) -> Option<&Doc> {
@@ -141,6 +145,7 @@ impl ChatRow {
         merge(&mut whole, fields);
         if let Ok(message) = serde_json::from_value(whole) {
             self.message = message;
+            self.read_docs();
         }
     }
 }
@@ -151,6 +156,9 @@ impl Row for ChatRow {
     }
 
     fn docs(&self) -> Vec<&Markdown> {
+        if !self.message.letters.is_empty() {
+            return (0..self.message.letters.len()).filter_map(|ix| self.doc(&letter_doc(ix))).map(|doc| &doc.markdown).collect();
+        }
         self.message
             .parts
             .iter()
@@ -158,6 +166,10 @@ impl Row for ChatRow {
             .map(|doc| &doc.markdown)
             .collect()
     }
+}
+
+fn letter_doc(ix: usize) -> String {
+    format!("letter-{ix}")
 }
 
 /// `fields` laid over `on`; a field sent as null is gone.
@@ -204,12 +216,15 @@ pub struct Chat {
     writing: Option<String>,
     /// The groups of live work over the composer the reader folded away, by kind.
     groups_folded: HashSet<String>,
+    /// The choice of the open question on show the arrow keys moved to.
+    cursor: Option<(String, usize)>,
 }
 
-/// The draft, and the masked field a secret answer is typed into.
+/// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
 pub struct Composing {
     pub draft: Entity<TextareaState>,
     pub secret: Entity<InputState>,
+    pub hint: SharedString,
     pub _heard: [Subscription; 2],
 }
 
@@ -268,8 +283,8 @@ struct Pick {
 }
 
 impl Chat {
-    pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
-        let looks = Looks::new(Tokens::get(cx), provider, bench.clone(), agent.clone());
+    pub fn new(agent: String, provider: &str, name: Option<String>, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
+        let looks = Looks::new(Tokens::get(cx), provider, name, bench.clone(), agent.clone());
         let (tools, running, subagents) = (looks.tools.clone(), looks.running.clone(), looks.subagents.clone());
         let transcript = cx.new(|cx| {
             Transcript::new(Vec::new(), looks.text.clone(), move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx), cx)
@@ -294,6 +309,7 @@ impl Chat {
             folded: None,
             writing: None,
             groups_folded: HashSet::new(),
+            cursor: None,
         }
     }
 
@@ -483,6 +499,12 @@ impl Chat {
     /// Holds the answer, then moves on to the next question still without one, or sends a lone question.
     fn pick(&mut self, id: &str, pick: Pick, open: &[&Question]) -> Option<Ask> {
         self.picks.insert(id.to_owned(), pick);
+        self.move_on(id, open)
+    }
+
+    /// Moves on from a question with its answer: to the next still without one, or sends a lone question.
+    fn move_on(&mut self, id: &str, open: &[&Question]) -> Option<Ask> {
+        self.cursor = None;
         if open.len() == 1 {
             return self.send_answers(open);
         }
@@ -491,6 +513,86 @@ impl Chat {
             self.shown = Some(next.id.clone());
         }
         None
+    }
+
+    /// The choice the arrows are on: where they moved to, else the one picked, else the first.
+    fn cursor_at(&self, question: &Question) -> usize {
+        match (&self.cursor, self.picks.get(&question.id).map(|pick| &pick.answer)) {
+            (Some((id, at)), _) if *id == question.id => *at,
+            (_, Some(Answer::Choice(choice))) => *choice,
+            _ => 0,
+        }
+    }
+
+    /// What the empty draft says, as the chat stands: what typing answers, or where words go.
+    pub fn hint(&self, agent: &str, questions: &[Question], resumes: bool) -> String {
+        let open: Vec<&Question> = questions.iter().filter(|question| question.of(agent, "open")).collect();
+        if let Some(current) = self.current(&open).filter(|question| !question.secret && !self.is_folded(&open)) {
+            let ix = open.iter().position(|question| question.id == current.id).unwrap_or(0);
+            return format!("Or answer “{}” in your own words", current.title(ix, open.len()));
+        }
+        if let Some(asker) = self.writing.as_ref().and_then(|id| questions.iter().find(|question| &question.id == id)) {
+            return format!("Answer {}", asker.name);
+        }
+        let Some(head) = &self.state else {
+            return "Ask about this project".into();
+        };
+        match head.connection {
+            ChatConnection::Error | ChatConnection::Stopped => "Reconnect to continue this conversation".into(),
+            ChatConnection::Ready if head.running => "Send to queue behind the running turn".into(),
+            ChatConnection::Ready if head.commands.is_empty() => "Ask about this project".into(),
+            ChatConnection::Ready => "Ask about this project, or type / for commands".into(),
+            _ if resumes => "Resuming — this message sends as soon as the session is back".into(),
+            _ => "Ask about this project, or type / for commands".into(),
+        }
+    }
+
+    /// A key pressed while nothing is written: a number picks, the arrows move, Space ticks,
+    /// Enter picks, moves on or sends. Says whether the question took it.
+    pub fn key(&mut self, key: &str, open: &[&Question]) -> (bool, Option<Ask>) {
+        let Some(current) = self.current(open).filter(|_| !self.is_folded(open)) else {
+            return (false, None);
+        };
+        let (id, count, multi, cursor) = (current.id.clone(), current.choices.len(), current.multi, self.cursor_at(current));
+        let ready = open.iter().all(|question| self.picks.contains_key(&question.id));
+        match key {
+            "up" | "down" if count > 0 => {
+                let step = if key == "up" { count - 1 } else { 1 };
+                self.cursor = Some((id, (cursor + step) % count));
+                (true, None)
+            }
+            "left" | "right" if open.len() > 1 => {
+                let at = open.iter().position(|question| question.id == id).unwrap_or(0);
+                let step = if key == "left" { open.len() - 1 } else { 1 };
+                self.shown = Some(open[(at + step) % open.len()].id.clone());
+                self.cursor = None;
+                (true, None)
+            }
+            "space" if multi && count > 0 => (true, self.choose(&id, cursor, open)),
+            "enter" if multi => match self.picks.contains_key(&id) {
+                false if count > 0 => (true, self.choose(&id, cursor, open)),
+                false => (false, None),
+                true if ready => (true, self.send_answers(open)),
+                true => (true, self.move_on(&id, open)),
+            },
+            "enter" => {
+                let already = matches!(self.picks.get(&id).map(|pick| &pick.answer), Some(Answer::Choice(choice)) if *choice == cursor);
+                if ready && (already || count == 0) {
+                    (true, self.send_answers(open))
+                } else if count > 0 {
+                    (true, self.choose(&id, cursor, open))
+                } else {
+                    (false, None)
+                }
+            }
+            digit => match digit.parse::<usize>() {
+                Ok(n @ 1..=9) if n <= count => {
+                    self.cursor = Some((id.clone(), n - 1));
+                    (true, self.choose(&id, n - 1, open))
+                }
+                _ => (false, None),
+            },
+        }
     }
 
     /// Picks a choice, or on a question that takes several, ticks or unticks it.
@@ -864,6 +966,7 @@ fn asking(agent: &str, chat: &Chat, open: &[&Question], current: &Question, t: &
         .text_color(t.text_primary)
         .child(StyledText::new(asked.clone()).with_highlights([(plain..asked.len(), faint)]));
     let picked = chat.picks.get(&current.id);
+    let cursor = chat.cursor.as_ref().filter(|(id, _)| *id == current.id).map(|(_, at)| *at);
     let chosen = |ix: usize| match picked.map(|pick| &pick.answer) {
         Some(Answer::Choice(choice)) => *choice == ix,
         Some(Answer::Choices(choices)) => choices.contains(&ix),
@@ -889,7 +992,7 @@ fn asking(agent: &str, chat: &Chat, open: &[&Question], current: &Question, t: &
                 .child(ui::text(label.to_owned(), 13., FontWeight::MEDIUM).line_height(px(19.)))
                 .when(recommended, |label| label.child(ui::text("recommended", 11., FontWeight::NORMAL).text_color(t.text_disabled)));
             let detail = choice.detail.clone().map(|detail| div().text_size(px(12.)).line_height(relative(1.45)).text_color(t.text_tertiary).child(detail));
-            answer_row(SharedString::from(format!("question-{id}-{ix}")), chosen(ix), key, div().child(label).children(detail), t)
+            answer_row(SharedString::from(format!("question-{id}-{ix}")), chosen(ix), cursor == Some(ix), key, div().child(label).children(detail), t)
                 .on_click(cx.listener(move |bench, _, _, cx| {
                     bench.answer(&agent, |chat, open| chat.choose(&id, ix, open));
                     cx.notify();
@@ -900,7 +1003,7 @@ fn asking(agent: &str, chat: &Chat, open: &[&Question], current: &Question, t: &
     if let Some(Pick { answer: Answer::Text(_), shown }) = picked.filter(|_| !current.secret) {
         let key = ui::icon(Icon::Pencil, 11.).mt(px(4.)).into_any_element();
         let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM).line_height(px(19.));
-        choices.push(answer_row(SharedString::from(format!("question-{}-typed", current.id)), true, key, typed, t).into_any_element());
+        choices.push(answer_row(SharedString::from(format!("question-{}-typed", current.id)), true, false, key, typed, t).into_any_element());
     }
     let secret = match (current.secret, picked) {
         (false, _) => None,
@@ -927,7 +1030,7 @@ fn recommended(label: &str) -> (&str, bool) {
     }
 }
 
-fn answer_row(id: SharedString, chosen: bool, key: AnyElement, body: impl IntoElement, t: &Tokens) -> BaseButton {
+fn answer_row(id: SharedString, chosen: bool, cursor: bool, key: AnyElement, body: impl IntoElement, t: &Tokens) -> BaseButton {
     let hover = t.surface_chosen;
     BaseButton::new(id)
         .w_full()
@@ -938,7 +1041,11 @@ fn answer_row(id: SharedString, chosen: bool, key: AnyElement, body: impl IntoEl
         .flex()
         .items_start()
         .rounded(theme::RADIUS_2)
-        .bg(if chosen { Hsla { a: 0.14, ..t.text_primary } } else { t.surface_hover })
+        .bg(match (chosen, cursor) {
+            (true, _) => Hsla { a: 0.14, ..t.text_primary },
+            (false, true) => t.surface_chosen,
+            (false, false) => t.surface_hover,
+        })
         .text_color(if chosen { t.text_primary } else { t.text_secondary })
         .hover(move |style| style.bg(hover))
         .child(div().w(px(22.)).flex_none().flex().justify_center().line_height(px(19.)).text_color(t.text_disabled).child(key))
@@ -1093,6 +1200,8 @@ struct Looks {
     tints: Tints,
     bench: WeakEntity<Workbench>,
     agent: String,
+    /// The agent's name, which an answer to its own question names it by.
+    name: Option<String>,
 }
 
 /// The colours a run of tool calls is drawn in, mixed once.
@@ -1140,7 +1249,7 @@ impl Tints {
 }
 
 impl Looks {
-    fn new(t: &Tokens, provider: &str, bench: WeakEntity<Workbench>, agent: String) -> Looks {
+    fn new(t: &Tokens, provider: &str, name: Option<String>, bench: WeakEntity<Workbench>, agent: String) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
         let text = Style {
@@ -1179,6 +1288,7 @@ impl Looks {
             tints: Tints::new(t),
             bench,
             agent,
+            name,
         }
     }
 }
@@ -1214,19 +1324,14 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
             Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks),
         })
         .collect();
-    let letters: Vec<_> = message
-        .letters
-        .iter()
-        .map(|letter| {
-            let from = ui::text(format!("From @{}", letter.name), 11., FontWeight::MEDIUM).text_color(looks.quiet);
-            div().flex().flex_col().gap(px(4.)).child(from).child(div().text_size(px(13.5)).child(letter.text.clone()))
-        })
-        .collect();
     let summary = opens.map(|fold| work(fold, !folded, looks));
-    if parts.is_empty() && letters.is_empty() && summary.is_none() {
+    if parts.is_empty() && message.letters.is_empty() && summary.is_none() {
         return div().into_any_element();
     }
-    let content = if user {
+    let lettered = !message.letters.is_empty();
+    let content = if lettered {
+        letters(row, pen, looks, window, cx)
+    } else if user {
         div()
             .max_w(relative(0.8))
             .px(px(12.))
@@ -1237,8 +1342,9 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
             .bg(looks.bubble)
             .children(parts)
     } else {
-        div().flex().flex_col().gap(px(10.)).min_w_0().children(summary).children(parts).children(letters)
+        div().flex().flex_col().gap(px(10.)).min_w_0().children(summary).children(parts)
     };
+    let user = user && !lettered;
     div()
         .w_full()
         .flex()
@@ -1254,6 +1360,64 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
                 .child(content),
         )
         .into_any_element()
+}
+
+/// Messages other agents sent and the person's answers to questions, which the core hands
+/// the agent as one message: each drawn as what it is rather than as the text the agent reads.
+fn letters(row: &ChatRow, pen: &Pen, looks: &Looks, window: &mut Window, cx: &mut App) -> gpui_kit::Div {
+    let rule = || div().flex_1().h(px(1.)).bg(looks.line);
+    let bold = HighlightStyle { color: Some(looks.ink), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() };
+    let drawn = row.message.letters.iter().enumerate().map(|(ix, letter)| match letter.kind {
+        LetterKind::Answer => {
+            let asked = format!("{} asked you", letter.name);
+            let asker = (looks.name.as_deref() != Some(letter.name.as_str())).then(|| {
+                div()
+                    .h(px(22.))
+                    .flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .text_size(px(11.))
+                    .text_color(looks.quiet)
+                    .child(ui::mark(&letter.cli, 16.))
+                    .child(StyledText::new(asked).with_highlights([(0..letter.name.len(), bold)]))
+            });
+            let answered = if letter.secret {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(ui::icon(Icon::Shield, 12.).text_color(looks.faint))
+                    .child("Answered, kept private")
+                    .into_any_element()
+            } else {
+                div().flex().flex_wrap().gap_x(px(4.)).child("You answered:").child(div().text_color(looks.ink).child(letter.text.clone())).into_any_element()
+            };
+            div()
+                .flex()
+                .flex_col()
+                .children(asker)
+                .child(div().text_size(px(14.)).text_color(looks.ink).child(letter.question.clone()))
+                .child(div().mt(px(6.)).text_size(px(12.)).text_color(looks.quiet).child(answered))
+                .into_any_element()
+        }
+        LetterKind::Message => {
+            let from = div()
+                .mb(px(4.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .text_size(px(11.))
+                .text_color(looks.quiet)
+                .child(rule())
+                .child(ui::mark(&letter.cli, 16.))
+                .child(StyledText::new(format!("Message from {}", letter.name)).with_highlights([(13..13 + letter.name.len(), bold)]))
+                .child(rule());
+            let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
+            let text = row.doc(&letter_doc(ix)).map(|doc| pen.markdown_with(&looks.text, id, &doc.markdown, window, cx));
+            div().flex().flex_col().child(from).children(text).into_any_element()
+        }
+    });
+    div().w_full().flex().flex_col().gap(px(14.)).min_w_0().children(drawn)
 }
 
 enum Shown<'a> {

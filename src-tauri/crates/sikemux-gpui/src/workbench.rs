@@ -6,7 +6,10 @@ use std::time::Duration;
 use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
+use gpui_kit::{
+    div, px, AppContext, Context, Entity, FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement, Keystroke, ParentElement, Render,
+    SharedString, Styled, Subscription, Window,
+};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind, Preferences, ProjectInfo, RecentInfo, SessionInfo,
@@ -62,6 +65,7 @@ pub struct Workbench {
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     _filtering: Option<Subscription>,
+    _question_keys: Subscription,
 }
 
 #[derive(Clone, PartialEq)]
@@ -173,6 +177,15 @@ impl Workbench {
             terminals: terminal::Terminals::default(),
             focus: cx.focus_handle(),
             _filtering: None,
+            _question_keys: {
+                let this = cx.weak_entity();
+                cx.intercept_keystrokes(move |event, window, cx| {
+                    let taken = this.update(cx, |bench, cx| bench.question_key(&event.keystroke, window, cx)).unwrap_or(false);
+                    if taken {
+                        cx.stop_propagation();
+                    }
+                })
+            },
         };
         bench.focus.focus(window, cx);
         bench.read_usage();
@@ -288,13 +301,13 @@ impl Workbench {
 
     /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
     fn open_chat(&mut self, cx: &mut Context<Self>) {
-        let Some(AgentRow { id: agent, provider, .. }) = self.agent() else {
+        let Some(AgentRow { id: agent, provider, name, .. }) = self.agent() else {
             return;
         };
         if self.chats.contains_key(&agent) {
             return;
         }
-        let chat = Chat::new(agent.clone(), &provider, cx.weak_entity(), cx);
+        let chat = Chat::new(agent.clone(), &provider, name, cx.weak_entity(), cx);
         self.chats.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
     }
@@ -307,7 +320,7 @@ impl Workbench {
         let Some(chat) = self.chats.get_mut(&agent).filter(|chat| chat.composer.is_none()) else {
             return;
         };
-        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true).placeholder("Ask about this project"));
+        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true));
         let secret = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Type the answer"));
         let sending = {
             let agent = agent.clone();
@@ -322,7 +335,24 @@ impl Workbench {
                 bench.keep_secret(&agent, window, cx);
             }
         });
-        chat.composer = Some(Composing { draft, secret, _heard: [sending, keeping] });
+        chat.composer = Some(Composing { draft, secret, hint: SharedString::default(), _heard: [sending, keeping] });
+    }
+
+    /// Keeps what the empty draft of the chat in front says in step with how the chat stands.
+    fn hint(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        let resumes = self.view.as_ref().is_some_and(|view| view.workspace.agents.iter().any(|saved| saved.id == agent && saved.resume_id.is_some()));
+        let Some(chat) = self.chats.get_mut(&agent) else {
+            return;
+        };
+        let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
+        let Some(composing) = chat.composer.as_mut().filter(|composing| composing.hint != hint) else {
+            return;
+        };
+        composing.hint = hint.clone();
+        composing.draft.update(cx, |draft, cx| draft.set_placeholder(hint, window, cx));
     }
 
     /// Sends what the person wrote: the answer to a question it answers, else words for
@@ -358,6 +388,38 @@ impl Workbench {
         self.answer(agent, |chat, open| chat.keep_secret(text, open));
         field.update(cx, |field, cx| field.set_value("", window, cx));
         cx.notify();
+    }
+
+    /// Hands the open question in front a key pressed while the draft is empty and has the
+    /// focus, or nothing does, so other fields keep their keys. Says whether it took it.
+    fn question_key(&mut self, keystroke: &Keystroke, window: &Window, cx: &mut Context<Self>) -> bool {
+        let held = &keystroke.modifiers;
+        if held.platform || held.control || held.alt || held.shift {
+            return false;
+        }
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return false;
+        };
+        let Some(composing) = self.chats.get(&agent).and_then(|chat| chat.composer.as_ref()) else {
+            return false;
+        };
+        let draft = &composing.draft;
+        let focused = draft.focus_handle(cx).is_focused(window) || window.focused(cx).is_none();
+        if !focused || !draft.read(cx).value().is_empty() {
+            return false;
+        }
+        let open: Vec<&Question> = self.questions.iter().filter(|question| question.of(&agent, "open")).collect();
+        let Some(chat) = self.chats.get_mut(&agent) else {
+            return false;
+        };
+        let (taken, ask) = chat.key(&keystroke.key, &open);
+        if let Some(ask) = ask {
+            let _ = self.asks.send(ask);
+        }
+        if taken {
+            cx.notify();
+        }
+        taken
     }
 
     /// Changes the chat of `agent` with its open questions to hand, and asks the core what that asks.
@@ -730,6 +792,7 @@ pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.compose(window, cx);
+        self.hint(window, cx);
         let t = Tokens::get(cx);
         div()
             .id("shell")
