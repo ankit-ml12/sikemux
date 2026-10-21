@@ -21,7 +21,7 @@ use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, PermissionAsk, SubagentCard, SubagentState,
     WorkFold,
 };
-use sikemux_wire::protocol::{ChatAttachment, ChatMark};
+use sikemux_wire::protocol::{ChatAttachment, ChatMark, MidTurnSend};
 
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
@@ -1035,6 +1035,7 @@ fn composer(bench: &Workbench, agent: &AgentRow, chat: &Chat, cx: &mut Context<W
         .strip(strip)
         .ready(head.is_some_and(|head| head.connection == ChatConnection::Ready))
         .running(chat.running())
+        .steers(bench.preferences().mid_turn_send == MidTurnSend::Steer)
         .usage(head.and_then(|head| head.usage.clone()));
     if head.is_some_and(|head| head.model.is_some() || head.effort.is_some()) {
         let (this, agent) = (this.clone(), agent.id.clone());
