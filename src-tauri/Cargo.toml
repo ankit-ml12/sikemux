@@ -69,6 +69,7 @@ sikemux-process = { path = "crates/sikemux-process" }
 sikemux-markdown = { path = "crates/sikemux-markdown" }
 sikemux-pty = { path = "crates/sikemux-pty" }
 sikemux-core = { path = "crates/sikemux-core" }
+sikemux-voice = { path = "crates/sikemux-voice" }
 sikemux-browser = { path = "crates/sikemux-browser" }
 sikemux-simulator = { path = "crates/sikemux-simulator" }
 sikemux-host = { path = "crates/sikemux-host", default-features = false }

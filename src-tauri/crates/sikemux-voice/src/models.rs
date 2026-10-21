@@ -8,10 +8,9 @@ use sha2::{Digest, Sha256};
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::error::{AppError, AppResult};
-use sikemux_core::download::{self, hash_file, PinnedFile};
+use sikemux_core::download::{self, hash_file, DownloadError, PinnedFile};
 
-const MANIFEST: &str = include_str!("../voice-models.json");
+const MANIFEST: &str = include_str!("../../../voice-models.json");
 /// Holds the hash of the manifest the models were last checked against.
 const VERIFIED_MARKER: &str = "models.verified";
 const HELPER_FILE: &str = "sikemux-voice";
@@ -82,6 +81,33 @@ fn helper_matches(dir: &Path, helper: &PinnedFile) -> bool {
         && hash_file(&path).is_ok_and(|hash| hash == helper.sha256)
 }
 
+/// Why the models or the helper are not in place.
+#[derive(Debug)]
+pub enum Missing {
+    /// The network is unreachable; the download carries on when it is back.
+    Offline,
+    Failed(String),
+}
+
+impl From<DownloadError> for Missing {
+    fn from(error: DownloadError) -> Self {
+        match &error {
+            DownloadError::Request(request)
+                if sikemux_plugin_api::unreachable(request).is_some() =>
+            {
+                Missing::Offline
+            }
+            _ => Missing::Failed(error.to_string()),
+        }
+    }
+}
+
+impl From<std::io::Error> for Missing {
+    fn from(error: std::io::Error) -> Self {
+        Missing::Failed(error.to_string())
+    }
+}
+
 /// `with_helper` asks for the published helper too, for a build that has no
 /// helper of its own beside the app.
 pub fn installed(dir: &Path, with_helper: bool) -> bool {
@@ -92,11 +118,15 @@ pub fn installed(dir: &Path, with_helper: bool) -> bool {
 /// Makes every model file under `dir` match the manifest, downloading the ones
 /// that are missing or differ, and with `with_helper` does the same for the
 /// helper. `progress` hears the fraction of bytes in place.
-pub async fn ensure(dir: &Path, with_helper: bool, mut progress: impl FnMut(f64)) -> AppResult<()> {
+pub async fn ensure(
+    dir: &Path,
+    with_helper: bool,
+    mut progress: impl FnMut(f64),
+) -> Result<(), Missing> {
     let helper =
         if with_helper {
             Some(published_helper().ok_or_else(|| {
-                AppError::Other("this build has no published voice helper".into())
+                Missing::Failed("this build has no published voice helper".into())
             })?)
         } else {
             None
@@ -151,22 +181,17 @@ pub async fn ensure(dir: &Path, with_helper: bool, mut progress: impl FnMut(f64)
     }
     if let Some(helper) = helper_to_fetch {
         let destination = helper_path(dir);
-        download::download(&helper_url(helper), &destination, helper, |bytes| {
+        download::download_executable(&helper_url(helper), &destination, helper, |bytes| {
             report(done + bytes)
         })
         .await?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o755))?;
-        }
         report(done + helper.size);
     }
     Ok(())
 }
 
 /// A relative path that cannot climb out of, or jump away from, the directory it is joined to.
-fn plain_relative(path: &str) -> AppResult<PathBuf> {
+fn plain_relative(path: &str) -> Result<PathBuf, Missing> {
     let relative = Path::new(path);
     let plain = !path.is_empty()
         && !path.contains('\\')
@@ -176,7 +201,7 @@ fn plain_relative(path: &str) -> AppResult<PathBuf> {
     if plain {
         Ok(relative.to_path_buf())
     } else {
-        Err(AppError::Other(format!(
+        Err(Missing::Failed(format!(
             "voice model path {path:?} is not a plain relative path"
         )))
     }
