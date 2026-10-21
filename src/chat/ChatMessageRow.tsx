@@ -17,6 +17,7 @@ import {
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentMark } from "../agents/AgentMark";
+import * as cmd from "../state/commands";
 import { messageLetters, type AgentLetter, type AgentMessageLetter } from "./agentLetters";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
@@ -287,7 +288,10 @@ function TeammateLetter({ id, letter }: { id: string; letter: AgentMessageLetter
                         <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
                     </span>
                     <span>
-                        Message from <b>{letter.name}</b>
+                        Message from{" "}
+                        <button type="button" className="chat-letter-name" title={`Open ${letter.name}`} onClick={() => cmd.revealAgent(letter.agentId)}>
+                            {letter.name}
+                        </button>
                     </span>
                 </span>
             </div>

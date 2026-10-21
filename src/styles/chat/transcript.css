@@ -103,9 +103,20 @@
     font-weight: var(--weight-medium);
 }
 
-.chat-letter-top b {
-    color: var(--ink);
+.chat-letter-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--acc);
+    font: inherit;
     font-weight: var(--weight-semibold);
+    cursor: pointer;
+}
+
+.chat-letter-name:hover,
+.chat-letter-name:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .chat-ask-who {
