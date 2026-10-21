@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
-use sikemux_client::client::{ClientEvent, CoreClient};
+use sikemux_client::client::{ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
 use sikemux_host::cli_paths;
-use sikemux_wire::protocol::{DeviceView, Event};
+use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event};
 use tokio::sync::mpsc;
 
 pub enum Update {
@@ -20,6 +20,16 @@ pub enum Update {
     /// The core turned down what was asked under the key.
     Refused(&'static str, String),
     Lost(String),
+    /// What came of a chat the window attached to, by its agent's id.
+    Chat(String, ChatNews),
+}
+
+pub enum ChatNews {
+    Attached(ChatAttachment),
+    /// The chat's changes numbered `seq`, a list of `ChatChange` as JSON.
+    Changes { seq: u64, changes: Value },
+    /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
+    Page(Value),
 }
 
 /// One of the core's `Watch` calls, read again whenever the core says one of
@@ -48,6 +58,18 @@ pub enum Ask {
     Call { method: &'static str, params: Value },
     /// A call whose answer the window waits for, sent back under `key`.
     Answer { key: &'static str, method: &'static str, params: Value },
+    Chat(ChatAsk),
+}
+
+pub enum ChatAsk {
+    /// Starts hearing a chat's changes, from `since` when the window held it before.
+    Attach { agent: String, since: Option<ChatMark> },
+    Detach { agent: String },
+    History { agent: String, feed: String, before: u64, turns: u32 },
+    Prompt { agent: String, text: String },
+    /// Words for a turn that is running, which it takes at its next step.
+    Steer { agent: String, text: String },
+    Cancel { agent: String },
 }
 
 pub struct Link {
@@ -129,6 +151,9 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
                                 let _ = updates.send(Update::View(Box::new(view)));
                             }
+                            Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
+                                let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
+                            }
                             Some(ClientEvent::Event(Event::Changed { topic, .. })) => {
                                 for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
                                     read(&client, key, watch, &current, &updates);
@@ -153,6 +178,10 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                                     });
                                 });
                             }
+                            Some(Ask::Chat(ask)) => {
+                                let (client, updates) = (client.clone(), updates.clone());
+                                tokio::spawn(async move { chat(&client, ask, &updates).await });
+                            }
                             Some(Ask::Call { method, params }) => {
                                 let client = client.clone();
                                 tokio::spawn(async move {
@@ -173,6 +202,30 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
             }
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender<Update>) {
+    let (agent, news) = match ask {
+        ChatAsk::Attach { agent, since } => match client.acp_attach_since(agent.clone(), since).await {
+            Ok(attachment) => (agent, ChatNews::Attached(attachment)),
+            Err(error) => return eprintln!("sikemux: the core refused to attach chat {agent}: {error}"),
+        },
+        ChatAsk::History { agent, feed, before, turns } => {
+            let page = client.acp_history(agent.clone(), feed, before, turns).await;
+            (agent, ChatNews::Page(page.unwrap_or_default()))
+        }
+        ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
+        ChatAsk::Prompt { agent, text } => return report("prompt", client.acp_prompt(agent, None, text, Vec::new(), Vec::new()).await),
+        ChatAsk::Steer { agent, text } => return report("steer", client.acp_steer(agent, text, Vec::new(), Vec::new()).await.map(drop)),
+        ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
+    };
+    let _ = updates.send(Update::Chat(agent, news));
+}
+
+fn report(what: &str, done: Result<(), ClientError>) {
+    if let Err(error) = done {
+        eprintln!("sikemux: the core refused to {what} a chat: {error}");
     }
 }
 

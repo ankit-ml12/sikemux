@@ -8300,6 +8300,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "gpui-pre-platform",
+ "gpui-transcript",
  "serde",
  "serde_json",
  "sikemux-client",

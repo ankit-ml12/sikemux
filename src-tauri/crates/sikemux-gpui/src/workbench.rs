@@ -4,13 +4,14 @@ use std::time::Duration;
 
 use chrono::Timelike;
 
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
 
-use crate::core::{utc_offset_minutes, Ask, Link, Update, Watch};
+use crate::chat::Chat;
+use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs};
 
@@ -40,6 +41,8 @@ pub struct Workbench {
     pub filter: Option<Entity<InputState>>,
     pub filter_text: String,
     pub asks: mpsc::UnboundedSender<Ask>,
+    /// The chats of the agents with a tab open, by agent id.
+    pub chats: HashMap<String, Chat>,
     _filtering: Option<Subscription>,
 }
 
@@ -109,6 +112,7 @@ impl Workbench {
             filter: None,
             filter_text: String::new(),
             asks,
+            chats: HashMap::new(),
             _filtering: None,
         };
         bench.read_usage();
@@ -125,12 +129,33 @@ impl Workbench {
             Update::Connected(version) => {
                 self.version = version;
                 self.lost = None;
+                for (agent, chat) in &self.chats {
+                    self.ask_chat(ChatAsk::Attach { agent: agent.clone(), since: chat.mark.clone() });
+                }
             }
             Update::View(view) => {
                 self.view = Some(*view);
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
+                self.close_chats();
+                self.open_chat(cx);
+            }
+            Update::Chat(agent, news) => {
+                let Some(chat) = self.chats.get_mut(&agent) else {
+                    return;
+                };
+                match news {
+                    ChatNews::Attached(attachment) => chat.attached(attachment, cx),
+                    ChatNews::Changes { seq, changes } => {
+                        if chat.changed(seq, changes, cx) {
+                            let since = chat.mark.clone();
+                            self.ask_chat(ChatAsk::Attach { agent, since });
+                        }
+                    }
+                    ChatNews::Page(page) => chat.page(page, cx),
+                }
+                return;
             }
             Update::Read("plugins", value) => {
                 self.reads.insert("plugins", value);
@@ -157,6 +182,73 @@ impl Workbench {
             Update::Lost(reason) => self.lost = Some(reason),
         }
         cx.notify();
+    }
+
+    fn ask_chat(&self, ask: ChatAsk) {
+        let _ = self.asks.send(Ask::Chat(ask));
+    }
+
+    /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
+    fn open_chat(&mut self, cx: &mut Context<Self>) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        if self.chats.contains_key(&agent) {
+            return;
+        }
+        let chat = Chat::new(agent.clone(), cx.weak_entity(), cx);
+        self.chats.insert(agent.clone(), chat);
+        self.ask_chat(ChatAsk::Attach { agent, since: None });
+    }
+
+    /// Makes the composer of the chat in front, which needs the window.
+    fn compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        let Some(chat) = self.chats.get_mut(&agent).filter(|chat| chat.composer.is_none()) else {
+            return;
+        };
+        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true).placeholder("Ask anything"));
+        let sending = cx.subscribe_in(&draft, window, move |bench, draft, event: &InputEvent, window, cx| {
+            if let InputEvent::PressEnter { shift: false, .. } = event {
+                bench.send(&agent, draft, window, cx);
+            }
+        });
+        chat.composer = Some((draft, sending));
+    }
+
+    /// Sends what the person wrote: a prompt, or while a turn runs, words that steer it.
+    fn send(&mut self, agent: &str, draft: &Entity<TextareaState>, window: &mut Window, cx: &mut Context<Self>) {
+        let text = draft.read(cx).value().trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        let agent = agent.to_owned();
+        let running = self.chats.get(&agent).is_some_and(Chat::running);
+        self.ask_chat(if running { ChatAsk::Steer { agent, text } } else { ChatAsk::Prompt { agent, text } });
+        draft.update(cx, |draft, cx| draft.set_value("", window, cx));
+    }
+
+    /// Lets go of the chats whose agents no longer have a tab.
+    fn close_chats(&mut self) {
+        let Some(view) = &self.view else {
+            return;
+        };
+        let tabs = view.layout.projects.values().flat_map(|layout| &layout.tabs);
+        let shown: Vec<&String> = tabs.filter_map(|tab| shows(tab, PaneKind::Agent)).collect();
+        let gone: Vec<String> = self.chats.keys().filter(|agent| !shown.contains(agent)).cloned().collect();
+        for agent in gone {
+            self.chats.remove(&agent);
+            self.ask_chat(ChatAsk::Detach { agent });
+        }
+    }
+
+    /// Asks for the turns before the earliest the chat holds.
+    pub fn ask_earlier(&mut self, agent: &str) {
+        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| chat.earlier(agent)) {
+            self.ask_chat(ask);
+        }
     }
 
     /// Points the watches that follow the project in front at it.
@@ -471,7 +563,8 @@ pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
 }
 
 impl Render for Workbench {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.compose(window, cx);
         let t = Tokens::get(cx);
         div()
             .id("shell")

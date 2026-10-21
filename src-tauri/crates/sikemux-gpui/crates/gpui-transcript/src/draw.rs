@@ -125,8 +125,19 @@ impl Pen {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
+        self.markdown_with(&self.style.clone(), id, doc, window, cx)
+    }
+
+    /// Draws markdown in a look of its own, such as a thought's quieter one.
+    pub fn markdown_with(
+        &self,
+        style: &Rc<Style>,
+        id: impl Into<ElementId>,
+        doc: &Markdown,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
         let id = id.into();
-        let style = &self.style;
         let blocks = Blocks {
             scope: Arc::new(id.clone()),
             blocks: doc.blocks().to_vec(),

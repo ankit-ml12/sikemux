@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use chrono::{Datelike, NaiveDate};
 use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{div, px, Anchor, App, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled};
+use gpui_kit::{div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled};
 use serde_json::{json, Value};
 
+use crate::chat;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -26,11 +27,16 @@ pub const METRICS: [(&str, &str); 5] = [
 
 /// The stage: the chosen agent's pane, on what a new chat opens on: the project, and
 /// what its agents did in it.
-pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let project = bench.project();
     let agent = bench.agent();
     let header = agent.as_ref().zip(project).map(|(agent, project)| pane_header(bench, agent, &project.id));
+    let chat = bench.agent().and_then(|agent| Some((bench.chats.get(&agent.id)?, agent.id)));
+    if let Some((chat, agent)) = chat {
+        let pane = ui::pane(cx).child(chat::pane(&agent, chat, &bench.asks, cx)).children(header);
+        return div().flex_1().min_w_0().child(pane).into_any_element();
+    }
     div().flex_1().min_w_0().child(
         ui::pane(cx)
             .child(
@@ -70,6 +76,7 @@ pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
             )
             .children(header),
     )
+    .into_any_element()
 }
 
 fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoElement {
