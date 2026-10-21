@@ -194,7 +194,7 @@ pub fn render(
                         .size(px(8.))
                         .flex_none()
                         .rounded_full()
-                        .bg(super::accounts::accent(profile)),
+                        .bg(crate::accounts::accent(profile)),
                 )
                 .child(
                     div()

@@ -7,8 +7,8 @@ use gpui_kit::base::Popover;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, Entity, FontWeight, Hsla, IntoElement,
-    ParentElement, SharedString, Styled, Window,
+    div, px, Anchor, AnyElement, App, Context, Entity, IntoElement, ParentElement, SharedString,
+    Styled, Window,
 };
 use sikemux_core::agent_accounts::Profile;
 
@@ -18,38 +18,6 @@ use crate::settings::rows;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, dialog, Menu, MenuItem};
 use crate::workbench::Workbench;
-
-/// An account's colour, which the person may have set as `#rrggbb`.
-pub fn accent(profile: &Profile) -> Hsla {
-    profile
-        .accent
-        .strip_prefix('#')
-        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-        .map(|value| gpui_kit::rgb(value).into())
-        .unwrap_or_else(|| theme::brand(&profile.provider))
-}
-
-/// The account's first letter on its colour.
-pub fn avatar(profile: &Profile, name: &str, size: f32) -> impl IntoElement {
-    div()
-        .size(px(size))
-        .flex_none()
-        .rounded_full()
-        .bg(accent(profile))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(size * 0.5))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(gpui_kit::white())
-        .child(
-            name.trim()
-                .chars()
-                .next()
-                .map(|letter| letter.to_uppercase().to_string())
-                .unwrap_or_else(|| "?".into()),
-        )
-}
 
 /// What the account is called: a built-in one still under its agent's name goes by
 /// the name on the account instead.
@@ -299,7 +267,7 @@ fn account_row(
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
-        .child(avatar(profile, &name, 24.))
+        .child(accounts::avatar(profile, &name, 24.))
         .child(
             div()
                 .flex_1()
@@ -497,7 +465,7 @@ pub fn dialog(
                     .flex()
                     .items_center()
                     .gap(px(10.))
-                    .child(avatar(profile, &profile.name, 28.))
+                    .child(accounts::avatar(profile, &profile.name, 28.))
                     .child(who)
                     .into_any_element(),
             )

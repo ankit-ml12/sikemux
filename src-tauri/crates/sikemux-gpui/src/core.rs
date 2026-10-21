@@ -12,9 +12,9 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    CallId, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn, WindowAnswer,
-    WindowCall,
+    CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event,
+    LaunchIdentity, RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn,
+    WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -177,6 +177,11 @@ pub enum Ask {
     /// Stops every agent and terminal the core runs.
     Shutdown,
     Remote(RemoteAsk),
+    /// Carries a chat on to another of the person's accounts; a turn at work goes on there.
+    MoveChat {
+        agent: String,
+        account: ChatAccount,
+    },
     /// Starts a terminal running `spawn` outside any tab, answering its id.
     Spawn {
         spawn: Box<TerminalSpawn>,
@@ -493,6 +498,14 @@ async fn run(
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;
                                 let _ = updates.send(Update::ShutDown);
+                            }
+                            Some(Ask::MoveChat { agent, account }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    if let Err(error) = client.acp_switch_account(agent, account).await {
+                                        eprintln!("sikemux: the chat stayed on its account: {error}");
+                                    }
+                                });
                             }
                             Some(Ask::Spawn { spawn, started }) => {
                                 let client = client.clone();

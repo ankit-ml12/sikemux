@@ -1,5 +1,6 @@
 //! The desktop UI on GPUI, a client of the core.
 
+pub mod account_picker;
 mod accounts;
 mod agent_menu;
 mod agents;
@@ -39,6 +40,7 @@ pub mod terminal;
 pub mod theme;
 mod ui;
 pub mod workbench;
+pub mod worktree_switch;
 
 /// The window's size when it first opens.
 pub const WINDOW_SIZE: (f32, f32) = (1340., 880.);

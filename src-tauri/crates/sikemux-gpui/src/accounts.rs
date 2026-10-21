@@ -5,12 +5,16 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::input::InputState;
-use gpui_kit::{AppContext, Context, Entity, Window};
+use gpui_kit::{
+    div, px, AppContext, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement, Styled,
+    Window,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_core::agent_accounts::{Book, Profile};
 
 use crate::core;
+use crate::theme;
 use crate::workbench::Workbench;
 
 /// Who one account is signed in as, in its agent's own words.
@@ -22,6 +26,8 @@ pub struct Status {
     pub email: Option<String>,
     pub plan: Option<String>,
     pub organization: Option<String>,
+    /// Where the account keeps its chats: accounts that share it can take over each other's chats.
+    pub sessions: Option<String>,
 }
 
 /// An account's sign-in while it runs or after it failed.
@@ -54,6 +60,38 @@ pub struct Accounts {
     asking: HashSet<(String, Option<String>)>,
     pub signing: HashMap<String, SignIn>,
     pub dialog: Option<Dialog>,
+}
+
+/// An account's colour, which the person may have set as `#rrggbb`.
+pub fn accent(profile: &Profile) -> Hsla {
+    profile
+        .accent
+        .strip_prefix('#')
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        .map(|value| gpui_kit::rgb(value).into())
+        .unwrap_or_else(|| theme::brand(&profile.provider))
+}
+
+/// The account's first letter on its colour.
+pub fn avatar(profile: &Profile, name: &str, size: f32) -> impl IntoElement {
+    div()
+        .size(px(size))
+        .flex_none()
+        .rounded_full()
+        .bg(accent(profile))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(size * 0.5))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(gpui_kit::white())
+        .child(
+            name.trim()
+                .chars()
+                .next()
+                .map(|letter| letter.to_uppercase().to_string())
+                .unwrap_or_else(|| "?".into()),
+        )
 }
 
 fn key(profile: &Profile) -> (String, Option<String>) {
