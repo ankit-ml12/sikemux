@@ -15,6 +15,7 @@
 //   nodes    — nodes with their roles, readiness, pressure and capacity, and cordoning one
 //   rollouts — a workload's revisions with their images and change causes, and which is live
 //   helm     — releases, each one's history and the objects it made, and rolling one back
+//   yaml     — an object's YAML to read, less env values, ConfigMap data and the applied copy
 
 mod actions;
 mod config;
@@ -30,6 +31,7 @@ mod nodes;
 mod pods;
 mod rollouts;
 mod workloads;
+mod yaml;
 
 use std::sync::Arc;
 
@@ -87,6 +89,7 @@ impl Plugin for Kubernetes {
                 "helmReleases" => answer(helm::releases(params(input)?)).await,
                 "helmRelease" => answer(helm::release(params(input)?)).await,
                 "helmRollback" => answer(helm::rollback(params(input)?)).await,
+                "yaml" => answer(yaml::yaml(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
