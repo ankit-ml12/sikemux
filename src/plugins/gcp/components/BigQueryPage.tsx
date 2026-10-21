@@ -1,7 +1,8 @@
+import { errorText } from "../../../plugin-api/format";
 import { useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type BqField, type BqResult, type Target } from "../api";
+import { gcpApi, type BqField, type BqResult, type Target } from "../api";
 import { datasetsR, tableR, tablesR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
@@ -168,7 +169,7 @@ function QueryEditor({ target, sql, onSql }: { target: Target; sql: string; onSq
         gcpApi
             .query(target, sql, dryRun)
             .then(setResult)
-            .catch((failure: unknown) => setError(failureMessage(failure)))
+            .catch((failure: unknown) => setError(errorText(failure)))
             .finally(() => setBusy(null));
     };
     return (

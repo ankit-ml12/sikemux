@@ -14,9 +14,9 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     runInTerminal: host.terminal,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { changesFor, SqlPage } from "./SqlPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const instance = {
@@ -55,7 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Cloud SQL", () => {

@@ -1,7 +1,7 @@
 import { openSurface } from "../../plugin-api/host";
 import { definePaneViews } from "../../plugin-api/paneViews";
 import { definePluginSettings } from "../../plugin-api/settings";
-import { GCP_CONSOLE, GCP_PLUGIN_ID } from "./kinds";
+import { GCP_CONSOLE, GCP_PLUGIN } from "./kinds";
 
 export type Product =
     | "overview"
@@ -56,7 +56,7 @@ export interface GcpSettings {
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const someText = (value: unknown) => (typeof value === "string" && value ? value : null);
 
-export const gcpSettings = definePluginSettings<GcpSettings>(GCP_PLUGIN_ID, (saved) => {
+export const gcpSettings = definePluginSettings<GcpSettings>(GCP_PLUGIN.id, (saved) => {
     const raw = isRecord(saved) ? saved : {};
     return {
         account: someText(raw.account),

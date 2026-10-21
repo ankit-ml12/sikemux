@@ -10,10 +10,10 @@ vi.mock("../api", async (importOriginal) => {
 const confirm = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), confirmDialog: confirm }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { FunctionsPage } from "./FunctionsPage";
 import { period, SecretsPage } from "./SecretsPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 
@@ -62,7 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Secret Manager", () => {

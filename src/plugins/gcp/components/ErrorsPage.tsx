@@ -1,8 +1,9 @@
+import { errorText } from "../../../plugin-api/format";
 import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, SendToAgentMenu } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type ErrorGroup, type ErrorSample, type ErrorStatus, type Target } from "../api";
+import { gcpApi, type ErrorGroup, type ErrorSample, type ErrorStatus, type Target } from "../api";
 import { errorEventsR, errorGroupsR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
@@ -62,7 +63,7 @@ function useStatusChange(target: Target) {
                 notify("success", `Marked ${status.toLowerCase()}`);
                 invalidate((kind) => kind === "gcp.errors");
             })
-            .catch((error: unknown) => notify("error", `Change status: ${failureMessage(error)}`));
+            .catch((error: unknown) => notify("error", `Change status: ${errorText(error)}`));
 }
 
 export function ErrorsPage({ paneId, active, target }: ProductProps) {

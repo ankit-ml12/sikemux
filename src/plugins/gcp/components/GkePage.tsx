@@ -1,8 +1,9 @@
+import { errorText } from "../../../plugin-api/format";
 import { useEffect, useState } from "react";
 import { notify, promptDialog } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type GkeCluster, type Pod, type PodLogLine, type Target, type Workload } from "../api";
+import { gcpApi, type GkeCluster, type Pod, type PodLogLine, type Target, type Workload } from "../api";
 import { clustersR, kubeServicesR, nodesR, podEventsR, podsR, workloadsR } from "../resources";
 import { splitOpen, updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
@@ -150,7 +151,7 @@ async function change(run: () => Promise<unknown>, done: string, failed: string)
         notify("success", done);
         invalidate((kind) => kind.startsWith("gcp."));
     } catch (error) {
-        notify("error", `${failed}: ${failureMessage(error)}`);
+        notify("error", `${failed}: ${errorText(error)}`);
     }
 }
 
@@ -385,7 +386,7 @@ function PodLogs({ target, cluster, pod, onBack }: { target: Target; cluster: Gk
         gcpApi
             .podLogs(target, cluster.location, cluster.name, pod.namespace, pod.name, previous)
             .then((answer) => current && setLines(answer.lines))
-            .catch((failure: unknown) => current && setError(failureMessage(failure)));
+            .catch((failure: unknown) => current && setError(errorText(failure)));
         return () => {
             current = false;
         };

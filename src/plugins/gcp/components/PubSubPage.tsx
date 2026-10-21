@@ -1,8 +1,9 @@
+import { errorText } from "../../../plugin-api/format";
 import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type PeekedMessage, type Subscription, type Target, type Topic } from "../api";
+import { gcpApi, type PeekedMessage, type Subscription, type Target, type Topic } from "../api";
 import { metricsR, pubsubR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
@@ -126,7 +127,7 @@ function TopicPanel({ target, topic, subscriptions, onClose }: { target: Target;
                 notify("success", `Published message ${sent.messageId}`);
                 setData("");
             })
-            .catch((failure: unknown) => notify("error", `Publish: ${failureMessage(failure)}`))
+            .catch((failure: unknown) => notify("error", `Publish: ${errorText(failure)}`))
             .finally(() => setSending(false));
     };
     return (
@@ -190,7 +191,7 @@ function SubscriptionPanel({
         gcpApi
             .peek(target, subscription.name)
             .then(setMessages)
-            .catch((failure: unknown) => setError(failureMessage(failure)))
+            .catch((failure: unknown) => setError(errorText(failure)))
             .finally(() => setPulling(false));
     };
     return (

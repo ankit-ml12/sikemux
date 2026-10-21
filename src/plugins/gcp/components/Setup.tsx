@@ -1,7 +1,8 @@
+import { refreshGcp } from "../resources";
 import { useState } from "react";
 import { runInTerminal, swallow } from "../../../plugin-api/host";
 import { SignInError, SignInScreen, SignInWaiting } from "../../../plugin-api/ui";
-import { gcpApi, refreshGcp, type GcpStatus } from "../api";
+import { gcpApi, type GcpStatus } from "../api";
 import { invalidate } from "../../../plugin-api/resources";
 import { GcpMark } from "./icons";
 

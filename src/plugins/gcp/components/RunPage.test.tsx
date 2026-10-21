@@ -15,9 +15,9 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     promptDialog: prompt,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { RunPage } from "./RunPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const service = {
@@ -68,7 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Cloud Run", () => {

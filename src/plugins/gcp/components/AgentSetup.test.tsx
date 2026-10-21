@@ -12,10 +12,10 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     useNearestProject: () => ({ name: "shop", cwd: "/code/shop" }),
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { gcpSettings } from "../state";
 import { AgentSetup, describePick } from "./AgentSetup";
+import { gcp } from "../resources";
 
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
@@ -30,7 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("what agents start on", () => {

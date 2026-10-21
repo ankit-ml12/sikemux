@@ -8,10 +8,10 @@ vi.mock("../api", async (importOriginal) => {
     return { ...(await importOriginal<object>()), gcpApi: api };
 });
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { LoggingPage } from "./LoggingPage";
 import { histogram } from "./LogStream";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const entry = (id: string, text: string, severity = "INFO") => ({
@@ -34,7 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Logs Explorer", () => {

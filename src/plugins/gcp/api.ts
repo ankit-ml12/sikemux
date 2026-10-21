@@ -1,10 +1,7 @@
 import { createPluginBackend, type PluginStream } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { GCP_PLUGIN_ID } from "./kinds";
+import { GCP_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(GCP_PLUGIN_ID, { signInStatus: (kind) => kind === "gcp.status" });
+const backend = createPluginBackend(GCP_PLUGIN.id);
 
 export interface GcpAccount {
     account: string;
@@ -658,8 +655,6 @@ export interface Operation {
     operation: string | null;
     status?: string | null;
 }
-
-export const refreshGcp = () => invalidate((kind) => kind.startsWith("gcp.") && kind !== "gcp.status");
 
 const t = (target: Target) => ({ account: target.account, project: target.project });
 

@@ -8,9 +8,9 @@ vi.mock("../api", async (importOriginal) => {
     return { ...(await importOriginal<object>()), gcpApi: api };
 });
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { BigQueryPage } from "./BigQueryPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const schema = [
@@ -63,7 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("BigQuery", () => {

@@ -11,9 +11,9 @@ const notify = vi.hoisted(() => vi.fn());
 const pickFile = vi.hoisted(() => vi.fn(() => Promise.resolve("/Users/ankit/Desktop/report.csv")));
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), notify, pickFile }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { crumbs, StoragePage } from "./StoragePage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 
@@ -71,7 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Cloud Storage", () => {

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, copyWithNotice, notify, openUrl, swallow } from "../../../plugin-api/host";
-import { formatAgo } from "../../../plugin-api/format";
-import { invalidate, type ResourceHandle } from "../../../plugin-api/resources";
+import { errorText, formatAgo } from "../../../plugin-api/format";
+import { type ResourceHandle } from "../../../plugin-api/resources";
 import { EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, type Series, type Target } from "../api";
+import { refreshGcp } from "../resources";
+import { type Series, type Target } from "../api";
 import { gcpSettings } from "../state";
 import { Problem } from "./Problem";
 
@@ -348,10 +349,10 @@ export function useAction() {
         try {
             await change();
             notify("success", done);
-            invalidate((kind) => kind.startsWith("gcp.") && kind !== "gcp.status");
+            refreshGcp();
             return true;
         } catch (error) {
-            notify("error", `${confirm.confirmLabel}: ${failureMessage(error)}`);
+            notify("error", `${confirm.confirmLabel}: ${errorText(error)}`);
             return false;
         } finally {
             setBusy(false);

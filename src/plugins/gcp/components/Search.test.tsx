@@ -8,11 +8,11 @@ vi.mock("../api", async (importOriginal) => {
     return { ...(await importOriginal<object>()), gcpApi: api };
 });
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { gcpSettings, getGcpView } from "../state";
 import { GcpPane, goBack } from "./GcpPane";
 import { search } from "./Search";
+import { gcp } from "../resources";
 
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
@@ -39,7 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("search", () => {

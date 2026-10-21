@@ -14,9 +14,9 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     runInTerminal: host.terminal,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { ComputePage, powersFor } from "./ComputePage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const vm = {
@@ -50,7 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Compute Engine", () => {

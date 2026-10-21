@@ -14,9 +14,9 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     promptDialog: host.prompt,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { BuildPage, buildForAgent } from "./BuildPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const failed = {
@@ -74,7 +74,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Cloud Build", () => {

@@ -1,7 +1,8 @@
+import { errorText } from "../../../plugin-api/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDebounced } from "../../../plugin-api/hooks";
 import { Dropdown, EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type LogEntry, type LogQuery, type Target } from "../api";
+import { gcpApi, type LogEntry, type LogQuery, type Target } from "../api";
 import { Problem } from "./Problem";
 
 const SEVERITIES = [
@@ -135,7 +136,7 @@ export function LogStream({ active, target, query, extraFilter }: { active: bool
         gcpApi
             .logs(target, full)
             .then((found) => current && setEntries([...found].reverse()))
-            .catch((failure: unknown) => current && setError(failureMessage(failure)));
+            .catch((failure: unknown) => current && setError(errorText(failure)));
         return () => {
             current = false;
         };

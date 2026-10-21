@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ComponentType } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows } from "../../../plugin-api/ui";
-import { refreshGcp, type GcpStatus, type Target } from "../api";
-import { gcpStatusR } from "../resources";
+import { type GcpStatus, type Target } from "../api";
+import { gcpStatusR, refreshGcp } from "../resources";
 import {
     gcpSettings,
     getGcpView,

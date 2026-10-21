@@ -1,7 +1,9 @@
+import { errorText } from "../../../plugin-api/format";
+import { refreshGcp } from "../resources";
 import { useState } from "react";
 import { notify } from "../../../plugin-api/host";
 import { isPluginFailure } from "../../../plugin-api/backend";
-import { failureMessage, gcpApi, refreshGcp } from "../api";
+import { gcpApi } from "../api";
 import type { Product } from "../state";
 import { ProductIcon } from "./icons";
 import { Button, consoleUrl, useTarget, visit } from "./parts";
@@ -76,7 +78,7 @@ function ApiOff({ service, compact }: { service: string; compact?: boolean }) {
             })
             .catch((failure: unknown) => {
                 if (isPluginFailure(failure, "billing-disabled")) setUnbilled(true);
-                else notify("error", `Enable ${name}: ${plainError(failureMessage(failure))}`);
+                else notify("error", `Enable ${name}: ${plainError(errorText(failure))}`);
             })
             .finally(() => setEnabling(false));
     };

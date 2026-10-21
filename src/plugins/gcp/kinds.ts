@@ -1,2 +1,5 @@
-export const GCP_PLUGIN_ID = "sikemux.gcp";
-export const GCP_CONSOLE = "sikemux.gcp:console";
+import { id, name } from "../../../src-tauri/plugins/gcp/manifest.json";
+import { surfaceKind } from "../../plugin-api/identity";
+
+export const GCP_PLUGIN = { id, name };
+export const GCP_CONSOLE = surfaceKind(GCP_PLUGIN, "console");

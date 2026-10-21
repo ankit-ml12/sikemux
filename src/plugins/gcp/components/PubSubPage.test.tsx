@@ -10,9 +10,9 @@ vi.mock("../api", async (importOriginal) => {
 const notify = vi.hoisted(() => vi.fn());
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), notify }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { attributesOf, PubSubPage } from "./PubSubPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 
@@ -49,7 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Pub/Sub", () => {

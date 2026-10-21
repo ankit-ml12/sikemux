@@ -14,11 +14,11 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     copyWithNotice: host.copy,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { IamPage } from "./IamPage";
 import { RegistryPage } from "./RegistryPage";
 import { SchedulerPage } from "./SchedulerPage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 
@@ -73,7 +73,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("Artifact Registry", () => {

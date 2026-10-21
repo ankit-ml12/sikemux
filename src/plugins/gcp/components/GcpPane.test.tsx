@@ -12,11 +12,11 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     runInTerminal: vi.fn(() => Promise.resolve()),
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { runInTerminal } from "../../../plugin-api/host";
 import { answerEmpty, signedIn } from "../testing";
 import { gcpSettings } from "../state";
 import { GcpPane } from "./GcpPane";
+import { gcp } from "../resources";
 
 let pane = 0;
 const renderPane = () => render(<GcpPane paneId={`gcp-${++pane}`} active />);
@@ -29,7 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 describe("the Google Cloud console", () => {

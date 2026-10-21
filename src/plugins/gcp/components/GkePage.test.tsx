@@ -14,9 +14,9 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => ({
     promptDialog: host.prompt,
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { answerEmpty } from "../testing";
 import { GkePage } from "./GkePage";
+import { gcp } from "../resources";
 
 const target = { account: null, project: "acme-prod" };
 const cluster = {
@@ -108,7 +108,7 @@ beforeEach(() => {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("gcp."));
+    gcp.refresh();
 });
 
 const openCluster = async () => {

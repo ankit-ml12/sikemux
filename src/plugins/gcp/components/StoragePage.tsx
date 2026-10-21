@@ -1,8 +1,9 @@
+import { errorText } from "../../../plugin-api/format";
 import { useEffect, useState } from "react";
 import { notify, pickFile } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, gcpApi, type Bucket, type ObjectPreview, type StorageObject, type Target } from "../api";
+import { gcpApi, type Bucket, type ObjectPreview, type StorageObject, type Target } from "../api";
 import { bucketsR, folderR } from "../resources";
 import { updateGcpView, useGcpView } from "../state";
 import type { ProductProps } from "./GcpPane";
@@ -76,7 +77,7 @@ function BucketBrowser({ paneId, active, target, bucket }: ProductProps & { buck
             notify("success", `Uploaded ${stored.name}`);
             invalidate((kind) => kind === "gcp.objects");
         } catch (error) {
-            notify("error", `Upload: ${failureMessage(error)}`);
+            notify("error", `Upload: ${errorText(error)}`);
         } finally {
             setUploading(false);
         }
@@ -162,7 +163,7 @@ function ObjectPanel({ target, bucket, name, onClose }: { target: Target; bucket
         gcpApi
             .objectPreview(target, bucket, name)
             .then((found) => current && setPreview(found))
-            .catch((failure: unknown) => current && setError(failureMessage(failure)));
+            .catch((failure: unknown) => current && setError(errorText(failure)));
         return () => {
             current = false;
         };
@@ -172,7 +173,7 @@ function ObjectPanel({ target, bucket, name, onClose }: { target: Target; bucket
         gcpApi
             .objectDownload(target, bucket, name)
             .then((saved) => notify("success", `Saved to ${saved.path}`))
-            .catch((failure: unknown) => notify("error", `Download: ${failureMessage(failure)}`))
+            .catch((failure: unknown) => notify("error", `Download: ${errorText(failure)}`))
             .finally(() => setSaving(false));
     };
     return (
