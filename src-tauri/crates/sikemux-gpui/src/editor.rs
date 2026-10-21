@@ -27,6 +27,7 @@ use crate::workbench::Workbench;
 mod insights;
 mod lsp;
 mod preview;
+mod viewer;
 
 /// Opens a file in the editor with the cursor at a line, counted from 0, and
 /// a column, or the line's first character that is not blank when there is
@@ -101,6 +102,8 @@ pub struct Editors {
     back: Vec<OpenAt>,
     forward: Vec<OpenAt>,
     insights: insights::Insights,
+    /// Files that are not text, shown for what they are.
+    viewers: HashMap<PathBuf, viewer::Viewer>,
 }
 
 struct Document {
@@ -159,6 +162,14 @@ pub fn pane(
 ) -> AnyElement {
     let path = PathBuf::from(path);
     let t = Tokens::get(cx).clone();
+    if bench.editors.viewers.contains_key(&path) {
+        return viewer::pane(bench, this, &path, cx);
+    }
+    if viewer::not_text(&path) {
+        let opening = path.clone();
+        cx.defer_in(window, move |bench, _, cx| viewer::load(bench, opening, cx));
+        return div().size_full().into_any_element();
+    }
     let Some(document) = bench.editors.open.get(&path) else {
         let opening = path.clone();
         cx.defer_in(window, move |bench, window, cx| {
@@ -827,6 +838,12 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
                     }
                     lsp::changed(document, &asks, cx);
                 }
+                Err(error) if error.starts_with("not-text:") => {
+                    bench.editors.open.remove(&path);
+                    viewer::load(bench, path.clone(), cx);
+                    show_files(&bench.editors, &bench.asks);
+                    return;
+                }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
             }
             if first && document.loaded {
@@ -927,6 +944,7 @@ pub fn keep(bench: &mut Workbench) {
             files_in(&tab.pane, &mut shown);
         }
     }
+    bench.editors.viewers.retain(|path, _| shown.contains(path));
     let gone: Vec<PathBuf> = bench
         .editors
         .open
