@@ -76,6 +76,10 @@ struct HandoverState {
     /// where this core stopped reading. Read one at a time, so a damaged
     /// entry costs only its own chat. Added in format 5.
     live_chats: Vec<Value>,
+    /// The documents clients held open in language servers, which the
+    /// replacement opens again and waits a while for them to claim back.
+    #[serde(default)]
+    lsp_documents: Vec<super::lsp::Carried>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -282,6 +286,7 @@ pub(crate) fn replace_process(core: &Core, binary: &Path, handed: &mut [HandOver
         harness: serde_json::to_value(core.harness.record()).unwrap_or(Value::Null),
         chats,
         live_chats,
+        lsp_documents: super::lsp::carry(),
     };
     let written = serde_json::to_vec(&state)
         .map_err(std::io::Error::other)
@@ -859,6 +864,7 @@ pub(crate) async fn resume(recovery: Recovery, build: BuildIdentity) -> Result<(
         tools_record = state.tools;
         chats = state.chats;
         live_chats = state.live_chats;
+        super::lsp::adopt(&core, state.lsp_documents);
     }
     let carried = live_chats.len();
     for live in live_chats {

@@ -6,6 +6,7 @@ mod commands;
 mod diagnostics;
 mod discovery;
 mod documents;
+mod held;
 mod limits;
 mod process;
 mod protocol;
@@ -22,6 +23,7 @@ use serde_json::Value;
 use sikemux_process::sync::Locked;
 
 use commands::*;
+pub(crate) use held::Carried;
 pub(crate) use registry::drain_all;
 use types::{LspDiagnosticsPayload, LspKind, LspTextChange};
 
@@ -191,28 +193,85 @@ fn answer(value: impl Serialize) -> CoreResult<Value> {
     Ok(serde_json::to_value(value)?)
 }
 
-/// A document's project, language and path.
-type OpenDocument = (String, String, String);
-type Opened = HashMap<ClientId, Vec<OpenDocument>>;
-
-/// The documents each client has open, once per open, so a client that goes
-/// away or reloads lets go of them and an idle server can stop.
-fn opened() -> &'static Mutex<Opened> {
-    static OPENED: OnceLock<Mutex<Opened>> = OnceLock::new();
-    OPENED.get_or_init(Default::default)
-}
-
-/// Closes every document `client` left open.
-pub(crate) fn release(client: ClientId) {
-    let left = opened().locked().remove(&client).unwrap_or_default();
-    if left.is_empty() {
+/// Closes documents nobody holds any more.
+fn close_all(keys: Vec<held::DocKey>) {
+    if keys.is_empty() {
         return;
     }
     tokio::spawn(async move {
-        for (project, language, path) in left {
-            let _ = lsp_close(project, language, path).await;
+        for key in keys {
+            let _ = lsp_close(key.project, key.language, key.path).await;
         }
     });
+}
+
+/// How long a client's documents wait for it to come back after its
+/// connection goes, such as across a hand-over.
+const CLAIM_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Closes every document `client` holds, as its page reloads.
+pub(crate) fn release(client: ClientId) {
+    close_all(held::leave(client));
+}
+
+/// Keeps `client`'s documents open a while after its connection goes, for it
+/// to claim back, then closes those it did not.
+pub(crate) fn orphan(client: ClientId) {
+    let handles = held::orphan(client);
+    if handles.is_empty() {
+        return;
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(CLAIM_GRACE).await;
+        close_all(held::expire(&handles));
+    });
+}
+
+/// The documents to carry through a hand-over.
+pub(crate) fn carry() -> Vec<held::Carried> {
+    held::carry()
+}
+
+/// Opens again the documents a hand-over carried, starting their servers,
+/// and gives their clients the grace to claim them back.
+pub(crate) fn adopt(core: &Arc<Core>, carried: Vec<held::Carried>) {
+    if carried.is_empty() {
+        return;
+    }
+    held::adopt(&carried);
+    let core = core.clone();
+    tokio::spawn(async move {
+        let mut started = std::collections::HashSet::new();
+        for document in &carried {
+            let server = (document.key.project.clone(), document.key.language.clone());
+            if started.insert(server.clone()) {
+                if let Err(error) = lsp_start(publisher(core.me.clone()), server.0, server.1).await
+                {
+                    eprintln!("sikemux core: a language server did not start again after the update: {error}");
+                }
+            }
+            let key = document.key.clone();
+            let _ = lsp_open(
+                key.project,
+                key.language,
+                key.path,
+                document.text.clone(),
+                Some(document.language_id.clone()),
+            )
+            .await;
+        }
+        tokio::time::sleep(CLAIM_GRACE).await;
+        let handles: Vec<String> = carried
+            .into_iter()
+            .map(|document| document.handle)
+            .collect();
+        close_all(held::expire(&handles));
+    });
+}
+
+#[derive(Deserialize)]
+struct Claim {
+    handles: Vec<String>,
 }
 
 /// The editor's language-server methods, `lsp.<name>`, as `client` asks.
@@ -227,6 +286,10 @@ pub(crate) async fn call(
             release(client);
             answer(())
         }
+        "lsp.claim" => {
+            let Claim { handles } = parse(params)?;
+            answer(held::claim(client, &handles))
+        }
         "lsp.languages" => answer(lsp_languages().await?),
         "lsp.install" => answer(lsp_install_server(parse::<Language>(params)?.language).await?),
         "lsp.start" => {
@@ -240,21 +303,23 @@ pub(crate) async fn call(
                 content,
                 language_id,
             } = parse(params)?;
-            let open = (
-                document.project.clone(),
-                document.language.clone(),
-                document.path.clone(),
-            );
+            let key = held::DocKey {
+                project: document.project.clone(),
+                language: document.language.clone(),
+                path: document.path.clone(),
+            };
+            let kept = content.clone();
+            let language_id = language_id.unwrap_or_else(|| document.language.clone());
             lsp_open(
                 document.project,
                 document.language,
                 document.path,
                 content,
-                language_id,
+                Some(language_id.clone()),
             )
             .await?;
-            opened().locked().entry(client).or_default().push(open);
-            answer(())
+            let handle = held::hold(client, key, language_id, kept);
+            answer(serde_json::json!({ "handle": handle }))
         }
         "lsp.change" => {
             let Change {
@@ -262,16 +327,22 @@ pub(crate) async fn call(
                 content,
                 version,
             } = parse(params)?;
-            answer(
-                lsp_change(
-                    document.project,
-                    document.language,
-                    document.path,
-                    content,
-                    version,
-                )
-                .await?,
+            let key = held::DocKey {
+                project: document.project.clone(),
+                language: document.language.clone(),
+                path: document.path.clone(),
+            };
+            let kept = content.clone();
+            lsp_change(
+                document.project,
+                document.language,
+                document.path,
+                content,
+                version,
             )
+            .await?;
+            held::set_text(&key, kept);
+            answer(())
         }
         "lsp.changeIncremental" => {
             let IncrementalChange {
@@ -279,16 +350,22 @@ pub(crate) async fn call(
                 changes,
                 version,
             } = parse(params)?;
-            answer(
-                lsp_change_incremental(
-                    document.project,
-                    document.language,
-                    document.path,
-                    changes,
-                    version,
-                )
-                .await?,
+            let key = held::DocKey {
+                project: document.project.clone(),
+                language: document.language.clone(),
+                path: document.path.clone(),
+            };
+            let applied = changes.clone();
+            lsp_change_incremental(
+                document.project,
+                document.language,
+                document.path,
+                changes,
+                version,
             )
+            .await?;
+            held::edit(&key, &applied);
+            answer(())
         }
         "lsp.save" => {
             let Save { document, content } = parse(params)?;
@@ -300,17 +377,14 @@ pub(crate) async fn call(
                 language,
                 path,
             } = parse(params)?;
-            {
-                let mut opened = opened().locked();
-                if let Some(documents) = opened.get_mut(&client) {
-                    if let Some(at) = documents
-                        .iter()
-                        .position(|(p, l, d)| *p == project && *l == language && *d == path)
-                    {
-                        documents.swap_remove(at);
-                    }
-                }
-            }
+            held::let_go(
+                client,
+                &held::DocKey {
+                    project: project.clone(),
+                    language: language.clone(),
+                    path: path.clone(),
+                },
+            );
             answer(lsp_close(project, language, path).await?)
         }
         "lsp.locations" => {

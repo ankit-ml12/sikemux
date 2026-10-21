@@ -64,6 +64,51 @@ export interface LspDiagnosticsSubscriptionOptions {
     readonly signal?: AbortSignal;
 }
 
+const documentKey = (project: string, language: string, path: string) => `${project}\0${language}\0${path}`;
+
+/** The handles of the documents this window holds open in language servers, by document, one per open. */
+const held = new Map<string, string[]>();
+const lostListeners = new Set<(project: string, language: string, path: string) => void>();
+
+function forgetHandle(key: string): void {
+    const handles = held.get(key);
+    handles?.pop();
+    if (handles && !handles.length) held.delete(key);
+}
+
+/** Hears of each document the core no longer holds for this window, so the editor opens it again. */
+export function onLostDocument(listener: (project: string, language: string, path: string) => void): () => void {
+    lostListeners.add(listener);
+    return () => lostListeners.delete(listener);
+}
+
+/**
+ * Claims back the documents this window held each time it connects to the core, as after an update hands the core
+ * over; the editor opens again any the core no longer has.
+ */
+export function watchLspClaims(): () => void {
+    const controller = new AbortController();
+    const claim = async () => {
+        const handles = [...held.values()].flat();
+        if (!handles.length) return;
+        const claimed = new Set(await coreCall<string[]>("lsp.claim", { handles }));
+        for (const [key, keyHandles] of [...held]) {
+            const kept = keyHandles.filter((handle) => claimed.has(handle));
+            if (kept.length) {
+                held.set(key, kept);
+                continue;
+            }
+            held.delete(key);
+            const [project, language, path] = key.split("\0");
+            for (const listener of lostListeners) listener(project, language, path);
+        }
+    };
+    void getIpcTransport()
+        .subscribe("core_connected", () => void claim().catch(swallow("claim back open documents")), { signal: controller.signal })
+        .catch(swallow("follow the core connecting"));
+    return () => controller.abort();
+}
+
 /** Which servers last published diagnostics for each file, so one that clears them is told too. */
 const publishedBy = new Map<string, Set<string>>();
 const serverKey = (payload: Pick<LspDiagnosticsPayload, "project" | "language">) => `${payload.project}\0${payload.language}`;
@@ -109,15 +154,21 @@ export const lsp = {
     start: (project: string, language: string) => coreCall<void>("lsp.start", { project, language }),
     stop: (project: string) => coreCall<void>("lsp.stop", { project }),
     install: (language: string) => coreCall<string>("lsp.install", { language }),
-    open: (project: string, language: string, path: string, content: string, languageId: string = language) =>
-        coreCall<void>("lsp.open", { project, language, path, content, languageId }),
+    open: async (project: string, language: string, path: string, content: string, languageId: string = language): Promise<void> => {
+        const { handle } = await coreCall<{ handle: string }>("lsp.open", { project, language, path, content, languageId });
+        const key = documentKey(project, language, path);
+        held.set(key, [...(held.get(key) ?? []), handle]);
+    },
     change: (project: string, language: string, path: string, content: string, version: number) =>
         coreCall<void>("lsp.change", { project, language, path, content, version }),
     changeIncremental: (project: string, language: string, path: string, changes: LspTextChange[], version: number) =>
         coreCall<void>("lsp.changeIncremental", { project, language, path, changes, version }),
     save: (project: string, language: string, path: string, content?: string | null) =>
         coreCall<void>("lsp.save", { project, language, path, content: content ?? null }),
-    close: (project: string, language: string, path: string) => coreCall<void>("lsp.close", { project, language, path }),
+    close: (project: string, language: string, path: string): Promise<void> => {
+        forgetHandle(documentKey(project, language, path));
+        return coreCall<void>("lsp.close", { project, language, path });
+    },
     locations: (project: string, language: string, path: string, line: number, character: number, kind: LspLocationKind) =>
         coreCall<LspLocation[]>("lsp.locations", {
             project,

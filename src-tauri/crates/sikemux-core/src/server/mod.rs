@@ -713,7 +713,7 @@ impl Core {
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
         self.seen.client_gone(client.id);
-        lsp::release(client.id);
+        lsp::orphan(client.id);
         self.clients.locked().remove(&client.id);
         for (stream, id) in client.take_streams() {
             if let Some(session) = self.session(id) {
