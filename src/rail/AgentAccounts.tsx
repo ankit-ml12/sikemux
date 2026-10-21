@@ -128,20 +128,11 @@ function accountMenu(
     );
     const items: CtxItem[] = shown.map((account) => {
         const selected = account.id === current.id;
-        const status = peekResource(agentAccountR, provider, account.configPath);
-        const peak = usagePeak(selected ? currentUsage : peekResource(agentUsageR, provider, account.configPath));
-        const signedOut = status?.signedIn === false;
-        const name = accountName(account, status);
+        const item = accountItem(provider, account, selected, selected ? currentUsage : undefined);
+        const name = item.label!;
+        const signedOut = peekResource(agentAccountR, provider, account.configPath)?.signedIn === false;
         return {
-            label: name,
-            detail: signedOut ? "Signed out" : (status?.email ?? status?.organization ?? undefined),
-            hint: !signedOut && peak != null ? `${Math.round(peak)}%` : undefined,
-            selected,
-            icon: (
-                <span className="agent-account-mark" style={{ background: account.accent }} aria-hidden="true">
-                    {name.trim().charAt(0).toUpperCase() || "?"}
-                </span>
-            ),
+            ...item,
             run: selected ? undefined : () => void switchAccount(provider, account).catch(reportError("Switch account")),
             actions: [
                 signedOut
@@ -156,6 +147,25 @@ function accountMenu(
     });
     items.push({ sep: true }, { label: "Add account…", icon: <IconPlus size={13} />, run: () => openAccountDialog({ provider }) });
     return items;
+}
+
+/** One account as an account menu draws it: its mark, who it is signed in as and how much of its plan it has used. */
+export function accountItem(provider: AccountAgentType, account: ProviderProfile, selected: boolean, usage?: AgentUsage): CtxItem {
+    const status = peekResource(agentAccountR, provider, account.configPath);
+    const peak = usagePeak(usage ?? peekResource(agentUsageR, provider, account.configPath));
+    const signedOut = status?.signedIn === false;
+    const name = accountName(account, status);
+    return {
+        label: name,
+        detail: signedOut ? "Signed out" : (status?.email ?? status?.organization ?? undefined),
+        hint: !signedOut && peak != null ? `${Math.round(peak)}%` : undefined,
+        selected,
+        icon: (
+            <span className="agent-account-mark" style={{ background: account.accent }} aria-hidden="true">
+                {name.trim().charAt(0).toUpperCase() || "?"}
+            </span>
+        ),
+    };
 }
 
 function UsageWindows({ usage }: { usage: ResourceHandle<AgentUsage> }) {
