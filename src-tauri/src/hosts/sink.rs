@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use sikemux_core::client::EventSink;
-use sikemux_core::protocol::{Event, SessionId};
+use sikemux_core::protocol::{Event, StreamId};
 use sikemux_pty::shell_protocol::PTY_SHELL_METADATA_EVENT;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
@@ -31,8 +31,8 @@ impl RemoteSink {
 }
 
 impl EventSink for RemoteSink {
-    fn output(&self, id: SessionId, bytes: &[u8]) {
-        deliver(&self.host.streams, self.host.page_id(id), bytes);
+    fn grid(&self, stream: StreamId, frame: &[u8]) {
+        deliver(&self.host.streams, self.host.current(), stream, frame);
     }
 
     fn event(&self, event: Event) {

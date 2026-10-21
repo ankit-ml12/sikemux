@@ -53,7 +53,7 @@ const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
  * back is instant and a shell is not re-attached. That retention used to be
  * unbounded and only ever released when the window was deleted, so a long
  * session accumulated every screen it had ever shown — each one holding store
- * subscriptions, CodeMirror views and xterm buffers. Eight is more than a
+ * subscriptions, CodeMirror views and terminal views. Eight is more than a
  * working set and small enough to have an end.
  */
 const RETAINED_WORKBENCH_WINDOWS = 8;

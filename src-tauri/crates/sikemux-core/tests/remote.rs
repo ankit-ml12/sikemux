@@ -9,6 +9,7 @@ use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
 use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
+use sikemux_core::grid::{decode_frame, Screen};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
     ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus,
@@ -209,22 +210,26 @@ fn echo_terminal() -> SpawnTarget {
     })
 }
 
+/// Attaches to the terminal and waits until its screen shows `needle`.
 async fn until_output(
     client: &CoreClient,
     events: &mut UnboundedReceiver<ClientEvent>,
     id: SessionId,
     needle: &str,
 ) {
-    let mut seen = Vec::new();
-    while !String::from_utf8_lossy(&seen).contains(needle) {
+    let attached = client.attach(id).await.expect("the device attaches");
+    let mut screen = Screen::default();
+    screen.apply(decode_frame(&attached.frame).expect("a frame"));
+    client.ack(attached.stream, screen.header.frame);
+    while !screen.text().contains(needle) {
         let event = tokio::time::timeout(WAIT, events.recv())
             .await
             .expect("timed out waiting for output")
             .expect("the device's connection closed");
-        if let ClientEvent::Output { id: from, bytes } = event {
-            client.ack(from, bytes.len());
-            if from == id {
-                seen.extend_from_slice(&bytes);
+        if let ClientEvent::Grid { stream, frame } = event {
+            if stream == attached.stream {
+                screen.apply(decode_frame(&frame).expect("a frame"));
+                client.ack(stream, screen.header.frame);
             }
         }
     }
@@ -247,7 +252,6 @@ async fn a_paired_device_drives_a_terminal_over_the_network() {
         .spawn(LaunchIdentity::default(), echo_terminal())
         .await
         .expect("the phone starts a terminal");
-    client.attach(id).await.expect("the phone attaches");
     until_output(&client, &mut events, id, "remote-hello").await;
     let session = app
         .list()

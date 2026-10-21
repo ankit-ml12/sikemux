@@ -48,7 +48,7 @@ function bindingOf(run: TaskRun | null): TaskPtyBinding | null {
 }
 
 function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<NativePtyController | null> {
-    // A fresh ref identity makes useXterm restart for each immutable binding.
+    // A fresh ref identity makes useTerminal restart for each immutable binding.
     void binding;
     return { current: null };
 }
@@ -56,7 +56,7 @@ function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<
 const ATTACH_HEADER_PREFIX_BYTES = 4;
 const attachHeaderDecoder = new TextDecoder();
 
-/** `[header length as 4 little-endian bytes][header JSON][replay bytes]`. */
+/** `[header length as 4 little-endian bytes][header JSON][first frame]`. */
 function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
     if (body.byteLength < ATTACH_HEADER_PREFIX_BYTES) throw new TypeError("PTY attach returned a truncated response");
     const headerBytes = new DataView(body).getUint32(0, true);
@@ -64,9 +64,9 @@ function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
     const headerEnd = ATTACH_HEADER_PREFIX_BYTES + headerBytes;
     const header: unknown = JSON.parse(attachHeaderDecoder.decode(new Uint8Array(body, ATTACH_HEADER_PREFIX_BYTES, headerBytes)));
     if (typeof header !== "object" || header === null) throw new TypeError("PTY attach returned an invalid header");
-    const { subId, alternateScreen, shell } = header as Partial<PtyAttachResult>;
+    const { subId, shell } = header as Partial<PtyAttachResult>;
     // The controller validates every field; the view shares the response buffer.
-    return { subId: subId as number, alternateScreen: alternateScreen as boolean, shell, snapshot: new Uint8Array(body, headerEnd) };
+    return { subId: subId as number, shell, frame: new Uint8Array(body, headerEnd) };
 }
 
 /** The same terminal commands, for a terminal on `host`, another host the app joined; the core there names it. */
@@ -98,6 +98,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
+    input: (id, input) => invoke<void>("pty_input", { id, input }),
     resize: (id, cols, rows) => {
         noteTerminalSize(cols, rows);
         return invoke<void>("pty_resize", { id, cols, rows });
@@ -105,14 +106,14 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
     kill: coreSessionsApi.kill,
     attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),
-    ack: (id, subId, bytes) => invoke<void>("pty_ack", { id, subId, bytes }),
+    ack: (id, subId, frame) => invoke<void>("pty_ack", { id, subId, frame }),
     resume: async (id) => takeResumableSession(id) && (await coreSessionsApi.list()).some((session) => session.id === id),
 };
 
 const nativeChannels: PtyChannelAdapter<NativeChannel> = {
     create: (onMessage) => {
         const channel = new Channel<ArrayBuffer>();
-        // Native output arrives as raw IPC bytes; the view shares the buffer.
+        // Frames arrive as raw IPC bytes; the view shares the buffer.
         channel.onmessage = (buffer) => onMessage(new Uint8Array(buffer));
         return {
             transport: channel,

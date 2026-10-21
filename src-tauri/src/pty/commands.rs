@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, CoreClient, Reply};
+use sikemux_core::grid::{FindOptions, FindResult, GridPoint, TerminalColors, TerminalInput};
 use sikemux_core::protocol::{
     Continuation, LaunchIdentity, Request, SessionId, SessionInfo, SpawnTarget, TerminalSpawn,
 };
@@ -15,7 +16,7 @@ use crate::error::AppResult;
 use crate::hosts::Hosts;
 use crate::observability::{global_observability, Metadata, SpanOutcome};
 
-use super::streams::{Release, StreamTable};
+use super::streams::StreamTable;
 use super::{core_error, PtyManager};
 
 /// The core a session the page names runs in, and its id there.
@@ -130,31 +131,29 @@ pub async fn pty_spawn(
     Ok(id)
 }
 
-/// Everything about an attach except the replay bytes, which follow the
+/// Everything about an attach except its first frame, which follows the
 /// header in the same raw response instead of crossing as JSON numbers.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachResult {
     pub sub_id: u32,
-    pub alternate_screen: bool,
-    /// The latest shell state, so a remounted pane recovers its metadata
-    /// although the OSC bytes that set it are not replayed.
+    /// The latest shell state, so a remounted pane recovers its metadata.
     pub shell: Option<ShellMetadataSnapshot>,
 }
 
-/// `[header length as 4 little-endian bytes][header JSON][replay bytes]`.
-fn encode_attach_response(header: &AttachResult, replay: &[u8]) -> AppResult<Vec<u8>> {
+/// `[header length as 4 little-endian bytes][header JSON][frame bytes]`.
+fn encode_attach_response(header: &AttachResult, frame: &[u8]) -> AppResult<Vec<u8>> {
     let json = serde_json::to_vec(header)?;
-    let mut body = Vec::with_capacity(4 + json.len() + replay.len());
+    let mut body = Vec::with_capacity(4 + json.len() + frame.len());
     body.extend_from_slice(&(json.len() as u32).to_le_bytes());
     body.extend_from_slice(&json);
-    body.extend_from_slice(replay);
+    body.extend_from_slice(frame);
     Ok(body)
 }
 
-/// Snapshot and subscribe in one step: the channel joins on the connection's
-/// reader as the replay lands, so it receives exactly the bytes the replay
-/// does not hold.
+/// Starts a stream of the terminal's frames for one pane. The pane joins on
+/// the connection's reader as the answer lands, so it receives every frame
+/// after the first.
 #[tauri::command]
 pub async fn pty_attach(
     manager: State<'_, PtyManager>,
@@ -171,50 +170,26 @@ pub async fn pty_attach(
     let outcome = async {
         let (client, core_id) = session_client(&manager, &hosts, id).await?;
         let table = session_streams(&manager, &hosts, id)?;
-        let streams = table.clone();
-        let replied = {
-            let mut guard = table.lock();
-            guard.begin_attach(id)?;
-            let submitted = client.submit(Request::Attach { id: core_id }, move |reply| {
-                let mut guard = streams.lock();
-                match reply {
-                    Ok(Reply::Attached(Attached {
-                        alternate_screen,
-                        shell,
-                        exited,
-                        replay,
-                    })) => {
-                        let sub_id = guard.finish_attach(id, on_event.clone())?;
-                        // The exit went out before this replay, so only this
-                        // channel has yet to hear of it, and it hears after
-                        // the replay is shown.
-                        if exited {
-                            let _ = on_event.send(Response::new(Vec::new()));
-                        }
-                        encode_attach_response(
-                            &AttachResult {
-                                sub_id,
-                                alternate_screen,
-                                shell,
-                            },
-                            &replay,
-                        )
+        let replied = client
+            .submit(Request::Attach { id: core_id }, move |reply| match reply {
+                Ok(Reply::Attached(Attached {
+                    stream,
+                    shell,
+                    exited,
+                    frame,
+                })) => {
+                    let sub_id = table.add(id, on_event.clone(), stream);
+                    // The exit went out before this frame, so only this pane
+                    // has yet to hear of it, and it hears after the frame.
+                    if exited {
+                        let _ = on_event.send(Response::new(Vec::new()));
                     }
-                    Ok(Reply::Response(_)) => {
-                        guard.cancel_attach(id);
-                        Err(core_error(ClientError::UnexpectedReply))
-                    }
-                    Err(error) => {
-                        guard.cancel_attach(id);
-                        Err(core_error(error))
-                    }
+                    encode_attach_response(&AttachResult { sub_id, shell }, &frame)
                 }
-            });
-            if submitted.is_err() {
-                guard.cancel_attach(id);
-            }
-            submitted.map_err(core_error)?
-        };
+                Ok(_) => Err(core_error(ClientError::UnexpectedReply)),
+                Err(error) => Err(core_error(error)),
+            })
+            .map_err(core_error)?;
         replied.await.map_err(core_error)?
     }
     .await;
@@ -228,52 +203,118 @@ pub async fn pty_unsubscribe(
     id: SessionId,
     sub_id: u32,
 ) -> AppResult<()> {
-    let Some((client, streams, core_id)) = session_current(&manager, &hosts, id) else {
+    let Some((client, streams, _)) = session_current(&manager, &hosts, id) else {
         return Ok(());
     };
-    let detached = {
-        let mut guard = streams.lock();
-        match guard.unsubscribe(id, sub_id) {
-            Release::Nothing => None,
-            Release::Ack(bytes) => {
-                client.ack(core_id, bytes);
-                None
-            }
-            // Queued while the table is locked, so an attach decided after
-            // this reaches the core after it.
-            Release::Detach => Some(client.submit(Request::Detach { id: core_id }, |_| ())),
-        }
+    let Some(stream) = streams.remove(sub_id) else {
+        return Ok(());
     };
-    if let Some(Ok(detached)) = detached {
+    if let Ok(detached) = client.submit(Request::Detach { stream }, |_| ()) {
         let _ = detached.await;
     }
     Ok(())
 }
 
-/// Reports how many delivered bytes a renderer has finished writing, which
-/// lets the core read more from the program.
+/// The pane drew every frame up to `frame`, so the core may send the next.
 #[tauri::command]
 pub async fn pty_ack(
     manager: State<'_, PtyManager>,
     hosts: State<'_, Hosts>,
     id: SessionId,
     sub_id: u32,
-    bytes: usize,
+    frame: u32,
 ) -> AppResult<()> {
-    if crate::hosts::slot_of(id) == 0 {
-        if let Some(forward) = manager.streams.ack(id, sub_id, bytes) {
-            if let Some(client) = manager.current() {
-                client.ack(id, forward);
-            }
-        }
-        return Ok(());
-    }
-    if let Some((client, streams, core_id)) = session_current(&manager, &hosts, id) {
-        if let Some(forward) = streams.ack(id, sub_id, bytes) {
-            client.ack(core_id, forward);
+    if let Some((client, streams, _)) = session_current(&manager, &hosts, id) {
+        if let Some(stream) = streams.stream(sub_id) {
+            client.ack(stream, frame);
         }
     }
     Ok(())
+}
+
+/// A key, text, paste, mouse or focus change, which the core encodes for
+/// the program under the modes it turned on.
+#[tauri::command]
+pub async fn pty_input(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    input: TerminalInput,
+) -> AppResult<()> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    client.input(id, input).await.map_err(core_error)
+}
+
+/// History lines, raw as the core lays them out.
+#[tauri::command]
+pub async fn pty_lines(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    start: u64,
+    count: u32,
+) -> AppResult<Response> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    let lines = client.lines(id, start, count).await.map_err(core_error)?;
+    Ok(Response::new(lines))
+}
+
+#[tauri::command]
+pub async fn pty_text(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    from: Option<GridPoint>,
+    to: Option<GridPoint>,
+) -> AppResult<String> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    client.text(id, from.zip(to)).await.map_err(core_error)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn pty_find(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    query: String,
+    options: FindOptions,
+    from: Option<GridPoint>,
+    backwards: bool,
+    inclusive: bool,
+) -> AppResult<FindResult> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    client
+        .find(Request::TerminalFind {
+            id,
+            query,
+            options,
+            from,
+            backwards,
+            inclusive,
+        })
+        .await
+        .map_err(core_error)
+}
+
+#[tauri::command]
+pub async fn pty_clear(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+) -> AppResult<()> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    client.clear(id).await.map_err(core_error)
+}
+
+/// The theme's colours, which programs that ask for them are told.
+#[tauri::command]
+pub async fn pty_set_colors(
+    manager: State<'_, PtyManager>,
+    colors: TerminalColors,
+) -> AppResult<()> {
+    let client = manager.client().await?;
+    client.set_terminal_colors(colors).await.map_err(core_error)
 }
 
 #[tauri::command]
@@ -327,9 +368,9 @@ pub async fn pty_kill(
     id: SessionId,
 ) -> AppResult<()> {
     // Panes render "[process exited]" before the unmount tears them down.
-    session_streams(&manager, &hosts, id)?
-        .channels(id)
-        .send(&[]);
+    for channel in session_streams(&manager, &hosts, id)?.channels(id) {
+        let _ = channel.send(Response::new(Vec::new()));
+    }
     let (client, core_id) = session_client(&manager, &hosts, id).await?;
     client.kill(core_id).await.map_err(core_error)
 }
@@ -386,10 +427,9 @@ mod tests {
     use super::{encode_attach_response, AttachResult};
 
     #[test]
-    fn attach_response_frames_the_header_before_the_replay_bytes() {
+    fn attach_response_frames_the_header_before_the_frame() {
         let header = AttachResult {
             sub_id: 9,
-            alternate_screen: false,
             shell: None,
         };
         let body = encode_attach_response(&header, b"hello").expect("encode attach");
@@ -397,7 +437,6 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_slice(&body[4..4 + header_len]).expect("header json");
         assert_eq!(parsed["subId"], 9);
-        assert_eq!(parsed["alternateScreen"], false);
         assert_eq!(&body[4 + header_len..], b"hello");
     }
 }

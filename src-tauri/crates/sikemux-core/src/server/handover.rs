@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_pty::output_log::OutputLog;
-use sikemux_pty::screen::{replay_snapshot, restored_parser};
+use sikemux_pty::screen::Screen;
 use sikemux_pty::shell::ShellLaunchIntegration;
 use sikemux_pty::shell_protocol::{ShellMetadataSnapshot, SshLink};
 use tokio::io::unix::AsyncFd;
@@ -137,21 +137,13 @@ fn private_directory() -> std::io::Result<PathBuf> {
 }
 
 fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
-    let mut parser = session.parser.locked();
-    let (rows, cols) = parser.screen().size();
-    let replay = replay_snapshot(&mut parser)?;
-    let shell = parser
-        .callbacks()
-        .shell
-        .as_ref()
-        .map(|shell| shell.snapshot());
-    let ssh = parser
-        .callbacks()
-        .shell
-        .as_ref()
-        .and_then(|shell| shell.ssh());
-    let window_title = parser.callbacks().window_title.clone();
-    drop(parser);
+    let screen = session.screen.locked();
+    let (rows, cols) = screen.terminal.size();
+    let replay = screen.terminal.replay();
+    let shell = screen.shell.as_ref().map(|shell| shell.snapshot());
+    let ssh = screen.shell.as_ref().and_then(|shell| shell.ssh());
+    let window_title = screen.window_title.clone();
+    drop(screen);
     write_private(&blob_path(directory, session.id, "replay"), &replay)?;
     let task_output_end = match session.task_log() {
         Some((bytes, end)) => {
@@ -691,7 +683,7 @@ fn adopt_session(
             kind: record.kind,
             pid: record.pid,
             owner: record.owner,
-            parser: restored_parser(
+            screen: Screen::restored(
                 rows,
                 cols,
                 &replay,
@@ -741,7 +733,7 @@ fn adopt_bare(
             kind: SessionKind::Terminal,
             pid,
             owner: Owner::default(),
-            parser: restored_parser(rows, cols, &[], None, None, String::new()),
+            screen: Screen::restored(rows, cols, &[], None, None, String::new()),
             shell_protocol: false,
             last_activity_ms: uptime_ms(),
             trimmed: false,

@@ -22,9 +22,10 @@ use sikemux_core::client::{
     await_deferred_upgrade, await_upgrade, frozen_request, probe, ClientEvent, CoreClient,
 };
 use sikemux_core::frozen::{FrozenReply, FrozenRequest};
+use sikemux_core::grid::{decode_frame, Screen};
 use sikemux_core::protocol::{
     BuildIdentity, ChatAttachment, ChatEvent, ChatEventKind, ChatLaunch, Event, LaunchIdentity,
-    SessionId, SpawnTarget, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
+    SessionId, SpawnTarget, StreamId, TerminalSpawn, BUILD_ID_OVERRIDE_ENV,
 };
 use sikemux_pty::output_log::OutputQuery;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -186,20 +187,39 @@ fn alive(pid: u32) -> bool {
 
 struct Stream {
     events: UnboundedReceiver<ClientEvent>,
+    /// What each attached session shows now.
     output: HashMap<SessionId, Vec<u8>>,
+    screens: HashMap<StreamId, (SessionId, Screen)>,
     exits: HashMap<SessionId, Option<u32>>,
 }
 
+fn screen_of(frame: &[u8]) -> Screen {
+    let mut screen = Screen::default();
+    screen.apply(decode_frame(frame).expect("a frame"));
+    screen
+}
+
 impl Stream {
+    async fn attach(&mut self, client: &CoreClient, id: SessionId) {
+        let attached = client.attach(id).await.expect("attach");
+        let screen = screen_of(&attached.frame);
+        client.ack(attached.stream, screen.header.frame);
+        self.output.insert(id, screen.text().into_bytes());
+        self.screens.insert(attached.stream, (id, screen));
+    }
+
     async fn pump(&mut self, client: &CoreClient) {
         let event = tokio::time::timeout(WAIT, self.events.recv())
             .await
             .expect("timed out waiting for the core")
             .expect("the core disconnected");
         match event {
-            ClientEvent::Output { id, bytes } => {
-                client.ack(id, bytes.len());
-                self.output.entry(id).or_default().extend_from_slice(&bytes);
+            ClientEvent::Grid { stream, frame } => {
+                if let Some((id, screen)) = self.screens.get_mut(&stream) {
+                    screen.apply(decode_frame(&frame).expect("a frame"));
+                    client.ack(stream, screen.header.frame);
+                    self.output.insert(*id, screen.text().into_bytes());
+                }
             }
             ClientEvent::Event(Event::Exited { id, code, .. }) => {
                 self.exits.insert(id, code);
@@ -233,6 +253,7 @@ async fn connect(core: &CoreProcess) -> (CoreClient, Stream) {
         Stream {
             events,
             output: HashMap::new(),
+            screens: HashMap::new(),
             exits: HashMap::new(),
         },
     )
@@ -329,7 +350,7 @@ async fn an_upgrade_keeps_every_session_and_the_harness() {
 
     let (client, mut stream) = connect(&core).await;
     let shell = spawn_shell(&client).await;
-    client.attach(shell).await.expect("attach");
+    stream.attach(&client, shell).await;
     client
         .write(shell, b"echo before-$((6*7))\r")
         .await
@@ -406,11 +427,10 @@ async fn an_upgrade_keeps_every_session_and_the_harness() {
             .collect::<Vec<_>>()
     );
     let attached = client.attach(shell).await.expect("attach after the update");
-    assert!(
-        String::from_utf8_lossy(&attached.replay).contains("before-42"),
-        "{:?}",
-        String::from_utf8_lossy(&attached.replay)
-    );
+    let text = screen_of(&attached.frame).text();
+    assert!(text.contains("before-42"), "{text:?}");
+    client.detach(attached.stream).await.expect("detach");
+    stream.attach(&client, shell).await;
     client
         .write(shell, b"echo after-$((6*7))\r")
         .await
@@ -574,7 +594,7 @@ async fn a_damaged_hand_over_keeps_the_sessions_it_can_adopt() {
     let core = CoreProcess::start("first");
     let (client, mut stream) = connect(&core).await;
     let shell = spawn_shell(&client).await;
-    client.attach(shell).await.expect("attach");
+    stream.attach(&client, shell).await;
     client.write(shell, b"echo kept\r").await.expect("write");
     stream.until_output(&client, shell, "kept").await;
     let shell_pid = client
@@ -606,7 +626,7 @@ async fn a_damaged_hand_over_keeps_the_sessions_it_can_adopt() {
         .expect("the shell was kept");
     assert_eq!(kept.pid, Some(shell_pid));
     assert!(kept.running);
-    client.attach(shell).await.expect("attach");
+    stream.attach(&client, shell).await;
     client
         .write(shell, b"echo still-$((2*21))\r")
         .await
@@ -1116,7 +1136,7 @@ async fn a_core_takes_over_from_the_oldest_hand_over_a_stable_release_wrote() {
     let core = CoreProcess::start("first");
     let (client, mut stream) = connect(&core).await;
     let shell = spawn_shell(&client).await;
-    client.attach(shell).await.expect("attach");
+    stream.attach(&client, shell).await;
     client
         .write(shell, b"echo older-$((3*3))\r")
         .await
@@ -1132,6 +1152,6 @@ async fn a_core_takes_over_from_the_oldest_hand_over_a_stable_release_wrote() {
     assert!(!core.log().contains("DAMAGED"), "{}", core.log());
 
     let (client, _stream) = connect(&core).await;
-    let replay = client.attach(shell).await.expect("attach").replay;
-    assert!(String::from_utf8_lossy(&replay).contains("older-9"));
+    let frame = client.attach(shell).await.expect("attach").frame;
+    assert!(screen_of(&frame).text().contains("older-9"));
 }

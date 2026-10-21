@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
+use crate::grid::{FindOptions, FindResult, GridPoint, TerminalColors, TerminalInput};
 use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use crate::pty::launch::{PtyContext, PtyDirectCommand};
 use crate::pty::output_log::{OutputPage, OutputQuery};
@@ -33,6 +34,9 @@ pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 
 pub type SessionId = u64;
+/// One attach's stream of frames. A client can watch a session in several
+/// places at once, each with its own stream.
+pub type StreamId = u32;
 pub type RequestId = u64;
 pub type CallId = u64;
 
@@ -40,14 +44,19 @@ pub type CallId = u64;
 #[repr(u8)]
 pub enum FrameKind {
     Control = 0,
-    /// Core to client: session id (u64 BE), then the terminal's bytes.
-    Output = 1,
+    /// Core to client, a terminal's cells changing: stream id (u32 BE), then
+    /// a frame as [`crate::grid`] lays it out.
+    Grid = 1,
     /// Core to client, answering an attach: request id (u64 BE), session id
-    /// (u64 BE), header length (u32 BE), [`AttachHeader`] JSON, replay bytes.
+    /// (u64 BE), stream id (u32 BE), header length (u32 BE), [`AttachHeader`]
+    /// JSON, then the first frame of the stream, holding the whole screen.
     Snapshot = 2,
     /// Client to core, a write: request id (u64 BE), session id (u64 BE), then
     /// the bytes for the terminal. Answered like any other request.
     Input = 3,
+    /// Core to client, answering [`Request::TerminalLines`]: request id
+    /// (u64 BE), then the lines as [`crate::grid`] lays them out.
+    Lines = 4,
     /// A request every core answers, whatever protocol version it speaks:
     /// sent instead of a hello, and answered once.
     Frozen = 0x46,
@@ -57,9 +66,10 @@ impl FrameKind {
     fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0 => Some(Self::Control),
-            1 => Some(Self::Output),
+            1 => Some(Self::Grid),
             2 => Some(Self::Snapshot),
             3 => Some(Self::Input),
+            4 => Some(Self::Lines),
             0x46 => Some(Self::Frozen),
             _ => None,
         }
@@ -98,9 +108,9 @@ pub enum ClientMessage {
         request_id: RequestId,
         request: Request,
     },
-    /// The client has finished with this many output bytes of a session it is
-    /// attached to. Never answered.
-    Ack { id: SessionId, bytes: usize },
+    /// The client has drawn every frame of the stream up to `frame`, so the
+    /// core may send the next. Never answered.
+    Ack { stream: StreamId, frame: u32 },
     /// The window's answer to a [`ServerMessage::WindowCall`].
     WindowReply {
         call_id: CallId,
@@ -126,15 +136,53 @@ pub enum Request {
         id: SessionId,
     },
     List,
+    /// Starts a stream of the session's cells, answered with a snapshot frame.
     Attach {
         id: SessionId,
     },
     Detach {
+        stream: StreamId,
+    },
+    /// A key, text, paste, mouse or focus change for the session's program.
+    TerminalInput {
+        id: SessionId,
+        input: TerminalInput,
+    },
+    /// History lines `start..start + count`, answered with a lines frame.
+    TerminalLines {
+        id: SessionId,
+        start: u64,
+        count: u32,
+    },
+    /// The text between two cells, or all the terminal holds without them.
+    TerminalText {
+        id: SessionId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        range: Option<(GridPoint, GridPoint)>,
+    },
+    /// Searches the session's history and screen. The current match is the
+    /// first after `from`, or before it going `backwards`, or at it when
+    /// `inclusive`.
+    TerminalFind {
+        id: SessionId,
+        query: String,
+        #[serde(default)]
+        options: FindOptions,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<GridPoint>,
+        #[serde(default)]
+        backwards: bool,
+        #[serde(default)]
+        inclusive: bool,
+    },
+    /// Moves the cursor's line to the top of the screen and drops the history
+    /// above it, without telling the program.
+    TerminalClear {
         id: SessionId,
     },
-    /// Like `Attach` without the replay: the client already holds the screen.
-    Subscribe {
-        id: SessionId,
+    /// The theme's colours, for answering programs that ask for them.
+    SetTerminalColors {
+        colors: TerminalColors,
     },
     /// Turns off the input modes a crashed program may have left on, for the
     /// core's screen and every attached client alike.
@@ -755,6 +803,12 @@ pub enum Response {
         id: SessionId,
     },
     Done,
+    TerminalText {
+        text: String,
+    },
+    Found {
+        result: FindResult,
+    },
     Sessions {
         sessions: Vec<SessionInfo>,
     },
@@ -1540,7 +1594,6 @@ pub struct AgentStateEvent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachHeader {
-    pub alternate_screen: bool,
     pub shell: Option<ShellMetadataSnapshot>,
     /// The session's `Exited` event was sent before this snapshot, so the
     /// client will not hear of the exit again.
@@ -1565,8 +1618,8 @@ pub fn encode_control<T: Serialize>(message: &T) -> serde_json::Result<Vec<u8>> 
     ))
 }
 
-pub fn encode_output(id: SessionId, bytes: &[u8]) -> Vec<u8> {
-    encode_frame(FrameKind::Output, &[&id.to_be_bytes(), bytes])
+pub fn encode_grid(stream: StreamId, frame: &[u8]) -> Vec<u8> {
+    encode_frame(FrameKind::Grid, &[&stream.to_be_bytes(), frame])
 }
 
 pub fn encode_input(request_id: RequestId, id: SessionId, bytes: &[u8]) -> Vec<u8> {
@@ -1579,8 +1632,9 @@ pub fn encode_input(request_id: RequestId, id: SessionId, bytes: &[u8]) -> Vec<u
 pub fn encode_snapshot(
     request_id: RequestId,
     id: SessionId,
+    stream: StreamId,
     header: &AttachHeader,
-    replay: &[u8],
+    frame: &[u8],
 ) -> serde_json::Result<Vec<u8>> {
     let header = serde_json::to_vec(header)?;
     Ok(encode_frame(
@@ -1588,11 +1642,16 @@ pub fn encode_snapshot(
         &[
             &request_id.to_be_bytes(),
             &id.to_be_bytes(),
+            &stream.to_be_bytes(),
             &(header.len() as u32).to_be_bytes(),
             &header,
-            replay,
+            frame,
         ],
     ))
+}
+
+pub fn encode_lines(request_id: RequestId, lines: &[u8]) -> Vec<u8> {
+    encode_frame(FrameKind::Lines, &[&request_id.to_be_bytes(), lines])
 }
 
 fn split_u64(bytes: &[u8]) -> Option<(u64, &[u8])> {
@@ -1600,8 +1659,13 @@ fn split_u64(bytes: &[u8]) -> Option<(u64, &[u8])> {
     Some((u64::from_be_bytes(*head), rest))
 }
 
-pub fn decode_output(payload: &[u8]) -> Option<(SessionId, &[u8])> {
-    split_u64(payload)
+fn split_u32(bytes: &[u8]) -> Option<(u32, &[u8])> {
+    let (head, rest) = bytes.split_first_chunk::<4>()?;
+    Some((u32::from_be_bytes(*head), rest))
+}
+
+pub fn decode_grid(payload: &[u8]) -> Option<(StreamId, &[u8])> {
+    split_u32(payload)
 }
 
 pub fn decode_input(payload: &[u8]) -> Option<(RequestId, SessionId, &[u8])> {
@@ -1610,17 +1674,37 @@ pub fn decode_input(payload: &[u8]) -> Option<(RequestId, SessionId, &[u8])> {
     Some((request_id, id, bytes))
 }
 
-pub fn decode_snapshot(payload: &[u8]) -> Option<(RequestId, SessionId, AttachHeader, &[u8])> {
+/// The parts of an attach's answer.
+pub struct Snapshot<'a> {
+    pub request_id: RequestId,
+    pub id: SessionId,
+    pub stream: StreamId,
+    pub header: AttachHeader,
+    pub frame: &'a [u8],
+}
+
+pub fn decode_snapshot(payload: &[u8]) -> Option<Snapshot<'_>> {
     let (request_id, rest) = split_u64(payload)?;
     let (id, rest) = split_u64(rest)?;
-    let (header_len, rest) = rest.split_first_chunk::<4>()?;
-    let header_len = u32::from_be_bytes(*header_len) as usize;
+    let (stream, rest) = split_u32(rest)?;
+    let (header_len, rest) = split_u32(rest)?;
+    let header_len = header_len as usize;
     if header_len > rest.len() {
         return None;
     }
-    let (header, replay) = rest.split_at(header_len);
+    let (header, frame) = rest.split_at(header_len);
     let header = serde_json::from_slice(header).ok()?;
-    Some((request_id, id, header, replay))
+    Some(Snapshot {
+        request_id,
+        id,
+        stream,
+        header,
+        frame,
+    })
+}
+
+pub fn decode_lines(payload: &[u8]) -> Option<(RequestId, &[u8])> {
+    split_u64(payload)
 }
 
 /// Whether a frame from [`encode_frame`] is small enough for the other side
@@ -1733,27 +1817,29 @@ mod tests {
 
     #[test]
     fn frames_carry_a_big_endian_length_that_counts_the_kind_byte() {
-        let frame = encode_output(7, b"hi");
-        assert_eq!(&frame[..4], &11u32.to_be_bytes());
-        assert_eq!(frame[4], FrameKind::Output as u8);
+        let frame = encode_grid(7, b"hi");
+        assert_eq!(&frame[..4], &7u32.to_be_bytes());
+        assert_eq!(frame[4], FrameKind::Grid as u8);
         let parsed = read_frame_sync(&mut &frame[..]).unwrap().unwrap();
-        assert_eq!(parsed.kind, FrameKind::Output);
-        assert_eq!(decode_output(&parsed.payload), Some((7, &b"hi"[..])));
+        assert_eq!(parsed.kind, FrameKind::Grid);
+        assert_eq!(decode_grid(&parsed.payload), Some((7, &b"hi"[..])));
     }
 
     #[test]
-    fn snapshot_frames_round_trip_header_and_raw_replay() {
+    fn snapshot_frames_round_trip_header_and_frame() {
         let header = AttachHeader {
-            alternate_screen: true,
             shell: None,
             exited: true,
         };
-        let frame = encode_snapshot(3, 9, &header, b"\xff\x00replay").unwrap();
+        let frame = encode_snapshot(3, 9, 5, &header, b"\xff\x00frame").unwrap();
         let parsed = read_frame_sync(&mut &frame[..]).unwrap().unwrap();
-        let (request_id, id, decoded, replay) = decode_snapshot(&parsed.payload).unwrap();
-        assert_eq!((request_id, id), (3, 9));
-        assert_eq!(decoded, header);
-        assert_eq!(replay, b"\xff\x00replay");
+        let snapshot = decode_snapshot(&parsed.payload).unwrap();
+        assert_eq!(
+            (snapshot.request_id, snapshot.id, snapshot.stream),
+            (3, 9, 5)
+        );
+        assert_eq!(snapshot.header, header);
+        assert_eq!(snapshot.frame, b"\xff\x00frame");
     }
 
     #[test]

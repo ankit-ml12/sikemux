@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -10,9 +10,9 @@ use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
-    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget,
-    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    decode_input, encode_control, encode_lines, fits, read_frame, ClientMessage, FrameKind,
+    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
+    SpawnTarget, StreamId, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -43,7 +43,8 @@ pub(crate) struct ClientConn {
     queued: AtomicUsize,
     closed: AtomicBool,
     kick: Notify,
-    subscriptions: Mutex<HashSet<SessionId>>,
+    /// The session each of this client's terminal streams shows.
+    streams: Mutex<HashMap<StreamId, SessionId>>,
     /// A local client that asked for the device view.
     watches_view: AtomicBool,
     /// A phone's app is in front, as far as it last said.
@@ -80,7 +81,7 @@ impl ClientConn {
             queued: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             kick: Notify::new(),
-            subscriptions: Mutex::new(HashSet::new()),
+            streams: Mutex::new(HashMap::new()),
             watches_view: AtomicBool::new(false),
             foreground: AtomicBool::new(true),
         });
@@ -104,7 +105,7 @@ impl ClientConn {
             queued: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             kick: Notify::new(),
-            subscriptions: Mutex::new(HashSet::new()),
+            streams: Mutex::new(HashMap::new()),
             watches_view: AtomicBool::new(false),
             foreground: AtomicBool::new(true),
         });
@@ -113,7 +114,11 @@ impl ClientConn {
     }
 
     pub(crate) fn is_subscribed(&self, id: SessionId) -> bool {
-        self.subscriptions.locked().contains(&id)
+        self.streams.locked().values().any(|session| *session == id)
+    }
+
+    pub(crate) fn stream_session(&self, stream: StreamId) -> Option<SessionId> {
+        self.streams.locked().get(&stream).copied()
     }
 
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
@@ -173,17 +178,16 @@ impl ClientConn {
         });
     }
 
-    pub(crate) fn note_subscription(&self, id: SessionId, subscribed: bool) {
-        let mut subscriptions = self.subscriptions.locked();
-        if subscribed {
-            subscriptions.insert(id);
-        } else {
-            subscriptions.remove(&id);
-        }
+    pub(crate) fn note_stream(&self, stream: StreamId, id: SessionId) {
+        self.streams.locked().insert(stream, id);
     }
 
-    pub(crate) fn take_subscriptions(&self) -> HashSet<SessionId> {
-        std::mem::take(&mut *self.subscriptions.locked())
+    pub(crate) fn forget_stream(&self, stream: StreamId) {
+        self.streams.locked().remove(&stream);
+    }
+
+    pub(crate) fn take_streams(&self) -> HashMap<StreamId, SessionId> {
+        std::mem::take(&mut *self.streams.locked())
     }
 
     pub(crate) async fn wait_flushed(&self, limit: Duration) {
@@ -305,7 +309,7 @@ pub(crate) async fn serve_client(
         queued: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
         kick: Notify::new(),
-        subscriptions: Mutex::new(HashSet::new()),
+        streams: Mutex::new(HashMap::new()),
         watches_view: AtomicBool::new(false),
         foreground: AtomicBool::new(true),
     });
@@ -350,9 +354,12 @@ async fn read_requests(
     while let Ok(Some(frame)) = read_frame(reader).await {
         match frame.kind {
             FrameKind::Control => match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-                Ok(ClientMessage::Ack { id, bytes }) => {
-                    if let Some(session) = core.session(id) {
-                        session::ack(&session, client.id, bytes);
+                Ok(ClientMessage::Ack { stream, frame }) => {
+                    if let Some(session) = client
+                        .stream_session(stream)
+                        .and_then(|id| core.session(id))
+                    {
+                        session::ack(&session, stream, frame);
                     }
                 }
                 Ok(ClientMessage::Request {
@@ -398,26 +405,46 @@ async fn read_requests(
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
                 };
-                agent::note_input(core, &target, bytes);
-                if let Some(agent) = target.agent.as_ref().filter(|_| agent::submits_line(bytes)) {
-                    core.harness.questions.typed(agent.agent_id());
-                    messages::worked(core, agent.agent_id());
-                }
-                let reply_to = client.clone();
-                session::queue_input(
-                    &target,
-                    bytes.to_vec(),
-                    Box::new(move |result| {
-                        reply_to.respond(
-                            request_id,
-                            result.map(|()| Response::Done).map_err(CoreError::from),
-                        );
-                    }),
-                );
+                write_to_program(core, client, request_id, &target, bytes.to_vec());
             }
-            FrameKind::Output | FrameKind::Snapshot | FrameKind::Frozen => return,
+            FrameKind::Grid | FrameKind::Snapshot | FrameKind::Lines | FrameKind::Frozen => return,
         }
     }
+}
+
+/// Writes to a session's program in the order writes arrived, and tells
+/// its agent's status a line was submitted.
+fn write_to_program(
+    core: &Arc<Core>,
+    client: &Arc<ClientConn>,
+    request_id: RequestId,
+    target: &session::Session,
+    bytes: Vec<u8>,
+) {
+    agent::note_input(core, target, &bytes);
+    if let Some(agent) = target
+        .agent
+        .as_ref()
+        .filter(|_| agent::submits_line(&bytes))
+    {
+        core.harness.questions.typed(agent.agent_id());
+        messages::worked(core, agent.agent_id());
+    }
+    if bytes.is_empty() {
+        client.respond(request_id, Ok(Response::Done));
+        return;
+    }
+    let reply_to = client.clone();
+    session::queue_input(
+        target,
+        bytes,
+        Box::new(move |result| {
+            reply_to.respond(
+                request_id,
+                result.map(|()| Response::Done).map_err(CoreError::from),
+            );
+        }),
+    );
 }
 
 pub(crate) async fn blocking<T: Send + 'static>(
@@ -591,25 +618,75 @@ async fn run_requests(
                     Err(error) => client.respond(request_id, Err(error)),
                 }
             }
-            Request::Subscribe { id } => {
+            Request::ResetModes { id } => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => {
-                        let subscriber = client.clone();
-                        blocking(move || session::subscribe(&target, &subscriber, request_id)).await
+                        let resetting = core.clone();
+                        blocking(move || session::reset_modes(&resetting, &target)).await
                     }
                     Err(error) => Err(error),
                 };
-                match result {
-                    Ok(()) => core.view_changed(),
-                    Err(error) => client.respond(request_id, Err(error)),
-                }
+                client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::ResetModes { id } => {
+            Request::TerminalInput { id, input } => match session_or_missing(&core, id) {
+                Ok(target) => {
+                    let bytes = session::encode(&target, &input);
+                    write_to_program(&core, &client, request_id, &target, bytes);
+                }
+                Err(error) => client.respond(request_id, Err(error)),
+            },
+            Request::TerminalLines { id, start, count } => match session_or_missing(&core, id) {
+                Ok(target) => {
+                    tokio::spawn(async move {
+                        let lines =
+                            blocking(move || Ok(session::lines(&target, start, count))).await;
+                        match lines {
+                            Ok(lines) => {
+                                client.send(encode_lines(request_id, &lines).into());
+                            }
+                            Err(error) => client.respond(request_id, Err(error)),
+                        }
+                    });
+                }
+                Err(error) => client.respond(request_id, Err(error)),
+            },
+            Request::TerminalText { id, range } => {
                 let result = match session_or_missing(&core, id) {
-                    Ok(target) => blocking(move || session::reset_modes(&target)).await,
+                    Ok(target) => blocking(move || Ok(session::text(&target, range))).await,
                     Err(error) => Err(error),
                 };
+                client.respond(
+                    request_id,
+                    result.map(|text| Response::TerminalText { text }),
+                );
+            }
+            Request::TerminalFind {
+                id,
+                query,
+                options,
+                from,
+                backwards,
+                inclusive,
+            } => match session_or_missing(&core, id) {
+                Ok(target) => {
+                    tokio::spawn(async move {
+                        let result = blocking(move || {
+                            session::find(&target, &query, &options, from, backwards, inclusive)
+                        })
+                        .await;
+                        client.respond(request_id, result.map(|result| Response::Found { result }));
+                    });
+                }
+                Err(error) => client.respond(request_id, Err(error)),
+            },
+            Request::TerminalClear { id } => {
+                let result =
+                    session_or_missing(&core, id).map(|target| session::clear(&core, &target));
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::SetTerminalColors { colors } => {
+                core.set_terminal_colors(colors);
+                client.respond(request_id, Ok(Response::Done));
             }
             Request::ShellAtPrompt { id } => {
                 let result = match session_or_missing(&core, id) {
@@ -621,16 +698,18 @@ async fn run_requests(
                     result.map(|at_prompt| Response::ShellAtPrompt { at_prompt }),
                 );
             }
-            Request::Detach { id } => {
-                if let Some(target) = core.session(id) {
-                    let client_id = client.id;
+            Request::Detach { stream } => {
+                if let Some(target) = client
+                    .stream_session(stream)
+                    .and_then(|id| core.session(id))
+                {
                     let _ = blocking(move || {
-                        session::detach(&target, client_id);
+                        session::detach(&target, stream);
                         Ok(())
                     })
                     .await;
                 }
-                client.note_subscription(id, false);
+                client.forget_stream(stream);
                 core.view_changed();
                 client.respond(request_id, Ok(Response::Done));
             }

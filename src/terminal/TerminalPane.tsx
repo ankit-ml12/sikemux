@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ISearchResultChangeEvent } from "@xterm/addon-search";
-import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 import { usePty } from "./usePty";
-import { useXterm } from "./useXterm";
+import { useTerminal } from "./useTerminal";
+import type { SearchResults } from "./view";
 import type { TerminalSearchOptions } from "./interactions";
 import { TerminalFindBar } from "./TerminalFindBar";
 import { TerminalContextMenu } from "./TerminalContextMenu";
@@ -80,7 +79,7 @@ export function TerminalPane({
     const [findOpen, setFindOpen] = useState(false);
     const [findQuery, setFindQuery] = useState("");
     const [findOptions, setFindOptions] = useState<TerminalSearchOptions>({ caseSensitive: false, regex: false, wholeWord: false });
-    const [findResult, setFindResult] = useState<ISearchResultChangeEvent>({ resultIndex: -1, resultCount: 0 });
+    const [findResult, setFindResult] = useState<SearchResults>({ resultIndex: -1, resultCount: 0 });
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const [sendMenu, setSendMenu] = useState<{ x: number; y: number; selection: string } | null>(null);
     const [shellMetadata, setShellMetadata] = useState<PtyShellMetadataSnapshot | null>(null);
@@ -157,7 +156,7 @@ export function TerminalPane({
         };
     }, [visible, shouldMount]);
 
-    const controller = useXterm({
+    const controller = useTerminal({
         hostRef,
         ptyController,
         shouldMount,

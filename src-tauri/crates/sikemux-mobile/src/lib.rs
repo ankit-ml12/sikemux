@@ -17,7 +17,7 @@ use sikemux_client::client::{ClientError, CoreClient, EventSink, Reply};
 use sikemux_client::join::{JoinHello, JoinReply};
 use sikemux_wire::accounts::protocol::{JoinTicket, Relay};
 use sikemux_wire::protocol::{
-    CallId, Event, NotifyPrefs, Request, Response, SessionId, WindowCall, MAX_ATTACHMENT_BYTES,
+    CallId, Event, NotifyPrefs, Request, Response, StreamId, WindowCall, MAX_ATTACHMENT_BYTES,
     OLDEST_PROTOCOL_VERSION, WAKE_WAIT,
 };
 use tokio::sync::mpsc;
@@ -403,7 +403,7 @@ enum Delivery {
 struct ListenerSink(mpsc::UnboundedSender<Delivery>);
 
 impl EventSink for ListenerSink {
-    fn output(&self, _id: SessionId, _bytes: &[u8]) {}
+    fn grid(&self, _stream: StreamId, _frame: &[u8]) {}
 
     fn event(&self, event: Event) {
         if let Some(event) = CoreEvent::from_core(event) {
@@ -511,7 +511,7 @@ impl Connection {
     async fn ask(&self, request: Request) -> Result<Response, MobileError> {
         match self.reply(request).await? {
             Reply::Response(response) => Ok(response),
-            Reply::Attached(_) => Err(unexpected()),
+            Reply::Attached(_) | Reply::Lines(_) => Err(unexpected()),
         }
     }
 
@@ -1124,7 +1124,7 @@ mod tests {
         let sink = ListenerSink(deliveries);
         sink.event(chat_event(1));
         sink.event(chat_event(2));
-        sink.output(7, b"ab");
+        sink.grid(7, b"ab");
         sink.event(chat_event(3));
         sink.closed();
         deliver(recorder.clone(), queue, Arc::new(AtomicBool::new(true)));

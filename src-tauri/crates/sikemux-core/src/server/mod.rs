@@ -352,6 +352,8 @@ pub(crate) struct Core {
     pub(crate) hosts: hosts::Hosts,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
+    /// The app's terminal theme, which programs asking for colours are told.
+    terminal_colors: Mutex<sikemux_wire::grid::TerminalColors>,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -426,6 +428,7 @@ impl Core {
             inbox: inbox::Inbox::default(),
             hosts,
             device_view: Mutex::new(Vec::new()),
+            terminal_colors: Mutex::default(),
         }))
     }
 
@@ -436,6 +439,14 @@ impl Core {
 
     pub(crate) fn is_frozen(&self) -> bool {
         *self.frozen.borrow()
+    }
+
+    pub(crate) fn terminal_colors(&self) -> sikemux_wire::grid::TerminalColors {
+        self.terminal_colors.locked().clone()
+    }
+
+    pub(crate) fn set_terminal_colors(&self, colors: sikemux_wire::grid::TerminalColors) {
+        *self.terminal_colors.locked() = colors;
     }
 
     /// Resolves once the core starts handing itself over.
@@ -640,9 +651,9 @@ impl Core {
         self.chats.forget_client(client.id);
         self.seen.client_gone(client.id);
         self.clients.locked().remove(&client.id);
-        for id in client.take_subscriptions() {
+        for (stream, id) in client.take_streams() {
             if let Some(session) = self.session(id) {
-                session::detach(&session, client.id);
+                session::detach(&session, stream);
             }
         }
         self.view_changed();
@@ -970,9 +981,8 @@ async fn poll_sessions(core: Arc<Core>) {
                 continue;
             }
             let update = session
-                .parser
+                .screen
                 .locked()
-                .callbacks_mut()
                 .shell
                 .as_mut()
                 .and_then(|shell| shell.take_due_event(now));

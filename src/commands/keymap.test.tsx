@@ -197,7 +197,7 @@ describe("Option in text", () => {
     function TerminalHarness() {
         useKeymap();
         return (
-            <div className="xterm">
+            <div className="terminal-surface">
                 <textarea aria-label="Terminal input" />
             </div>
         );

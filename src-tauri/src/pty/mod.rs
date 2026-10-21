@@ -1,7 +1,7 @@
 //! Terminals live in the background core (`sikemux core`); these commands
-//! forward to it over its socket. Output comes back on the connection and is
-//! fanned out to the webview channels that show each terminal, with the same
-//! ack-based flow control the in-process terminals had.
+//! forward to it over its socket. The core runs each terminal and sends every
+//! pane its own stream of changed cells, which comes back on the connection
+//! and goes to the webview channel of that pane.
 
 pub(crate) mod commands;
 pub(crate) mod sink;
@@ -39,8 +39,6 @@ const UPGRADE_RETURN_TIMEOUT: Duration = Duration::from_secs(20);
 /// A core with chat turns running updates once they end, which it gives two
 /// minutes.
 const DEFERRED_RETURN_TIMEOUT: Duration = Duration::from_secs(150);
-/// `ESC c`, which clears a pane's screen and history before its replay.
-const FULL_RESET: &[u8] = b"\x1bc";
 
 struct CoreSettings {
     app: AppHandle,
@@ -352,12 +350,12 @@ impl PtyManager {
     /// The page went away with every channel it held. Terminals and tasks keep
     /// running in the core, which stops sending what nobody will show.
     pub fn detach_all(&self) {
-        let subscribed = self.streams.release_all();
+        let streams = self.streams.release_all();
         let Some(client) = self.current() else {
             return;
         };
-        for id in subscribed {
-            let _ = client.submit(Request::Detach { id }, |_| ());
+        for stream in streams {
+            let _ = client.submit(Request::Detach { stream }, |_| ());
         }
     }
 
@@ -410,33 +408,25 @@ impl PtyManager {
     }
 }
 
-/// Sends every pane its screen again from a core that came back, followed
-/// by the live output. `streams` holds the page's ids, which the core of
-/// another host knows by its own.
+/// Starts every pane's stream again on a core that came back, each with its
+/// whole screen. `streams` holds the page's ids, which the core of another
+/// host knows by its own.
 pub(crate) async fn reattach(client: &Arc<CoreClient>, streams: &Arc<StreamTable>) {
-    for id in streams.core_subscribed() {
+    for (pane, id) in streams.panes() {
         let table = streams.clone();
         let request = Request::Attach {
             id: crate::hosts::core_session(id),
         };
         let submitted = client.submit(request, move |reply| match reply {
             Ok(Reply::Attached(Attached {
-                alternate_screen,
+                stream,
                 exited,
-                replay,
+                frame,
                 ..
             })) => {
-                table.restart(id);
-                // An alternate screen repaints itself in full and leaves
-                // the pane's own normal-screen history alone.
-                let mut screen = Vec::with_capacity(replay.len() + FULL_RESET.len());
-                if !alternate_screen {
-                    screen.extend_from_slice(FULL_RESET);
-                }
-                screen.extend_from_slice(&replay);
-                sink::deliver(&table, id, &screen);
+                table.restream(pane, stream, &frame);
                 if exited {
-                    table.channels(id).send(&[]);
+                    sink::report_exited(&table, id);
                 }
             }
             // A dropped connection is not the session ending; the next
@@ -594,11 +584,7 @@ mod tests {
     fn leaving_detaches_without_telling_any_pane_its_process_ended() {
         let manager = PtyManager::default();
         let (channel, messages) = recorded();
-        {
-            let mut guard = manager.streams.lock();
-            guard.begin_attach(3).expect("begin");
-            guard.finish_attach(3, channel).expect("attach");
-        }
+        manager.streams.add(3, channel, 1);
         manager.detach_all();
         assert_eq!(manager.streams.subscriber_count(), 0);
         assert_eq!(*messages.lock().expect("count"), 0);

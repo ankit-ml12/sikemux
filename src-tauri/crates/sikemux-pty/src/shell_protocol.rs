@@ -378,7 +378,8 @@ mod tests {
         parse_shell_cwd, ShellBoundary, ShellPhase, ShellProtocolParser, MAX_SHELL_OSC_BYTES,
         MAX_SHELL_PATH_BYTES, SHELL_EVENT_MIN_INTERVAL,
     };
-    use crate::screen::{semantic_parser_with_shell, PARSER_SCROLLBACK};
+    use crate::screen::Screen;
+    use sikemux_wire::grid::TerminalColors;
     use std::path::PathBuf;
 
     #[cfg(target_os = "macos")]
@@ -510,7 +511,7 @@ mod tests {
 
     #[test]
     fn shell_protocol_side_parse_preserves_visible_terminal_output() {
-        let mut parser = semantic_parser_with_shell(24, 80, PARSER_SCROLLBACK, true);
+        let mut screen = Screen::new(24, 80, true);
         let cwd = if cfg!(windows) {
             PathBuf::from(r"C:\tmp\project")
         } else {
@@ -522,19 +523,17 @@ mod tests {
         let output = format!("before\x1b]7;{cwd_uri}\x07after");
         let split = output.len() / 2;
         for chunk in [&output.as_bytes()[..split], &output.as_bytes()[split..]] {
-            let batch = parser
-                .callbacks_mut()
+            let batch = screen
                 .shell
                 .as_mut()
                 .expect("enabled shell parser")
                 .process(chunk);
-            parser.process(chunk);
+            screen.process(chunk, &TerminalColors::default());
             assert_eq!(batch.dropped, 0);
         }
-        assert_eq!(parser.screen().contents().trim(), "beforeafter");
+        assert_eq!(screen.terminal.contents().trim(), "beforeafter");
         assert_eq!(
-            parser
-                .callbacks()
+            screen
                 .shell
                 .as_ref()
                 .expect("enabled shell parser")

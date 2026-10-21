@@ -58,7 +58,9 @@ pub(crate) fn needs(request: &Request) -> Needs {
         Request::List
         | Request::Attach { .. }
         | Request::Detach { .. }
-        | Request::Subscribe { .. }
+        | Request::TerminalLines { .. }
+        | Request::TerminalText { .. }
+        | Request::TerminalFind { .. }
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
@@ -78,6 +80,8 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::Resize { .. }
         | Request::Kill { .. }
         | Request::ResetModes { .. }
+        | Request::TerminalInput { .. }
+        | Request::TerminalClear { .. }
         | Request::ShellAtPrompt { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
@@ -112,6 +116,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::WatchView
         | Request::FocusAgent { .. }
         | Request::PublishPalette { .. }
+        | Request::SetTerminalColors { .. }
         | Request::PublishBackdrop { .. } => Needs::Local,
     }
 }
@@ -148,7 +153,9 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         Request::List
         | Request::Attach { .. }
         | Request::Detach { .. }
-        | Request::Subscribe { .. }
+        | Request::TerminalLines { .. }
+        | Request::TerminalText { .. }
+        | Request::TerminalFind { .. }
         | Request::TaskOutput { .. }
         | Request::ShellAtPrompt { .. }
         | Request::AcpList
@@ -173,6 +180,8 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::Resize { .. }
         | Request::Kill { .. }
         | Request::ResetModes { .. }
+        | Request::TerminalInput { .. }
+        | Request::TerminalClear { .. }
         | Request::AcpStart { .. }
         | Request::AcpPrompt { .. }
         | Request::AcpEdit { .. }
@@ -199,6 +208,7 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::AllowDevices { .. }
         | Request::PublishOnScreen { .. }
         | Request::PublishPalette { .. }
+        | Request::SetTerminalColors { .. }
         | Request::PublishBackdrop { .. } => true,
     }
 }

@@ -24,6 +24,7 @@ pub mod harness;
 pub mod join;
 #[cfg(unix)]
 pub mod launch;
+pub use sikemux_wire::grid;
 pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;

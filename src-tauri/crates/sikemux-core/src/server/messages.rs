@@ -1673,7 +1673,7 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Qu
         .chars()
         .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
         .collect();
-    let pastes = terminal.parser.locked().screen().bracketed_paste();
+    let pastes = terminal.screen.locked().terminal.bracketed_paste();
     let typed = if pastes {
         format!("\x1b[200~{plain}\x1b[201~")
     } else {

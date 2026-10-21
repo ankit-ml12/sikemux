@@ -1,4 +1,5 @@
 import type { PtyDirectCommand } from "../state/types";
+import type { TerminalInput } from "./grid";
 import { errorCategory, errorText } from "../lib/format";
 import { isRecord } from "../lib/guards";
 import { swallow } from "../state/toast";
@@ -24,20 +25,22 @@ export interface PtySpawnRequest<Context = unknown> {
 
 export interface PtyAttachResult {
     readonly subId: number;
-    readonly snapshot: Uint8Array;
-    readonly alternateScreen: boolean;
+    /** The stream's first frame, holding the whole screen. */
+    readonly frame: Uint8Array;
     readonly shell?: PtyShellMetadataSnapshot | null;
 }
 
 export interface PtyApi<ChannelTransport, Context = unknown> {
     spawn(request: PtySpawnRequest<Context>): Promise<number>;
     write(id: number, data: string): Promise<void>;
+    /** A key, text, paste, mouse or focus change, which the core encodes for the program. */
+    input(id: number, input: TerminalInput): Promise<void>;
     resize(id: number, cols: number, rows: number): Promise<void>;
     kill(id: number): Promise<void>;
     attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
     detach(id: number, subId: number): Promise<void>;
-    /** Reports bytes this subscription has finished writing to its renderer. */
-    ack(id: number, subId: number, bytes: number): Promise<void>;
+    /** Reports the last frame this subscription has drawn. */
+    ack(id: number, subId: number, frame: number): Promise<void>;
     /** Whether a process this page did not start may be taken over instead of spawning one. */
     resume?(id: number): Promise<boolean>;
 }
@@ -64,6 +67,7 @@ export type PtyOperation =
     | "initial-input"
     | "initial-input-callback"
     | "write"
+    | "input"
     | "resize"
     | "attach"
     | "ack"
@@ -92,19 +96,18 @@ export interface PtyControllerErrorEvent {
 }
 
 export interface PtyAttachment {
-    /** Atomic native parser snapshot. Apply this before calling activate(). */
-    readonly snapshot: Uint8Array;
-    readonly alternateScreen: boolean;
+    /** The stream's first frame, with the whole screen. Apply this before calling activate(). */
+    readonly frame: Uint8Array;
     /** Untrusted display hint parsed from opt-in shell integration. */
     readonly shell: PtyShellMetadataSnapshot | null;
-    /** Release buffered post-snapshot deltas to the renderer in exact order. */
+    /** Release the frames that came after the first to the renderer in exact order. */
     activate(): void;
     /**
-     * Report bytes the renderer has finished writing. The native reader pauses
-     * once too many delivered bytes are outstanding, which pushes back on the
-     * child process instead of growing an unbounded queue.
+     * Report the last frame drawn. The core sends a stream only a couple of
+     * frames ahead of what was drawn; a renderer that falls behind gets the
+     * latest screen when it catches up, never a backlog.
      */
-    ack(bytes: number): void;
+    ack(frame: number): void;
     /** Drop only this renderer subscription; the headless PTY keeps running. */
     detach(): Promise<void>;
     toJSON(): never;
@@ -278,10 +281,9 @@ export function parsePtyShellMetadataSnapshot(value: unknown): PtyShellMetadataS
 
 function validateAttachResult(result: PtyAttachResult, maxSnapshotBytes: number): PtyShellMetadataSnapshot | null {
     if (!isSubscriptionId(result.subId)) throw new TypeError("PTY attach returned an invalid subscription ID");
-    if (!(result.snapshot instanceof Uint8Array) || result.snapshot.length > maxSnapshotBytes) {
-        throw new TypeError("PTY attach returned an invalid or oversized snapshot");
+    if (!(result.frame instanceof Uint8Array) || result.frame.length > maxSnapshotBytes) {
+        throw new TypeError("PTY attach returned an invalid or oversized frame");
     }
-    if (typeof result.alternateScreen !== "boolean") throw new TypeError("PTY attach returned an invalid screen mode");
     if (result.shell === undefined || result.shell === null) return null;
     const shell = parsePtyShellMetadataSnapshot(result.shell);
     if (!shell) throw new TypeError("PTY attach returned invalid shell metadata");
@@ -577,6 +579,25 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         }
     }
 
+    input(input: TerminalInput): Promise<void> {
+        return containRejection(this.performInput(input));
+    }
+
+    private async performInput(input: TerminalInput): Promise<void> {
+        const id = await this.readyPtyId();
+        this.assertRunning(id);
+        try {
+            await this.api.input(id, input);
+        } catch (error) {
+            if (!this.disposeRequested && this.status === "running" && this.ptyId === id) {
+                this.failureOperation = "input";
+                this.reportError("input", error);
+                this.emitState();
+            }
+            throw error;
+        }
+    }
+
     resize(cols: number, rows: number): Promise<void> {
         try {
             requirePositiveInteger("cols", cols, 65_535);
@@ -687,11 +708,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         }
 
         const attachment: PtyAttachment = Object.freeze({
-            snapshot: attached.snapshot,
-            alternateScreen: attached.alternateScreen,
+            frame: attached.frame,
             shell,
             activate: () => this.activateAttachment(state),
-            ack: (bytes: number) => this.ackAttachment(state, bytes),
+            ack: (frame: number) => this.ackAttachment(state, frame),
             detach: () => this.detachAttachment(state),
             toJSON: (): never => {
                 throw new TypeError("PTY attachments contain runtime output and cannot be serialized");
@@ -923,10 +943,10 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.drainOutput(state);
     }
 
-    private ackAttachment(state: AttachmentState<ChannelTransport>, bytes: number): void {
+    private ackAttachment(state: AttachmentState<ChannelTransport>, frame: number): void {
         const subId = state.subId;
-        if (state.detached || subId === null || !Number.isSafeInteger(bytes) || bytes <= 0) return;
-        void callAsPromise(() => this.api.ack(state.ptyId, subId, bytes)).catch((error: unknown) => {
+        if (state.detached || subId === null || !Number.isSafeInteger(frame) || frame <= 0) return;
+        void callAsPromise(() => this.api.ack(state.ptyId, subId, frame)).catch((error: unknown) => {
             this.reportError("ack", error);
         });
     }

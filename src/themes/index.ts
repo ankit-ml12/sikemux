@@ -972,5 +972,5 @@ export const THEME_GROUPS: ThemeGroup[] = [
     { key: "chrome", label: "interface", hint: "Window chrome, rails, accents.", fields: toFields(CHROME_KEYS) },
     { key: "editor", label: "editor", hint: "Code surface, caret, gutters.", fields: toFields(EDITOR_KEYS) },
     { key: "highlight", label: "syntax", hint: "Token colours in the code editor.", fields: toFields(HIGHLIGHT_KEYS) },
-    { key: "terminal", label: "terminal", hint: "xterm palette — 16 ANSI colours plus cursor & selection.", fields: toFields(TERMINAL_KEYS) },
+    { key: "terminal", label: "terminal", hint: "terminal palette — 16 ANSI colours plus cursor & selection.", fields: toFields(TERMINAL_KEYS) },
 ];

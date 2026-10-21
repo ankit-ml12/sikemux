@@ -142,7 +142,7 @@ export function AgentPalette() {
      *
      * This used to ride the picker's own `onKeyDown`, which only fires while
      * focus is inside the picker. Anything that took focus first — a terminal
-     * pane being the usual one — left the palette unclosable: xterm saw the
+     * pane being the usual one — left the palette unclosable: the terminal saw the
      * key, wrote an escape byte to the PTY, and the dialog never heard it. Same
      * window-capture pattern DialogHost uses, for the same reason.
      */

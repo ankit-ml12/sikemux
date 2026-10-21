@@ -1,15 +1,21 @@
 import { readableColor } from "../lib/themeContrast";
 import type { EditorView } from "@codemirror/view";
-import type { ITheme, Terminal } from "@xterm/xterm";
+import type { TerminalTheme } from "../terminal/canvas";
+import { invokeCommand } from "../api/invoke";
 import { DEFAULT_THEME_ID, TERMINAL_KEYS, themeById, type Theme } from ".";
 
 let current: Theme = themeById(DEFAULT_THEME_ID);
 let currentOpacity = 1;
 
 const views = new Set<EditorView>();
-const terms = new Map<Terminal, () => boolean>();
-const termThemes = new WeakMap<Terminal, ITheme>();
-let terminalTheme: ITheme | null = null;
+/** A terminal that draws with the theme's colours. */
+export interface ThemedTerminal {
+    setTheme(theme: TerminalTheme): void;
+}
+
+const terms = new Map<ThemedTerminal, () => boolean>();
+const termThemes = new WeakMap<ThemedTerminal, TerminalTheme>();
+let terminalTheme: TerminalTheme | null = null;
 
 /** What an editor view needs from a theme change. Supplied by `editor/themeBridge`
  *  the first time a view registers, so nothing here pulls CodeMirror into the boot bundle. */
@@ -50,40 +56,57 @@ function applyTransparentState() {
     document.documentElement.classList.toggle("is-transparent", currentOpacity < 1);
 }
 
-function terminalThemeFor(theme: Theme): ITheme {
+const ANSI_KEYS = TERMINAL_KEYS.slice(TERMINAL_KEYS.indexOf("black"));
+
+function terminalThemeFor(theme: Theme): TerminalTheme {
+    const colors = theme.terminal;
     return {
-        ...theme.terminal,
-        // Always transparent so the pane's surface shows through the canvas.
-        // xterm paints this itself, below CSS, so any opaque value here put a
-        // darker rectangle in the middle of the chrome that no stylesheet
-        // could reach.
-        background: "rgba(0, 0, 0, 0)",
-        // xterm 6 renders its own scrollbar and injects slider styles after the
-        // app stylesheet. Keep it unobtrusive until the terminal is hovered.
-        scrollbarSliderBackground: "rgba(0, 0, 0, 0)",
-        scrollbarSliderHoverBackground: theme.chrome.inkMuted,
-        scrollbarSliderActiveBackground: theme.chrome.inkDim,
+        foreground: colors.foreground,
+        background: colors.background,
+        cursor: colors.cursor,
+        cursorAccent: colors.cursorAccent,
+        selectionBackground: colors.selectionBackground,
+        ansi: ANSI_KEYS.map((key) => colors[key]),
     };
 }
 
-/* The one sanitized terminal palette. Construction and later theme changes
- * must both go through this; a Terminal built straight from theme.terminal
- * carries the opaque background this function exists to strip. */
-export function currentTerminalTheme(): ITheme {
-    return (terminalTheme ??= terminalThemeFor(current));
+function rgb(color: string): [number, number, number] | null {
+    const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color.trim());
+    return match ? [parseInt(match[1], 16), parseInt(match[2], 16), parseInt(match[3], 16)] : null;
+}
+
+/** The core answers programs that ask for the terminal's colours, such as one choosing light or dark output. */
+function tellCoreTerminalColors(theme: TerminalTheme): void {
+    const foreground = rgb(theme.foreground);
+    const background = rgb(theme.background);
+    const ansi = theme.ansi.map(rgb);
+    if (!foreground || !background || ansi.length !== 16 || ansi.some((color) => !color)) return;
+    void invokeCommand("pty_set_colors", {
+        colors: { foreground, background, cursor: rgb(theme.cursor), ansi },
+    }).catch(() => {});
+}
+
+/* The one terminal palette, which construction and later theme changes both use. */
+export function currentTerminalTheme(): TerminalTheme {
+    if (!terminalTheme) {
+        terminalTheme = terminalThemeFor(current);
+        tellCoreTerminalColors(terminalTheme);
+    }
+    return terminalTheme;
 }
 
 /** Gives a terminal the current palette if it does not have it yet. */
-export function refreshTerminalTheme(term: Terminal): void {
+export function refreshTerminalTheme(term: ThemedTerminal): void {
     const theme = currentTerminalTheme();
     if (termThemes.get(term) === theme) return;
     termThemes.set(term, theme);
-    term.options.theme = theme;
+    term.setTheme(theme);
 }
 
-// Every repaint redraws the whole terminal, so one out of sight waits until it is shown again.
+// A terminal out of sight takes the new palette once it is shown again.
 function applyTerminalThemes() {
     terminalTheme = terminalThemeFor(current);
+    tellCoreTerminalColors(terminalTheme);
     terms.forEach((visible, term) => {
         if (visible()) refreshTerminalTheme(term);
     });
@@ -109,7 +132,7 @@ export function refreshViewTheme(view: EditorView): void {
     editorBridge?.push(view);
 }
 
-export function registerTerminal(term: Terminal, visible: () => boolean): () => void {
+export function registerTerminal(term: ThemedTerminal, visible: () => boolean): () => void {
     refreshTerminalTheme(term);
     terms.set(term, visible);
     return () => terms.delete(term);

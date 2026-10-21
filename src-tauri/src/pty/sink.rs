@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sikemux_core::client::EventSink;
-use sikemux_core::protocol::{CallId, ChatEventKind, Event, SessionId, WindowCall};
+use sikemux_core::protocol::{
+    CallId, ChatEventKind, Event, Request, SessionId, StreamId, WindowCall,
+};
 use sikemux_pty::shell_protocol::{SshLink, PTY_SHELL_METADATA_EVENT};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -71,31 +73,38 @@ impl AppSink {
     }
 }
 
-pub(crate) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
-    let delivery = streams.output(id, bytes);
-    if delivery.is_empty() {
+/// Hands a frame to its pane. A pane whose webview is gone has its stream
+/// ended, which the core is told on `client`'s connection.
+pub(crate) fn deliver(
+    streams: &StreamTable,
+    client: Option<Arc<sikemux_core::client::CoreClient>>,
+    stream: StreamId,
+    frame: &[u8],
+) {
+    let Some(dead) = streams.deliver(stream, frame) else {
         return;
-    }
-    let dead = delivery.send(bytes);
-    if !dead.is_empty() {
-        global_observability().increment_counter("pty.channel_send_errors", dead.len() as u64);
-        streams.drop_dead(id, &dead);
+    };
+    global_observability().increment_counter("pty.channel_send_errors", 1);
+    if let Some(client) = client {
+        let _ = client.submit(Request::Detach { stream: dead }, |_| ());
     }
 }
 
 /// An empty chunk is the frontend's sign that the process is gone.
 pub(crate) fn report_exited(streams: &StreamTable, id: SessionId) {
-    streams.exited(id).send(&[]);
+    for channel in streams.channels(id) {
+        let _ = channel.send(tauri::ipc::Response::new(Vec::new()));
+    }
 }
 
 pub(crate) fn report_all_exited(streams: &StreamTable) {
-    for delivery in streams.take_all() {
-        delivery.send(&[]);
+    for channel in streams.take_all() {
+        let _ = channel.send(tauri::ipc::Response::new(Vec::new()));
     }
 }
 
 impl EventSink for AppSink {
-    fn output(&self, id: SessionId, bytes: &[u8]) {
+    fn grid(&self, stream: StreamId, frame: &[u8]) {
         let observer = global_observability();
         // Every observability call allocates a name and takes one global lock,
         // and this runs for every frame of every terminal. Instrument a
@@ -103,14 +112,18 @@ impl EventSink for AppSink {
         let sampled = OUTPUT_FRAMES
             .fetch_add(1, Ordering::Relaxed)
             .is_multiple_of(OBSERVED_BROADCASTS);
-        OUTPUT_BYTES.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+        OUTPUT_BYTES.fetch_add(frame.len() as u64, Ordering::Relaxed);
         let operation = sampled.then(|| {
             let mut metadata = Metadata::new();
-            metadata.insert("bytes".to_owned(), ScalarValue::from(bytes.len()));
+            metadata.insert("bytes".to_owned(), ScalarValue::from(frame.len()));
             observer.slow_operation("pty.broadcast", SLOW_BROADCAST, None, metadata)
         });
         let started = Instant::now();
-        deliver(&self.streams, id, bytes);
+        let client = self
+            .app
+            .try_state::<PtyManager>()
+            .and_then(|manager| manager.current_client());
+        deliver(&self.streams, client, stream, frame);
         match operation {
             Some(operation) => {
                 operation.finish(crate::observability::SpanOutcome::Success);
@@ -247,11 +260,7 @@ mod tests {
     fn an_exit_reaches_every_pane_as_an_empty_chunk() {
         let streams = StreamTable::default();
         let (pane, chunks) = recording();
-        {
-            let mut guard = streams.lock();
-            guard.begin_attach(4).expect("begin");
-            guard.finish_attach(4, pane).expect("attach");
-        }
+        streams.add(4, pane, 1);
         report_exited(&streams, 4);
         assert_eq!(chunks.lock().expect("chunks").as_slice(), ["raw 0"]);
     }
@@ -260,11 +269,7 @@ mod tests {
     fn losing_the_core_ends_every_pane_and_forgets_it() {
         let streams = StreamTable::default();
         let (pane, chunks) = recording();
-        {
-            let mut guard = streams.lock();
-            guard.begin_attach(11).expect("begin");
-            guard.finish_attach(11, pane).expect("attach");
-        }
+        streams.add(11, pane, 2);
         report_all_exited(&streams);
         assert_eq!(chunks.lock().expect("chunks").as_slice(), ["raw 0"]);
         assert!(streams.take_all().is_empty());
