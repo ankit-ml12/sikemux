@@ -105,7 +105,7 @@ fn add_actions(id: &'static str, keys: &'static str, cx: &App) -> impl IntoEleme
 
 fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let active = bench.project.as_deref() == Some(project.id.as_str());
+    let active = bench.project().is_some_and(|front| front.id == project.id);
     let agents = bench.agents_of(&project.id);
     let id = project.id.clone();
     div()
@@ -118,10 +118,7 @@ fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workb
                 .bold(active)
                 .chosen(active)
                 .padding_right(4.)
-                .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench.select_project(Some(id.clone()));
-                    cx.notify();
-                }))
+                .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
                 .child(faces(&agents)),
         )
         .when(active, |tree| tree.pb(px(4.)).child(surfaces(cx)))

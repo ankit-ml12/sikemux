@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use sikemux_client::client::{ClientEvent, CoreClient};
 use sikemux_wire::protocol::{DeviceView, Event};
 use tokio::sync::mpsc;
@@ -11,13 +12,32 @@ pub enum Update {
     /// The core's release, which the app ships with.
     Connected(String),
     View(Box<DeviceView>),
-    Activity(Value),
+    /// A watched call's latest answer, under the key it was watched as.
+    Read(&'static str, Value),
     Lost(String),
+}
+
+/// One of the core's `Watch` calls, read again whenever the core says one of
+/// its topics changed.
+#[derive(Clone)]
+pub struct Watch {
+    pub method: &'static str,
+    pub params: Value,
+    pub topics: &'static [&'static str],
+    /// Counts the watches made under one key, so an answer to one it replaced is dropped.
+    generation: u64,
+}
+
+impl Watch {
+    pub fn new(method: &'static str, params: Value, topics: &'static [&'static str]) -> Self {
+        Self { method, params, topics, generation: 0 }
+    }
 }
 
 /// What the client asks of the core beyond the view it is sent.
 pub enum Ask {
-    Activity { project: Option<String> },
+    /// Keeps `key` answered by `watch`, in place of whatever it watched before.
+    Watch(&'static str, Watch),
     /// One of the core's methods, for something the person did. What it changes
     /// comes back with the next view.
     Call { method: &'static str, params: Value },
@@ -52,12 +72,9 @@ pub fn start(socket: PathBuf) -> Link {
     Link { updates, asks }
 }
 
-async fn run(
-    socket: PathBuf,
-    updates: mpsc::UnboundedSender<Update>,
-    mut asks: mpsc::UnboundedReceiver<Ask>,
-) {
-    let mut project = None;
+async fn run(socket: PathBuf, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
+    let mut watches: HashMap<&'static str, Watch> = HashMap::new();
+    let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
     loop {
         match CoreClient::connect(&socket).await {
             Ok((client, mut events)) => {
@@ -66,23 +83,29 @@ async fn run(
                 if let Err(error) = client.watch_view().await {
                     let _ = updates.send(Update::Lost(error.to_string()));
                 }
-                read_activity(&client, &project, &updates);
+                for (key, watch) in &watches {
+                    read(&client, key, watch, &current, &updates);
+                }
                 loop {
                     tokio::select! {
                         event = events.recv() => match event {
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
                                 let _ = updates.send(Update::View(Box::new(view)));
                             }
-                            Some(ClientEvent::Event(Event::Changed { topic, .. })) if topic == "activity" => {
-                                read_activity(&client, &project, &updates);
+                            Some(ClientEvent::Event(Event::Changed { topic, .. })) => {
+                                for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
+                                    read(&client, key, watch, &current, &updates);
+                                }
                             }
                             Some(_) => {}
                             None => break,
                         },
                         ask = asks.recv() => match ask {
-                            Some(Ask::Activity { project: asked }) => {
-                                project = asked;
-                                read_activity(&client, &project, &updates);
+                            Some(Ask::Watch(key, mut watch)) => {
+                                watch.generation = watches.get(key).map_or(0, |old| old.generation + 1);
+                                current.lock().expect("watch generations").insert(key, watch.generation);
+                                read(&client, key, &watch, &current, &updates);
+                                watches.insert(key, watch);
                             }
                             Some(Ask::Call { method, params }) => {
                                 let client = client.clone();
@@ -106,17 +129,24 @@ async fn run(
     }
 }
 
-fn read_activity(client: &Arc<CoreClient>, project: &Option<String>, updates: &mpsc::UnboundedSender<Update>) {
-    let client = client.clone();
-    let updates = updates.clone();
-    let params = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": project });
+fn read(
+    client: &Arc<CoreClient>,
+    key: &'static str,
+    watch: &Watch,
+    current: &Arc<Mutex<HashMap<&'static str, u64>>>,
+    updates: &mpsc::UnboundedSender<Update>,
+) {
+    let (client, updates, watch, current) = (client.clone(), updates.clone(), watch.clone(), current.clone());
     tokio::spawn(async move {
-        if let Ok(summary) = client.call("activitySummary", params).await {
-            let _ = updates.send(Update::Activity(summary));
+        let Ok(value) = client.call(watch.method, watch.params).await else {
+            return;
+        };
+        if current.lock().expect("watch generations").get(key) == Some(&watch.generation) {
+            let _ = updates.send(Update::Read(key, value));
         }
     });
 }
 
-fn utc_offset_minutes() -> i32 {
+pub fn utc_offset_minutes() -> i32 {
     chrono::Local::now().offset().local_minus_utc() / 60
 }

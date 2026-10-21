@@ -29,11 +29,7 @@ pub const METRICS: [(&str, &str); 5] = [
 pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let project = bench.project();
-    let agent = bench
-        .agent
-        .as_deref()
-        .zip(project)
-        .and_then(|(agent, project)| bench.agents_of(&project.id).into_iter().find(|row| row.id == agent));
+    let agent = bench.agent();
     let provider = agent.as_ref().map_or("claude", |agent| agent.provider.as_str()).to_owned();
     let header = agent.zip(project).map(|(agent, project)| pane_header(bench, &agent, &project.id));
     div().flex_1().min_w_0().child(
@@ -60,7 +56,7 @@ pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
                                         .text_color(t.text_primary),
                                 ),
                         )
-                        .children(bench.activity.as_ref().map(|summary| {
+                        .children(bench.read("activity").map(|summary| {
                             div()
                                 .flex()
                                 .flex_col()
@@ -76,7 +72,8 @@ pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
 
 fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoElement {
     let asks = bench.asks.clone();
-    let close = json!({ "project": project, "tab": format!("agent:{}", agent.id) });
+    let tab = bench.tab().map(|tab| tab.id.clone()).unwrap_or_default();
+    let close = json!({ "project": project, "tab": tab });
     let menu = Popover::new("agent-menu")
         .anchor(Anchor::TopLeft)
         .offset(px(4.))

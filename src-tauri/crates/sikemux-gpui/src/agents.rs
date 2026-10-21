@@ -32,7 +32,7 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
         .w(px(TAB_RAIL_WIDTH))
         .min_w(px(240.))
         .flex_none()
-        .child(header(&agents, bench.filter.is_some(), cx))
+        .child(header(bench, cx))
         .children(bench.filter.as_ref().map(|filter| {
             div().flex_none().mt(px(10.)).mx(px(12.)).mb(px(2.)).child(Field::new(filter).icon(Icon::Search))
         }))
@@ -70,9 +70,13 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
         .child(pages(cx))
 }
 
-fn header(agents: &[AgentRow], searching: bool, cx: &mut Context<Workbench>) -> impl IntoElement {
+fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let provider = agents.first().map(|agent| agent.provider.as_str()).unwrap_or("claude");
+    let launcher = bench.project().and_then(|project| {
+        let id = project.launcher.as_deref()?;
+        bench.view.as_ref()?.workspace.launchers.iter().find(|launcher| launcher.id == id)
+    });
+    let (provider, label) = launcher.map_or(("", "Agents"), |launcher| (launcher.provider.as_str(), launcher.label.as_str()));
     div()
         .flex_none()
         .pt(px(6.))
@@ -94,7 +98,7 @@ fn header(agents: &[AgentRow], searching: bool, cx: &mut Context<Workbench>) -> 
                         .items_center()
                         .gap(px(7.))
                         .child(ui::mark(provider, 16.))
-                        .child(ui::text(label(provider), 13., FontWeight::SEMIBOLD).text_color(t.text_primary)),
+                        .child(ui::text(label.to_owned(), 13., FontWeight::SEMIBOLD).text_color(t.text_primary)),
                 )
                 .child(
                     div()
@@ -102,7 +106,7 @@ fn header(agents: &[AgentRow], searching: bool, cx: &mut Context<Workbench>) -> 
                         .gap(px(2.))
                         .child(
                             IconButton::new("search", Icon::Search, "Filter recent chats")
-                                .pressed(searching)
+                                .pressed(bench.filter.is_some())
                                 .on_click(cx.listener(|bench, _, window, cx| {
                                     bench.toggle_filter(window, cx);
                                     cx.notify();
@@ -112,14 +116,6 @@ fn header(agents: &[AgentRow], searching: bool, cx: &mut Context<Workbench>) -> 
                         .child(IconButton::new("hide-tab-rail", Icon::PanelRight, "Hide the agent rail")),
                 ),
         )
-}
-
-fn label(provider: &str) -> &'static str {
-    match provider {
-        "claude" => "Claude",
-        "codex" => "Codex",
-        _ => "Agents",
-    }
 }
 
 fn new_row(id: &'static str, glyph: Icon, label: &'static str, keys: &'static str, cx: &App) -> impl IntoElement {
@@ -137,10 +133,11 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
         .then(|| bench.projects().iter().find(|project| project.id == agent.project))
         .flatten()
         .map(|project| project.name.clone());
-    let id = agent.id.clone();
+    let chosen = bench.agent().is_some_and(|front| front.id == agent.id);
+    let (id, home) = (agent.id.clone(), agent.project.clone());
     Row::new(SharedString::from(format!("agent-{}", agent.id)), agent.title.clone())
         .mark(22., ui::mark(&agent.provider, 20.))
-        .chosen(bench.agent.as_deref() == Some(agent.id.as_str()))
+        .chosen(chosen)
         .when_some(project, |row, project| {
             row.subtitle(
                 div()
@@ -153,9 +150,10 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
             )
         })
         .status(ui::status_mark(agent.status, cx))
-        .on_click(cx.listener(move |bench, _, _, cx| {
-            bench.agent = Some(id.clone());
-            cx.notify();
+        .on_click(cx.listener(move |bench, _, _, _| {
+            if let Some(agent) = bench.agents_of(&home).into_iter().find(|agent| agent.id == id) {
+                bench.activate_agent(&agent);
+            }
         }))
         .children(agent.name.clone().map(|name| ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.))))
         .children(counts(agent, cx))

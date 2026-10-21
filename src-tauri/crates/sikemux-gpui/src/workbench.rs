@@ -1,23 +1,24 @@
+use std::collections::HashMap;
+
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::{
-    div, px, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    Styled, Subscription, Window,
-};
-use serde_json::Value;
-use sikemux_wire::protocol::{AgentStatus, DeviceView, ProjectInfo, RecentInfo};
+use gpui_kit::{div, px, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
+use serde_json::{json, Value};
+use sikemux_wire::protocol::{AgentStatus, DeviceView, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
 
-use crate::core::{Ask, Link, Update};
+use crate::core::{utc_offset_minutes, Ask, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs};
 
+/// The one store: what the core last said, and what only this window decides.
 pub struct Workbench {
     pub version: String,
     pub view: Option<DeviceView>,
-    pub activity: Option<Value>,
+    /// The latest answer to each watched call, by key.
+    reads: HashMap<&'static str, Value>,
     pub lost: Option<String>,
-    pub project: Option<String>,
-    pub agent: Option<String>,
+    /// The project the per-project watches were last made for, by path.
+    watched_project: Option<String>,
     pub all_projects: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
@@ -50,13 +51,14 @@ impl Workbench {
             }
         })
         .detach();
+        let _ = asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
+        let _ = asks.send(Ask::Watch("ssh", Watch::new("sshHosts", json!({}), &["ssh"])));
         Self {
             version: String::new(),
             view: None,
-            activity: None,
+            reads: HashMap::new(),
             lost: None,
-            project: None,
-            agent: None,
+            watched_project: None,
             all_projects: false,
             metric: 0,
             filter: None,
@@ -64,34 +66,6 @@ impl Workbench {
             asks,
             _filtering: None,
         }
-    }
-
-    pub fn toggle_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.filter.take().is_some() {
-            self._filtering = None;
-            self.filter_text.clear();
-            return;
-        }
-        let filter = cx.new(|cx| InputState::new(window, cx).placeholder("filter recent chats…"));
-        self._filtering = Some(cx.subscribe(&filter, |bench, filter, event: &InputEvent, cx| {
-            if let InputEvent::Change = event {
-                bench.filter_text = filter.read(cx).value().to_lowercase();
-                cx.notify();
-            }
-        }));
-        filter.update(cx, |state, cx| state.focus(window, cx));
-        self.filter = Some(filter);
-    }
-
-    /// The rows the agent rail lists: this project's, or every project's.
-    pub fn listed_agents(&self) -> Vec<AgentRow> {
-        let mut rows = if self.all_projects {
-            self.projects().iter().flat_map(|project| self.agents_of(&project.id)).collect()
-        } else {
-            self.project.as_deref().map(|project| self.agents_of(project)).unwrap_or_default()
-        };
-        rows.retain(|row| row.title.to_lowercase().contains(&self.filter_text));
-        rows
     }
 
     fn apply(&mut self, update: Update, cx: &mut Context<Self>) {
@@ -102,39 +76,101 @@ impl Workbench {
             }
             Update::View(view) => {
                 self.view = Some(*view);
-                if self.project().is_none() {
-                    let first = self.projects().first().map(|project| project.id.clone());
-                    self.select_project(first);
-                }
+                self.watch_project();
             }
-            Update::Activity(summary) => self.activity = Some(summary),
+            Update::Read(key, value) => {
+                self.reads.insert(key, value);
+            }
             Update::Lost(reason) => self.lost = Some(reason),
         }
         cx.notify();
     }
 
+    /// Points the watches that follow the project in front at it.
+    fn watch_project(&mut self) {
+        let path = self.project().map(|project| project.path.to_string_lossy().into_owned());
+        if path == self.watched_project {
+            return;
+        }
+        let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
+        let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
+        let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
+        self.watched_project = path;
+    }
+
+    pub fn read(&self, key: &str) -> Option<&Value> {
+        self.reads.get(key)
+    }
+
+    fn call(&self, method: &'static str, params: Value) {
+        let _ = self.asks.send(Ask::Call { method, params });
+    }
+
     pub fn projects(&self) -> &[ProjectInfo] {
+        self.view.as_ref().map_or(&[], |view| view.workspace.projects.as_slice())
+    }
+
+    /// The project in front, as the core's layout says.
+    pub fn project(&self) -> Option<&ProjectInfo> {
+        let active = self.view.as_ref()?.layout.active_project.as_deref();
+        let projects = self.projects();
+        active.and_then(|id| projects.iter().find(|project| project.id == id)).or(projects.first())
+    }
+
+    pub fn activate_project(&self, id: &str) {
+        self.call("activateProject", json!({ "project": id }));
+    }
+
+    pub fn tabs(&self, project: &str) -> &[Tab] {
         self.view
             .as_ref()
-            .map_or(&[], |view| view.workspace.projects.as_slice())
+            .and_then(|view| view.layout.projects.get(project))
+            .map_or(&[], |layout| layout.tabs.as_slice())
     }
 
-    pub fn project(&self) -> Option<&ProjectInfo> {
-        let id = self.project.as_deref()?;
-        self.projects().iter().find(|project| project.id == id)
+    /// The tab in front in the project in front.
+    pub fn tab(&self) -> Option<&Tab> {
+        let project = self.project()?;
+        let layout = self.view.as_ref()?.layout.projects.get(&project.id)?;
+        let tabs = layout.tabs.as_slice();
+        layout.active.as_deref().and_then(|id| tabs.iter().find(|tab| tab.id == id)).or(tabs.first())
     }
 
-    pub fn select_project(&mut self, id: Option<String>) {
-        self.project = id;
-        self.agent = self
-            .project
-            .as_deref()
-            .and_then(|project| self.agents_of(project).into_iter().next())
-            .map(|agent| agent.id);
-        let path = self
-            .project()
-            .map(|project| project.path.to_string_lossy().into_owned());
-        let _ = self.asks.send(Ask::Activity { project: path });
+    pub fn activate_tab(&self, project: &str, tab: &str) {
+        self.call("activateTab", json!({ "project": project, "tab": tab }));
+    }
+
+    pub fn close_tab(&self, project: &str, tab: &str) {
+        self.call("closeTab", json!({ "project": project, "tab": tab }));
+    }
+
+    /// Brings an agent's tab to the front.
+    pub fn activate_agent(&self, agent: &AgentRow) {
+        if let Some(tab) = self.tabs(&agent.project).iter().find(|tab| shows(tab, PaneKind::Agent) == Some(&agent.id)) {
+            self.activate_project(&agent.project);
+            self.activate_tab(&agent.project, &tab.id);
+        }
+    }
+
+    /// The agent the tab in front shows.
+    pub fn agent(&self) -> Option<AgentRow> {
+        let project = self.project()?;
+        let target = shows(self.tab()?, PaneKind::Agent)?;
+        self.agents_of(&project.id).into_iter().find(|agent| &agent.id == target)
+    }
+
+    pub fn session(&self, id: &str) -> Option<&SessionInfo> {
+        self.view.as_ref()?.sessions.iter().find(|session| session.id.to_string() == id)
+    }
+
+    /// Terminals started outside every project.
+    pub fn loose_terminals(&self) -> Vec<&SessionInfo> {
+        self.view.as_ref().map_or(Vec::new(), |view| {
+            view.sessions
+                .iter()
+                .filter(|session| session.project.is_none() && session.agent_id.is_none() && session.exit.is_none())
+                .collect()
+        })
     }
 
     /// The project's agents in the order the core ranks them for the person.
@@ -155,66 +191,88 @@ impl Workbench {
             .filter(|agent| agent.project == project)
             .map(|agent| {
                 let chat = view.chats.iter().find(|chat| chat.agent_id == agent.id);
-                let session = view
-                    .sessions
-                    .iter()
-                    .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
+                let session = view.sessions.iter().find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
                 AgentRow {
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
                     title: agent.title.clone(),
-                    name: agent
-                        .name
-                        .clone()
-                        .or_else(|| chat.and_then(|chat| chat.name.clone()))
-                        .or_else(|| session.and_then(|session| session.agent_name.clone())),
+                    name: agent.name.clone(),
                     status: chat
                         .map(|chat| chat.status)
                         .or_else(|| session.and_then(|session| session.status))
-                        .unwrap_or(if agent.asleep {
-                            AgentStatus::Asleep
-                        } else {
-                            AgentStatus::Idle
-                        }),
+                        .unwrap_or(if agent.asleep { AgentStatus::Asleep } else { AgentStatus::Idle }),
                     subagents: chat.map_or(0, |chat| chat.subagents),
                     tasks: chat.map_or(0, |chat| chat.tasks),
                     project: agent.project.clone(),
                 }
             })
             .collect();
-        rows.sort_by_key(|row| {
-            ranked
-                .iter()
-                .position(|id| *id == row.id)
-                .unwrap_or(usize::MAX)
-        });
+        rows.sort_by_key(|row| ranked.iter().position(|id| *id == row.id).unwrap_or(usize::MAX));
         rows
     }
 
+    /// The rows the agent rail lists: this project's, or every project's.
+    pub fn listed_agents(&self) -> Vec<AgentRow> {
+        let mut rows = if self.all_projects {
+            self.projects().iter().flat_map(|project| self.agents_of(&project.id)).collect()
+        } else {
+            self.project().map(|project| self.agents_of(&project.id)).unwrap_or_default()
+        };
+        rows.retain(|row| row.title.to_lowercase().contains(&self.filter_text));
+        rows
+    }
+
+    /// The project's saved chats no agent holds, which the agent list already shows.
     pub fn recent_of(&self, project: &str) -> Vec<&RecentInfo> {
         self.view.as_ref().map_or(Vec::new(), |view| {
             view.recent
                 .iter()
-                .filter(|recent| recent.project == project)
+                .filter(|recent| recent.project == project && recent.agent_id.is_none())
                 .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
                 .collect()
         })
+    }
+
+    pub fn toggle_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.filter.take().is_some() {
+            self._filtering = None;
+            self.filter_text.clear();
+            return;
+        }
+        let filter = cx.new(|cx| InputState::new(window, cx).placeholder("filter recent chats…"));
+        self._filtering = Some(cx.subscribe(&filter, |bench, filter, event: &InputEvent, cx| {
+            if let InputEvent::Change = event {
+                bench.filter_text = filter.read(cx).value().to_lowercase();
+                cx.notify();
+            }
+        }));
+        filter.update(cx, |state, cx| state.focus(window, cx));
+        self.filter = Some(filter);
+    }
+}
+
+/// What a tab's pane shows when it is one view of `kind`.
+pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
+    match &tab.pane {
+        Pane::View { kind: shown, target, .. } if *shown == kind => Some(target),
+        _ => None,
     }
 }
 
 impl Render for Workbench {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Tokens::get(cx);
         div()
             .id("shell")
             .size_full()
             .flex()
             .flex_col()
             .pt(px(6.))
-            .bg(Tokens::get(cx).surface_sunken)
+            .bg(t.surface_sunken)
             .font_family(theme::UI)
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
-            .text_color(Tokens::get(cx).text_secondary)
+            .text_color(t.text_secondary)
             .child(tabs::top_bar(self, cx))
             .child(
                 div()
