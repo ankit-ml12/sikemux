@@ -311,22 +311,25 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 "agent_thought_chunk",
                 "Reading the test before changing anything.",
             );
+            let printed: Vec<String> = (1..=14).map(|n| format!("✓ src/app.test.ts > case {n}")).chain(["3 passed".into()]).collect();
             let calls = [
-                ("read-1", "read", "Read src/app.ts", json!([])),
+                ("read-1", "read", "Read src/app.ts", json!([]), Value::Null),
                 (
                     "run-1",
                     "execute",
                     "pnpm test src/app",
                     json!([{ "type": "content", "content": { "type": "text", "text": "3 passed" } }]),
+                    json!({ "output": printed.join("\n") }),
                 ),
                 (
                     "edit-1",
                     "edit",
                     "Edit src/app.ts",
                     json!([{ "type": "diff", "path": "/tmp/src/app.ts", "oldText": "a\nb\n", "newText": "a\nc\nd\n" }]),
+                    Value::Null,
                 ),
             ];
-            for (id, kind, title, content) in calls {
+            for (id, kind, title, content, raw_output) in calls {
                 agent.update(
                     session_id,
                     json!({ "sessionUpdate": "tool_call", "toolCallId": id, "title": title, "kind": kind, "status": "in_progress" }),
@@ -334,7 +337,7 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 std::thread::sleep(Duration::from_millis(argument.unwrap_or(300)));
                 agent.update(
                     session_id,
-                    json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "completed", "content": content }),
+                    json!({ "sessionUpdate": "tool_call_update", "toolCallId": id, "status": "completed", "content": content, "rawOutput": raw_output }),
                 );
             }
             say("Done. The test reads the file once now.");

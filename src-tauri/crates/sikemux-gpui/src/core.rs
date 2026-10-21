@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
@@ -34,6 +34,8 @@ pub enum ChatNews {
     Changes { seq: u64, changes: Value },
     /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
     Page(Value),
+    /// A `ToolDetail` as JSON.
+    Detail { tool: String, detail: Value },
 }
 
 /// What an attached terminal sends, decoded on the core's thread.
@@ -106,6 +108,8 @@ pub enum ChatAsk {
     /// The person's answer to a tool's request for permission; none turns it down.
     Permission { agent: String, request: String, option: Option<String> },
     Mode { agent: String, mode: String },
+    /// What a tool call changed and printed, which its row opens on.
+    Detail { agent: String, tool: String },
 }
 
 pub struct Link {
@@ -283,6 +287,13 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
         ChatAsk::Permission { agent, request, option } => {
             return report("answer", client.acp_permission_reply(agent, request, option).await)
+        }
+        ChatAsk::Detail { agent, tool } => {
+            let asked = json!({ "agentId": agent, "toolCallId": tool });
+            match client.call("chatToolDetail", asked).await {
+                Ok(detail) => (agent, ChatNews::Detail { tool, detail }),
+                Err(error) => return eprintln!("sikemux: the core refused a tool's detail: {error}"),
+            }
         }
         ChatAsk::Mode { agent, mode } => return report("switch the mode of", client.acp_set_permission_mode(agent, mode).await),
     };

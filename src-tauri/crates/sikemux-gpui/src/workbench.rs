@@ -207,12 +207,17 @@ impl Workbench {
                 match news {
                     ChatNews::Attached(attachment) => chat.attached(attachment, cx),
                     ChatNews::Changes { seq, changes } => {
-                        if chat.changed(seq, changes, cx) {
-                            let since = chat.mark.clone();
-                            self.ask_chat(ChatAsk::Attach { agent, since });
+                        let gap = chat.changed(seq, changes, cx);
+                        let (since, wanted) = (chat.mark.clone(), chat.wanted());
+                        if gap {
+                            self.ask_chat(ChatAsk::Attach { agent: agent.clone(), since });
+                        }
+                        for tool in wanted {
+                            self.ask_chat(ChatAsk::Detail { agent: agent.clone(), tool });
                         }
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
+                    ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
                 }
                 return;
             }
@@ -449,7 +454,8 @@ impl Workbench {
     fn until_next_tick(&self) -> Duration {
         let now = chrono::Local::now();
         let into_second = Duration::from_nanos(u64::from(now.timestamp_subsec_nanos()));
-        let seconds = if self.person_runs().0.is_some() { 1 } else { 60 - u64::from(now.second()) };
+        let counting = self.person_runs().0.is_some() || self.chats.values().any(Chat::running);
+        let seconds = if counting { 1 } else { 60 - u64::from(now.second()) };
         Duration::from_secs(seconds) - into_second
     }
 

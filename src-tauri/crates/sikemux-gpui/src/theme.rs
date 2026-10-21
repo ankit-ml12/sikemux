@@ -289,6 +289,11 @@ fn mix_srgb(a: Rgba, b: Rgba, amount: f32) -> Rgba {
 }
 
 /// CSS `color-mix(in oklab, a amount, b)` for two opaque colours.
+/// `a` mixed into `b` by `amount`, as CSS's `color-mix(in oklab, a amount, b)` does.
+pub fn mix(a: Hsla, b: Hsla, amount: f32) -> Hsla {
+    mix_oklab(a.into(), b.into(), amount).into()
+}
+
 fn mix_oklab(a: Rgba, b: Rgba, amount: f32) -> Rgba {
     let [l1, a1, b1] = oklab(a);
     let [l2, a2, b2] = oklab(b);

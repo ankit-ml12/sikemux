@@ -1,7 +1,7 @@
 //! An agent's chat: the rows the core folds, kept in a transcript, and how
 //! each row draws. Rows change only by the core's changes.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
@@ -29,6 +29,8 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
+
+mod tools;
 
 /// Turns asked for each time the reader nears the top of what is held.
 const PAGE_TURNS: u32 = 20;
@@ -178,6 +180,10 @@ pub struct Chat {
     head: Map<String, Value>,
     /// The head as last changed, read once for each change.
     state: Option<ChatHead>,
+    tools: Rc<RefCell<tools::Opened>>,
+    running: Rc<Cell<bool>>,
+    /// Opened calls whose detail is older than the call, to ask the core for again.
+    wanted: Vec<String>,
     subagents: HashMap<String, Vec<ChatRow>>,
     pub mark: Option<ChatMark>,
     older_before: Option<u64>,
@@ -257,7 +263,8 @@ struct Pick {
 
 impl Chat {
     pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
-        let looks = Looks::new(Tokens::get(cx), provider);
+        let looks = Looks::new(Tokens::get(cx), provider, bench.clone(), agent.clone());
+        let (tools, running) = (looks.tools.clone(), looks.running.clone());
         let transcript = cx.new(|cx| {
             Transcript::new(Vec::new(), looks.text.clone(), move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx), cx)
                 .on_reach_top(move |_, cx| {
@@ -268,6 +275,9 @@ impl Chat {
             transcript,
             head: Map::new(),
             state: None,
+            tools,
+            running,
+            wanted: Vec::new(),
             subagents: HashMap::new(),
             mark: None,
             older_before: None,
@@ -316,12 +326,26 @@ impl Chat {
 
     fn show(&mut self, view: ChatView, cx: &mut App) {
         self.head = serde_json::to_value(&view.head).ok().and_then(|head| head.as_object().cloned()).unwrap_or_default();
+        self.running.set(view.head.running);
         self.state = Some(view.head);
         self.subagents = rows_by_session(view.subagents);
         self.older_before = view.older_before;
         self.asked_earlier = false;
         let rows = view.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| transcript.push(Change::Reset(rows), cx));
+    }
+
+    /// What the core sent of a tool call the reader opened.
+    pub fn detail(&mut self, tool: String, detail: Value, cx: &mut App) {
+        if let Ok(detail) = serde_json::from_value(detail) {
+            self.tools.borrow_mut().held(tool, detail);
+            self.transcript.update(cx, |_, cx| cx.notify());
+        }
+    }
+
+    /// The tool calls whose detail to ask the core for again.
+    pub fn wanted(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.wanted)
     }
 
     pub fn running(&self) -> bool {
@@ -367,6 +391,7 @@ impl Chat {
                     let mut head = Value::Object(std::mem::take(&mut self.head));
                     merge(&mut head, &set);
                     self.state = serde_json::from_value(head.clone()).ok();
+                    self.running.set(self.running());
                     self.head = head.as_object().cloned().unwrap_or_default();
                 }
                 ChatChange::View { view } => {
@@ -381,7 +406,10 @@ impl Chat {
                     }
                 }
                 ChatChange::Row { row, within: None } => rows.push(Change::Put(ChatRow::new(row))),
-                ChatChange::Part { row, part, within } => self.update(&mut rows, row, within, move |held| held.put_part(part)),
+                ChatChange::Part { row, part, within } => {
+                    self.wanted.extend(self.tools.borrow().stale(&part));
+                    self.update(&mut rows, row, within, move |held| held.put_part(part))
+                }
                 ChatChange::Text { row, part, text, md, within } => {
                     self.update(&mut rows, row, within, move |held| held.write(&part, &text, md.as_ref()))
                 }
@@ -1039,10 +1067,60 @@ struct Looks {
     provider: String,
     /// The finished turns the reader opened, by their first row.
     opened: Rc<RefCell<HashSet<String>>>,
+    tools: Rc<RefCell<tools::Opened>>,
+    /// A turn is running, so the last row's run of calls stays open.
+    running: Rc<Cell<bool>>,
+    tints: Tints,
+    bench: WeakEntity<Workbench>,
+    agent: String,
+}
+
+/// The colours a run of tool calls is drawn in, mixed once.
+struct Tints {
+    looked: Hsla,
+    changed: Hsla,
+    deleted: Hsla,
+    ran: Hsla,
+    called: Hsla,
+    failed: Hsla,
+    added: Hsla,
+    deleted_line: Hsla,
+    added_ground: Hsla,
+    deleted_ground: Hsla,
+    added_mark: Hsla,
+    deleted_mark: Hsla,
+    spine: Hsla,
+    tick: Hsla,
+    line_soft: Hsla,
+    well: Hsla,
+}
+
+impl Tints {
+    fn new(t: &Tokens) -> Tints {
+        let dim = t.text_tertiary;
+        Tints {
+            looked: theme::mix(t.git_renamed, dim, 0.76),
+            changed: theme::mix(t.git_modified, dim, 0.76),
+            deleted: theme::mix(t.git_deleted, dim, 0.76),
+            ran: theme::mix(t.cmd, dim, 0.7),
+            called: theme::mix(t.live, dim, 0.66),
+            failed: t.danger,
+            added: t.git_added,
+            deleted_line: t.git_deleted,
+            added_ground: Hsla { a: 0.09, ..t.git_added },
+            deleted_ground: Hsla { a: 0.09, ..t.git_deleted },
+            added_mark: Hsla { a: 0.26, ..t.git_added },
+            deleted_mark: Hsla { a: 0.26, ..t.git_deleted },
+            spine: t.tree_spine,
+            tick: t.tree_tick,
+            line_soft: t.line_soft,
+            well: Hsla { a: 0.62, ..t.surface_sunken },
+        }
+    }
 }
 
 impl Looks {
-    fn new(t: &Tokens, provider: &str) -> Looks {
+    fn new(t: &Tokens, provider: &str, bench: WeakEntity<Workbench>, agent: String) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
         let text = Style {
@@ -1075,6 +1153,11 @@ impl Looks {
             rule: Hsla { a: 0.14, ..t.text_primary },
             provider: provider.to_owned(),
             opened: Rc::default(),
+            tools: Rc::default(),
+            running: Rc::default(),
+            tints: Tints::new(t),
+            bench,
+            agent,
         }
     }
 }
@@ -1100,7 +1183,16 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
         let reply = matches!(part, ChatPart::Text { .. } | ChatPart::Content { .. });
         from == 0 || outlives(part) || *index >= from && reply
     });
-    let parts: Vec<AnyElement> = shown.map(|(_, part)| self::part(row, part, user, pen, looks, window, cx)).collect();
+    let groups = runs(shown.map(|(_, part)| part));
+    let (count, live) = (groups.len(), ix + 1 == rows.len() && looks.running.get());
+    let parts: Vec<AnyElement> = groups
+        .into_iter()
+        .enumerate()
+        .map(|(at, group)| match group {
+            Shown::Part(part) => self::part(row, part, user, pen, looks, window, cx),
+            Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks),
+        })
+        .collect();
     let letters: Vec<_> = message
         .letters
         .iter()
@@ -1141,6 +1233,24 @@ fn row(rows: &[ChatRow], ix: usize, pen: &Pen, looks: &Looks, window: &mut Windo
                 .child(content),
         )
         .into_any_element()
+}
+
+enum Shown<'a> {
+    Part(&'a ChatPart),
+    Run(Vec<&'a ChatPart>),
+}
+
+/// A message's parts with each run of tool calls together; a page the agent showed stands on its own.
+fn runs<'a>(parts: impl Iterator<Item = &'a ChatPart>) -> Vec<Shown<'a>> {
+    let mut shown = Vec::new();
+    for part in parts {
+        match (part, shown.last_mut()) {
+            (ChatPart::Tool { page: None, .. }, Some(Shown::Run(calls))) => calls.push(part),
+            (ChatPart::Tool { page: None, .. }, _) => shown.push(Shown::Run(vec![part])),
+            _ => shown.push(Shown::Part(part)),
+        }
+    }
+    shown
 }
 
 /// A page the agent showed and a subagent still at work stay in view when the turn around them folds.
