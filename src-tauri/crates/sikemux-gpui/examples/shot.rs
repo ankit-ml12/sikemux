@@ -7,7 +7,8 @@
 //!     [--then step…]              then does each step in turn: "click x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
-//!                                 a place or drop them there, or "copy-image file.png"
+//!                                 a place or drop them there, "copy-image file.png", or "share" to open the
+//!                                 share dialog of the chat in front
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -228,6 +229,15 @@ fn main() -> anyhow::Result<()> {
                             PlatformInput::FileDrop(FileDropEvent::Submit { position }),
                             cx,
                         );
+                    }
+                }
+                "share" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.update(cx, |bench, cx| {
+                            if let Some(agent) = bench.agent() {
+                                bench.open_share(&agent.id, window, cx);
+                            }
+                        });
                     }
                 }
                 "copy-image" => {

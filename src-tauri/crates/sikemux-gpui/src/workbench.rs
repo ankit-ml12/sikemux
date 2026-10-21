@@ -209,6 +209,10 @@ impl Workbench {
             Watch::new("questions", json!({}), &["questions"]),
         ));
         let _ = asks.send(Ask::Watch(
+            "shares",
+            Watch::new("shares", json!({}), &["shares"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "catalog",
             Watch::new("agentCatalog", json!({}), &[]),
         ));
