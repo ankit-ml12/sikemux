@@ -267,7 +267,7 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
 
 async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender<Update>) {
     let (agent, news) = match ask {
-        ChatAsk::Attach { agent, since } => match client.acp_attach_since(agent.clone(), since).await {
+        ChatAsk::Attach { agent, since } => match attach(client, &agent, since).await {
             Ok(attachment) => (agent, ChatNews::Attached(attachment)),
             Err(error) => return eprintln!("sikemux: the core refused to attach chat {agent}: {error}"),
         },
@@ -295,6 +295,20 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
         ChatAsk::Mode { agent, mode } => return report("switch the mode of", client.acp_set_permission_mode(agent, mode).await),
     };
     let _ = updates.send(Update::Chat(agent, news));
+}
+
+/// Attaches to a chat, starting it again first when its agent has gone to sleep.
+async fn attach(client: &CoreClient, agent: &str, since: Option<ChatMark>) -> Result<ChatAttachment, ClientError> {
+    let attached = client.acp_attach_since(agent.to_owned(), since).await?;
+    if !matches!(attached, ChatAttachment::Missing) {
+        return Ok(attached);
+    }
+    client.call("startChat", json!({ "agentId": agent })).await?;
+    let attached = client.acp_attach_since(agent.to_owned(), None).await?;
+    if matches!(attached, ChatAttachment::Missing) {
+        eprintln!("sikemux: chat {agent} stopped as soon as it started");
+    }
+    Ok(attached)
 }
 
 fn report(what: &str, done: Result<(), ClientError>) {
