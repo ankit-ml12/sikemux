@@ -138,8 +138,9 @@ impl Plugin for Aws {
                 }
                 "identity" => {
                     let IdentityParams { profile, force } = params(input)?;
-                    reply(auth::identity(profile, force).await)
+                    reply(auth::identity(Target::named(&profile), force).await)
                 }
+                "status" => reply(auth::status(ctx).await),
                 "ecsClusters" => answer(ecs::clusters(&params(input)?)).await,
                 "ecsServices" => {
                     let ClusterParams { target, cluster } = params(input)?;
