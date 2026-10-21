@@ -16,7 +16,8 @@ use tokio::sync::Notify;
 
 use crate::protocol::{Continuation, SessionId};
 
-use super::{launching, Core, CoreResult};
+use super::agent::AgentActivity;
+use super::{launching, session, Core, CoreError, CoreResult};
 
 /// How long a chat nobody looks at stays idle before it sleeps.
 const IDLE_SLEEP_MS: u64 = 10 * 60_000;
@@ -136,6 +137,38 @@ pub(crate) fn sleep(core: &Core, agent_id: &str) -> bool {
         core.note_agent_gone(agent_id);
     }
     stopped
+}
+
+/// Puts the agent to sleep at the person's word: a chat as [`sleep`] does, and
+/// a terminal agent by ending its terminal, to start again on its saved
+/// session when next shown.
+pub(crate) fn sleep_agent(core: &Core, agent_id: &str) -> CoreResult<()> {
+    let agent = core
+        .workspaces
+        .agent(agent_id)
+        .ok_or_else(|| CoreError::from("that agent is no longer on this host"))?;
+    if core.chats.get(agent_id).is_some() {
+        return match sleep(core, agent_id) {
+            true => Ok(()),
+            false => Err("the agent is at work; it can sleep once its turn ends".into()),
+        };
+    }
+    let Some(terminal) = agent.pty_id.and_then(|pty| core.session(pty)) else {
+        return Ok(());
+    };
+    if agent.resume_id.is_none() {
+        return Err("this agent has no saved session to wake on".into());
+    }
+    let state = terminal.agent.as_ref().and_then(AgentActivity::state_label);
+    if matches!(state, Some("working" | "blocked")) {
+        return Err("the agent is at work; it can sleep once its turn ends".into());
+    }
+    session::kill(core, &terminal);
+    let patch = serde_json::Map::from_iter([("ptyId".to_owned(), serde_json::Value::Null)]);
+    core.workspaces.update_agent(agent_id, patch)?;
+    core.note_agent_gone(agent_id);
+    core.view_changed();
+    Ok(())
 }
 
 /// Whether a terminal agent's process ended the way a crash does, rather than

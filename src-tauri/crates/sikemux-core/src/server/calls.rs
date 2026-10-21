@@ -86,6 +86,10 @@ calls! { core, client, params;
         let params: AgentParams = parse(params)?;
         answer(json!({ "stopped": super::lifecycle::sleep(&core, &params.agent_id) }))
     },
+    "sleepAgent": Person => {
+        let params: AgentParams = parse(params)?;
+        answer(super::lifecycle::sleep_agent(&core, &params.agent_id)?)
+    },
     "sleepIdleChats": Local => answer(json!({ "slept": super::lifecycle::sleep_idle(&core) })),
     "startTerminalAgent": Local => {
         let params: TerminalParams = parse(params)?;
@@ -138,6 +142,8 @@ calls! { core, client, params;
         answer(workspace::close_agent(&core, params.agent_id)?)
     },
     "createAgentWorktree": Person => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
+    "worktreeRemoval": Person => answer(super::agent_worktree::removal(&core, parse(params)?).await?),
+    "removeAgentWorktree": Person => answer(super::agent_worktree::remove(&core, parse(params)?).await?),
     "agentWorktreeAt": Full => answer(super::sandbox::at(parse(params)?).await?),
     "savedSessions": Full, any_program => answer(saved_sessions::list(parse(params)?).await?),
     "recentSessions": Full, any_program => answer(saved_sessions::recent(parse(params)?).await?),
