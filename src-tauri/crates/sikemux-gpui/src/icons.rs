@@ -130,6 +130,7 @@ icons!(
     Tap => "tap",
     Terminal => "terminal",
     Text => "text",
+    Timer => "timer",
     TouchPath => "touch-path",
     Trash => "trash",
     Unlink => "unlink",

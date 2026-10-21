@@ -115,7 +115,7 @@ fn seconds(ms: u64) -> String {
 }
 
 /// The word a row names its call by: the call's own, its server's, or the app's for what it did.
-fn word(row: &ToolRow) -> &str {
+pub(super) fn word(row: &ToolRow) -> &str {
     if let Some(word) = row.verb.as_deref().or(row.server.as_deref()) {
         return word;
     }

@@ -117,6 +117,7 @@ const DRAWN = {
   waterfall: [ICONS, "IconWaterfall"],
   workflow: [ICONS, "IconWorkflow"],
   wrench: [ICONS, "IconWrench"],
+  timer: [ICONS, "IconTimer"],
 };
 /** Marks the app draws as pictures of their own, copied as they are. */
 const PICTURES = {

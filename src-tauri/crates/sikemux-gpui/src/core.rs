@@ -108,6 +108,7 @@ pub enum ChatAsk {
     Mode { agent: String, mode: String },
     /// One of the session's settings, such as its model, set to one of its choices.
     Config { agent: String, config: String, value: String },
+    StopTask { agent: String, task: String },
     /// What a tool call changed and printed, which its row opens on.
     Detail { agent: String, tool: String },
 }
@@ -283,6 +284,7 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
         ChatAsk::Config { agent, config, value } => {
             return report("change the settings of", client.acp_set_config(agent, config, value).await.map(drop))
         }
+        ChatAsk::StopTask { agent, task } => return report("stop a task of", client.acp_stop_task(agent, task).await),
         ChatAsk::Detail { agent, tool } => {
             let asked = json!({ "agentId": agent, "toolCallId": tool });
             match client.call("chatToolDetail", asked).await {

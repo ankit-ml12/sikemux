@@ -30,6 +30,7 @@ use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
+mod live;
 mod tools;
 
 /// Turns asked for each time the reader nears the top of what is held.
@@ -201,6 +202,8 @@ pub struct Chat {
     folded: Option<String>,
     /// The assumption the person chose to change, which the composer then answers.
     writing: Option<String>,
+    /// The groups of live work over the composer the reader folded away, by kind.
+    groups_folded: HashSet<String>,
 }
 
 /// The draft, and the masked field a secret answer is typed into.
@@ -290,6 +293,7 @@ impl Chat {
             shown: None,
             folded: None,
             writing: None,
+            groups_folded: HashSet::new(),
         }
     }
 
@@ -462,6 +466,12 @@ impl Chat {
         self.folded = open.first().filter(|_| fold).map(|first| first.id.clone());
     }
 
+    pub fn toggle_group(&mut self, key: &str) {
+        if !self.groups_folded.remove(key) {
+            self.groups_folded.insert(key.to_owned());
+        }
+    }
+
     pub fn show_question(&mut self, id: &str) {
         self.shown = Some(id.to_owned());
     }
@@ -594,6 +604,11 @@ pub fn pane(bench: &Workbench, agent: &AgentRow, chat: &Chat, welcome: Option<An
     let permissions = chat.state.as_ref().map_or(&[][..], |head| head.permissions.as_slice());
     let permissions: Vec<_> = permissions.iter().map(|ask| permission(&agent.id, ask, cx)).collect();
     let assumed: Vec<_> = bench.questions.iter().filter(|question| question.of(&agent.id, "assumed")).map(|question| assumption(question, cx)).collect();
+    let mut groups: Vec<AnyElement> = questions(&agent.id, chat, &open, cx).into_iter().collect();
+    groups.extend(live::subagents(agent, chat, cx));
+    groups.extend(live::tasks(agent, chat, cx));
+    groups.extend(live::queued(&agent.id, chat, cx));
+    let stack = live::stack(groups, Tokens::get(cx));
     div()
         .size_full()
         .flex()
@@ -601,7 +616,7 @@ pub fn pane(bench: &Workbench, agent: &AgentRow, chat: &Chat, welcome: Option<An
         .child(rows)
         .children(permissions)
         .children(assumed)
-        .children(questions(&agent.id, chat, &open, cx))
+        .children(stack)
         .children(composer(bench, agent, chat, cx))
 }
 
@@ -709,9 +724,9 @@ fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElem
     )
 }
 
-/// The questions the agent waits on, docked on the composer: a tab for each, what the one on
-/// show asks, and its choices.
-fn questions(agent: &str, chat: &Chat, open: &[&Question], cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
+/// The questions the agent waits on, at the top of the live work over the composer: a tab
+/// for each, what the one on show asks, and its choices.
+fn questions(agent: &str, chat: &Chat, open: &[&Question], cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let current = chat.current(open)?;
     let t = Tokens::get(cx).clone();
     let count = open.len();
@@ -742,17 +757,7 @@ fn questions(agent: &str, chat: &Chat, open: &[&Question], cx: &mut Context<Work
     } else {
         asking(agent, chat, open, current, &t, cx).into_any_element()
     };
-    let docked = div()
-        .w_full()
-        .max_w(px(780.))
-        .border_t_1()
-        .border_l_1()
-        .border_r_1()
-        .border_color(t.border)
-        .rounded_t(theme::RADIUS_3)
-        .bg(t.surface_composer)
-        .child(body);
-    Some(div().w_full().px(px(36.)).flex().justify_center().child(docked))
+    Some(body)
 }
 
 fn asking(agent: &str, chat: &Chat, open: &[&Question], current: &Question, t: &Tokens, cx: &mut Context<Workbench>) -> impl IntoElement {
