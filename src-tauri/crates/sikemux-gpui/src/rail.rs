@@ -5,7 +5,7 @@ use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{PaneKind, ProjectInfo};
@@ -43,7 +43,12 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                         .first()
                         .actions(actions(
                             keymap::hint("project.open", cx),
-                            [IconButton::new("add-project", Icon::Plus, "Open project")],
+                            [
+                                IconButton::new("add-project", Icon::Plus, "Open project")
+                                    .on_click(|_, window, cx| {
+                                        keymap::dispatch("project.open", window, cx)
+                                    }),
+                            ],
                             cx,
                         ))
                         .child(div().mb(px(6.)).child(
@@ -57,7 +62,9 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                             keymap::hint("ssh.open", cx),
                             [
                                 IconButton::new("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"),
-                                IconButton::new("add-host", Icon::Plus, "Find a host"),
+                                IconButton::new("add-host", Icon::Plus, "Find a host").on_click(
+                                    |_, window, cx| keymap::dispatch("ssh.open", window, cx),
+                                ),
                             ],
                             cx,
                         ))
@@ -407,8 +414,12 @@ fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl In
                 let lit = kind.is_some() && kind == front;
                 let spine = div().absolute().left_0().top_0();
                 div()
+                    .id(SharedString::from(format!("surface-{index}")))
                     .relative()
                     .h(px(25.))
+                    .when(!command.is_empty(), |row| {
+                        row.on_click(move |_, window, cx| keymap::dispatch(command, window, cx))
+                    })
                     .pr(px(8.))
                     .flex()
                     .items_center()
@@ -524,9 +535,10 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .border_color(t.border)
         .child(div().flex_1().min_w_0().child(menu))
         .child(
-            IconButton::new("settings", Icon::Settings, "Settings — ⌘,")
+            IconButton::new("settings", Icon::Settings, "Settings")
                 .glyph(14.)
-                .width(28.),
+                .width(28.)
+                .on_click(|_, window, cx| keymap::dispatch("settings.toggle", window, cx)),
         )
         .into_any_element()
 }

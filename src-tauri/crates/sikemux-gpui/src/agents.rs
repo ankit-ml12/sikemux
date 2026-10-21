@@ -107,13 +107,18 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     )
                     .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
                 )
-                .child(new_row(
-                    "new-browser",
-                    Icon::Globe,
-                    "New browser",
-                    "browser.tabNew",
-                    cx,
-                ))
+                .child(
+                    new_row(
+                        "new-browser",
+                        Icon::Globe,
+                        "New browser",
+                        "browser.tabNew",
+                        cx,
+                    )
+                    .on_click(|_, window, cx| {
+                        crate::keymap::dispatch("browser.tabNew", window, cx)
+                    }),
+                )
                 .child(div().mt(px(8.)).child(
                     Segmented::new("scope", scope, usize::from(bench.all_projects)).on_select(
                         cx.listener(|bench, all: &usize, _, cx| {
@@ -172,11 +177,11 @@ fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                                     cx.notify();
                                 })),
                         )
-                        .child(IconButton::new(
-                            "start-agent",
-                            Icon::Plus,
-                            "Choose agent — ⌘⇧N",
-                        ))
+                        .child(
+                            IconButton::new("start-agent", Icon::Plus, "Choose agent").on_click(
+                                |_, window, cx| crate::keymap::dispatch("agent.choose", window, cx),
+                            ),
+                        )
                         .child(
                             IconButton::new(
                                 "hide-tab-rail",

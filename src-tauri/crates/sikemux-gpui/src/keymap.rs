@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::{
     actions, App, Global, KeyBinding, Menu, MenuItem, OsAction, SharedString, SystemMenuType,
+    Window,
 };
 use serde::Deserialize;
 
@@ -56,6 +57,8 @@ commands! {
     FocusMode = "view.focusMode",
     /// Starts a chat with the agent the rail is set to.
     NewChat = "agent.new",
+    /// Brings the project's terminal forward, opening one when it has none.
+    FocusTerminal = "window.terminal",
 }
 
 /// Stops every agent and terminal the core runs, then quits.
@@ -143,6 +146,13 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
     cx.bind_keys(released);
     cx.bind_keys(bindings);
     cx.global_mut::<Keymap>().bound = bound;
+}
+
+/// Does what command `id` does, as its shortcut would; nothing while no part of the app has it.
+pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
+    if let Ok(action) = cx.build_action(id, None) {
+        window.dispatch_action(action, cx);
+    }
 }
 
 /// The keys `id` is bound to as the app shows them, such as ⌘⇧P, or none when it is unbound.

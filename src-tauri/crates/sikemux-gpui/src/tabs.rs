@@ -64,7 +64,13 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                         .gap(px(4.))
                         .children(tabs),
                 )
-                .child(IconButton::new("new-tab", Icon::Plus, "New tab").glyph(13.)),
+                .child(
+                    IconButton::new("new-tab", Icon::Plus, "New tab")
+                        .glyph(13.)
+                        .on_click(|_, window, cx| {
+                            crate::keymap::dispatch("palette.newTab", window, cx)
+                        }),
+                ),
         )
         .child(
             div()

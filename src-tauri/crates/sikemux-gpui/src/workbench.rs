@@ -984,6 +984,20 @@ impl Workbench {
         }
     }
 
+    /// Brings forward the first terminal tab in the strip in front, else opens a terminal.
+    fn focus_terminal(&self) {
+        let terminal = self.strip().and_then(|strip| {
+            let tab = self.tabs(&strip).iter().find(|tab| {
+                tabs::first_view(&tab.pane).is_some_and(|(kind, _)| kind == PaneKind::Terminal)
+            })?;
+            Some((strip.clone(), tab.id.clone()))
+        });
+        match terminal {
+            Some((strip, tab)) => self.activate_tab(&strip, &tab),
+            None => self.new_terminal(),
+        }
+    }
+
     pub fn new_terminal(&self) {
         if let Some(project) = self.project() {
             self.call("newTerminal", json!({ "project": project.id }));
@@ -1374,6 +1388,7 @@ impl Render for Workbench {
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
             .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
+            .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
             .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))
