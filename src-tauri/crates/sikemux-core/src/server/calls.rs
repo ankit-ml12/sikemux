@@ -259,6 +259,7 @@ calls! { core, client, params;
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
     },
+    "faceStyle": Watch => answer(core.faces.style()),
     "setFaceStyle": Person => {
         let style = core.faces.set_style(parse(params)?)?;
         core.view_changed();

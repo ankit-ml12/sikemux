@@ -1,4 +1,6 @@
 import { agentApi, type AgentAccountBook } from "../../api/agents";
+import { coreCall } from "../../api/core";
+import type { FaceStyle } from "../../api/generated/wire";
 import { checkForUpdateNow } from "../../api/updater";
 import { adoptAgentAccounts } from "../persist";
 import { reportError } from "../toast";
@@ -18,9 +20,16 @@ export const setNotch = (patch: Partial<import("../../notch/notchSettings").Notc
 export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
 export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
-export const setBuddies = (value: boolean): void => setState({ buddies: value });
-export const setBuddyStyle = (pack: string, shape: string): void => setState({ buddyPack: pack, buddyShape: shape });
-export const setBuddyMotion = (value: boolean): void => setState({ buddyMotion: value });
+/** Changes how agents' faces look for every client, showing the change here at once. */
+function changeFaceStyle(change: Partial<FaceStyle>): void {
+    setState({ faceStyle: { ...getState().faceStyle, ...change } });
+    coreCall<FaceStyle>("setFaceStyle", change)
+        .then((faceStyle) => setState({ faceStyle }))
+        .catch(reportError("Change buddies"));
+}
+export const setBuddies = (on: boolean): void => changeFaceStyle({ on });
+export const setBuddyStyle = (pack: string, shape: string): void => changeFaceStyle({ pack, shape });
+export const setBuddyMotion = (motion: boolean): void => changeFaceStyle({ motion });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
 export const clampPaneStrength = (value: number): number => Math.min(2, Math.max(0, Math.round(value * 20) / 20));
 export const setPaneStrength = (value: number): void => setState({ paneStrength: clampPaneStrength(value) });

@@ -861,7 +861,7 @@ const MORE = 22;
 function FittedIcons({ icons }: { icons: ReactNode[] }) {
     const ref = useRef<HTMLSpanElement>(null);
     const [room, setRoom] = useState(Infinity);
-    const step = useStore((s) => (s.buddies ? MARK_STEP.buddies : MARK_STEP.logos));
+    const step = useStore((s) => (s.faceStyle.on ? MARK_STEP.buddies : MARK_STEP.logos));
     useLayoutEffect(() => {
         const el = ref.current;
         if (!el) return;

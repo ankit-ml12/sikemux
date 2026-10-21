@@ -20,14 +20,8 @@ export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
     const [themeChanges, setThemeChanges] = useState(0);
     const agents = useStore((s) => s.agents);
-    const buddiesOn = useStore((s) => s.buddies);
-    const buddyPack = useStore((s) => s.buddyPack);
-    const buddyShape = useStore((s) => s.buddyShape);
-    const buddyMotion = useStore((s) => s.buddyMotion);
-    const buddies = useMemo(
-        () => JSON.stringify(publishBuddies(Object.values(agents), { pack: buddyPack, shape: buddyShape }, buddyMotion, buddiesOn)),
-        [buddiesOn, agents, buddyPack, buddyShape, buddyMotion],
-    );
+    const style = useStore((s) => s.faceStyle);
+    const buddies = useMemo(() => JSON.stringify(publishBuddies(Object.values(agents), style, style.motion, style.on)), [agents, style]);
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
 

@@ -74,7 +74,6 @@ type Read<T> = (saved: unknown, current: T) => T;
 
 const flag: Read<boolean> = (saved, current) => (typeof saved === "boolean" ? saved : current);
 const text: Read<string> = (saved, current) => (typeof saved === "string" ? saved : current);
-const shortName: Read<string> = (saved, current) => boundedOptionalString(saved, 40) ?? current;
 const finite =
     (clamp: (value: number) => number = (value) => value): Read<number> =>
     (saved, current) =>
@@ -116,10 +115,6 @@ const PREFS = {
     customThemes: (saved, current) => (Array.isArray(saved) ? saved.filter(isTheme) : current),
     uiTextScale: oneOf<number>(1, 1.1, 1.25),
     paneShader: flag,
-    buddies: flag,
-    buddyPack: shortName,
-    buddyShape: shortName,
-    buddyMotion: flag,
     paneImage: (saved, current) => (typeof saved === "string" || saved === null ? saved : current),
     paneStrength: finite(clampPaneStrength),
     terminalFontSize: finite(clampTerminalFontSize),

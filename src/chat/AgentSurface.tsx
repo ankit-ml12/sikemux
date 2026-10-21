@@ -86,7 +86,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const working = useStore((state) => state.agentStatus[agent.id]?.group === "working");
     const busy = chatBusy || working;
     const [renaming, setRenaming] = useState(false);
-    const buddies = useStore((state) => state.buddies);
+    const buddies = useStore((state) => state.faceStyle.on);
     /* The core starts a terminal agent again after a crash, in a terminal of its own that the pane takes up. */
     const [terminal, setTerminal] = useState({ ptyId: agent.ptyId, generation: 0 });
     useEffect(() => {

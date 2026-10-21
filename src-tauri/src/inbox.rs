@@ -1,5 +1,5 @@
-//! What waits on the person, as the core ranks it for every device, and the
-//! workspace every client shares. The app watches the core's device view and
+//! What waits on the person, as the core ranks it for every device, the
+//! workspace every client shares, and how agents' faces look. The app watches the core's device view and
 //! hands the page each of them whenever it changes.
 
 use std::sync::{Arc, Mutex};
@@ -14,6 +14,7 @@ use crate::pty::core_error;
 
 const INBOX_EVENT: &str = "inbox_changed";
 const WORKSPACE_EVENT: &str = "workspace_changed";
+const FACE_STYLE_EVENT: &str = "face_style_changed";
 
 /// Asks a core the app just connected to for its device view as it changes.
 pub(crate) async fn connected(client: &Arc<CoreClient>) {
@@ -36,6 +37,7 @@ pub(crate) async fn connected(client: &Arc<CoreClient>) {
 pub(crate) struct LastView {
     inbox: Mutex<Value>,
     workspace: Mutex<Value>,
+    face_style: Mutex<Value>,
 }
 
 impl LastView {
@@ -43,6 +45,9 @@ impl LastView {
         emit_changed(app, &self.inbox, INBOX_EVENT, view.inbox);
         if let Ok(workspace) = serde_json::to_value(view.workspace) {
             emit_changed(app, &self.workspace, WORKSPACE_EVENT, workspace);
+        }
+        if let Ok(style) = serde_json::to_value(view.face_style) {
+            emit_changed(app, &self.face_style, FACE_STYLE_EVENT, style);
         }
     }
 }

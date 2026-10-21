@@ -2,12 +2,25 @@ import { memo, useMemo, useState, type CSSProperties } from "react";
 import { useStore } from "../state/store";
 import { AgentIcon } from "../ui/Icons";
 import type { Agent } from "../state/types";
-import { buddyStateOfGroup, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
+import type { AgentFace } from "../api/generated/wire";
+import { buddyStateOfGroup, packById, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyState, type BuddyStyle } from "./catalogue";
 import { wearsBuddy } from "./published";
 import { bodyMotion, buddyBox, buddyMarkup } from "./render";
 import "./buddies.css";
 
 let nextUid = 0;
+
+/**
+ * The face the core gave the agent, drawn from this app's art; an agent the core has not listed yet, such as one just
+ * started, wears the one the style gives it until it does.
+ */
+function drawnFace(agent: Pick<Agent, "id" | "buddy">, face: AgentFace | null | undefined, style: BuddyStyle) {
+    const pack = face ? packById(face.pack) : undefined;
+    const shape = face && pack?.shapes.find((candidate) => candidate.id === face.shape);
+    if (face && pack && shape) return { pack, shape, color: pack.colors[face.color % pack.colors.length], box: face.box };
+    const look = resolveBuddy(agent, style);
+    return { pack: look.pack, shape: look.shape, color: look.color, box: undefined };
+}
 
 export const BuddyArt = memo(function BuddyArt({
     pack,
@@ -16,6 +29,7 @@ export const BuddyArt = memo(function BuddyArt({
     state,
     size,
     className,
+    box: measured,
 }: {
     pack: BuddyPack;
     shape: BuddyShape;
@@ -23,10 +37,12 @@ export const BuddyArt = memo(function BuddyArt({
     state: BuddyState;
     size: number;
     className?: string;
+    /** The part of the shape's square it fills, when the core already says. */
+    box?: string;
 }) {
     const [uid] = useState(() => `bd${++nextUid}`);
-    const still = !useStore((s) => s.buddyMotion);
-    const box = useMemo(() => buddyBox(pack, shape), [pack, shape]);
+    const still = !useStore((s) => s.faceStyle.motion);
+    const box = useMemo(() => measured ?? buddyBox(pack, shape), [measured, pack, shape]);
     const html = useMemo(() => buddyMarkup(pack, shape, color, state, uid, box), [pack, shape, color, state, uid, box]);
     const motion = bodyMotion(state);
     return (
@@ -52,11 +68,19 @@ export const AgentBuddy = memo(function AgentBuddy({
     className?: string;
 }) {
     const live = useStore((s) => (state ? undefined : s.agentStatus[agent.id]?.group));
-    const pack = useStore((s) => s.buddyPack);
-    const shape = useStore((s) => s.buddyShape);
-    const look = useMemo(() => resolveBuddy(agent, { pack, shape }), [agent, pack, shape]);
+    const face = useStore((s) => s.faces[agent.id]);
+    const style = useStore((s) => s.faceStyle);
+    const look = useMemo(() => drawnFace(agent, face, style), [agent, face, style]);
     return (
-        <BuddyArt pack={look.pack} shape={look.shape} color={look.color} state={state ?? buddyStateOfGroup(live)} size={size} className={className} />
+        <BuddyArt
+            pack={look.pack}
+            shape={look.shape}
+            color={look.color}
+            box={look.box}
+            state={state ?? buddyStateOfGroup(live)}
+            size={size}
+            className={className}
+        />
     );
 });
 
@@ -74,11 +98,10 @@ export function AgentFace({
     logoClass: string;
     buddyClass: string;
 }) {
-    const on = wearsBuddy(
-        useStore((s) => s.buddies),
-        !!agent.name,
-    );
-    return on ? (
+    const face = useStore((s) => s.faces[agent.id]);
+    const on = useStore((s) => s.faceStyle.on);
+    const wears = face === undefined ? wearsBuddy(on, !!agent.name) : face !== null;
+    return wears ? (
         <span className={buddyClass}>
             <AgentBuddy agent={agent} size={size} />
         </span>
@@ -91,7 +114,7 @@ export function AgentFace({
 
 /** The agent's buddy peeking over the top of the composer, or of whatever is docked on it. */
 export function ComposerBuddy({ agent }: { agent: Pick<Agent, "id" | "buddy"> }) {
-    const on = useStore((s) => s.buddies);
+    const on = useStore((s) => s.faceStyle.on);
     if (!on) return null;
     return (
         <div className="composer-buddy" aria-hidden="true">

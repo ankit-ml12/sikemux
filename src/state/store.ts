@@ -65,11 +65,11 @@ export interface DomainState {
     uiTextScale: number;
     paneShader: boolean;
     /** Agents show a character in place of their harness logo. */
-    buddies: boolean;
+    /** How agents' faces look, as the core keeps it. */
+    faceStyle: import("../api/generated/wire").FaceStyle;
+    /** The face each agent the core lists wears, or null while it shows its CLI's logo, by agent id. */
+    faces: Readonly<Record<string, import("../api/generated/wire").AgentFace | null>>;
     /** The default character style: a pack id or "all", and a shape id or "mixed". */
-    buddyPack: string;
-    buddyShape: string;
-    buddyMotion: boolean;
     /** A picture on disk that panes show, dithered, in place of the grain. */
     paneImage: string | null;
     /** How strongly the pane texture or picture shows, 1 being as designed. */
@@ -293,10 +293,8 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
-        buddies: false,
-        buddyPack: DEFAULT_BUDDY_STYLE.pack,
-        buddyShape: DEFAULT_BUDDY_STYLE.shape,
-        buddyMotion: true,
+        faceStyle: { on: false, pack: DEFAULT_BUDDY_STYLE.pack, shape: DEFAULT_BUDDY_STYLE.shape, motion: true },
+        faces: {},
         paneImage: null,
         paneStrength: 1,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
