@@ -14,10 +14,9 @@ import {
     zoomTo,
     type SignozSettings,
 } from "./state";
-import { setState } from "../../state/store";
-import { testPreferences } from "../../test/preferences";
+import { answerPreferencesForTests } from "../../plugin-api/testPreferences";
 
-beforeEach(() => setState({ preferences: testPreferences() }));
+beforeEach(answerPreferencesForTests);
 
 describe("signozSettings", () => {
     it("falls back to usable settings whatever was saved", () => {

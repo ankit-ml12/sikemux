@@ -9,10 +9,9 @@ vi.mock("../../plugin-api/host", async (importOriginal) => ({ ...(await importOr
 
 import { watchRun } from "./runWatch";
 import { updateRundeckSettings } from "./state";
-import { setState } from "../../state/store";
-import { testPreferences } from "../../test/preferences";
+import { answerPreferencesForTests } from "../../plugin-api/testPreferences";
 
-beforeEach(() => setState({ preferences: testPreferences() }));
+beforeEach(answerPreferencesForTests);
 
 const job = { project: "shop", jobId: "j1", name: "api", group: "staging/backend" };
 let nextId = 100;
