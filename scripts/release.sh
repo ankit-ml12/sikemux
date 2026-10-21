@@ -272,7 +272,7 @@ SIM="$ROOT/src-tauri/binaries/sikemux-sim-$HOST"
 # Remove stale outputs before the one release build. Their absence afterwards
 # is stronger evidence of freshness than directory mtimes, which do not change
 # when a bundler updates files in place.
-if [[ "$STAGE" != "app" ]]; then
+if [[ "$STAGE" == "all" || "$STAGE" == "helpers" ]]; then
   rm -f "$VOICE" "$SIM"
   echo "→ Building the voice and simulator helpers for v$VERSION"
   node "$ROOT/scripts/build-voice-helper.mjs"
