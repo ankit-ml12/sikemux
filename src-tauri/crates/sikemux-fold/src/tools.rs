@@ -223,6 +223,29 @@ fn from_input(input: Option<&Value>) -> Option<Change<'_>> {
     })
 }
 
+/// A path the agent named relative to the folder it works in, made whole, so every
+/// client opens the same file; a whole path, a home path or an address stays as it is.
+pub(super) fn rooted(folder: Option<&std::path::Path>, path: String) -> String {
+    match folder {
+        Some(folder)
+            if std::path::Path::new(&path).is_relative()
+                && !path.is_empty()
+                && !path.starts_with('~')
+                && !path.contains("://") =>
+        {
+            folder.join(&path).to_string_lossy().into_owned()
+        }
+        _ => path,
+    }
+}
+
+/// The call with the paths it names made whole against `folder`.
+pub(super) fn root_call(folder: Option<&std::path::Path>, mut call: ToolCall) -> ToolCall {
+    call.path = call.path.map(|path| rooted(folder, path));
+    call.row.path = call.row.path.take().map(|path| rooted(folder, path));
+    call
+}
+
 /// Gives the diff's lines the file's own numbers, counted from where its new text sits
 /// in the file now. Lines counted within an edit's text alone would point at the wrong
 /// place, so they go unnumbered when the text is not found.

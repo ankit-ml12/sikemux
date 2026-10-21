@@ -15,6 +15,7 @@ mod tools;
 mod turns;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use sikemux_markdown::Doc;
@@ -32,10 +33,11 @@ pub use event::{ChatEvent, ChatEventKind};
 pub use send::TAIL_TURNS;
 
 /// The change a call made and what it printed, from everything said of it.
-pub fn detail_of(raw: &Map<String, Value>, place: Option<&Place>) -> ToolDetail {
+pub fn detail_of(raw: &Map<String, Value>, work: Option<(&Path, &Place)>) -> ToolDetail {
     let mut settled = tools::settle(raw);
-    if let (Some(diff), Some(place)) = (settled.diff.as_mut(), place) {
+    if let (Some(diff), Some((folder, place))) = (settled.diff.as_mut(), work) {
         tools::place(diff, raw, place);
+        diff.path = tools::rooted(Some(folder), std::mem::take(&mut diff.path));
     }
     tools::detail(&settled)
 }
@@ -274,6 +276,8 @@ pub struct Fold {
     /// The agent always offers an effort picker, empty until its session
     /// lists the levels.
     offers_effort: bool,
+    /// The folder the agent works in, which the paths it names relative to are made whole against.
+    folder: Option<PathBuf>,
     /// Where a finished edit's lines sit in its file, so they carry the file's numbers.
     place: Option<Place>,
 }
@@ -515,8 +519,10 @@ fn workflow_agents(value: &Value) -> Option<Vec<WorkflowAgent>> {
 type Within = Option<String>;
 
 impl Fold {
-    /// Numbers the lines of each edit that finishes from where it sits in its file.
-    pub fn place_edits(&mut self, place: Place) {
+    /// Makes the paths the agent names whole against `folder`, and numbers the lines of
+    /// each edit that finishes from where `place` finds it in its file.
+    pub fn work_in(&mut self, folder: PathBuf, place: Place) {
+        self.folder = Some(folder);
         self.place = Some(place);
     }
 
@@ -540,6 +546,7 @@ impl Fold {
             settle_from: None,
             seq: 0,
             offers_effort: false,
+            folder: None,
             place: None,
         }
     }
@@ -731,7 +738,12 @@ impl Fold {
                 self.end_turn(stop, at);
             }
             ChatEventKind::PermissionRequest => {
-                if let Some(ask) = permission_ask(payload) {
+                if let Some(mut ask) = permission_ask(payload) {
+                    let folder = self.folder.as_deref();
+                    ask.tool_call = tools::root_call(folder, ask.tool_call);
+                    if let Some(diff) = ask.diff.as_mut() {
+                        diff.path = tools::rooted(folder, std::mem::take(&mut diff.path));
+                    }
                     self.head
                         .permissions
                         .retain(|held| held.request_id != ask.request_id);
@@ -1369,9 +1381,10 @@ impl Fold {
             let running = tools::running(text_of(raw.get("status")));
             if running {
                 self.tools.get_mut(&key).expect("held").raw = Some(raw.clone());
+                let call = tools::root_call(self.folder.as_deref(), tools::call(&raw));
                 self.replace_tool(&within, &row, part, |part| {
                     if let ChatPart::Tool { tool, .. } = part {
-                        *tool = tools::call(&raw);
+                        *tool = call;
                     }
                 });
             } else {
@@ -1390,7 +1403,7 @@ impl Fold {
         let ended = !tools::running(text_of(update.get("status")));
         // Reloading a session replays its whole history at once, so a call
         // already finished the first time this side sees it never ran here.
-        let call = tools::call(update);
+        let call = tools::root_call(self.folder.as_deref(), tools::call(update));
         let Some((row, part)) = self.append_part(
             index,
             within,
@@ -1458,10 +1471,13 @@ impl Fold {
         at: u64,
     ) {
         let mut settled = tools::settle(raw);
-        if let (Some(diff), Some(place)) = (settled.diff.as_mut(), &self.place) {
-            tools::place(diff, raw, place);
+        if let Some(diff) = settled.diff.as_mut() {
+            if let Some(place) = &self.place {
+                tools::place(diff, raw, place);
+            }
+            diff.path = tools::rooted(self.folder.as_deref(), std::mem::take(&mut diff.path));
         }
-        let call = tools::call(raw);
+        let call = tools::root_call(self.folder.as_deref(), tools::call(raw));
         let detail = tools::detail(&settled);
         let id = call.tool_call_id.clone();
         if detail.diff.is_some() || detail.output.is_some() {
@@ -1498,6 +1514,7 @@ impl Fold {
         part: usize,
         patch: &Map<String, Value>,
     ) {
+        let folder = self.folder.clone();
         self.replace_tool(within, row, part, |part| {
             let ChatPart::Tool { tool, .. } = part else {
                 return;
@@ -1519,7 +1536,7 @@ impl Fold {
                 tool.raw_input = restated.raw_input;
                 tool.description = restated.description;
             }
-            *tool = std::mem::take(tool).with_row();
+            *tool = tools::root_call(folder.as_deref(), std::mem::take(tool).with_row());
         });
     }
 

@@ -4,6 +4,7 @@
 //! the same events the others watched arrive.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -1052,9 +1053,14 @@ impl Replay {
 
     /// The change a tool call made and what it printed, read again from the
     /// events held, for a call the fold no longer holds.
-    pub(crate) fn tool_detail(&self, id: &str, place: Option<&Place>) -> Option<ToolDetail> {
+    pub(crate) fn tool_detail(
+        &self,
+        id: &str,
+        work: Option<&(PathBuf, Place)>,
+    ) -> Option<ToolDetail> {
+        let work = work.map(|(folder, place)| (folder.as_path(), place));
         self.tool_call(id)
-            .map(|raw| sikemux_fold::detail_of(&raw, place))
+            .map(|raw| sikemux_fold::detail_of(&raw, work))
     }
 }
 
@@ -1098,8 +1104,9 @@ struct Inner {
     holding: bool,
     /// What the person sent while the agent was at work, oldest first.
     queued: Vec<Queued>,
-    /// Where the chat's edits sit in their files, for each fold made for it.
-    place: Option<Place>,
+    /// The folder the chat's agent works in, and where its edits sit in their files,
+    /// for each fold made for it.
+    work: Option<(PathBuf, Place)>,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1146,13 +1153,13 @@ fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
 
 /// A fold for a chat, showing an effort picker from the start when its agent
 /// always offers one.
-fn new_fold(permission_mode: &str, offers_effort: bool, place: Option<&Place>) -> Fold {
+fn new_fold(permission_mode: &str, offers_effort: bool, work: Option<&(PathBuf, Place)>) -> Fold {
     let mut fold = Fold::new(permission_mode);
     if offers_effort {
         fold.offer_effort();
     }
-    if let Some(place) = place {
-        fold.place_edits(place.clone());
+    if let Some((folder, place)) = work {
+        fold.work_in(folder.clone(), place.clone());
     }
     fold
 }
@@ -1203,7 +1210,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
-                place: None,
+                work: None,
             }),
         })
     }
@@ -1270,7 +1277,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
-                place: None,
+                work: None,
             }),
         })
     }
@@ -1341,7 +1348,7 @@ impl Feed {
             let mut fold = new_fold(
                 &inner.permission_mode,
                 inner.offers_effort,
-                inner.place.as_ref(),
+                inner.work.as_ref(),
             );
             if let Some(start) = &inner.start {
                 fold.apply(
@@ -1751,15 +1758,17 @@ impl Feed {
 
     /// Shows an effort picker from the start, as agents that offer effort on
     /// every model do.
-    /// Numbers the lines of the chat's edits from where they sit in their files, read
-    /// under `cwd` when the agent names a file relative to it.
-    pub(crate) fn place_edits(&self, cwd: std::path::PathBuf) {
-        let place: Place = Arc::new(move |path: &str, text: &str| line_of(&cwd.join(path), text));
+    /// Makes the paths the chat's agent names whole against `cwd`, and numbers the lines
+    /// of its edits from where they sit in their files.
+    pub(crate) fn work_in(&self, cwd: PathBuf) {
+        let folder = cwd.clone();
+        let place: Place =
+            Arc::new(move |path: &str, text: &str| line_of(&folder.join(path), text));
         let mut inner = self.inner.locked();
         if let Some(fold) = inner.fold.as_mut() {
-            fold.place_edits(place.clone());
+            fold.work_in(cwd.clone(), place.clone());
         }
-        inner.place = Some(place);
+        inner.work = Some((cwd, place));
     }
 
     pub(crate) fn offer_effort(&self) {
@@ -1892,7 +1901,7 @@ impl Feed {
             return Some(detail);
         }
         let inner = &*inner;
-        inner.replay.tool_detail(tool_call_id, inner.place.as_ref())
+        inner.replay.tool_detail(tool_call_id, inner.work.as_ref())
     }
 }
 
