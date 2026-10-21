@@ -1,4 +1,5 @@
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Arc;
 
 use sikemux_process::sync::Locked;
 use tempfile::TempDir;
@@ -8,7 +9,7 @@ use super::SimulatorManager;
 /// Tests that drive a real simulator share it, so they take turns.
 static REAL_DEVICE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn helper(script: &str) -> (TempDir, SimulatorManager) {
+fn helper(script: &str) -> (TempDir, Arc<SimulatorManager>) {
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("sikemux-sim");
     std::fs::write(&path, script).expect("write helper");
@@ -17,9 +18,9 @@ fn helper(script: &str) -> (TempDir, SimulatorManager) {
 }
 
 /// The helper built beside the tests, as `SIKEMUX_SIM_EXECUTABLE` names it.
-fn real_helper() -> SimulatorManager {
+fn real_helper() -> Arc<SimulatorManager> {
     SimulatorManager::with_helper(
-        crate::sim::local_helper().expect("SIKEMUX_SIM_EXECUTABLE names the sikemux-sim helper"),
+        crate::local_helper().expect("SIKEMUX_SIM_EXECUTABLE names the sikemux-sim helper"),
     )
 }
 
@@ -28,8 +29,9 @@ fn real_helper() -> SimulatorManager {
 fn lists_the_real_simulators() {
     let _turn = REAL_DEVICE.locked();
     let manager = real_helper();
-    let devices = tauri::async_runtime::block_on(manager.request("devices", serde_json::json!({})))
-        .expect("devices");
+    let devices =
+        sikemux_core::runtime::block_on(manager.request("devices", serde_json::json!({})))
+            .expect("devices");
     let devices = devices["devices"].as_array().expect("a list of devices");
     assert!(!devices.is_empty(), "Xcode has no simulators");
     assert!(devices
@@ -39,15 +41,15 @@ fn lists_the_real_simulators() {
 
 #[test]
 fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
-    let manager = Arc::new(SimulatorManager::with_helper("/nonexistent".into()));
+    let manager = SimulatorManager::with_helper("/nonexistent".into());
     let order = Arc::new(Mutex::new(Vec::new()));
     let call = |name: &'static str, agent: &'static str| {
         let (manager, order) = (Arc::clone(&manager), Arc::clone(&order));
         std::thread::spawn(move || {
-            tauri::async_runtime::block_on(manager.in_turn(agent, async {
+            sikemux_core::runtime::block_on(manager.in_turn(agent, async {
                 order.lock().unwrap().push(format!("{name} start"));
                 super::pause(Duration::from_millis(150)).await?;
                 order.lock().unwrap().push(format!("{name} end"));
@@ -69,7 +71,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
         let manager = Arc::clone(&manager);
         std::thread::spawn(move || {
             let started = Instant::now();
-            let result = tauri::async_runtime::block_on(manager.in_turn("agent-1", async {
+            let result = sikemux_core::runtime::block_on(manager.in_turn("agent-1", async {
                 for _ in 0..100 {
                     super::pause(Duration::from_millis(50)).await?;
                 }
@@ -81,7 +83,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
     let other = {
         let manager = Arc::clone(&manager);
         std::thread::spawn(move || {
-            tauri::async_runtime::block_on(manager.in_turn("agent-2", async {
+            sikemux_core::runtime::block_on(manager.in_turn("agent-2", async {
                 super::pause(Duration::from_millis(400)).await
             }))
         })
@@ -96,7 +98,7 @@ fn an_agents_calls_run_one_at_a_time_and_a_cancel_stops_them() {
         "another agent's call goes on"
     );
     let after =
-        tauri::async_runtime::block_on(manager.in_turn("agent-1", async { Ok::<_, String>(1) }));
+        sikemux_core::runtime::block_on(manager.in_turn("agent-1", async { Ok::<_, String>(1) }));
     assert_eq!(after, Ok(1), "a call after the cancel runs");
 }
 
@@ -104,8 +106,8 @@ mod tools {
     use serde_json::json;
 
     use super::{helper, real_helper, REAL_DEVICE};
-    use crate::simulator::claims::Claim;
-    use crate::simulator::tools::{
+    use crate::claims::Claim;
+    use crate::tools::{
         app_size, cap_logs, changes, choose_device, edge_warning, element_lines, elements_from,
         inside_project, inspect, labelled, launching, newest_iphone, pick_device, run, tap_point,
         Device, Element, Numbered, Numbering, Pick,
@@ -139,10 +141,7 @@ mod tools {
     }
 
     /// Attaches the way an agent does when a first boot outlasts one call: by asking again.
-    fn attach_when_booted(
-        manager: &crate::simulator::SimulatorManager,
-        agent_id: &str,
-    ) -> serde_json::Value {
+    fn attach_when_booted(manager: &crate::SimulatorManager, agent_id: &str) -> serde_json::Value {
         let params = std::env::var("SIKEMUX_SIM_DEVICE")
             .map_or_else(|_| json!({}), |device| json!({ "device": device }));
         for _ in 0..5 {
@@ -156,13 +155,13 @@ mod tools {
 
     /// Runs one tool call to its end, as the harness does on its own thread.
     fn run_now(
-        manager: &crate::simulator::SimulatorManager,
+        manager: &crate::SimulatorManager,
         agent_id: &str,
         project: &str,
         method: &str,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        tauri::async_runtime::block_on(run(manager, agent_id, project, method, params))
+        sikemux_core::runtime::block_on(run(manager, agent_id, project, method, params))
     }
 
     fn device(name: &str, os: &str, booted: bool) -> Device {

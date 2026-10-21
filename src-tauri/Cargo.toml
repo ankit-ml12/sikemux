@@ -71,6 +71,7 @@ sikemux-markdown = { path = "crates/sikemux-markdown" }
 sikemux-pty = { path = "crates/sikemux-pty" }
 sikemux-core = { path = "crates/sikemux-core" }
 sikemux-browser = { path = "crates/sikemux-browser" }
+sikemux-simulator = { path = "crates/sikemux-simulator" }
 sikemux-host = { path = "crates/sikemux-host", default-features = false }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "sync", "io-util", "net"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "form", "query", "rustls-no-provider", "gzip", "stream", "cookies", "multipart"] }

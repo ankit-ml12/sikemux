@@ -16,7 +16,10 @@ const browserHandlersPath = resolve(
   root,
   "src-tauri/crates/sikemux-browser/src/tools.rs",
 );
-const simulatorHandlersPath = resolve(root, "src-tauri/src/simulator/tools.rs");
+const simulatorHandlersPath = resolve(
+  root,
+  "src-tauri/crates/sikemux-simulator/src/tools.rs",
+);
 const windowHandlersPath = resolve(root, "src/harness/service.ts");
 const pluginsPath = resolve(root, "src-tauri/plugins");
 const rowsOutputPath = resolve(
@@ -95,7 +98,7 @@ compare(
     /((?:"[a-zA-Z0-9.]+"\s*\|\s*)*"[a-zA-Z0-9.]+")\s*=>/gu,
     "sim.",
   ),
-  "src-tauri/src/simulator/tools.rs",
+  "src-tauri/crates/sikemux-simulator/src/tools.rs",
 );
 // The core answers some harness methods itself and hands the rest to the
 // window, so a method counts as handled by either side's dispatch.

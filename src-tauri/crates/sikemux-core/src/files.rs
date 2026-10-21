@@ -840,6 +840,14 @@ fn delete(params: PathParams) -> Result<()> {
     Ok(())
 }
 
+/// `path`, taken from `project` with links followed, or `None` when that leads
+/// outside the project.
+pub fn confine_to_project(project: &str, path: &str) -> std::io::Result<Option<PathBuf>> {
+    let root = fs::canonicalize(project)?;
+    let target = fs::canonicalize(root.join(path))?;
+    Ok(target.starts_with(&root).then_some(target))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

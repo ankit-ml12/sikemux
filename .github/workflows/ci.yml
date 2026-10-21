@@ -88,7 +88,7 @@ jobs:
             fi
           }
           area rust '^(src-tauri/|browser/|server/protocol/|src/test/markdownFixtures\.json$|rust-toolchain\.toml$)'
-          area simulator '^(src-tauri/sim/|src-tauri/src/sim\.rs$|src-tauri/src/simulator/|src-tauri/Cargo\.(toml|lock)$|scripts/build-sim-(helper|fixture)\.mjs$|rust-toolchain\.toml$)'
+          area simulator '^(src-tauri/sim/|src-tauri/crates/sikemux-simulator/|src-tauri/src/simulator\.rs$|src-tauri/Cargo\.(toml|lock)$|scripts/build-sim-(helper|fixture)\.mjs$|rust-toolchain\.toml$)'
           area desktop '^(src/|public/|browser/|scripts/|src-tauri/|index\.html$|package\.json$|pnpm-lock\.yaml$|vite\.config\.ts$|tsconfig\.json$|rust-toolchain\.toml$)' '^src-tauri/sim/'
 
   frontend:
@@ -333,7 +333,7 @@ jobs:
 
       - name: Build the simulator tests
         working-directory: src-tauri
-        run: cargo test --lib --no-run
+        run: cargo test -p sikemux-simulator --lib --no-run
 
       - name: Wait for the simulator to finish booting
         timeout-minutes: 10
@@ -349,7 +349,7 @@ jobs:
         env:
           SIKEMUX_SIM_EXECUTABLE: ${{ github.workspace }}/src-tauri/target/debug/sikemux-sim
           SIKEMUX_SIM_FIXTURE: ${{ github.workspace }}/src-tauri/sim/.build/fixture/Build/Products/Debug-iphonesimulator/SimFixture.app
-        run: cargo test --lib simulator -- --ignored --test-threads=1
+        run: cargo test -p sikemux-simulator --lib -- --ignored --test-threads=1
 
   desktop-e2e:
     name: macOS launched desktop E2E

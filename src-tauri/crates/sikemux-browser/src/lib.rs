@@ -19,7 +19,6 @@ pub mod macos;
 mod manager;
 #[cfg(target_os = "macos")]
 mod recording;
-mod runtime;
 mod tab;
 pub mod tools;
 pub mod viewport;
@@ -34,8 +33,7 @@ pub use host::{BrowserResult, Error, Host};
 pub use manager::{BrowserManager, TabPage};
 pub use tab::{ParentView, Tab, TabSpec};
 
-pub use runtime::set_runtime;
-pub(crate) use runtime::spawn;
+pub(crate) use sikemux_core::runtime::spawn;
 
 pub const BLANK_URL: &str = "about:blank";
 /// Parked pages sit outside the window, since a hidden view still takes file

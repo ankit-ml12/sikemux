@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
 
 use super::claims::Claim;
 use super::{checkpoint, pause, remaining, SimulatorManager};
@@ -54,12 +53,11 @@ pub const DETACHED_EVENT: &str = "simulator-detached";
 /// True while one of an agent's calls is driving its device, as the browser's acting highlight.
 pub const ACTING_EVENT: &str = "simulator-acting";
 
-pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, String> {
+pub fn execute(manager: &SimulatorManager, request: &HarnessRequest) -> Result<Value, String> {
     let agent_id = request
         .agent_id
         .as_deref()
         .ok_or("simulator tools need the agent's id")?;
-    let manager = app.state::<SimulatorManager>();
     if request.method == SIM_OFFERED_METHOD {
         let offered = super::offered();
         manager.note_offered(agent_id, offered);
@@ -76,10 +74,10 @@ pub fn execute(app: &AppHandle, request: &HarnessRequest) -> Result<Value, Strin
     if acting {
         manager.emit(ACTING_EVENT, json!({ "agentId": agent_id, "acting": true }));
     }
-    let result = tauri::async_runtime::block_on(manager.in_turn(
+    let result = sikemux_core::runtime::block_on(manager.in_turn(
         agent_id,
         run(
-            &manager,
+            manager,
             agent_id,
             &request.project,
             &request.method,
@@ -657,7 +655,7 @@ async fn create_device(
         })
         .find(|name| devices.iter().all(|device| &device.name != name))
         .unwrap_or(base);
-    let udid = tauri::async_runtime::spawn_blocking(move || {
+    let udid = tokio::task::spawn_blocking(move || {
         let dir = super::developer_dir().ok_or("the iOS Simulator needs Xcode")?;
         let runtimes = super::simctl(&dir, &["list", "runtimes", "--json"])
             .and_then(|text| serde_json::from_str::<Value>(&text).ok())
@@ -803,7 +801,7 @@ pub(super) fn frontmost_pid(reply: &Value) -> Option<i64> {
 
 /// A path the agent gave, which must name something inside its project.
 pub(super) fn inside_project(project: &str, path: &str) -> Result<PathBuf, String> {
-    let confined = crate::harness::confine_to_project(project, path).map_err(|error| {
+    let confined = sikemux_core::files::confine_to_project(project, path).map_err(|error| {
         if std::fs::metadata(project).is_ok() {
             format!("no app at {}", Path::new(project).join(path).display())
         } else {

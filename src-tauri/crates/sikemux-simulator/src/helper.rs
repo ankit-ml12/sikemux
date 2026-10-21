@@ -13,13 +13,11 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
+use sikemux_core::download::{self, PinnedFile};
 use sikemux_process::sync::Locked;
-use tauri::ipc::{Channel, Response};
-use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 
-use crate::error::{AppError, AppResult};
-use sikemux_core::download::{self, PinnedFile};
+use crate::{Host, SimResult};
 
 pub const SIM_EVENT: &str = "sim";
 /// Tells the page a screen it was watching stopped, and why, unless it asked for that itself.
@@ -39,7 +37,7 @@ const HANGS_BEFORE_RESTART: u32 = 3;
 /// unread, which is how the helper learns to drop frames.
 const UNREAD_FRAMES: u64 = 12;
 
-type Reply = Result<Value, AppError>;
+type Reply = Result<Value, String>;
 type Waiting = Arc<Mutex<Pending>>;
 
 /// The requests one helper process still owes an answer, closed once it stops.
@@ -58,7 +56,7 @@ struct Helper {
 }
 
 struct Watch {
-    task: tauri::async_runtime::JoinHandle<()>,
+    task: tokio::task::JoinHandle<()>,
     udid: String,
     format: String,
     read: Arc<Progress>,
@@ -122,7 +120,7 @@ impl SimManager {
     }
 
     /// Sends one request, such as `{"type": "tap", "x": 10, "y": 20}`, and waits for its answer.
-    pub async fn call(&self, executable: PathBuf, request: Map<String, Value>) -> AppResult<Value> {
+    pub async fn call(&self, executable: PathBuf, request: Map<String, Value>) -> SimResult<Value> {
         let timeout = if request.get("type").and_then(Value::as_str) == Some("boot") {
             BOOT_TIMEOUT
         } else {
@@ -136,7 +134,7 @@ impl SimManager {
         executable: PathBuf,
         mut request: Map<String, Value>,
         timeout: Duration,
-    ) -> AppResult<Value> {
+    ) -> SimResult<Value> {
         let kind = request
             .get("type")
             .and_then(Value::as_str)
@@ -151,15 +149,13 @@ impl SimManager {
                 self.note_answer(generation);
                 reply
             }
-            Ok(Err(_)) => Err(AppError::Other("the simulator helper stopped".into())),
+            Ok(Err(_)) => Err("the simulator helper stopped".into()),
             Err(_) => {
                 waiting.locked().senders.remove(&id);
                 if timeout >= HANG {
                     self.note_hang(generation);
                 }
-                Err(AppError::Other(format!(
-                    "the simulator did not answer `{kind}` in time"
-                )))
+                Err(format!("the simulator did not answer `{kind}` in time"))
             }
         }
     }
@@ -170,7 +166,7 @@ impl SimManager {
         id: u64,
         sender: oneshot::Sender<Reply>,
         request: &Value,
-    ) -> AppResult<(Waiting, u64)> {
+    ) -> SimResult<(Waiting, u64)> {
         let mut slot = self.helper.locked();
         let running = match slot.as_mut() {
             Some(helper) => matches!(helper.child.try_wait(), Ok(None)),
@@ -194,7 +190,7 @@ impl SimManager {
         }
         let helper = slot.as_mut().expect("helper was just started");
         if sender.is_some() {
-            return Err(AppError::Other("the simulator helper stopped".into()));
+            return Err("the simulator helper stopped".into());
         }
         let mut line = request.to_string();
         line.push('\n');
@@ -204,9 +200,7 @@ impl SimManager {
             .and_then(|()| helper.stdin.flush());
         if let Err(error) = written {
             helper.waiting.locked().senders.remove(&id);
-            return Err(AppError::Other(format!(
-                "simulator helper stopped listening: {error}"
-            )));
+            return Err(format!("simulator helper stopped listening: {error}"));
         }
         Ok((Arc::clone(&helper.waiting), helper.generation))
     }
@@ -242,15 +236,13 @@ impl SimManager {
         }
     }
 
-    fn spawn(&self, executable: PathBuf) -> AppResult<Helper> {
+    fn spawn(&self, executable: PathBuf) -> SimResult<Helper> {
         let mut child = sikemux_process::user_environment::command(executable)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|error| {
-                AppError::Other(format!("could not start the simulator helper: {error}"))
-            })?;
+            .map_err(|error| format!("could not start the simulator helper: {error}"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let waiting: Waiting = Arc::default();
@@ -292,7 +284,7 @@ fn fail_all(waiting: &Waiting, message: &str) {
     let mut pending = waiting.locked();
     pending.closed = true;
     for (_, sender) in pending.senders.drain() {
-        let _ = sender.send(Err(AppError::Other(message.into())));
+        let _ = sender.send(Err(message.into()));
     }
 }
 
@@ -313,14 +305,14 @@ fn parse_reply(line: &str) -> Option<(u64, Reply)> {
                 Some(reason @ "streamUnavailable") => format!("{message} ({reason})"),
                 _ => message.to_owned(),
             };
-            Some((id, Err(AppError::Other(message))))
+            Some((id, Err(message)))
         }
         _ => None,
     }
 }
 
 /// A helper built alongside the app, as `make dev` does.
-pub(crate) fn local_helper() -> Option<PathBuf> {
+pub fn local_helper() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SIKEMUX_SIM_EXECUTABLE") {
         return Some(PathBuf::from(path));
     }
@@ -329,7 +321,7 @@ pub(crate) fn local_helper() -> Option<PathBuf> {
 }
 
 /// The helper published beside this release, which the app downloads the first time it is needed.
-pub(crate) fn published_helper() -> Option<PinnedFile> {
+pub fn published_helper() -> Option<PinnedFile> {
     Some(PinnedFile {
         path: option_env!("SIKEMUX_SIM_HELPER_ASSET")?.into(),
         size: option_env!("SIKEMUX_SIM_HELPER_SIZE")?.parse().ok()?,
@@ -337,11 +329,10 @@ pub(crate) fn published_helper() -> Option<PinnedFile> {
     })
 }
 
-fn downloaded_helper(app: &AppHandle) -> AppResult<PathBuf> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|error| AppError::Other(format!("simulator data directory unavailable: {error}")))?
+fn downloaded_helper(host: &dyn Host) -> SimResult<PathBuf> {
+    Ok(host
+        .data_dir()
+        .ok_or("the simulator's data directory is unavailable")?
         .join("sim")
         .join("sikemux-sim"))
 }
@@ -358,7 +349,7 @@ fn verified() -> &'static tokio::sync::Mutex<Option<PathBuf>> {
     &VERIFIED
 }
 
-pub(crate) fn installed(app: &AppHandle) -> bool {
+pub fn installed(host: &dyn Host) -> bool {
     if local_helper().is_some() {
         return true;
     }
@@ -368,14 +359,14 @@ pub(crate) fn installed(app: &AppHandle) -> bool {
         }
     }
     published_helper()
-        .zip(downloaded_helper(app).ok())
+        .zip(downloaded_helper(host).ok())
         .is_some_and(|(helper, path)| {
             std::fs::metadata(path).is_ok_and(|meta| meta.len() == helper.size)
         })
 }
 
 /// The helper to run, downloading the published one first if this build has none beside it.
-pub(crate) async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
+pub async fn executable(host: &dyn Host) -> SimResult<PathBuf> {
     if let Some(local) = local_helper() {
         return Ok(local);
     }
@@ -383,12 +374,10 @@ pub(crate) async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
     if let Some(path) = known.as_ref() {
         return Ok(path.clone());
     }
-    let helper = published_helper().ok_or_else(|| {
-        AppError::Other("This build does not include the simulator helper.".into())
-    })?;
-    let destination = downloaded_helper(app)?;
+    let helper = published_helper().ok_or("This build does not include the simulator helper.")?;
+    let destination = downloaded_helper(host)?;
     let (check, size, sha256) = (destination.clone(), helper.size, helper.sha256.clone());
-    let present = tauri::async_runtime::spawn_blocking(move || matches(&check, size, &sha256))
+    let present = tokio::task::spawn_blocking(move || matches(&check, size, &sha256))
         .await
         .unwrap_or(false);
     if !present {
@@ -402,88 +391,60 @@ pub(crate) async fn executable(app: &AppHandle) -> AppResult<PathBuf> {
             let fraction = bytes as f64 / helper.size as f64;
             if fraction - reported >= 0.01 || fraction >= 1.0 {
                 reported = fraction;
-                let _ = app.emit_to(
-                    "main",
+                host.emit(
                     SIM_EVENT,
                     json!({ "type": "progress", "fraction": fraction }),
                 );
             }
         })
-        .await
-        .map_err(AppError::Http)?;
+        .await?;
     }
     *known = Some(destination.clone());
     Ok(destination)
 }
 
-/// Why this Mac cannot run the simulator, or nothing when it can.
-pub(crate) fn unsupported_reason() -> Option<String> {
-    crate::simulator::unsupported_reason()
-}
-
-#[tauri::command]
-pub async fn sim_status(app: AppHandle) -> AppResult<SimStatus> {
-    let reason = tauri::async_runtime::spawn_blocking(unsupported_reason)
+/// Whether this Mac can run the simulator, and whether its helper is in place.
+pub async fn status(host: &dyn Host) -> SimStatus {
+    let reason = tokio::task::spawn_blocking(crate::unsupported_reason)
         .await
         .unwrap_or_else(|error| Some(error.to_string()));
-    Ok(SimStatus {
+    SimStatus {
         supported: reason.is_none(),
-        installed: reason.is_none() && installed(&app),
+        installed: reason.is_none() && installed(host),
         reason,
-    })
+    }
 }
 
 /// Downloads the helper if this build needs to, reporting progress as `sim` events.
-#[tauri::command]
-pub async fn sim_prepare(app: AppHandle) -> AppResult<()> {
+pub async fn prepare(host: &dyn Host) -> SimResult<()> {
     supported().await?;
-    executable(&app).await.map(|_| ())
+    executable(host).await.map(|_| ())
 }
 
-async fn supported() -> AppResult<()> {
-    match tauri::async_runtime::spawn_blocking(unsupported_reason).await {
+pub(crate) async fn supported() -> SimResult<()> {
+    match tokio::task::spawn_blocking(crate::unsupported_reason).await {
         Ok(None) => Ok(()),
-        Ok(Some(reason)) => Err(AppError::Other(reason)),
-        Err(error) => Err(AppError::Other(error.to_string())),
+        Ok(Some(reason)) => Err(reason),
+        Err(error) => Err(error.to_string()),
     }
 }
 
-#[tauri::command]
-pub async fn sim_call(
-    app: AppHandle,
-    request: Map<String, Value>,
-    sim: State<'_, SimManager>,
-) -> AppResult<Value> {
-    supported().await?;
-    let boot = request.get("type").and_then(Value::as_str) == Some("boot");
-    let udid = request
-        .get("udid")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let answer = sim.call(executable(&app).await?, request).await?;
-    if let (true, Some(udid)) = (boot, udid) {
-        app.state::<crate::simulator::SimulatorManager>()
-            .note_booted(&udid);
-    }
-    Ok(answer)
-}
-
-/// Why forwarding stopped: the page went away, or the helper's stream ended.
+/// Why forwarding stopped: nobody reads the frames any more, or the helper's stream ended.
 #[derive(Debug, PartialEq)]
 enum Ended {
-    PageGone,
+    Unread,
     Stream(String),
 }
 
 /// Reads the helper's length-prefixed frames from 127.0.0.1 and hands each to
-/// the page as raw bytes. While the page is [`UNREAD_FRAMES`] behind, the
-/// socket is left unread, so the helper drops frames rather than the page
-/// falling further behind.
+/// `on_frame`, which answers false once nobody wants them. While the reader is
+/// [`UNREAD_FRAMES`] behind, the socket is left unread, so the helper drops
+/// frames rather than the reader falling further behind.
 async fn forward_frames(
     port: u16,
     token: String,
     read: Arc<Progress>,
-    on_frame: Channel<Response>,
+    mut on_frame: impl FnMut(Vec<u8>) -> bool,
 ) -> Ended {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let stream = async {
@@ -509,95 +470,91 @@ async fn forward_frames(
             Ok(frame) => frame,
             Err(error) => return Ended::Stream(error.to_string()),
         };
-        if on_frame.send(Response::new(frame)).is_err() {
-            return Ended::PageGone;
+        if !on_frame(frame) {
+            return Ended::Unread;
         }
         sent += 1;
     }
 }
 
-/// Streams a device's screen to `on_frame`, and returns an id `sim_unwatch`
-/// stops it by. The page tells how many frames it has read with
-/// `sim_watch_read`; a watch that ends on its own sends `simulator-watch-ended`.
-#[tauri::command]
-pub async fn sim_watch(
-    app: AppHandle,
-    udid: String,
-    format: String,
-    on_frame: Channel<Response>,
-    sim: State<'_, SimManager>,
-) -> AppResult<u64> {
-    supported().await?;
-    let request = json!({ "type": "stream", "udid": udid, "format": format });
-    let stream = sim
-        .call(
-            executable(&app).await?,
-            request.as_object().cloned().unwrap_or_default(),
-        )
-        .await?;
-    let port = stream["port"]
-        .as_u64()
-        .and_then(|port| u16::try_from(port).ok())
-        .ok_or_else(|| AppError::Other("the simulator helper gave no stream port".into()))?;
-    let token = stream["token"].as_str().unwrap_or_default().to_owned();
-    let id = sim.next_id.fetch_add(1, Ordering::SeqCst) + 1;
-    let read = Arc::new(Progress::default());
-    let mut watches = sim.watches.locked();
-    let manager = sim.inner().clone();
-    let task = tauri::async_runtime::spawn({
-        let read = Arc::clone(&read);
-        async move {
-            let ended = forward_frames(port, token, read, on_frame).await;
-            if manager.end_watch(id).is_none() {
-                return;
-            }
-            let reason = match ended {
-                Ended::PageGone => return,
-                Ended::Stream(error) => format!("the stream stopped: {error}"),
-            };
-            let _ = app.emit_to(
-                "main",
-                WATCH_ENDED_EVENT,
-                json!({ "id": id, "reason": reason }),
-            );
-        }
-    });
-    watches.insert(
-        id,
-        Watch {
-            task,
-            udid,
-            format,
-            read,
-        },
-    );
-    Ok(id)
-}
-
-/// The page has read this many frames of a watch.
-#[tauri::command]
-pub fn sim_watch_read(id: u64, frames: u64, sim: State<'_, SimManager>) {
-    if let Some(watch) = sim.watches.locked().get(&id) {
-        watch.read.report(frames);
-    }
-}
-
-#[tauri::command]
-pub async fn sim_unwatch(app: AppHandle, id: u64, sim: State<'_, SimManager>) -> AppResult<()> {
-    let Some(watch) = sim.end_watch(id) else {
-        return Ok(());
-    };
-    watch.task.abort();
-    if !sim.streamed(&watch.udid, &watch.format) {
-        let request = json!({ "type": "stopStream", "udid": watch.udid, "format": watch.format });
-        let _ = sim
+impl SimManager {
+    /// Streams a device's screen to `on_frame`, and answers the id [`Self::unwatch`]
+    /// stops it by. The reader tells how many frames it has read with [`Self::watch_read`];
+    /// a watch that ends on its own sends [`WATCH_ENDED_EVENT`] through `host`.
+    pub async fn watch(
+        &self,
+        host: Arc<dyn Host>,
+        udid: String,
+        format: String,
+        on_frame: impl FnMut(Vec<u8>) -> bool + Send + 'static,
+    ) -> SimResult<u64> {
+        supported().await?;
+        let request = json!({ "type": "stream", "udid": udid, "format": format });
+        let stream = self
             .call(
-                executable(&app).await?,
+                executable(&*host).await?,
                 request.as_object().cloned().unwrap_or_default(),
             )
-            .await;
+            .await?;
+        let port = stream["port"]
+            .as_u64()
+            .and_then(|port| u16::try_from(port).ok())
+            .ok_or("the simulator helper gave no stream port")?;
+        let token = stream["token"].as_str().unwrap_or_default().to_owned();
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+        let read = Arc::new(Progress::default());
+        let mut watches = self.watches.locked();
+        let manager = self.clone();
+        let task = tokio::spawn({
+            let read = Arc::clone(&read);
+            async move {
+                let ended = forward_frames(port, token, read, on_frame).await;
+                if manager.end_watch(id).is_none() {
+                    return;
+                }
+                let reason = match ended {
+                    Ended::Unread => return,
+                    Ended::Stream(error) => format!("the stream stopped: {error}"),
+                };
+                host.emit(WATCH_ENDED_EVENT, json!({ "id": id, "reason": reason }));
+            }
+        });
+        watches.insert(
+            id,
+            Watch {
+                task,
+                udid,
+                format,
+                read,
+            },
+        );
+        Ok(id)
     }
-    Ok(())
+
+    /// The reader has read this many frames of a watch.
+    pub fn watch_read(&self, id: u64, frames: u64) {
+        if let Some(watch) = self.watches.locked().get(&id) {
+            watch.read.report(frames);
+        }
+    }
+
+    pub async fn unwatch(&self, host: &dyn Host, id: u64) -> SimResult<()> {
+        let Some(watch) = self.end_watch(id) else {
+            return Ok(());
+        };
+        watch.task.abort();
+        if !self.streamed(&watch.udid, &watch.format) {
+            let request =
+                json!({ "type": "stopStream", "udid": watch.udid, "format": watch.format });
+            let _ = self
+                .call(
+                    executable(host).await?,
+                    request.as_object().cloned().unwrap_or_default(),
+                )
+                .await;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -724,20 +681,18 @@ mod tests {
 
     type Received = Arc<Mutex<Vec<Vec<u8>>>>;
 
-    fn recording_channel() -> (Channel<Response>, Received) {
+    fn recording_channel() -> (impl FnMut(Vec<u8>) -> bool + Send + 'static, Received) {
         let received = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&received);
-        let channel = Channel::new(move |body| {
-            if let tauri::ipc::InvokeResponseBody::Raw(bytes) = body {
-                sink.lock().unwrap().push(bytes);
-            }
-            Ok(())
-        });
+        let channel = move |frame| {
+            sink.lock().unwrap().push(frame);
+            true
+        };
         (channel, received)
     }
 
     #[tokio::test]
-    async fn frames_from_the_helpers_socket_reach_the_page_as_raw_bytes() {
+    async fn frames_from_the_helpers_socket_reach_the_reader_as_raw_bytes() {
         let (port, helper) = helper_socket(vec![b"first", b"second"]).await;
         let (channel, received) = recording_channel();
 
@@ -755,7 +710,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_socket_waits_while_the_page_is_behind() {
+    async fn the_socket_waits_while_the_reader_is_behind() {
         let frames: Vec<&'static [u8]> = vec![b"frame"; UNREAD_FRAMES as usize + 5];
         let (port, _helper) = helper_socket(frames).await;
         let (channel, received) = recording_channel();
@@ -774,7 +729,7 @@ mod tests {
         assert_eq!(
             received.lock().unwrap().len(),
             UNREAD_FRAMES as usize + 5,
-            "reading on once the page catches up"
+            "reading on once the reader catches up"
         );
     }
 

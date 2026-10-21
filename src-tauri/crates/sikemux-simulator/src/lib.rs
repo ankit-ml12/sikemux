@@ -1,26 +1,56 @@
-//! What agents and the desk do with a simulator: which device each agent
-//! holds, how it was last read, and which devices Sikemux booted. Requests go
-//! to the `sikemux-sim` helper through [`crate::sim::SimManager`].
+//! The iOS Simulator for agents and the desk, with no UI toolkit: the
+//! `sikemux-sim` helper that drives devices ([`SimManager`]), which device each
+//! agent holds, how it was last read and which devices Sikemux booted
+//! ([`SimulatorManager`]), and the agents' `sim_*` tools ([`tools`]). The app
+//! hosting it gives it a [`Host`] for its data folder and its events.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sikemux_core::cli::protocol::PAGE_REPLY_TIMEOUT;
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::sim::SimManager;
 use claims::{Claim, Claims};
 use tools::{Device, Element, Numbered, Numbering};
 
 pub mod claims;
+mod helper;
 pub mod tools;
+
+pub use helper::{
+    executable, installed, local_helper, prepare, published_helper, status, SimManager, SimStatus,
+    SIM_EVENT, WATCH_ENDED_EVENT,
+};
+
+pub type SimResult<T> = Result<T, String>;
+
+/// What the app hosting the simulator gives it.
+pub trait Host: Send + Sync + 'static {
+    /// Where the helper is kept once downloaded.
+    fn data_dir(&self) -> Option<PathBuf>;
+    /// Tells the window that something changed, such as the helper's download
+    /// or an agent attaching a device, as `event` with `payload`.
+    fn emit(&self, event: &str, payload: Value);
+}
+
+/// A host with nowhere to keep the helper and nobody to tell, for tests.
+#[cfg(test)]
+struct NoHost;
+
+#[cfg(test)]
+impl Host for NoHost {
+    fn data_dir(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn emit(&self, _: &str, _: Value) {}
+}
 
 const CORE_SIMULATOR: &str = "/Library/Developer/PrivateFrameworks/CoreSimulator.framework";
 /// Simulators take gigabytes of memory each, so agents may have Sikemux boot at most this many.
@@ -76,13 +106,6 @@ struct SavedAttachment {
     screen: Option<(f64, f64)>,
 }
 
-/// Where the helper comes from: the app's own, downloaded if it must be, or a given one in tests.
-enum Helper {
-    App(AppHandle),
-    #[cfg_attr(not(test), allow(dead_code))]
-    At(PathBuf),
-}
-
 #[derive(Default)]
 struct Shared {
     attachments: HashMap<String, Attachment>,
@@ -98,13 +121,16 @@ struct Shared {
 
 pub struct SimulatorManager {
     sim: SimManager,
-    helper: Helper,
+    host: Arc<dyn Host>,
+    /// The helper tests run in place of the app's own, which is downloaded if it must be.
+    helper: Option<PathBuf>,
     claims: Claims,
     shared: Mutex<Shared>,
     /// One call at a time per agent.
     turns: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Counts each agent's cancellations; a call started before the latest one stops.
     cancels: Mutex<HashMap<String, Arc<AtomicU64>>>,
+    me: Weak<SimulatorManager>,
 }
 
 /// The tool call the current task is running.
@@ -158,35 +184,44 @@ fn for_agents(message: String) -> String {
 }
 
 impl SimulatorManager {
-    pub fn for_app(app: AppHandle, sim: SimManager) -> Self {
-        Self::new(sim, Helper::App(app), Claims::shared())
+    pub fn new(host: Arc<dyn Host>) -> Arc<Self> {
+        Self::made(host, None, Claims::shared())
     }
 
     #[cfg(test)]
-    pub(crate) fn with_helper(path: PathBuf) -> Self {
+    pub(crate) fn with_helper(path: PathBuf) -> Arc<Self> {
         let claims = tempfile::tempdir().expect("a claims folder").keep();
-        Self::new(
-            SimManager::default(),
-            Helper::At(path),
+        Self::made(
+            Arc::new(NoHost),
+            Some(path),
             Claims::at(claims, std::process::id()),
         )
     }
 
-    fn new(sim: SimManager, helper: Helper, claims: Claims) -> Self {
-        Self {
-            sim,
+    fn made(host: Arc<dyn Host>, helper: Option<PathBuf>, claims: Claims) -> Arc<Self> {
+        Arc::new_cyclic(|me| Self {
+            sim: SimManager::default(),
+            host,
             helper,
             claims,
             shared: Mutex::default(),
             turns: Mutex::default(),
             cancels: Mutex::default(),
-        }
+            me: me.clone(),
+        })
+    }
+
+    /// The helper's own requests, as a window's device view sends them.
+    pub fn sim(&self) -> &SimManager {
+        &self.sim
+    }
+
+    pub fn host(&self) -> &Arc<dyn Host> {
+        &self.host
     }
 
     pub(crate) fn emit(&self, event: &str, payload: Value) {
-        if let Helper::App(app) = &self.helper {
-            let _ = app.emit_to("main", event, payload);
-        }
+        self.host.emit(event, payload);
     }
 
     /// Sends `kind` with `fields`, such as `tap` with `{"udid": …, "x": 10, "y": 20}`.
@@ -214,10 +249,8 @@ impl SimulatorManager {
         };
         request.insert("type".into(), kind.into());
         let executable = match &self.helper {
-            Helper::App(app) => crate::sim::executable(app)
-                .await
-                .map_err(|error| error.to_string())?,
-            Helper::At(path) => path.clone(),
+            Some(path) => path.clone(),
+            None => helper::executable(&*self.host).await?,
         };
         let limit = remaining().map_or(limit, |left| limit.min(left));
         let answer = self.sim.call_within(executable, request, limit).await;
@@ -326,7 +359,7 @@ impl SimulatorManager {
     }
 
     /// Lets go of the agent's device, and tells the desk.
-    pub fn release(&self, agent_id: &str) -> Option<Device> {
+    pub(crate) fn release(&self, agent_id: &str) -> Option<Device> {
         let attachment = self.shared.locked().attachments.remove(agent_id)?;
         self.claims.release(&attachment.device.udid, agent_id);
         self.emit(tools::DETACHED_EVENT, json!({ "agentId": agent_id }));
@@ -350,12 +383,10 @@ impl SimulatorManager {
     }
 
     fn shut_down_when_idle(&self, udid: String, stop_logs: bool) {
-        let Helper::App(app) = &self.helper else {
+        let Some(manager) = self.me.upgrade().filter(|_| self.helper.is_none()) else {
             return;
         };
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let manager = app.state::<SimulatorManager>();
+        sikemux_core::runtime::spawn(async move {
             if stop_logs {
                 let _ = manager.request("stopLogs", json!({ "udid": udid })).await;
             }
@@ -493,15 +524,13 @@ impl SimulatorManager {
 
     /// Starts reading the devices' logs again, as attaching does.
     fn follow_logs(&self, udids: Vec<String>) {
-        let Helper::App(app) = &self.helper else {
+        let Some(manager) = self.me.upgrade().filter(|_| self.helper.is_none()) else {
             return;
         };
         if udids.is_empty() {
             return;
         }
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let manager = app.state::<SimulatorManager>();
+        sikemux_core::runtime::spawn(async move {
             for udid in udids {
                 let _ = manager
                     .request("logs", json!({ "udid": udid, "limit": 1 }))
@@ -639,44 +668,15 @@ impl SimulatorManager {
     }
 }
 
-/// An agent stopped: its terminal's process exited, or its chat ended.
-pub(crate) fn agent_stopped(app: &AppHandle, agent_id: &str) {
-    if let Some(manager) = app.try_state::<SimulatorManager>() {
-        manager.forget_agent(agent_id);
-    }
-}
+static ENABLED: AtomicBool = AtomicBool::new(true);
 
-const UNKNOWN: u8 = 2;
-static ENABLED: AtomicU8 = AtomicU8::new(UNKNOWN);
-
+/// The person turned the simulator tools on or off in Settings; the app says so as it starts too.
 pub fn set_enabled(enabled: bool) {
-    ENABLED.store(u8::from(enabled), Ordering::Relaxed);
+    ENABLED.store(enabled, Ordering::Relaxed);
 }
 
-/// Whether the person left the simulator tools on in Settings, as last saved
-/// until the page says otherwise.
 pub fn enabled() -> bool {
-    match ENABLED.load(Ordering::Relaxed) {
-        UNKNOWN => {
-            let saved = saved_preference(&crate::state::state_load_sync());
-            let _ = ENABLED.compare_exchange(
-                UNKNOWN,
-                u8::from(saved),
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
-            ENABLED.load(Ordering::Relaxed) == 1
-        }
-        known => known == 1,
-    }
-}
-
-/// The `iosSimulator` preference in the page's saved state, on unless it was turned off.
-fn saved_preference(state: &str) -> bool {
-    serde_json::from_str::<Value>(state)
-        .ok()
-        .and_then(|state| state["prefs"]["iosSimulator"].as_bool())
-        .unwrap_or(true)
+    ENABLED.load(Ordering::Relaxed)
 }
 
 /// Whether agents are offered the `sim_*` tools: the person has not turned them
@@ -718,7 +718,7 @@ fn check_support() -> Option<String> {
             "The iOS Simulator needs macOS {MINIMUM_MACOS} or later."
         ));
     }
-    if crate::sim::local_helper().is_none() && crate::sim::published_helper().is_none() {
+    if local_helper().is_none() && published_helper().is_none() {
         return Some("This build does not include the simulator helper.".into());
     }
     if developer_dir().is_none() {
@@ -781,112 +781,112 @@ pub(crate) fn developer_dir() -> Option<PathBuf> {
     installed.into_iter().next()
 }
 
-/// Every agent's device, for the desk's device picker and an agent's tab.
-#[tauri::command]
-pub fn simulator_attachments(manager: State<'_, SimulatorManager>) -> Vec<AttachmentInfo> {
-    manager.attachments()
-}
-
-/// The person picked `udid` on this agent's desk. An attached agent moves to
-/// it now; one that has not attached yet is given it when it does.
-#[tauri::command]
-pub async fn simulator_set_desk_device(
-    manager: State<'_, SimulatorManager>,
-    agent_id: String,
-    udid: String,
-) -> Result<(), String> {
-    manager
-        .shared
-        .locked()
-        .desk
-        .insert(agent_id.clone(), udid.clone());
-    let Some(project) = manager
-        .shared
-        .locked()
-        .attachments
-        .get(&agent_id)
-        .map(|attachment| attachment.project.clone())
-    else {
-        return Ok(());
-    };
-    let device = tools::list_devices(&manager)
-        .await?
-        .into_iter()
-        .find(|device| device.udid == udid)
-        .ok_or_else(|| format!("no simulator has the id {udid}"))?;
-    manager.hold(&agent_id, &project, &device)?;
-    manager.emit(
-        tools::ATTACHED_EVENT,
-        json!({ "agentId": agent_id, "udid": device.udid, "name": device.name }),
-    );
-    Ok(())
-}
-
-/// Turns a device, or with no `orientation` says which way it is turned.
-#[tauri::command]
-pub async fn simulator_orientation(
-    manager: State<'_, SimulatorManager>,
-    udid: String,
-    orientation: Option<String>,
-) -> Result<String, String> {
-    let mut fields = json!({ "udid": udid });
-    if let Some(orientation) = &orientation {
-        fields["orientation"] = orientation.as_str().into();
-    }
-    let answer = manager.request("orientation", fields).await?;
-    Ok(answer["orientation"]
-        .as_str()
-        .map(str::to_owned)
-        .or(orientation)
-        .unwrap_or_else(|| "portrait".into()))
-}
-
-#[tauri::command]
-pub fn simulator_set_enabled(enabled: bool) {
-    set_enabled(enabled);
-}
-
-/// What Settings shows about the simulator: the Xcode in use, its iOS runtimes,
-/// and where the helper stands.
-#[tauri::command]
-pub async fn simulator_setup(app: AppHandle) -> Value {
-    let (xcode, runtimes) = tauri::async_runtime::spawn_blocking(|| {
-        let Some(dir) = developer_dir() else {
-            let tools_only = Path::new(COMMAND_LINE_TOOLS).exists().then(|| {
-                format!("{COMMAND_LINE_TOOLS} (Command Line Tools only; the simulator needs Xcode)")
-            });
-            return (tools_only, Vec::new());
+impl SimulatorManager {
+    /// The person picked `udid` on this agent's desk. An attached agent moves to
+    /// it now; one that has not attached yet is given it when it does.
+    pub async fn set_desk_device(&self, agent_id: &str, udid: &str) -> SimResult<()> {
+        self.shared
+            .locked()
+            .desk
+            .insert(agent_id.to_owned(), udid.to_owned());
+        let Some(project) = self
+            .shared
+            .locked()
+            .attachments
+            .get(agent_id)
+            .map(|attachment| attachment.project.clone())
+        else {
+            return Ok(());
         };
-        let runtimes = simctl(&dir, &["list", "runtimes", "--json"])
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .map(|list| {
-                list["runtimes"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter(|runtime| runtime["isAvailable"].as_bool() == Some(true))
-                    .filter_map(|runtime| runtime["name"].as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
-        (Some(dir.to_string_lossy().into_owned()), runtimes)
-    })
-    .await
-    .unwrap_or_default();
-    let helper = if crate::sim::local_helper().is_some() {
-        "built with this copy of Sikemux"
-    } else if crate::sim::installed(&app) {
-        "ready"
-    } else if crate::sim::published_helper().is_some() {
-        "downloaded when first needed"
-    } else {
-        "not included in this build"
-    };
-    json!({
-        "xcode": xcode,
-        "runtimes": runtimes,
-        "helper": helper,
-    })
+        let device = tools::list_devices(self)
+            .await?
+            .into_iter()
+            .find(|device| device.udid == udid)
+            .ok_or_else(|| format!("no simulator has the id {udid}"))?;
+        self.hold(agent_id, &project, &device)?;
+        self.emit(
+            tools::ATTACHED_EVENT,
+            json!({ "agentId": agent_id, "udid": device.udid, "name": device.name }),
+        );
+        Ok(())
+    }
+
+    /// Turns a device, or with no `orientation` says which way it is turned.
+    pub async fn orientation(&self, udid: &str, orientation: Option<String>) -> SimResult<String> {
+        let mut fields = json!({ "udid": udid });
+        if let Some(orientation) = &orientation {
+            fields["orientation"] = orientation.as_str().into();
+        }
+        let answer = self.request("orientation", fields).await?;
+        Ok(answer["orientation"]
+            .as_str()
+            .map(str::to_owned)
+            .or(orientation)
+            .unwrap_or_else(|| "portrait".into()))
+    }
+
+    /// A request from the window's own view of a device, such as a tap the person
+    /// made on its screen. A boot is remembered as Sikemux's.
+    pub async fn window_call(&self, request: Map<String, Value>) -> SimResult<Value> {
+        helper::supported().await?;
+        let boot = request.get("type").and_then(Value::as_str) == Some("boot");
+        let udid = request
+            .get("udid")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let answer = self
+            .sim
+            .call(helper::executable(&*self.host).await?, request)
+            .await?;
+        if let (true, Some(udid)) = (boot, udid) {
+            self.note_booted(&udid);
+        }
+        Ok(answer)
+    }
+
+    /// What Settings shows about the simulator: the Xcode in use, its iOS runtimes,
+    /// and where the helper stands.
+    pub async fn setup(&self) -> Value {
+        let (xcode, runtimes) = tokio::task::spawn_blocking(|| {
+            let Some(dir) = developer_dir() else {
+                let tools_only = Path::new(COMMAND_LINE_TOOLS).exists().then(|| {
+                    format!(
+                        "{COMMAND_LINE_TOOLS} (Command Line Tools only; the simulator needs Xcode)"
+                    )
+                });
+                return (tools_only, Vec::new());
+            };
+            let runtimes = simctl(&dir, &["list", "runtimes", "--json"])
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                .map(|list| {
+                    list["runtimes"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|runtime| runtime["isAvailable"].as_bool() == Some(true))
+                        .filter_map(|runtime| runtime["name"].as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (Some(dir.to_string_lossy().into_owned()), runtimes)
+        })
+        .await
+        .unwrap_or_default();
+        let helper = if local_helper().is_some() {
+            "built with this copy of Sikemux"
+        } else if installed(&*self.host) {
+            "ready"
+        } else if published_helper().is_some() {
+            "downloaded when first needed"
+        } else {
+            "not included in this build"
+        };
+        json!({
+            "xcode": xcode,
+            "runtimes": runtimes,
+            "helper": helper,
+        })
+    }
 }
 
 /// Runs Xcode's `simctl` from a full Xcode, never through `xcrun`, which offers

@@ -68,7 +68,7 @@ pub fn execute(manager: &BrowserManager, request: &HarnessRequest) -> Result<Val
     let before = tab_ids(manager, agent_id);
     let download_mark = manager.download_mark(agent_id);
     let mut result =
-        crate::runtime::block_on(run(manager, agent_id, &request.method, &request.params))
+        sikemux_core::runtime::block_on(run(manager, agent_id, &request.method, &request.params))
             .map_err(|error| error.to_string());
     if acts_on_a_tab {
         marks.extend(manager.mark_acting(agent_id));
@@ -108,7 +108,7 @@ fn saved_files(manager: &BrowserManager, agent_id: &str, mark: u64) -> Vec<Value
 /// An unloaded tab loads its page again before the agent's tools touch it.
 fn wait_for_reload(manager: &BrowserManager, agent_id: &str) {
     if let Ok((tab_id, _)) = manager.active_view(agent_id) {
-        crate::runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
+        sikemux_core::runtime::block_on(manager.wait_until_loaded(agent_id, &tab_id, LOAD_TIMEOUT));
     }
 }
 

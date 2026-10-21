@@ -65,7 +65,7 @@ impl Desks {
     pub fn new(window: &mut Window, cx: &mut Context<Workbench>) -> Self {
         let (heard, mut hearing) = mpsc::unbounded_channel();
         let engine = window_pointer(window).map(|view| {
-            sikemux_browser::set_runtime(runtime().handle().clone());
+            sikemux_core::runtime::set(runtime().handle().clone());
             BrowserManager::new(Arc::new(DeskHost {
                 view,
                 heard,

@@ -5788,6 +5788,7 @@ dependencies = [
  "sikemux-plugin-api",
  "sikemux-process",
  "sikemux-pty",
+ "sikemux-simulator",
  "tauri",
  "tauri-build",
  "tauri-plugin-process",
@@ -6267,6 +6268,20 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-simulator"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "sikemux-core",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
  "workspace-hack",
 ]
 

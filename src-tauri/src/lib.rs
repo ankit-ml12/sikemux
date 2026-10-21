@@ -30,7 +30,6 @@ mod pty;
 mod relaunch;
 mod remote;
 mod share;
-mod sim;
 mod simulator;
 mod state;
 mod system;
@@ -49,7 +48,6 @@ use browser::BrowserManager;
 use observability::UiWatchdogState;
 use pty::PtyManager;
 use sikemux_process as bounded_process;
-use sim::SimManager;
 use simulator::SimulatorManager;
 use tauri::Manager;
 use voice::VoiceManager;
@@ -182,20 +180,18 @@ pub fn run() {
                 if let Some(browser) = webview.try_state::<BrowserManager>() {
                     browser.drain(&format!("the window started loading {}", payload.url()));
                 }
-                if let Some(sim) = webview.try_state::<SimManager>() {
-                    sim.drop_watches();
+                if let Some(simulators) = webview.try_state::<SimulatorManager>() {
+                    simulators.sim().drop_watches();
                 }
             }
         })
         .setup(|_app| {
-            sikemux_browser::set_runtime(tauri::async_runtime::handle().inner().clone());
+            sikemux_core::runtime::set(tauri::async_runtime::handle().inner().clone());
             _app.manage(browser::engine(_app.handle()));
             _app.manage(UiWatchdogState::start()?);
-            let sim = SimManager::default();
-            _app.manage(sim.clone());
-            _app.manage(SimulatorManager::for_app(_app.handle().clone(), sim));
+            _app.manage(simulator::engine(_app.handle()));
             relaunch::restore(_app.handle());
-            tauri::async_runtime::spawn_blocking(simulator::offered);
+            tauri::async_runtime::spawn_blocking(sikemux_simulator::offered);
             wheel::watch(_app.handle());
             _app.state::<PtyManager>().start(_app.handle());
             _app.state::<hosts::Hosts>().start(_app.handle());
@@ -337,12 +333,12 @@ pub fn run() {
             voice::voice_stop,
             voice::voice_cancel,
             voice::voice_shutdown,
-            sim::sim_status,
-            sim::sim_prepare,
-            sim::sim_call,
-            sim::sim_watch,
-            sim::sim_unwatch,
-            sim::sim_watch_read,
+            simulator::sim_status,
+            simulator::sim_prepare,
+            simulator::sim_call,
+            simulator::sim_watch,
+            simulator::sim_unwatch,
+            simulator::sim_watch_read,
             simulator::simulator_set_enabled,
             simulator::simulator_setup,
             simulator::simulator_attachments,
@@ -393,9 +389,7 @@ pub fn run() {
                     } else {
                         simulators.drain();
                     }
-                }
-                if let Some(sim) = app_handle.try_state::<SimManager>() {
-                    sim.drain();
+                    simulators.sim().drain();
                 }
             }
         });

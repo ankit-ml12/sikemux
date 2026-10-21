@@ -31,6 +31,7 @@ pub use sikemux_wire::protocol;
 #[cfg(unix)]
 pub mod push;
 pub mod releases;
+pub mod runtime;
 #[cfg(unix)]
 pub use sikemux_client::device;
 #[cfg(unix)]
