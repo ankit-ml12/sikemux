@@ -134,7 +134,11 @@ pub(crate) struct WindowCall {
 /// plugin offers agents, so they are told to list their tools again.
 pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
     let outcome = match plugins(&call.plugin) {
-        Ok(plugins) => plugins.call(&call.plugin, &call.method, call.params.clone()).await,
+        Ok(plugins) => {
+            plugins
+                .call(&call.plugin, &call.method, call.params.clone())
+                .await
+        }
         Err(failure) => Err(failure),
     };
     if let (true, Some(core)) = (outcome.is_ok(), core.arc()) {
@@ -186,7 +190,11 @@ pub(crate) struct SignIn {
 
 /// The plugin's browser sign-in as the client's stream, which sends the
 /// address to open and ends once the person has signed in.
-pub(crate) fn sign_in(core: &Arc<Core>, connection: Arc<ClientConn>, sign_in: SignIn) -> CoreResult<Value> {
+pub(crate) fn sign_in(
+    core: &Arc<Core>,
+    connection: Arc<ClientConn>,
+    sign_in: SignIn,
+) -> CoreResult<Value> {
     stream(
         core,
         connection,
@@ -293,7 +301,11 @@ pub(crate) struct StreamCall {
 /// Runs a plugin's stream, its items arriving as the client's stream on
 /// `connection`. A stream that signs the plugin in or out changes what it
 /// offers agents and what the rail shows, so both hear of it when it ends.
-pub(crate) fn stream(core: &Arc<Core>, connection: Arc<ClientConn>, call: StreamCall) -> CoreResult<Value> {
+pub(crate) fn stream(
+    core: &Arc<Core>,
+    connection: Arc<ClientConn>,
+    call: StreamCall,
+) -> CoreResult<Value> {
     let StreamCall {
         stream: id,
         call: WindowCall {

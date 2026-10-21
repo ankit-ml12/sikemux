@@ -391,4 +391,3 @@ async fn open(
     };
     write(writer, &CliServerResponse::Closed { request_id, reason }).await;
 }
-

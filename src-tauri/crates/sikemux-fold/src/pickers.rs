@@ -129,7 +129,13 @@ mod tests {
 
     fn labels(picker: Option<ConfigPicker>) -> Vec<String> {
         picker
-            .map(|picker| picker.choices.into_iter().map(|choice| choice.label).collect())
+            .map(|picker| {
+                picker
+                    .choices
+                    .into_iter()
+                    .map(|choice| choice.label)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -159,7 +165,12 @@ mod tests {
         ] }]);
         assert_eq!(
             labels(pickers(&options).0),
-            ["Default (recommended)", "Opus 5 (1M context)", "Sonnet 5", "Haiku 4.5"]
+            [
+                "Default (recommended)",
+                "Opus 5 (1M context)",
+                "Sonnet 5",
+                "Haiku 4.5"
+            ]
         );
     }
 
@@ -194,7 +205,8 @@ mod tests {
 
     #[test]
     fn finds_no_effort_unless_one_is_tagged_as_thought_level() {
-        let options = json!([{ "id": "effort", "type": "select", "currentValue": "high", "options": [] }]);
+        let options =
+            json!([{ "id": "effort", "type": "select", "currentValue": "high", "options": [] }]);
         assert!(pickers(&options).1.is_none());
     }
 }

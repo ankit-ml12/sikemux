@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde_json::json;
-use sikemux_core::client::{probe, wait_for_core, ClientError, ClientEvent, CoreClient, ProbeError};
+use sikemux_core::client::{
+    probe, wait_for_core, ClientError, ClientEvent, CoreClient, ProbeError,
+};
 use sikemux_core::protocol::{AccountLinkState, Event, RemoteStatus};
 use sikemux_core::waiting;
 
@@ -388,9 +390,12 @@ async fn plugin_login(socket: &Path, plugin: &str) -> Result<(), String> {
     let (core, mut events) = CoreClient::connect(socket)
         .await
         .map_err(|error| error.to_string())?;
-    core.call("pluginSignIn", json!({ "stream": STREAM, "plugin": plugin }))
-        .await
-        .map_err(|error| error.to_string())?;
+    core.call(
+        "pluginSignIn",
+        json!({ "stream": STREAM, "plugin": plugin }),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
     let (pasted_into, mut pasted) = tokio::sync::mpsc::unbounded_channel();
     loop {
         tokio::select! {

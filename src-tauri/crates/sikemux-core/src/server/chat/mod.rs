@@ -1360,7 +1360,8 @@ impl Chats {
             .is_some_and(|driver| {
                 matches!(
                     driver,
-                    crate::agent_catalog::ChatDriver::Claude | crate::agent_catalog::ChatDriver::Codex
+                    crate::agent_catalog::ChatDriver::Claude
+                        | crate::agent_catalog::ChatDriver::Codex
                 )
             });
         if offers_effort {

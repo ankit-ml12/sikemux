@@ -436,7 +436,10 @@ impl Row {
         let mut text = String::new();
         let mut col = 0;
         for span in &self.spans {
-            text.extend(std::iter::repeat_n(' ', usize::from(span.col.saturating_sub(col))));
+            text.extend(std::iter::repeat_n(
+                ' ',
+                usize::from(span.col.saturating_sub(col)),
+            ));
             text.push_str(&span.text);
             col = span.col + span.width;
         }
@@ -575,7 +578,11 @@ impl<'a> Reader<'a> {
             let text = std::str::from_utf8(self.take(len)?).ok()?.to_owned();
             let wide = flags & SPAN_WIDE != 0;
             let cluster = flags & SPAN_CLUSTER != 0;
-            let cells = if cluster { 1 } else { text.chars().count() as u16 };
+            let cells = if cluster {
+                1
+            } else {
+                text.chars().count() as u16
+            };
             let width = cells * if wide { 2 } else { 1 };
             spans.push(Span {
                 style,

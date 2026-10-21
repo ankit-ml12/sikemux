@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
-use tokio::runtime::RuntimeFlavor;
 use sikemux_process::sync::Locked;
+use tokio::runtime::RuntimeFlavor;
 
 use super::connection::{ClientConn, ClientId};
 use super::{CoreError, CoreResult};

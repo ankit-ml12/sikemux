@@ -23,7 +23,6 @@ pub(crate) struct ProjectEntry {
     path: String,
 }
 
-
 fn name_of(p: &Path) -> String {
     p.file_name()
         .map(|s| s.to_string_lossy().into_owned())

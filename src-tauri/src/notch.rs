@@ -186,11 +186,7 @@ mod mac {
             >= 14
     }
 
-    pub(super) fn configure(
-        app: &AppHandle,
-        manager: &PtyManager,
-        enabled: bool,
-    ) -> AppResult<()> {
+    pub(super) fn configure(app: &AppHandle, manager: &PtyManager, enabled: bool) -> AppResult<()> {
         if !supported() {
             return Ok(());
         }

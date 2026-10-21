@@ -1138,7 +1138,6 @@ impl Workspaces {
             .map(|image| image.data_url.clone())
     }
 
-
     /// The recent chats a device may take up again: those in a project on
     /// this host, leaving out any running now.
     pub(crate) fn recent(&self, open: &[ChatInfo]) -> Vec<RecentInfo> {
