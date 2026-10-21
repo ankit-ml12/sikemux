@@ -4,11 +4,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
-use sikemux_client::client::{ClientError, ClientEvent, CoreClient};
+use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
 use sikemux_host::cli_paths;
-use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event};
+use sikemux_wire::grid::{decode_frame, decode_lines, Frame, GridPoint, Lines, TerminalColors, TerminalInput};
+use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, SessionId, StreamId};
 use tokio::sync::mpsc;
 
 pub enum Update {
@@ -19,6 +20,7 @@ pub enum Update {
     Read(&'static str, Value),
     /// The core turned down what was asked under the key.
     Refused(&'static str, String),
+    Terminal(SessionId, Screenful),
     Lost(String),
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
@@ -30,6 +32,27 @@ pub enum ChatNews {
     Changes { seq: u64, changes: Value },
     /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
     Page(Value),
+}
+
+/// What an attached terminal sends, decoded on the core's thread.
+pub enum Screenful {
+    Frame(Frame),
+    Lines(Lines),
+    Copied(String),
+}
+
+/// What the window asks of one terminal.
+pub enum TerminalAsk {
+    /// Starts its frames, the first a whole screen.
+    Attach,
+    Detach,
+    Input(TerminalInput),
+    /// The window drew this frame, so the core may send the next.
+    Ack(u32),
+    Resize(u16, u16),
+    Lines { start: u64, count: u32 },
+    /// Its text between two cells, or all of it, sent back as `Screenful::Copied`.
+    Copy(Option<(GridPoint, GridPoint)>),
 }
 
 /// One of the core's `Watch` calls, read again whenever the core says one of
@@ -58,6 +81,9 @@ pub enum Ask {
     Call { method: &'static str, params: Value },
     /// A call whose answer the window waits for, sent back under `key`.
     Answer { key: &'static str, method: &'static str, params: Value },
+    Terminal(SessionId, TerminalAsk),
+    /// The theme's colours, which the core answers programs' colour queries with.
+    TerminalColors(TerminalColors),
     Chat(ChatAsk),
 }
 
@@ -120,6 +146,7 @@ pub fn start(home: Home) -> Link {
 async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
+    let mut colors = None;
     loop {
         if let Some(launch) = &home.launch {
             match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false).await {
@@ -145,9 +172,19 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                 for (key, watch) in &watches {
                     read(&client, key, watch, &current, &updates);
                 }
+                if let Some(colors) = &colors {
+                    let _ = client.set_terminal_colors(Clone::clone(colors)).await;
+                }
+                let mut streams = Streams::new(&client, &updates);
                 loop {
                     tokio::select! {
+                        settled = streams.settled.recv() => {
+                            if let Some(settled) = settled {
+                                streams.settle(settled);
+                            }
+                        }
                         event = events.recv() => match event {
+                            Some(ClientEvent::Grid { stream, frame }) => streams.frame(stream, frame),
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
                                 let _ = updates.send(Update::View(Box::new(view)));
                             }
@@ -190,6 +227,13 @@ async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc:
                                     }
                                 });
                             }
+                            Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
+                            Some(Ask::TerminalColors(theme)) => {
+                                let client = client.clone();
+                                let sent = theme.clone();
+                                tokio::spawn(async move { client.set_terminal_colors(sent).await });
+                                colors = Some(theme);
+                            }
                             None => return,
                         },
                     }
@@ -226,6 +270,119 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
 fn report(what: &str, done: Result<(), ClientError>) {
     if let Err(error) = done {
         eprintln!("sikemux: the core refused to {what} a chat: {error}");
+    }
+}
+
+enum Settled {
+    Attached(SessionId, Attached),
+    Detached(StreamId),
+}
+
+/// The terminals attached on one connection: their streams, and frames that
+/// arrived before the attach that started them was answered.
+struct Streams {
+    client: Arc<CoreClient>,
+    updates: mpsc::UnboundedSender<Update>,
+    sessions: HashMap<StreamId, SessionId>,
+    streams: HashMap<SessionId, StreamId>,
+    early: HashMap<StreamId, Vec<Vec<u8>>>,
+    settle_tx: mpsc::UnboundedSender<Settled>,
+    settled: mpsc::UnboundedReceiver<Settled>,
+}
+
+impl Streams {
+    fn new(client: &Arc<CoreClient>, updates: &mpsc::UnboundedSender<Update>) -> Self {
+        let (settle_tx, settled) = mpsc::unbounded_channel();
+        Self {
+            client: client.clone(),
+            updates: updates.clone(),
+            sessions: HashMap::new(),
+            streams: HashMap::new(),
+            early: HashMap::new(),
+            settle_tx,
+            settled,
+        }
+    }
+
+    fn send(&self, session: SessionId, screenful: Screenful) {
+        let _ = self.updates.send(Update::Terminal(session, screenful));
+    }
+
+    fn frame(&mut self, stream: StreamId, bytes: Vec<u8>) {
+        match self.sessions.get(&stream) {
+            Some(&session) => {
+                if let Some(frame) = decode_frame(&bytes) {
+                    self.send(session, Screenful::Frame(frame));
+                }
+            }
+            None => self.early.entry(stream).or_default().push(bytes),
+        }
+    }
+
+    fn settle(&mut self, settled: Settled) {
+        match settled {
+            Settled::Attached(session, attached) => {
+                self.sessions.insert(attached.stream, session);
+                self.streams.insert(session, attached.stream);
+                self.frame(attached.stream, attached.frame);
+                for bytes in self.early.remove(&attached.stream).unwrap_or_default() {
+                    self.frame(attached.stream, bytes);
+                }
+            }
+            Settled::Detached(stream) => {
+                self.sessions.remove(&stream);
+                self.early.remove(&stream);
+            }
+        }
+    }
+
+    fn ask(&mut self, session: SessionId, ask: TerminalAsk) {
+        let client = self.client.clone();
+        let stream = self.streams.get(&session).copied();
+        match ask {
+            TerminalAsk::Attach => {
+                let settle = self.settle_tx.clone();
+                tokio::spawn(async move {
+                    match client.attach(session).await {
+                        Ok(attached) => drop(settle.send(Settled::Attached(session, attached))),
+                        Err(error) => eprintln!("sikemux: terminal {session} would not attach: {error}"),
+                    }
+                });
+            }
+            TerminalAsk::Detach => {
+                let Some(stream) = self.streams.remove(&session) else {
+                    return;
+                };
+                let settle = self.settle_tx.clone();
+                tokio::spawn(async move {
+                    let _ = client.detach(stream).await;
+                    let _ = settle.send(Settled::Detached(stream));
+                });
+            }
+            TerminalAsk::Ack(frame) => {
+                if let Some(stream) = stream {
+                    client.ack(stream, frame);
+                }
+            }
+            TerminalAsk::Input(input) => drop(tokio::spawn(async move { client.input(session, input).await })),
+            TerminalAsk::Resize(cols, rows) => drop(tokio::spawn(async move { client.resize(session, cols, rows).await })),
+            TerminalAsk::Lines { start, count } => {
+                let updates = self.updates.clone();
+                tokio::spawn(async move {
+                    if let Some(lines) = client.lines(session, start, count).await.ok().and_then(|bytes| decode_lines(&bytes)) {
+                        let _ = updates.send(Update::Terminal(session, Screenful::Lines(lines)));
+                    }
+                });
+            }
+            TerminalAsk::Copy(range) => {
+                let updates = self.updates.clone();
+                tokio::spawn(async move {
+                    if let Ok(text) = client.text(session, range).await {
+                        let _ = updates.send(Update::Terminal(session, Screenful::Copied(text)));
+                    }
+                });
+            }
+        }
     }
 }
 

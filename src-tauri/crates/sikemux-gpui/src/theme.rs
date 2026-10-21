@@ -5,6 +5,7 @@ use std::borrow::Cow;
 
 use gpui_kit::component::theme::Theme as KitTheme;
 use gpui_kit::{px, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rgba, SharedString};
+use sikemux_wire::grid::TerminalColors;
 
 pub const UI: &str = "Figtree";
 pub const MONO: &str = "JetBrainsMono NFM";
@@ -30,6 +31,18 @@ pub struct Palette {
     pub live: u32,
     pub warn: u32,
     pub cmd: u32,
+    pub terminal: TerminalPalette,
+}
+
+/// A theme's terminal colours, as src/themes/index.ts lists them.
+pub struct TerminalPalette {
+    pub background: u32,
+    pub foreground: u32,
+    pub cursor: u32,
+    /// The character under a block cursor.
+    pub cursor_text: u32,
+    pub selection: u32,
+    pub ansi: [u32; 16],
 }
 
 pub const AURA_NOIR: Palette = Palette {
@@ -44,6 +57,17 @@ pub const AURA_NOIR: Palette = Palette {
     live: 0x78dca1,
     warn: 0xe9ba6c,
     cmd: 0xff6ac1,
+    terminal: TerminalPalette {
+        background: 0x0f0f13,
+        foreground: 0xedecee,
+        cursor: 0xa277ff,
+        cursor_text: 0x0f0f13,
+        selection: 0x3d375e,
+        ansi: [
+            0x1f1f25, 0xff6767, 0x54ffbe, 0xffca85, 0xa277ff, 0xff6ac1, 0x61ffca, 0xedecee, 0x3d3a5a, 0xff8585, 0x88ffd8,
+            0xffe5b0, 0xc4a8ff, 0xff85d5, 0x88ffe0, 0xffffff,
+        ],
+    },
 };
 
 #[derive(Clone)]
@@ -80,6 +104,10 @@ pub struct Tokens {
     pub ssh: Hsla,
     pub tree_spine: Hsla,
     pub tree_tick: Hsla,
+    /// What named and indexed colours look like in a terminal; the core answers programs' colour queries with it.
+    pub terminal: TerminalColors,
+    pub terminal_cursor_text: Hsla,
+    pub terminal_selection: Hsla,
 }
 
 impl Global for Tokens {}
@@ -121,6 +149,14 @@ impl Tokens {
             ssh: mix_oklab(hex(palette.cmd), hex(palette.ink_dim), 0.7).into(),
             tree_spine: mix_srgb(acc, hex(palette.line), 0.52).into(),
             tree_tick: tint(acc, 0.72).into(),
+            terminal: TerminalColors {
+                foreground: bytes(palette.terminal.foreground),
+                background: bytes(palette.terminal.background),
+                cursor: Some(bytes(palette.terminal.cursor)),
+                ansi: palette.terminal.ansi.map(bytes),
+            },
+            terminal_cursor_text: hex(palette.terminal.cursor_text).into(),
+            terminal_selection: hex(palette.terminal.selection).into(),
         }
     }
 
@@ -214,6 +250,11 @@ pub fn install(cx: &mut App) {
     kit.danger = tokens.danger;
     kit.scrollbar_thumb = Hsla { a: 0.42, ..tokens.text_tertiary };
     cx.set_global(tokens);
+}
+
+fn bytes(value: u32) -> [u8; 3] {
+    let [_, r, g, b] = value.to_be_bytes();
+    [r, g, b]
 }
 
 fn hex(value: u32) -> Rgba {

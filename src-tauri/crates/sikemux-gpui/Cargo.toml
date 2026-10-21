@@ -21,6 +21,7 @@ flate2 = "1"
 # The same GPUI as GPUI Kit's, named `gpui` for the macros that expand to it.
 gpui = { package = "gpui-pre", version = "=0.3.9" }
 gpui-kit = { version = "=0.8.0", default-features = false, features = ["component"] }
+gpui-terminal-grid = { path = "crates/gpui-terminal-grid" }
 gpui-transcript = { path = "crates/gpui-transcript", features = ["fork"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -39,6 +40,7 @@ core-foundation = "0.10"
 anyhow = "1"
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["test-support", "bench-support"] }
+libc = "0.2"
 
 [profile.dev.package."*"]
 opt-level = 3

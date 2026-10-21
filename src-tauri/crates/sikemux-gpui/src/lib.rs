@@ -9,6 +9,7 @@ mod home;
 pub mod icons;
 mod rail;
 mod tabs;
+pub mod terminal;
 pub mod theme;
 mod ui;
 pub mod workbench;

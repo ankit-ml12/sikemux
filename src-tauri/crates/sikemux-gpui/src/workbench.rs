@@ -14,7 +14,7 @@ use crate::battery::Battery;
 use crate::chat::Chat;
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
-use crate::{agents, home, rail, tabs};
+use crate::{agents, home, rail, tabs, terminal};
 
 /// The one store: what the core last said, and what only this window decides.
 pub struct Workbench {
@@ -45,6 +45,7 @@ pub struct Workbench {
     pub asks: mpsc::UnboundedSender<Ask>,
     /// The chats of the agents with a tab open, by agent id.
     pub chats: HashMap<String, Chat>,
+    pub terminals: terminal::Terminals,
     _filtering: Option<Subscription>,
 }
 
@@ -94,12 +95,17 @@ impl Workbench {
         .detach();
         cx.spawn(async move |this, cx| {
             while let Some(update) = updates.recv().await {
-                if this.update(cx, |this, cx| this.apply(update, cx)).is_err() {
+                let mut batch = vec![update];
+                while let Ok(update) = updates.try_recv() {
+                    batch.push(update);
+                }
+                if this.update(cx, |this, cx| batch.into_iter().for_each(|update| this.apply(update, cx))).is_err() {
                     break;
                 }
             }
         })
         .detach();
+        let _ = asks.send(Ask::TerminalColors(Tokens::get(cx).terminal.clone()));
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
         let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
@@ -132,6 +138,7 @@ impl Workbench {
             filter_text: String::new(),
             asks,
             chats: HashMap::new(),
+            terminals: terminal::Terminals::default(),
             _filtering: None,
         };
         bench.read_usage();
@@ -151,9 +158,12 @@ impl Workbench {
                 for (agent, chat) in &self.chats {
                     self.ask_chat(ChatAsk::Attach { agent: agent.clone(), since: chat.mark.clone() });
                 }
+                self.terminals.reattach(&self.asks);
             }
             Update::View(view) => {
                 self.view = Some(*view);
+                let sessions = &self.view.as_ref().map_or(&[][..], |view| view.sessions.as_slice());
+                self.terminals.keep(|id| sessions.iter().any(|session| session.id == id), &self.asks);
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
@@ -198,6 +208,7 @@ impl Workbench {
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
+            Update::Terminal(session, screenful) => self.terminals.apply(session, screenful, cx),
             Update::Lost(reason) => self.lost = Some(reason),
         }
         cx.notify();
