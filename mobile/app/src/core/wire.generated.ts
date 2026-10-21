@@ -183,15 +183,12 @@ export interface AgentFace {
   shape: string;
   /** Which of the pack's colours, in the order its palette lists them. */
   color: number;
-  state: FaceState;
   /**
    * The part of the shape's 24-unit square its drawing fills, as an SVG
    * viewBox.
    */
   box: string;
 }
-
-export type FaceState = 'idle' | 'working' | 'waiting' | 'done';
 
 /** A saved chat kept at the top of the list, open or closed. */
 export interface PinnedChat {

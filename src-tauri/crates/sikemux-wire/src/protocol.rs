@@ -1054,21 +1054,10 @@ pub struct AgentFace {
     pub shape: String,
     /// Which of the pack's colours, in the order its palette lists them.
     pub color: u32,
-    pub state: FaceState,
     /// The part of the shape's 24-unit square its drawing fills, as an SVG
     /// viewBox.
     #[serde(rename = "box")]
     pub view_box: String,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum FaceState {
-    #[default]
-    Idle,
-    Working,
-    Waiting,
-    Done,
 }
 
 /// How agents' faces look, as the person picked.

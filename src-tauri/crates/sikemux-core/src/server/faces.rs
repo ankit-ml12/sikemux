@@ -1,8 +1,8 @@
 //! The face each agent wears in place of its CLI's logo: which pack, shape
 //! and colour, worked out the same way for every client from the art's
-//! catalogue, and the style the person picked.
+//! catalogue, and the style the person picked. How a face moves follows the
+//! agent's group, which clients already have.
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -11,7 +11,7 @@ use sikemux_process::sync::Locked;
 
 use super::kept::Kept;
 use super::{CoreError, CoreResult};
-use crate::protocol::{AgentFace, AgentGroup, FaceState, FaceStyle, WorkspaceAgent};
+use crate::protocol::{AgentFace, FaceStyle, WorkspaceAgent};
 
 const FILE: &str = "face-style.json";
 const EVERY_PACK: &str = "all";
@@ -60,18 +60,9 @@ fn hash(text: &str) -> u32 {
     h
 }
 
-fn state_of(group: Option<AgentGroup>) -> FaceState {
-    match group {
-        Some(AgentGroup::Blocked) => FaceState::Waiting,
-        Some(AgentGroup::Working) => FaceState::Working,
-        Some(AgentGroup::Done) => FaceState::Done,
-        Some(AgentGroup::Idle) | None => FaceState::Idle,
-    }
-}
-
 /// The face `agent` wears under `style`, or none while it shows its logo:
 /// every agent wears one while faces are on, and one with a name always does.
-fn face(style: &FaceStyle, agent: &WorkspaceAgent, group: Option<AgentGroup>) -> Option<AgentFace> {
+fn face(style: &FaceStyle, agent: &WorkspaceAgent) -> Option<AgentFace> {
     if !style.on && agent.name.is_none() {
         return None;
     }
@@ -114,7 +105,6 @@ fn face(style: &FaceStyle, agent: &WorkspaceAgent, group: Option<AgentGroup>) ->
         pack: pack.id.clone(),
         shape: shape.id.clone(),
         color: colour % pack.colors.max(1),
-        state: state_of(group),
         view_box: shape.view_box.clone(),
     })
 }
@@ -172,12 +162,11 @@ impl Faces {
         Ok(style.clone())
     }
 
-    /// Puts on each agent the face it wears, in the state its group says.
-    pub(crate) fn fill(&self, agents: &mut [WorkspaceAgent], groups: &HashMap<&str, AgentGroup>) {
+    /// Puts on each agent the face it wears.
+    pub(crate) fn fill(&self, agents: &mut [WorkspaceAgent]) {
         let style = self.style();
         for agent in agents {
-            let group = groups.get(agent.id.as_str()).copied();
-            agent.face = face(&style, agent, group);
+            agent.face = face(&style, agent);
         }
     }
 }
