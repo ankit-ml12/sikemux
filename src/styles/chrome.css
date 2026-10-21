@@ -112,7 +112,7 @@
 /* Where the window is, host then project, at the bar's true middle whatever sits either side. */
 .tb-place {
     position: absolute;
-    top: calc(50% + 1px);
+    top: 50%;
     left: 50%;
     display: flex;
     align-items: center;

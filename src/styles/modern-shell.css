@@ -62,12 +62,11 @@ textarea:focus,
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
-/* Its chips centre on the line macOS puts the window buttons on, 23px down. The window's own top edge reads as part
-   of the room above them, so the room under them is a little less to look the same. */
+/* Its chips centre on the line macOS puts the window buttons on, set by trafficLightPosition in tauri.macos.conf.json;
+   the two move together. */
 .top-bar {
     box-sizing: border-box;
-    height: 44px;
-    padding-top: 2px;
+    height: 36px;
 }
 
 .tb-right {
