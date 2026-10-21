@@ -4,7 +4,7 @@
 //!     [--account "Name <email>"]  draws the rail as if the host were signed in as them
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
-//!     [--then step…]              then does each step in turn: "click x,y" or "move x,y" in points,
+//!     [--then step…]              then does each step in turn: "click x,y", "dclick x,y", "rclick x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, "copy-image file.png", or "share" to open the
@@ -141,10 +141,10 @@ fn main() -> anyhow::Result<()> {
                     );
                     window.draw(cx).clear(cx);
                 }
-                "click" => {
+                "click" | "dclick" | "rclick" => {
                     let (x, y) = rest
                         .split_once(',')
-                        .ok_or_else(|| anyhow::anyhow!("click x,y"))?;
+                        .ok_or_else(|| anyhow::anyhow!("{verb} x,y"))?;
                     let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
                     let modifiers = Modifiers::default();
                     window.dispatch_event(
@@ -156,7 +156,12 @@ fn main() -> anyhow::Result<()> {
                         cx,
                     );
                     window.draw(cx).clear(cx);
-                    let (button, click_count) = (MouseButton::Left, 1);
+                    let button = if verb == "rclick" {
+                        MouseButton::Right
+                    } else {
+                        MouseButton::Left
+                    };
+                    let click_count = if verb == "dclick" { 2 } else { 1 };
                     window.dispatch_event(
                         PlatformInput::MouseDown(MouseDownEvent {
                             button,
