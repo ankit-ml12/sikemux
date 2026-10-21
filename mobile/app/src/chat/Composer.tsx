@@ -119,6 +119,12 @@ function PermissionDock({
           {run ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
           {asked(request.toolCall)}
         </Text>
+        {request.diff ? (
+          <Text style={[styles.dockCmdText, { marginTop: 4 }]}>
+            <Text style={{ color: colors.gitAdded }}>+{request.diff.adds}</Text>{' '}
+            <Text style={{ color: colors.gitDeleted }}>−{request.diff.dels}</Text>
+          </Text>
+        ) : null}
       </ScrollView>
       <View style={styles.dockActs}>
         {ordered.map((option) => {
@@ -352,7 +358,10 @@ function ConfigSheet({
           </View>
           <View style={styles.contextBar}>
             <View
-              style={[styles.contextFill, { width: `${contextShare(usage) * 100}%`, backgroundColor: usageColor(usage, provider, brand, colors) }]}
+              style={[
+                styles.contextFill,
+                { width: `${contextShare(usage) * 100}%`, backgroundColor: usageColor(usage, provider, brand, colors) },
+              ]}
             />
           </View>
           {usage.cost ? <Text style={styles.cost}>Session cost {money(usage.cost)}</Text> : null}
