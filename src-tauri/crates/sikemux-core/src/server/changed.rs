@@ -56,6 +56,8 @@ pub(crate) enum Topic {
     CodeHost,
     /// What a plugin's pane shows; `paths` names each view as `plugin/method`.
     PluginView,
+    /// Files clients have open moved on disk; `paths` names them as the clients did.
+    Files,
 }
 
 /// Paths by topic and project; none means anything may have changed.

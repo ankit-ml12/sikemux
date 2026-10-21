@@ -1203,7 +1203,8 @@ export type CoreChangeTopic =
   | 'lsp'
   | 'preferences'
   | 'codeHost'
-  | 'pluginView';
+  | 'pluginView'
+  | 'files';
 
 /**
  * How the person wants Sikemux to behave, the same in every app. A field
