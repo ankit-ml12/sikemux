@@ -1,10 +1,13 @@
 //! What every settings page is made of: sections under a heading, and rows
 //! with a name, a line about them, and the control that changes them.
 
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::switch::Switch;
+use gpui_kit::component::IndexPath;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Div, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
+    div, px, AnyElement, App, AppContext, Context, Div, Entity, IntoElement, ParentElement,
+    SharedString, Styled, Subscription, Window,
 };
 
 use crate::theme::{self, Tokens};
@@ -136,4 +139,44 @@ pub fn note(text: impl Into<SharedString>, cx: &App) -> AnyElement {
         .text_color(t.text_tertiary)
         .child(text.into())
         .into_any_element()
+}
+
+/// A dropdown of fixed choices, which a page keeps between frames.
+pub struct Choice {
+    state: Entity<SelectState<Vec<SharedString>>>,
+    _picked: Subscription,
+}
+
+impl Choice {
+    /// Offers `labels` with the one at `chosen` showing; `pick` hears the place of the one chosen.
+    pub fn new(
+        labels: Vec<impl Into<SharedString>>,
+        chosen: usize,
+        pick: impl Fn(&mut Workbench, usize, &mut Context<Workbench>) + 'static,
+        window: &mut Window,
+        cx: &mut Context<Workbench>,
+    ) -> Self {
+        let labels: Vec<SharedString> = labels.into_iter().map(Into::into).collect();
+        let offered = labels.clone();
+        let state = cx.new(|cx| SelectState::new(labels, Some(IndexPath::new(chosen)), window, cx));
+        let picked = cx.subscribe(
+            &state,
+            move |bench, _, event: &SelectEvent<Vec<SharedString>>, cx| {
+                let SelectEvent::Confirm(Some(label)) = event else {
+                    return;
+                };
+                if let Some(at) = offered.iter().position(|offered| offered == label) {
+                    pick(bench, at, cx);
+                }
+            },
+        );
+        Self {
+            state,
+            _picked: picked,
+        }
+    }
+
+    pub fn view(&self) -> Select<Vec<SharedString>> {
+        Select::new(&self.state).w(px(220.))
+    }
 }

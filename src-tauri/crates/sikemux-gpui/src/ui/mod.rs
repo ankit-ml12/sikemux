@@ -2,7 +2,7 @@
 //! that is missing belongs here, once.
 
 mod controls;
-mod dialog;
+pub(crate) mod dialog;
 mod dock;
 mod floats;
 mod lists;

@@ -9,6 +9,7 @@ use crate::workbench::Workbench;
 mod about;
 mod actions;
 mod activity;
+mod agents;
 mod appearance;
 mod cli;
 mod cloud;
@@ -21,6 +22,7 @@ mod plugins;
 /// for them, and the fields being typed in.
 #[derive(Default)]
 pub struct State {
+    pub agents: Option<agents::Fields>,
     pub devices: Option<devices::Fields>,
     pub actions: Option<actions::Fields>,
     pub activity: Option<activity::Fields>,
@@ -43,22 +45,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
         Page::Keybindings => keybindings::SECTIONS,
         Page::Activity => activity::SECTIONS,
         Page::About => about::SECTIONS,
-        Page::Agents => &[
-            "Agents on this machine",
-            "Launch boundary",
-            "Claude accounts",
-            "Codex accounts",
-            "Provider profiles",
-            "Coding plans",
-            "Model providers",
-            "Local models",
-            "Helpers",
-            "Skills",
-            "Sessions",
-            "Voice",
-            "Notch",
-            "iOS Simulator",
-        ],
+        Page::Agents => agents::SECTIONS,
         Page::Actions => actions::SECTIONS,
         Page::Cli => cli::SECTIONS,
         Page::Devices => devices::SECTIONS,
@@ -80,6 +67,7 @@ pub fn render(
     match settings.page {
         Page::About => about::render(bench, &lit, this, cx),
         Page::Actions => actions::render(bench, &settings.pages, &lit, this, window, cx),
+        Page::Agents => agents::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Activity => activity::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),

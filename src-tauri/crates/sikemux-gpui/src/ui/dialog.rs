@@ -12,12 +12,12 @@ use gpui_kit::{
 use super::text;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
 
-type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(crate) type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
 type Typed = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 /// The sheet every dialog is drawn on: a title, what it says, then its buttons on a
 /// sunken foot. Escape calls `no`, Enter `yes`.
-fn sheet(
+pub(crate) fn sheet(
     title: SharedString,
     body: AnyElement,
     foot: Div,
@@ -92,7 +92,7 @@ fn sheet_of(
 }
 
 /// A dialog's button: the plain one, or the filled one that answers yes.
-fn button(
+pub(crate) fn button(
     id: &'static str,
     label: SharedString,
     fill: Option<Hsla>,
