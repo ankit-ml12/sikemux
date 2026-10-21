@@ -12,6 +12,7 @@ mod finder;
 mod fuzzy;
 mod home;
 pub mod icons;
+mod keymap;
 mod rail;
 pub mod syntax;
 mod tabs;

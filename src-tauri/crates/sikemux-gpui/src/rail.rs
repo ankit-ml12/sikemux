@@ -11,6 +11,7 @@ use serde_json::Value;
 use sikemux_wire::protocol::{PaneKind, ProjectInfo};
 
 use crate::icons::Icon;
+use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
@@ -41,8 +42,8 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                     Group::new("Projects", "no projects")
                         .first()
                         .actions(actions(
-                            Some("⌘O"),
-                            [("add-project", Icon::Plus, "Open project — ⌘O")],
+                            keymap::hint("project.open", cx),
+                            [IconButton::new("add-project", Icon::Plus, "Open project")],
                             cx,
                         ))
                         .child(div().mb(px(6.)).child(
@@ -53,10 +54,10 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .child(
                     Group::new("Hosts", "no hosts")
                         .actions(actions(
-                            Some("⌘⇧S"),
+                            keymap::hint("ssh.open", cx),
                             [
-                                ("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"),
-                                ("add-host", Icon::Plus, "Find a host — ⌘⇧S"),
+                                IconButton::new("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"),
+                                IconButton::new("add-host", Icon::Plus, "Find a host"),
                             ],
                             cx,
                         ))
@@ -68,7 +69,8 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                     Group::new("Terminals", "no terminals")
                         .actions(actions(
                             None,
-                            [("add-terminal", Icon::Plus, "New terminal")],
+                            [IconButton::new("add-terminal", Icon::Plus, "New terminal")
+                                .on_click(cx.listener(|bench, _, _, _| bench.new_terminal()))],
                             cx,
                         ))
                         .children(terminals(bench, cx)),
@@ -251,8 +253,8 @@ fn split_version(version: &str) -> (String, Option<String>) {
 }
 
 fn actions<const N: usize>(
-    keys: Option<&'static str>,
-    buttons: [(&'static str, Icon, &'static str); N],
+    keys: Option<SharedString>,
+    buttons: [IconButton; N],
     cx: &App,
 ) -> impl IntoElement {
     div()
@@ -260,7 +262,7 @@ fn actions<const N: usize>(
         .items_center()
         .gap(px(6.))
         .children(keys.map(|keys| ui::kbd(keys, cx)))
-        .children(buttons.map(|(id, glyph, label)| IconButton::new(id, glyph, label).small()))
+        .children(buttons.map(IconButton::small))
 }
 
 fn project_tree(
@@ -325,15 +327,25 @@ fn surface_rows(
     project: &ProjectInfo,
 ) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>)> {
     let mut rows = vec![
-        (Icon::Editor, "Files".into(), "⌘E", Some(PaneKind::Files)),
+        (
+            Icon::Editor,
+            "Files".into(),
+            "window.files",
+            Some(PaneKind::Files),
+        ),
         (
             Icon::Terminal,
             "Terminal".into(),
-            "⌘⌥2",
+            "window.terminal",
             Some(PaneKind::Terminal),
         ),
-        (Icon::Agent, "Agents".into(), "⌘⌥4", Some(PaneKind::Agent)),
-        (Icon::Git, "Git".into(), "⌘⌥3", Some(PaneKind::Git)),
+        (
+            Icon::Agent,
+            "Agents".into(),
+            "window.agents",
+            Some(PaneKind::Agent),
+        ),
+        (Icon::Git, "Git".into(), "window.git", Some(PaneKind::Git)),
     ];
     if let Some(host) = &project.code_host {
         rows.extend(host.sections.iter().filter_map(|section| {
@@ -347,11 +359,16 @@ fn surface_rows(
         }));
     }
     rows.extend([
-        (Icon::Search, "Search".into(), "⌘⇧F", Some(PaneKind::Search)),
+        (
+            Icon::Search,
+            "Search".into(),
+            "search.global",
+            Some(PaneKind::Search),
+        ),
         (
             Icon::Board,
             "Agent board".into(),
-            "⌘⌥6",
+            "window.board",
             Some(PaneKind::Board),
         ),
     ]);
@@ -369,69 +386,62 @@ fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl In
         .ml(px(20.))
         .py(px(2.))
         .pr(px(6.))
-        .children(
-            rows.into_iter()
-                .enumerate()
-                .map(move |(index, (glyph, label, keys, kind))| {
-                    let tail = index == last;
-                    let lit = kind.is_some() && kind == front;
-                    let spine = div().absolute().left_0().top_0();
-                    div()
-                        .relative()
-                        .h(px(25.))
-                        .pr(px(8.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .rounded(RADIUS_2)
-                        .text_color(if lit { t.accent } else { t.text_tertiary })
-                        .when(!lit, |row| {
-                            row.hover(move |style| style.text_color(t.text_primary))
-                        })
-                        .child(if tail {
-                            spine
+        .children(rows.into_iter().enumerate().map(
+            move |(index, (glyph, label, command, kind))| {
+                let tail = index == last;
+                let lit = kind.is_some() && kind == front;
+                let spine = div().absolute().left_0().top_0();
+                div()
+                    .relative()
+                    .h(px(25.))
+                    .pr(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .rounded(RADIUS_2)
+                    .text_color(if lit { t.accent } else { t.text_tertiary })
+                    .when(!lit, |row| {
+                        row.hover(move |style| style.text_color(t.text_primary))
+                    })
+                    .child(if tail {
+                        spine
+                            .w(px(9.))
+                            .h(px(13.))
+                            .border_l_1()
+                            .border_b_1()
+                            .border_color(t.tree_spine)
+                            .rounded_bl(px(4.))
+                    } else {
+                        spine.bottom_0().w(px(1.)).bg(t.tree_spine)
+                    })
+                    .when(!tail, |row| {
+                        row.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .top(px(12.))
                                 .w(px(9.))
-                                .h(px(13.))
-                                .border_l_1()
-                                .border_b_1()
-                                .border_color(t.tree_spine)
-                                .rounded_bl(px(4.))
-                        } else {
-                            spine.bottom_0().w(px(1.)).bg(t.tree_spine)
-                        })
-                        .when(!tail, |row| {
-                            row.child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .top(px(12.))
-                                    .w(px(9.))
-                                    .h(px(1.))
-                                    .bg(t.tree_tick),
-                            )
-                        })
-                        .child(div().w(px(9.)).flex_none())
-                        .child(ui::mark_box(
-                            16.,
-                            ui::icon(glyph, 13.).text_color(if lit {
-                                t.live
-                            } else {
-                                t.text_tertiary
-                            }),
-                        ))
-                        .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
-                        .when(!keys.is_empty(), |row| {
-                            let keys =
-                                ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
-                            row.child(
-                                div()
-                                    .ml_auto()
-                                    .when(!lit, |keys| keys.opacity(0.5))
-                                    .child(keys),
-                            )
-                        })
-                }),
-        )
+                                .h(px(1.))
+                                .bg(t.tree_tick),
+                        )
+                    })
+                    .child(div().w(px(9.)).flex_none())
+                    .child(ui::mark_box(
+                        16.,
+                        ui::icon(glyph, 13.).text_color(if lit { t.live } else { t.text_tertiary }),
+                    ))
+                    .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
+                    .when_some(keymap::hint(command, cx), |row, keys| {
+                        let keys = ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
+                        row.child(
+                            div()
+                                .ml_auto()
+                                .when(!lit, |keys| keys.opacity(0.5))
+                                .child(keys),
+                        )
+                    })
+            },
+        ))
 }
 
 /// Who the host is signed in as, or the card that signs it in.

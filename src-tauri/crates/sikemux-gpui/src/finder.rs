@@ -24,19 +24,13 @@ actions!(finder, [Next, Previous, Choose, Close]);
 
 /// Named by today's command id, so a shortcut the person set for it still finds it.
 #[derive(Clone, Default, PartialEq, gpui::Action)]
-#[action(name = "palette.files", no_json)]
+#[action(name = "palette.files")]
 pub struct OpenFile;
 
 const SHOWN: usize = 200;
 
 pub fn install(cx: &mut App) {
-    let open = if cfg!(target_os = "macos") {
-        "cmd-p"
-    } else {
-        "ctrl-alt-p"
-    };
     cx.bind_keys([
-        KeyBinding::new(open, OpenFile, None),
         KeyBinding::new("down", Next, Some("Finder > Input")),
         KeyBinding::new("tab", Next, Some("Finder > Input")),
         KeyBinding::new("up", Previous, Some("Finder > Input")),

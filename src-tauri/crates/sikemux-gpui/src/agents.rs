@@ -89,19 +89,25 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .flex_none()
                 .pt(px(4.))
                 .px(px(10.))
-                .child(new_row("new-chat", Icon::Plus, "New chat", "⌘N", cx))
-                .child(new_row(
-                    "new-terminal",
-                    Icon::Terminal,
-                    "New terminal",
-                    "⌘T",
-                    cx,
-                ))
+                .child(
+                    new_row("new-chat", Icon::Plus, "New chat", "agent.new", cx)
+                        .on_click(cx.listener(|bench, _, _, _| bench.new_chat())),
+                )
+                .child(
+                    new_row(
+                        "new-terminal",
+                        Icon::Terminal,
+                        "New terminal",
+                        "terminal.new",
+                        cx,
+                    )
+                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                )
                 .child(new_row(
                     "new-browser",
                     Icon::Globe,
                     "New browser",
-                    "⌘⇧T",
+                    "browser.tabNew",
                     cx,
                 ))
                 .child(div().mt(px(8.)).child(
@@ -283,13 +289,7 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .into_any_element()
 }
 
-fn new_row(
-    id: &'static str,
-    glyph: Icon,
-    label: &'static str,
-    keys: &'static str,
-    cx: &App,
-) -> impl IntoElement {
+fn new_row(id: &'static str, glyph: Icon, label: &'static str, command: &str, cx: &App) -> Row {
     let t = Tokens::get(cx).clone();
     Row::new(id, label)
         .mark(
@@ -299,7 +299,7 @@ fn new_row(
                 .group_hover(ui::ROW, move |style| style.text_color(t.text_primary)),
         )
         .quiet()
-        .child(ui::kbd(keys, cx))
+        .children(crate::keymap::hint(command, cx).map(|keys| ui::kbd(keys, cx)))
 }
 
 fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -> impl IntoElement {

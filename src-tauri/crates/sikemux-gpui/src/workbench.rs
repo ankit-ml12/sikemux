@@ -47,6 +47,8 @@ pub struct Workbench {
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
     pub all_projects: bool,
+    /// Both rails are hidden, so the stage takes the window.
+    pub focus_mode: bool,
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
@@ -109,8 +111,8 @@ impl Workbench {
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
         crate::finder::install(cx);
+        crate::keymap::install(cx);
         crate::chat::install(cx);
-        crate::terminal::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -195,6 +197,7 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             all_projects: false,
+            focus_mode: false,
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             finder: None,
@@ -336,6 +339,12 @@ impl Workbench {
                 }
                 return;
             }
+            Update::Read("preferences", value) => {
+                if let Ok(preferences) = serde_json::from_value::<Preferences>(value.clone()) {
+                    crate::keymap::bind(&preferences.keybinding_overrides, cx);
+                }
+                self.reads.insert("preferences", value);
+            }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
@@ -344,6 +353,7 @@ impl Workbench {
                 return self.parts.redraw(&self.parts.stage, cx);
             }
             Update::Lost(reason) => self.lost = Some(reason),
+            Update::ShutDown => return cx.quit(),
             Update::Changed {
                 topic,
                 project,
@@ -836,6 +846,51 @@ impl Workbench {
     }
 
     /// A terminal tab in the project in front, on the shell the core keeps ready there.
+    /// Starts a chat with the agent the rail is set to, in the project in front.
+    pub fn new_chat(&self) {
+        if let (Some(project), Some(launcher)) = (self.project(), self.launcher()) {
+            let _ = self.asks.send(Ask::StartChat {
+                launcher: launcher.id.clone(),
+                project: project.id.clone(),
+            });
+        }
+    }
+
+    /// Brings forward the tab `by` places from the one in front, among those `same`
+    /// accepts, going round the strip.
+    fn step_tab(&self, by: isize, same: impl Fn(&Tab, &Tab) -> bool) {
+        let (Some(project), Some(front)) = (self.project(), self.tab()) else {
+            return;
+        };
+        let tabs: Vec<&Tab> = self
+            .tabs(&project.id)
+            .iter()
+            .filter(|tab| same(tab, front))
+            .collect();
+        let Some(at) = tabs.iter().position(|tab| tab.id == front.id) else {
+            return;
+        };
+        let to = (at as isize + by).rem_euclid(tabs.len() as isize) as usize;
+        self.activate_tab(&project.id, &tabs[to].id);
+    }
+
+    /// Brings forward the tab at `place` in the strip, counting from one, or the last tab.
+    fn go_to_tab(&self, place: Option<usize>) {
+        let Some(project) = self.project() else {
+            return;
+        };
+        let tabs = self.tabs(&project.id);
+        if let Some(tab) = place.map_or(tabs.last(), |place| tabs.get(place - 1)) {
+            self.activate_tab(&project.id, &tab.id);
+        }
+    }
+
+    fn close_front_tab(&self) {
+        if let (Some(project), Some(tab)) = (self.project(), self.tab()) {
+            self.close_tab(&project.id, &tab.id);
+        }
+    }
+
     pub fn new_terminal(&self) {
         if let Some(project) = self.project() {
             self.call("newTerminal", json!({ "project": project.id }));
@@ -1048,6 +1103,12 @@ fn decode_picture(value: &Value) -> Option<Arc<Image>> {
     Some(Arc::new(Image::from_bytes(format, bytes)))
 }
 
+/// Whether two tabs show the same kind of pane, as ⌃Tab steps between them.
+fn same_kind(tab: &Tab, front: &Tab) -> bool {
+    let kind = |tab: &Tab| tabs::first_view(&tab.pane).map(|(kind, _)| kind);
+    kind(tab) == kind(front)
+}
+
 /// What a tab's pane shows when it is one view of `kind`.
 pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
     match &tab.pane {
@@ -1143,8 +1204,10 @@ impl Parts {
 
 impl Render for Workbench {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::keymap::*;
         let t = Tokens::get(cx);
         let parts = &self.parts;
+        let rails = !self.focus_mode;
         div()
             .id("shell")
             .track_focus(&self.focus)
@@ -1155,6 +1218,31 @@ impl Render for Workbench {
                 cx.notify();
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
+            .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
+            .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
+            .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
+            .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))
+            .on_action(cx.listener(|bench, _: &NextOfKind, _, _| bench.step_tab(1, same_kind)))
+            .on_action(cx.listener(|bench, _: &GoToTab1, _, _| bench.go_to_tab(Some(1))))
+            .on_action(cx.listener(|bench, _: &GoToTab2, _, _| bench.go_to_tab(Some(2))))
+            .on_action(cx.listener(|bench, _: &GoToTab3, _, _| bench.go_to_tab(Some(3))))
+            .on_action(cx.listener(|bench, _: &GoToTab4, _, _| bench.go_to_tab(Some(4))))
+            .on_action(cx.listener(|bench, _: &GoToTab5, _, _| bench.go_to_tab(Some(5))))
+            .on_action(cx.listener(|bench, _: &GoToTab6, _, _| bench.go_to_tab(Some(6))))
+            .on_action(cx.listener(|bench, _: &GoToTab7, _, _| bench.go_to_tab(Some(7))))
+            .on_action(cx.listener(|bench, _: &GoToTab8, _, _| bench.go_to_tab(Some(8))))
+            .on_action(cx.listener(|bench, _: &GoToLastTab, _, _| bench.go_to_tab(None)))
+            .on_action(cx.listener(|bench, _: &CloseTab, _, _| bench.close_front_tab()))
+            .on_action(cx.listener(|bench, _: &FocusMode, _, cx| {
+                bench.focus_mode = !bench.focus_mode;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|bench, _: &QuitAndStopEverything, _, _| {
+                let _ = bench.asks.send(Ask::Shutdown);
+            }))
+            .on_action(|_: &Minimize, window, _| window.minimize_window())
+            .on_action(|_: &Zoom, window, _| window.zoom_window())
+            .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .flex()
             .flex_col()
             .pt(px(6.))
@@ -1178,28 +1266,32 @@ impl Render for Workbench {
                     .pt(px(4.))
                     .px(px(10.))
                     .pb(px(10.))
-                    .child(
-                        parts.rail.clone().cached(
-                            StyleRefinement::default()
-                                .w(px(rail::SIDE_RAIL_WIDTH))
-                                .h_full()
-                                .flex_none(),
-                        ),
-                    )
+                    .when(rails, |row| {
+                        row.child(
+                            parts.rail.clone().cached(
+                                StyleRefinement::default()
+                                    .w(px(rail::SIDE_RAIL_WIDTH))
+                                    .h_full()
+                                    .flex_none(),
+                            ),
+                        )
+                    })
                     .child(
                         parts
                             .stage
                             .clone()
                             .cached(StyleRefinement::default().flex_1().min_w_0().h_full()),
                     )
-                    .child(
-                        parts.tabs.clone().cached(
-                            StyleRefinement::default()
-                                .w(px(agents::TAB_RAIL_WIDTH))
-                                .h_full()
-                                .flex_none(),
-                        ),
-                    ),
+                    .when(rails, |row| {
+                        row.child(
+                            parts.tabs.clone().cached(
+                                StyleRefinement::default()
+                                    .w(px(agents::TAB_RAIL_WIDTH))
+                                    .h_full()
+                                    .flex_none(),
+                            ),
+                        )
+                    }),
             )
             .when(self.finder.is_some(), |shell| {
                 shell.child(

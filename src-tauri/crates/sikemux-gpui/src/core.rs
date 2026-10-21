@@ -26,6 +26,8 @@ pub enum Update {
     Refused(&'static str, String),
     Terminal(SessionId, Screenful),
     Lost(String),
+    /// The core stopped everything it ran, as the person asked, so the app can quit.
+    ShutDown,
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
     /// The core said something under a followed topic moved; no paths means anything may have.
@@ -129,6 +131,13 @@ pub enum Ask {
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
     Follow(&'static str),
+    /// Starts a chat with `launcher`'s agent in `project` and brings its tab to the front.
+    StartChat {
+        launcher: String,
+        project: String,
+    },
+    /// Stops every agent and terminal the core runs.
+    Shutdown,
 }
 
 pub enum ChatAsk {
@@ -348,6 +357,22 @@ async fn run(
                                 });
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
+                            Some(Ask::StartChat { launcher, project }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    match client.start_chat(launcher, project.clone(), None).await {
+                                        Ok((agent, _)) => {
+                                            let tab = json!({ "project": project, "kind": "agent", "target": agent });
+                                            let _ = client.call("openTab", tab).await;
+                                        }
+                                        Err(error) => eprintln!("sikemux: the core would not start a chat: {error}"),
+                                    }
+                                });
+                            }
+                            Some(Ask::Shutdown) => {
+                                let _ = client.shutdown(true).await;
+                                let _ = updates.send(Update::ShutDown);
+                            }
                             None => return,
                         },
                     }

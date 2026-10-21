@@ -140,7 +140,7 @@ pub fn caps(value: &str, cx: &App) -> Div {
 }
 
 /// A shortcut as the system draws key names.
-pub fn kbd(keys: &'static str, cx: &App) -> Div {
+pub fn kbd(keys: impl Into<SharedString>, cx: &App) -> Div {
     text(keys, 11., FontWeight::MEDIUM)
         .font_family(theme::KBD)
         .line_height(px(11.))
