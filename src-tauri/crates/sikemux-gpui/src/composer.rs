@@ -2,13 +2,14 @@ use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use gpui_kit::base::input::InlineTokenContext;
 use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, radians, Anchor, App, Entity, Focusable, FontWeight, Hsla, Image, ImageFormat,
-    InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Transformation, Window,
+    div, img, px, radians, Anchor, AnyElement, App, ClipboardItem, Entity, Focusable, FontWeight,
+    Hsla, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
@@ -19,6 +20,8 @@ use crate::ui::{self, IconButton, Menu, MenuItem};
 
 type Act = Rc<dyn Fn(&mut Window, &mut App)>;
 type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
+type Paste = Rc<dyn Fn(&ClipboardItem, &mut Window, &mut App) -> bool>;
+type Chip = Rc<dyn Fn(&InlineTokenContext, &mut Window, &mut App) -> AnyElement>;
 
 /// The project a new chat starts in, docked on the composer until its first message.
 pub struct Strip {
@@ -41,6 +44,9 @@ pub struct Composer {
     yolo: Option<(bool, Act)>,
     pickers: Option<(Option<ConfigPicker>, Option<ConfigPicker>, Pick)>,
     usage: Option<ContextUsage>,
+    /// The files going with the message, the button that picks more, what a paste of
+    /// files or pictures does, and how the draft draws the tags that name them.
+    attachments: Option<(Option<AnyElement>, Act, Paste, Chip)>,
     on_send: Act,
     on_stop: Act,
 }
@@ -64,6 +70,7 @@ impl Composer {
             yolo: None,
             pickers: None,
             usage: None,
+            attachments: None,
             on_send,
             on_stop,
         }
@@ -107,6 +114,19 @@ impl Composer {
         self
     }
 
+    pub fn attachments<E: IntoElement>(
+        mut self,
+        tiles: Option<AnyElement>,
+        on_add: Act,
+        on_paste: Paste,
+        chip: impl Fn(&InlineTokenContext, &mut Window, &mut App) -> E + 'static,
+    ) -> Self {
+        let chip: Chip =
+            Rc::new(move |token, window, cx| chip(token, window, cx).into_any_element());
+        self.attachments = Some((tiles, on_add, on_paste, chip));
+        self
+    }
+
     pub fn usage(mut self, usage: Option<ContextUsage>) -> Self {
         self.usage = usage;
         self
@@ -117,7 +137,13 @@ impl RenderOnce for Composer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let fill = t.surface_composer;
-        let drafted = !self.draft.read(cx).value().trim().is_empty();
+        let (tiles, on_add, on_paste, chip) = match self.attachments {
+            Some((tiles, on_add, on_paste, chip)) => {
+                (tiles, Some(on_add), Some(on_paste), Some(chip))
+            }
+            None => (None, None, None, None),
+        };
+        let drafted = tiles.is_some() || !self.draft.read(cx).value().trim().is_empty();
         let focused = self.draft.focus_handle(cx).contains_focused(window, cx);
         let settable = self.ready && !self.running;
         let mut bar = div()
@@ -131,7 +157,10 @@ impl RenderOnce for Composer {
             .child(
                 IconButton::new("composer-attach", Icon::Plus, "Add files")
                     .glyph(17.)
-                    .width(31.),
+                    .width(31.)
+                    .when_some(on_add, |button, on_add| {
+                        button.on_click(move |_, window, cx| on_add(window, cx))
+                    }),
             );
         if let Some((on, toggle)) = self.yolo {
             bar = bar.child(yolo(on, settable, &self.agent_label, toggle, cx));
@@ -193,11 +222,20 @@ impl RenderOnce for Composer {
                     .border_color(if focused { t.border_selected } else { t.border })
                     .rounded(theme::RADIUS_3)
                     .bg(fill)
+                    .children(tiles)
                     .child(
                         div().px(px(12.)).py(px(10.)).child(
                             Textarea::new(&self.draft)
                                 .appearance(false)
-                                .text_size(px(14.5)),
+                                .text_size(px(14.5))
+                                .when_some(on_paste, |draft, on_paste| {
+                                    draft.on_paste(move |item, window, cx| {
+                                        on_paste(item, window, cx)
+                                    })
+                                })
+                                .when_some(chip, |draft, chip| {
+                                    draft.token(move |token, window, cx| chip(token, window, cx))
+                                }),
                         ),
                     )
                     .child(bar),

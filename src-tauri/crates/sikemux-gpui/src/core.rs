@@ -14,7 +14,7 @@ use sikemux_wire::grid::{
 use sikemux_wire::protocol::{
     ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 pub enum Update {
     /// The core's release, which the app ships with.
@@ -149,6 +149,16 @@ pub enum ChatAsk {
     Prompt {
         agent: String,
         text: String,
+        paths: Vec<String>,
+    },
+    /// A file the person handed the chat that lives nowhere the agent can read, such as a
+    /// pasted picture, for the core to keep; answers where it keeps it.
+    Keep {
+        agent: String,
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+        kept: oneshot::Sender<Result<PathBuf, String>>,
     },
     Cancel {
         agent: String,
@@ -370,13 +380,28 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             (agent, ChatNews::Page(page.unwrap_or_default()))
         }
         ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
-        ChatAsk::Prompt { agent, text } => {
+        ChatAsk::Prompt { agent, text, paths } => {
             return report(
                 "prompt",
                 client
-                    .acp_prompt(agent, None, text, Vec::new(), Vec::new())
+                    .acp_prompt(agent, None, text, paths, Vec::new())
                     .await,
             )
+        }
+        ChatAsk::Keep {
+            agent,
+            name,
+            mime,
+            bytes,
+            kept,
+        } => {
+            let _ = kept.send(
+                client
+                    .attach_file(agent, name, mime, &bytes)
+                    .await
+                    .map_err(|error| error.to_string()),
+            );
+            return;
         }
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
         ChatAsk::Permission {

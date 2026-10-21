@@ -437,6 +437,7 @@ impl Workbench {
             draft,
             secret,
             hint: SharedString::default(),
+            attachments: Vec::new(),
             _heard: [sending, keeping],
         });
     }
@@ -480,15 +481,16 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(draft) = self
+        let Some(composing) = self
             .chats
             .get(agent)
-            .and_then(|chat| Some(chat.composer.as_ref()?.draft.clone()))
+            .and_then(|chat| chat.composer.as_ref())
         else {
             return;
         };
+        let (draft, attached) = (composing.draft.clone(), !composing.attachments.is_empty());
         let text = draft.read(cx).value().trim().to_owned();
-        if text.is_empty() {
+        if text.is_empty() && !attached {
             if primary {
                 self.answer(agent, |chat, open| {
                     chat.send_answers(open)

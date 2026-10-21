@@ -72,6 +72,7 @@ icons!(
     Highlighter => "highlighter",
     HomeButton => "home-button",
     Hourglass => "hourglass",
+    Image => "image",
     Inbox => "inbox",
     Issue => "issue",
     Issues => "issues",

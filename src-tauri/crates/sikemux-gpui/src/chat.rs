@@ -4,6 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Scrollbar};
@@ -31,6 +32,7 @@ use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
+mod attach;
 mod live;
 mod tools;
 
@@ -311,6 +313,8 @@ pub struct Composing {
     pub draft: Entity<TextareaState>,
     pub secret: Entity<InputState>,
     pub hint: SharedString,
+    /// The files going out with the next message, its pictures named in the draft by number.
+    pub attachments: Vec<PathBuf>,
     pub _heard: [Subscription; 2],
 }
 
@@ -951,12 +955,22 @@ impl Chat {
                 open,
             );
         }
+        let attachments = self
+            .composer
+            .as_mut()
+            .map(|composing| std::mem::take(&mut composing.attachments))
+            .unwrap_or_default();
+        let paths: Vec<String> = attachments
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
         if self.steers() && !queue {
-            return Some(self.steer_queued(agent, Some(text)));
+            return Some(self.steer_queued(agent, Some(json!({ "text": text, "paths": paths }))));
         }
         Some(Ask::Chat(ChatAsk::Prompt {
             agent: agent.to_owned(),
             text,
+            paths,
         }))
     }
 
@@ -976,15 +990,14 @@ impl Chat {
         (self.steers() && waiting).then(|| self.steer_queued(agent, None))
     }
 
-    /// Puts the messages waiting behind the running turn into it, and `text` after them.
-    fn steer_queued(&self, agent: &str, text: Option<String>) -> Ask {
+    /// Puts the messages waiting behind the running turn into it, and `message` after them.
+    fn steer_queued(&self, agent: &str, message: Option<Value>) -> Ask {
         let ids: Vec<&str> = self.state.as_ref().map_or(Vec::new(), |head| {
             head.queued
                 .iter()
                 .map(|queued| queued.id.as_str())
                 .collect()
         });
-        let message = text.map(|text| json!({ "text": text }));
         Ask::Call {
             method: "steerQueued",
             params: json!({ "agentId": agent, "ids": ids, "message": message }),
@@ -1066,10 +1079,13 @@ pub fn pane(
         && chat.current(&open).is_some_and(|question| !question.secret)
         && !chat.is_folded(&open);
     let id = &agent.id;
+    let composing = chat.composer.is_some();
     div()
         .size_full()
+        .relative()
         .flex()
         .flex_col()
+        .when(composing, |pane| pane.on_drop(attach::on_drop(id, cx)))
         .when(asking, |pane| {
             pane.key_context("QuestionDock")
                 .on_action(pressed(id, |choose: &Choose| Press::Choose(choose.0), cx))
@@ -1092,6 +1108,7 @@ pub fn pane(
                 .on_action(stop_turn(id, cx))
                 .child(composer)
         }))
+        .when(composing, |pane| pane.child(attach::drop_hint(cx)))
 }
 
 /// Hands a key's action to the question on show; one it does not take goes on to the draft.
@@ -1879,7 +1896,29 @@ fn composer(
             .project()
             .and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
     });
+    let on_add = {
+        let (this, agent) = (this.clone(), agent.id.clone());
+        Rc::new(move |window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.add_files(&agent, window, cx))
+                .ok();
+        })
+    };
+    let remove = {
+        let (this, agent) = (this.clone(), agent.id.clone());
+        move |index: usize, window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.detach(&agent, index, window, cx))
+                .ok();
+        }
+    };
+    let tiles =
+        attach::tiles(&composing.attachments, remove, cx).map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
+        .attachments(
+            tiles,
+            on_add,
+            Rc::new(attach::on_paste(&agent.id, cx)),
+            attach::chip,
+        )
         .strip(strip)
         .ready(head.is_some_and(|head| head.connection == ChatConnection::Ready))
         .running(chat.running())

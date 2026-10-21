@@ -5,17 +5,20 @@
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
 //!     [--then step…]              then does each step in turn: "click x,y" in points,
-//!                                 "type text", "key cmd-enter", "wait seconds" or "shot out.png"
+//!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png",
+//!                                 "drag x,y path…" or "drop x,y path…" to hold files over
+//!                                 a place or drop them there, or "copy-image file.png"
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    point, px, size, AppContext, HeadlessAppContext, Keystroke, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent,
-    TouchPhase,
+    point, px, size, AppContext, ClipboardEntry, ClipboardItem, ExternalPaths, FileDropEvent,
+    HeadlessAppContext, Image, ImageFormat, Keystroke, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
 };
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 use sikemux_wire::protocol::AccountInfo;
@@ -170,6 +173,38 @@ fn main() -> anyhow::Result<()> {
                 }
                 "key" => {
                     window.dispatch_keystroke(Keystroke::parse(rest)?, cx);
+                }
+                "drag" | "drop" => {
+                    let (at, paths) = rest
+                        .split_once(' ')
+                        .ok_or_else(|| anyhow::anyhow!("{verb} x,y path…"))?;
+                    let (x, y) = at
+                        .split_once(',')
+                        .ok_or_else(|| anyhow::anyhow!("{verb} x,y path…"))?;
+                    let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
+                    let paths = ExternalPaths(paths.split(' ').map(PathBuf::from).collect());
+                    window.dispatch_event(
+                        PlatformInput::FileDrop(FileDropEvent::Entered { position, paths }),
+                        cx,
+                    );
+                    window.draw(cx).clear(cx);
+                    window.dispatch_event(
+                        PlatformInput::FileDrop(FileDropEvent::Pending { position }),
+                        cx,
+                    );
+                    if verb == "drop" {
+                        window.draw(cx).clear(cx);
+                        window.dispatch_event(
+                            PlatformInput::FileDrop(FileDropEvent::Submit { position }),
+                            cx,
+                        );
+                    }
+                }
+                "copy-image" => {
+                    let image = Image::from_bytes(ImageFormat::Png, std::fs::read(rest)?);
+                    cx.write_to_clipboard(ClipboardItem {
+                        entries: vec![ClipboardEntry::Image(image)],
+                    });
                 }
                 _ => {}
             }
