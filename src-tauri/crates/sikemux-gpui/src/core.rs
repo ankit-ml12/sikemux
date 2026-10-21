@@ -87,6 +87,11 @@ pub enum TerminalAsk {
         inclusive: bool,
     },
     Clear,
+    /// Its text between two cells, sent back to `reply`.
+    Text {
+        range: Option<(GridPoint, GridPoint)>,
+        reply: oneshot::Sender<String>,
+    },
     /// Turns off the modes a program left on, such as mouse reporting, after
     /// it exits without doing so.
     ResetModes,
@@ -141,10 +146,12 @@ pub enum Ask {
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
     Follow(&'static str),
-    /// Starts a chat with `launcher`'s agent in `project` and brings its tab to the front.
+    /// Starts a chat with `launcher`'s agent in `project` and brings its tab to the front,
+    /// answering the new agent's id to `started` when it is there.
     StartChat {
         launcher: String,
         project: String,
+        started: Option<oneshot::Sender<String>>,
     },
     /// Takes up one of the device view's recent chats again and brings its tab to the front.
     ResumeChat {
@@ -405,13 +412,16 @@ async fn run(
                                 });
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
-                            Some(Ask::StartChat { launcher, project }) => {
+                            Some(Ask::StartChat { launcher, project, started }) => {
                                 let client = client.clone();
                                 tokio::spawn(async move {
                                     match client.start_chat(launcher, project.clone(), None).await {
                                         Ok((agent, _)) => {
                                             let tab = json!({ "project": project, "kind": "agent", "target": agent });
                                             let _ = client.call("openTab", tab).await;
+                                            if let Some(started) = started {
+                                                let _ = started.send(agent);
+                                            }
                                         }
                                         Err(error) => eprintln!("sikemux: the core would not start a chat: {error}"),
                                     }
@@ -718,6 +728,11 @@ impl Streams {
                 });
             }
             TerminalAsk::Clear => drop(tokio::spawn(async move { client.clear(session).await })),
+            TerminalAsk::Text { range, reply } => drop(tokio::spawn(async move {
+                if let Ok(text) = client.text(session, range).await {
+                    let _ = reply.send(text);
+                }
+            })),
             TerminalAsk::ResetModes => {
                 drop(tokio::spawn(
                     async move { client.reset_modes(session).await },

@@ -81,6 +81,7 @@ pub struct Workbench {
     /// What agents asked the person, and the assumptions they went on.
     pub questions: Vec<Question>,
     pub terminals: terminal::Terminals,
+    pub editors: crate::editor::Editors,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
@@ -153,6 +154,7 @@ impl Workbench {
         crate::keymap::install(cx);
         crate::chat::install(cx);
         crate::terminal::install(cx);
+        crate::editor::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -215,6 +217,7 @@ impl Workbench {
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
         let _ = asks.send(Ask::Follow("git"));
+        let _ = asks.send(Ask::Follow("files"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
                 break;
@@ -256,6 +259,7 @@ impl Workbench {
             deliveries: HashMap::new(),
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
+            editors: crate::editor::Editors::default(),
             focus: cx.focus_handle(),
             parts: Parts::new(cx),
             _filtering: None,
@@ -421,6 +425,9 @@ impl Workbench {
                     if self.finder.is_some() {
                         self.project_files.read(root.as_deref(), &self.asks);
                     }
+                }
+                if topic == "files" {
+                    crate::editor::changed(self, paths.as_deref().unwrap_or_default(), cx);
                 }
                 if topic == "git" {
                     cx.emit(crate::git::Changed { project, paths });
@@ -964,6 +971,7 @@ impl Workbench {
             let _ = self.asks.send(Ask::StartChat {
                 launcher: launcher.id.clone(),
                 project: project.id.clone(),
+                started: None,
             });
         }
     }
@@ -1502,7 +1510,10 @@ impl Render for Workbench {
             .on_action(|_: &Minimize, window, _| window.minimize_window())
             .on_action(|_: &Zoom, window, _| window.zoom_window())
             .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
-            .on_action(cx.listener(|bench, open: &OpenAt, _, _| bench.open_file(&open.path)))
+            .on_action(cx.listener(|bench, open: &OpenAt, _, _| {
+                bench.editors.reveal(open.clone());
+                bench.open_file(&open.path);
+            }))
             .flex()
             .flex_col()
             .pt(px(6.))
