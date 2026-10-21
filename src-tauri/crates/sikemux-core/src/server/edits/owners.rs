@@ -98,6 +98,22 @@ pub(crate) struct FileOwners {
     pub path: String,
     pub lines: Vec<Run>,
     pub removed: Vec<Removal>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
+}
+
+/// What to say beside a changed line: who wrote it, said where its run of changed
+/// lines starts and wherever the writer changes within it, and whose lines it
+/// rewrote.
+#[derive(Serialize, Debug, PartialEq)]
+pub(crate) struct Note {
+    pub line: u64,
+    /// Whether the note names who wrote the line; `author` none when no agent did.
+    pub named: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub over: Option<usize>,
 }
 
 /// `count` lines from `start` that `author` wrote last. `over` is the agent
@@ -456,12 +472,62 @@ fn record_over(core: &Core, dir: &Path, staged: bool, diff: &Diff) -> Owners {
                     path: path.clone(),
                     lines,
                     removed,
+                    notes: Vec::new(),
                 });
             }
         }
         owners = agents.owners(core, files);
+        for file in &mut owners.files {
+            let changes: Vec<(u64, u64)> = match changed.get(&file.path) {
+                Some(hunks) => hunks.iter().map(|hunk| (hunk.start, hunk.count)).collect(),
+                None => read_text(&top.join(&file.path))
+                    .as_deref()
+                    .map(|text| vec![(1, line_count(text))])
+                    .unwrap_or_default(),
+            };
+            file.notes = notes(&changes, &file.lines);
+        }
     }
     owners
+}
+
+/// The notes beside the lines of `changes`, each `count` changed lines from
+/// `start`, given who wrote which in `lines`. A run of changed lines no agent
+/// wrote any of gets none.
+fn notes(changes: &[(u64, u64)], lines: &[Run]) -> Vec<Note> {
+    let owner = |line: u64| {
+        let after = lines.partition_point(|run| run.start + run.count <= line);
+        lines.get(after).filter(|run| run.start <= line)
+    };
+    let mut notes = Vec::new();
+    for &(start, count) in changes.iter().filter(|(_, count)| *count > 0) {
+        let owners: Vec<Option<&Run>> = (start..start + count).map(owner).collect();
+        let writers: HashSet<Option<usize>> =
+            owners.iter().map(|run| run.map(|run| run.author)).collect();
+        if writers.len() == 1 && owners[0].is_none() {
+            continue;
+        }
+        let mixed = writers.len() > 1;
+        let mut before: Option<&Run> = None;
+        for (at, run) in owners.iter().enumerate() {
+            let author = run.map(|run| run.author);
+            let named = at == 0 || (mixed && author != before.map(|run| run.author));
+            let over = run.and_then(|run| run.over).filter(|over| {
+                Some(*over) != before.and_then(|run| run.over)
+                    || author != before.map(|run| run.author)
+            });
+            if named || over.is_some() {
+                notes.push(Note {
+                    line: start + at as u64,
+                    named,
+                    author,
+                    over,
+                });
+            }
+            before = *run;
+        }
+    }
+    notes
 }
 
 /// `agent_id` as its latest edit in `dir`'s project names it.
