@@ -221,7 +221,12 @@ mod tests {
             std::env::var("PATH").unwrap()
         );
         let alias = "odd 'host' \\ $HOME";
-        for shell in ["/bin/sh", "/bin/zsh", "/bin/bash"] {
+        let shells: Vec<&str> = ["/bin/sh", "/bin/bash", "/bin/zsh"]
+            .into_iter()
+            .filter(|shell| std::path::Path::new(shell).exists())
+            .collect();
+        assert!(shells.contains(&"/bin/sh"), "no /bin/sh to run the loop");
+        for shell in shells {
             sikemux_process::user_environment::command(shell)
                 .arg("-c")
                 .arg(super::startup(alias))
