@@ -3,13 +3,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, Div, HighlightStyle, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled, StyledText,
-    Transformation,
+    div, px, relative, Action, AnyElement, App, Div, HighlightStyle, Hsla, InteractiveElement,
+    IntoElement, ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled,
+    StyledText, Transformation,
 };
 use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
@@ -17,6 +18,7 @@ use sikemux_wire::chat::{
 
 use super::{duration, Drawn};
 use crate::core::ChatAsk;
+use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme;
 use crate::ui;
@@ -670,6 +672,15 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Drawn) -> Div {
 
 /// The lines a change made, numbered, with the lines around it and a gap for the rest.
 fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], looks: &Drawn) -> Div {
+    let open = OpenAt {
+        path: PathBuf::from(path),
+        line: lines
+            .iter()
+            .find(|line| line.sign != " ")
+            .and_then(|line| line.new_line.or(line.old_line))
+            .map_or(0, |line| line.saturating_sub(1) as u32),
+        column: None,
+    };
     let whole = looks.reading.tools.whole.contains(id);
     let head = div()
         .h(px(22.))
@@ -684,9 +695,17 @@ fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], loo
         .child(ui::icon(Icon::File, 12.).text_color(looks.faint))
         .child(
             div()
+                .id(SharedString::from(format!("open:{id}")))
                 .min_w_0()
                 .truncate()
                 .text_color(looks.quiet)
+                .cursor_pointer()
+                .hover(|path| path.underline())
+                .tooltip(ui::tooltip("Open in editor"))
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    window.dispatch_action(open.boxed_clone(), cx);
+                })
                 .child(path.to_owned()),
         )
         .child(

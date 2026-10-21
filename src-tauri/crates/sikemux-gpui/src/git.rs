@@ -4,20 +4,22 @@
 use std::cell::Cell;
 use std::future::Future;
 use std::ops::Range;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, font, list, px, App, Context, Div, HighlightStyle, Hsla, InteractiveElement,
-    IntoElement, ListAlignment, ListState, ParentElement, Pixels, Render, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
+    canvas, div, font, list, px, Action, App, Context, Div, HighlightStyle, Hsla,
+    InteractiveElement, IntoElement, ListAlignment, ListState, ParentElement, Pixels, Render,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::git::diff::{changes, DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::core::{request, Ask};
+use crate::editor::OpenAt;
 use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -285,14 +287,15 @@ impl RowLook {
     }
 }
 
-/// One row of a diff: its one number column, then its code. A hidden row is a bar that
-/// calls `expand` when clicked.
+/// One row of a diff: its one number column, which opens `file` in the editor at its
+/// line, then its code. A hidden row is a bar that calls `expand` when clicked.
 pub fn row(
     diff: &Diff,
     colours: &Colours,
     index: usize,
     look: &RowLook,
     id: SharedString,
+    file: &Path,
     expand: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Div {
     let DiffRow(kind, number, text) = &diff.rows[index];
@@ -316,6 +319,12 @@ pub fn row(
         _ => None,
     };
     let digits = look.advance * diff.digits as f32;
+    let open = OpenAt {
+        path: file.to_owned(),
+        line: diff.target(index),
+        column: None,
+    };
+    let opens = format!("Open at line {}", open.line + 1);
     div()
         .h(ROW_HEIGHT)
         .w_full()
@@ -323,6 +332,7 @@ pub fn row(
         .overflow_hidden()
         .child(
             div()
+                .id(id)
                 .flex_none()
                 .w(digits + look.advance * 3. + px(2.))
                 .pl(look.advance * 2.)
@@ -330,7 +340,10 @@ pub fn row(
                 .border_r_2()
                 .bg(look.gutter)
                 .text_right()
-                .text_color(tint.unwrap_or(look.number))
+                .text_color(tint.filter(|_| look.tinted).unwrap_or(look.number))
+                .cursor_pointer()
+                .tooltip(ui::tooltip(opens))
+                .on_click(move |_, window, cx| window.dispatch_action(open.boxed_clone(), cx))
                 .child(number.to_string()),
         )
         .child(
@@ -477,6 +490,7 @@ impl Render for DiffView {
         let width = diff.width(advance);
         let view = cx.entity();
         let scrolled = self.scrolled;
+        let file = Path::new(&self.compared.repo).join(&self.compared.path);
         let rows = list(self.rows.clone(), move |index, _, cx| {
             let this = view.read(cx);
             let Some(Ok(diff)) = &this.diff else {
@@ -490,6 +504,7 @@ impl Render for DiffView {
                 index,
                 &look,
                 SharedString::from(format!("diff-row-{index}")),
+                &file,
                 move |_, cx| expanding.update(cx, |view, cx| view.expand(cx)),
             )
             .into_any_element()
