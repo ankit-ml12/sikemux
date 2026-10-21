@@ -13,7 +13,8 @@
 //! questions for the person, one of them secret, and `delegate` with a
 //! subagent that reads a file. `FAKE_MODE=workspace-write`
 //! has the agent ask before it acts, and `FAKE_MENTION=<agent id>` names that
-//! agent with `@` in every prompt, for the core to describe.
+//! agent with `@` in every prompt, for the core to describe. `FAKE_PROJECT=<folder>`
+//! opens the chat in that folder's project rather than the temporary folder's.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -42,15 +43,19 @@ async fn run() -> anyhow::Result<()> {
     client
         .call("setAgentAccounts", json!({ "profiles": [profile] }))
         .await?;
-    let project = json!({ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() });
+    let folder = std::env::var_os("FAKE_PROJECT").map_or_else(std::env::temp_dir, PathBuf::from);
+    let name = folder
+        .file_name()
+        .map_or("tmp".into(), |name| name.to_string_lossy().into_owned());
+    let project = json!({ "id": name, "name": name, "path": folder });
     client.call("addProject", project).await?;
     let (chat, _) = client
-        .start_chat(format!("{provider}:fake"), "tmp".into(), None)
+        .start_chat(format!("{provider}:fake"), name.clone(), None)
         .await?;
     client
         .call(
             "openTab",
-            json!({ "project": "tmp", "kind": "agent", "target": chat }),
+            json!({ "project": name, "kind": "agent", "target": chat }),
         )
         .await?;
     println!("chat {chat}");

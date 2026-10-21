@@ -39,9 +39,42 @@ fn is_screenshot_thumbnail(path: &Path) -> bool {
         .contains("/TemporaryItems/NSIRD_screencaptureui_")
 }
 
+const IMAGE: &str = "image:";
+
+/// The glyph a tag in the draft wears: a picture's, a named agent's, or a file's or folder's.
+fn mark(id: &str, tint: Hsla, cx: &App) -> gpui_kit::AnyElement {
+    if id.starts_with(IMAGE) {
+        return ui::icon(Icon::Image, 12.)
+            .text_color(tint)
+            .into_any_element();
+    }
+    if id.starts_with("agent:") {
+        return ui::icon(Icon::Agent, 12.)
+            .text_color(tint)
+            .into_any_element();
+    }
+    if id.starts_with("folder:") {
+        return ui::icon(Icon::Folder, 12.)
+            .text_color(tint)
+            .into_any_element();
+    }
+    let path = Path::new(id.strip_prefix("file:").unwrap_or(id));
+    let name = path
+        .file_name()
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    crate::file_icons::icon(&name, cx).map_or_else(
+        || {
+            ui::icon(Icon::File, 12.)
+                .text_color(tint)
+                .into_any_element()
+        },
+        |icon| gpui_kit::img(icon).size(px(12.)).into_any_element(),
+    )
+}
+
 fn image_tag(number: usize, path: &Path) -> InlineToken {
     InlineToken::new(
-        path.to_string_lossy().into_owned(),
+        format!("{IMAGE}{}", path.to_string_lossy()),
         format!("[Image #{number}]"),
     )
     .with_label(format!("Image #{number}"))
@@ -116,8 +149,10 @@ impl Composing {
         self.draft.update(cx, |draft, cx| {
             let spans = draft.tokens().to_vec();
             for span in spans.iter().rev() {
-                let id = span.token().id();
-                if id.as_ref() == gone {
+                let Some(id) = span.token().id().strip_prefix(IMAGE) else {
+                    continue;
+                };
+                if id == gone {
                     let range = span.range();
                     let start = if draft.value()[..range.start].ends_with(' ') {
                         range.start - 1
@@ -128,7 +163,7 @@ impl Composing {
                     draft.replace("", window, cx);
                 } else if let Some(at) = attachments
                     .iter()
-                    .position(|path| path.to_string_lossy() == id.as_ref())
+                    .position(|path| path.to_string_lossy() == id)
                     .filter(|at| *at >= index)
                 {
                     if let Err(error) = draft.replace_range_with_token(
@@ -379,7 +414,7 @@ pub fn chip(token: &InlineTokenContext, _: &mut Window, cx: &mut App) -> impl In
             })
             .text_size(px(12.))
             .text_color(t.text_primary)
-            .child(ui::icon(Icon::Image, 12.).text_color(t.text_tertiary))
+            .child(mark(token.token().id(), t.text_tertiary, cx))
             .child(
                 div()
                     .min_w_0()

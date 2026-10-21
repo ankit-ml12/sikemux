@@ -12,7 +12,7 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId,
+    ChatAttachment, ChatContext, ChatMark, DeviceView, Event, Request, SessionId, StreamId,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -150,6 +150,7 @@ pub enum ChatAsk {
         agent: String,
         text: String,
         paths: Vec<String>,
+        context: Vec<ChatContext>,
     },
     /// A file the person handed the chat that lives nowhere the agent can read, such as a
     /// pasted picture, for the core to keep; answers where it keeps it.
@@ -380,12 +381,15 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             (agent, ChatNews::Page(page.unwrap_or_default()))
         }
         ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
-        ChatAsk::Prompt { agent, text, paths } => {
+        ChatAsk::Prompt {
+            agent,
+            text,
+            paths,
+            context,
+        } => {
             return report(
                 "prompt",
-                client
-                    .acp_prompt(agent, None, text, paths, Vec::new())
-                    .await,
+                client.acp_prompt(agent, None, text, paths, context).await,
             )
         }
         ChatAsk::Keep {

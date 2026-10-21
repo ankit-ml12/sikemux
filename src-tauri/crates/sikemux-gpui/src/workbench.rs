@@ -332,6 +332,7 @@ impl Workbench {
             Update::Read("projectFiles", value) => {
                 if self.project_files.answered(&value) {
                     self.rank(cx);
+                    self.files_listed(cx);
                 }
                 return;
             }
@@ -425,6 +426,7 @@ impl Workbench {
                         if was_empty.replace(empty) != empty {
                             cx.notify();
                         }
+                        bench.offer(&agent, cx);
                     }
                     _ => {}
                 },
@@ -444,6 +446,7 @@ impl Workbench {
             secret,
             hint: SharedString::default(),
             attachments: Vec::new(),
+            menu: None,
             _heard: [sending, keeping],
         });
     }
@@ -494,9 +497,10 @@ impl Workbench {
         else {
             return;
         };
-        let (draft, attached) = (composing.draft.clone(), !composing.attachments.is_empty());
+        let draft = composing.draft.clone();
+        let outgoing = composing.outgoing(cx);
         let text = draft.read(cx).value().trim().to_owned();
-        if text.is_empty() && !attached {
+        if text.is_empty() && outgoing.0.is_empty() {
             if primary {
                 self.answer(agent, |chat, open| {
                     chat.send_answers(open)
@@ -508,7 +512,7 @@ impl Workbench {
         }
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
         self.answer(agent, |chat, open| {
-            chat.sent(agent, text, primary == steers, open)
+            chat.sent(agent, text, outgoing, primary == steers, open)
         });
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         cx.notify();

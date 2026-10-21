@@ -16,7 +16,7 @@ use sikemux_wire::protocol::ConfigPicker;
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, IconButton, Menu, MenuItem};
+use crate::ui::{self, DockMenu, IconButton, Menu, MenuItem};
 
 type Act = Rc<dyn Fn(&mut Window, &mut App)>;
 type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
@@ -47,6 +47,8 @@ pub struct Composer {
     /// The files going with the message, the button that picks more, what a paste of
     /// files or pictures does, and how the draft draws the tags that name them.
     attachments: Option<(Option<AnyElement>, Act, Paste, Chip)>,
+    /// What the word at the caret is offered, docked over the top edge.
+    menu: Option<DockMenu>,
     on_send: Act,
     on_stop: Act,
 }
@@ -71,6 +73,7 @@ impl Composer {
             pickers: None,
             usage: None,
             attachments: None,
+            menu: None,
             on_send,
             on_stop,
         }
@@ -124,6 +127,11 @@ impl Composer {
         let chip: Chip =
             Rc::new(move |token, window, cx| chip(token, window, cx).into_any_element());
         self.attachments = Some((tiles, on_add, on_paste, chip));
+        self
+    }
+
+    pub fn menu(mut self, menu: Option<DockMenu>) -> Self {
+        self.menu = menu;
         self
     }
 
@@ -213,6 +221,7 @@ impl RenderOnce for Composer {
             .children(self.strip.map(|strip| project_strip(strip, fill, cx)))
             .child(
                 div()
+                    .relative()
                     .w_full()
                     .max_w(px(820.))
                     .p(px(8.))
@@ -238,7 +247,8 @@ impl RenderOnce for Composer {
                                 }),
                         ),
                     )
-                    .child(bar),
+                    .child(bar)
+                    .children(self.menu),
             )
     }
 }

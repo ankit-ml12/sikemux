@@ -2,11 +2,13 @@
 //! that is missing belongs here, once.
 
 mod controls;
+mod dock;
 mod floats;
 mod lists;
 mod pane;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
+pub use dock::{DockMenu, DockRow};
 pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};

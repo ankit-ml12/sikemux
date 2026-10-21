@@ -23,7 +23,7 @@ use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
     LetterKind, PartTree, PermissionAsk, SubagentCard, SubagentState, WorkFold,
 };
-use sikemux_wire::protocol::{ChatAttachment, ChatMark, MidTurnSend};
+use sikemux_wire::protocol::{ChatAttachment, ChatContext, ChatMark, MidTurnSend};
 
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
@@ -35,6 +35,7 @@ use crate::workbench::{AgentRow, Workbench};
 
 mod attach;
 mod live;
+mod mention;
 mod tools;
 
 /// Turns asked for each time the reader nears the top of what is held.
@@ -229,7 +230,18 @@ actions!(
         Confirm
     ]
 );
-actions!(composer, [OlderPrompt, NewerPrompt, StopTurn]);
+actions!(
+    composer,
+    [
+        OlderPrompt,
+        NewerPrompt,
+        StopTurn,
+        MenuUp,
+        MenuDown,
+        MenuPick,
+        MenuClose
+    ]
+);
 
 /// Picks the choice at this index of the question on show, from its number key.
 #[derive(Clone, PartialEq, gpui::Action)]
@@ -258,6 +270,13 @@ pub fn install(cx: &mut App) {
             KeyBinding::new("enter", Confirm, Some(context)),
         ]);
     }
+    bindings.extend([
+        KeyBinding::new("up", MenuUp, Some("ComposerMenu > Input")),
+        KeyBinding::new("down", MenuDown, Some("ComposerMenu > Input")),
+        KeyBinding::new("tab", MenuPick, Some("ComposerMenu > Input")),
+        KeyBinding::new("enter", MenuPick, Some("ComposerMenu > Input")),
+        KeyBinding::new("escape", MenuClose, Some("ComposerMenu > Input")),
+    ]);
     cx.bind_keys(bindings);
 }
 
@@ -332,6 +351,8 @@ pub struct Composing {
     pub hint: SharedString,
     /// The files going out with the next message, its pictures named in the draft by number.
     pub attachments: Vec<PathBuf>,
+    /// The agents, files or commands offered for the word at the caret.
+    pub menu: Option<mention::Menu>,
     pub _heard: [Subscription; 2],
 }
 
@@ -987,6 +1008,7 @@ impl Chat {
         &mut self,
         agent: &str,
         text: String,
+        (paths, context): (Vec<String>, Vec<ChatContext>),
         queue: bool,
         open: &[&Question],
     ) -> Option<Ask> {
@@ -1010,22 +1032,18 @@ impl Chat {
                 open,
             );
         }
-        let attachments = self
-            .composer
-            .as_mut()
-            .map(|composing| std::mem::take(&mut composing.attachments))
-            .unwrap_or_default();
-        let paths: Vec<String> = attachments
-            .into_iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect();
+        if let Some(composing) = self.composer.as_mut() {
+            composing.attachments.clear();
+        }
         if self.steers() && !queue {
-            return Some(self.steer_queued(agent, Some(json!({ "text": text, "paths": paths }))));
+            let message = json!({ "text": text, "paths": paths, "context": context });
+            return Some(self.steer_queued(agent, Some(message)));
         }
         Some(Ask::Chat(ChatAsk::Prompt {
             agent: agent.to_owned(),
             text,
             paths,
+            context,
         }))
     }
 
@@ -1155,14 +1173,44 @@ pub fn pane(
         .children(permissions)
         .children(assumed)
         .children(stack)
-        .children(composer(bench, agent, chat, cx).map(|composer| {
-            div()
-                .key_context("ChatComposer")
-                .on_action(recall::<OlderPrompt>(id, true, cx))
-                .on_action(recall::<NewerPrompt>(id, false, cx))
-                .on_action(stop_turn(id, cx))
-                .child(composer)
-        }))
+        .children(
+            composer(bench, agent, chat, cx).map(|(composer, offering)| {
+                div()
+                    .key_context("ChatComposer")
+                    .on_action(recall::<OlderPrompt>(id, true, cx))
+                    .on_action(recall::<NewerPrompt>(id, false, cx))
+                    .on_action(stop_turn(id, cx))
+                    .child(
+                        div()
+                            .when(offering, |menu| {
+                                menu.key_context("ComposerMenu")
+                                    .on_action(offered::<MenuUp>(
+                                        id,
+                                        |bench, agent, _, cx| bench.pick_choice(agent, -1, cx),
+                                        cx,
+                                    ))
+                                    .on_action(offered::<MenuDown>(
+                                        id,
+                                        |bench, agent, _, cx| bench.pick_choice(agent, 1, cx),
+                                        cx,
+                                    ))
+                                    .on_action(offered::<MenuPick>(
+                                        id,
+                                        |bench, agent, window, cx| {
+                                            bench.take_choice(agent, None, window, cx)
+                                        },
+                                        cx,
+                                    ))
+                                    .on_action(offered::<MenuClose>(
+                                        id,
+                                        |bench, agent, _, cx| bench.dismiss_menu(agent, cx),
+                                        cx,
+                                    ))
+                            })
+                            .child(composer),
+                    )
+            }),
+        )
         .when(composing, |pane| pane.child(attach::drop_hint(cx)))
 }
 
@@ -1213,6 +1261,19 @@ fn recall<A: gpui::Action>(
         if !matches!(brought, Ok(Some(()))) {
             cx.propagate();
         }
+    }
+}
+
+/// Hands a key's action to the menu over the draft of `agent`'s chat.
+fn offered<A: gpui::Action>(
+    agent: &str,
+    act: fn(&mut Workbench, &str, &mut Window, &mut Context<Workbench>),
+    cx: &mut Context<Workbench>,
+) -> impl Fn(&A, &mut Window, &mut App) + use<A> {
+    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    move |_: &A, window: &mut Window, cx: &mut App| {
+        this.update(cx, |bench, cx| act(bench, &agent, window, cx))
+            .ok();
     }
 }
 
@@ -1899,8 +1960,14 @@ fn composer(
     agent: &AgentRow,
     chat: &Chat,
     cx: &mut Context<Workbench>,
-) -> Option<Composer> {
+) -> Option<(Composer, bool)> {
     let composing = chat.composer.as_ref()?;
+    let dock = composing
+        .menu
+        .as_ref()
+        .filter(|menu| menu.answers(composing.draft.read(cx)))
+        .and_then(|menu| mention::dock(&agent.id, menu, cx));
+    let offering = dock.is_some();
     let head = chat.state.as_ref();
     let kinds = bench.read("catalog").and_then(Value::as_array);
     let kind = kinds.and_then(|kinds| {
@@ -2010,7 +2077,7 @@ fn composer(
             }),
         );
     }
-    Some(composer)
+    Some((composer.menu(dock), offering))
 }
 
 fn tilde(path: &std::path::Path) -> String {
