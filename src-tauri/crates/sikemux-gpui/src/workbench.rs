@@ -619,7 +619,7 @@ impl Render for Workbench {
                     .px(px(10.))
                     .pb(px(10.))
                     .child(rail::side_rail(self, cx))
-                    .child(home::stage(self, cx))
+                    .child(home::stage(self, window, cx))
                     .child(agents::tab_rail(self, cx)),
             )
     }

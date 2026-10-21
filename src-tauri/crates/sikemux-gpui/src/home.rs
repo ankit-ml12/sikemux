@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use chrono::{Datelike, NaiveDate};
 use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled};
+use gpui_kit::{div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, Window};
+use sikemux_wire::protocol::PaneKind;
 use serde_json::{json, Value};
 
-use crate::chat;
+use crate::{chat, tabs, terminal};
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -27,7 +28,11 @@ pub const METRICS: [(&str, &str); 5] = [
 
 /// The stage: the chosen agent's pane, on what a new chat opens on: the project, and
 /// what its agents did in it.
-pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> AnyElement {
+    if let Some((PaneKind::Terminal, session)) = bench.tab().and_then(|tab| tabs::first_view(&tab.pane)) {
+        let pane = ui::pane(cx).child(terminal::pane(bench, &cx.entity(), session, window));
+        return div().flex_1().min_w_0().child(pane).into_any_element();
+    }
     let t = Tokens::get(cx).clone();
     let project = bench.project();
     let agent = bench.agent();
