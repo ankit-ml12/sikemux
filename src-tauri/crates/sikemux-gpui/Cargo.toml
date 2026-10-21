@@ -7,7 +7,6 @@ description = "The desktop UI on GPUI, a client of the core"
 
 # Its own workspace, so GPUI stays out of the app's lockfile and workspace-hack.
 [workspace]
-exclude = ["target"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -38,23 +37,23 @@ opt-level = 3
 [profile.release.package.taffy]
 opt-level = 3
 
-# Run fork.mjs first: it checks out the sonorahq fork under the names below.
+# GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.
 [patch.crates-io]
-gpui-pre = { path = "target/gpui-fork/crates/gpui" }
-gpui-pre-apple = { path = "target/gpui-fork/crates/gpui_apple" }
-gpui-pre-collections = { path = "target/gpui-fork/crates/collections" }
-gpui-pre-derive-refineable = { path = "target/gpui-fork/crates/refineable/derive_refineable" }
-gpui-pre-http-client = { path = "target/gpui-fork/crates/http_client" }
-gpui-pre-linux = { path = "target/gpui-fork/crates/gpui_linux" }
-gpui-pre-macos = { path = "target/gpui-fork/crates/gpui_macos" }
-gpui-pre-macros = { path = "target/gpui-fork/crates/gpui_macros" }
-gpui-pre-platform = { path = "target/gpui-fork/crates/gpui_platform" }
-gpui-pre-refineable = { path = "target/gpui-fork/crates/refineable" }
-gpui-pre-scheduler = { path = "target/gpui-fork/crates/scheduler" }
-gpui-pre-shared-string = { path = "target/gpui-fork/crates/gpui_shared_string" }
-gpui-pre-sum-tree = { path = "target/gpui-fork/crates/sum_tree" }
-gpui-pre-util = { path = "target/gpui-fork/crates/gpui_util" }
-gpui-pre-wgpu = { path = "target/gpui-fork/crates/gpui_wgpu" }
-gpui-pre-windows = { path = "target/gpui-fork/crates/gpui_windows" }
-gpui-pre-ztracing = { path = "target/gpui-fork/crates/ztracing" }
-gpui-pre-ztracing-macro = { path = "target/gpui-fork/crates/ztracing_macro" }
+gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }

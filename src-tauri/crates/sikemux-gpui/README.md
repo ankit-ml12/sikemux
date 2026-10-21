@@ -6,10 +6,15 @@ the core sends.
 ## Run
 
 ```sh
-node fork.mjs      # checks out sonorahq/gpui as gpui-pre, with fork.patch
 node icons.mjs     # after an icon in src/ui/Icons.tsx changes
 cargo run --release
 ```
+
+GPUI comes from the `sikemux` branch of sikemux/gpui, our fork of sonorahq/gpui,
+pinned by commit in `[patch.crates-io]`. That branch is upstream plus our
+commits and one last commit that renames the crates to the gpui-pre names and
+version GPUI Kit pins. To move onto a newer upstream, rebase our commits, drop
+the rename commit and run `node tooling/gpui-pre-names.mjs <version>` again.
 
 It talks to the core at `SIKEMUX_CORE_SOCKET`, else `~/.config/sikemux/core.sock`.
 It is a workspace of its own, so GPUI stays out of the app's lockfile and
