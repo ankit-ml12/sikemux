@@ -4,6 +4,7 @@ pub const AGENT_ID: &str = "SIKEMUX_AGENT_ID";
 pub const AGENT_TYPE: &str = "SIKEMUX_AGENT_TYPE";
 pub const TOOLS_AGENT_ID: &str = "SIKEMUX_TOOLS_AGENT_ID";
 pub const CLI_ENDPOINT: &str = "SIKEMUX_CLI_ENDPOINT";
+pub const CONFIG_DIR: &str = "SIKEMUX_CONFIG_DIR";
 pub const CLI_ENDPOINT_PUBLISH: &str = "SIKEMUX_CLI_ENDPOINT_PUBLISH";
 pub const REAL_GIT: &str = "SIKEMUX_REAL_GIT";
 pub const PROJECT: &str = "SIKEMUX_PROJECT";

@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
-use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
+use sikemux_host::login_item::{self, CoreLaunch};
 use sikemux_host::cli_paths;
 use sikemux_wire::grid::{decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput};
 use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId};
@@ -117,8 +117,10 @@ pub struct Link {
     pub asks: mpsc::UnboundedSender<Ask>,
 }
 
-/// Where this build's core listens, and how it is started when none does: the
-/// same core, files and identity the app has always used.
+/// The app's own identifier, so its folders and its core's login item are never the Mac app's.
+pub const IDENTIFIER: &str = if cfg!(debug_assertions) { "com.nodelike.sikemux.gpui.dev" } else { "com.nodelike.sikemux.gpui" };
+
+/// Where this build's core listens, and how it is started when none does.
 pub struct Home {
     pub socket: PathBuf,
     launch: Option<CoreLaunch>,

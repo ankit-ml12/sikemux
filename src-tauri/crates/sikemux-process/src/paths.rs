@@ -27,8 +27,12 @@ pub fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-/// `~/.config/sikemux`, where Sikemux keeps its own files.
+/// `~/.config/sikemux`, where Sikemux keeps its own files, or the folder `SIKEMUX_CONFIG_DIR`
+/// names for a Sikemux kept apart from the person's own, such as a build being tried out.
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os(crate::vars::CONFIG_DIR).filter(|dir| !dir.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
     Some(home()?.join(".config").join("sikemux"))
 }
 
