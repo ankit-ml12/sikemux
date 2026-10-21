@@ -32,7 +32,7 @@ import { HostScopeTabs, ScopeTabs } from "./ScopeTabs";
 import { NewRow } from "./RailNewRow";
 import { RailPages } from "./RailPages";
 import { FilesPage, TerminalsPage } from "./ProjectPages";
-import { drawTeamLines } from "./teams";
+import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
@@ -130,6 +130,7 @@ export function TabRailBody() {
     const [query, setQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
     const [renamingId, setRenamingId] = useState<string | null>(null);
+    const { folded, toggle: toggleTeam } = useTeamFolds();
     const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
     const [pinMenu, setPinMenu] = useState<{ pin: PinnedChat; x: number; y: number } | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
@@ -221,7 +222,6 @@ export function TabRailBody() {
      */
     useLayoutEffect(() => {
         const scroll = scrollRef.current;
-        if (scroll) drawTeamLines(scroll);
         const last = seen.current;
         const wraps = scroll ? [...scroll.querySelectorAll<HTMLElement>(".agent-row-wrap[data-agent-id]:not(.is-leaving)")] : [];
         const ids = new Set(wraps.map((w) => w.dataset.agentId ?? ""));
@@ -331,12 +331,13 @@ export function TabRailBody() {
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;
 
-    const openRow = (a: Agent, link?: TeamLink) => (
+    const openRow = (a: Agent, link?: TeamLink, fold?: TeamFold) => (
         <OpenAgentRow
             key={a.id}
             agent={a}
             display={agentDisplayOf({ agentStatus }, a.id)}
             link={link}
+            fold={fold}
             active={activeAgentId({ windows: windowsById }, session) === a.id}
             sessionCwd={session.cwd}
             wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
@@ -426,8 +427,8 @@ export function TabRailBody() {
 
                 {scope === "project" && (opens.length > 0 || remoteChats.length > 0) && (
                     <Panel variant="group" className="agent-group">
-                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
-                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
+                        {foldTeams(inTeams(withRemoteWorkers(opens, inbox.remoteAgents)), folded, toggleTeam).map(({ agent: a, link, fold }) =>
+                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link, fold),
                         )}
                         {remoteChats}
                     </Panel>

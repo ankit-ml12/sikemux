@@ -923,60 +923,166 @@
     margin-top: var(--space-4);
 }
 
-/* What an agent is tied to hangs off its row on the side rail's tree. The
-   tree's spine runs down from the agent's mark. */
-.tab-rail .agent-tree {
-    margin-left: 14px;
-    padding: 0 6px 2px 0;
-}
-/* A lead's workers sit flat right after it, and its tree line runs on through
-   each worker's mark, stopping short of the mark and of a selected row's box.
-   drawTeamLines in src/rail/teams.ts measures where. */
-.tab-rail .agent-tree.runs-on {
-    padding-bottom: 0;
-}
-.tab-rail .agent-tree.runs-on .proj-child:last-child::before {
-    bottom: 0;
-    width: 1px;
-    height: auto;
-    border: 0;
-    border-radius: 0;
-    background: var(--tree-spine);
-}
-.tab-rail .agent-tree.runs-on .proj-child:last-child .proj-child-tick {
-    background: var(--tree-tick);
-}
 .agent-all-projects {
     display: contents;
 }
 
-.agent-row-wrap.chain::before,
-.agent-row-wrap.chain:not(.chain-last)::after,
-.agent-row-wrap.chain-head::after {
+/* A lead and the agents it started read as one group, as the git pane's file groups do:
+   a chevron folds the group, and the workers hang off a spine running down from it. */
+.agent-row-wrap.team-head,
+.agent-row-wrap.team-member {
+    padding-left: 16px;
+}
+.team-fold {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-tertiary);
+}
+.team-fold:hover {
+    color: var(--text-primary);
+}
+.team-fold svg {
+    transition: transform var(--dur-1) var(--ease-out);
+}
+.team-fold[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+}
+.agent-row-wrap.team-head.open::after,
+.agent-row-wrap.team-member::before,
+.agent-row-wrap.team-member::after {
     content: "";
     position: absolute;
-    left: var(--cx, 22px);
-    z-index: 2;
-    width: 1px;
+    z-index: 1;
     background: var(--tree-spine);
     pointer-events: none;
 }
-.agent-row-wrap.chain::before {
+.agent-row-wrap.team-head.open::after {
+    top: 22px;
+    bottom: -2px;
+    left: 8px;
+    width: 1px;
+}
+.agent-row-wrap.team-member::before {
     top: -2px;
-    height: calc(var(--gt, 4px) + 2px);
+    bottom: -2px;
+    left: 8px;
+    width: 1px;
 }
-.agent-row-wrap.chain:not(.chain-last)::after,
-.agent-row-wrap.chain-head::after {
-    top: var(--gb, 24px);
-    height: var(--down, 6px);
+.agent-row-wrap.team-member.team-last::before {
+    bottom: auto;
+    height: 16px;
 }
-.agent-row-wrap:has(> .agent-tree) > .row-status,
-.agent-row-wrap:has(> .agent-tree) > .row-x,
-.agent-row-wrap:has(> .agent-tree) > .row-pin {
+.agent-row-wrap.team-member::after {
     top: 14px;
+    left: 8px;
+    width: 7px;
+    height: 1px;
+    background: var(--tree-tick);
 }
-.agent-tree .proj-child {
-    cursor: default;
+.team-count {
+    flex: none;
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    background: var(--surface-hover);
+    color: var(--text-tertiary);
+    font-size: var(--text-3xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 15px;
+}
+
+/* What a row stands for, beside it when the pointer rests on it. */
+.agent-card {
+    position: fixed;
+    z-index: 60;
+    width: 300px;
+    padding: 10px 12px 12px;
+    display: grid;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    background: var(--surface-overlay);
+    box-shadow: var(--shadow-3);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.agent-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.agent-card-who {
+    display: grid;
+    min-width: 0;
+}
+.agent-card-who b {
+    overflow: hidden;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-card-who span {
+    color: var(--text-tertiary);
+}
+.agent-card-facts {
+    display: grid;
+    gap: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+.agent-card-fact {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.agent-card-fact > :last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agent-card-icon {
+    display: grid;
+    place-items: center;
+    color: var(--text-tertiary);
+}
+.agent-card .mono {
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+}
+.agent-card .quiet {
+    color: var(--text-tertiary);
+}
+.agent-card-pulls {
+    display: flex;
+    gap: 8px;
+}
+.agent-card-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+.agent-card-link:hover,
+.agent-card-link:focus-visible {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--ink) 40%, transparent);
+    text-underline-offset: 2px;
 }
 .agent-row-text > .agent-title {
     color: var(--text-primary);
@@ -1024,59 +1130,6 @@
 .agent-row-wrap:has(> .agent-row.two-line) > .row-x,
 .agent-row-wrap:has(> .agent-row.two-line) > .row-pin {
     top: 13px;
-}
-/* Joins the agent's mark to its tree; a team's line already does this through drawTeamLines. */
-.tab-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-tree):not(:has(> .agent-row.active))::before {
-    content: "";
-    position: absolute;
-    top: 26px;
-    left: 14px;
-    width: 1px;
-    height: 2px;
-    background: var(--tree-spine);
-}
-.tab-rail .agent-row-wrap:not(.chain, .chain-head):has(> .agent-row.two-line):has(> .agent-tree)::before {
-    top: 25px;
-    height: 15px;
-}
-.agent-tree .agent-tree-items {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    overflow: hidden;
-    font-size: var(--text-xs);
-    white-space: nowrap;
-}
-.agent-tree-items > * + *::before {
-    content: "·";
-    display: inline-block;
-    margin: 0 6px;
-    color: var(--text-tertiary);
-}
-.agent-tree-items > :last-child {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.agent-tree-link {
-    flex: none;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-}
-.agent-tree-link:hover,
-.agent-tree-link:focus-visible {
-    color: var(--ink);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in oklab, var(--ink) 40%, transparent);
-    text-underline-offset: 2px;
-}
-.agent-tree .agent-tree-mono {
-    font-family: var(--mono);
-    font-size: var(--text-2xs);
 }
 
 .agent-review {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type Ref } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { agentHandle } from "../agents/AgentLabel";
 import { HostLabel } from "./RemoteRows";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
@@ -10,14 +10,16 @@ import type { AgentDisplay } from "../state/agentStatus";
 import { activeAgentId, agentDisplayOf, hasChat, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
-import { IconAgent, IconClose, IconPin } from "../ui/Icons";
+import { IconAgent, IconChevron, IconClose, IconPin } from "../ui/Icons";
 import { RailEmpty } from "./RailEmpty";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
-import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
+import { AgentRowProject } from "./AgentRowTree";
+import { AgentRowCard, useRowCard } from "./AgentRowCard";
+import { AgentReview } from "./AgentReview";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
-import { drawTeamLines } from "./teams";
+import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { inCoreOrder, useInbox } from "./useInbox";
 
 interface OpenAgentRow {
@@ -58,15 +60,11 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
         return rows;
     }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus]);
 
+    const { folded, toggle } = useTeamFolds();
     const teams = useMemo(
-        () => inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), inbox.remoteAgents)),
-        [open, inbox.agents, inbox.remoteAgents],
+        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), inbox.remoteAgents)), folded, toggle),
+        [open, inbox.agents, inbox.remoteAgents, folded, toggle],
     );
-
-    const root = useRef<HTMLDivElement>(null);
-    useLayoutEffect(() => {
-        if (root.current) drawTeamLines(root.current);
-    });
 
     const menuAgent = menu && agents[menu.agentId];
     const menuSession = menu && sessions[menu.sessionId];
@@ -75,9 +73,9 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
         return showEmpty && <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
 
     return (
-        <div ref={root} className="agent-all-projects">
+        <div className="agent-all-projects">
             <Panel variant="group" className="agent-group">
-                {teams.map(({ agent: row, link }) =>
+                {teams.map(({ agent: row, link, fold }) =>
                     isRemoteWorker(row) ? (
                         <RemoteAgentRow key={row.id} agent={row.remote} link={link} />
                     ) : (
@@ -86,6 +84,7 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                             agent={row.agent}
                             display={row.display}
                             link={link}
+                            fold={fold}
                             active={row.id === shownAgentId}
                             project={{ name: row.sessionName, sessionId: row.sessionId }}
                             sessionCwd={row.sessionCwd}
@@ -127,6 +126,7 @@ export function OpenAgentRow({
     agent,
     display,
     link,
+    fold,
     active,
     project,
     sessionCwd,
@@ -140,6 +140,8 @@ export function OpenAgentRow({
     agent: Agent;
     display: AgentDisplay;
     link?: TeamLink;
+    /** On a lead's row, whether its team shows and how to fold it. */
+    fold?: TeamFold;
     active: boolean;
     project?: { name: string; sessionId: string };
     sessionCwd: string;
@@ -152,8 +154,20 @@ export function OpenAgentRow({
     onContextMenu?: (event: MouseEvent) => void;
 }) {
     const glyph = <AgentFace agent={agent} size={18} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
+    const card = useRowCard();
+    const [reviewAt, setReviewAt] = useState<DOMRect | null>(null);
     return (
-        <div className={teamWrapClass(link)} {...wrap}>
+        <div className={teamWrapClass(link, fold?.open)} {...wrap} onMouseEnter={card.enter} onMouseLeave={card.leave} onMouseDown={card.close}>
+            {fold && (
+                <button
+                    type="button"
+                    className="team-fold"
+                    aria-expanded={fold.open}
+                    aria-label={`${fold.open ? "Hide" : "Show"} the agents ${agent.title} started`}
+                    onClick={fold.toggle}>
+                    <IconChevron size={11} />
+                </button>
+            )}
             {title ? (
                 <div className={`agent-row${active ? " active" : ""}`}>
                     {glyph}
@@ -172,6 +186,7 @@ export function OpenAgentRow({
                     </span>
                     {hostShown && <HostLabel host={agent.host} />}
                     {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
+                    {fold && !fold.open && <span className="team-count">+{fold.count}</span>}
                     <BackgroundCounts display={display} />
                 </button>
             )}
@@ -186,7 +201,22 @@ export function OpenAgentRow({
                     <IconClose size={11} />
                 </button>
             </Tooltip>
-            <AgentRowTree agentId={agent.id} worktree={agent.worktree} runsOn={link === "head" || link === "member"} />
+            {card.anchor && !title && (
+                <AgentRowCard
+                    agent={agent}
+                    project={project?.name}
+                    anchor={card.anchor}
+                    onStay={card.stay}
+                    onLeave={card.leave}
+                    onReview={(at) => {
+                        card.close();
+                        setReviewAt(at);
+                    }}
+                />
+            )}
+            {reviewAt && agent.worktree && (
+                <AgentReview agentId={agent.id} worktree={agent.worktree} anchor={reviewAt} onClose={() => setReviewAt(null)} />
+            )}
         </div>
     );
 }

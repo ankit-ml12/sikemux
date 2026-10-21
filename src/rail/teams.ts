@@ -1,33 +1,51 @@
-const GAP = 3;
+import { useCallback, useState } from "react";
+import type { TeamMember, TeamRow } from "../agents/teams";
 
-/**
- * Lays each team's line through its rows' marks: it runs from the lead's mark down the lead's tree, stops a few
- * pixels short of each worker's mark and goes on below it, and ends at the last worker's. On a selected row it stops at
- * the row's border instead, so it never enters the box.
- */
-export function drawTeamLines(root: HTMLElement): void {
-    let spineX = 0;
-    for (const wrap of root.querySelectorAll<HTMLElement>(".agent-row-wrap.chain-head, .agent-row-wrap.chain")) {
-        const box = wrap.getBoundingClientRect();
-        if (wrap.classList.contains("chain-head")) {
-            const glyph = wrap.querySelector(":scope > .agent-row .agent-glyph")?.getBoundingClientRect();
-            const tree = wrap.querySelector(":scope > .agent-tree")?.getBoundingClientRect();
-            spineX = tree ? tree.left - box.left : glyph ? glyph.left + glyph.width / 2 - box.left : 0;
+/** How a lead's row folds its team: whether the workers show, and how many there are. */
+export interface TeamFold {
+    open: boolean;
+    count: number;
+    toggle: () => void;
+}
+
+export type FoldedRow<T extends TeamMember> = TeamRow<T> & { fold?: TeamFold };
+
+/** Which leads have their teams folded away, for one list of agents. */
+export function useTeamFolds(): { folded: ReadonlySet<string>; toggle: (lead: string) => void } {
+    const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+    const toggle = useCallback(
+        (lead: string) =>
+            setFolded((now) => {
+                const next = new Set(now);
+                if (!next.delete(lead)) next.add(lead);
+                return next;
+            }),
+        [],
+    );
+    return { folded, toggle };
+}
+
+/** The rows with each lead's fold on it, and a folded lead's workers left out. */
+export function foldTeams<T extends TeamMember>(
+    rows: readonly TeamRow<T>[],
+    folded: ReadonlySet<string>,
+    toggle: (lead: string) => void,
+): FoldedRow<T>[] {
+    const shown: FoldedRow<T>[] = [];
+    let lead: string | null = null;
+    rows.forEach((row, index) => {
+        if (row.link === "head") {
+            lead = row.agent.id;
+            const id = lead;
+            let count = 0;
+            for (let next = index + 1; next < rows.length && (rows[next].link === "member" || rows[next].link === "last"); next++) count++;
+            shown.push({ ...row, fold: { open: !folded.has(id), count, toggle: () => toggle(id) } });
+        } else if (row.link === "member" || row.link === "last") {
+            if (!lead || !folded.has(lead)) shown.push(row);
+        } else {
+            lead = null;
+            shown.push(row);
         }
-        const mark = wrap.querySelector<SVGElement | HTMLElement>(":scope > .agent-row .agent-glyph svg, :scope > .agent-row .agent-glyph img");
-        const row = wrap.querySelector<HTMLElement>(":scope > .agent-row");
-        if (!mark || !row) continue;
-        const drawn = mark.getBoundingClientRect();
-        const inset = (mark.tagName.toLowerCase() === "svg" ? (drawn.height * 4) / 32 : 1) - GAP;
-        const framed = row.classList.contains("active");
-        const edges = row.getBoundingClientRect();
-        const top = framed ? edges.top - box.top : drawn.top - box.top + inset;
-        const bottom = framed ? edges.bottom - box.top : drawn.bottom - box.top - inset;
-        const tree = wrap.querySelector(":scope > .agent-tree")?.getBoundingClientRect();
-        const until = tree ? tree.top - box.top + 1 : box.height + 2;
-        wrap.style.setProperty("--cx", `${Math.round(spineX)}px`);
-        wrap.style.setProperty("--gt", `${Math.round(top)}px`);
-        wrap.style.setProperty("--gb", `${Math.round(bottom)}px`);
-        wrap.style.setProperty("--down", `${Math.max(0, Math.round(until - bottom))}px`);
-    }
+    });
+    return shown;
 }
