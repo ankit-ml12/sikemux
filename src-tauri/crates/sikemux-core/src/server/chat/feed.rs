@@ -112,8 +112,8 @@ pub(crate) struct Replay {
     /// subagents still going.
     standing: Vec<(Holds, u64, ChatEvent)>,
     work: Work,
-    /// Every subagent's start, so a slice of the chat that speaks of one
-    /// started before it can carry the start too.
+    /// Every subagent's start and latest state, so a slice of the chat that
+    /// speaks of one started before it can carry them too.
     spawns: Vec<Spawn>,
 }
 
@@ -124,6 +124,7 @@ struct Spawn {
     parent: String,
     index: u64,
     event: ChatEvent,
+    state: Option<(u64, ChatEvent)>,
 }
 
 /// One thing said or done in a chat, as another agent reads it.
@@ -500,7 +501,7 @@ impl Replay {
         } = recovered;
         let kind = event.kind;
         self.note_standing(kind, index, &event);
-        self.note_spawn(kind, index, &event);
+        self.note_subagent(kind, index, &event);
         if kind == ChatEventKind::SessionUpdate {
             self.work.note(&event.payload);
         }
@@ -629,7 +630,7 @@ impl Replay {
             payload: payload.clone(),
         };
         self.note_standing(kind, index, &event);
-        self.note_spawn(kind, index, &event);
+        self.note_subagent(kind, index, &event);
         if kind == ChatEventKind::SessionUpdate {
             self.work.note(payload);
             self.note_retry(payload);
@@ -660,32 +661,41 @@ impl Replay {
         bytes
     }
 
-    fn note_spawn(&mut self, kind: ChatEventKind, index: u64, event: &ChatEvent) {
-        if kind != ChatEventKind::SessionUpdate
-            || session_update_kind(&event.payload) != Some("subagent_spawned")
-        {
+    fn note_subagent(&mut self, kind: ChatEventKind, index: u64, event: &ChatEvent) {
+        if kind != ChatEventKind::SessionUpdate {
             return;
         }
         let text = |pointer: &str| event.payload.pointer(pointer).and_then(Value::as_str);
-        let (Some(subagent), Some(parent)) =
-            (text("/update/subagentSessionId"), text("/sessionId"))
-        else {
+        let Some(subagent) = text("/update/subagentSessionId") else {
             return;
         };
-        if self.spawns.iter().any(|spawn| spawn.subagent == subagent) {
-            return;
+        let known = self.spawns.iter_mut().find(|spawn| spawn.subagent == subagent);
+        match session_update_kind(&event.payload) {
+            Some("subagent_spawned") => {
+                let (None, Some(parent)) = (known, text("/sessionId")) else {
+                    return;
+                };
+                self.spawns.push(Spawn {
+                    subagent: subagent.to_owned(),
+                    parent: parent.to_owned(),
+                    index,
+                    event: event.clone(),
+                    state: None,
+                });
+            }
+            Some("subagent_state_update") => {
+                if let Some(spawn) = known {
+                    spawn.state = Some((index, event.clone()));
+                }
+            }
+            _ => {}
         }
-        self.spawns.push(Spawn {
-            subagent: subagent.to_owned(),
-            parent: parent.to_owned(),
-            index,
-            event: event.clone(),
-        });
     }
 
     /// The starts of the subagents `events` speak of, and of the subagents
-    /// that started those, from before `first`. Without them a client would
-    /// take a subagent's work for the chat's own and never see it end.
+    /// that started those, from before `first`, each with its latest state
+    /// from before `first`. Without them a client would take a subagent's
+    /// work for the chat's own, or draw one that already ended as running.
     fn spawns_before<'a>(
         &self,
         events: impl Iterator<Item = &'a ChatEvent>,
@@ -713,11 +723,19 @@ impl Replay {
             chosen.push(spawn);
             named.push(&spawn.parent);
         }
-        chosen.sort_by_key(|spawn| spawn.index);
-        chosen
+        let mut found: Vec<(u64, &ChatEvent)> = chosen
             .into_iter()
-            .map(|spawn| (spawn.index, &spawn.event))
-            .collect()
+            .flat_map(|spawn| {
+                let state = spawn
+                    .state
+                    .as_ref()
+                    .filter(|(index, _)| *index < first)
+                    .map(|(index, event)| (*index, event));
+                std::iter::once((spawn.index, &spawn.event)).chain(state)
+            })
+            .collect();
+        found.sort_by_key(|(index, _)| *index);
+        found
     }
 
     fn hold(&mut self, holds: Holds, index: u64, event: &ChatEvent) {
@@ -969,6 +987,11 @@ impl Replay {
         }
         self.standing.retain(|(_, held, _)| *held < index);
         self.spawns.retain(|spawn| spawn.index < index);
+        for spawn in &mut self.spawns {
+            if spawn.state.as_ref().is_some_and(|(at, _)| *at >= index) {
+                spawn.state = None;
+            }
+        }
         self.in_turn = false;
         self.reconnecting = None;
         self.last_from_user = false;
