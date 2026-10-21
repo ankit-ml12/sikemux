@@ -230,6 +230,16 @@ impl Run {
         }
     }
 
+    fn right_click(&mut self, row: u16, col: u16) {
+        let cell = self.bench.read_with(&self.cx, |bench, _| bench.terminals.cell()).unwrap_or_default();
+        let position = point(px(16.) + cell.width * (f32::from(col) + 0.5), px(8.) + cell.height * (f32::from(row) + 0.5));
+        let event = PlatformInput::MouseDown(MouseDownEvent { button: MouseButton::Right, position, click_count: 1, ..Default::default() });
+        self.cx.update_window(self.window, |_, window, cx| window.dispatch_event(event, cx)).ok();
+        for _ in 0..10 {
+            self.frame();
+        }
+    }
+
     fn shot(&mut self, folder: &Option<PathBuf>, name: &str) {
         let Some(folder) = folder else {
             return;
@@ -374,6 +384,17 @@ fn main() {
     run.shot(&shots, "word");
     run.point(row.saturating_sub(1), 1, Some(3));
     run.shot(&shots, "line");
+    run.key("cmd-f");
+    for key in ["9", "9", "9", "8"] {
+        run.key(key);
+    }
+    for _ in 0..30 {
+        run.frame();
+    }
+    run.shot(&shots, "find");
+    run.key("escape");
+    run.right_click(row.saturating_sub(1), 30);
+    run.shot(&shots, "menu");
     println!("app peak RSS {:.0} MB", peak_rss_mb());
     drop(client);
 }

@@ -42,6 +42,8 @@ pub struct TerminalPalette {
     /// The character under a block cursor.
     pub cursor_text: u32,
     pub selection: u32,
+    pub find_match: u32,
+    pub find_current: u32,
     pub ansi: [u32; 16],
 }
 
@@ -63,6 +65,8 @@ pub const AURA_NOIR: Palette = Palette {
         cursor: 0xa277ff,
         cursor_text: 0x0f0f13,
         selection: 0x3d375e,
+        find_match: 0x433866,
+        find_current: 0xa277ff,
         ansi: [
             0x1f1f25, 0xff6767, 0x54ffbe, 0xffca85, 0xa277ff, 0xff6ac1, 0x61ffca, 0xedecee, 0x3d3a5a, 0xff8585, 0x88ffd8,
             0xffe5b0, 0xc4a8ff, 0xff85d5, 0x88ffe0, 0xffffff,
@@ -116,6 +120,8 @@ pub struct Tokens {
     pub terminal: TerminalColors,
     pub terminal_cursor_text: Hsla,
     pub terminal_selection: Hsla,
+    pub terminal_match: Hsla,
+    pub terminal_match_current: Hsla,
 }
 
 impl Global for Tokens {}
@@ -171,6 +177,8 @@ impl Tokens {
             },
             terminal_cursor_text: hex(palette.terminal.cursor_text).into(),
             terminal_selection: hex(palette.terminal.selection).into(),
+            terminal_match: hex(palette.terminal.find_match).into(),
+            terminal_match_current: hex(palette.terminal.find_current).into(),
         }
     }
 

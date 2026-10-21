@@ -8,8 +8,8 @@ use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch, IDENTIFIER};
 use sikemux_host::cli_paths;
-use sikemux_wire::grid::{decode_frame, decode_lines, Frame, GridPoint, Lines, TerminalColors, TerminalInput};
-use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, SessionId, StreamId};
+use sikemux_wire::grid::{decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalColors, TerminalInput};
+use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId};
 use tokio::sync::mpsc;
 
 pub enum Update {
@@ -41,6 +41,7 @@ pub enum Screenful {
     Frame(Frame),
     Lines(Lines),
     Copied(String),
+    Found(FindResult),
 }
 
 /// What the window asks of one terminal.
@@ -55,6 +56,10 @@ pub enum TerminalAsk {
     Lines { start: u64, count: u32 },
     /// Its text between two cells, or all of it, sent back as `Screenful::Copied`.
     Copy(Option<(GridPoint, GridPoint)>),
+    /// Matches of `query` in the screen and history, the current one the
+    /// first after `from`, or before it going `backwards`. Sent back as `Screenful::Found`.
+    Find { query: String, options: FindOptions, from: Option<GridPoint>, backwards: bool, inclusive: bool },
+    Clear,
 }
 
 /// One of the core's `Watch` calls, read again whenever the core says one of
@@ -399,6 +404,15 @@ impl Streams {
                     }
                 });
             }
+            TerminalAsk::Find { query, options, from, backwards, inclusive } => {
+                let updates = self.updates.clone();
+                let request = Request::TerminalFind { id: session, query, options, from, backwards, inclusive };
+                tokio::spawn(async move {
+                    let found = client.find(request).await.unwrap_or_default();
+                    let _ = updates.send(Update::Terminal(session, Screenful::Found(found)));
+                });
+            }
+            TerminalAsk::Clear => drop(tokio::spawn(async move { client.clear(session).await })),
         }
     }
 }
