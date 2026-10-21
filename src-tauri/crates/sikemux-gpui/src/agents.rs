@@ -1,9 +1,15 @@
+use std::f32::consts::FRAC_PI_2;
+
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{div, px, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled};
+use gpui_kit::{
+    canvas, div, fill, point, px, radians, size, Transformation, App, Bounds, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled,
+};
+use serde_json::Value;
 
 use crate::icons::Icon;
-use crate::theme::Tokens;
+use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Row, Segmented};
 use crate::workbench::{AgentRow, Workbench};
 
@@ -67,16 +73,14 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
                 .child(div().flex().flex_col().gap(px(2.)).children(rows))
                 .when(!recent.is_empty(), |scroll| scroll.child(Group::new("Recent", "").children(recent))),
         )
+        .children(limits(bench, cx))
         .child(pages(cx))
 }
 
 fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let launcher = bench.project().and_then(|project| {
-        let id = project.launcher.as_deref()?;
-        bench.view.as_ref()?.workspace.launchers.iter().find(|launcher| launcher.id == id)
-    });
-    let (provider, label) = launcher.map_or(("", "Agents"), |launcher| (launcher.provider.as_str(), launcher.label.as_str()));
+    let (provider, label) = bench
+        .launcher().map_or(("", "Agents"), |launcher| (launcher.provider.as_str(), launcher.label.as_str()));
     div()
         .flex_none()
         .pt(px(6.))
@@ -190,6 +194,157 @@ fn age(at: u64) -> String {
         86_400..2_592_000 => format!("{}d", seconds / 86_400),
         2_592_000..31_536_000 => format!("{}mo", seconds / 2_592_000),
         _ => format!("{}y", seconds / 31_536_000),
+    }
+}
+
+/// The plan limits of the account new chats here start on, as its agent last reported them.
+fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
+    let t = Tokens::get(cx).clone();
+    let launcher = bench.launcher()?;
+    let account = bench.read("usage")?.as_array()?.iter().find(|account| account["launcher"] == launcher.id.as_str())?;
+    let name = account["label"].as_str().unwrap_or_default().to_owned();
+    let refresh = format!("Refresh {} plan limits", launcher.label);
+    let windows = account["usage"]["windows"].as_array().map_or(&[][..], Vec::as_slice);
+    let quiet = |text: String| ui::text(text, 10.5, FontWeight::NORMAL).italic().text_color(t.text_tertiary).px(px(8.));
+    let body = if account["signedIn"] == false {
+        div()
+            .flex()
+            .gap(px(4.))
+            .child(quiet(format!("{name} is signed out.")).pr_0())
+            .child(ui::text("Sign in", 10.5, FontWeight::NORMAL).text_color(t.text_secondary).underline())
+            .into_any_element()
+    } else if !account["problem"].is_null() {
+        quiet("Could not read plan limits. Refresh to try again.".into()).into_any_element()
+    } else if windows.is_empty() {
+        let reason = account["usage"]["unavailableReason"].as_str().unwrap_or("This account did not report plan limits.");
+        quiet(reason.to_owned()).into_any_element()
+    } else {
+        div().flex().flex_col().gap(px(6.)).children(windows.iter().map(|window| limit_row(window, cx))).into_any_element()
+    };
+    Some(
+        div()
+            .flex_none()
+            .mt(px(12.))
+            .mx(px(10.))
+            .mb(px(16.))
+            .child(
+                div()
+                    .h(px(18.))
+                    .mb(px(9.))
+                    .px(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(ui::text("LIMITS", 11., FontWeight::MEDIUM).letter_spacing(0.08).text_color(t.text_tertiary))
+                    .child(div().flex_1().h(px(1.)).bg(t.border))
+                    .child(
+                        div()
+                            .h(px(20.))
+                            .pl(px(3.))
+                            .pr(px(5.))
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .rounded(theme::RADIUS_2)
+                            .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
+                            .child(ui::icon(Icon::Chevron, 9.).with_transformation(Transformation::rotate(radians(FRAC_PI_2))).text_color(t.text_tertiary)),
+                    )
+                    .child(
+                        IconButton::new("refresh-limits", Icon::Refresh, refresh)
+                            .small()
+                            .on_click(cx.listener(|bench, _, _, _| bench.read_usage())),
+                    ),
+            )
+            .child(body),
+    )
+}
+
+/// One of a plan's rolling windows: how much of it is used, and when it starts again.
+fn limit_row(window: &Value, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let label = window["label"].as_str().unwrap_or_default().to_owned();
+    let percent = window["usedPercent"].as_f64().unwrap_or(0.).clamp(0., 100.);
+    let signal = if percent >= 90. {
+        t.danger
+    } else if percent >= 70. {
+        t.warn
+    } else {
+        Hsla { a: 0.62, ..t.text_primary }
+    };
+    let reset = reset_at(&window["resetsAt"]);
+    let note = match reset {
+        Some(at) => format!("Resets {}", at.with_timezone(&chrono::Local).format("%-m/%-d/%Y, %-I:%M:%S %p")),
+        None => "Reset time unavailable".into(),
+    };
+    let unlit = Hsla { a: 0.10, ..t.text_primary };
+    div()
+        .id(SharedString::from(format!("limit-{label}")))
+        .h(px(18.))
+        .px(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .tooltip(ui::tooltip(format!("{label}: {}% used. {note}", percent.round())))
+        .child(ui::meta(label, cx).w(px(58.)).flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap())
+        .child(
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    let lit = bounds.size.width * (percent / 100.) as f32;
+                    let mut x = px(0.);
+                    while x < bounds.size.width {
+                        let tick = Bounds::new(point(bounds.origin.x + x, bounds.origin.y), size(px(1.5), bounds.size.height));
+                        window.paint_quad(fill(tick, if x < lit { signal } else { unlit }));
+                        x += px(4.);
+                    }
+                },
+            )
+            .flex_1()
+            .h(px(10.)),
+        )
+        .child(
+            ui::text(format!("{}%", percent.round()), 11., FontWeight::NORMAL)
+                .w(px(28.))
+                .flex_none()
+                .text_right()
+                .font_features(theme::tabular())
+                .text_color(if percent < 70. { t.text_primary } else { signal }),
+        )
+        .child(
+            ui::text(countdown(reset), 10., FontWeight::NORMAL)
+                .w(px(42.))
+                .flex_none()
+                .text_right()
+                .font_features(theme::tabular())
+                .text_color(t.text_tertiary),
+        )
+}
+
+/// When a window starts again: Unix seconds, as a number or digits, or an ISO time.
+fn reset_at(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
+    let seconds = value.as_i64().or_else(|| value.as_str().filter(|text| text.bytes().all(|byte| byte.is_ascii_digit())).and_then(|text| text.parse().ok()));
+    match seconds {
+        Some(seconds) => chrono::DateTime::from_timestamp(seconds, 0),
+        None => chrono::DateTime::parse_from_rfc3339(value.as_str()?).ok().map(|at| at.to_utc()),
+    }
+}
+
+fn countdown(reset: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    let Some(reset) = reset else {
+        return "unknown".into();
+    };
+    let minutes = ((reset - chrono::Utc::now()).num_seconds().max(0) as f64 / 60.).ceil() as i64;
+    let (hours, days) = (minutes / 60, minutes / 1440);
+    let with = |big: i64, unit: &str, small: i64, small_unit: &str| match small {
+        0 => format!("{big}{unit}"),
+        small => format!("{big}{unit} {small}{small_unit}"),
+    };
+    match minutes {
+        0 => "resetting now".into(),
+        1..=59 => format!("{minutes}m"),
+        _ if hours < 24 => with(hours, "h", minutes % 60, "m"),
+        _ if days < 7 => with(days, "d", hours % 24, "h"),
+        _ => reset.with_timezone(&chrono::Local).format("%b %-d").to_string(),
     }
 }
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AgentStatus, DeviceView, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
+use sikemux_wire::protocol::{AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
 
 use crate::core::{utc_offset_minutes, Ask, Link, Update, Watch};
@@ -57,10 +57,9 @@ impl Workbench {
             }
         })
         .detach();
-        let _ = asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
-        Self {
+        let bench = Self {
             version: String::new(),
             view: None,
             reads: HashMap::new(),
@@ -75,7 +74,14 @@ impl Workbench {
             filter_text: String::new(),
             asks,
             _filtering: None,
-        }
+        };
+        bench.read_usage();
+        bench
+    }
+
+    /// Reads every account's plan limits again, as they are whenever usage changes.
+    pub fn read_usage(&self) {
+        let _ = self.asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
     }
 
     fn apply(&mut self, update: Update, cx: &mut Context<Self>) {
@@ -158,6 +164,12 @@ impl Workbench {
         let active = self.view.as_ref()?.layout.active_project.as_deref();
         let projects = self.projects();
         active.and_then(|id| projects.iter().find(|project| project.id == id)).or(projects.first())
+    }
+
+    /// What a new chat in the project in front starts with.
+    pub fn launcher(&self) -> Option<&LauncherInfo> {
+        let id = self.project()?.launcher.as_deref()?;
+        self.view.as_ref()?.workspace.launchers.iter().find(|launcher| launcher.id == id)
     }
 
     pub fn activate_project(&self, id: &str) {
