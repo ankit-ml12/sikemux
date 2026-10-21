@@ -8,8 +8,8 @@ use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, AppContext, Context, Entity, InteractiveElement,
-    ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, Window,
+    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};
@@ -579,12 +579,172 @@ pub fn render(
                 })
             })
     };
+    let packs = crate::faces::packs();
+    let chosen_pack = packs.iter().find(|pack| pack.id == style.pack);
+    let choose = |pack: String, shape: String| {
+        let this = this.clone();
+        move |_: &gpui_kit::ClickEvent, _: &mut Window, cx: &mut gpui_kit::App| {
+            let change = serde_json::json!({ "pack": pack, "shape": shape });
+            this.update(cx, |bench, _| {
+                let _ = bench.asks.send(Ask::Call {
+                    method: "setFaceStyle",
+                    params: change,
+                });
+            })
+        }
+    };
+    let face = |pack: &crate::faces::Pack, shape: &crate::faces::Shape, color: u32, size: f32| {
+        crate::faces::resting(pack, shape, color, cx)
+            .map(|image| gpui_kit::img(image).size(px(size)).into_any_element())
+            .unwrap_or_else(|| div().size(px(size)).into_any_element())
+    };
+    let card = |id: String, name: String, faces: Vec<AnyElement>, on: bool, click| {
+        div()
+            .id(SharedString::from(id))
+            .w(px(108.))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(6.))
+            .p(px(8.))
+            .rounded(theme::RADIUS_3)
+            .border_1()
+            .cursor_pointer()
+            .border_color(if on { t.border_selected } else { t.border })
+            .when(on, |card| card.bg(t.surface_chosen))
+            .when(!on, |card| card.hover(|style| style.bg(t.surface_hover)))
+            .child(div().flex().gap(px(2.)).children(faces))
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(t.text_secondary)
+                    .child(name),
+            )
+            .on_click(click)
+    };
+    let pack_cards = div()
+        .flex()
+        .flex_wrap()
+        .gap(px(8.))
+        .children(packs.iter().map(|pack| {
+            let step = (pack.shapes.len() / 3).max(1);
+            let faces = (0..3)
+                .filter_map(|at| {
+                    pack.shapes
+                        .get((at * step) % pack.shapes.len().max(1))
+                        .map(|shape| face(pack, shape, at as u32 * 2, 24.))
+                })
+                .collect();
+            card(
+                format!("buddy-pack-{}", pack.id),
+                pack.name.clone(),
+                faces,
+                pack.id == style.pack,
+                choose(pack.id.clone(), "mixed".into()),
+            )
+        }))
+        .child({
+            let mixed = [1usize, 7, 8]
+                .iter()
+                .enumerate()
+                .filter_map(|(at, index)| {
+                    let pack = packs.get(*index)?;
+                    Some(face(pack, pack.shapes.first()?, at as u32 + 1, 24.))
+                })
+                .collect();
+            card(
+                "buddy-pack-all".into(),
+                "Every pack".into(),
+                mixed,
+                style.pack == "all",
+                choose("all".into(), "mixed".into()),
+            )
+        });
+    let mixing = style.shape == "mixed" || chosen_pack.is_none();
+    let shape_chips = div()
+        .flex()
+        .flex_wrap()
+        .gap(px(6.))
+        .child(
+            div()
+                .id("buddy-shape-mix")
+                .h(px(36.))
+                .px(px(12.))
+                .flex()
+                .items_center()
+                .rounded(theme::RADIUS_2)
+                .border_1()
+                .cursor_pointer()
+                .text_size(px(12.))
+                .text_color(t.text_secondary)
+                .border_color(if mixing { t.border_selected } else { t.border })
+                .when(mixing, |chip| chip.bg(t.surface_chosen))
+                .child("Mix")
+                .on_click(choose(style.pack.clone(), "mixed".into())),
+        )
+        .children(chosen_pack.into_iter().flat_map(|pack| {
+            pack.shapes.iter().enumerate().map(|(at, shape)| {
+                let on = shape.id == style.shape;
+                div()
+                    .id(SharedString::from(format!("buddy-shape-{}", shape.id)))
+                    .size(px(36.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(theme::RADIUS_2)
+                    .border_1()
+                    .cursor_pointer()
+                    .border_color(if on { t.border_selected } else { t.border })
+                    .when(on, |chip| chip.bg(t.surface_chosen))
+                    .when(!on, |chip| chip.hover(|style| style.bg(t.surface_hover)))
+                    .tooltip(ui::tooltip(shape.name.clone()))
+                    .child(face(pack, shape, at as u32, 26.))
+                    .on_click(choose(pack.id.clone(), shape.id.clone()))
+            })
+        }));
+    let stacked = |label: &'static str, about: &'static str, body: AnyElement| {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .px(px(14.))
+            .py(px(10.))
+            .border_b_1()
+            .border_color(t.line_soft)
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .text_color(t.text_primary)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .text_size(px(11.5))
+                    .text_color(t.text_tertiary)
+                    .child(about),
+            )
+            .child(body)
+    };
     let buddies = div()
         .child(rows::row(
             "Show buddies",
             Some("Agents get a character in place of their harness logo."),
             face_switch("buddies-on", "on", style.on),
             cx,
+        ))
+        .child(stacked(
+            "Pack",
+            "What new agents look like. Right-click an agent to give it its own.",
+            pack_cards.into_any_element(),
+        ))
+        .child(stacked(
+            "Shape",
+            if chosen_pack.is_some() {
+                "Mix gives each agent its own shape from the pack."
+            } else {
+                "Every pack mixes shapes too."
+            },
+            shape_chips.into_any_element(),
         ))
         .child(rows::row(
             "Animate faces",

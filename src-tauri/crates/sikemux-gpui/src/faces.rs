@@ -12,6 +12,49 @@ include!(concat!(env!("OUT_DIR"), "/faces.rs"));
 /// Every colour of a shape, each drawn in every state.
 type Drawings = Vec<HashMap<String, String>>;
 
+/// A pack of faces as the core's catalogue lists it, with what the person reads it as.
+#[derive(serde::Deserialize)]
+pub struct Pack {
+    pub id: String,
+    pub name: String,
+    pub shapes: Vec<Shape>,
+    /// How many colours each of its shapes comes in.
+    pub colors: u32,
+}
+
+#[derive(serde::Deserialize)]
+pub struct Shape {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "box")]
+    pub view_box: String,
+}
+
+/// Every pack, in the order the Mac lists them.
+pub fn packs() -> &'static [Pack] {
+    #[derive(serde::Deserialize)]
+    struct Catalogue {
+        packs: Vec<Pack>,
+    }
+    static PACKS: std::sync::LazyLock<Vec<Pack>> = std::sync::LazyLock::new(|| {
+        serde_json::from_str::<Catalogue>(include_str!("../../sikemux-core/src/assets/faces.json"))
+            .map(|catalogue| catalogue.packs)
+            .unwrap_or_default()
+    });
+    &PACKS
+}
+
+/// The shape of a pack in one of its colours, at rest.
+pub fn resting(pack: &Pack, shape: &Shape, color: u32, cx: &App) -> Option<Arc<Image>> {
+    let face = AgentFace {
+        pack: pack.id.clone(),
+        shape: shape.id.clone(),
+        color: color % pack.colors.max(1),
+        view_box: shape.view_box.clone(),
+    };
+    image(&face, AgentGroup::Idle, cx)
+}
+
 /// The faces drawn so far, and the shapes unpacked to draw them.
 #[derive(Default)]
 pub struct Faces {

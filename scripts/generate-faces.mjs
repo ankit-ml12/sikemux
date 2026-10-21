@@ -49,13 +49,14 @@ try {
   const toMeasure = [];
   const packs = BUDDY_PACKS.map((pack) => ({
     id: pack.id,
+    name: pack.name,
     shapes: pack.shapes.map((shape) => {
       const drawing = measuredDrawing(pack, shape);
       const measured = digest(drawing);
       const known = keptBoxes.get(`${pack.id}/${shape.id}`);
       if (known?.measured === measured)
-        return { id: shape.id, box: known.box, measured };
-      const entry = { id: shape.id, box: null, measured };
+        return { id: shape.id, name: shape.name, box: known.box, measured };
+      const entry = { id: shape.id, name: shape.name, box: null, measured };
       toMeasure.push({ entry, drawing });
       return entry;
     }),
