@@ -258,6 +258,20 @@ textarea:focus,
     line-height: 1.4;
 }
 
+.rail-sign-in-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.rail-sign-in-actions > .rail-sign-in-btn {
+    flex: 1;
+}
+
+.rail-account-loading {
+    justify-content: flex-end;
+}
+
 .rail-sign-in-btn {
     display: flex;
     align-items: center;

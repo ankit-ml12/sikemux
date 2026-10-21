@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACCOUNT_CHANGED_EVENT, type AccountStatus } from "../api/account";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { initials } from "../lib/initials";
+import { getState, setState } from "../state/store";
 import { useAccount } from "./account";
 import { RailAccount } from "./RailAccount";
 
@@ -23,6 +24,7 @@ beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     useAccount.setState({ account: null });
+    setState({ settingsOpen: false });
 });
 
 afterEach(() => {
@@ -69,5 +71,23 @@ describe("RailAccount", () => {
         expect(await screen.findByRole("button", { name: "Account: ada@example.com" })).toBeInTheDocument();
         transport.emit(ACCOUNT_CHANGED_EVENT, SIGNED_OUT);
         expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    });
+
+    it("keeps Settings in reach while signed out", async () => {
+        serve(SIGNED_OUT);
+        render(<RailAccount />);
+
+        expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+        expect(getState().settingsOpen).toBe(true);
+    });
+
+    it("keeps Settings in reach before the account has been read", () => {
+        transport.register("account_status", () => new Promise<AccountStatus>(() => {}));
+        render(<RailAccount />);
+
+        expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+        expect(getState().settingsOpen).toBe(true);
     });
 });
