@@ -1565,6 +1565,7 @@ fn start(
     }
     validate(&launch_spec)?;
     let resume_id = launch_spec.resume_id.clone();
+    let waking = core.workspaces.agent(&launch_spec.agent_id).is_some();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
     core.workspaces.note_begun(&chat);
     super::model_providers::chat_begun(core, &chat.launch);
@@ -1578,7 +1579,9 @@ fn start(
         let (core, agent_id, cwd, provider) = naming;
         core.name_agent(&agent_id, &cwd, Some(&provider), resume_id.as_deref());
     });
-    core.seen.active(chat.agent_id());
+    if !waking {
+        core.seen.active(chat.agent_id());
+    }
     super::activity_log::chat_launched(core, &chat.launch);
     chat.keep(kept::Progress::STARTING);
     if let Some(client) = subscriber {
