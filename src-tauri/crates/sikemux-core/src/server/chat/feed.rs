@@ -23,7 +23,7 @@ use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 use sikemux_fold::Fold;
-use sikemux_fold::{ChatEvent, ChatEventKind};
+use sikemux_fold::{ChatEvent, ChatEventKind, Place};
 
 /// One frame's worth of streamed updates travels as a single event. Each
 /// notification on its own costs a script eval in the webview, and an adapter
@@ -1052,8 +1052,9 @@ impl Replay {
 
     /// The change a tool call made and what it printed, read again from the
     /// events held, for a call the fold no longer holds.
-    pub(crate) fn tool_detail(&self, id: &str) -> Option<ToolDetail> {
-        self.tool_call(id).map(|raw| sikemux_fold::detail_of(&raw))
+    pub(crate) fn tool_detail(&self, id: &str, place: Option<&Place>) -> Option<ToolDetail> {
+        self.tool_call(id)
+            .map(|raw| sikemux_fold::detail_of(&raw, place))
     }
 }
 
@@ -1097,6 +1098,8 @@ struct Inner {
     holding: bool,
     /// What the person sent while the agent was at work, oldest first.
     queued: Vec<Queued>,
+    /// Where the chat's edits sit in their files, for each fold made for it.
+    place: Option<Place>,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1143,12 +1146,31 @@ fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
 
 /// A fold for a chat, showing an effort picker from the start when its agent
 /// always offers one.
-fn new_fold(permission_mode: &str, offers_effort: bool) -> Fold {
+fn new_fold(permission_mode: &str, offers_effort: bool, place: Option<&Place>) -> Fold {
     let mut fold = Fold::new(permission_mode);
     if offers_effort {
         fold.offer_effort();
     }
+    if let Some(place) = place {
+        fold.place_edits(place.clone());
+    }
     fold
+}
+
+/// The largest file an edit is looked for in; a bigger one leaves the edit's lines unnumbered.
+const MAX_PLACED_BYTES: u64 = 2 * 1024 * 1024;
+
+/// The line `text` starts on in the file at `path`, when it is there exactly once.
+fn line_of(path: &std::path::Path, text: &str) -> Option<u64> {
+    if text.is_empty() || std::fs::metadata(path).ok()?.len() > MAX_PLACED_BYTES {
+        return None;
+    }
+    let held = std::fs::read_to_string(path).ok()?;
+    let at = held.find(text)?;
+    if held[at + text.len()..].contains(text) {
+        return None;
+    }
+    Some(held[..at].matches('\n').count() as u64 + 1)
 }
 
 impl Feed {
@@ -1181,6 +1203,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
+                place: None,
             }),
         })
     }
@@ -1247,6 +1270,7 @@ impl Feed {
                 closed: false,
                 holding: false,
                 queued: Vec::new(),
+                place: None,
             }),
         })
     }
@@ -1314,7 +1338,11 @@ impl Feed {
     /// The fold, built again from the chat's events when it was let go.
     fn fold<'a>(&self, inner: &'a mut Inner) -> &'a mut Fold {
         if inner.fold.is_none() {
-            let mut fold = new_fold(&inner.permission_mode, inner.offers_effort);
+            let mut fold = new_fold(
+                &inner.permission_mode,
+                inner.offers_effort,
+                inner.place.as_ref(),
+            );
             if let Some(start) = &inner.start {
                 fold.apply(
                     inner.replay.next_index,
@@ -1723,6 +1751,17 @@ impl Feed {
 
     /// Shows an effort picker from the start, as agents that offer effort on
     /// every model do.
+    /// Numbers the lines of the chat's edits from where they sit in their files, read
+    /// under `cwd` when the agent names a file relative to it.
+    pub(crate) fn place_edits(&self, cwd: std::path::PathBuf) {
+        let place: Place = Arc::new(move |path: &str, text: &str| line_of(&cwd.join(path), text));
+        let mut inner = self.inner.locked();
+        if let Some(fold) = inner.fold.as_mut() {
+            fold.place_edits(place.clone());
+        }
+        inner.place = Some(place);
+    }
+
     pub(crate) fn offer_effort(&self) {
         let mut inner = self.inner.locked();
         inner.offers_effort = true;
@@ -1852,7 +1891,8 @@ impl Feed {
         if let Some(detail) = self.fold(&mut inner).tool_detail(tool_call_id) {
             return Some(detail);
         }
-        inner.replay.tool_detail(tool_call_id)
+        let inner = &*inner;
+        inner.replay.tool_detail(tool_call_id, inner.place.as_ref())
     }
 }
 

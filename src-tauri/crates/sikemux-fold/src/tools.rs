@@ -223,6 +223,19 @@ fn from_input(input: Option<&Value>) -> Option<Change<'_>> {
     })
 }
 
+/// Gives the diff's lines the file's own numbers, counted from where its new text sits
+/// in the file now. Lines counted within an edit's text alone would point at the wrong
+/// place, so they go unnumbered when the text is not found.
+pub(super) fn place(diff: &mut ToolDiff, raw: &Map<String, Value>, place: &super::Place) {
+    let change = from_content(raw.get("content")).or_else(|| from_input(raw.get("rawInput")));
+    let start = change.and_then(|change| place(change.path, change.new));
+    let shift = |number: Option<u64>| Some(number? + start? - 1);
+    for line in &mut diff.lines {
+        line.old_line = shift(line.old_line);
+        line.new_line = shift(line.new_line);
+    }
+}
+
 pub(super) fn tool_diff(content: Option<&Value>, input: Option<&Value>) -> Option<ToolDiff> {
     let change = from_content(content).or_else(|| from_input(input))?;
     let lines = diff_lines(change.old, change.new)?;

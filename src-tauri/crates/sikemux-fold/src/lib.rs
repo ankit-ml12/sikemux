@@ -32,9 +32,17 @@ pub use event::{ChatEvent, ChatEventKind};
 pub use send::TAIL_TURNS;
 
 /// The change a call made and what it printed, from everything said of it.
-pub fn detail_of(raw: &Map<String, Value>) -> ToolDetail {
-    tools::detail(&tools::settle(raw))
+pub fn detail_of(raw: &Map<String, Value>, place: Option<&Place>) -> ToolDetail {
+    let mut settled = tools::settle(raw);
+    if let (Some(diff), Some(place)) = (settled.diff.as_mut(), place) {
+        tools::place(diff, raw, place);
+    }
+    tools::detail(&settled)
 }
+
+/// Finds the line an edit's new text starts on in its file as the file is now, from the
+/// path the agent gave and that text; none unless it is there exactly once.
+pub type Place = std::sync::Arc<dyn Fn(&str, &str) -> Option<u64> + Send + Sync>;
 
 /// A picture bigger than the transcript can reasonably hold onto is kept by
 /// name instead of by its bytes: the row still says what it was.
@@ -266,6 +274,8 @@ pub struct Fold {
     /// The agent always offers an effort picker, empty until its session
     /// lists the levels.
     offers_effort: bool,
+    /// Where a finished edit's lines sit in its file, so they carry the file's numbers.
+    place: Option<Place>,
 }
 
 const TEXT_PART: &str = "text";
@@ -505,6 +515,11 @@ fn workflow_agents(value: &Value) -> Option<Vec<WorkflowAgent>> {
 type Within = Option<String>;
 
 impl Fold {
+    /// Numbers the lines of each edit that finishes from where it sits in its file.
+    pub fn place_edits(&mut self, place: Place) {
+        self.place = Some(place);
+    }
+
     pub fn new(permission_mode: &str) -> Self {
         Self {
             head: ChatHead {
@@ -525,6 +540,7 @@ impl Fold {
             settle_from: None,
             seq: 0,
             offers_effort: false,
+            place: None,
         }
     }
 
@@ -1441,7 +1457,10 @@ impl Fold {
         raw: &Map<String, Value>,
         at: u64,
     ) {
-        let settled = tools::settle(raw);
+        let mut settled = tools::settle(raw);
+        if let (Some(diff), Some(place)) = (settled.diff.as_mut(), &self.place) {
+            tools::place(diff, raw, place);
+        }
         let call = tools::call(raw);
         let detail = tools::detail(&settled);
         let id = call.tool_call_id.clone();
