@@ -13,6 +13,7 @@
 //   config   — ConfigMaps and Secrets by key name and size; no value is ever read
 //   describe — one pod's containers, last crash, conditions, volumes and events; env by name only
 //   nodes    — nodes with their roles, readiness, pressure and capacity, and cordoning one
+//   rollouts — a workload's revisions with their images and change causes, and which is live
 
 mod actions;
 mod config;
@@ -25,6 +26,7 @@ mod logs;
 mod network;
 mod nodes;
 mod pods;
+mod rollouts;
 mod workloads;
 
 use std::sync::Arc;
@@ -79,6 +81,7 @@ impl Plugin for Kubernetes {
                 "act" => answer(actions::act(params(input)?)).await,
                 "nodes" => answer(nodes::list(params(input)?)).await,
                 "cordon" => answer(nodes::cordon(params(input)?)).await,
+                "history" => answer(rollouts::history(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })

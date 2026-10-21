@@ -23,6 +23,11 @@ pub enum Action {
     RunNow,
     Suspend,
     Resume,
+    /// Roll a Deployment, StatefulSet or DaemonSet back to one of its revisions.
+    Undo,
+    /// Stop a Deployment's rollout where it is, so changes wait.
+    PauseRollout,
+    ResumeRollout,
 }
 
 #[derive(Deserialize)]
@@ -37,6 +42,9 @@ pub struct Act {
     pub name: String,
     #[serde(default)]
     pub replicas: Option<u32>,
+    /// The revision to undo to.
+    #[serde(default)]
+    pub revision: Option<u64>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -102,6 +110,28 @@ pub fn args_of(input: &Act, now_secs: u64) -> KubeResult<Vec<String>> {
                 job,
                 format!("--from=cronjob/{name}"),
             ]
+        }
+        Action::Undo => {
+            let kind = resource(kind, &["deployment", "statefulset", "daemonset"])?;
+            let revision = input
+                .revision
+                .filter(|revision| *revision > 0)
+                .ok_or_else(|| KubeError::BadArg("say which revision to go back to".into()))?;
+            vec![
+                "rollout".into(),
+                "undo".into(),
+                format!("{kind}/{name}"),
+                format!("--to-revision={revision}"),
+            ]
+        }
+        Action::PauseRollout | Action::ResumeRollout => {
+            let kind = resource(kind, &["deployment"])?;
+            let verb = if input.action == Action::PauseRollout {
+                "pause"
+            } else {
+                "resume"
+            };
+            vec!["rollout".into(), verb.into(), format!("{kind}/{name}")]
         }
         Action::Suspend | Action::Resume => {
             resource(kind.or(Some("cronjob")), &["cronjob"])?;
@@ -172,6 +202,35 @@ mod tests {
             pause.last().map(String::as_str),
             Some("--patch={\"spec\":{\"suspend\":true}}")
         );
+    }
+
+    #[test]
+    fn a_rollout_is_undone_to_a_named_revision_and_paused_only_for_a_deployment() {
+        let undo = args_of(&act(serde_json::json!({ "action": "undo", "kind": "Deployment", "name": "web", "revision": 3 })), 0).unwrap();
+        assert_eq!(
+            undo,
+            ["rollout", "undo", "deployment/web", "--to-revision=3"]
+        );
+        let sts = args_of(&act(serde_json::json!({ "action": "undo", "kind": "sts", "name": "cache", "revision": 1 })), 0).unwrap();
+        assert_eq!(
+            sts,
+            ["rollout", "undo", "statefulset/cache", "--to-revision=1"]
+        );
+        assert!(args_of(
+            &act(serde_json::json!({ "action": "undo", "kind": "Deployment", "name": "web" })),
+            0
+        )
+        .is_err());
+        assert!(args_of(&act(serde_json::json!({ "action": "undo", "kind": "Deployment", "name": "web", "revision": 0 })), 0).is_err());
+        let pause = args_of(&act(serde_json::json!({ "action": "pauseRollout", "kind": "Deployment", "name": "web" })), 0).unwrap();
+        assert_eq!(pause, ["rollout", "pause", "deployment/web"]);
+        let resume = args_of(
+            &act(serde_json::json!({ "action": "resumeRollout", "name": "web" })),
+            0,
+        )
+        .unwrap();
+        assert_eq!(resume, ["rollout", "resume", "deployment/web"]);
+        assert!(args_of(&act(serde_json::json!({ "action": "pauseRollout", "kind": "StatefulSet", "name": "cache" })), 0).is_err());
     }
 
     #[test]
