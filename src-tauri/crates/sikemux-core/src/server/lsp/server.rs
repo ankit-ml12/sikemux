@@ -3,8 +3,8 @@ use std::process::Child;
 use std::process::ChildStdin;
 use std::sync::{mpsc, Arc, Mutex};
 
+use super::Publish;
 use serde_json::Value;
-use tauri::AppHandle;
 
 use super::diagnostics::clear_server_diagnostics;
 use sikemux_process::sync::Locked;
@@ -23,7 +23,8 @@ pub(super) struct OpenDoc {
 // `shutdown` flips true once a stop has been issued — readers and writers
 // check it so they bail without spamming errors as the child dies.
 pub(super) struct Server {
-    pub(super) app: AppHandle,
+    /// Hands the core each file's diagnostics as the server publishes them.
+    pub(super) publish: Publish,
     pub(super) project: String,
     pub(super) language: String,
     pub(super) child: Mutex<Option<Child>>,

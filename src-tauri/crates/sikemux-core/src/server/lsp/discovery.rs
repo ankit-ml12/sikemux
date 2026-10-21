@@ -2,7 +2,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{AppError, AppResult};
+use super::{LspError, LspResult};
 
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
@@ -109,12 +109,11 @@ const JDTLS_MIN_JAVA: u32 = 21;
 
 /// jdtls runs on the Java in `JAVA_HOME`, so one set for an older project would stop it starting.
 fn jdtls_java_home() -> Option<PathBuf> {
-    let current = sikemux_core::tasks::java::default_java()?;
+    let current = crate::tasks::java::default_java()?;
     if current.major >= JDTLS_MIN_JAVA {
         return None;
     }
-    sikemux_core::tasks::java::java_at_least(JDTLS_MIN_JAVA)
-        .map(|runtime| PathBuf::from(runtime.home))
+    crate::tasks::java::java_at_least(JDTLS_MIN_JAVA).map(|runtime| PathBuf::from(runtime.home))
 }
 
 pub(super) fn server_env(language: &str) -> Vec<(&'static str, PathBuf)> {
@@ -167,36 +166,36 @@ fn install_output_message(stdout: &[u8], stderr: &[u8]) -> String {
     }
 }
 
-pub(super) fn install_gopls() -> AppResult<String> {
+pub(super) fn install_gopls() -> LspResult<String> {
     let output = sikemux_process::user_environment::command("go")
         .args(["install", "golang.org/x/tools/gopls@latest"])
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                AppError::Lsp(
+                LspError::new(
                     "Go toolchain not found on PATH. Install Go first: https://go.dev/doc/install"
                         .into(),
                 )
             } else {
-                AppError::Lsp(format!("run go install gopls: {e}"))
+                LspError::new(format!("run go install gopls: {e}"))
             }
         })?;
     if !output.status.success() {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "go install golang.org/x/tools/gopls@latest failed: {}",
             install_output_message(&output.stdout, &output.stderr)
         )));
     }
     go_lsp_path().map(path_string).ok_or_else(|| {
-        AppError::Lsp(
+        LspError::new(
             "gopls installed, but Sikemux could not locate it in PATH, GOBIN, or GOPATH/bin".into(),
         )
     })
 }
 
-pub(super) fn install_jdtls() -> AppResult<String> {
-    sikemux_core::tasks::tools::brew_install("jdtls").map_err(AppError::Lsp)?;
+pub(super) fn install_jdtls() -> LspResult<String> {
+    crate::tasks::tools::brew_install("jdtls").map_err(LspError::new)?;
     executable_in_path("jdtls").map(path_string).ok_or_else(|| {
-        AppError::Lsp("jdtls installed, but Sikemux could not locate it in PATH".into())
+        LspError::new("jdtls installed, but Sikemux could not locate it in PATH".into())
     })
 }

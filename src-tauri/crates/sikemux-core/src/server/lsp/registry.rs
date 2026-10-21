@@ -8,8 +8,7 @@ use tokio::task;
 
 use super::limits::{server_limit_error, MAX_LSP_SERVERS};
 use super::server::{shutdown_server, ServerHandle, ServerKey};
-use crate::error::AppResult;
-use crate::observability::global_observability;
+use super::LspResult;
 
 pub(super) fn registry() -> &'static Mutex<HashMap<ServerKey, ServerHandle>> {
     static R: OnceLock<Mutex<HashMap<ServerKey, ServerHandle>>> = OnceLock::new();
@@ -27,30 +26,6 @@ pub(super) fn server_for(project: &str, language: &str) -> Option<ServerHandle> 
         .get(&ServerKey::new(project, language))
         .filter(|server| !server.shutdown.load(Ordering::Acquire))
         .cloned()
-}
-
-pub fn server_count() -> usize {
-    registry()
-        .locked()
-        .values()
-        .filter(|server| !server.shutdown.load(Ordering::Acquire))
-        .count()
-}
-
-/// The documents open across every language server, and how many running
-/// servers have none open.
-pub fn document_counts() -> (usize, usize) {
-    let registry = registry().locked();
-    let mut open_documents = 0;
-    let mut idle_servers = 0;
-    for server in registry.values() {
-        let documents = server.open_docs.locked().len();
-        open_documents += documents;
-        if documents == 0 && !server.shutdown.load(Ordering::Acquire) {
-            idle_servers += 1;
-        }
-    }
-    (open_documents, idle_servers)
 }
 
 const LSP_IDLE_GRACE: Duration = Duration::from_secs(5 * 60);
@@ -148,7 +123,7 @@ pub(super) enum PreparedServerStart {
 /// is locked. `start_lock` serializes callers across this preparation, process
 /// spawn, and insertion, so registry cardinality can never transiently exceed
 /// `MAX_LSP_SERVERS`.
-pub(super) fn prepare_server_start(requested: &ServerKey) -> AppResult<PreparedServerStart> {
+pub(super) fn prepare_server_start(requested: &ServerKey) -> LspResult<PreparedServerStart> {
     let (action, to_shutdown) = {
         let mut registry = registry().locked();
         let entries = registry
@@ -191,10 +166,7 @@ pub(super) fn prepare_server_start(requested: &ServerKey) -> AppResult<PreparedS
     match action {
         ServerStartAction::Existing => Ok(PreparedServerStart::Existing),
         ServerStartAction::Admit { .. } => Ok(PreparedServerStart::Admit),
-        ServerStartAction::Reject => {
-            global_observability().increment_counter("lsp.server_limit_rejections", 1);
-            Err(server_limit_error())
-        }
+        ServerStartAction::Reject => Err(server_limit_error()),
     }
 }
 
@@ -261,8 +233,8 @@ pub(super) fn live_server_exists(key: &ServerKey) -> bool {
     false
 }
 
-/// Application-teardown backstop for servers whose project stop never arrived.
-pub fn drain_all() {
+/// Stops every server as the core exits, so none outlives it.
+pub(crate) fn drain_all() {
     let _start_guard = start_lock().locked();
     let servers = registry()
         .locked()

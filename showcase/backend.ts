@@ -313,8 +313,18 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("take_deep_links", constant([]));
     this.on("harness_claim", constant([]));
     this.on("agent_sessions_watch_start", constant(1));
-    this.on("lsp_locations", constant([]));
-    this.on("lsp_document_symbols", constant([]));
+    this.onCore(["lsp.locations", "lsp.symbols"], constant([]));
+    this.onCore(
+      [
+        "lsp.start",
+        "lsp.open",
+        "lsp.change",
+        "lsp.changeIncremental",
+        "lsp.close",
+        "lsp.stop",
+      ],
+      constant(null),
+    );
     this.on("simulator_attachments", constant([SIM_ATTACHED]));
     this.on(
       "sim_status",
@@ -356,12 +366,6 @@ export class ShowcaseBackend implements IpcTransport {
       "state_save",
       "path_kinds",
       "write_file",
-      "lsp_start",
-      "lsp_open",
-      "lsp_change",
-      "lsp_change_incremental",
-      "lsp_close",
-      "lsp_stop",
       "pty_write",
       "pty_input",
       "pty_unsubscribe",

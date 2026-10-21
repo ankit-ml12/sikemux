@@ -2,7 +2,6 @@ use std::sync::atomic::Ordering;
 
 use serde_json::json;
 use sikemux_process::sync::Locked;
-use tauri::AppHandle;
 use tokio::task;
 
 use super::discovery::{install_gopls, install_jdtls};
@@ -22,51 +21,40 @@ use super::registry::{
 use super::server::{shutdown_server, ServerKey};
 use super::transport::{notify, request};
 use super::types::{LspDocumentSymbol, LspKind, LspLocation, LspTextChange};
-use crate::error::{AppError, AppResult};
-use crate::observability::{global_observability, Metadata, SpanOutcome};
+use super::{LspError, LspResult, Publish};
 
-#[tauri::command]
-pub async fn lsp_languages() -> AppResult<Vec<String>> {
+pub(crate) async fn lsp_languages() -> LspResult<Vec<String>> {
     task::spawn_blocking(super::discovery::server_languages)
         .await
-        .map_err(|e| AppError::Lsp(format!("join: {e}")))
+        .map_err(|e| LspError::new(format!("join: {e}")))
 }
 
-#[tauri::command]
-pub async fn lsp_install_server(language: String) -> AppResult<String> {
+pub(crate) async fn lsp_install_server(language: String) -> LspResult<String> {
     match language.as_str() {
         "go" => task::spawn_blocking(install_gopls)
             .await
-            .map_err(|e| AppError::Lsp(format!("join: {e}")))?,
+            .map_err(|e| LspError::new(format!("join: {e}")))?,
         "java" => task::spawn_blocking(install_jdtls)
             .await
-            .map_err(|e| AppError::Lsp(format!("join: {e}")))?,
-        _ => Err(AppError::Lsp(format!(
+            .map_err(|e| LspError::new(format!("join: {e}")))?,
+        _ => Err(LspError::new(format!(
             "no language-server installer configured for `{language}`"
         ))),
     }
 }
 
-#[tauri::command]
-pub async fn lsp_start(app: AppHandle, project: String, language: String) -> AppResult<()> {
-    let span = global_observability().begin_span("lsp.start", None, Metadata::new());
-    let result = lsp_start_inner(app, project, language).await;
-    span.finish(if result.is_ok() {
-        SpanOutcome::Success
-    } else {
-        SpanOutcome::Error
-    });
-    result
-}
-
-async fn lsp_start_inner(app: AppHandle, project: String, language: String) -> AppResult<()> {
+pub(crate) async fn lsp_start(
+    publish: Publish,
+    project: String,
+    language: String,
+) -> LspResult<()> {
     validate_server_identity(&project, &language)?;
     let server_key = ServerKey::new(&project, &language);
     // The initialize handshake blocks up to 20 s on slow servers; off the
     // Tauri worker pool so unrelated IPC isn't starved. The start lock spans
     // admission, process initialization, and registry insertion, making the
     // cap a hard pre-spawn admission limit rather than an eventual backstop.
-    task::spawn_blocking(move || -> AppResult<()> {
+    task::spawn_blocking(move || -> LspResult<()> {
         let _guard = start_lock().locked();
         if live_server_exists(&server_key) {
             let existing = registry()
@@ -83,7 +71,7 @@ async fn lsp_start_inner(app: AppHandle, project: String, language: String) -> A
             return Ok(());
         }
 
-        let server = spawn_server(&project, &language, app)?;
+        let server = spawn_server(&project, &language, publish)?;
         let insertion = {
             let mut registry = registry().locked();
             if registry.len() >= MAX_LSP_SERVERS {
@@ -100,33 +88,21 @@ async fn lsp_start_inner(app: AppHandle, project: String, language: String) -> A
         Ok(())
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
 /// Shut every server owned by this project down. Called from the close-
 /// session path so a long-running rust-analyzer doesn't hang around with
 /// 500 MB resident after the user moves on. Idempotent.
-#[tauri::command]
-pub async fn lsp_stop(project: String) -> AppResult<()> {
-    let span = global_observability().begin_span("lsp.stop", None, Metadata::new());
-    let result = lsp_stop_inner(project).await;
-    span.finish(if result.is_ok() {
-        SpanOutcome::Success
-    } else {
-        SpanOutcome::Error
-    });
-    result
-}
-
-async fn lsp_stop_inner(project: String) -> AppResult<()> {
+pub(crate) async fn lsp_stop(project: String) -> LspResult<()> {
     if project.len() > MAX_LSP_PATH_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "project path exceeds {MAX_LSP_PATH_BYTES} bytes"
         )));
     }
     // Serialize against start so a stop racing a 20-second initialize cannot
     // miss the process and let it appear in the registry after stop returns.
-    task::spawn_blocking(move || -> AppResult<()> {
+    task::spawn_blocking(move || -> LspResult<()> {
         let _guard = start_lock().locked();
         let to_kill = {
             let mut registry = registry().locked();
@@ -141,24 +117,23 @@ async fn lsp_stop_inner(project: String) -> AppResult<()> {
         Ok(())
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
-#[tauri::command]
-pub async fn lsp_open(
+pub(crate) async fn lsp_open(
     project: String,
     language: String,
     path: String,
     content: String,
     language_id: Option<String>,
-) -> AppResult<()> {
+) -> LspResult<()> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     if let Some(language_id) = language_id.as_deref() {
         validate_document_language_id(language_id)?;
     }
     let server =
-        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+        server_for(&project, &language).ok_or(LspError::new("server not started".into()))?;
     server
         .idle_generation
         .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -167,53 +142,50 @@ pub async fn lsp_open(
         open_document(&server, &path, content, &language_id)
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
-#[tauri::command]
-pub async fn lsp_change(
+pub(crate) async fn lsp_change(
     project: String,
     language: String,
     path: String,
     content: String,
     version: u32,
-) -> AppResult<()> {
+) -> LspResult<()> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let server =
-        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+        server_for(&project, &language).ok_or(LspError::new("server not started".into()))?;
     task::spawn_blocking(move || change_document(&server, &path, content, version))
         .await
-        .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+        .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
-#[tauri::command]
-pub async fn lsp_change_incremental(
+pub(crate) async fn lsp_change_incremental(
     project: String,
     language: String,
     path: String,
     changes: Vec<LspTextChange>,
     version: u32,
-) -> AppResult<()> {
+) -> LspResult<()> {
     if changes.is_empty() {
         return Ok(());
     }
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let server =
-        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+        server_for(&project, &language).ok_or(LspError::new("server not started".into()))?;
     task::spawn_blocking(move || change_document_incremental(&server, &path, changes, version))
         .await
-        .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+        .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
-#[tauri::command]
-pub async fn lsp_save(
+pub(crate) async fn lsp_save(
     project: String,
     language: String,
     path: String,
     content: Option<String>,
-) -> AppResult<()> {
+) -> LspResult<()> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let Some(server) = server_for(&project, &language) else {
@@ -227,11 +199,10 @@ pub async fn lsp_save(
         notify(&server, "textDocument/didSave", params)
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))?
+    .map_err(|e| LspError::new(format!("join: {e}")))?
 }
 
-#[tauri::command]
-pub async fn lsp_close(project: String, language: String, path: String) -> AppResult<()> {
+pub(crate) async fn lsp_close(project: String, language: String, path: String) -> LspResult<()> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let Some(server) = server_for(&project, &language) else {
@@ -239,7 +210,7 @@ pub async fn lsp_close(project: String, language: String, path: String) -> AppRe
     };
     let server_key = ServerKey::new(&project, &language);
     let idle_server = server.clone();
-    let became_idle = task::spawn_blocking(move || -> AppResult<bool> {
+    let became_idle = task::spawn_blocking(move || -> LspResult<bool> {
         let mut documents = server.open_docs.locked();
         let Some(document) = documents.get(&path).copied() else {
             return Ok(false);
@@ -267,26 +238,25 @@ pub async fn lsp_close(project: String, language: String, path: String) -> AppRe
         Ok(documents.is_empty())
     })
     .await
-    .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
+    .map_err(|e| LspError::new(format!("join: {e}")))??;
     if became_idle {
         schedule_idle_shutdown(server_key, idle_server);
     }
     Ok(())
 }
 
-#[tauri::command]
-pub async fn lsp_locations(
+pub(crate) async fn lsp_locations(
     project: String,
     language: String,
     path: String,
     line: u32,
     character: u32,
     kind: LspKind,
-) -> AppResult<Vec<LspLocation>> {
+) -> LspResult<Vec<LspLocation>> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let server =
-        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+        server_for(&project, &language).ok_or(LspError::new("server not started".into()))?;
     let (method, with_context) = match kind {
         LspKind::Definition => ("textDocument/definition", false),
         LspKind::Declaration => ("textDocument/declaration", false),
@@ -303,26 +273,25 @@ pub async fn lsp_locations(
     }
     let result = task::spawn_blocking(move || request(&server, method, params))
         .await
-        .map_err(|e| AppError::Lsp(format!("join: {e}")))??;
+        .map_err(|e| LspError::new(format!("join: {e}")))??;
     Ok(parse_locations(&result))
 }
 
-#[tauri::command]
-pub async fn lsp_document_symbols(
+pub(crate) async fn lsp_document_symbols(
     project: String,
     language: String,
     path: String,
-) -> AppResult<Vec<LspDocumentSymbol>> {
+) -> LspResult<Vec<LspDocumentSymbol>> {
     validate_server_identity(&project, &language)?;
     validate_document_path(&path)?;
     let server =
-        server_for(&project, &language).ok_or(AppError::Lsp("server not started".into()))?;
+        server_for(&project, &language).ok_or(LspError::new("server not started".into()))?;
     let params = json!({ "textDocument": { "uri": path_to_uri(&path) } });
     // Use the same bounded blocking request path as locations: shutdown drops
     // the response sender, and timeout removes the pending request in 4 s.
     let result =
         task::spawn_blocking(move || request(&server, "textDocument/documentSymbol", params))
             .await
-            .map_err(|error| AppError::Lsp(format!("join: {error}")))??;
+            .map_err(|error| LspError::new(format!("join: {error}")))??;
     Ok(parse_document_symbols(&result))
 }

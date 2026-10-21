@@ -45,6 +45,7 @@ macro_rules! calls {
                     super::git::call(&$core, &$client.peer, method, $params).await
                 }
                 method if method.starts_with("files.") => files(&$core, method, $params).await,
+                method if method.starts_with("lsp.") => super::lsp::call(&$core, $client.id, method, $params).await,
                 _ => Err(format!("this host does not know {method}").into()),
             }
         }
@@ -57,7 +58,7 @@ pub(crate) fn needs(method: &str) -> Needs {
     if method.starts_with("git.") {
         return super::git::needs(method);
     }
-    if method.starts_with("files.") {
+    if method.starts_with("files.") || method.starts_with("lsp.") {
         return Needs::Full;
     }
     rule(method).map_or(Needs::Local, |(needs, _)| needs)

@@ -8,17 +8,16 @@ use serde_json::{json, Value};
 use super::limits::insert_pending_request;
 use super::lsp;
 use super::server::{lsp_tick, ServerHandle};
-use crate::error::{AppError, AppResult};
-use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
+use super::{LspError, LspResult};
 use sikemux_process::sync::Locked;
 
 const MAX_LSP_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LSP_HEADER_BYTES: usize = 8 * 1024;
 
-fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
+fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> LspResult<()> {
     let body = serde_json::to_string(msg)?;
     if body.len() > MAX_LSP_FRAME_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "outbound LSP frame exceeds {} bytes",
             MAX_LSP_FRAME_BYTES
         )));
@@ -30,9 +29,9 @@ fn write_frame(stdin: &mut ChildStdin, msg: &Value) -> AppResult<()> {
     Ok(())
 }
 
-pub(super) fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
+pub(super) fn send(server: &ServerHandle, msg: &Value) -> LspResult<()> {
     if server.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-        return Err(AppError::Lsp("server shut down".into()));
+        return Err(LspError::new("server shut down".into()));
     }
     server
         .last_used
@@ -40,18 +39,18 @@ pub(super) fn send(server: &ServerHandle, msg: &Value) -> AppResult<()> {
     let mut guard = server.stdin.locked();
     let stdin = guard
         .as_mut()
-        .ok_or_else(|| AppError::Lsp("stdin gone".into()))?;
+        .ok_or_else(|| LspError::new("stdin gone".into()))?;
     write_frame(stdin, msg)
 }
 
-pub(super) fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value>> {
+pub(super) fn read_message<R: BufRead>(reader: &mut R) -> LspResult<Option<Value>> {
     let mut content_length: usize = 0;
     let mut header_bytes = 0usize;
     loop {
         let mut bytes = Vec::new();
         let remaining = MAX_LSP_HEADER_BYTES.saturating_sub(header_bytes);
         if remaining == 0 {
-            return Err(AppError::Lsp("LSP headers exceed size limit".into()));
+            return Err(LspError::new("LSP headers exceed size limit".into()));
         }
         let n = reader
             .take((remaining + 1) as u64)
@@ -61,7 +60,7 @@ pub(super) fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value
         }
         header_bytes = header_bytes.saturating_add(n);
         if header_bytes > MAX_LSP_HEADER_BYTES || !bytes.ends_with(b"\n") {
-            return Err(AppError::Lsp("LSP headers exceed size limit".into()));
+            return Err(LspError::new("LSP headers exceed size limit".into()));
         }
         let line = std::str::from_utf8(&bytes).map_err(lsp)?;
         let line = line.trim_end_matches(['\r', '\n']);
@@ -71,7 +70,7 @@ pub(super) fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value
         if let Some(v) = line.strip_prefix("Content-Length:") {
             content_length = v.trim().parse().map_err(lsp)?;
             if content_length > MAX_LSP_FRAME_BYTES {
-                return Err(AppError::Lsp(format!(
+                return Err(LspError::new(format!(
                     "LSP frame exceeds {} bytes",
                     MAX_LSP_FRAME_BYTES
                 )));
@@ -79,19 +78,19 @@ pub(super) fn read_message<R: BufRead>(reader: &mut R) -> AppResult<Option<Value
         }
     }
     if content_length == 0 {
-        return Err(AppError::Lsp("missing or empty Content-Length".into()));
+        return Err(LspError::new("missing or empty Content-Length".into()));
     }
     let mut buf = vec![0u8; content_length];
     reader.read_exact(&mut buf)?;
     Ok(Some(serde_json::from_slice(&buf)?))
 }
 
-pub(super) fn next_id(server: &ServerHandle) -> AppResult<i64> {
+pub(super) fn next_id(server: &ServerHandle) -> LspResult<i64> {
     let mut id = server.next_id.locked();
     let v = *id;
     *id = id
         .checked_add(1)
-        .ok_or_else(|| AppError::Lsp("language-server request id exhausted".into()))?;
+        .ok_or_else(|| LspError::new("language-server request id exhausted".into()))?;
     Ok(v)
 }
 
@@ -100,17 +99,8 @@ pub(super) fn request_with_timeout(
     method: &str,
     params: Value,
     timeout: Duration,
-) -> AppResult<Value> {
-    let mut metadata = Metadata::new();
-    metadata.insert("method".to_owned(), ScalarValue::from(method));
-    let span = global_observability().begin_span("lsp.request", None, metadata);
-    let result = request_with_timeout_inner(server, method, params, timeout);
-    span.finish(if result.is_ok() {
-        SpanOutcome::Success
-    } else {
-        SpanOutcome::Error
-    });
-    result
+) -> LspResult<Value> {
+    request_with_timeout_inner(server, method, params, timeout)
 }
 
 fn request_with_timeout_inner(
@@ -118,7 +108,7 @@ fn request_with_timeout_inner(
     method: &str,
     params: Value,
     timeout: Duration,
-) -> AppResult<Value> {
+) -> LspResult<Value> {
     let id = next_id(server)?;
     let (tx, rx) = mpsc::channel();
     insert_pending_request(&server.pending, id, tx)?;
@@ -134,7 +124,7 @@ fn request_with_timeout_inner(
         Ok(v) => Ok(v),
         Err(e) => {
             server.pending.locked().remove(&id);
-            Err(AppError::Lsp(match e {
+            Err(LspError::new(match e {
                 mpsc::RecvTimeoutError::Timeout => format!("{method} timed out"),
                 mpsc::RecvTimeoutError::Disconnected => {
                     format!("{method} failed: the language server exited")
@@ -144,11 +134,11 @@ fn request_with_timeout_inner(
     }
 }
 
-pub(super) fn request(server: &ServerHandle, method: &str, params: Value) -> AppResult<Value> {
+pub(super) fn request(server: &ServerHandle, method: &str, params: Value) -> LspResult<Value> {
     request_with_timeout(server, method, params, Duration::from_secs(4))
 }
 
-pub(super) fn notify(server: &ServerHandle, method: &str, params: Value) -> AppResult<()> {
+pub(super) fn notify(server: &ServerHandle, method: &str, params: Value) -> LspResult<()> {
     let n = json!({"jsonrpc": "2.0", "method": method, "params": params});
     send(server, &n)
 }

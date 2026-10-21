@@ -160,9 +160,6 @@ pub struct RuntimeDiagnostics {
     agent_ptys_blocked: usize,
     agent_ptys_idle: usize,
     agent_ptys_unknown: usize,
-    lsp_servers: usize,
-    lsp_open_documents: usize,
-    lsp_idle_servers: usize,
     observability: crate::observability::ObservabilitySnapshot,
 }
 
@@ -207,7 +204,6 @@ pub async fn runtime_diagnostics(
     .await
     .unwrap_or((None, None, None));
     let pty_diagnostics = ptys.diagnostics().await;
-    let (lsp_open_documents, lsp_idle_servers) = crate::lsp::document_counts();
     Ok(RuntimeDiagnostics {
         pid: std::process::id(),
         fd_count,
@@ -222,9 +218,6 @@ pub async fn runtime_diagnostics(
         agent_ptys_blocked: pty_diagnostics.blocked_agents,
         agent_ptys_idle: pty_diagnostics.idle_agents,
         agent_ptys_unknown: pty_diagnostics.unknown_agents,
-        lsp_servers: crate::lsp::server_count(),
-        lsp_open_documents,
-        lsp_idle_servers,
         observability: crate::observability::global_observability().snapshot(),
     })
 }

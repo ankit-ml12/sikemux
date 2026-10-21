@@ -46,6 +46,8 @@ pub(crate) enum Topic {
     /// The hosts linked with this one, the SSH hosts a terminal is open to,
     /// and how each is reached.
     Hosts,
+    /// A language server's diagnostics for the files in `paths` moved.
+    Lsp,
 }
 
 /// Paths by topic and project; none means anything may have changed.

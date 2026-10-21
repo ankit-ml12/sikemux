@@ -1152,7 +1152,8 @@ export type CoreChangeTopic =
   | 'ssh'
   | 'plugins'
   | 'account'
-  | 'hosts';
+  | 'hosts'
+  | 'lsp';
 
 /** A board as the app and devices read it. */
 export interface ProjectBoard {

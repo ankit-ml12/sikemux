@@ -6,7 +6,6 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::AppHandle;
 
 use super::diagnostics::handle_server_notification;
 use super::discovery::{server_command, server_env};
@@ -15,7 +14,8 @@ use super::server::{lsp_tick, shutdown_server, Server, ServerHandle};
 use super::transport::{
     notify, read_message, request_with_timeout, response_for_server_request, send,
 };
-use crate::error::{AppError, AppResult};
+use super::Publish;
+use super::{LspError, LspResult};
 use sikemux_process::sync::Locked;
 
 struct SpawnedProcessGuard(Option<Child>);
@@ -42,10 +42,10 @@ impl Drop for SpawnedProcessGuard {
 pub(super) fn spawn_server(
     project: &str,
     language: &str,
-    app: AppHandle,
-) -> AppResult<ServerHandle> {
+    publish: Publish,
+) -> LspResult<ServerHandle> {
     let (bin, args) = server_command(language)
-        .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
+        .ok_or_else(|| LspError::new(format!("no language server configured for `{language}`")))?;
     let child = sikemux_process::user_environment::command(&bin)
         .args(&args)
         .envs(server_env(language))
@@ -56,12 +56,9 @@ pub(super) fn spawn_server(
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                AppError::LspServerMissing {
-                    language: language.to_string(),
-                    bin: bin.clone(),
-                }
+                LspError::missing(language, &bin)
             } else {
-                AppError::Lsp(format!("spawn {bin}: {e}"))
+                LspError::new(format!("spawn {bin}: {e}"))
             }
         })?;
     let mut child = SpawnedProcessGuard(Some(child));
@@ -69,17 +66,17 @@ pub(super) fn spawn_server(
         .child_mut()
         .stdin
         .take()
-        .ok_or(AppError::Lsp("no stdin".into()))?;
+        .ok_or(LspError::new("no stdin".into()))?;
     let stdout = child
         .child_mut()
         .stdout
         .take()
-        .ok_or(AppError::Lsp("no stdout".into()))?;
+        .ok_or(LspError::new("no stdout".into()))?;
     let stderr = child.child_mut().stderr.take();
     let child = child.into_inner();
 
     let server = Arc::new(Server {
-        app,
+        publish,
         project: project.to_owned(),
         language: language.to_owned(),
         child: Mutex::new(Some(child)),
@@ -213,17 +210,17 @@ fn drain_stderr(stderr: impl Read + Send + 'static) -> mpsc::Receiver<Vec<String
     rx
 }
 
-fn with_stderr_tail(error: AppError, tail: &[String]) -> AppError {
+fn with_stderr_tail(error: LspError, tail: &[String]) -> LspError {
     if tail.is_empty() {
         return error;
     }
-    AppError::Lsp(format!("{}\n{}", lsp_error_message(error), tail.join("\n")))
+    LspError::new(format!("{}\n{}", lsp_error_message(error), tail.join("\n")))
 }
 
-fn lsp_error_message(error: AppError) -> String {
-    match error {
-        AppError::Lsp(message) => message,
-        other => other.to_string(),
+fn lsp_error_message(error: LspError) -> String {
+    match error.0.strip_prefix("lsp: ") {
+        Some(message) => message.to_owned(),
+        None => error.0,
     }
 }
 
@@ -250,7 +247,7 @@ mod tests {
         );
 
         let error = with_stderr_tail(
-            AppError::Lsp("initialize failed: the language server exited".into()),
+            LspError::new("initialize failed: the language server exited".into()),
             &tail[tail.len() - 1..],
         );
         assert_eq!(

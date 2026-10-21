@@ -4,7 +4,7 @@ use std::sync::{mpsc, Mutex};
 use serde_json::Value;
 use sikemux_process::sync::Locked;
 
-use crate::error::{AppError, AppResult};
+use super::{LspError, LspResult};
 
 pub(super) const MAX_LSP_PATH_BYTES: usize = 4_096;
 pub(super) const MAX_LSP_LANGUAGE_BYTES: usize = 128;
@@ -13,47 +13,47 @@ pub(super) const MAX_LSP_SERVERS: usize = 6;
 const MAX_OPEN_DOCUMENTS_PER_SERVER: usize = 512;
 const MAX_PENDING_REQUESTS_PER_SERVER: usize = 64;
 
-pub(super) fn validate_server_identity(project: &str, language: &str) -> AppResult<()> {
+pub(super) fn validate_server_identity(project: &str, language: &str) -> LspResult<()> {
     if project.len() > MAX_LSP_PATH_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "project path exceeds {MAX_LSP_PATH_BYTES} bytes"
         )));
     }
     if language.len() > MAX_LSP_LANGUAGE_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "language identifier exceeds {MAX_LSP_LANGUAGE_BYTES} bytes"
         )));
     }
     Ok(())
 }
 
-pub(super) fn validate_document_path(path: &str) -> AppResult<()> {
+pub(super) fn validate_document_path(path: &str) -> LspResult<()> {
     if path.len() > MAX_LSP_PATH_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "document path exceeds {MAX_LSP_PATH_BYTES} bytes"
         )));
     }
     Ok(())
 }
 
-pub(super) fn validate_document_language_id(language_id: &str) -> AppResult<()> {
+pub(super) fn validate_document_language_id(language_id: &str) -> LspResult<()> {
     if language_id.len() > MAX_LSP_LANGUAGE_BYTES {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "document language identifier exceeds {MAX_LSP_LANGUAGE_BYTES} bytes"
         )));
     }
     Ok(())
 }
 
-pub(super) fn server_limit_error() -> AppError {
-    AppError::Lsp(format!(
+pub(super) fn server_limit_error() -> LspError {
+    LspError::new(format!(
         "language server limit reached ({MAX_LSP_SERVERS}); close a project before starting another"
     ))
 }
 
-pub(super) fn check_open_document_slot(open_documents: usize) -> AppResult<()> {
+pub(super) fn check_open_document_slot(open_documents: usize) -> LspResult<()> {
     if open_documents >= MAX_OPEN_DOCUMENTS_PER_SERVER {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "open document limit reached for language server ({MAX_OPEN_DOCUMENTS_PER_SERVER})"
         )));
     }
@@ -64,15 +64,15 @@ pub(super) fn insert_pending_request(
     pending: &Mutex<HashMap<i64, mpsc::Sender<Value>>>,
     id: i64,
     sender: mpsc::Sender<Value>,
-) -> AppResult<()> {
+) -> LspResult<()> {
     let mut pending = pending.locked();
     if pending.len() >= MAX_PENDING_REQUESTS_PER_SERVER {
-        return Err(AppError::Lsp(format!(
+        return Err(LspError::new(format!(
             "pending request limit reached for language server ({MAX_PENDING_REQUESTS_PER_SERVER})"
         )));
     }
     if pending.contains_key(&id) {
-        return Err(AppError::Lsp("duplicate language-server request id".into()));
+        return Err(LspError::new("duplicate language-server request id".into()));
     }
     pending.insert(id, sender);
     Ok(())

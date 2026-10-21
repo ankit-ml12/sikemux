@@ -9,7 +9,7 @@ use super::protocol::path_to_uri;
 use super::server::{OpenDoc, ServerHandle};
 use super::transport::notify;
 use super::types::LspTextChange;
-use crate::error::{AppError, AppResult};
+use super::{LspError, LspResult};
 
 fn content_hash(content: &str) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -38,9 +38,9 @@ pub(super) fn open_document(
     path: &str,
     content: String,
     language_id: &str,
-) -> AppResult<()> {
+) -> LspResult<()> {
     if server.shutdown.load(Ordering::Acquire) {
-        return Err(AppError::Lsp("server shut down".into()));
+        return Err(LspError::new("server shut down".into()));
     }
     let hash = content_hash(&content);
     let mut documents = server.open_docs.locked();
@@ -52,7 +52,7 @@ pub(super) fn open_document(
             .expect("document disappeared while its map is locked");
         let previous_hash = last_change.get(path).copied();
         if previous.refs == usize::MAX {
-            return Err(AppError::Lsp(
+            return Err(LspError::new(
                 "open document reference count exhausted".into(),
             ));
         }
@@ -121,15 +121,15 @@ pub(super) fn change_document(
     path: &str,
     content: String,
     requested_version: u32,
-) -> AppResult<()> {
+) -> LspResult<()> {
     if server.shutdown.load(Ordering::Acquire) {
-        return Err(AppError::Lsp("server shut down".into()));
+        return Err(LspError::new("server shut down".into()));
     }
     let hash = content_hash(&content);
     let mut documents = server.open_docs.locked();
     let previous = *documents
         .get(path)
-        .ok_or_else(|| AppError::Lsp("document not open".into()))?;
+        .ok_or_else(|| LspError::new("document not open".into()))?;
     let mut last_change = server.last_change.locked();
     let previous_hash = last_change.get(path).copied();
     if previous_hash == Some(hash) {
@@ -161,14 +161,14 @@ pub(super) fn change_document_incremental(
     path: &str,
     changes: Vec<LspTextChange>,
     requested_version: u32,
-) -> AppResult<()> {
+) -> LspResult<()> {
     if server.shutdown.load(Ordering::Acquire) {
-        return Err(AppError::Lsp("server shut down".into()));
+        return Err(LspError::new("server shut down".into()));
     }
     let mut documents = server.open_docs.locked();
     let previous = *documents
         .get(path)
-        .ok_or_else(|| AppError::Lsp("document not open".into()))?;
+        .ok_or_else(|| LspError::new("document not open".into()))?;
     let mut last_change = server.last_change.locked();
     let previous_hash = last_change.remove(path);
     let version = requested_version.max(previous.version.saturating_add(1));

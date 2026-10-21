@@ -41,6 +41,7 @@ mod network_watch;
 mod notify;
 pub mod plugins;
 mod ports;
+mod lsp;
 mod project_files;
 mod project_roots;
 mod faces;
@@ -712,6 +713,7 @@ impl Core {
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
         self.seen.client_gone(client.id);
+        lsp::release(client.id);
         self.clients.locked().remove(&client.id);
         for (stream, id) in client.take_streams() {
             if let Some(session) = self.session(id) {
@@ -1316,6 +1318,7 @@ pub fn run(config: ServerConfig) -> Result<(), ServerError> {
         .thread_name("sikemux-core")
         .build()?;
     let result = runtime.block_on(serve(config));
+    lsp::drain_all();
     runtime.shutdown_timeout(Duration::from_millis(100));
     result
 }

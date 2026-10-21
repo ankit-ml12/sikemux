@@ -23,7 +23,6 @@ mod grammars;
 mod harness;
 mod hosts;
 mod inbox;
-mod lsp;
 mod markdown;
 mod notch;
 pub mod observability;
@@ -145,7 +144,6 @@ pub fn run() {
                 if let Some(browser) = window.try_state::<BrowserManager>() {
                     browser.drain("the window closed");
                 }
-                lsp::drain_all();
             }
         })
         .on_page_load(|webview, payload| {
@@ -178,7 +176,6 @@ pub fn run() {
                 if let Some(sim) = webview.try_state::<SimManager>() {
                     sim.drop_watches();
                 }
-                lsp::drain_all();
             }
         })
         .setup(|_app| {
@@ -305,17 +302,6 @@ pub fn run() {
             fs::chat_attachment_dir,
             fs::save_clipboard_image,
             fs::reveal_in_finder,
-            lsp::lsp_languages,
-            lsp::lsp_install_server,
-            lsp::lsp_start,
-            lsp::lsp_stop,
-            lsp::lsp_open,
-            lsp::lsp_change,
-            lsp::lsp_change_incremental,
-            lsp::lsp_save,
-            lsp::lsp_close,
-            lsp::lsp_locations,
-            lsp::lsp_document_symbols,
             diff::diff_hunks,
             markdown::markdown_parse,
             wallpaper::wallpaper_image,
@@ -403,7 +389,6 @@ pub fn run() {
                 if let Some(sim) = app_handle.try_state::<SimManager>() {
                     sim.drain();
                 }
-                lsp::drain_all();
             }
         });
 }

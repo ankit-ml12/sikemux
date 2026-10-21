@@ -21,8 +21,8 @@ pub enum AppError {
     #[error("lsp: {0}")]
     Lsp(String),
 
-    #[error("lsp server `{bin}` for {language} not found")]
-    LspServerMissing { language: String, bin: String },
+    #[error("{0}")]
+    LspServerMissing(String),
 
     #[error("http: {0}")]
     Http(String),
@@ -134,7 +134,7 @@ impl AppError {
             AppError::Io(_) => "io",
             AppError::Json(_) => "json",
             AppError::Lsp(_) => "lsp",
-            AppError::LspServerMissing { .. } => "lsp-server-missing",
+            AppError::LspServerMissing(_) => "lsp-server-missing",
             AppError::Http(_) => "http",
             AppError::Unreachable(kind) => sikemux_plugin_api::network::category(*kind),
             AppError::Plugin { .. } => "plugin",
@@ -162,11 +162,7 @@ mod tests {
         // change, every `err.category === "..."` check in api/* must be
         // updated to match.
         assert_eq!(
-            AppError::LspServerMissing {
-                language: "go".into(),
-                bin: "gopls".into(),
-            }
-            .category(),
+            AppError::LspServerMissing("lsp server `gopls` for go not found".into()).category(),
             "lsp-server-missing"
         );
         assert_eq!(AppError::BadArg("x").category(), "bad-arg");

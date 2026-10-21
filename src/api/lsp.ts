@@ -1,4 +1,6 @@
-import { invokeCommand as invoke } from "./invoke";
+import { coreCall } from "./core";
+import type { CoreChange } from "./coreChanged";
+import { swallow } from "../state/toast";
 import { fileUriToPath } from "../lib/paths";
 import { languageServerOf } from "../languages";
 import { getIpcTransport, type IpcUnsubscribe } from "./transport";
@@ -62,7 +64,23 @@ export interface LspDiagnosticsSubscriptionOptions {
     readonly signal?: AbortSignal;
 }
 
-export const LSP_DIAGNOSTICS_EVENT = "lsp_diagnostics";
+/** Which servers last published diagnostics for each file, so one that clears them is told too. */
+const publishedBy = new Map<string, Set<string>>();
+const serverKey = (payload: Pick<LspDiagnosticsPayload, "project" | "language">) => `${payload.project}\0${payload.language}`;
+
+/** Reads a file's diagnostics again after the core says they moved, clearing any server's that are gone. */
+async function readDiagnostics(path: string, listener: LspDiagnosticsListener): Promise<void> {
+    const sets = await coreCall<LspDiagnosticsPayload[]>("lsp.diagnostics", { path });
+    const now = new Set(sets.map(serverKey));
+    for (const key of publishedBy.get(path) ?? []) {
+        if (now.has(key)) continue;
+        const [project, language] = key.split("\0");
+        listener({ project, language, path, version: null, diagnostics: [] });
+    }
+    if (now.size) publishedBy.set(path, now);
+    else publishedBy.delete(path);
+    for (const set of sets) listener(set);
+}
 
 let servedLanguages: ReadonlySet<string> = new Set();
 let servedLanguagesAsked: Promise<void> | null = null;
@@ -73,7 +91,7 @@ export function noteServedLanguages(languages: readonly string[]): void {
 
 /** Asks the native side once which languages a server can start for, including any a `SIKEMUX_LSP_<LANG>` variable adds. */
 export function loadServedLanguages(): Promise<void> {
-    servedLanguagesAsked ??= invoke<string[]>("lsp_languages").then(noteServedLanguages, () => {
+    servedLanguagesAsked ??= coreCall<string[]>("lsp.languages").then(noteServedLanguages, () => {
         servedLanguagesAsked = null;
     });
     return servedLanguagesAsked;
@@ -88,20 +106,20 @@ export function languageFromPath(path: string): string | null {
 export const uriToPath = (uri: string): string => fileUriToPath(uri) ?? uri;
 
 export const lsp = {
-    start: (project: string, language: string) => invoke<void>("lsp_start", { project, language }),
-    stop: (project: string) => invoke<void>("lsp_stop", { project }),
-    install: (language: string) => invoke<string>("lsp_install_server", { language }),
+    start: (project: string, language: string) => coreCall<void>("lsp.start", { project, language }),
+    stop: (project: string) => coreCall<void>("lsp.stop", { project }),
+    install: (language: string) => coreCall<string>("lsp.install", { language }),
     open: (project: string, language: string, path: string, content: string, languageId: string = language) =>
-        invoke<void>("lsp_open", { project, language, path, content, languageId }),
+        coreCall<void>("lsp.open", { project, language, path, content, languageId }),
     change: (project: string, language: string, path: string, content: string, version: number) =>
-        invoke<void>("lsp_change", { project, language, path, content, version }),
+        coreCall<void>("lsp.change", { project, language, path, content, version }),
     changeIncremental: (project: string, language: string, path: string, changes: LspTextChange[], version: number) =>
-        invoke<void>("lsp_change_incremental", { project, language, path, changes, version }),
+        coreCall<void>("lsp.changeIncremental", { project, language, path, changes, version }),
     save: (project: string, language: string, path: string, content?: string | null) =>
-        invoke<void>("lsp_save", { project, language, path, content: content ?? null }),
-    close: (project: string, language: string, path: string) => invoke<void>("lsp_close", { project, language, path }),
+        coreCall<void>("lsp.save", { project, language, path, content: content ?? null }),
+    close: (project: string, language: string, path: string) => coreCall<void>("lsp.close", { project, language, path }),
     locations: (project: string, language: string, path: string, line: number, character: number, kind: LspLocationKind) =>
-        invoke<LspLocation[]>("lsp_locations", {
+        coreCall<LspLocation[]>("lsp.locations", {
             project,
             language,
             path,
@@ -119,8 +137,14 @@ export const lsp = {
         lsp.locations(project, language, path, line, character, "implementation"),
     references: (project: string, language: string, path: string, line: number, character: number) =>
         lsp.locations(project, language, path, line, character, "references"),
-    documentSymbols: (project: string, language: string, path: string) =>
-        invoke<LspDocumentSymbol[]>("lsp_document_symbols", { project, language, path }),
+    documentSymbols: (project: string, language: string, path: string) => coreCall<LspDocumentSymbol[]>("lsp.symbols", { project, language, path }),
     subscribeDiagnostics: (listener: LspDiagnosticsListener, options: LspDiagnosticsSubscriptionOptions = {}): Promise<IpcUnsubscribe> =>
-        getIpcTransport().subscribe<LspDiagnosticsPayload>(LSP_DIAGNOSTICS_EVENT, (event) => listener(event.payload), options),
+        getIpcTransport().subscribe<CoreChange>(
+            "core_changed",
+            ({ payload }) => {
+                if (payload.topic !== "lsp") return;
+                for (const path of payload.paths ?? []) void readDiagnostics(path, listener).catch(swallow("read a file's diagnostics"));
+            },
+            options,
+        ),
 };

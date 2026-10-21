@@ -78,6 +78,10 @@ pub(crate) fn core_message(message: String) -> AppError {
         AppError::FileConflict(reason.to_string())
     } else if let Some(path) = message.strip_prefix("not-text: ") {
         AppError::NotText(path.to_string())
+    } else if let Some(reason) = message.strip_prefix("lsp: ") {
+        AppError::Lsp(reason.to_string())
+    } else if let Some(reason) = message.strip_prefix("lsp-server-missing: ") {
+        AppError::LspServerMissing(reason.to_string())
     } else {
         AppError::Other(message)
     }
@@ -331,8 +335,9 @@ impl PtyManager {
 
     /// The page went away with every channel it held. Terminals and tasks keep
     /// running in the core, which stops sending what nobody will show.
-    /// Lets go of every terminal the page watched, and stops every stream it
-    /// started, such as a search or a plugin's, as the page goes away.
+    /// Lets go of every terminal the page watched, stops every stream it
+    /// started, such as a search or a plugin's, and closes the documents its
+    /// editors opened in language servers, as the page goes away.
     pub fn detach_all(&self) {
         let streams = self.streams.release_all();
         let Some(client) = self.current() else {
@@ -341,11 +346,13 @@ impl PtyManager {
         for stream in streams {
             let _ = client.submit(Request::Detach { stream }, |_| ());
         }
-        let cancel = Request::Call {
-            method: "streamCancel".into(),
-            params: serde_json::json!({}),
-        };
-        let _ = client.submit(cancel, |_| ());
+        for method in ["streamCancel", "lsp.release"] {
+            let call = Request::Call {
+                method: method.into(),
+                params: serde_json::json!({}),
+            };
+            let _ = client.submit(call, |_| ());
+        }
     }
 
     /// The app is leaving and its sessions stay with the core.

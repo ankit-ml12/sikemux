@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 use sikemux_process::sync::Locked;
-use tauri::Emitter;
 
 use super::limits::{MAX_LSP_LANGUAGE_BYTES, MAX_LSP_PATH_BYTES};
 use super::protocol::{bounded_string, parse_lsp_range, uri_to_bounded_path};
@@ -14,8 +13,6 @@ const MAX_DIAGNOSTICS_PER_PUBLISH: usize = 500;
 const MAX_DIAGNOSTIC_MESSAGE_BYTES: usize = 2_048;
 const MAX_DIAGNOSTIC_SOURCE_BYTES: usize = 128;
 const MAX_DIAGNOSTIC_CODE_BYTES: usize = 128;
-
-pub const LSP_DIAGNOSTICS_EVENT: &str = "lsp_diagnostics";
 
 fn parse_diagnostic_code(value: Option<&Value>) -> Option<String> {
     let code = match value? {
@@ -112,7 +109,7 @@ fn publish_diagnostics(server: &Server, params: &Value) {
     // Keep the tracking lock through emission. Shutdown flips its atomic flag
     // before taking this lock, guaranteeing that a non-empty publish racing
     // teardown is always followed by the corresponding clear event.
-    let _ = server.app.emit_to("main", LSP_DIAGNOSTICS_EVENT, payload);
+    (server.publish)(payload);
 }
 
 pub(super) fn clear_server_diagnostics(server: &Server) {
@@ -121,17 +118,13 @@ pub(super) fn clear_server_diagnostics(server: &Server) {
         tracked.drain().collect::<Vec<_>>()
     };
     for (path, version) in tracked {
-        let _ = server.app.emit_to(
-            "main",
-            LSP_DIAGNOSTICS_EVENT,
-            LspDiagnosticsPayload {
-                project: server.project.clone(),
-                language: server.language.clone(),
-                path,
-                version,
-                diagnostics: Vec::new(),
-            },
-        );
+        (server.publish)(LspDiagnosticsPayload {
+            project: server.project.clone(),
+            language: server.language.clone(),
+            path,
+            version,
+            diagnostics: Vec::new(),
+        });
     }
 }
 
