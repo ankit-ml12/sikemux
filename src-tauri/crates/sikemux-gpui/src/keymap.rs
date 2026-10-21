@@ -67,6 +67,19 @@ commands! {
     TextSizeReset = "text.sizeReset",
     /// Lets the agent in front run without asking, or has it ask again.
     ToggleYolo = "agent.permissions",
+    /// A new shell beside the view in focus, to its right or below it.
+    SplitRow = "pane.splitRow",
+    SplitColumn = "pane.splitColumn",
+    FocusLeft = "pane.focusLeft",
+    FocusRight = "pane.focusRight",
+    FocusUp = "pane.focusUp",
+    FocusDown = "pane.focusDown",
+    ResizeLeft = "pane.resizeLeft",
+    ResizeRight = "pane.resizeRight",
+    ResizeUp = "pane.resizeUp",
+    ResizeDown = "pane.resizeDown",
+    /// The view in focus fills its tab, or gives the room back.
+    ZoomPane = "pane.zoom",
 }
 
 actions!(

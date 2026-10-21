@@ -2628,6 +2628,8 @@ impl Workbench {
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         use crate::keymap::*;
+        use crate::panes::Towards;
+        use sikemux_wire::protocol::SplitDir;
         let asked = self.asked(window, cx);
         if window.focused(cx).is_none() {
             self.focus.focus(window, cx);
@@ -2766,6 +2768,37 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &GoToLastTab, _, _| bench.go_to_tab(None)))
             .on_action(cx.listener(|bench, _: &CloseTab, _, cx| bench.close_front(cx)))
             .on_action(cx.listener(|bench, _: &FocusMode, _, cx| bench.toggle_focus_mode(cx)))
+            .on_action(
+                cx.listener(|bench, _: &SplitRow, _, cx| bench.split_front(SplitDir::Row, cx)),
+            )
+            .on_action(
+                cx.listener(|bench, _: &SplitColumn, _, cx| {
+                    bench.split_front(SplitDir::Column, cx)
+                }),
+            )
+            .on_action(cx.listener(|bench, _: &FocusLeft, window, cx| {
+                bench.focus_towards(Towards::Left, window, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &FocusRight, window, cx| {
+                bench.focus_towards(Towards::Right, window, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &FocusUp, window, cx| {
+                bench.focus_towards(Towards::Up, window, cx)
+            }))
+            .on_action(cx.listener(|bench, _: &FocusDown, window, cx| {
+                bench.focus_towards(Towards::Down, window, cx)
+            }))
+            .on_action(
+                cx.listener(|bench, _: &ResizeLeft, _, _| bench.resize_towards(Towards::Left)),
+            )
+            .on_action(
+                cx.listener(|bench, _: &ResizeRight, _, _| bench.resize_towards(Towards::Right)),
+            )
+            .on_action(cx.listener(|bench, _: &ResizeUp, _, _| bench.resize_towards(Towards::Up)))
+            .on_action(
+                cx.listener(|bench, _: &ResizeDown, _, _| bench.resize_towards(Towards::Down)),
+            )
+            .on_action(cx.listener(|bench, _: &ZoomPane, _, cx| bench.toggle_zoom(cx)))
             .on_action(cx.listener(|bench, _: &QuitAndStopEverything, _, _| {
                 let _ = bench.asks.send(Ask::Shutdown);
             }))
