@@ -6,6 +6,7 @@
 //! its saved session below its last screen, unless it crashes again at once.
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -33,9 +34,9 @@ const SIGNAL_EXIT_BASE: u32 = 128;
 
 #[derive(Default)]
 pub(crate) struct Lifecycle {
-    /// Agents whose chat is starting, so two clients waking one start it once.
+    /// Agents starting, so two callers starting one start it once.
     starting: Mutex<HashSet<String>>,
-    /// An agent's chat stopped starting, whether it started or failed.
+    /// An agent stopped starting, whether it started or failed.
     started: Notify,
     /// When each terminal agent was last started again after a crash.
     resumed: Mutex<HashMap<String, Instant>>,
@@ -64,22 +65,42 @@ impl Lifecycle {
     }
 }
 
-/// Starts the agent's chat as its record says unless it runs already or
-/// another client is starting it, and answers once it runs.
-pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+/// Starts the agent with `start` unless `running` finds it running already,
+/// waiting out another caller starting it, and answers what runs.
+pub(crate) async fn start_once<T, Started>(
+    core: &Core,
+    agent_id: &str,
+    running: impl Fn() -> Option<T>,
+    start: impl FnOnce() -> Started,
+) -> CoreResult<T>
+where
+    Started: Future<Output = CoreResult<T>>,
+{
     loop {
-        if core.chats.get(agent_id).is_some() {
-            return Ok(());
+        if let Some(running) = running() {
+            return Ok(running);
         }
         let started = core.lifecycle.started.notified();
         if let Some(_starting) = core.lifecycle.claim(agent_id) {
-            if core.chats.get(agent_id).is_none() {
-                launching::start_agent(core, None, agent_id).await?;
-            }
-            return Ok(());
+            return match running() {
+                Some(running) => Ok(running),
+                None => start().await,
+            };
         }
         started.await;
     }
+}
+
+/// Starts the agent's chat as its record says unless it runs already or
+/// another client is starting it, and answers once it runs.
+pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+    start_once(
+        core,
+        agent_id,
+        || core.chats.get(agent_id).map(drop),
+        || async { launching::start_agent(core, None, agent_id).await.map(drop) },
+    )
+    .await
 }
 
 /// Wakes the sleeping agents among those a client just brought on screen.

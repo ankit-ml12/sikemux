@@ -79,9 +79,33 @@ pub(crate) async fn terminal_agent(core: &Arc<Core>, spawn: &mut TerminalSpawn) 
 
 /// Starts a terminal agent as its record says, on its saved session and the
 /// account it runs on, below the screen of `continues` when it carries one on,
-/// and answers its terminal. Every terminal agent, however it starts, starts
-/// here.
+/// and answers its terminal. An agent whose terminal runs already, or that
+/// another caller is starting, answers that terminal instead. Every terminal
+/// agent, however it starts, starts here.
 pub(crate) async fn start_terminal(
+    core: &Arc<Core>,
+    agent_id: &str,
+    size: (u16, u16),
+    continues: Option<Continuation>,
+) -> CoreResult<SessionId> {
+    lifecycle::start_once(
+        core,
+        agent_id,
+        || running_terminal(core, agent_id),
+        || launch_terminal(core, agent_id, size, continues),
+    )
+    .await
+}
+
+/// The agent's terminal, unless it ended or is being stopped.
+fn running_terminal(core: &Core, agent_id: &str) -> Option<SessionId> {
+    let pty = core.workspaces.agent(agent_id)?.pty_id?;
+    core.session(pty)
+        .filter(|session| session.is_running() && !session.is_killed())
+        .map(|_| pty)
+}
+
+async fn launch_terminal(
     core: &Arc<Core>,
     agent_id: &str,
     (cols, rows): (u16, u16),
