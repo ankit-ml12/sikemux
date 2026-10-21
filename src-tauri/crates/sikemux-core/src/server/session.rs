@@ -44,6 +44,11 @@ const TASK_OUTPUT_NOTICE_DELAY: Duration = Duration::from_millis(50);
 
 static NEXT_STREAM: AtomicU32 = AtomicU32::new(1);
 
+struct LineWaiter {
+    containing: String,
+    found: tokio::sync::oneshot::Sender<Option<String>>,
+}
+
 pub(crate) struct Subscriber {
     client: Arc<ClientConn>,
     view: View,
@@ -101,6 +106,8 @@ pub(crate) struct Session {
     shell_integration: Option<ShellLaunchIntegration>,
     /// A title change waits to be sent, with any that follow it soon after.
     title_pending: AtomicBool,
+    /// Callers waiting for a line containing some text to show on the screen.
+    line_waiters: Mutex<Vec<LineWaiter>>,
     _capacity_permit: CapacityPermit,
 }
 
@@ -167,6 +174,7 @@ impl Session {
             reader_frozen: AtomicBool::new(false),
             shell_integration: parts.shell_integration,
             title_pending: AtomicBool::new(false),
+            line_waiters: Mutex::new(Vec::new()),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
@@ -716,6 +724,9 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         signal: signal.clone(),
     });
     session.exited.store(true, Ordering::Release);
+    for waiter in std::mem::take(&mut *session.line_waiters.locked()) {
+        let _ = waiter.found.send(None);
+    }
     core.broadcast_event(&Event::Exited {
         id: session.id,
         code,
@@ -799,6 +810,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     }
     screen.title_from_cwd();
     let retitled = screen.take_title_change().is_some();
+    answer_line_waiters(session, &screen);
     drop(screen);
     session.frames.notify.notify_one();
     reply_to_program(session, replies);
@@ -854,6 +866,56 @@ pub(crate) fn clear(core: &Core, session: &Session) {
         .terminal
         .clear(&core.terminal_colors());
     session.frames.notify.notify_one();
+}
+
+fn line_containing(contents: &str, containing: &str) -> Option<String> {
+    contents
+        .lines()
+        .find(|line| line.contains(containing))
+        .map(str::to_owned)
+}
+
+/// Callers hold the screen lock, so no output can land between a check and
+/// a waiter being added.
+fn answer_line_waiters(session: &Session, screen: &Screen) {
+    let mut waiters = session.line_waiters.locked();
+    if waiters.is_empty() {
+        return;
+    }
+    let contents = screen.terminal.contents();
+    for waiter in std::mem::take(&mut *waiters) {
+        if waiter.found.is_closed() {
+            continue;
+        }
+        match line_containing(&contents, &waiter.containing) {
+            Some(line) => {
+                let _ = waiter.found.send(Some(line));
+            }
+            None => waiters.push(waiter),
+        }
+    }
+}
+
+/// The first line on the screen containing `containing`, once one shows,
+/// whether or not anyone watches the terminal. Nothing if it ends first.
+pub(crate) fn line_shown(
+    session: &Session,
+    containing: String,
+) -> tokio::sync::oneshot::Receiver<Option<String>> {
+    let (found, shown) = tokio::sync::oneshot::channel();
+    let screen = session.screen.locked();
+    if let Some(line) = line_containing(&screen.terminal.contents(), &containing) {
+        let _ = found.send(Some(line));
+    } else if session.exit_reported() {
+        let _ = found.send(None);
+    } else {
+        session
+            .line_waiters
+            .locked()
+            .push(LineWaiter { containing, found });
+    }
+    drop(screen);
+    shown
 }
 
 /// What the person did, as the bytes the program expects under the modes it

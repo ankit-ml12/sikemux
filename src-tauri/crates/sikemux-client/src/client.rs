@@ -482,6 +482,22 @@ impl CoreClient {
         }
     }
 
+    /// The first line on the terminal's screen containing `containing`, once
+    /// one shows, or none when the terminal ends first.
+    pub async fn line_shown(
+        &self,
+        id: SessionId,
+        containing: String,
+    ) -> Result<Option<String>, ClientError> {
+        match self
+            .request(Request::TerminalWaitFor { id, containing })
+            .await?
+        {
+            Response::TerminalLine { line } => Ok(line),
+            _ => Err(ClientError::UnexpectedReply),
+        }
+    }
+
     pub async fn clear(&self, id: SessionId) -> Result<(), ClientError> {
         self.request_done(Request::TerminalClear { id }).await
     }

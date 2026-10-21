@@ -175,6 +175,13 @@ pub enum Request {
         #[serde(default)]
         inclusive: bool,
     },
+    /// Answers with the first line on the session's screen that contains
+    /// `containing`, once one shows, or with none when the session ends first.
+    /// Needs no client to watch the terminal.
+    TerminalWaitFor {
+        id: SessionId,
+        containing: String,
+    },
     /// Moves the cursor's line to the top of the screen and drops the history
     /// above it, without telling the program.
     TerminalClear {
@@ -774,6 +781,9 @@ pub enum Response {
     Done,
     TerminalText {
         text: String,
+    },
+    TerminalLine {
+        line: Option<String>,
     },
     Found {
         result: FindResult,

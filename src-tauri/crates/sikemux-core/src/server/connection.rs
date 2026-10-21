@@ -688,6 +688,17 @@ async fn run_requests(
                 }
                 Err(error) => client.respond(request_id, Err(error)),
             },
+            Request::TerminalWaitFor { id, containing } => match session_or_missing(&core, id) {
+                Ok(target) => {
+                    let shown = session::line_shown(&target, containing);
+                    drop(target);
+                    tokio::spawn(async move {
+                        let line = shown.await.unwrap_or(None);
+                        client.respond(request_id, Ok(Response::TerminalLine { line }));
+                    });
+                }
+                Err(error) => client.respond(request_id, Err(error)),
+            },
             Request::TerminalClear { id } => {
                 let result =
                     session_or_missing(&core, id).map(|target| session::clear(&core, &target));

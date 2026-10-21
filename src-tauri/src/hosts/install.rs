@@ -5,18 +5,12 @@
 //! host for the account (ADR 0018). Only a code read from that session's own
 //! screen, on the line login prints it on, is approved.
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{BuildChannel, SessionId, SpawnTarget, TerminalSpawn};
-use sikemux_process::sync::Locked;
 use sikemux_pty::launch::PtyDirectCommand;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::Notify;
 
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
@@ -30,57 +24,6 @@ const CODE_LETTERS: &str = "BCDFGHJKLMNPQRSTVWXZ";
 /// What `sikemux login` prints in front of the code.
 const CODE_LINE: &str = "enter the code";
 const DONE_EVENT: &str = "host_installed";
-
-/// The install terminals whose screens are read for the code, by session.
-struct Watch {
-    changed: Arc<Notify>,
-    ended: bool,
-}
-
-static WATCHING: AtomicBool = AtomicBool::new(false);
-static WATCHES: LazyLock<Mutex<HashMap<SessionId, Watch>>> = LazyLock::new(Mutex::default);
-
-/// A terminal drew something, so an install terminal's screen is read again.
-/// Every terminal's frames pass here, so without one it returns at once.
-pub(crate) fn screen_changed() {
-    if !WATCHING.load(Ordering::Relaxed) {
-        return;
-    }
-    for watch in WATCHES.locked().values() {
-        watch.changed.notify_one();
-    }
-}
-
-/// The install terminal ended; whoever waits on its code hears it never came.
-pub(crate) fn ended(id: SessionId) {
-    if !WATCHING.load(Ordering::Relaxed) {
-        return;
-    }
-    if let Some(watch) = WATCHES.locked().get_mut(&id) {
-        watch.ended = true;
-        watch.changed.notify_one();
-    }
-}
-
-fn unwatch(id: SessionId) {
-    let mut watches = WATCHES.locked();
-    watches.remove(&id);
-    WATCHING.store(!watches.is_empty(), Ordering::Relaxed);
-}
-
-/// The sign-in code once the session `id` shows it, or None when it ends first.
-async fn code_shown(core: &CoreClient, id: SessionId, changed: &Notify) -> Option<String> {
-    loop {
-        changed.notified().await;
-        let text = core.text(id, None).await.ok()?;
-        if let Some(code) = text.lines().find_map(sign_in_code) {
-            return Some(code);
-        }
-        if WATCHES.locked().get(&id).is_none_or(|watch| watch.ended) {
-            return None;
-        }
-    }
-}
 
 /// An alias from ~/.ssh/config, never something ssh would read as an option.
 fn checked_alias(alias: &str) -> AppResult<&str> {
@@ -165,27 +108,20 @@ pub async fn host_install(
         )
         .await
         .map_err(core_error)?;
-    let changed = Arc::new(Notify::new());
-    WATCHES.locked().insert(
-        id,
-        Watch {
-            changed: changed.clone(),
-            ended: false,
-        },
-    );
-    WATCHING.store(true, Ordering::Relaxed);
     let core_for_approval = core.clone();
     let app_for_task = app.clone();
     tauri::async_runtime::spawn(async move {
         let finished = async {
-            let code = tokio::time::timeout(
+            let line = tokio::time::timeout(
                 INSTALL_TIMEOUT,
-                code_shown(&core_for_approval, id, &changed),
+                core_for_approval.line_shown(id, CODE_LINE.to_owned()),
             )
-            .await;
-            unwatch(id);
-            let code = code
-                .map_err(|_| AppError::Other("installing took too long".into()))?
+            .await
+            .map_err(|_| AppError::Other("installing took too long".into()))?
+            .map_err(core_error)?;
+            let code = line
+                .as_deref()
+                .and_then(sign_in_code)
                 .ok_or_else(|| {
                     AppError::Other("the installer ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
                 })?;

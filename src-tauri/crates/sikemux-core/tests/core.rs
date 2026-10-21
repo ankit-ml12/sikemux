@@ -969,6 +969,37 @@ async fn reset_modes_reach_the_screen() {
 }
 
 #[tokio::test]
+async fn a_line_shows_on_a_terminal_nobody_watches() {
+    let core = start_core();
+    let (client, _stream) = core.connect().await;
+    let id = client
+        .spawn(
+            launch(),
+            terminal(Some(
+                "sleep 0.3; printf 'then enter the %s BCDF-GHJK\\n' code; sleep 100",
+            )),
+        )
+        .await
+        .expect("spawn");
+    let line = tokio::time::timeout(WAIT, client.line_shown(id, "enter the code".into()))
+        .await
+        .expect("the line was never found")
+        .expect("answer");
+    assert_eq!(line.as_deref(), Some("then enter the code BCDF-GHJK"));
+    client.kill(id).await.expect("kill");
+
+    let ended = client
+        .spawn(launch(), terminal(Some("sleep 0.3; exit 0")))
+        .await
+        .expect("spawn");
+    let line = tokio::time::timeout(WAIT, client.line_shown(ended, "never printed".into()))
+        .await
+        .expect("the wait outlived the terminal")
+        .expect("answer");
+    assert_eq!(line, None);
+}
+
+#[tokio::test]
 async fn writes_larger_than_a_frame_arrive_whole() {
     let core = start_core();
     let (client, mut stream) = core.connect().await;

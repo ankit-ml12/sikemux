@@ -61,6 +61,7 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::TerminalLines { .. }
         | Request::TerminalText { .. }
         | Request::TerminalFind { .. }
+        | Request::TerminalWaitFor { .. }
         | Request::TaskOutput { .. }
         | Request::AcpList
         | Request::AcpAttach { .. }
@@ -156,6 +157,7 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::TerminalLines { .. }
         | Request::TerminalText { .. }
         | Request::TerminalFind { .. }
+        | Request::TerminalWaitFor { .. }
         | Request::TaskOutput { .. }
         | Request::ShellAtPrompt { .. }
         | Request::AcpList
