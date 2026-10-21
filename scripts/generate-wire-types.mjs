@@ -151,7 +151,7 @@ const CODEHOST_ROOTS = [
 
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
-  DeviceView: "workspace chats sessions attentions inbox",
+  DeviceView: "workspace chats sessions attentions inbox faceStyle",
   Workspace: "projects launchers",
   ProjectInfo: "id name path",
   LauncherInfo: "id provider label permissionMode model effort",
@@ -161,14 +161,14 @@ const SWIFT_FIELDS = {
   SessionInfo: "id project agentId agentName agentType",
   Attention: "id agentId choices",
   PermissionChoices: "allowOnce allowAlways reject command title",
-  Inbox: "items working agents rollup buddies",
-  AgentShown: "agentId title group subagents tasks",
+  Inbox: "items working agents rollup",
+  AgentShown: "agentId title group subagents tasks face",
+  AgentFace: "pack shape color box",
+  FaceStyle: "motion",
   AgentRollup: "subagents tasks",
   InboxItem:
     "id tier kind agentId name cli project title what detail at session card requestId questionId url",
   InboxCard: "title",
-  PublishedBuddies: "on pack shape motion agents boxes",
-  BuddyLook: "pack shape color",
   RemoteStatus: "pending",
   PendingDevice: "id name platform expiresAt",
   AgentQuestion: "id text choices viaNote",

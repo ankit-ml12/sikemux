@@ -3,7 +3,8 @@ import Foundation
 extension DeviceView {
     static let empty = DeviceView(
         workspace: Workspace(projects: [], launchers: []), sessions: [], chats: [], attentions: [],
-        inbox: Inbox(items: [], working: 0, agents: [], rollup: nil, buddies: nil)
+        inbox: Inbox(items: [], working: 0, agents: [], rollup: nil),
+        faceStyle: FaceStyle(motion: true)
     )
 }
 

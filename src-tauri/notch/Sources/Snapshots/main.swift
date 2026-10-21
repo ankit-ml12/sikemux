@@ -5,8 +5,8 @@ import SwiftUI
 // Renders each state of the island against demo agents, to compare with
 // src-tauri/notch/design/screens.html: `swift run notch-snapshots <dir>`.
 // `--bare` leaves out the backdrop, so the showcase can lay the island over its own wallpaper;
-// `--scale 3` draws it at three pixels a point, `--fixture <file>` reads another device view, and `--buddies`
-// draws each agent as the buddy the app's default style gives it.
+// `--scale 3` draws it at three pixels a point, `--fixture <file>` reads another device view, and `--faces`
+// gives each agent a face from the core's catalogue, as if faces were on.
 
 let fixture = #"""
 {
@@ -57,6 +57,7 @@ let fixture = #"""
     {"id": "p1", "agentId": "a1",
      "choices": {"allowOnce": "o1", "allowAlways": "o2", "reject": "o3", "command": "pnpm test --filter core -- --runInBand", "title": "Run tests"}}
   ],
+  "faceStyle": {"motion": true},
   "inbox": {"working": 2, "rollup": {"subagents": 3, "tasks": 2}, "agents": [
     {"agentId": "a1", "title": "Fix the login flake", "group": "blocked", "subagents": 0, "tasks": 0},
     {"agentId": "a9", "title": "Move the ledger import", "group": "blocked", "subagents": 0, "tasks": 0},
@@ -114,15 +115,33 @@ let dated = try! NSRegularExpression(pattern: #"AGO\((\d+)\)"#).matches(in: sour
     }
 let decoded = try! JSONDecoder().decode(DeviceView.self, from: Data(dated.utf8))
 AgentCatalog.names = ["claude": "Claude", "codex": "Codex", "opencode": "OpenCode", "grok": "Grok"]
-let buddies = arguments.contains("--buddies")
-    ? PublishedBuddies(on: true, pack: "all", shape: "mixed", motion: true, agents: [:], boxes: [:])
-    : decoded.inbox.buddies
+/// The first pack's shapes in the core's catalogue, one to each agent in turn.
+func catalogueFaces() -> [AgentFace] {
+    let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../../../crates/sikemux-core/src/assets/faces.json").standardized
+    struct Catalogue: Decodable {
+        struct Pack: Decodable {
+            struct Shape: Decodable { let id: String; let box: String }
+            let id: String
+            let shapes: [Shape]
+            let colors: Int
+        }
+        let packs: [Pack]
+    }
+    guard let pack = (try? JSONDecoder().decode(Catalogue.self, from: Data(contentsOf: path)))?.packs.first else { return [] }
+    return pack.shapes.enumerated().map { index, shape in
+        AgentFace(pack: pack.id, shape: shape.id, color: index % pack.colors, box: shape.box)
+    }
+}
+let faces = arguments.contains("--faces") ? catalogueFaces() : []
+let agents = faces.isEmpty ? decoded.inbox.agents : decoded.inbox.agents.enumerated().map { index, agent in
+    AgentShown(agentId: agent.agentId, title: agent.title, group: agent.group, subagents: agent.subagents, tasks: agent.tasks,
+               face: faces[index % faces.count])
+}
 let full = DeviceView(
     workspace: decoded.workspace, sessions: decoded.sessions, chats: decoded.chats, attentions: decoded.attentions,
-    inbox: Inbox(
-        items: decoded.inbox.items, working: decoded.inbox.working, agents: decoded.inbox.agents, rollup: decoded.inbox.rollup,
-        buddies: buddies
-    )
+    inbox: Inbox(items: decoded.inbox.items, working: decoded.inbox.working, agents: agents, rollup: decoded.inbox.rollup),
+    faceStyle: decoded.faceStyle
 )
 
 func view(keeping ids: Set<String>?) -> DeviceView {
@@ -137,9 +156,9 @@ func view(keeping ids: Set<String>?) -> DeviceView {
         inbox: Inbox(
             items: items, working: items.filter { $0.kind == .working }.count,
             agents: agents,
-            rollup: AgentRollup(subagents: agents.reduce(0) { $0 + $1.subagents }, tasks: agents.reduce(0) { $0 + $1.tasks }),
-            buddies: full.inbox.buddies
-        )
+            rollup: AgentRollup(subagents: agents.reduce(0) { $0 + $1.subagents }, tasks: agents.reduce(0) { $0 + $1.tasks })
+        ),
+        faceStyle: full.faceStyle
     )
 }
 

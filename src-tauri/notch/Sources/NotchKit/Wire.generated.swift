@@ -10,6 +10,7 @@ struct DeviceView: Codable, Hashable {
     /// What waits on the person, ranked, as the core's inbox JSON. Kept as
     /// JSON so a change to its shape reaches phones over the air.
     let inbox: Inbox
+    let faceStyle: FaceStyle
 }
 
 struct Workspace: Codable, Hashable {
@@ -100,8 +101,6 @@ struct Inbox: Codable, Hashable {
     let agents: [AgentShown]
     /// How every open agent here shows together; none while none is open.
     let rollup: AgentRollup?
-    /// The characters the app draws for its agents.
-    let buddies: PublishedBuddies?
 }
 
 /// One thing in the inbox: who, what they need or did, and where to open it.
@@ -182,6 +181,9 @@ struct AgentShown: Codable, Hashable {
     let group: AgentGroup
     let subagents: Int
     let tasks: Int
+    /// The face it wears, as the workspace's agent does; none while it shows
+    /// its CLI's logo.
+    let face: AgentFace?
 }
 
 /// Where an agent stands for the person, in the order lists show the groups:
@@ -202,6 +204,17 @@ enum AgentGroup: String, Codable, Hashable {
     }
 }
 
+/// The face an agent wears, drawn by each client from the same art.
+struct AgentFace: Codable, Hashable {
+    let pack: String
+    let shape: String
+    /// Which of the pack's colours, in the order its palette lists them.
+    let color: Int
+    /// The part of the shape's 24-unit square its drawing fills, as an SVG
+    /// viewBox.
+    let box: String
+}
+
 /// Several agents shown as one: the group of the one that wants the person
 /// most, with every subagent and shell they still have running.
 struct AgentRollup: Codable, Hashable {
@@ -209,25 +222,10 @@ struct AgentRollup: Codable, Hashable {
     let tasks: Int
 }
 
-/// The characters the app draws for its agents, so the notch and phones draw
-/// the same ones.
-struct PublishedBuddies: Codable, Hashable {
-    /// Whether the person turned buddies on; a named agent wears its own either way.
-    let on: Bool
-    let pack: String
-    let shape: String
+/// How agents' faces look, as the person picked.
+struct FaceStyle: Codable, Hashable {
+    /// Faces move with what their agents are doing.
     let motion: Bool
-    /// Each agent's buddy as the app draws it, by agent id.
-    let agents: [String: BuddyLook]
-    /// The part of its 24-unit square each shape fills, by `pack/shape`, as a
-    /// viewBox; only the app can measure it.
-    let boxes: [String: String]
-}
-
-struct BuddyLook: Codable, Hashable {
-    let pack: String
-    let shape: String
-    let color: String
 }
 
 struct RemoteStatus: Codable, Hashable {
