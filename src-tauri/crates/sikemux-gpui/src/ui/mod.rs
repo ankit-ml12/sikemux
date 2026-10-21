@@ -7,7 +7,7 @@ mod lists;
 mod pane;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
-pub use floats::{tooltip, Menu, MenuItem};
+pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};
 

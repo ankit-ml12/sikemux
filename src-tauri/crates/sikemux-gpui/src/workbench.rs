@@ -6,7 +6,7 @@ use std::time::Duration;
 use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
+use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question};
 use crate::files::FileTree;
+use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -39,6 +40,8 @@ pub struct Workbench {
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
+    pub finder: Option<Finder>,
+    pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
     /// The rail lists the recent chats of every agent, not one's.
@@ -53,6 +56,8 @@ pub struct Workbench {
     /// What agents asked the person, and the assumptions they went on.
     pub questions: Vec<Question>,
     pub terminals: terminal::Terminals,
+    /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
+    pub focus: FocusHandle,
     _filtering: Option<Subscription>,
 }
 
@@ -87,10 +92,11 @@ pub struct AgentRow {
 }
 
 impl Workbench {
-    pub fn new(link: Link, _window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(link: Link, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
         crate::faces::install(cx);
         crate::file_icons::install(cx);
+        crate::finder::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -150,6 +156,8 @@ impl Workbench {
             all_projects: false,
             rail_page: RailPage::Agents,
             files: FileTree::default(),
+            finder: None,
+            project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
             metric: 0,
@@ -159,8 +167,10 @@ impl Workbench {
             chats: HashMap::new(),
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
+            focus: cx.focus_handle(),
             _filtering: None,
         };
+        bench.focus.focus(window, cx);
         bench.read_usage();
         bench
     }
@@ -230,6 +240,11 @@ impl Workbench {
                 }
             }
             Update::Read("files.list", value) => self.files.listed(&value, &self.asks),
+            Update::Read("projectFiles", value) => {
+                if self.project_files.answered(&value) {
+                    self.rank(cx);
+                }
+            }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
@@ -239,6 +254,9 @@ impl Workbench {
                 let root = self.files.root.as_ref().map(|root| root.to_string_lossy().into_owned());
                 if topic == "git" && (project.is_none() || project == root) {
                     self.files.changed(paths.as_deref(), &self.asks);
+                    if self.finder.is_some() {
+                        self.project_files.read(root.as_deref(), &self.asks);
+                    }
                 }
             }
         }
@@ -689,7 +707,13 @@ impl Render for Workbench {
         let t = Tokens::get(cx);
         div()
             .id("shell")
+            .track_focus(&self.focus)
+            .relative()
             .size_full()
+            .on_action(cx.listener(|bench, _: &OpenFile, window, cx| {
+                bench.toggle_finder(window, cx);
+                cx.notify();
+            }))
             .flex()
             .flex_col()
             .pt(px(6.))
@@ -712,5 +736,6 @@ impl Render for Workbench {
                     .child(home::stage(self, window, cx))
                     .child(agents::tab_rail(self, cx)),
             )
+            .children(crate::finder::overlay(self, window, cx))
     }
 }

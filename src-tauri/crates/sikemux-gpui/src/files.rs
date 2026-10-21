@@ -260,7 +260,10 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                         .flex()
                         .gap(px(2.))
                         .opacity(0.6)
-                        .child(action("files-find", Icon::Search, "Find a file"))
+                        .child(action("files-find", Icon::Search, "Find a file").on_click(cx.listener(|bench, _, window, cx| {
+                            bench.toggle_finder(window, cx);
+                            cx.notify();
+                        })))
                         .child(action("files-new", Icon::FilePlus, "New file"))
                         .child(action("files-new-folder", Icon::FolderPlus, "New folder"))
                         .child(action("files-collapse", Icon::CollapseAll, "Collapse folders").on_click(cx.listener(|bench, _, _, cx| {

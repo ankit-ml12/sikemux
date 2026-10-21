@@ -7,6 +7,8 @@ pub mod composer;
 mod faces;
 mod file_icons;
 mod files;
+mod finder;
+mod fuzzy;
 pub mod core;
 mod home;
 pub mod icons;

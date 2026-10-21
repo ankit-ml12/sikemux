@@ -8345,6 +8345,7 @@ dependencies = [
  "gpui-terminal-grid",
  "gpui-transcript",
  "libc",
+ "memchr",
  "serde",
  "serde_json",
  "sikemux-client",
