@@ -52,7 +52,7 @@ function answerThemeCalls(): void {
     transport.register("core_call", (args) => {
         const { method, params } = args as { method: string; params: { name?: string } | null };
         if (method === "themes") return THEME_LIST;
-        if (method === "themeFromColours") return { ...themeById("aura-noir"), name: params?.name ?? "" };
+        if (method === "themeFromPixels") return { ...themeById("aura-noir"), name: params?.name ?? "" };
         return new Promise(() => {});
     });
 }

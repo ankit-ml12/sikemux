@@ -341,6 +341,13 @@ calls! { core, client, params;
         let theme = super::themes::from_colours(&params.name, &params.colours, params.accent.as_deref());
         answer(theme.ok_or("a theme needs 21 colours, each #rrggbb, the selection's may be empty")?)
     },
+    "themeFromPixels": Watch => {
+        let params: super::wallpaper::PixelsParams = parse(params)?;
+        let rgba = super::wallpaper::pixels(&params)?;
+        let (colours, accent) = super::wallpaper::colours(&rgba)?;
+        let theme = super::themes::from_colours(&params.name, &colours, Some(&accent));
+        answer(theme.ok_or("the wallpaper gave no theme")?)
+    },
     "codeHostPulls": Watch => answer(super::codehost::pulls(&core, client.id, parse(params)?).await),
     "codeHostRuns": Watch => answer(super::codehost::runs(&core, client.id, parse(params)?).await),
     "codeHostIssues": Watch => answer(super::codehost::issues(&core, client.id, parse(params)?).await),

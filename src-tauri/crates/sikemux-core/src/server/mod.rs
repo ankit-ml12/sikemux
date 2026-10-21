@@ -77,6 +77,7 @@ mod tools;
 mod transcript;
 mod upgrade;
 mod wake;
+mod wallpaper;
 mod who_wrote;
 mod window;
 mod workspace;

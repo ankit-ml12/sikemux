@@ -2,7 +2,6 @@ import { invokeCommand as invoke } from "../../api/invoke";
 import { coreCall } from "../../api/core";
 import { DEFAULT_THEME_ID, type Theme } from "../../themes";
 import { applyWindowOpacity, endPreview, previewTheme, previewThemeId } from "../../themes/bus";
-import type { WallpaperColours } from "../../themes/wallpaper";
 import { applyTerminalFontSize, clampTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../terminal/fontSize";
 import { applyChatTextScale, clampChatTextScale, DEFAULT_CHAT_TEXT_SCALE } from "../../chat/textScale";
 import { applyEditorTextScale, clampEditorTextScale, DEFAULT_EDITOR_TEXT_SCALE } from "../../editor/textScale";
@@ -33,9 +32,9 @@ export function cancelThemePreview(): void {
     endPreview();
 }
 
-/** A theme the core works out from colours picked out of a wallpaper. */
-export function themeFromColours(colours: WallpaperColours): Promise<Theme> {
-    return coreCall<Theme>("themeFromColours", colours);
+/** A theme the core works out from a wallpaper's pixels, as base64 RGBA. */
+export function themeFromPixels(name: string, pixels: string): Promise<Theme> {
+    return coreCall<Theme>("themeFromPixels", { name, pixels });
 }
 
 /** Insert or overwrite a custom theme (matched by id) and make it the active theme. */

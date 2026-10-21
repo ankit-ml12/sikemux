@@ -30,7 +30,7 @@ import { customCommandsOf, setPreference, updateChannelOf, usePreference, projec
 import type { MidTurnSend } from "../api/generated/wire";
 import { cloneTheme, DEFAULT_THEME_ID, newCustomThemeId, NO_THEMES, THEME_GROUPS, type Theme, type ThemeGroupKey } from "../themes";
 import { themeById, useThemeSummaries } from "../themes/summaries";
-import { wallpaperColours, wallpaperPixels } from "../themes/wallpaper";
+import { pixelsBase64, wallpaperPixels } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
@@ -1269,7 +1269,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         setReadingWallpaper(true);
         try {
             const wallpaper = await settingsApi.wallpaperImage();
-            const theme = await cmd.themeFromColours(wallpaperColours(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            const theme = await cmd.themeFromPixels(`${wallpaper.name} wallpaper`, pixelsBase64(await wallpaperPixels(wallpaper.dataUrl)));
             openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
         } catch (error) {
             reportError("Theme from wallpaper")(error);
