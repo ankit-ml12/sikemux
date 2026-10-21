@@ -161,6 +161,13 @@ pub enum Ask {
         params: Value,
         reply: oneshot::Sender<Result<Value, String>>,
     },
+    /// A call whose answer arrives in parts, as `Stream` events under `stream`.
+    Stream {
+        stream: u64,
+        method: &'static str,
+        params: Value,
+        parts: mpsc::UnboundedSender<Part>,
+    },
     Terminal(SessionId, TerminalAsk),
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
@@ -336,6 +343,55 @@ pub fn request(
     }
 }
 
+/// One batch of a streamed answer; the last has `done`, and `error` when it failed.
+pub struct Part {
+    pub items: Vec<Value>,
+    pub done: bool,
+    pub error: Option<Value>,
+}
+
+/// A streamed answer's parts as they arrive. Dropping it stops the stream in the core.
+pub struct Streaming {
+    pub parts: mpsc::UnboundedReceiver<Part>,
+    stream: u64,
+    asks: mpsc::UnboundedSender<Ask>,
+}
+
+impl Drop for Streaming {
+    fn drop(&mut self) {
+        let _ = self.asks.send(Ask::Call {
+            method: "streamCancel",
+            params: json!({ "stream": self.stream }),
+        });
+    }
+}
+
+/// Asks the core one of its methods whose answer streams, adding the stream's number to
+/// `params`.
+pub fn stream(
+    asks: &mpsc::UnboundedSender<Ask>,
+    method: &'static str,
+    mut params: Value,
+) -> Streaming {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let stream = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let Some(params) = params.as_object_mut() {
+        params.insert("stream".into(), stream.into());
+    }
+    let (sender, parts) = mpsc::unbounded_channel();
+    let _ = asks.send(Ask::Stream {
+        stream,
+        method,
+        params,
+        parts: sender,
+    });
+    Streaming {
+        parts,
+        stream,
+        asks: asks.clone(),
+    }
+}
+
 /// Talks to the core on a thread of its own, so the window's thread only draws.
 pub fn start(home: Home) -> Link {
     let (updates_tx, updates) = mpsc::unbounded_channel();
@@ -392,6 +448,7 @@ async fn run(
                     read(&client, key, watch, &current, &updates);
                 }
                 let mut streams = Streams::new(&client, &updates);
+                let mut streamed: HashMap<u64, mpsc::UnboundedSender<Part>> = HashMap::new();
                 loop {
                     tokio::select! {
                         settled = streams.settled.recv() => {
@@ -412,6 +469,13 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
                                 let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
+                            }
+                            Some(ClientEvent::Event(Event::Stream { stream, items, done, error })) => {
+                                if let Some(parts) = streamed.get(&stream) {
+                                    if parts.send(Part { items, done, error }).is_err() || done {
+                                        streamed.remove(&stream);
+                                    }
+                                }
                             }
                             Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
                                 for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
@@ -455,6 +519,16 @@ async fn run(
                                         Ok(value) => Update::Read(key, value),
                                         Err(error) => Update::Refused(key, error.to_string()),
                                     });
+                                });
+                            }
+                            Some(Ask::Stream { stream, method, params, parts }) => {
+                                streamed.insert(stream, parts.clone());
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    if let Err(error) = client.call(method, params).await {
+                                        let error = json!({ "category": "call", "message": error.to_string() });
+                                        let _ = parts.send(Part { items: Vec::new(), done: true, error: Some(error) });
+                                    }
                                 });
                             }
                             Some(Ask::Request { method, params, reply }) => {

@@ -50,30 +50,30 @@ fn read_replace_file(path: &Path) -> std::io::Result<Vec<u8>> {
 
 // ---- wire types --------------------------------------------------------
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchOptions {
     #[serde(default)]
-    case_sensitive: bool,
+    pub case_sensitive: bool,
     #[serde(default)]
-    whole_word: bool,
+    pub whole_word: bool,
     #[serde(default)]
-    is_regex: bool,
+    pub is_regex: bool,
     /// Glob pattern restricting which paths participate (empty = all).
     #[serde(default)]
-    include: String,
+    pub include: String,
     /// Glob pattern excluding paths (in addition to the built-in denylist).
     #[serde(default)]
-    exclude: String,
+    pub exclude: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SearchRange {
     pub start: u32,
     pub end: u32,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchHit {
     pub line: u32,
@@ -84,14 +84,14 @@ pub struct SearchHit {
     pub ranges: Vec<SearchRange>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SearchFile {
     pub path: String,
     pub matches: Vec<SearchHit>,
 }
 
 /// How a search went, sent after every file it found.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchSummary {
     pub file_count: usize,
@@ -104,20 +104,20 @@ pub struct SearchSummary {
     pub elapsed_ms: u64,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplaceFile {
     pub path: String,
     pub match_count: usize,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReplaceError {
     pub path: String,
     pub reason: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplaceResults {
     pub files: Vec<ReplaceFile>,
@@ -901,7 +901,7 @@ fn persist_rewrite(
 // a window of `before` + `after` lines around `line` (1-based) plus the
 // starting line number for the snippet.
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileWindow {
     pub doc: String,

@@ -65,7 +65,7 @@ mod remote;
 mod sandbox;
 mod saved;
 mod saved_sessions;
-mod search;
+pub mod search;
 mod seen;
 mod session;
 mod session_watch;
