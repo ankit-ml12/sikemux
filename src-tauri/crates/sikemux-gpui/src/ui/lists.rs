@@ -1,17 +1,18 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::base::{Button as BaseButton, Selectable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, Styled, Window,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smallvec::SmallVec;
 
-use super::{caps, mark_box, meta, text};
+use super::controls::OnClick;
+use super::{caps, icon, mark_box, meta, text};
+use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
-
-type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 /// The hover group a row puts itself in, for a glyph in it that follows its text.
 pub const ROW: &str = "row";
@@ -291,6 +292,7 @@ pub struct Tab {
     tail: Option<AnyElement>,
     active: bool,
     on_click: Option<OnClick>,
+    on_close: Option<OnClick>,
 }
 
 impl Tab {
@@ -303,6 +305,7 @@ impl Tab {
             tail: None,
             active: false,
             on_click: None,
+            on_close: None,
         }
     }
 
@@ -337,25 +340,41 @@ impl Tab {
     }
 }
 
+impl Tab {
+    /// Closes the tab from a button that shows while the pointer is over it, in place of its status.
+    pub fn on_close(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_close = Some(Rc::new(handler));
+        self
+    }
+}
+
 impl RenderOnce for Tab {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
+        let hovered = window.use_keyed_state(
+            ElementId::NamedChild(Arc::new(self.id.clone()), "hovered".into()),
+            cx,
+            |_, _| false,
+        );
+        let closing = self.on_close.clone().filter(|_| *hovered.read(cx));
+        let close_id = ElementId::NamedChild(Arc::new(self.id.clone()), "close".into());
+        let label = self.label.clone();
         let edge = gpui_kit::Hsla {
             a: 0.06,
             ..t.text_primary
         };
         let on_click = self.on_click;
-        BaseButton::new(self.id)
-            .selected(self.active)
-            .accessibility_label(self.label.clone())
+        let wrap_id = ElementId::NamedChild(Arc::new(self.id.clone()), "wrap".into());
+        div()
+            .id(wrap_id)
             .flex_none()
             .h(px(26.))
             .min_w(px(120.))
-            .pl(px(8.))
             .flex()
             .items_center()
-            .justify_start()
-            .gap(px(8.))
             .rounded(RADIUS_2)
             .map(|tab| {
                 if self.active {
@@ -368,23 +387,69 @@ impl RenderOnce for Tab {
                 }
             })
             .hover(move |style| style.bg(t.surface_hover).text_color(t.text_secondary))
-            .when_some(on_click, |tab, handler| {
-                tab.on_click(move |event, window, cx| handler(event, window, cx))
+            .when(self.on_close.is_some(), |tab| {
+                tab.on_hover(move |inside, _, cx| {
+                    hovered.update(cx, |hovered, cx| {
+                        if *hovered != *inside {
+                            *hovered = *inside;
+                            cx.notify();
+                        }
+                    })
+                })
             })
-            .children(self.mark.map(|mark| mark_box(22., mark)))
             .child(
-                text(self.label, 12., FontWeight::MEDIUM)
-                    .max_w(px(160.))
-                    .overflow_hidden()
-                    .text_ellipsis(),
+                BaseButton::new(self.id)
+                    .selected(self.active)
+                    .accessibility_label(self.label.clone())
+                    .flex_1()
+                    .h_full()
+                    .pl(px(8.))
+                    .flex()
+                    .items_center()
+                    .justify_start()
+                    .gap(px(8.))
+                    .when_some(on_click, |tab, handler| {
+                        tab.on_click(move |event, window, cx| handler(event, window, cx))
+                    })
+                    .children(self.mark.map(|mark| mark_box(22., mark)))
+                    .child(
+                        text(self.label, 12., FontWeight::MEDIUM)
+                            .max_w(px(160.))
+                            .overflow_hidden()
+                            .text_ellipsis(),
+                    )
+                    .children(self.note.map(|note| meta(note, cx))),
             )
-            .children(self.note.map(|note| meta(note, cx)))
-            .child(
-                div()
-                    .size(px(20.))
-                    .mr(px(8.))
-                    .flex_none()
-                    .children(self.tail),
-            )
+            .child(div().size(px(20.)).mr(px(8.)).flex_none().map(|slot| {
+                match closing {
+                    Some(close) => slot.child(
+                        BaseButton::new(close_id)
+                            .group(CLOSE)
+                            .accessibility_label(SharedString::from(format!("Close {label}")))
+                            .size(px(20.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(RADIUS_2)
+                            .text_color(t.text_tertiary)
+                            .hover(move |style| {
+                                style.text_color(t.danger).bg(gpui_kit::Hsla {
+                                    a: 0.18,
+                                    ..t.danger
+                                })
+                            })
+                            .on_click(move |event, window, cx| close(event, window, cx))
+                            .child(
+                                icon(Icon::Close, 11.)
+                                    .text_color(t.text_tertiary)
+                                    .group_hover(CLOSE, move |style| style.text_color(t.danger)),
+                            ),
+                    ),
+                    None => slot.children(self.tail),
+                }
+            }))
     }
 }
+
+/// The hover group a tab's close button puts its glyph in, so the glyph reddens with it.
+const CLOSE: &str = "tab-close";

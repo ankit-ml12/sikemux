@@ -13,7 +13,7 @@ use sikemux_wire::protocol::PaneKind;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, IconButton, Menu, MenuItem, PaneHeader, Segmented, Toggle};
+use crate::ui::{self, Button, IconButton, Menu, MenuItem, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::{chat, tabs, terminal};
 
@@ -39,6 +39,13 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
     let project = bench.project();
+    if project.is_some_and(|project| bench.tabs(&project.id).is_empty()) {
+        return div()
+            .flex_1()
+            .min_w_0()
+            .child(ui::pane(cx).child(empty_stage(cx)))
+            .into_any_element();
+    }
     let agent = bench.agent();
     let header = agent
         .as_ref()
@@ -69,6 +76,47 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
                 .children(header),
         )
         .into_any_element()
+}
+
+/// A project with every tab closed, which would otherwise show nothing to click.
+fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let hint = |id: &str| crate::keymap::hint(id, cx);
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(12.))
+        .text_color(t.text_tertiary)
+        .child(
+            ui::text("Nothing open in this project", 12.5, FontWeight::NORMAL)
+                .text_color(t.text_secondary),
+        )
+        .child(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    Button::new("empty-new-agent", "New agent", Variant::Outline)
+                        .keys(hint("agent.new"))
+                        .on_click(cx.listener(|bench, _, _, _| bench.new_chat())),
+                )
+                .child(
+                    Button::new("empty-new-terminal", "New terminal", Variant::Outline)
+                        .keys(hint("terminal.new"))
+                        .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                )
+                .child(
+                    Button::new("empty-open-file", "Open file", Variant::Outline)
+                        .keys(hint("palette.files"))
+                        .on_click(cx.listener(|bench, _, window, cx| {
+                            bench.toggle_finder(window, cx);
+                            cx.notify();
+                        })),
+                ),
+        )
 }
 
 /// What a chat opens on before its first message: the agent's face, the project, and what

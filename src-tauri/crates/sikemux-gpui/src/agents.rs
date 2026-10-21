@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
-use crate::workbench::{AgentRow, RailPage, Workbench};
+use crate::workbench::{AgentRow, Edge, RailPage, Workbench};
 
 pub const TAB_RAIL_WIDTH: f32 = 288.;
 
@@ -57,6 +57,10 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             )
             .mark(22., ui::mark(&recent.provider, 20.))
             .child(ui::mono(age(recent.active_at), 11., cx))
+            .on_click(cx.listener({
+                let recent = recent.clone();
+                move |bench, _, _, _| bench.resume_chat(&recent)
+            }))
             .into_any_element()
         })
         .collect();
@@ -173,11 +177,20 @@ fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                             Icon::Plus,
                             "Choose agent — ⌘⇧N",
                         ))
-                        .child(IconButton::new(
-                            "hide-tab-rail",
-                            Icon::PanelRight,
-                            "Hide agents rail",
-                        )),
+                        .child(
+                            IconButton::new(
+                                "hide-tab-rail",
+                                Icon::PanelRight,
+                                if bench.tab_rail_open {
+                                    "Hide agents rail"
+                                } else {
+                                    "Keep agents rail open"
+                                },
+                            )
+                            .on_click(
+                                cx.listener(|bench, _, _, cx| bench.toggle_rail(Edge::End, cx)),
+                            ),
+                        ),
                 ),
         )
 }

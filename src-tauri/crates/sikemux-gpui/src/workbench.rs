@@ -11,7 +11,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Image,
     ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StyleRefinement, Styled, Subscription, WeakEntity, Window,
+    StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -29,6 +29,11 @@ use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
+
+/// How long a peeking rail stays after the pointer leaves it.
+const PEEK_CLOSE: Duration = Duration::from_millis(180);
+/// How close to the window's edge the pointer brings out a closed rail.
+const PEEK_REACH: f32 = 28.;
 
 /// The one store: what the core last said, and what only this window decides.
 pub struct Workbench {
@@ -48,8 +53,11 @@ pub struct Workbench {
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
     pub all_projects: bool,
-    /// Both rails are hidden, so the stage takes the window.
-    pub focus_mode: bool,
+    /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
+    pub side_rail_open: bool,
+    pub tab_rail_open: bool,
+    pub peeking: Option<Edge>,
+    unpeek: Option<Task<()>>,
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
@@ -82,6 +90,13 @@ pub struct CiRepo {
     pub name: String,
     pub account: Option<String>,
     pub branch: String,
+}
+
+/// A side of the window a rail lives on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Start,
+    End,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -198,7 +213,10 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             all_projects: false,
-            focus_mode: false,
+            side_rail_open: true,
+            tab_rail_open: true,
+            peeking: None,
+            unpeek: None,
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             finder: None,
@@ -861,6 +879,56 @@ impl Workbench {
         }
     }
 
+    /// Keeps a rail open, or closes it; a peeking rail that is kept stays where it is.
+    pub fn toggle_rail(&mut self, edge: Edge, cx: &mut Context<Self>) {
+        let open = match edge {
+            Edge::Start => &mut self.side_rail_open,
+            Edge::End => &mut self.tab_rail_open,
+        };
+        *open = !*open;
+        self.peeking = None;
+        cx.notify();
+    }
+
+    /// Opens both rails when either is closed, else closes both.
+    pub fn toggle_focus_mode(&mut self, cx: &mut Context<Self>) {
+        let open = !(self.side_rail_open && self.tab_rail_open);
+        self.side_rail_open = open;
+        self.tab_rail_open = open;
+        self.peeking = None;
+        cx.notify();
+    }
+
+    /// Shows a closed rail over the stage while the pointer is at its edge or over it, and puts
+    /// it away a moment after the pointer leaves.
+    fn peek(&mut self, edge: Edge, inside: bool, cx: &mut Context<Self>) {
+        if inside {
+            self.unpeek = None;
+            if self.peeking != Some(edge) {
+                self.peeking = Some(edge);
+                cx.notify();
+            }
+            return;
+        }
+        self.unpeek = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(PEEK_CLOSE).await;
+            let _ = this.update(cx, |bench, cx| {
+                if bench.peeking == Some(edge) {
+                    bench.peeking = None;
+                    cx.notify();
+                }
+            });
+        }));
+    }
+
+    /// Takes up a recent chat again, in the project it ran in.
+    pub fn resume_chat(&self, recent: &RecentInfo) {
+        let _ = self.asks.send(Ask::ResumeChat {
+            recent: recent.id.clone(),
+            project: recent.project.clone(),
+        });
+    }
+
     /// Brings forward the tab `by` places from the one in front, among those `same`
     /// accepts, going round the strip.
     fn step_tab(&self, by: isize, same: impl Fn(&Tab, &Tab) -> bool) {
@@ -1209,12 +1277,46 @@ impl Parts {
     }
 }
 
+impl Workbench {
+    /// A closed rail's edge of the window, which brings the rail out over the stage.
+    fn rail_edge(&self, edge: Edge, cx: &mut Context<Self>) -> impl IntoElement {
+        let (part, width) = match edge {
+            Edge::Start => (&self.parts.rail, rail::SIDE_RAIL_WIDTH),
+            Edge::End => (&self.parts.tabs, agents::TAB_RAIL_WIDTH),
+        };
+        let peeking = self.peeking == Some(edge);
+        let zone = div()
+            .id(match edge {
+                Edge::Start => "peek-start",
+                Edge::End => "peek-end",
+            })
+            .absolute()
+            .top(px(44.))
+            .bottom(px(10.))
+            .w(px(if peeking { width + 20. } else { PEEK_REACH }))
+            .px(px(10.))
+            .on_hover(cx.listener(move |bench, inside: &bool, _, cx| bench.peek(edge, *inside, cx)))
+            .when(peeking, |zone| {
+                zone.child(
+                    part.clone()
+                        .cached(StyleRefinement::default().w(px(width)).h_full()),
+                )
+            });
+        match edge {
+            Edge::Start => zone.left_0(),
+            Edge::End => zone.right_0(),
+        }
+    }
+}
+
 impl Render for Workbench {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         use crate::keymap::*;
+        if window.focused(cx).is_none() {
+            self.focus.focus(window, cx);
+        }
         let t = Tokens::get(cx);
         let parts = &self.parts;
-        let rails = !self.focus_mode;
         div()
             .id("shell")
             .track_focus(&self.focus)
@@ -1240,10 +1342,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &GoToTab8, _, _| bench.go_to_tab(Some(8))))
             .on_action(cx.listener(|bench, _: &GoToLastTab, _, _| bench.go_to_tab(None)))
             .on_action(cx.listener(|bench, _: &CloseTab, _, _| bench.close_front_tab()))
-            .on_action(cx.listener(|bench, _: &FocusMode, _, cx| {
-                bench.focus_mode = !bench.focus_mode;
-                cx.notify();
-            }))
+            .on_action(cx.listener(|bench, _: &FocusMode, _, cx| bench.toggle_focus_mode(cx)))
             .on_action(cx.listener(|bench, _: &QuitAndStopEverything, _, _| {
                 let _ = bench.asks.send(Ask::Shutdown);
             }))
@@ -1274,7 +1373,7 @@ impl Render for Workbench {
                     .pt(px(4.))
                     .px(px(10.))
                     .pb(px(10.))
-                    .when(rails, |row| {
+                    .when(self.side_rail_open, |row| {
                         row.child(
                             parts.rail.clone().cached(
                                 StyleRefinement::default()
@@ -1290,7 +1389,7 @@ impl Render for Workbench {
                             .clone()
                             .cached(StyleRefinement::default().flex_1().min_w_0().h_full()),
                     )
-                    .when(rails, |row| {
+                    .when(self.tab_rail_open, |row| {
                         row.child(
                             parts.tabs.clone().cached(
                                 StyleRefinement::default()
@@ -1301,6 +1400,12 @@ impl Render for Workbench {
                         )
                     }),
             )
+            .when(!self.side_rail_open, |shell| {
+                shell.child(self.rail_edge(Edge::Start, cx))
+            })
+            .when(!self.tab_rail_open, |shell| {
+                shell.child(self.rail_edge(Edge::End, cx))
+            })
             .when(self.finder.is_some(), |shell| {
                 shell.child(
                     parts

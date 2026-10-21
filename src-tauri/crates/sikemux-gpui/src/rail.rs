@@ -15,7 +15,7 @@ use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
-use crate::workbench::{AgentRow, Workbench};
+use crate::workbench::{AgentRow, Edge, Workbench};
 
 pub const SIDE_RAIL_WIDTH: f32 = 258.;
 
@@ -200,7 +200,7 @@ fn rows(read: Option<&Value>) -> impl Iterator<Item = &Value> {
     read.and_then(Value::as_array).into_iter().flatten()
 }
 
-fn masthead(bench: &Workbench, cx: &App) -> impl IntoElement {
+fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let (release, channel) = split_version(&bench.version);
     div()
@@ -237,11 +237,20 @@ fn masthead(bench: &Workbench, cx: &App) -> impl IntoElement {
                         .text_color(t.text_tertiary)
                 })),
         )
-        .child(div().ml_auto().child(IconButton::new(
-            "hide-side-rail",
-            Icon::PanelLeft,
-            "Hide the side rail",
-        )))
+        .child(
+            div().ml_auto().child(
+                IconButton::new(
+                    "hide-side-rail",
+                    Icon::PanelLeft,
+                    if bench.side_rail_open {
+                        "Hide the side rail"
+                    } else {
+                        "Keep the side rail open"
+                    },
+                )
+                .on_click(cx.listener(|bench, _, _, cx| bench.toggle_rail(Edge::Start, cx))),
+            ),
+        )
 }
 
 /// `0.4.0-nightly.10` as the release `0.4.0` and the channel `nightly 10`.

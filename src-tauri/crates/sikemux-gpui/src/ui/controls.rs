@@ -8,7 +8,7 @@ use gpui_kit::{
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
-use super::{icon, text};
+use super::{icon, kbd, text};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
 
@@ -161,6 +161,7 @@ pub struct Button {
     label: SharedString,
     icon: Option<Icon>,
     variant: Variant,
+    keys: Option<SharedString>,
     on_click: Option<OnClick>,
 }
 
@@ -171,12 +172,19 @@ impl Button {
             label: label.into(),
             icon: None,
             variant,
+            keys: None,
             on_click: None,
         }
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// The shortcut that does the same, shown after the label.
+    pub fn keys(mut self, keys: Option<SharedString>) -> Self {
+        self.keys = keys;
         self
     }
 
@@ -255,6 +263,10 @@ impl RenderOnce for Button {
                 .group_hover(GROUP, move |style| style.text_color(hover))
         }))
         .child(self.label)
+        .children(
+            self.keys
+                .map(|keys| kbd(keys, cx).font_family(crate::theme::MONO)),
+        )
     }
 }
 

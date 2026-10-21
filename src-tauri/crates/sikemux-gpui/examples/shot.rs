@@ -4,7 +4,7 @@
 //!     [--account "Name <email>"]  draws the rail as if the host were signed in as them
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
-//!     [--then step…]              then does each step in turn: "click x,y" in points,
+//!     [--then step…]              then does each step in turn: "click x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, or "copy-image file.png"
@@ -125,6 +125,21 @@ fn main() -> anyhow::Result<()> {
         let (verb, rest) = step.split_once(' ').unwrap_or((step.as_str(), ""));
         cx.update_window(window.into(), |_, window, cx| -> anyhow::Result<()> {
             match verb {
+                "move" => {
+                    let (x, y) = rest
+                        .split_once(',')
+                        .ok_or_else(|| anyhow::anyhow!("move x,y"))?;
+                    let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
+                    window.dispatch_event(
+                        PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            pressed_button: None,
+                            modifiers: Modifiers::default(),
+                        }),
+                        cx,
+                    );
+                    window.draw(cx).clear(cx);
+                }
                 "click" => {
                     let (x, y) = rest
                         .split_once(',')

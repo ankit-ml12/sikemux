@@ -95,8 +95,17 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .children(battery_chip(bench, cx))
                 .child(clock(cx))
                 .child(
-                    IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B")
-                        .width(30.),
+                    IconButton::new(
+                        "focus",
+                        Icon::Focus,
+                        match crate::keymap::hint("view.focusMode", cx) {
+                            Some(keys) => format!("Focus mode — hide rails — {keys}"),
+                            None => "Focus mode — hide rails".to_owned(),
+                        },
+                    )
+                    .width(30.)
+                    .pressed(!bench.side_rail_open && !bench.tab_rail_open)
+                    .on_click(cx.listener(|bench, _, _, cx| bench.toggle_focus_mode(cx))),
                 ),
         )
 }
@@ -503,7 +512,11 @@ fn strip_tab(
         label(bench, tab),
     )
     .active(active)
-    .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&project_id, &tab_id)));
+    .on_click(cx.listener({
+        let (project, tab) = (project_id.clone(), tab_id.clone());
+        move |bench, _, _, _| bench.activate_tab(&project, &tab)
+    }))
+    .on_close(cx.listener(move |bench, _, _, _| bench.close_tab(&project_id, &tab_id)));
     let view = first_view(&tab.pane);
     match view {
         Some((PaneKind::Agent, target)) => match bench

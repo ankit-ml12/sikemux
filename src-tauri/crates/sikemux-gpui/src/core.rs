@@ -143,6 +143,11 @@ pub enum Ask {
         launcher: String,
         project: String,
     },
+    /// Takes up one of the device view's recent chats again and brings its tab to the front.
+    ResumeChat {
+        recent: String,
+        project: String,
+    },
     /// Stops every agent and terminal the core runs.
     Shutdown,
 }
@@ -399,6 +404,18 @@ async fn run(
                                             let _ = client.call("openTab", tab).await;
                                         }
                                         Err(error) => eprintln!("sikemux: the core would not start a chat: {error}"),
+                                    }
+                                });
+                            }
+                            Some(Ask::ResumeChat { recent, project }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    match client.resume_chat(recent).await {
+                                        Ok((agent, _)) => {
+                                            let tab = json!({ "project": project, "kind": "agent", "target": agent });
+                                            let _ = client.call("openTab", tab).await;
+                                        }
+                                        Err(error) => eprintln!("sikemux: the core would not resume the chat: {error}"),
                                     }
                                 });
                             }
