@@ -8,7 +8,10 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
+use sikemux_wire::protocol::{
+    AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind, Preferences, ProjectInfo, RecentInfo, SessionInfo,
+    Tab,
+};
 use tokio::sync::mpsc;
 
 use crate::battery::Battery;
@@ -131,6 +134,7 @@ impl Workbench {
         let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
         let _ = asks.send(Ask::Watch("questions", Watch::new("questions", json!({}), &["questions"])));
         let _ = asks.send(Ask::Watch("catalog", Watch::new("agentCatalog", json!({}), &[])));
+        let _ = asks.send(Ask::Watch("preferences", Watch::new("preferences", json!({}), &["preferences"])));
         let _ = asks.send(Ask::Follow("git"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
@@ -312,21 +316,23 @@ impl Workbench {
     }
 
     /// Sends what the person wrote: the answer to a question it answers, else words for
-    /// the agent, which steer a running turn, or with ⌘ wait behind it. ⌘ with nothing
-    /// written sends the questions' answers, else steers in the messages waiting.
-    pub fn send(&mut self, agent: &str, queue: bool, window: &mut Window, cx: &mut Context<Self>) {
+    /// the agent, which join a running turn or wait behind it as the person prefers,
+    /// and ⌘ does the other. ⌘ with nothing written sends the questions' answers, else
+    /// steers in the messages waiting.
+    pub fn send(&mut self, agent: &str, primary: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(draft) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.draft.clone())) else {
             return;
         };
         let text = draft.read(cx).value().trim().to_owned();
         if text.is_empty() {
-            if queue {
+            if primary {
                 self.answer(agent, |chat, open| chat.send_answers(open).or_else(|| chat.steer_waiting(agent)));
                 cx.notify();
             }
             return;
         }
-        self.answer(agent, |chat, open| chat.sent(agent, text, queue, open));
+        let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
+        self.answer(agent, |chat, open| chat.sent(agent, text, primary == steers, open));
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         cx.notify();
     }
@@ -487,6 +493,10 @@ impl Workbench {
 
     pub fn picture(&self) -> Option<Arc<Image>> {
         self.picture.clone()
+    }
+
+    pub fn preferences(&self) -> Preferences {
+        self.read("preferences").and_then(|read| serde_json::from_value(read.clone()).ok()).unwrap_or_default()
     }
 
     pub fn read(&self, key: &str) -> Option<&Value> {

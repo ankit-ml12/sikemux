@@ -1031,6 +1031,14 @@ fn composer(bench: &Workbench, agent: &AgentRow, chat: &Chat, cx: &mut Context<W
         .ready(head.is_some_and(|head| head.connection == ChatConnection::Ready))
         .running(chat.running())
         .usage(head.and_then(|head| head.usage.clone()));
+    if head.is_some_and(|head| head.model.is_some() || head.effort.is_some()) {
+        let (this, agent) = (this.clone(), agent.id.clone());
+        let pick = Rc::new(move |config: &str, value: &str, _: &mut Window, cx: &mut App| {
+            let ask = ChatAsk::Config { agent: agent.clone(), config: config.to_owned(), value: value.to_owned() };
+            this.update(cx, |bench, _| bench.ask_chat(ask)).ok();
+        });
+        composer = composer.pickers(head.and_then(|head| head.model.clone()), head.and_then(|head| head.effort.clone()), pick);
+    }
     if kind.is_some_and(|kind| kind["bypass"] == true) {
         let on = head.is_some_and(|head| head.permission_mode == "bypass");
         let agent = agent.id.clone();
