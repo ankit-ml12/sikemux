@@ -264,6 +264,9 @@ function openCore(path) {
         );
         return reply && control(reply);
       };
+      const text = async (id) =>
+        (await request({ op: "terminalText", id }, 5_000))?.response?.text ??
+        "";
       resolveOpen({
         hello: control(hello),
         request,
@@ -298,9 +301,7 @@ function openCore(path) {
               frame.kind === CORE_FRAME.snapshot &&
               frame.payload.readBigUInt64BE(0) === BigInt(attachId),
           );
-          if (!reply) return "";
-          const headerLength = reply.payload.readUInt32BE(16);
-          return reply.payload.subarray(20 + headerLength).toString("utf8");
+          return reply ? text(id) : "";
         },
         write(id, text) {
           const header = Buffer.alloc(16);
@@ -313,24 +314,15 @@ function openCore(path) {
             ),
           );
         },
+        // The core sends a pane cells, not the program's bytes, so what a
+        // terminal printed is read back as the text it holds.
         async output(id, needle, timeout) {
-          let seen = "";
           const deadline = Date.now() + timeout;
-          while (!seen.includes(needle) && Date.now() < deadline) {
-            const frame = await next(
-              (candidate) =>
-                candidate.kind === CORE_FRAME.output ||
-                candidate.kind === CORE_FRAME.snapshot,
-              deadline - Date.now(),
-            );
-            if (!frame) break;
-            if (
-              frame.kind === CORE_FRAME.output &&
-              frame.payload.readBigUInt64BE(0) === BigInt(id)
-            )
-              seen += frame.payload.subarray(8).toString("utf8");
+          for (;;) {
+            if ((await text(id)).includes(needle)) return true;
+            if (Date.now() >= deadline) return false;
+            await new Promise((resolveWait) => setTimeout(resolveWait, 100));
           }
-          return seen.includes(needle);
         },
         async chatEvent(agentId, accept, timeout = 10_000) {
           const frame = await next((candidate) => {
