@@ -12,10 +12,10 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, DragMoveEvent, Entity, EventEmitter,
-    FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
-    WeakEntity, Window,
+    div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, DragMoveEvent, Entity,
+    EventEmitter, FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -49,6 +49,8 @@ pub struct Workbench {
     /// The latest answer to each watched call, by key.
     reads: HashMap<&'static str, Value>,
     pub lost: Option<String>,
+    /// Opening has taken long enough to say what the window waits for.
+    pub slow_start: bool,
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     pub battery: Option<Battery>,
@@ -83,6 +85,10 @@ pub struct Workbench {
     pub rail_page: RailPage,
     pub files: FileTree,
     pub finder: Option<Finder>,
+    pub palette: Option<crate::palette::Palette>,
+    pub switcher: Option<crate::switcher::Switcher>,
+    /// The command deck's keys, the last used first.
+    pub recent_commands: Vec<SharedString>,
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
@@ -117,6 +123,8 @@ pub struct Workbench {
     trust_asked: HashSet<String>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
+    /// The window the store draws, for what is said in it from outside a draw.
+    window: AnyWindowHandle,
     pub parts: Parts,
     pub panes: crate::panes::Panes,
     pub desks: crate::desk::Desks,
@@ -236,6 +244,7 @@ impl Workbench {
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
         crate::finder::install(cx);
+        crate::palette::install(cx);
         crate::keymap::install(cx);
         crate::chat::install(cx);
         crate::terminal::install(cx);
@@ -290,6 +299,10 @@ impl Workbench {
             Watch::new("hosts", json!({}), &["hosts"]),
         ));
         let _ = asks.send(Ask::Watch(
+            "update",
+            Watch::new("updateStatus", json!({}), &["update"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "runs",
             Watch::new("taskRuns", json!({}), &["runs"]),
         ));
@@ -333,6 +346,7 @@ impl Workbench {
             view: None,
             reads: HashMap::new(),
             lost: None,
+            slow_start: false,
             watched_project: None,
             watched_ci: None,
             battery: crate::battery::read(),
@@ -359,6 +373,9 @@ impl Workbench {
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             finder: None,
+            palette: None,
+            switcher: None,
+            recent_commands: Vec::new(),
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
@@ -376,6 +393,7 @@ impl Workbench {
             search: None,
             settings: None,
             focus: cx.focus_handle(),
+            window: window.window_handle(),
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
             desks: crate::desk::Desks::new(window, cx),
@@ -384,6 +402,7 @@ impl Workbench {
         };
         bench.focus.focus(window, cx);
         bench.read_usage();
+        bench.wait_patiently(cx);
         bench
     }
 
@@ -480,6 +499,16 @@ impl Workbench {
                 self.reads.insert("plugins", value);
                 self.watch_ci();
             }
+            Update::Read("update", value) => {
+                let ready = |value: &Value| value["state"] == "ready";
+                let already = self.read("update").is_some_and(ready);
+                let now = ready(&value);
+                self.reads.insert("update", value);
+                if now && !already {
+                    // The core put the update in place of this app; opening the app again starts it.
+                    cx.restart();
+                }
+            }
             Update::Read("questions", value) => match serde_json::from_value(value) {
                 Ok(questions) => self.questions = questions,
                 Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
@@ -504,6 +533,9 @@ impl Workbench {
                 None => self.signing_in = false,
             },
             Update::Read("sign-in-finished", _) => self.signing_in = false,
+            Update::Failed(error) => {
+                return self.notify(Notification::error(error).autohide(false), cx);
+            }
             Update::Refused(key, error) => {
                 eprintln!("sikemux: the core refused {key}: {error}");
                 if key.starts_with("sign-in") {
@@ -566,6 +598,9 @@ impl Workbench {
             }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
+                if matches!(key, "pickerFolders" | "sshHosts") {
+                    self.picker_answered(cx);
+                }
             }
             Update::Terminal(session, screenful) => {
                 self.terminals.apply(session, screenful, cx);
@@ -1157,6 +1192,14 @@ impl Workbench {
 
     pub fn read(&self, key: &str) -> Option<&Value> {
         self.reads.get(key)
+    }
+
+    /// Shows `note` in the window's notifications.
+    pub fn notify(&self, note: Notification, cx: &mut Context<Self>) {
+        let window = self.window;
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+        });
     }
 
     pub fn call(&self, method: &'static str, params: Value) {
@@ -2216,7 +2259,9 @@ impl Parts {
             tabs: part(|bench, _, cx| agents::tab_rail(bench, cx), false),
             finder: part(
                 |bench, window, cx| {
-                    crate::finder::overlay(bench, window, cx)
+                    crate::switcher::overlay(bench, cx)
+                        .or_else(|| crate::palette::overlay(bench, window, cx))
+                        .or_else(|| crate::finder::overlay(bench, window, cx))
                         .unwrap_or_else(|| div().into_any_element())
                 },
                 true,
@@ -2275,6 +2320,55 @@ impl Render for Workbench {
             .track_focus(&self.focus)
             .relative()
             .size_full()
+            .on_modifiers_changed(
+                cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
+            )
+            .capture_key_down(cx.listener(|bench, event, _, cx| bench.switcher_key(event, cx)))
+            .on_action(
+                cx.listener(|bench, _: &crate::switcher::NextPlace, window, cx| {
+                    bench.step_place(1, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::switcher::PreviousPlace, window, cx| {
+                    bench.step_place(-1, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::commands::OpenCommands, window, cx| {
+                    bench.toggle_commands(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::agent_palette::ChooseAgent, window, cx| {
+                    bench.toggle_agent_palette(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::picker::OpenProject, window, cx| {
+                    bench.toggle_picker(crate::picker::Picking::Projects, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::picker::OpenHost, window, cx| {
+                    bench.toggle_picker(crate::picker::Picking::Hosts, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::picker::OpenPlace, window, cx| {
+                    bench.toggle_picker(crate::picker::Picking::Both, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::new_tab::NewTab, window, cx| {
+                    bench.toggle_new_tab(window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::theme_palette::SwitchTheme, window, cx| {
+                    bench.toggle_theme_palette(window, cx);
+                }),
+            )
             .on_action(cx.listener(|bench, _: &OpenFile, window, cx| {
                 bench.toggle_finder(window, cx);
                 cx.notify();
@@ -2392,13 +2486,18 @@ impl Render for Workbench {
                 shell.child(self.rail_edge(Edge::End, cx))
             })
             .children(asked)
-            .when(self.finder.is_some(), |shell| {
-                shell.child(
-                    parts
-                        .finder
-                        .clone()
-                        .cached(StyleRefinement::default().absolute().inset_0()),
-                )
-            })
+            .children(crate::boot::reconnecting(self, cx))
+            .children(crate::boot::opening(self, cx))
+            .when(
+                self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
+                |shell| {
+                    shell.child(
+                        parts
+                            .finder
+                            .clone()
+                            .cached(StyleRefinement::default().absolute().inset_0()),
+                    )
+                },
+            )
     }
 }

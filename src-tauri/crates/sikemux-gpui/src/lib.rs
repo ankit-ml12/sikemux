@@ -3,9 +3,12 @@
 pub mod account_picker;
 mod accounts;
 mod agent_menu;
+mod agent_palette;
 mod agents;
 mod battery;
+mod boot;
 mod chat;
+mod commands;
 pub mod composer;
 pub mod core;
 mod desk;
@@ -21,8 +24,11 @@ mod home;
 pub mod icons;
 mod keymap;
 pub mod model_picker;
+mod new_tab;
 pub mod notifications;
+mod palette;
 mod panes;
+mod picker;
 mod picture;
 mod ports;
 pub mod project_switcher;
@@ -36,10 +42,12 @@ mod sim_screen;
 #[cfg(not(target_os = "macos"))]
 #[path = "sim_screen_elsewhere.rs"]
 mod sim_screen;
+mod switcher;
 pub mod syntax;
 mod tabs;
 pub mod terminal;
 pub mod theme;
+mod theme_palette;
 mod ui;
 pub mod workbench;
 pub mod worktree_switch;

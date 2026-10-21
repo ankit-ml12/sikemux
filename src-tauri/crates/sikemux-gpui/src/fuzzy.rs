@@ -80,3 +80,39 @@ pub fn rank_paths(query: &str, paths: &[String], limit: usize) -> Vec<usize> {
         .map(|(_, place)| place)
         .collect()
 }
+
+/// The places in `texts` of the best `limit` matches for `query`, best first and earlier
+/// places first among equals. Once any text holds the query whole, texts that only hold its
+/// letters in order are dropped.
+pub fn rank<'a>(query: &str, texts: impl IntoIterator<Item = &'a str>, limit: usize) -> Vec<usize> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return (0..texts.into_iter().take(limit).count()).collect();
+    }
+    let query = Finder::new(query.as_bytes());
+    let mut buffer = [0; 512];
+    let mut best = BinaryHeap::with_capacity(limit + 1);
+    let mut substring = false;
+    for (place, text) in texts.into_iter().enumerate() {
+        let text = lower(text, &mut buffer);
+        let Some(score) = score_field(&query, &text) else {
+            continue;
+        };
+        if score < SUBSEQUENCE {
+            if !substring {
+                best.clear();
+            }
+            substring = true;
+        } else if substring {
+            continue;
+        }
+        best.push((score, place));
+        if best.len() > limit {
+            best.pop();
+        }
+    }
+    best.into_sorted_vec()
+        .into_iter()
+        .map(|(_, place)| place)
+        .collect()
+}

@@ -182,6 +182,7 @@ impl Workbench {
         if self.finder.is_some() {
             return self.close_finder(window, cx);
         }
+        self.close_palette(window, cx);
         self.finder = Some(Finder::open(window, cx));
         let project = self
             .project()

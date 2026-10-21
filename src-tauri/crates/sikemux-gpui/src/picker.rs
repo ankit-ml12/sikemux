@@ -1,0 +1,209 @@
+//! ⌘O, ⌘⇧S and ⌘⇧O: the projects with the folders under the person's project
+//! roots, the SSH hosts, or both.
+
+use std::path::Path;
+
+use gpui_kit::{AppContext, Context, Window};
+use serde_json::{json, Value};
+
+use crate::chat::tilde;
+use crate::core::Ask;
+use crate::icons::Icon;
+use crate::palette::{Mark, Row, Spec};
+use crate::workbench::{Strip, Workbench};
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "project.open")]
+pub struct OpenProject;
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "ssh.open")]
+pub struct OpenHost;
+
+#[derive(Clone, Default, PartialEq, gpui::Action)]
+#[action(name = "session.open")]
+pub struct OpenPlace;
+
+const PROJECT: &str = "project:";
+const FOLDER: &str = "folder:";
+const HOST: &str = "host:";
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Picking {
+    Projects,
+    Hosts,
+    Both,
+}
+
+impl Picking {
+    const ALL: [Picking; 3] = [Picking::Projects, Picking::Hosts, Picking::Both];
+
+    fn id(self) -> &'static str {
+        match self {
+            Picking::Projects => "project.open",
+            Picking::Hosts => "ssh.open",
+            Picking::Both => "session.open",
+        }
+    }
+
+    fn projects(self) -> bool {
+        self != Picking::Hosts
+    }
+
+    fn hosts(self) -> bool {
+        self != Picking::Projects
+    }
+}
+
+fn listed(value: Option<&Value>) -> impl Iterator<Item = &Value> {
+    value.and_then(Value::as_array).into_iter().flatten()
+}
+
+fn host_line(host: &Value) -> String {
+    let alias = host["alias"].as_str().unwrap_or_default();
+    let user = host["user"]
+        .as_str()
+        .map(|user| format!("{user}@"))
+        .unwrap_or_default();
+    let port = host["port"]
+        .as_u64()
+        .filter(|port| *port != 22)
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    format!("{user}{}{port}", host["hostname"].as_str().unwrap_or(alias))
+}
+
+impl Workbench {
+    pub fn toggle_picker(&mut self, picking: Picking, window: &mut Window, cx: &mut Context<Self>) {
+        if picking.projects() {
+            let roots = self.preferences().project_roots;
+            if !roots.is_empty() {
+                let _ = self.asks.send(Ask::Answer {
+                    key: "pickerFolders",
+                    method: "projectRoots",
+                    params: json!({ "roots": roots }),
+                });
+            }
+        }
+        if picking.hosts() {
+            let _ = self.asks.send(Ask::Answer {
+                key: "sshHosts",
+                method: "sshHosts",
+                params: json!({}),
+            });
+        }
+        let placeholder = match picking {
+            Picking::Projects => "open a project…",
+            Picking::Hosts => "connect to a host…",
+            Picking::Both => "open a project or host…",
+        };
+        let spec = Spec::new(
+            picking.id(),
+            placeholder,
+            self.places(picking),
+            |row, bench, _, cx| {
+                bench.open_place(&row.key, cx);
+            },
+        )
+        .empty(if picking == Picking::Hosts {
+            "no hosts in ~/.ssh/config match"
+        } else {
+            "no projects match"
+        });
+        self.toggle_palette(spec, window, cx);
+    }
+
+    /// Lists what the core answered since the picker opened.
+    pub fn picker_answered(&mut self, cx: &mut Context<Self>) {
+        let Some(picking) = Picking::ALL.into_iter().find(|picking| {
+            self.palette
+                .as_ref()
+                .is_some_and(|open| open.id() == picking.id())
+        }) else {
+            return;
+        };
+        let rows = self.places(picking);
+        if let Some(palette) = self.palette.as_mut() {
+            palette.refill(rows, cx);
+        }
+        self.parts.redraw(&self.parts.finder, cx);
+    }
+
+    fn places(&self, picking: Picking) -> Vec<Row> {
+        let mut rows = Vec::new();
+        if picking.projects() {
+            let projects = self.projects();
+            for project in projects {
+                let path = tilde(&project.path);
+                rows.push(
+                    Row::new(format!("{PROJECT}{}", project.id), project.name.clone())
+                        .meta(path.clone())
+                        .mark(Mark::Icon(Icon::Folder))
+                        .group("Projects")
+                        .also(&path),
+                );
+            }
+            let added = |path: &str| {
+                projects
+                    .iter()
+                    .any(|project| project.path == Path::new(path))
+            };
+            for folder in listed(self.read("pickerFolders")) {
+                let (Some(name), Some(path)) = (folder["name"].as_str(), folder["path"].as_str())
+                else {
+                    continue;
+                };
+                if added(path) {
+                    continue;
+                }
+                let shown = tilde(Path::new(path));
+                rows.push(
+                    Row::new(format!("{FOLDER}{path}"), name.to_owned())
+                        .meta(shown.clone())
+                        .mark(Mark::Icon(Icon::FolderPlus))
+                        .group("Folders")
+                        .also(&shown),
+                );
+            }
+        }
+        if picking.hosts() {
+            for host in listed(self.read("sshHosts")) {
+                let Some(alias) = host["alias"].as_str() else {
+                    continue;
+                };
+                let line = host_line(host);
+                rows.push(
+                    Row::new(format!("{HOST}{alias}"), alias.to_owned())
+                        .meta(line.clone())
+                        .mark(Mark::Icon(Icon::Server))
+                        .group("SSH hosts")
+                        .also(&line),
+                );
+            }
+        }
+        rows
+    }
+
+    fn open_place(&self, key: &str, cx: &mut Context<Self>) {
+        if let Some(project) = key.strip_prefix(PROJECT) {
+            self.activate_project(project);
+        } else if let Some(path) = key.strip_prefix(FOLDER) {
+            let asks = self.asks.clone();
+            let added = crate::core::request(&self.asks, "addProject", json!({ "path": path }));
+            cx.background_spawn(async move {
+                match added.await {
+                    Ok(project) => {
+                        let _ = asks.send(Ask::Call {
+                            method: "activateProject",
+                            params: json!({ "project": project["id"] }),
+                        });
+                    }
+                    Err(error) => eprintln!("sikemux: the core would not add the project: {error}"),
+                }
+            })
+            .detach();
+        } else if let Some(alias) = key.strip_prefix(HOST) {
+            self.show_strip(&Strip::Host(alias.to_owned()));
+        }
+    }
+}

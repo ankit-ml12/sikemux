@@ -26,6 +26,8 @@ pub enum Update {
     Read(&'static str, Value),
     /// The core turned down what was asked under the key.
     Refused(&'static str, String),
+    /// The core turned down something the person did, saying why.
+    Failed(String),
     Terminal(SessionId, Screenful),
     Lost(String),
     /// The core stopped everything it ran, as the person asked, so the app can quit.
@@ -543,10 +545,10 @@ async fn run(
                                 tokio::spawn(async move { chat(&client, ask, &updates).await });
                             }
                             Some(Ask::Call { method, params }) => {
-                                let client = client.clone();
+                                let (client, updates) = (client.clone(), updates.clone());
                                 tokio::spawn(async move {
                                     if let Err(error) = client.call(method, params).await {
-                                        eprintln!("sikemux: the core refused {method}: {error}");
+                                        let _ = updates.send(Update::Failed(error.to_string()));
                                     }
                                 });
                             }

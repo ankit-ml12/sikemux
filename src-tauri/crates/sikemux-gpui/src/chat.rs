@@ -2160,7 +2160,7 @@ fn composer(
     Some((composer.menu(dock), offering))
 }
 
-fn tilde(path: &std::path::Path) -> String {
+pub(crate) fn tilde(path: &std::path::Path) -> String {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     match home
         .as_deref()
