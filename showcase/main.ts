@@ -31,9 +31,6 @@ const [commands, store, gitWorkbench, git] = await Promise.all([
   import("../src/state/gitWorkbench"),
   import("./world/git"),
 ]);
-store.useStore.setState((state) => ({
-  faceStyle: { ...state.faceStyle, on: true },
-}));
 for (const [repo, draft] of Object.entries(git.COMMIT_DRAFT)) {
   gitWorkbench.setGitDraft(repo, draft);
 }

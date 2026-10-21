@@ -315,6 +315,10 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("agent_sessions_watch_start", constant(1));
     this.onCore(["lsp.locations", "lsp.symbols"], constant([]));
     this.onCore(
+      ["faceStyle", "setFaceStyle"],
+      constant({ on: true, pack: "all", shape: "mixed", motion: true }),
+    );
+    this.onCore(
       ["preferences", "setPreference"],
       constant({
         midTurnSend: "steer",
