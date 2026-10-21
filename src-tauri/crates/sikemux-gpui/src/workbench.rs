@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+
+use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
@@ -63,6 +66,17 @@ impl Workbench {
         .detach();
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
+        let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
+        cx.spawn(async move |this, cx| loop {
+            let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
+                break;
+            };
+            cx.background_executor().timer(wait).await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
+            }
+        })
+        .detach();
         let bench = Self {
             version: String::new(),
             view: None,
@@ -147,6 +161,40 @@ impl Workbench {
             let _ = self.asks.send(Ask::Watch("picture", Watch::new("accountPicture", json!({ "hash": hash }), &[])));
         }
         self.picture_hash = hash;
+    }
+
+    /// The clock moves each minute, and a run's time each second while it goes.
+    fn until_next_tick(&self) -> Duration {
+        let now = chrono::Local::now();
+        let into_second = Duration::from_nanos(u64::from(now.timestamp_subsec_nanos()));
+        let seconds = if self.person_runs().0.is_some() { 1 } else { 60 - u64::from(now.second()) };
+        Duration::from_secs(seconds) - into_second
+    }
+
+    /// The run of the project in front's tasks the person started that is going, and the last.
+    pub fn person_runs(&self) -> (Option<&Value>, Option<&Value>) {
+        let Some(path) = self.watched_project.as_deref() else {
+            return (None, None);
+        };
+        let mine: Vec<&Value> = self
+            .read("runs")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|run| run["project"] == path && run["agentId"].is_null())
+            .collect();
+        let active = |run: &Value| matches!(run["status"].as_str(), Some("awaiting-trust" | "starting" | "running" | "stopping"));
+        (mine.iter().rev().find(|run| active(run)).copied(), mine.last().copied())
+    }
+
+    pub fn start_task(&self, task: &str) {
+        if let Some(project) = &self.watched_project {
+            self.call("taskStart", json!({ "project": project, "taskId": task }));
+        }
+    }
+
+    pub fn stop_run(&self, execution: &str) {
+        self.call("taskStop", json!({ "executionId": execution }));
     }
 
     pub fn picture(&self) -> Option<Arc<Image>> {
