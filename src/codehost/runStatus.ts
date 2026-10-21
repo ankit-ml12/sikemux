@@ -1,43 +1,22 @@
-import type { Job, Run, RunStatus, Step } from "./api";
+import type { Job, Outcome, Run, RunStatus, Step } from "./api";
 import type { StatusFilter } from "./state";
 
-export type Outcome = "running" | "queued" | "success" | "failure" | "cancelled" | "skipped" | "blocked" | "unknown";
+export type { Outcome };
 
-const BY_CONCLUSION: Record<string, Outcome> = {
-    success: "success",
-    failure: "failure",
-    timed_out: "failure",
-    startup_failure: "failure",
-    cancelled: "cancelled",
-    stale: "cancelled",
-    skipped: "skipped",
-    neutral: "skipped",
-    action_required: "blocked",
-};
-
-const BY_STATUS: Record<string, Outcome> = {
-    in_progress: "running",
-    queued: "queued",
-    requested: "queued",
-    pending: "queued",
-    waiting: "blocked",
-    action_required: "blocked",
-};
-
-export function outcomeOf(thing: Pick<Run, "status" | "conclusion">): Outcome {
-    if (thing.status === "completed") return BY_CONCLUSION[thing.conclusion ?? ""] ?? "unknown";
-    return BY_STATUS[thing.status] ?? "unknown";
+/** What the host's status and conclusion come to, as the plugin worked it out. */
+export function outcomeOf(thing: Pick<Run, "outcome">): Outcome {
+    return thing.outcome;
 }
 
 /** Still going, including a run held for approval, which can still be cancelled but not re-run. */
-export function isUnfinished(thing: Pick<Run, "status" | "conclusion">): boolean {
+export function isUnfinished(thing: Pick<Run, "status" | "outcome">): boolean {
     if (thing.status === "completed") return false;
     const outcome = outcomeOf(thing);
     return outcome === "running" || outcome === "queued" || outcome === "blocked";
 }
 
 /** Skipped and neutral checks count as passing, the way GitHub counts them. */
-export function checksSummary(runs: readonly Pick<Run, "status" | "conclusion">[]): string {
+export function checksSummary(runs: readonly Pick<Run, "outcome">[]): string {
     const tally: Record<Outcome, number> = { running: 0, queued: 0, success: 0, failure: 0, cancelled: 0, skipped: 0, blocked: 0, unknown: 0 };
     for (const run of runs) tally[outcomeOf(run)] += 1;
     const passed = tally.success + tally.skipped;
@@ -57,7 +36,7 @@ export function checksSummary(runs: readonly Pick<Run, "status" | "conclusion">[
 }
 
 /** One outcome for a commit's runs: any failure fails it, then anything still going keeps it running. */
-export function overallOutcome(runs: readonly Pick<Run, "status" | "conclusion">[]): Outcome {
+export function overallOutcome(runs: readonly Pick<Run, "outcome">[]): Outcome {
     const outcomes = runs.map(outcomeOf);
     if (outcomes.includes("failure")) return "failure";
     if (outcomes.some((outcome) => outcome === "running" || outcome === "queued")) return "running";

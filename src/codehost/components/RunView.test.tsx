@@ -45,6 +45,7 @@ const makeRun = (overrides: Partial<Run> = {}): Run => ({
     event: "push",
     status: "completed",
     conclusion: "failure",
+    outcome: "failure",
     branch: "main",
     sha: "abc123",
     shortSha: "abc123",
@@ -58,7 +59,7 @@ const makeRun = (overrides: Partial<Run> = {}): Run => ({
     ...overrides,
 });
 
-const waiting = makeRun({ status: "waiting", conclusion: null });
+const waiting = makeRun({ status: "waiting", conclusion: null, outcome: "blocked" });
 
 interface Watch {
     handlers: PluginStreamHandlers<RunTick>;
@@ -78,6 +79,7 @@ const makeJob = (overrides: Partial<Job> = {}): Job => ({
     name: "build",
     status: "completed",
     conclusion: "success",
+    outcome: "success",
     startedAt: "2026-01-01T12:00:00Z",
     completedAt: "2026-01-01T12:01:05Z",
     runner: null,
@@ -176,7 +178,7 @@ describe("RunView", () => {
 
     it("starts the watch again, and says why, when it gives up on a run still going", async () => {
         vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-        await renderRun(makeRun({ status: "in_progress", conclusion: null }));
+        await renderRun(makeRun({ status: "in_progress", conclusion: null, outcome: "running" }));
         const onTick = watches()[0].handlers.onItem;
         act(() => {
             onTick({ run: null, jobs: [], error: "GitHub is rate limiting this token", finished: true, fatal: false, signedOut: false });
@@ -191,7 +193,7 @@ describe("RunView", () => {
 
     it("stops for good, still saying why, when watching again cannot help", async () => {
         vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-        await renderRun(makeRun({ status: "in_progress", conclusion: null }));
+        await renderRun(makeRun({ status: "in_progress", conclusion: null, outcome: "running" }));
         const onTick = watches()[0].handlers.onItem;
         act(() => onTick({ run: null, jobs: [], error: "github: not signed in", finished: true, fatal: true, signedOut: true }));
         expect(screen.getByText("github: not signed in")).toBeTruthy();
@@ -204,7 +206,7 @@ describe("RunView", () => {
     });
 
     it("stops watching while the window is hidden and picks up again when it is shown", async () => {
-        await renderRun(makeRun({ status: "in_progress", conclusion: null }));
+        await renderRun(makeRun({ status: "in_progress", conclusion: null, outcome: "running" }));
         expect(api.watch).toHaveBeenCalledTimes(1);
         await act(async () => setHidden(true));
         expect(watches()[0].stop).toHaveBeenCalled();
@@ -229,7 +231,7 @@ const card = () => document.querySelector(".git-side-head") as HTMLElement;
 
 describe("the run's card", () => {
     it("cancels a run only once the person confirms", async () => {
-        await renderPane(makeRun({ status: "in_progress", conclusion: null }));
+        await renderPane(makeRun({ status: "in_progress", conclusion: null, outcome: "running" }));
         fireEvent.click(screen.getByRole("button", { name: "Cancel run" }));
         await act(async () => {});
         answerDialog(false);
@@ -245,7 +247,7 @@ describe("the run's card", () => {
     });
 
     it("offers nothing that changes the run to someone who cannot write", async () => {
-        await renderPane(makeRun({ status: "in_progress", conclusion: null }), [], false);
+        await renderPane(makeRun({ status: "in_progress", conclusion: null, outcome: "running" }), [], false);
         expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
         cleanup();
         await renderPane(makeRun(), [], false);
@@ -257,14 +259,17 @@ describe("the run's card", () => {
 describe("a run opened from a failing check", () => {
     it("opens the log of the job that failed", async () => {
         updateView("pane", { pickFailed: true });
-        await renderPane(makeRun(), [makeJob({ id: "1", name: "lint" }), makeJob({ id: "2", name: "test", conclusion: "failure" })]);
+        await renderPane(makeRun(), [
+            makeJob({ id: "1", name: "lint" }),
+            makeJob({ id: "2", name: "test", conclusion: "failure", outcome: "failure" }),
+        ]);
         expect(viewOf("pane")).toMatchObject({ pickFailed: false, job: "2", runTab: "logs" });
         expect(screen.getByRole("tab", { name: "Logs · test" }).getAttribute("aria-selected")).toBe("true");
     });
 
     it("stays on the summary when no job failed", async () => {
         updateView("pane", { pickFailed: true });
-        await renderPane(makeRun({ conclusion: "success" }), [makeJob()]);
+        await renderPane(makeRun({ conclusion: "success", outcome: "success" }), [makeJob()]);
         expect(viewOf("pane")).toMatchObject({ pickFailed: false, job: null, runTab: "summary" });
     });
 
@@ -293,7 +298,7 @@ describe("a job's log", () => {
     });
 
     it("offers no re-run of a job still going, or to someone who cannot write", async () => {
-        await openJob(makeJob({ status: "in_progress", conclusion: null, completedAt: null }));
+        await openJob(makeJob({ status: "in_progress", conclusion: null, outcome: "running", completedAt: null }));
         expect(screen.queryByRole("button", { name: "Re-run this job" })).toBeNull();
         cleanup();
         await openJob(makeJob(), false);
@@ -320,12 +325,18 @@ describe("the run's summary", () => {
 });
 
 describe("watching a run", () => {
-    const going = () => makeRun({ status: "in_progress", conclusion: null, updatedAt: "2026-01-01T12:01:00Z" });
+    const going = () => makeRun({ status: "in_progress", conclusion: null, outcome: "running", updatedAt: "2026-01-01T12:01:00Z" });
 
     it("shows what the watch sees once it is newer than the last read, and keeps the jobs it read until the watch has some", async () => {
-        await renderPane(going(), [makeJob({ status: "in_progress", conclusion: null, completedAt: null })]);
+        await renderPane(going(), [makeJob({ status: "in_progress", conclusion: null, outcome: "running", completedAt: null })]);
         const onTick = watches()[0].handlers.onItem;
-        const newer = makeRun({ status: "in_progress", conclusion: null, updatedAt: "2026-01-01T12:02:00Z", title: "Ship it now" });
+        const newer = makeRun({
+            status: "in_progress",
+            conclusion: null,
+            outcome: "running",
+            updatedAt: "2026-01-01T12:02:00Z",
+            title: "Ship it now",
+        });
         act(() => onTick({ run: newer, jobs: [], error: null, finished: false, fatal: false, signedOut: false }));
         expect(screen.getByRole("heading").textContent).toBe("Ship it now");
         expect(document.querySelector(".pr-headline-who")?.textContent).toContain("#12");
@@ -340,7 +351,7 @@ describe("watching a run", () => {
         await renderPane(going());
         const onTick = watches()[0].handlers.onItem;
         api.run.mockClear();
-        const done = makeRun({ updatedAt: "2026-01-01T12:09:00Z", conclusion: "success" });
+        const done = makeRun({ updatedAt: "2026-01-01T12:09:00Z", conclusion: "success", outcome: "success" });
         act(() => onTick({ run: done, jobs: [], error: null, finished: true, fatal: false, signedOut: false }));
         await act(async () => {
             vi.advanceTimersByTime(10 * 60_000);

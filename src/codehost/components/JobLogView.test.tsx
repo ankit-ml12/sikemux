@@ -24,14 +24,31 @@ const makeJob = (status: string): Job => ({
     name: "build",
     status,
     conclusion: status === "completed" ? "failure" : null,
+    outcome: status === "completed" ? "failure" : "running",
     startedAt: "2026-01-01T12:00:00Z",
     completedAt: null,
     runner: null,
     url: null,
     checkRunId: null,
     steps: [
-        { number: 1, name: "Set up", status: "completed", conclusion: "success", startedAt: "2026-01-01T12:00:00Z", completedAt: null },
-        { number: 2, name: "Test", status: "in_progress", conclusion: null, startedAt: "2026-01-01T12:00:02Z", completedAt: null },
+        {
+            number: 1,
+            name: "Set up",
+            status: "completed",
+            conclusion: "success",
+            outcome: "success",
+            startedAt: "2026-01-01T12:00:00Z",
+            completedAt: null,
+        },
+        {
+            number: 2,
+            name: "Test",
+            status: "in_progress",
+            conclusion: null,
+            outcome: "running",
+            startedAt: "2026-01-01T12:00:02Z",
+            completedAt: null,
+        },
     ],
 });
 

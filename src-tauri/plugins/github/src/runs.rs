@@ -7,7 +7,9 @@ use std::path::Path;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::json;
-use sikemux_plugin_api::codehost::{Billable, Job, Run, RunDetail, RunPage, RunTiming, Step};
+use sikemux_plugin_api::codehost::{
+    Billable, Job, Outcome, Run, RunDetail, RunPage, RunTiming, Step,
+};
 
 use crate::client;
 use crate::common::LIST_PAGES;
@@ -70,7 +72,9 @@ fn short(sha: &str) -> String {
 impl From<RunRow> for Run {
     fn from(row: RunRow) -> Self {
         let actor = row.triggering_actor.or(row.actor);
+        let status = row.status.unwrap_or_else(|| "queued".into());
         Self {
+            outcome: Outcome::of(&status, row.conclusion.as_deref()),
             title: row
                 .display_title
                 .clone()
@@ -86,7 +90,7 @@ impl From<RunRow> for Run {
             run_number: row.run_number,
             attempt: row.run_attempt.unwrap_or(1),
             event: row.event,
-            status: row.status.unwrap_or_else(|| "queued".into()),
+            status,
             conclusion: row.conclusion,
             branch: row.head_branch,
             sha: row.head_sha,
@@ -271,10 +275,12 @@ struct JobList {
 
 impl From<JobRow> for Job {
     fn from(row: JobRow) -> Self {
+        let status = row.status.unwrap_or_else(|| "queued".into());
         Self {
+            outcome: Outcome::of(&status, row.conclusion.as_deref()),
             id: row.id.to_string(),
             name: row.name,
-            status: row.status.unwrap_or_else(|| "queued".into()),
+            status,
             conclusion: row.conclusion,
             started_at: row.started_at,
             completed_at: row.completed_at,
@@ -288,13 +294,17 @@ impl From<JobRow> for Job {
             steps: row
                 .steps
                 .into_iter()
-                .map(|step| Step {
-                    number: step.number,
-                    name: step.name,
-                    status: step.status.unwrap_or_else(|| "queued".into()),
-                    conclusion: step.conclusion,
-                    started_at: step.started_at,
-                    completed_at: step.completed_at,
+                .map(|step| {
+                    let status = step.status.unwrap_or_else(|| "queued".into());
+                    Step {
+                        outcome: Outcome::of(&status, step.conclusion.as_deref()),
+                        number: step.number,
+                        name: step.name,
+                        status,
+                        conclusion: step.conclusion,
+                        started_at: step.started_at,
+                        completed_at: step.completed_at,
+                    }
                 })
                 .collect(),
         }

@@ -20,6 +20,7 @@ describe("summaryJobs", () => {
         name: `job ${id}`,
         status: "completed",
         conclusion,
+        outcome: conclusion === "skipped" ? ("skipped" as const) : ("success" as const),
         startedAt: null,
         completedAt: null,
         runner: null,

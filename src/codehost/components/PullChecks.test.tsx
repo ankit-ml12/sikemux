@@ -23,6 +23,7 @@ const makeRun = (overrides: Partial<Run> = {}): Run => ({
     event: "pull_request",
     status: "completed",
     conclusion: "success",
+    outcome: "success",
     branch: "feat/x",
     sha: "abc",
     shortSha: "abc",
@@ -62,15 +63,15 @@ afterEach(() => {
 
 describe("PullChecks", () => {
     it("says all passed when every run passed or was skipped", async () => {
-        await renderChecks([makeRun({ id: "1" }), makeRun({ id: "2", conclusion: "skipped" })]);
+        await renderChecks([makeRun({ id: "1" }), makeRun({ id: "2", conclusion: "skipped", outcome: "skipped" })]);
         expect(headline()).toBe("All checks passed");
         expect(overall()).toBe("Passed");
     });
 
     it("leads with a failure over anything still going", async () => {
         await renderChecks([
-            makeRun({ id: "1", conclusion: "failure" }),
-            makeRun({ id: "2", status: "in_progress", conclusion: null }),
+            makeRun({ id: "1", conclusion: "failure", outcome: "failure" }),
+            makeRun({ id: "2", status: "in_progress", conclusion: null, outcome: "running" }),
             makeRun({ id: "3" }),
         ]);
         expect(headline()).toBe("Checks: 1 failing, 1 running, 1 passed");
@@ -78,18 +79,21 @@ describe("PullChecks", () => {
     });
 
     it("reads as running while a run is queued, before one waiting for approval", async () => {
-        await renderChecks([makeRun({ id: "1", status: "queued", conclusion: null }), makeRun({ id: "2", status: "waiting", conclusion: null })]);
+        await renderChecks([
+            makeRun({ id: "1", status: "queued", conclusion: null, outcome: "queued" }),
+            makeRun({ id: "2", status: "waiting", conclusion: null, outcome: "blocked" }),
+        ]);
         expect(overall()).toBe("Running");
     });
 
     it("reads as waiting when a run is held for approval and nothing else is going", async () => {
-        await renderChecks([makeRun({ id: "1", status: "waiting", conclusion: null }), makeRun({ id: "2" })]);
+        await renderChecks([makeRun({ id: "1", status: "waiting", conclusion: null, outcome: "blocked" }), makeRun({ id: "2" })]);
         expect(headline()).toBe("Checks: 1 waiting, 1 passed");
         expect(overall()).toBe("Waiting for approval");
     });
 
     it("reads the checks again when the core says the repository's CI moved", async () => {
-        await renderChecks([makeRun({ status: "in_progress", conclusion: null })]);
+        await renderChecks([makeRun({ status: "in_progress", conclusion: null, outcome: "running" })]);
         expect(api.runs).toHaveBeenCalledTimes(1);
         api.runs.mockResolvedValue({ runs: [makeRun()], total: 1, nextPage: null });
         await act(async () => {

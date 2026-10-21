@@ -65,6 +65,8 @@ export interface Run {
     status: string;
     /** Only set once the run is over: `success`, `failure`, `cancelled`, and the rest. */
     conclusion: string | null;
+    /** What `status` and `conclusion` come to, the one thing clients show. */
+    outcome: Outcome;
     branch: string | null;
     sha: string;
     shortSha: string;
@@ -77,6 +79,9 @@ export interface Run {
     url: string;
 }
 
+/** How a run, job or check stands, whichever host it ran on. */
+export type Outcome = "running" | "queued" | "success" | "failure" | "cancelled" | "skipped" | "blocked" | "unknown";
+
 export interface RunDetail {
     run: Run;
     jobs: Job[];
@@ -87,6 +92,7 @@ export interface Job {
     name: string;
     status: string;
     conclusion: string | null;
+    outcome: Outcome;
     startedAt: string | null;
     completedAt: string | null;
     runner: string | null;
@@ -101,6 +107,7 @@ export interface Step {
     name: string;
     status: string;
     conclusion: string | null;
+    outcome: Outcome;
     startedAt: string | null;
     completedAt: string | null;
 }

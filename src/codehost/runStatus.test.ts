@@ -1,50 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { elapsedMs, checksSummary, isUnfinished, outcomeOf, watchIsNewer } from "./runStatus";
+import { elapsedMs, checksSummary, isUnfinished, watchIsNewer, type Outcome } from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
-describe("outcomeOf", () => {
-    it("reads a finished run by its conclusion", () => {
-        expect(outcomeOf({ status: "completed", conclusion: "success" })).toBe("success");
-        expect(outcomeOf({ status: "completed", conclusion: "failure" })).toBe("failure");
-        expect(outcomeOf({ status: "completed", conclusion: "timed_out" })).toBe("failure");
-        expect(outcomeOf({ status: "completed", conclusion: "startup_failure" })).toBe("failure");
-        expect(outcomeOf({ status: "completed", conclusion: "cancelled" })).toBe("cancelled");
-        expect(outcomeOf({ status: "completed", conclusion: "skipped" })).toBe("skipped");
-    });
-
-    it("reads a run still going by its status", () => {
-        expect(outcomeOf({ status: "in_progress", conclusion: null })).toBe("running");
-        expect(outcomeOf({ status: "queued", conclusion: null })).toBe("queued");
-        expect(outcomeOf({ status: "waiting", conclusion: null })).toBe("blocked");
-    });
-
-    it("does not guess at a state it has not seen", () => {
-        expect(outcomeOf({ status: "completed", conclusion: null })).toBe("unknown");
-        expect(outcomeOf({ status: "something_new", conclusion: null })).toBe("unknown");
-    });
-
+describe("isUnfinished", () => {
     it("counts queued, running and waiting for approval as unfinished, and nothing that has completed", () => {
-        expect(isUnfinished({ status: "in_progress", conclusion: null })).toBe(true);
-        expect(isUnfinished({ status: "queued", conclusion: null })).toBe(true);
-        expect(isUnfinished({ status: "waiting", conclusion: null })).toBe(true);
-        expect(isUnfinished({ status: "completed", conclusion: "success" })).toBe(false);
-        expect(isUnfinished({ status: "completed", conclusion: "action_required" })).toBe(false);
+        expect(isUnfinished({ status: "in_progress", outcome: "running" })).toBe(true);
+        expect(isUnfinished({ status: "queued", outcome: "queued" })).toBe(true);
+        expect(isUnfinished({ status: "waiting", outcome: "blocked" })).toBe(true);
+        expect(isUnfinished({ status: "completed", outcome: "success" })).toBe(false);
+        expect(isUnfinished({ status: "completed", outcome: "blocked" })).toBe(false);
     });
 });
 
 describe("checksSummary", () => {
-    const done = (conclusion: string) => ({ status: "completed", conclusion });
+    const done = (outcome: Outcome) => ({ outcome });
 
-    it("only says all passed when every check succeeded, counting skipped and neutral as passing", () => {
-        expect(checksSummary([done("success"), done("skipped"), done("neutral")])).toBe("all passed");
+    it("only says all passed when every check succeeded, counting skipped as passing", () => {
+        expect(checksSummary([done("success"), done("skipped"), done("skipped")])).toBe("all passed");
     });
 
     it("names what did not pass instead of calling it a pass", () => {
         expect(checksSummary([done("success"), done("cancelled")])).toBe("1 cancelled, 1 passed");
-        expect(checksSummary([done("failure"), { status: "in_progress", conclusion: null }, { status: "waiting", conclusion: null }])).toBe(
-            "1 failing, 1 running, 1 waiting",
-        );
+        expect(checksSummary([done("failure"), done("running"), done("blocked")])).toBe("1 failing, 1 running, 1 waiting");
     });
 });
 

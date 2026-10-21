@@ -68,6 +68,43 @@ pub struct Workflow {
     pub url: String,
 }
 
+/// How a run, job or check stands, whichever host it ran on.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Outcome {
+    Running,
+    Queued,
+    Success,
+    Failure,
+    Cancelled,
+    Skipped,
+    /// Waiting on someone's approval.
+    Blocked,
+    Unknown,
+}
+
+impl Outcome {
+    /// What a host's `status`, and its `conclusion` once `completed`, mean.
+    pub fn of(status: &str, conclusion: Option<&str>) -> Self {
+        if status == "completed" {
+            return match conclusion.unwrap_or_default() {
+                "success" => Self::Success,
+                "failure" | "timed_out" | "startup_failure" => Self::Failure,
+                "cancelled" | "stale" => Self::Cancelled,
+                "skipped" | "neutral" => Self::Skipped,
+                "action_required" => Self::Blocked,
+                _ => Self::Unknown,
+            };
+        }
+        match status {
+            "in_progress" => Self::Running,
+            "queued" | "requested" | "pending" => Self::Queued,
+            "waiting" | "action_required" => Self::Blocked,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
@@ -84,6 +121,8 @@ pub struct Run {
     pub status: String,
     /// Only set once the run is over: `success`, `failure`, `cancelled`, and the rest.
     pub conclusion: Option<String>,
+    /// What `status` and `conclusion` come to, the one thing clients show.
+    pub outcome: Outcome,
     pub branch: Option<String>,
     pub sha: String,
     pub short_sha: String,
@@ -111,6 +150,7 @@ pub struct Step {
     pub name: String,
     pub status: String,
     pub conclusion: Option<String>,
+    pub outcome: Outcome,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
 }
@@ -122,6 +162,7 @@ pub struct Job {
     pub name: String,
     pub status: String,
     pub conclusion: Option<String>,
+    pub outcome: Outcome,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
     pub runner: Option<String>,
@@ -491,4 +532,33 @@ pub struct Notification {
     pub updated_at: String,
     /// Where a person would go to read it, or nothing when the host gave no address.
     pub url: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Outcome;
+
+    #[test]
+    fn reads_a_finished_run_by_its_conclusion() {
+        let done = |conclusion| Outcome::of("completed", Some(conclusion));
+        assert_eq!(done("success"), Outcome::Success);
+        assert_eq!(done("failure"), Outcome::Failure);
+        assert_eq!(done("timed_out"), Outcome::Failure);
+        assert_eq!(done("startup_failure"), Outcome::Failure);
+        assert_eq!(done("cancelled"), Outcome::Cancelled);
+        assert_eq!(done("skipped"), Outcome::Skipped);
+    }
+
+    #[test]
+    fn reads_a_run_still_going_by_its_status() {
+        assert_eq!(Outcome::of("in_progress", None), Outcome::Running);
+        assert_eq!(Outcome::of("queued", None), Outcome::Queued);
+        assert_eq!(Outcome::of("waiting", None), Outcome::Blocked);
+    }
+
+    #[test]
+    fn does_not_guess_at_a_state_it_has_not_seen() {
+        assert_eq!(Outcome::of("completed", None), Outcome::Unknown);
+        assert_eq!(Outcome::of("something_new", None), Outcome::Unknown);
+    }
 }

@@ -8,7 +8,8 @@ use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_plugin_api::codehost::{
-    Job, JobLog, LogExcerpt, LogLine, Run, RunDetail, RunPage, RunTiming, Workflow, WorkflowFile,
+    Job, JobLog, LogExcerpt, LogLine, Outcome, Run, RunDetail, RunPage, RunTiming, Workflow,
+    WorkflowFile,
 };
 
 use crate::client;
@@ -142,6 +143,7 @@ fn run_of(repo: &RepoRef, row: &PipelineRow) -> Run {
         run_number: row.build_number,
         attempt: row.run_number.unwrap_or(1),
         event: event.into(),
+        outcome: Outcome::of(&status, conclusion.as_deref()),
         status,
         conclusion,
         branch,
@@ -307,6 +309,7 @@ async fn steps(data_dir: &Path, repo: &RepoRef, run: &Run) -> BitbucketResult<Ve
             Job {
                 id: job_id(&run.id, &row.uuid),
                 name: row.name.unwrap_or_else(|| "Step".into()),
+                outcome: Outcome::of(&status, conclusion.as_deref()),
                 status,
                 conclusion,
                 started_at: row.started_on,

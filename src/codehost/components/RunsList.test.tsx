@@ -28,6 +28,7 @@ const makeRun = (overrides: Partial<Run> = {}): Run => ({
     event: "push",
     status: "completed",
     conclusion: "success",
+    outcome: "success",
     branch: "main",
     sha: "abc123def",
     shortSha: "abc123d",
@@ -146,7 +147,7 @@ describe("filtering runs", () => {
 
 describe("keeping the list fresh", () => {
     it("reads again when the core says the repository's CI moved, and only then", async () => {
-        api.runs.mockResolvedValue(pageOf([makeRun({ status: "in_progress", conclusion: null })]));
+        api.runs.mockResolvedValue(pageOf([makeRun({ status: "in_progress", conclusion: null, outcome: "running" })]));
         await renderList();
         const before = api.runs.mock.calls.length;
         await act(async () => {

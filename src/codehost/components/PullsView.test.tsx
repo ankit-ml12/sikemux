@@ -232,6 +232,7 @@ describe("the list", () => {
             event: "pull_request",
             status: "completed",
             conclusion,
+            outcome: conclusion === "success" ? "success" : "failure",
             branch: null,
             sha,
             shortSha: sha,

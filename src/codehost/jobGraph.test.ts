@@ -9,6 +9,7 @@ function job(id: number, name: string, startedAt: string | null, completedAt: st
         name,
         status,
         conclusion: status === "completed" ? "success" : null,
+        outcome: status === "completed" ? "success" : "running",
         startedAt,
         completedAt,
         runner: null,
@@ -127,8 +128,8 @@ describe("graphOf", () => {
             job(1, "Checks already run on this commit", at(0), at(1)),
             job(2, "Build and verify", at(2), at(30)),
             job(3, "Build Linux packages", at(2), at(20)),
-            { ...job(4, "Approve the stable release", at(0), at(0)), conclusion: "skipped" },
-            { ...job(5, "Checks", at(1), at(1)), conclusion: "skipped" },
+            { ...job(4, "Approve the stable release", at(0), at(0)), conclusion: "skipped", outcome: "skipped" as const },
+            { ...job(5, "Checks", at(1), at(1)), conclusion: "skipped", outcome: "skipped" as const },
             job(6, "Publish", at(31), at(32)),
         ];
         const graph = graphOf(jobs, files, ".github/workflows/release.yml");
@@ -177,6 +178,7 @@ describe("stepStarts", () => {
         name: `step ${number}`,
         status: "completed",
         conclusion: "success",
+        outcome: "success",
         startedAt: second === null ? null : `2026-09-27T10:00:${String(second).padStart(2, "0")}Z`,
         completedAt: null,
     });
