@@ -94,6 +94,11 @@ try {
     await writeFile(resolve(out, `${file}.svg`), `${markup}\n`);
   }
   for (const [file, path] of Object.entries(PICTURES)) await copyFile(resolve(root, path), resolve(out, `${file}.svg`));
+  const { MARK_INNER } = await server.ssrLoadModule(SECTIONS);
+  for (const [outcome, d] of Object.entries(MARK_INNER)) {
+    const mark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"></path></svg>`;
+    await writeFile(resolve(out, `mark-${outcome}.svg`), `${mark}\n`);
+  }
 } finally {
   await server.close();
 }

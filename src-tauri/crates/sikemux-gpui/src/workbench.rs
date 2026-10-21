@@ -23,6 +23,8 @@ pub struct Workbench {
     pub lost: Option<String>,
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
+    /// The repository and branch whose latest CI run the top bar shows.
+    pub watched_ci: Option<CiRepo>,
     /// The account's picture, and the hash the core named the one asked for by.
     picture: Option<Arc<Image>>,
     picture_hash: Option<String>,
@@ -39,6 +41,15 @@ pub struct Workbench {
     pub filter_text: String,
     pub asks: mpsc::UnboundedSender<Ask>,
     _filtering: Option<Subscription>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct CiRepo {
+    pub host: String,
+    pub owner: String,
+    pub name: String,
+    pub account: Option<String>,
+    pub branch: String,
 }
 
 /// An agent as the rails and tabs show it.
@@ -83,6 +94,7 @@ impl Workbench {
             reads: HashMap::new(),
             lost: None,
             watched_project: None,
+            watched_ci: None,
             picture: None,
             picture_hash: None,
             signing_in: false,
@@ -114,6 +126,11 @@ impl Workbench {
                 self.view = Some(*view);
                 self.watch_project();
                 self.watch_picture();
+                self.watch_ci();
+            }
+            Update::Read("plugins", value) => {
+                self.reads.insert("plugins", value);
+                self.watch_ci();
             }
             Update::Read("picture", value) => self.picture = decode_picture(&value),
             Update::Read("sign-in", value) => match value["url"].as_str() {
@@ -148,6 +165,49 @@ impl Workbench {
         let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
         let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
         self.watched_project = path;
+    }
+
+    /// Keeps the core checking the CI of the repository in front while its host is signed in.
+    fn watch_ci(&mut self) {
+        let shown = self.ci_repo();
+        if shown == self.watched_ci {
+            return;
+        }
+        let repos: Vec<Value> = shown
+            .iter()
+            .map(|ci| json!({ "provider": ci.host, "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
+            .collect();
+        let _ = self.asks.send(Ask::Watch("ci-shown", Watch::new("showCi", json!({ "repos": repos }), &[])));
+        if let Some(ci) = &shown {
+            let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
+            let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
+            let _ = self.asks.send(Ask::Watch("ci", Watch::new("plugin", call, &["ci"])));
+        }
+        self.watched_ci = shown;
+    }
+
+    fn ci_repo(&self) -> Option<CiRepo> {
+        let project = self.project()?;
+        let host = project.code_host.as_ref().filter(|host| host.host == "github")?;
+        let plugin = format!("sikemux.{}", host.host);
+        let signed_in = self.read("plugins")?.as_array()?.iter().any(|entry| entry["id"] == plugin.as_str() && entry["signedIn"] == true);
+        let (owner, name) = host.repo.split_once('/')?;
+        if !signed_in {
+            return None;
+        }
+        Some(CiRepo {
+            host: host.host.clone(),
+            owner: owner.to_owned(),
+            name: name.to_owned(),
+            account: project.code_hosts.get(&host.host).and_then(|choice| choice.account.clone()),
+            branch: project.git.as_ref()?.branch.clone(),
+        })
+    }
+
+    /// The latest CI run of the branch in front, while the core is checking it.
+    pub fn latest_run(&self) -> Option<&Value> {
+        self.watched_ci.as_ref()?;
+        self.read("ci")?["runs"].as_array()?.first()
     }
 
     /// Asks for the account's picture when it is one this window has not got.

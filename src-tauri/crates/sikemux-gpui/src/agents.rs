@@ -243,7 +243,7 @@ fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
 }
 
 /// How long ago, in a tight column: `now`, `5m`, `3h`, `4d`, `2mo`, `1y`.
-fn age(at: u64) -> String {
+pub fn age(at: u64) -> String {
     let now = chrono::Utc::now().timestamp_millis().max(0) as u64;
     let seconds = now.saturating_sub(at) / 1000;
     match seconds {

@@ -56,6 +56,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .pr(px(16.))
                 .children(git_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
                 .children(run_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
+                .children(ci_glyph(bench, cx))
                 .child(clock(cx))
                 .child(IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B").width(30.)),
         )
@@ -105,6 +106,50 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             })
             .into_any_element(),
     )
+}
+
+/// How the branch's latest CI run went, in the space of one mark.
+fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let run = bench.latest_run()?;
+    let outcome = run["outcome"].as_str()?;
+    let number = run["runNumber"].as_u64()?;
+    let ago = chrono::DateTime::parse_from_rfc3339(run["createdAt"].as_str()?).ok()?.timestamp_millis().max(0) as u64;
+    let ago = match crate::agents::age(ago) {
+        now if now == "now" => now,
+        age => format!("{age} ago"),
+    };
+    let about = format!("{} · {} #{number} · {ago}", outcome_label(outcome), run["name"].as_str().unwrap_or_default());
+    Some(
+        div()
+            .id("ci-glyph")
+            .h(px(24.))
+            .px(px(4.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(crate::theme::RADIUS_1)
+            .text_size(px(11.))
+            .text_color(t.text_secondary)
+            .hover(move |style| style.text_color(t.text_primary))
+            .tooltip(ui::tooltip(about))
+            .child(ui::status_of_run(outcome, 12., cx))
+            .child(ui::mono(format!("#{number}"), 11., cx).font_features(crate::theme::tabular()).text_color(t.text_secondary))
+            .into_any_element(),
+    )
+}
+
+fn outcome_label(outcome: &str) -> &str {
+    match outcome {
+        "running" => "Running",
+        "queued" => "Queued",
+        "success" => "Passed",
+        "failure" => "Failed",
+        "cancelled" => "Cancelled",
+        "skipped" => "Skipped",
+        "blocked" => "Waiting for approval",
+        _ => "Unknown",
+    }
 }
 
 fn host_label(host: &str) -> &str {

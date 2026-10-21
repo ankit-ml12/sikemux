@@ -39,6 +39,33 @@ pub fn mark(provider: &str, size: f32) -> AnyElement {
     picture(icons::agent(provider), size, theme::brand(provider))
 }
 
+/// How a CI run, job or check went, as GitHub draws it: a filled circle with its
+/// tick, cross or slash once it ends, an amber dot while queued, an amber ring
+/// while it runs, and an empty ring when nobody knows.
+pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    let ended = |color: Hsla, inner: Icon| {
+        div()
+            .size(px(size * 0.9))
+            .rounded_full()
+            .bg(color)
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon(inner, size).text_color(t.on_accent))
+    };
+    let mark = match outcome {
+        "success" => ended(t.live, Icon::MarkSuccess),
+        "failure" => ended(t.danger, Icon::MarkFailure),
+        "cancelled" => ended(t.text_tertiary, Icon::MarkCancelled),
+        "skipped" => ended(t.text_tertiary, Icon::MarkSkipped),
+        "queued" => div().size(px(size * 0.55)).rounded_full().bg(t.warn),
+        "running" | "blocked" => div().size(px(size * 0.82)).rounded_full().border(px(1.5)).border_color(t.warn),
+        _ => div().size(px(size * 0.8)).rounded_full().border(px(size * 1.3 / 16.)).border_color(t.text_tertiary),
+    };
+    mark_box(size, mark).into_any_element()
+}
+
 /// A square that centres what it holds, so marks of any drawing line up.
 pub fn mark_box(size: f32, child: impl IntoElement) -> Div {
     div()
