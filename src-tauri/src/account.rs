@@ -11,13 +11,12 @@ use sikemux_core::accounts::protocol::{
     Challenge, Device, DeviceList, DeviceRegistration, DeviceRole, JoinTicket,
 };
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{DeviceInfo, RemoteStatus};
-use tauri::State;
+use sikemux_core::protocol::RemoteStatus;
 
 use sikemux_host::account::{api, http};
 
 use crate::error::{AppError, AppResult};
-use crate::pty::{core_error, PtyManager};
+use crate::pty::core_error;
 
 /// The core's key and its signature, as the accounts server checks them.
 #[derive(Serialize, Deserialize)]
@@ -90,50 +89,10 @@ pub(crate) async fn approve_host_code(
     .await
 }
 
-/// Renames a device or host on the account, which every device and host
-/// shows from then on.
-#[tauri::command]
-pub async fn account_rename_device(
-    manager: State<'_, PtyManager>,
-    key: String,
-    name: String,
-) -> AppResult<()> {
-    let core = manager.client().await?;
-    host_request(
-        &core,
-        Method::POST,
-        &format!("/v1/devices/{key}/name"),
-        Some(&serde_json::json!({ "name": name })),
-    )
-    .await?;
-    Ok(())
-}
-
-/// Takes a device or host off the account, which revokes it on every host at
-/// once.
-#[tauri::command]
-pub async fn account_remove_device(manager: State<'_, PtyManager>, key: String) -> AppResult<()> {
-    let core = manager.client().await?;
-    host_request(&core, Method::DELETE, &format!("/v1/devices/{key}"), None).await?;
-    Ok(())
-}
-
 /// The core's status, while an account owns this host.
 async fn owned(core: &CoreClient) -> AppResult<Option<RemoteStatus>> {
     let remote = core.remote_status().await.map_err(core_error)?;
     Ok((remote.owner.is_some() && !remote.core_id.is_empty()).then_some(remote))
-}
-
-/// The phones on the account this host has not paired, newest first, so the
-/// person can let them in right after signing in.
-#[tauri::command]
-pub async fn account_phones(manager: State<'_, PtyManager>) -> AppResult<Vec<Device>> {
-    let core = manager.client().await?;
-    let Some(remote) = owned(&core).await? else {
-        return Ok(Vec::new());
-    };
-    let list: DeviceList = as_host(&core, Method::GET, "/v1/devices?role=client", None).await?;
-    Ok(unpaired_phones(list.devices, &remote.devices))
 }
 
 /// Adds this app to the account as a device of its own, added by this host,
@@ -182,51 +141,6 @@ pub(crate) async fn app_join_ticket(
     .await
 }
 
-fn unpaired_phones(devices: Vec<Device>, paired: &[DeviceInfo]) -> Vec<Device> {
-    devices
-        .into_iter()
-        .filter(|device| device.role == DeviceRole::Client)
-        .filter(|device| !paired.iter().any(|known| known.id == device.key))
-        .collect()
-}
-
 async fn api_failure(response: Response) -> AppError {
     AppError::Other(sikemux_core::accounts::refusal(response).await)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sikemux_core::accounts::protocol::Platform;
-
-    #[test]
-    fn only_phones_this_host_has_not_paired_are_offered() {
-        let device = |key: &str, role: DeviceRole| Device {
-            key: key.into(),
-            role,
-            name: key.into(),
-            platform: Platform::Ios,
-            channel: None,
-            created_at: "2026-10-08T00:00:00Z".into(),
-            last_seen_at: None,
-        };
-        let paired = DeviceInfo {
-            id: "paired".into(),
-            name: "Paired".into(),
-            platform: "ios".into(),
-            access: sikemux_core::protocol::DeviceAccess::Full,
-            paired_at: 0,
-            last_seen: None,
-        };
-        let offered = unpaired_phones(
-            vec![
-                device("new", DeviceRole::Client),
-                device("paired", DeviceRole::Client),
-                device("host", DeviceRole::Host),
-            ],
-            &[paired],
-        );
-        let keys: Vec<_> = offered.iter().map(|device| device.key.as_str()).collect();
-        assert_eq!(keys, ["new"]);
-    }
 }

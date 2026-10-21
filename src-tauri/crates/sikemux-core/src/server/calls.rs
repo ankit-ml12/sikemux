@@ -420,6 +420,9 @@ calls! { core, client, params;
     "hostTools": Watch => answer(super::about::tools().await?),
     "cliInstall": Watch => answer(super::cli_install::status().await?),
     "installCli": Person => answer(super::cli_install::install().await?),
+    "renameAccountDevice": Person => answer(super::hosts::account::rename_device(&core, parse(params)?).await?),
+    "removeAccountDevice": Person => answer(super::hosts::account::remove_device(&core, parse(params)?).await?),
+    "accountPhones": Person => answer(super::hosts::account::phones(&core).await?),
     "showFiles": Watch => {
         super::open_files::show(&core, client.id, parse(params)?)?;
         answer(())

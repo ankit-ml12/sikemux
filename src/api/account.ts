@@ -1,7 +1,6 @@
 import { coreCall } from "./core";
 import type { CoreChange } from "./coreChanged";
 import type { AccountInfo } from "./generated/wire";
-import { invokeCommand as invoke } from "./invoke";
 import { openUrl } from "./system";
 import { getIpcTransport } from "./transport";
 
@@ -46,9 +45,9 @@ export interface AccountPhone {
 
 export const accountApi = {
     /** Takes a device or host off the account, which revokes it on every host at once. */
-    removeDevice: (key: string) => invoke<void>("account_remove_device", { key }),
+    removeDevice: (key: string) => coreCall<void>("removeAccountDevice", { key }),
     /** Renames a device or host on the account, which every device and host shows from then on. */
-    renameDevice: (key: string, name: string) => invoke<void>("account_rename_device", { key, name }),
+    renameDevice: (key: string, name: string) => coreCall<void>("renameAccountDevice", { key, name }),
     /** Who the core says this host is signed in to Sikemux as. */
     status: async () => statusOf(await coreCall<AccountInfo | null>("account")),
     /** Opens sign-in in the browser and resolves once the core has registered this host with the account. */
@@ -59,7 +58,7 @@ export const accountApi = {
     },
     cancelSignIn: () => coreCall<void>("accountSignInCancel"),
     /** The phones on the account this host has not paired yet. */
-    phones: () => invoke<readonly AccountPhone[]>("account_phones"),
+    phones: () => coreCall<readonly AccountPhone[]>("accountPhones"),
     /** The other hosts on the account this host has not linked with yet. */
     /** Asks another host on the account to link, and resolves once the person there allows it. */
     /** Takes this host off the account; devices already paired stay paired. */
