@@ -213,6 +213,8 @@ pub(crate) struct Hosted {
     pub shown: Option<ProjectCodeHost>,
     pub branch: Option<String>,
     pub pull: Option<ProjectPull>,
+    /// The branch has no open pull request and is not a usual base.
+    pub needs_pull: bool,
     /// The repository as the CI watch names it, once an account reaches it.
     pub watched: Option<super::ci::Shown>,
 }
@@ -247,17 +249,22 @@ pub(crate) fn read_hosts(core: &Arc<Core>, folders: Vec<String>) {
             let (pull, watched) = match (&shown, &branch) {
                 (Some(_), Some(branch)) => match codehost::find(&origin, &picks).await {
                     Ok(repo) => (
-                        codehost::branch_pull(&repo, branch).await.ok().flatten(),
+                        codehost::branch_pull(&repo, branch).await.ok(),
                         Some(repo.watched()),
                     ),
                     Err(_) => (None, None),
                 },
                 _ => (None, None),
             };
+            let needs_pull = matches!(pull, Some(None))
+                && branch
+                    .as_deref()
+                    .is_some_and(|branch| !codehost::is_usual_base(branch));
             let hosted = Hosted {
                 shown,
                 branch,
-                pull,
+                pull: pull.flatten(),
+                needs_pull,
                 watched,
             };
             read.push((folder, Some(hosted)));

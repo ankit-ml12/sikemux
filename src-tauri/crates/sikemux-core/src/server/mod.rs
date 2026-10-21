@@ -886,9 +886,10 @@ impl Core {
             let hosted = hosts.get(&*folder);
             project.code_host = hosted.and_then(|hosted| hosted.shown.clone());
             project.git = chips.get(&*folder).cloned().map(|mut chip| {
-                chip.pull = hosted
-                    .filter(|hosted| hosted.branch.as_deref() == Some(chip.branch.as_str()))
-                    .and_then(|hosted| hosted.pull.clone());
+                let hosted =
+                    hosted.filter(|hosted| hosted.branch.as_deref() == Some(chip.branch.as_str()));
+                chip.pull = hosted.and_then(|hosted| hosted.pull.clone());
+                chip.needs_pull = hosted.is_some_and(|hosted| hosted.needs_pull);
                 chip
             });
         }

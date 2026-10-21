@@ -944,6 +944,10 @@ pub struct ProjectGit {
     /// last said.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull: Option<ProjectPull>,
+    /// The branch has no open pull request and is not one others merge into,
+    /// so clients offer to open one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub needs_pull: bool,
 }
 
 /// A repository or account picked for a project on one code host.

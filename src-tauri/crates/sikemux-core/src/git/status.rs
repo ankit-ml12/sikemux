@@ -422,6 +422,7 @@ pub(crate) async fn git_chip(repo: String) -> Result<crate::protocol::ProjectGit
         behind: u32::try_from(status.behind).unwrap_or(0),
         dirty: !status.files.is_empty(),
         pull: None,
+        needs_pull: false,
     })
 }
 

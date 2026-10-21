@@ -100,6 +100,11 @@ export interface ProjectGit {
    * last said.
    */
   pull?: ProjectPull;
+  /**
+   * The branch has no open pull request and is not one others merge into,
+   * so clients offer to open one.
+   */
+  needsPull?: boolean;
 }
 
 /** The open pull request a project's branch is the head of. */

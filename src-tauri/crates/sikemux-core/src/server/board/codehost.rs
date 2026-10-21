@@ -279,6 +279,11 @@ pub(crate) async fn shown(
 
 /// The open pull request `branch` is the head of, with how the checks on its
 /// latest commit stand.
+/// A branch others usually merge into, which needs no pull request of its own.
+pub(crate) fn is_usual_base(branch: &str) -> bool {
+    matches!(branch, "main" | "master" | "develop" | "trunk")
+}
+
 pub(crate) async fn branch_pull(repo: &Repo, branch: &str) -> Result<Option<ProjectPull>, String> {
     let open = repo.call("pulls", json!({ "state": "open" })).await?;
     let Some(found) = open
