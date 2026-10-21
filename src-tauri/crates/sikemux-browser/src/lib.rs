@@ -18,6 +18,8 @@ pub mod local_files;
 pub mod macos;
 mod manager;
 #[cfg(target_os = "macos")]
+pub mod page_view;
+#[cfg(target_os = "macos")]
 mod recording;
 mod tab;
 pub mod tools;

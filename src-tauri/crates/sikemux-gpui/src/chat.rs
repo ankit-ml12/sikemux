@@ -39,6 +39,7 @@ mod attach;
 mod edit;
 mod live;
 mod mention;
+mod page;
 mod tools;
 
 /// Turns asked for each time the reader nears the top of what is held.
@@ -2929,6 +2930,9 @@ fn part(
             };
             pen.markdown_with(look, id, &doc.markdown, window, cx)
         }
+        ChatPart::Tool {
+            page: Some(page), ..
+        } => self::page::page(page, looks, window, cx),
         ChatPart::Tool { tool, failure, .. } => {
             let tint = if failure.is_some() {
                 Tokens::get(cx).danger

@@ -8890,6 +8890,7 @@ dependencies = [
  "libc",
  "lsp-types",
  "memchr",
+ "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-core-video",
  "serde",
@@ -8910,7 +8911,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-host"
-version = "0.5.4-nightly.4"
+version = "0.5.4-nightly.5"
 dependencies = [
  "hex",
  "libc",

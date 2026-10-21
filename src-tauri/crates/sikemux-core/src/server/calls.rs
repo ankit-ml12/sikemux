@@ -76,6 +76,7 @@ pub(crate) fn for_person(method: &str) -> bool {
 
 calls! { core, client, params;
     "chatFile": Watch, any_program => answer(chat_file(&core, &client.peer, parse(params)?).await?),
+    "page": Watch, any_program => answer(page(&core, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
@@ -745,6 +746,35 @@ async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResu
     }
     let data = blocking(move || attachments::read(&path)).await?;
     Ok(ChatFile { data })
+}
+
+#[derive(Deserialize)]
+struct PageParams {
+    id: String,
+}
+
+#[derive(Serialize)]
+struct PageHtml {
+    html: String,
+}
+
+/// A page an agent showed with `page_show`, as a chat shows it in the reply.
+async fn page(core: &Core, params: PageParams) -> CoreResult<PageHtml> {
+    if !crate::pages::is_page_id(&params.id) {
+        return Err("that is not a page's id".into());
+    }
+    let dir = core
+        .harness
+        .data_dir
+        .clone()
+        .ok_or("this core keeps no pages")?
+        .join(crate::pages::FOLDER);
+    let html = blocking(move || {
+        std::fs::read_to_string(dir.join(format!("{}.html", params.id)))
+            .map_err(|_| CoreError::from("that page is gone"))
+    })
+    .await?;
+    Ok(PageHtml { html })
 }
 
 #[derive(Deserialize)]
