@@ -7,7 +7,7 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{div, px, AppContext, Context, Entity, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, Styled, Subscription, Window};
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
+use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, Pane, PaneKind, ProjectInfo, RecentInfo, SessionInfo, Tab};
 use tokio::sync::mpsc;
 
 use crate::core::{utc_offset_minutes, Ask, Link, Update, Watch};
@@ -62,11 +62,15 @@ pub struct AgentRow {
     pub subagents: u32,
     pub tasks: u32,
     pub project: String,
+    /// The face it wears, else none and its agent's mark is drawn.
+    pub face: Option<AgentFace>,
+    pub group: AgentGroup,
 }
 
 impl Workbench {
     pub fn new(link: Link, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
+        crate::faces::install(cx);
         cx.spawn(async move |this, cx| {
             while let Some(update) = updates.recv().await {
                 if this.update(cx, |this, cx| this.apply(update, cx)).is_err() {
@@ -386,6 +390,8 @@ impl Workbench {
                     subagents: chat.map_or(0, |chat| chat.subagents),
                     tasks: chat.map_or(0, |chat| chat.tasks),
                     project: agent.project.clone(),
+                    face: agent.face.clone(),
+                    group: chat.map(|chat| chat.group).or_else(|| session.and_then(|session| session.group)).unwrap_or_default(),
                 }
             })
             .collect();

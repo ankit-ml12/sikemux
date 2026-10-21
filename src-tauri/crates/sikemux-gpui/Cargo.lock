@@ -8239,6 +8239,7 @@ dependencies = [
  "git2",
  "hashlink",
  "hex",
+ "ignore",
  "iroh",
  "libc",
  "notify",
@@ -8295,6 +8296,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
+ "flate2",
  "gpui-kit",
  "gpui-pre",
  "gpui-pre-platform",
@@ -11065,6 +11067,7 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bitflags 2.13.2",
+ "bstr",
  "cc",
  "crc32fast",
  "crossbeam-utils",

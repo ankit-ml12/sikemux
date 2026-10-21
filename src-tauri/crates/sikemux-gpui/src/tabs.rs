@@ -252,7 +252,7 @@ fn strip_tab(bench: &Workbench, project: &str, tab: &LayoutTab, active: bool, cx
     match view {
         Some((PaneKind::Agent, target)) => match bench.agents_of(project).into_iter().find(|agent| &agent.id == target) {
             Some(agent) => base
-                .mark(ui::mark(&agent.provider, 19.))
+                .mark(ui::agent_mark(&agent, 19., cx))
                 .note(agent.name.as_ref().map(|name| SharedString::from(format!("@{name}"))))
                 .tail(ui::status_mark(agent.status, cx)),
             None => base,

@@ -30,8 +30,7 @@ pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
     let t = Tokens::get(cx).clone();
     let project = bench.project();
     let agent = bench.agent();
-    let provider = agent.as_ref().map_or("claude", |agent| agent.provider.as_str()).to_owned();
-    let header = agent.zip(project).map(|(agent, project)| pane_header(bench, &agent, &project.id));
+    let header = agent.as_ref().zip(project).map(|(agent, project)| pane_header(bench, agent, &project.id));
     div().flex_1().min_w_0().child(
         ui::pane(cx)
             .child(
@@ -50,7 +49,10 @@ pub fn stage(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
                                 .flex_col()
                                 .items_center()
                                 .gap(px(6.))
-                                .child(div().mb(px(6.)).child(ui::mark(&provider, 40.)))
+                                .child(div().mb(px(6.)).child(match &agent {
+                                    Some(agent) => ui::agent_mark(agent, 40., cx),
+                                    None => ui::mark("claude", 40.),
+                                }))
                                 .child(
                                     ui::text(project.map(|project| project.name.clone()).unwrap_or_default(), 16., FontWeight::SEMIBOLD)
                                         .text_color(t.text_primary),

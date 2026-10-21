@@ -20,6 +20,7 @@ use sikemux_wire::protocol::AgentStatus;
 
 use crate::icons::{self, Icon};
 use crate::theme::{self, Tokens};
+use crate::workbench::AgentRow;
 
 pub fn icon(icon: Icon, size: f32) -> Svg {
     svg().path(icon.path()).size(px(size)).flex_none()
@@ -64,6 +65,14 @@ pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
         _ => div().size(px(size * 0.8)).rounded_full().border(px(size * 1.3 / 16.)).border_color(t.text_tertiary),
     };
     mark_box(size, mark).into_any_element()
+}
+
+/// An agent's face, or its agent's mark while it wears none.
+pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
+    match agent.face.as_ref().and_then(|face| crate::faces::image(face, agent.group, cx)) {
+        Some(face) => gpui_kit::img(face).size(px(size)).flex_none().into_any_element(),
+        None => mark(&agent.provider, size),
+    }
 }
 
 /// A square that centres what it holds, so marks of any drawing line up.

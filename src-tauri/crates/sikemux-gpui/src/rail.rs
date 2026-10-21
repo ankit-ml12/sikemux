@@ -233,13 +233,13 @@ fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workb
                 .chosen(active)
                 .padding_right(4.)
                 .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
-                .child(faces(&agents)),
+                .child(faces(&agents, cx)),
         )
         .when(active, |tree| tree.pb(px(4.)).child(surfaces(project, bench.tab().and_then(|tab| tabs::first_view(&tab.pane)).map(|(kind, _)| kind), cx)))
 }
 
-/// Up to five agent marks, each overlapping the one before by 6px.
-fn faces(agents: &[AgentRow]) -> impl IntoElement {
+/// Up to five agents' faces, each overlapping the one before by 6px.
+fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
     let shown = agents.len().min(5);
     div()
         .relative()
@@ -247,7 +247,7 @@ fn faces(agents: &[AgentRow]) -> impl IntoElement {
         .h(px(20.))
         .w(px(if shown == 0 { 0. } else { 20. + 14. * (shown - 1) as f32 }))
         .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
-            ui::mark_box(20., ui::mark(&agent.provider, 20.))
+            ui::mark_box(20., ui::agent_mark(agent, 20., cx))
                 .absolute()
                 .left(px(14. * index as f32))
         }))

@@ -199,7 +199,7 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
     let chosen = bench.agent().is_some_and(|front| front.id == agent.id);
     let (id, home) = (agent.id.clone(), agent.project.clone());
     Row::new(SharedString::from(format!("agent-{}", agent.id)), agent.title.clone())
-        .mark(22., ui::mark(&agent.provider, 20.))
+        .mark(22., ui::agent_mark(agent, 20., cx))
         .chosen(chosen)
         .when_some(project, |row, project| {
             row.subtitle(
