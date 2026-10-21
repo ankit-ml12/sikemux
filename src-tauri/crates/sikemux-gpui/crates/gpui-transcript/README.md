@@ -21,8 +21,9 @@ only the rows in view, anchored to the bottom.
   move what the reader sees. While the reader is at the end, the end stays
   in view. Near the top it calls `on_reach_top` for an earlier page.
 - The reader selects text across rows by dragging or shift-clicking, and ⌘C
-  copies it. A copy reads the rows' own markdown, through `Row::docs`, so
-  rows scrolled out of view copy too.
+  copies it: the `Copy` action, bound in the `Transcript` key context by
+  `init`, which the app calls once. A copy reads the rows' own markdown,
+  through `Row::docs`, so rows scrolled out of view copy too.
 
 The crate draws no rows itself. You hand `Transcript::new` a function that
 draws the row at an index with the `Pen` it is given, calling `markdown` for

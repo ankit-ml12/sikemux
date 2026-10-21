@@ -193,9 +193,10 @@ actions!(questions, [PreviousChoice, NextChoice, PreviousQuestion, NextQuestion,
 #[action(name = "questions.choose", no_json)]
 pub struct Choose(pub usize);
 
-/// The open question in front takes these keys while the draft is empty, whether the draft
-/// or something else in the chat holds the focus.
+/// Binds a transcript's keys, and those the open question in front takes while the draft is
+/// empty, whether the draft or something else in the chat holds the focus.
 pub fn install(cx: &mut App) {
+    gpui_transcript::init(cx);
     let mut bindings = Vec::new();
     for context in ["QuestionDock > Input", "QuestionDock"] {
         bindings.extend((1..=9).map(|n| KeyBinding::new(&n.to_string(), Choose(n - 1), Some(context))));

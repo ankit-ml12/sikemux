@@ -3,14 +3,24 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui::{
-    div, list, px, AnyElement, App, ClipboardItem, Context, FocusHandle, FollowMode,
-    InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState, MouseButton,
+    actions, div, list, px, AnyElement, App, ClipboardItem, Context, FocusHandle, FollowMode,
+    InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
     MouseDownEvent, MouseMoveEvent, ParentElement, Point, Render, SharedString, Styled, Window,
 };
 
 use crate::draw::{Pen, Style};
 use crate::markdown::Markdown;
 use crate::select::{spot_at, Place, Selecting, Shown, Span, Spot};
+
+actions!(transcript, [Copy]);
+
+const CONTEXT: &str = "Transcript";
+
+/// Binds the keys a transcript takes; call it once when the app starts.
+pub fn init(cx: &mut App) {
+    let copy = if cfg!(target_os = "macos") { "cmd-c" } else { "ctrl-c" };
+    cx.bind_keys([KeyBinding::new(copy, Copy, Some(CONTEXT))]);
+}
 
 /// A row of a transcript, known by an id that stays the same for as long as the row lives.
 pub trait Row: 'static {
@@ -242,14 +252,10 @@ impl<R: Row> Transcript<R> {
         cx.notify();
     }
 
-    fn key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        let keystroke = &event.keystroke;
-        if !keystroke.modifiers.platform || keystroke.key != "c" {
-            return;
-        }
-        if let Some(text) = self.selected_text() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-            cx.stop_propagation();
+    fn copy(&mut self, cx: &mut Context<Self>) {
+        match self.selected_text() {
+            Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
+            None => cx.propagate(),
         }
     }
 
@@ -309,7 +315,8 @@ impl<R: Row> Render for Transcript<R> {
                 MouseButton::Left,
                 cx.listener(|this, _, _, _| this.dragging = false),
             )
-            .on_key_down(cx.listener(|this, event, _, cx| this.key(event, cx)))
+            .key_context(CONTEXT)
+            .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .child(rows.size_full())
     }
 }

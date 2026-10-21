@@ -606,6 +606,7 @@ fn main() {
     let rows_drawn = Rc::new(Cell::new(0));
     let drawn = rows_drawn.clone();
     let transcript = cx.update(|cx| {
+        gpui_transcript::init(cx);
         let pages = specs.clone();
         cx.new(|cx: &mut Context<Transcript<Message>>| {
             let this = cx.weak_entity();
