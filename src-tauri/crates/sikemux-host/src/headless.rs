@@ -166,7 +166,7 @@ fn enable() -> Result<(), String> {
     style::done("The core starts at boot", &path.display().to_string());
     match running_pid(&launch.socket) {
         None => {
-            login_item::start(IDENTIFIER);
+            login_item::start(IDENTIFIER)?;
             wait_for_core(&launch.socket, SETTLE_TIMEOUT).map_err(|error| error.to_string())?;
         }
         Some(pid) if starts_by_service(pid) => {}

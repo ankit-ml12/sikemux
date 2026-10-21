@@ -16,7 +16,12 @@ use launchd as service;
 use systemd as service;
 
 const SERVICE_PROBE: Duration = Duration::from_secs(1);
+#[cfg(target_os = "macos")]
 const SERVICE_START: Duration = Duration::from_secs(5);
+/// How long systemd may take to bring the core up, which the first start
+/// after an update can take a while to do.
+#[cfg(not(target_os = "macos"))]
+const SERVICE_START: Duration = Duration::from_secs(60);
 
 /// How the app starts the core, which the login item repeats.
 pub struct CoreLaunch {
@@ -132,16 +137,31 @@ pub fn path(identifier: &str) -> Option<PathBuf> {
 
 /// The core `launch` describes, started first when none runs: through the
 /// login item when there is one, so it is never a second core beside it, and
-/// directly when there is none or it did not start one.
+/// directly when there is none. Under systemd the service alone starts it: a
+/// core started beside a slow service makes the service's own one stop, and
+/// the host's core then runs outside it. A LaunchAgent already loaded cannot
+/// be started again, so on macOS the core starts directly when it did not.
 pub fn start_core(identifier: &str, launch: &CoreLaunch) -> Result<CoreHello, ClientError> {
     if path(identifier).is_some_and(|path| path.exists()) {
         if let Ok(hello) = probe(&launch.socket, SERVICE_PROBE) {
             return Ok(hello);
         }
-        start(identifier);
-        if let Ok(hello) = wait_for_core(&launch.socket, SERVICE_START) {
+        start(identifier).map_err(ClientError::Core)?;
+        let started = wait_for_core(&launch.socket, SERVICE_START);
+        #[cfg(target_os = "macos")]
+        if let Ok(hello) = started {
             return Ok(hello);
         }
+        #[cfg(not(target_os = "macos"))]
+        return started.map_err(|error| match error {
+            ClientError::StartTimeout(_) => ClientError::Core(format!(
+                "its service did not start the core within {}s; see `systemctl --user status {}` and {}",
+                SERVICE_START.as_secs(),
+                service::unit(&label(identifier)),
+                launch.log.display()
+            )),
+            other => other,
+        });
     }
     ensure_running(&launch.socket, &launch.binary, &launch.log, &launch.args)
 }
@@ -162,10 +182,11 @@ pub fn install(identifier: &str, launch: &CoreLaunch) -> std::io::Result<PathBuf
 }
 
 /// Starts the installed login item now rather than at the next login.
-pub fn start(identifier: &str) {
+pub fn start(identifier: &str) -> Result<(), String> {
     let label = label(identifier);
-    if let Some(path) = service::path(&label) {
-        service::start(&label, &path);
+    match service::path(&label) {
+        Some(path) => service::start(&label, &path),
+        None => Ok(()),
     }
 }
 
@@ -260,13 +281,14 @@ mod launchd {
     /// launchd reads the folder itself at the next login.
     pub(super) fn installed(_label: &str) {}
 
-    pub(super) fn start(_label: &str, path: &std::path::Path) {
+    pub(super) fn start(_label: &str, path: &std::path::Path) -> Result<(), String> {
         // SAFETY: getuid takes no arguments, cannot fail and touches no memory.
         let uid = unsafe { libc::getuid() };
         quiet(
             "/bin/launchctl",
             &["bootstrap", &format!("gui/{uid}"), &path.to_string_lossy()],
         );
+        Ok(())
     }
 
     pub(super) fn stop(label: &str) {
@@ -285,7 +307,7 @@ mod systemd {
 
     use super::{quiet, CoreLaunch};
 
-    fn unit(label: &str) -> String {
+    pub(super) fn unit(label: &str) -> String {
         format!("{label}.service")
     }
 
@@ -349,8 +371,25 @@ WantedBy=default.target
         }
     }
 
-    pub(super) fn start(label: &str, _path: &Path) {
-        quiet("systemctl", &["--user", "start", &unit(label)]);
+    pub(super) fn start(label: &str, _path: &Path) -> Result<(), String> {
+        let output = sikemux_process::user_environment::command("systemctl")
+            .args(["--user", "start", &unit(label)])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|error| format!("could not run systemctl: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let said = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        Err(format!(
+            "systemctl --user start {} failed: {}",
+            unit(label),
+            if said.is_empty() {
+                output.status.to_string()
+            } else {
+                said
+            }
+        ))
     }
 
     pub(super) fn stop(label: &str) {
