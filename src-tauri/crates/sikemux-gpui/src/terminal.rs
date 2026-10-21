@@ -4,13 +4,14 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use std::ops::Range;
+use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Entity,
     FocusHandle, FontFallbacks, Hsla, InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers,
     MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Rgba,
-    ScrollWheelEvent, SharedString, Styled, Subscription, UTF16Selection, Window,
+    ScrollWheelEvent, SharedString, Styled, Subscription, Task, UTF16Selection, Window,
 };
 use gpui_terminal_grid::{Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline};
 use sikemux_wire::grid::{self as wire, Color, FindOptions, FindResult, GridPoint, Mods, MouseAction, MouseButton, Row, Screen, TerminalInput};
@@ -28,6 +29,10 @@ const PAGE: u64 = 256;
 const HISTORY_KEPT: usize = 4_000;
 const FONT_SIZE: f32 = 13.;
 const LINE_HEIGHT: f32 = 1.32;
+/// How long a blinking cursor stays shown, and then hidden.
+const BLINK: Duration = Duration::from_millis(600);
+/// Wakes just past each flip, so a timer that lands a hair early does not redraw twice.
+const BLINK_MARGIN: Duration = Duration::from_millis(5);
 /// Characters that end a word picked by a double click.
 const WORD_SEPARATORS: &str = " ()[]{}<>'\"`,;│|";
 
@@ -36,6 +41,10 @@ const WORD_SEPARATORS: &str = " ()[]{}<>'\"`,;│|";
 pub struct Terminals {
     open: std::collections::HashMap<SessionId, Terminal>,
     metrics: Option<Metrics>,
+    /// The terminal holding the keyboard, if one does.
+    focused: Option<SessionId>,
+    /// Redraws while the focused terminal's cursor blinks.
+    blinking: Option<Task<()>>,
 }
 
 struct Terminal {
@@ -57,6 +66,9 @@ struct Terminal {
     find: Option<Find>,
     /// Where the context menu is open, in window coordinates.
     menu: Option<Point<Pixels>>,
+    /// When the cursor last came back into view: typing and focus restart its blink.
+    blink_from: Instant,
+    _focus_changes: [Subscription; 2],
     focus: FocusHandle,
     acked: u32,
     asked_size: (u16, u16),
@@ -381,6 +393,7 @@ fn layout(
     let terminal = bench.terminals.open.entry(id).or_insert_with(|| {
         let _ = asks.send(Ask::Terminal(id, TerminalAsk::Attach));
         cx.notify();
+        let focus = cx.focus_handle();
         Terminal {
             screen: Screen::default(),
             history: BTreeMap::new(),
@@ -393,7 +406,12 @@ fn layout(
             marked: None,
             find: None,
             menu: None,
-            focus: cx.focus_handle(),
+            blink_from: Instant::now(),
+            _focus_changes: [
+                cx.on_focus_in(&focus, window, move |bench, _, cx| focus_changed(bench, id, true, cx)),
+                cx.on_focus_out(&focus, window, move |bench, _, _, cx| focus_changed(bench, id, false, cx)),
+            ],
+            focus,
             acked: 0,
             asked_size: (0, 0),
             origin: Point::default(),
@@ -518,6 +536,9 @@ impl Grid for View<'_> {
         let header = &self.terminal.screen.header;
         let line = header.history_end + u64::from(header.cursor.row);
         let row = u16::try_from(line.checked_sub(self.top)?).ok().filter(|row| *row < header.rows)?;
+        if self.focused && header.cursor.shape & wire::CURSOR_BLINKS != 0 && blinked_off(self.terminal.blink_from) {
+            return None;
+        }
         let shape = match header.cursor.shape & !wire::CURSOR_BLINKS {
             wire::CURSOR_HIDDEN => return None,
             _ if !self.focused => CursorShape::Hollow,
@@ -559,6 +580,7 @@ impl Grid for View<'_> {
 fn send(bench: &mut Workbench, id: SessionId, input: TerminalInput) {
     if let Some(terminal) = bench.terminals.open.get_mut(&id) {
         terminal.top = None;
+        terminal.blink_from = Instant::now();
     }
     let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
 }
@@ -1039,4 +1061,50 @@ impl RenderOnce for TerminalMenu {
                     })),
             )
     }
+}
+
+/// How far a blinking cursor is into being shown, or hidden.
+fn phase(terminal: &Terminal) -> Duration {
+    Duration::from_millis((terminal.blink_from.elapsed().as_millis() % BLINK.as_millis()) as u64)
+}
+
+fn blinked_off(since: Instant) -> bool {
+    since.elapsed().as_millis() / BLINK.as_millis() % 2 == 1
+}
+
+/// Tells the program, if it asked, and keeps a timer redrawing a blinking cursor while it is focused.
+fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut Context<Workbench>) {
+    let Some(terminal) = bench.terminals.open.get_mut(&id) else {
+        return;
+    };
+    terminal.blink_from = Instant::now();
+    if terminal.screen.header.modes & wire::MODE_FOCUS_REPORTS != 0 {
+        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(TerminalInput::Focus { focused })));
+    }
+    if focused {
+        bench.terminals.focused = Some(id);
+    } else if bench.terminals.focused == Some(id) {
+        bench.terminals.focused = None;
+    }
+    if bench.terminals.focused.is_some() && bench.terminals.blinking.is_none() {
+        bench.terminals.blinking = Some(cx.spawn(async move |this, cx| loop {
+            let Ok(wait) = this.update(cx, |bench, cx| {
+                let terminal = bench.terminals.focused.and_then(|id| bench.terminals.open.get(&id));
+                let blinking = terminal.filter(|terminal| terminal.screen.header.cursor.shape & wire::CURSOR_BLINKS != 0);
+                let wait = blinking.map(|terminal| BLINK - phase(terminal) + BLINK_MARGIN);
+                if wait.is_none() {
+                    bench.terminals.blinking = None;
+                }
+                cx.notify();
+                wait
+            }) else {
+                return;
+            };
+            match wait {
+                Some(wait) => cx.background_executor().timer(wait).await,
+                None => return,
+            }
+        }));
+    }
+    cx.notify();
 }

@@ -334,11 +334,21 @@ fn main() {
         .expect("window opens")
         .into();
     let (bench, panes) = parts.expect("window parts");
+    cx.update_window(window, |_, window, _| window.activate_window()).ok();
     let mut run = Run { cx, window, bench, panes, last: Instant::now(), clock: Instant::now() };
 
     run.show(vec![typist]);
     let idle = run.typing(typist, 100);
     println!("typing alone: {}", spread(idle));
+    run.focus(typist);
+    DRAWS.with_borrow_mut(Vec::clear);
+    let (began, cpu) = (Instant::now(), thread_cpu_ms());
+    while began.elapsed() < Duration::from_secs(3) {
+        run.pump();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let blinks = DRAWS.with_borrow_mut(std::mem::take);
+    println!("idle 3 s with a blinking cursor: {} draws, window thread {:.1} ms; panes laid out and painted {}", blinks.len(), thread_cpu_ms() - cpu, spread(blinks));
     run.shot(&shots, "typing");
 
     for count in [1, 4] {
