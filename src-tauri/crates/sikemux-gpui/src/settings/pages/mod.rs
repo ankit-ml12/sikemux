@@ -7,6 +7,7 @@ use super::{Page, Settings};
 use crate::workbench::Workbench;
 
 mod about;
+mod actions;
 mod activity;
 mod appearance;
 mod cli;
@@ -19,6 +20,7 @@ mod plugins;
 /// for them, and the fields being typed in.
 #[derive(Default)]
 pub struct State {
+    pub actions: Option<actions::Fields>,
     pub activity: Option<activity::Fields>,
     pub appearance: Option<appearance::Fields>,
     pub cloud: Option<cloud::Fields>,
@@ -55,7 +57,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
             "Notch",
             "iOS Simulator",
         ],
-        Page::Actions => &["Your actions", "New action"],
+        Page::Actions => actions::SECTIONS,
         Page::Cli => cli::SECTIONS,
         Page::Devices => &["Your account", "Remote access", "Phones"],
         Page::Cloud => cloud::SECTIONS,
@@ -75,6 +77,7 @@ pub fn render(
     let lit = |section: &str| flash == Some(section);
     match settings.page {
         Page::About => about::render(bench, &lit, this, cx),
+        Page::Actions => actions::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Activity => activity::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
