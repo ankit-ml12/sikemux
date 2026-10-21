@@ -421,6 +421,7 @@ calls! { core, client, params;
     "changeOwners": Watch, any_program => answer(change_owners(&core, parse(params)?).await?),
     "commitStaged": Person => answer(commit_staged(&core, parse(params)?).await?),
     "commitOwners": Watch, any_program => answer(who_wrote::call(&core, parse(params)?).await?),
+    "commitLines": Watch, any_program => answer(who_wrote::lines(&core, parse(params)?).await?),
     "inbox": Watch, any_program => answer(inbox(&core).await?),
     "digest": Watch, any_program => answer(digest(&core, parse(params)?).await?),
     "ports": Local => {

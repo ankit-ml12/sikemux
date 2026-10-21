@@ -87,12 +87,27 @@ export interface OwnedLines {
     over?: number;
 }
 
+/** What to say beside changed `line`: who wrote it when `named` (nobody known when `author` is left out), and whose lines it rewrote. */
+export interface OwnerNote {
+    line: number;
+    named: boolean;
+    author?: number;
+    over?: number;
+}
+
 /** The changed lines of a file agents wrote, numbered as in the working tree, or in the index for staged lines. */
 export interface FileOwners {
     path: string;
     lines: OwnedLines[];
     /** Lines `author` took out just before line `at`. */
     removed: { at: number; author: number }[];
+    notes?: OwnerNote[];
+}
+
+/** Who wrote which changed lines, the writers by name. */
+export interface LineOwners {
+    authors: { name: string }[];
+    files: FileOwners[];
 }
 
 /** Who wrote a checkout's uncommitted lines, as the core reads it from agents' edits. Lines no file lists have no known author. */
@@ -223,6 +238,7 @@ export const git = {
     commit: (repo: string, message: string) => coreCall<string>("commitStaged", { dir: repo, message }),
     changeOwners: (repo: string, staged: boolean) => coreCall<ChangeOwners>("changeOwners", { dir: repo, staged }),
     commitOwners: (repo: string, commits: string[]) => coreCall<Record<string, CommitOwner[]>>("commitOwners", { dir: repo, commits }),
+    commitLines: (repo: string, commit: string) => coreCall<LineOwners>("commitLines", { dir: repo, commit }),
     push: (repo: string) => call<string>("push", { repo }),
     pull: (repo: string) => call<string>("pull", { repo }),
     aiMessage: (repo: string, provider: string, model: string) => call<string>("aiMessage", { repo, provider, model }),

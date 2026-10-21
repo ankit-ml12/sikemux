@@ -1541,7 +1541,6 @@ function GitWorkbench({
             title={commit.hash}
             subtitle={commit.subject}
             head={commitHead(commit)}
-            owners={commitOwners?.[commit.full_hash]}
             onOpenFile={cmd.requestOpenFile}
         />
     );
