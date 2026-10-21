@@ -166,6 +166,12 @@ icons!(
     Window => "window",
     Workflow => "workflow",
     Wrench => "wrench",
+    Grok => "grok",
+    Hermes => "hermes",
+    Muse => "muse",
+    Omp => "omp",
+    OpenCode => "opencode",
+    Pi => "pi",
 );
 
 /// Whether an SVG draws in `currentColor`.
@@ -210,6 +216,12 @@ pub fn agent(provider: &str) -> Icon {
     match provider {
         "codex" => Icon::Codex,
         "claude" => Icon::Claude,
+        "grok" => Icon::Grok,
+        "hermes" => Icon::Hermes,
+        "muse" => Icon::Muse,
+        "omp" => Icon::Omp,
+        "opencode" => Icon::OpenCode,
+        "pi" => Icon::Pi,
         _ => Icon::Agent,
     }
 }

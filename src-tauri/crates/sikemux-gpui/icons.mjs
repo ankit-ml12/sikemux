@@ -52,6 +52,10 @@ const DRAWN = {
   server: [ICONS, "IconServer"],
   window: [ICONS, "IconWindow"],
   claude: [ICONS, "IconClaude"],
+  hermes: [ICONS, "IconHermes"],
+  pi: [ICONS, "IconPi"],
+  opencode: [ICONS, "IconOpenCode"],
+  grok: [ICONS, "IconGrok"],
   run: [ICONS, "IconRun"],
   stop: [ICONS, "IconStop"],
   refresh: [ICONS, "IconRefresh"],
@@ -136,6 +140,8 @@ const DRAWN = {
 /** Marks the app draws as pictures of their own, copied as they are. */
 const PICTURES = {
   codex: "src/assets/agent-logos/codex.svg",
+  omp: "src/assets/agent-logos/omp.svg",
+  muse: "src/assets/agent-logos/muse.svg",
   bruno: "src/assets/bruno.svg",
   signoz: "src/plugins/signoz/signoz.svg",
 };

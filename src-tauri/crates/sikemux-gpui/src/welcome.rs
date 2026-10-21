@@ -160,6 +160,7 @@ pub fn render(
         .zip(&welcome.moves)
         .map(|(&(id, label, detail, icon), focus)| {
             let focused = focus.is_focused(window);
+            let ink = if focused { t.accent } else { t.text_tertiary };
             let this = this.clone();
             let keys = keymap::hint(id, cx);
             div()
@@ -185,14 +186,18 @@ pub fn render(
                         ..t.surface
                     }
                 })
-                .text_color(if focused { t.accent } else { t.text_tertiary })
                 .cursor_pointer()
                 .when(!focused, |row| row.hover(|row| row.bg(t.surface_raised)))
                 .on_mouse_down(MouseButton::Left, keep_press)
                 .on_click(move |_, window, cx| {
                     this.update(cx, |bench, cx| take(id, window, cx, bench))
                 })
-                .child(div().w(px(18.)).flex_none().child(ui::icon(icon, 16.)))
+                .child(
+                    div()
+                        .w(px(18.))
+                        .flex_none()
+                        .child(ui::icon(icon, 16.).text_color(ink)),
+                )
                 .child(
                     div()
                         .flex_1()
@@ -252,7 +257,7 @@ pub fn render(
                         .gap(px(11.))
                         .text_size(px(44.))
                         .font_weight(FontWeight::BOLD)
-                        .letter_spacing(-2.2)
+                        .letter_spacing(-0.05)
                         .line_height(relative(1.05))
                         .text_color(t.text_primary)
                         .child("Welcome to")
@@ -393,7 +398,7 @@ fn found(bench: &Workbench, this: &Entity<Workbench>, cx: &App) -> impl IntoElem
         .child(
             ui::text("AGENTS ON THIS MACHINE", 9., FontWeight::SEMIBOLD)
                 .font_family(theme::MONO)
-                .letter_spacing(0.72)
+                .letter_spacing(0.08)
                 .text_color(t.text_tertiary),
         )
         .child(list)

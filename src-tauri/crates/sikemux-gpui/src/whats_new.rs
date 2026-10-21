@@ -374,7 +374,8 @@ fn side(
                 .text_color(t.live)
                 .child(div().size(px(5.)).rounded_full().bg(t.live))
                 .child(
-                    ui::text(channel.to_uppercase(), 10., FontWeight::SEMIBOLD).letter_spacing(0.8),
+                    ui::text(channel.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                        .letter_spacing(0.08),
                 ),
         )
         .child(
@@ -384,7 +385,7 @@ fn side(
                 .text_size(px(48.))
                 .font_weight(FontWeight::BOLD)
                 .line_height(relative(1.))
-                .letter_spacing(-2.9)
+                .letter_spacing(-0.06)
                 .text_color(t.text_primary)
                 .child(div().text_color(t.accent).child("v"))
                 .child(if release.is_empty() {
@@ -396,7 +397,7 @@ fn side(
         .children(build.map(|build| {
             ui::text(build, 20., FontWeight::SEMIBOLD)
                 .mt(px(8.))
-                .letter_spacing(-0.4)
+                .letter_spacing(-0.02)
                 .text_color(t.text_secondary)
         }))
         .children(
@@ -489,7 +490,7 @@ fn contributors(
         .child(
             ui::text("CONTRIBUTORS", 10., FontWeight::SEMIBOLD)
                 .mb(px(6.))
-                .letter_spacing(1.4)
+                .letter_spacing(0.14)
                 .text_color(t.text_tertiary),
         )
         .children(featured.iter().map(|person| {
