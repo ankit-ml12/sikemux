@@ -96,6 +96,26 @@ fn fitted(mut layout: Layout, workspace: &Workspace, sessions: &[SessionInfo]) -
     if !active_shown {
         layout.active_project = workspace.projects.first().map(|project| project.id.clone());
     }
+    layout.hosts.retain(|_, strip| {
+        strip
+            .tabs
+            .retain_mut(|tab| keep_shown(&mut tab.pane, &shown));
+        if !strip
+            .active
+            .as_ref()
+            .is_some_and(|active| strip.tabs.iter().any(|tab| &tab.id == active))
+        {
+            strip.active = strip.tabs.first().map(|tab| tab.id.clone());
+        }
+        !strip.tabs.is_empty()
+    });
+    if !layout
+        .active_host
+        .as_ref()
+        .is_some_and(|host| layout.hosts.contains_key(host))
+    {
+        layout.active_host = None;
+    }
     layout
 }
 
@@ -187,6 +207,7 @@ pub(crate) struct OpenTab {
 pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
     edit(core, |layout| {
         layout.active_project = Some(params.project.clone());
+        layout.active_host = None;
         let strip = strip(layout, &params.project)?;
         let id = match strip
             .tabs
@@ -214,6 +235,41 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
     })
 }
 
+/// The strip a tab call names: an SSH host's, or a project's.
+fn strip_of<'a>(
+    layout: &'a mut Layout,
+    params: &TabParams,
+) -> CoreResult<&'a mut crate::protocol::ProjectLayout> {
+    match &params.host {
+        Some(host) => layout
+            .hosts
+            .get_mut(host)
+            .ok_or_else(|| CoreError::from("no terminal is open to that host")),
+        None => strip(layout, &params.project),
+    }
+}
+
+/// Opens a tab on the terminal `id` at the end of the SSH host's strip and
+/// brings the host to the front. Answers the tab's id.
+pub(crate) fn show_ssh_terminal(core: &Core, host: String, id: SessionId) -> CoreResult<String> {
+    edit(core, |layout| {
+        let strip = layout.hosts.entry(host.clone()).or_default();
+        if strip.tabs.len() >= MAX_TABS {
+            return Err("that host already has as many tabs as the core keeps".into());
+        }
+        let opened = tab(
+            format!("tab-{}", uuid::Uuid::new_v4().simple()),
+            PaneKind::Terminal,
+            id.to_string(),
+        );
+        let tab_id = opened.id.clone();
+        strip.tabs.push(opened);
+        strip.active = Some(tab_id.clone());
+        layout.active_host = Some(host);
+        Ok(tab_id)
+    })
+}
+
 /// Brings the tab showing the terminal `id` to the front in `project`,
 /// opening one when none does. Answers its id.
 pub(crate) fn show_terminal(core: &Core, project: String, id: SessionId) -> CoreResult<String> {
@@ -231,7 +287,10 @@ pub(crate) fn show_terminal(core: &Core, project: String, id: SessionId) -> Core
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TabParams {
+    #[serde(default)]
     project: String,
+    /// The SSH host whose strip holds the tab, in place of a project.
+    host: Option<String>,
     tab: String,
     /// Where `moveTab` puts it, counted in the strip as it is now.
     to: Option<usize>,
@@ -241,7 +300,7 @@ pub(crate) struct TabParams {
 /// tab; terminals keep running until a client ends them.
 pub(crate) fn close_tab(core: &Core, params: TabParams) -> CoreResult<()> {
     let agents = edit(core, |layout| {
-        let strip = strip(layout, &params.project)?;
+        let strip = strip_of(layout, &params)?;
         let at = strip
             .tabs
             .iter()
@@ -266,8 +325,14 @@ pub(crate) fn close_tab(core: &Core, params: TabParams) -> CoreResult<()> {
 
 pub(crate) fn activate_tab(core: &Core, params: TabParams) -> CoreResult<()> {
     edit(core, |layout| {
-        layout.active_project = Some(params.project.clone());
-        let strip = strip(layout, &params.project)?;
+        match &params.host {
+            Some(host) => layout.active_host = Some(host.clone()),
+            None => {
+                layout.active_project = Some(params.project.clone());
+                layout.active_host = None;
+            }
+        }
+        let strip = strip_of(layout, &params)?;
         if !strip.tabs.iter().any(|tab| tab.id == params.tab) {
             return Err("that tab is not open".into());
         }
@@ -278,7 +343,7 @@ pub(crate) fn activate_tab(core: &Core, params: TabParams) -> CoreResult<()> {
 
 pub(crate) fn move_tab(core: &Core, params: TabParams) -> CoreResult<()> {
     edit(core, |layout| {
-        let strip = strip(layout, &params.project)?;
+        let strip = strip_of(layout, &params)?;
         let at = strip
             .tabs
             .iter()
@@ -300,6 +365,7 @@ pub(crate) fn activate_project(core: &Core, params: ProjectParams) -> CoreResult
     edit(core, |layout| {
         strip(layout, &params.project)?;
         layout.active_project = Some(params.project);
+        layout.active_host = None;
         Ok(())
     })
 }

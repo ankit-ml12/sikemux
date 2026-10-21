@@ -1877,6 +1877,13 @@ pub struct Layout {
     /// Each project's tabs, by project id.
     #[serde(default)]
     pub projects: BTreeMap<String, ProjectLayout>,
+    /// The SSH host in front instead of a project, by its alias.
+    #[serde(default)]
+    pub active_host: Option<String>,
+    /// The terminal tabs open to each SSH host, by its alias. A host with
+    /// none left has no strip.
+    #[serde(default)]
+    pub hosts: BTreeMap<String, ProjectLayout>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

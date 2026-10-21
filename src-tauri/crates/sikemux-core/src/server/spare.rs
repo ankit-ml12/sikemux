@@ -1,7 +1,7 @@
-//! One shell started ahead of time for the project in front, at the size
-//! terminals were last given, so a new terminal there opens on a prompt
-//! instead of waiting on the person's rc files. At most one runs, and one
-//! nobody takes is stopped after a while.
+//! New terminal tabs, and one shell started ahead of time for the project in
+//! front, at the size terminals were last given, so a new terminal there
+//! opens on a prompt instead of waiting on the person's rc files. At most one
+//! runs, and one nobody takes is stopped after a while.
 
 use std::sync::{Arc, Mutex};
 
@@ -210,22 +210,33 @@ async fn shell(
     window_id: &str,
     pane_id: &str,
 ) -> CoreResult<SessionId> {
+    let context = PtyContext {
+        session_id: project.to_owned(),
+        session_name: name,
+        session_kind: "project".into(),
+        project: Some(path.clone()),
+        window_id: Some(window_id.to_owned()),
+        pane_id: Some(pane_id.to_owned()),
+        agent_id: None,
+        agent_type: None,
+        initial_prompt_submitted: false,
+        shell_integration: true,
+    };
+    terminal(core, size, Some(path), context).await
+}
+
+/// Starts a terminal at `size` in `cwd`, as `context` describes it.
+async fn terminal(
+    core: &Arc<Core>,
+    size: (u16, u16),
+    cwd: Option<String>,
+    context: PtyContext,
+) -> CoreResult<SessionId> {
     let spawn = TerminalSpawn {
         cols: size.0,
         rows: size.1,
-        cwd: Some(path.clone()),
-        context: Some(PtyContext {
-            session_id: project.to_owned(),
-            session_name: name,
-            session_kind: "project".into(),
-            project: Some(path),
-            window_id: Some(window_id.to_owned()),
-            pane_id: Some(pane_id.to_owned()),
-            agent_id: None,
-            agent_type: None,
-            initial_prompt_submitted: false,
-            shell_integration: true,
-        }),
+        cwd,
+        context: Some(context),
         ..TerminalSpawn::default()
     };
     let target = Box::new(SpawnTarget::Terminal(spawn));
@@ -234,6 +245,11 @@ async fn shell(
     let id = pending.id();
     pending.start(core);
     Ok(id)
+}
+
+/// The size a terminal opened by the core starts at: the last one a client gave.
+fn opening_size(core: &Core) -> (u16, u16) {
+    core.spares.held.locked().size.unwrap_or((80, 24))
 }
 
 /// Opens a terminal tab in `project` on the shell started ahead when it fits,
@@ -249,7 +265,7 @@ pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreRe
         None => {
             let (path, name) = project_folder(core, &params.project)
                 .ok_or_else(|| CoreError::from("that project is not on this host"))?;
-            let size = core.spares.held.locked().size.unwrap_or((80, 24));
+            let size = opening_size(core);
             let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
             let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
             shell(
@@ -265,6 +281,30 @@ pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreRe
         }
     };
     super::layout::show_terminal(core, params.project, id)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SshParams {
+    host: String,
+}
+
+/// Opens a terminal tab connected to `host`, by its alias in the person's
+/// SSH config, and brings the host to the front. Answers the tab's id.
+pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> CoreResult<String> {
+    let context = PtyContext {
+        session_id: format!("ssh:{}", params.host),
+        session_name: params.host.clone(),
+        session_kind: "ssh".into(),
+        project: None,
+        window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
+        pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),
+        agent_id: None,
+        agent_type: None,
+        initial_prompt_submitted: false,
+        shell_integration: false,
+    };
+    let id = terminal(core, opening_size(core), None, context).await?;
+    super::layout::show_ssh_terminal(core, params.host, id)
 }
 
 /// Stops the shell started ahead, as before the core hands itself over.
