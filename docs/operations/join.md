@@ -17,7 +17,7 @@ of its phones. A host looks for hosts to link with when it starts, when its live
 the account comes up, and when the account adds a host (ADR 0013, 0018).
 
 The desktop app joins the account's other hosts as a device of its own, with a key of its own
-(ADR 0017). Its host adds that key to the account as a client, signing the request itself, and
+(ADR 0019). Its host adds that key to the account as a client, signing the request itself, and
 the route then signs tickets for it only when the host asking is the one that added it. Such a
 ticket also names that host, as `via` and `viaName`, signed after the other fields, and the host
 it joins asks its owner to allow "The app on <viaName>" rather than whatever the app calls
