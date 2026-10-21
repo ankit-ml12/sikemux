@@ -74,7 +74,7 @@
     padding-bottom: 10px;
 }
 
-/* A teammate's message is headed like the agent's own "Worked for" line, with the same hairline under it, and folds from it. */
+/* A teammate's message is headed like the agent's own "Worked for" line, with the same hairline under it. */
 .chat-letter + .chat-letter,
 .chat-letter-answer + .chat-letter,
 .chat-letter + .chat-letter-answer {
@@ -94,7 +94,11 @@
     background: color-mix(in oklab, var(--ink) 14%, transparent);
 }
 
-.chat-letter-top .chat-tools-sum {
+.chat-letter-head {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
     color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
     font-weight: var(--weight-medium);
 }

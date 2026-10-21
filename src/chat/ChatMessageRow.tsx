@@ -277,27 +277,23 @@ function SentTime({ at, took }: { at: number; took: number | null }) {
     );
 }
 
-/** A teammate's message, headed like the agent's own "Worked for" line, which folds it. */
+/** A teammate's message, headed like the agent's own "Worked for" line. */
 function TeammateLetter({ id, letter }: { id: string; letter: AgentMessageLetter }) {
-    const [open, setOpen] = useState(true);
     return (
         <div className="chat-letter" title={letter.agentId}>
             <div className="chat-letter-top">
-                <button type="button" className="chat-tools-sum" aria-expanded={open} onClick={() => setOpen((was) => !was)}>
+                <span className="chat-letter-head">
                     <span className="chat-work-mark" aria-hidden="true">
                         <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
                     </span>
                     <span>
                         Message from <b>{letter.name}</b>
                     </span>
-                    <IconChevron size={10} className="chat-tools-chevron" />
-                </button>
+                </span>
             </div>
-            {open && (
-                <div className="chat-markdown">
-                    <FoldedMarkdown id={id} text={letter.text} live={false} tree={letter.tree} />
-                </div>
-            )}
+            <div className="chat-markdown">
+                <FoldedMarkdown id={id} text={letter.text} live={false} tree={letter.tree} />
+            </div>
         </div>
     );
 }
