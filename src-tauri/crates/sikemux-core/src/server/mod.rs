@@ -63,6 +63,7 @@ mod skill_library;
 mod spawn;
 mod ssh;
 mod tasks;
+mod themes;
 mod tools;
 mod transcript;
 mod upgrade;
@@ -471,6 +472,7 @@ impl Core {
             terminal_colors: Mutex::default(),
         });
         from_app::carry(&core, data_dir);
+        core.theme_changed();
         Ok(core)
     }
 
@@ -489,6 +491,11 @@ impl Core {
 
     pub(crate) fn set_terminal_colors(&self, colors: sikemux_wire::grid::TerminalColors) {
         *self.terminal_colors.locked() = colors;
+    }
+
+    /// Answers programs' colour queries with the person's theme from here on.
+    pub(crate) fn theme_changed(&self) {
+        self.set_terminal_colors(themes::terminal_colors(&themes::resolve(&self.preferences.get())));
     }
 
     /// Resolves once the core starts handing itself over.

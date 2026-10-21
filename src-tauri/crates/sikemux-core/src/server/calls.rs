@@ -292,9 +292,12 @@ calls! { core, client, params;
     "setPreference": Person => {
         let params: SetPreferenceParams = parse(params)?;
         let preferences = core.preferences.set(&params.key, params.value)?;
+        core.theme_changed();
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
     },
+    "theme": Watch, any_program => answer(super::themes::resolve(&core.preferences.get())),
+    "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
