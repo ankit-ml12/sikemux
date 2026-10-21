@@ -115,9 +115,9 @@ fn view(
             Some(pane) => ui::pane(cx).child(pane.clone()).into_any_element(),
             None => ui::pane(cx).into_any_element(),
         },
-        PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
+        PaneKind::Agent => home::agent_view(bench, tab, id, target, window, cx),
         PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
-        _ => home::agent_view(bench, tab, id, "", cx),
+        _ => home::agent_view(bench, tab, id, "", window, cx),
     }
 }
 

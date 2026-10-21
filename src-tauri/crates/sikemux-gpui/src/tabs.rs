@@ -615,7 +615,17 @@ impl RunMenu {
         for other in &self.others {
             popup = popup.item(other.running_item(&self.bench));
         }
-        popup
+        let bench = self.bench.clone();
+        popup.separator().label("Your own tasks").item(
+            PopupMenuItem::new("Add a task…")
+                .icon(Icon::Plus)
+                .on_click(move |_, window, cx| {
+                    let bench = bench.clone();
+                    window.defer(cx, move |window, cx| {
+                        let _ = bench.update(cx, |bench, cx| bench.add_task(window, cx));
+                    });
+                }),
+        )
     }
 }
 

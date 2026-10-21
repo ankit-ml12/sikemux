@@ -20,7 +20,8 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionInfo, SpaceInfo, Tab,
+    Preferences, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionId, SessionInfo,
+    SpaceInfo, Tab,
 };
 use tokio::sync::mpsc;
 
@@ -121,6 +122,8 @@ pub struct Workbench {
     pub retitling: Option<Retitling>,
     /// The question the shell is putting to the person, over the window.
     asking: Option<Asking>,
+    /// The task the person is writing in the Add a task dialog, while it is open.
+    pub adding_task: Option<crate::add_task::AddTask>,
     /// The core's trust questions already put to the person, by id.
     trust_asked: HashSet<String>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
@@ -369,6 +372,7 @@ impl Workbench {
             resizers: [cx.focus_handle(), cx.focus_handle()],
             retitling: None,
             asking: None,
+            adding_task: None,
             trust_asked: HashSet::new(),
             peeking: None,
             unpeek: None,
@@ -1165,6 +1169,14 @@ impl Workbench {
         }
     }
 
+    /// Opens the Add a task dialog for the project whose tasks the Run menu lists.
+    pub fn add_task(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(project) = self.watched_project.clone() {
+            self.adding_task = Some(crate::add_task::AddTask::new(project, window, cx));
+            cx.notify();
+        }
+    }
+
     /// Brings forward the project's tab showing `target`, opening one when none does.
     pub fn show(&self, kind: &str, target: &str, title: Option<&str>) {
         if let Some(project) = self.project() {
@@ -1629,6 +1641,24 @@ impl Workbench {
             });
         })
         .detach();
+    }
+
+    /// The terminal an agent runs in, while it runs in one rather than as a chat.
+    pub fn agent_terminal(&self, agent: &str) -> Option<SessionId> {
+        self.view
+            .as_ref()?
+            .workspace
+            .agents
+            .iter()
+            .find(|kept| kept.id == agent)?
+            .pty_id
+    }
+
+    /// Moves an agent between its chat and its own CLI in a terminal, carrying what was
+    /// typed and not sent.
+    pub fn switch_view(&self, agent: &str, terminal: bool) {
+        let to = if terminal { "terminal" } else { "chat" };
+        self.call("switchAgentView", json!({ "agentId": agent, "to": to }));
     }
 
     pub fn rail_width(&self, edge: Edge) -> f32 {
@@ -2489,6 +2519,7 @@ impl Render for Workbench {
                 shell.child(self.rail_edge(Edge::End, cx))
             })
             .children(asked)
+            .children(crate::add_task::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::opening(self, cx))
             .when(

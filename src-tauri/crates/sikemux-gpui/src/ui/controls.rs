@@ -312,6 +312,8 @@ pub struct Segmented {
     selected: usize,
     pill: bool,
     on_select: Option<OnSelect>,
+    /// Why it cannot be changed now, shown over it; none while it can.
+    disabled: Option<SharedString>,
 }
 
 impl Segmented {
@@ -326,6 +328,7 @@ impl Segmented {
             selected,
             pill: false,
             on_select: None,
+            disabled: None,
         }
     }
 
@@ -339,16 +342,24 @@ impl Segmented {
         self.on_select = Some(Rc::new(handler));
         self
     }
+
+    pub fn disabled_because(mut self, reason: Option<impl Into<SharedString>>) -> Self {
+        self.disabled = reason.map(Into::into);
+        self
+    }
 }
 
 impl RenderOnce for Segmented {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let on_select = self.on_select;
+        let on_select = self.on_select.filter(|_| self.disabled.is_none());
         let pill = self.pill;
         div()
             .id(self.id)
             .flex()
+            .when_some(self.disabled, |track, reason| {
+                track.opacity(0.5).tooltip(super::tooltip(reason))
+            })
             .map(|track| {
                 if pill {
                     track.h(px(24.)).p(px(2.)).rounded_full()

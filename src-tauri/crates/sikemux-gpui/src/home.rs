@@ -4,6 +4,7 @@ use chrono::{Datelike, NaiveDate};
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement,
@@ -17,7 +18,7 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
-use crate::{chat, panes};
+use crate::{chat, panes, terminal};
 
 const WEEKS: i64 = 53;
 const CELL_GAP: f32 = 3.;
@@ -67,12 +68,14 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
         .into_any_element()
 }
 
-/// One agent's view of a tab: its chat under its header, or what a new chat opens on.
+/// One agent's view of a tab: its terminal or its chat under its header, or what a new
+/// chat opens on.
 pub fn agent_view(
     bench: &Workbench,
     tab: &str,
     view: &str,
     agent: &str,
+    window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let project = bench.project();
@@ -86,6 +89,20 @@ pub fn agent_view(
         .as_ref()
         .filter(|_| project.is_some())
         .map(|agent| pane_header(bench, agent, tab, view, cx));
+    if let Some(session) = agent
+        .as_ref()
+        .and_then(|agent| bench.agent_terminal(&agent.id))
+    {
+        return ui::pane(cx)
+            .child(div().size_full().pt(px(40.)).child(terminal::pane(
+                bench,
+                &cx.entity(),
+                &session.to_string(),
+                window,
+            )))
+            .children(header)
+            .into_any_element();
+    }
     if let Some((agent, chat)) = agent
         .as_ref()
         .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
@@ -228,6 +245,9 @@ fn pane_header(
         (Icon::Agent, SharedString::from("GUI")),
         (Icon::Terminal, SharedString::from("TUI")),
     ];
+    let in_terminal = bench.agent_terminal(&agent.id).is_some();
+    let working = matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked);
+    let switched = agent.id.clone();
     let shared = agent.id.clone();
     let open_share = cx.listener(move |bench, _, window, cx| bench.open_share(&shared, window, cx));
     let share = match bench.share_of(&agent.id) {
@@ -299,7 +319,27 @@ fn pane_header(
                 .items_center()
                 .gap(px(4.))
                 .children(chat)
-                .child(Segmented::new("agent-view", views, 0).pill()),
+                .child(
+                    Segmented::new("agent-view", views, usize::from(in_terminal))
+                        .pill()
+                        .disabled_because(Some(
+                            "Switching between GUI and TUI isn't in this build yet",
+                        ))
+                        .on_select(cx.listener(move |bench, picked: &usize, window, cx| {
+                            let terminal = *picked == 1;
+                            if terminal == in_terminal {
+                                return;
+                            }
+                            if working {
+                                let view = if terminal { "TUI" } else { "GUI" };
+                                return window.push_notification(
+                                    format!("Wait for the agent to finish before opening {view}"),
+                                    cx,
+                                );
+                            }
+                            bench.switch_view(&switched, terminal);
+                        })),
+                ),
         )
         .side(
             IconButton::new(
