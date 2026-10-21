@@ -3,6 +3,8 @@
  * terminals and chats, written to read well in a screenshot.
  */
 
+import type { ChatMessage, ChatPart, ChatView, PermissionAsk } from '../../src/chat/types';
+
 export const CORE = 'showcase0000000000000000000000000000000000000000000000000000core';
 export const HOST = { name: 'MacBook Pro', model: 'MacBook Pro' };
 export const PANE_PICTURE = '/showcase/pane.jpg';
@@ -22,20 +24,16 @@ export const LAUNCHERS = [
   { id: 'opencode', provider: 'opencode', label: 'OpenCode', permissionMode: 'default' },
 ];
 
-type Update = Record<string, unknown>;
+/** One thing said or done in a demo chat: a prompt, or a part of the answer after it. */
+type Step = { ask: string } | { part: ChatPart };
 
 let ids = 0;
 const next = (prefix: string) => `${prefix}-${++ids}`;
-const user = (text: string): Update => ({ sessionUpdate: 'user_message_chunk', messageId: next('m'), content: { type: 'text', text } });
-const say = (text: string): Update => ({ sessionUpdate: 'agent_message_chunk', messageId: next('m'), content: { type: 'text', text } });
-const think = (text: string): Update => ({ sessionUpdate: 'agent_thought_chunk', messageId: next('m'), content: { type: 'text', text } });
-const tool = (kind: string, title: string, status = 'completed', extra: Update = {}): Update => ({
-  sessionUpdate: 'tool_call',
-  toolCallId: next('tool'),
-  kind,
-  title,
-  status,
-  ...extra,
+const user = (text: string): Step => ({ ask: text });
+const say = (text: string): Step => ({ part: { kind: 'text', id: next('part'), text } });
+const think = (text: string): Step => ({ part: { kind: 'thought', id: next('part'), text } });
+const tool = (kind: string, title: string, status = 'completed'): Step => ({
+  part: { kind: 'tool', id: next('part'), tool: { toolCallId: next('tool'), kind, title, status } },
 });
 
 const MODELS: Record<string, unknown[]> = {
@@ -88,7 +86,7 @@ export type DemoChat = {
   running: boolean;
   asleep?: boolean;
   permissionMode: string;
-  history: Update[];
+  history: Step[];
   /** A permission the agent is waiting on, shown on the phone as a card to answer. */
   asking?: { title: string; command: string };
   /** What it left when its last turn ended. */
@@ -370,27 +368,70 @@ export const SESSIONS = [
   { id: 13, project: 'p-api', task: { label: 'api', command: 'pnpm start', cwd: `${HOME}/payments-api`, project: 'p-api' } },
 ];
 
-/* A real chat's history says when each part of it happened, which is how a
-   finished turn knows how long it worked. The demo's arrive nine seconds apart. */
-function recorded(history: Update[]): Update[] {
-  const start = Date.now() - history.length * 9_000;
-  return history.map((update, index) => ({ ...update, _meta: { sikemux: { at: start + index * 9_000 } } }));
+/* A real chat's history says when each part of it happened, which is how a finished turn knows
+   how long it worked. The demo's steps came nine seconds apart. */
+const STEP_MS = 9_000;
+
+/** An answer's last run of prose, which stays in view once the turn folds its work away. */
+function replyStart(parts: ChatPart[]): number {
+  let from = parts.length;
+  while (from > 0 && (parts[from - 1].kind === 'text' || parts[from - 1].kind === 'content')) from -= 1;
+  return from;
 }
 
-export function chatEvents(chat: DemoChat): { kind: string; payload: Record<string, unknown> }[] {
-  const sessionId = `session-${chat.agentId}`;
-  const events: { kind: string; payload: Record<string, unknown> }[] = [
-    { kind: 'ready', payload: { capabilities: {}, setup: { configOptions: MODELS[chat.provider] ?? [] } } },
-    { kind: 'status', payload: { state: 'ready' } },
-    ...recorded(chat.history).map((update) => ({ kind: 'session_update', payload: { sessionId, update } })),
-  ];
-  if (chat.running) events.push({ kind: 'turn_started', payload: {} });
+/** The demo chat's rows, as the host's core folds them: a row per prompt and per answer, finished turns folded. */
+export function chatRows(chat: DemoChat): ChatMessage[] {
+  const start = Date.now() - chat.history.length * STEP_MS;
+  const rows: ChatMessage[] = [];
+  let asked = start;
+  chat.history.forEach((step, index) => {
+    const at = start + index * STEP_MS;
+    if ('ask' in step) {
+      const id = next('m');
+      asked = at;
+      rows.push({ id, role: 'user', parts: [{ kind: 'text', id: next('part'), text: step.ask }], sentAt: at, meta: { from: id, at } });
+      return;
+    }
+    const part = step.part.kind === 'tool' ? { ...step.part, startedAt: at, endedAt: at + 2_000 } : step.part;
+    const last = rows.at(-1);
+    if (last?.role === 'assistant') last.parts.push(part);
+    else rows.push({ id: next('m'), role: 'assistant', parts: [part] });
+    const answer = rows.at(-1) as ChatMessage;
+    const finished = !(chat.running && index === chat.history.length - 1) && !('part' in (chat.history[index + 1] ?? { ask: '' }));
+    if (!finished) return;
+    const took = at + STEP_MS - asked;
+    answer.endedAt = at + STEP_MS;
+    answer.meta = { from: answer.id, at: answer.endedAt, took };
+    const from = replyStart(answer.parts);
+    const work = answer.parts.slice(0, from);
+    if (from === answer.parts.length || !work.length) return;
+    const calls = work.filter((done) => done.kind === 'tool').length;
+    answer.fold = { id: answer.id, last: answer.id, from, calls, took, thought: calls === 0 };
+  });
+  return rows;
+}
+
+/** How the demo chat stands, as the head of the view a host sends. */
+export function chatHead(chat: DemoChat): ChatView['head'] {
   const asking = permissionPayload(chat);
-  if (asking) events.push({ kind: 'permission_request', payload: asking });
-  return events;
+  return {
+    sessionId: `session-${chat.agentId}`,
+    connection: 'ready',
+    running: chat.running,
+    turned: true,
+    permissionMode: chat.permissionMode,
+    commands: [],
+    capabilities: {},
+    setup: setupOf(chat),
+    permissions: asking ? [asking] : [],
+    tasks: [],
+    runningSubagents: [],
+    queued: [],
+    earlierLost: false,
+  };
 }
 
-export function permissionPayload(chat: DemoChat): Record<string, unknown> | undefined {
+export function permissionPayload(chat: DemoChat): PermissionAsk | undefined {
   if (!chat.asking) return undefined;
   return {
     requestId: `ask-${chat.agentId}`,
@@ -404,7 +445,7 @@ export function permissionPayload(chat: DemoChat): Record<string, unknown> | und
   };
 }
 
-export function setupOf(chat: DemoChat) {
+function setupOf(chat: DemoChat) {
   return { configOptions: MODELS[chat.provider] ?? [] };
 }
 

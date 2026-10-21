@@ -2,7 +2,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CodeTokens, fenceLanguage, splitAtMark, useCodeTokens, useDiffTokens } from "./codeHighlight";
 import type { CodeLine } from "./types";
-import type { DiffLine } from "./diff";
+import type { DiffLine } from "./types";
 import { previewTheme } from "../themes/bus";
 import { DEFAULT_THEME_ID, THEMES, themeById } from "../themes";
 

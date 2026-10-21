@@ -501,28 +501,7 @@ pub struct ChatStart {
     pub setup: Value,
 }
 
-/// The kinds of the app's `acp_event`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChatEventKind {
-    Status,
-    Ready,
-    SessionUpdate,
-    /// What a person sent the agent, for everyone watching but the sender.
-    Prompt,
-    TurnStarted,
-    TurnCompleted,
-    PermissionRequest,
-    Error,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ChatEvent {
-    pub kind: ChatEventKind,
-    pub payload: Value,
-}
-
-/// The last of a chat's events a client heard. `feed` changes whenever the
+/// The last of a chat's changes a client heard. `feed` changes whenever the
 /// chat's agent starts again, which starts `seq` over.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMark {
@@ -537,32 +516,19 @@ pub struct ChatMark {
     rename_all_fields = "camelCase"
 )]
 pub enum ChatAttachment {
-    /// `replay` holds what the agent said since its session started or
-    /// loaded, in order, so a client rebuilds the chat as if it had watched.
-    /// Live events follow, numbered from `mark.seq + 1`.
+    /// The chat as it stands, a [`crate::chat::ChatView`] as JSON. Changes
+    /// follow, numbered from `mark.seq + 1`.
     Live {
-        start: Box<ChatStart>,
-        permission_mode: String,
-        running: bool,
-        /// A turn has run in this session, so the provider keeps it.
-        turned: bool,
-        replay: Vec<ChatEvent>,
+        view: Value,
         mark: ChatMark,
-        /// A phone is sent only the chat's last turns. Asking for the history
-        /// before this event, with [`Request::AcpHistory`], pages back.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        older_before: Option<u64>,
     },
-    /// The events the client missed since the mark it attached with, except
-    /// the prompts it sent itself. Live events follow `mark`.
+    /// What changed since the mark the client attached with, as a list of
+    /// [`crate::chat::ChatChange`] JSON. Changes follow `mark`.
     Resumed {
-        events: Vec<ChatEvent>,
+        changes: Value,
         mark: ChatMark,
     },
     Missing,
-    /// The session said more than the core keeps, so the client starts it
-    /// again from the provider's own history.
-    Restart,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -833,11 +799,11 @@ pub enum Response {
     ChatAttached {
         attachment: ChatAttachment,
     },
-    /// Older events of a chat, in order. Paging goes on before `older_before`;
-    /// without one this reaches the start of what the host keeps.
+    /// Rows from before what a client holds, a [`crate::chat::ChatPage`] as
+    /// JSON. Paging goes on before its `olderBefore`; without one this reaches
+    /// the start of what the host keeps.
     ChatHistory {
-        events: Vec<ChatEvent>,
-        older_before: Option<u64>,
+        page: Value,
     },
     Chats {
         chats: Vec<ChatInfo>,
@@ -1460,13 +1426,14 @@ pub enum Event {
         id: SessionId,
     },
     AgentState(AgentStateEvent),
-    /// Sent only to the clients that started or attached to the chat.
-    /// `seq` counts the chat's events, so a client can tell which ones the
-    /// attach answer already held.
+    /// Sent only to the clients that started or attached to the chat: what
+    /// changed in it, a list of [`crate::chat::ChatChange`] as JSON. `seq`
+    /// counts the chat's changes, so a client can tell which the attach answer
+    /// already held.
     Chat {
         agent_id: String,
         seq: u64,
-        event: ChatEvent,
+        changes: Value,
     },
     /// Sent only to paired devices: what they show of this host, whole, when
     /// they connect and whenever any of it changes.

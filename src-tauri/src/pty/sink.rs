@@ -3,9 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sikemux_core::client::EventSink;
-use sikemux_core::protocol::{
-    CallId, ChatEventKind, Event, Request, SessionId, StreamId, WindowCall,
-};
+use sikemux_core::protocol::{CallId, Event, Request, SessionId, StreamId, WindowCall};
 use sikemux_pty::shell_protocol::{SshLink, PTY_SHELL_METADATA_EVENT};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -165,14 +163,14 @@ impl EventSink for AppSink {
                 }
             }
             Event::Chat {
-                agent_id, event, ..
+                agent_id,
+                seq,
+                changes,
             } => {
-                if matches!(event.kind, ChatEventKind::Status)
-                    && matches!(event.payload["state"].as_str(), Some("stopped" | "error"))
-                {
+                if crate::acp::ended(&changes) {
                     crate::simulator::agent_stopped(&self.app, &agent_id);
                 }
-                crate::acp::deliver(&self.app, &agent_id, event)
+                crate::acp::deliver(&self.app, &agent_id, seq, changes)
             }
             Event::Remote { status } => {
                 crate::account::notice_remote(&self.app, &status);
@@ -214,10 +212,7 @@ impl EventSink for AppSink {
                     None => self.emit("core_changed", change),
                 }
             }
-            Event::AttentionCleared { id, agent_id } => {
-                crate::acp::permission_cleared(&self.app, &agent_id, id)
-            }
-            Event::Attention { .. } => {}
+            Event::Attention { .. } | Event::AttentionCleared { .. } => {}
         }
     }
 

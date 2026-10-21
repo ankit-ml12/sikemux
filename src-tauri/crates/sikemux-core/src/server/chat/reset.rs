@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
 use crate::agent_accounts::usage;
-use crate::protocol::{ChatEventKind, ChatLaunch};
+use crate::protocol::ChatLaunch;
+use sikemux_fold::ChatEventKind;
 
 use super::super::{launching, Core};
 use super::rebind::Replay;

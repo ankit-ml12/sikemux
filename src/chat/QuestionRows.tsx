@@ -36,7 +36,7 @@ export default function QuestionRows({ questions, onWrite }: { questions: ChatQu
                         <AnsweredQuestion
                             letter={{
                                 kind: "answer",
-                                asker: question.name,
+                                name: question.name,
                                 cli: question.cli,
                                 question: question.text,
                                 text: question.answer ?? "",

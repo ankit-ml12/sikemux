@@ -231,6 +231,8 @@ impl Claude {
                         "retry_delay_ms": 500, "error_status": null, "error": "unknown",
                     }));
                 }
+                // Claude waits before it retries, so the chat has time to say so.
+                std::thread::sleep(std::time::Duration::from_millis(100));
                 let assistant = json!({
                     "type": "assistant",
                     "uuid": uuid::Uuid::new_v4().to_string(),

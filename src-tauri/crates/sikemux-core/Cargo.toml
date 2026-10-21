@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 sikemux-process = { path = "../sikemux-process" }
+sikemux-fold = { path = "../sikemux-fold" }
 sikemux-markdown = { path = "../sikemux-markdown" }
 agent-client-protocol = { version = "2.0.0", features = ["unstable_session_notices"] }
 hex = "0.4"

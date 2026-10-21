@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ChatEvent, ChatEventKind};
+use sikemux_fold::{ChatEvent, ChatEventKind};
 
 /// Past this the oldest half of the file goes, so a chat that never ends
 /// cannot fill the disk. Its earliest turns are then out of reach.
@@ -70,7 +70,8 @@ pub(crate) struct HistoryState {
 /// Events from before some index, and where the page before them starts.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Page {
-    pub events: Vec<ChatEvent>,
+    /// Each with its index.
+    pub events: Vec<(u64, ChatEvent)>,
     pub older_before: Option<u64>,
     /// The index of the page's first event.
     pub first: u64,
@@ -429,8 +430,8 @@ impl History {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
             .filter_map(|line| serde_json::from_slice::<Line<ChatEvent>>(line).ok())
-            .map(|line| line.event)
-            .filter(|event| event.kind != ChatEventKind::PermissionRequest)
+            .filter(|line| line.event.kind != ChatEventKind::PermissionRequest)
+            .map(|line| (line.index, line.event))
             .collect();
         Ok(Page {
             events,
@@ -464,7 +465,7 @@ mod tests {
     fn numbers(page: &Page) -> Vec<u64> {
         page.events
             .iter()
-            .map(|event| event.payload["n"].as_u64().unwrap_or(u64::MAX))
+            .map(|(_, event)| event.payload["n"].as_u64().unwrap_or(u64::MAX))
             .collect()
     }
 

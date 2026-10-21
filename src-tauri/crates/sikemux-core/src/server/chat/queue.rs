@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::protocol::ChatContext;
 
 use super::super::{Core, CoreResult};
-use super::{Chat, ChatCommand, NOBODY};
+use super::{Chat, ChatCommand};
 
 /// At most this many messages wait behind a turn.
 pub(crate) const MAX_QUEUED: usize = 20;
@@ -41,9 +41,16 @@ pub(crate) struct Message {
 }
 
 impl Queued {
-    pub(crate) fn new(text: String, paths: Vec<String>, context: Vec<ChatContext>) -> Self {
+    /// Kept under the id the client sent it with, which its prompt then goes
+    /// out with, so the client knows its message again.
+    pub(crate) fn new(
+        message_id: Option<String>,
+        text: String,
+        paths: Vec<String>,
+        context: Vec<ChatContext>,
+    ) -> Self {
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: message_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             text,
             paths,
             context,
@@ -123,10 +130,10 @@ impl Chat {
 }
 
 fn send(chat: &Chat, batch: Vec<Queued>) {
+    let message_id = batch.first().map(|message| message.id.clone());
     let (text, paths, context) = combine(batch);
     let _ = chat.send(ChatCommand::Prompt {
-        from: NOBODY,
-        message_id: None,
+        message_id,
         text,
         paths,
         context,
@@ -143,12 +150,14 @@ pub(crate) async fn steer(
 ) -> CoreResult<()> {
     let chat = core.chats.running(agent_id)?;
     let mut taken = chat.feed.take_queued(Some(&ids));
-    taken.extend(message.map(|message| Queued::new(message.text, message.paths, message.context)));
+    taken.extend(
+        message.map(|message| Queued::new(None, message.text, message.paths, message.context)),
+    );
     if taken.is_empty() {
         return Ok(());
     }
     let (text, paths, context) = combine(taken.clone());
-    if super::steer(core, NOBODY, agent_id, text, paths, context).await? == "promptRequired" {
+    if super::steer(core, agent_id, text, paths, context).await? == "promptRequired" {
         send(&chat, taken);
     }
     Ok(())
@@ -166,6 +175,7 @@ mod tests {
 
     fn queued(text: &str, paths: &[&str], uris: &[&str]) -> Queued {
         Queued::new(
+            None,
             text.into(),
             paths.iter().map(|path| (*path).to_owned()).collect(),
             uris.iter()

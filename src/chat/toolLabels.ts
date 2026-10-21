@@ -1,7 +1,8 @@
 import { basename } from "../lib/paths";
 import { safeWebUrl } from "../lib/urls";
-import { rowArguments, sikemuxToolRow, toolArguments } from "./toolRows";
-import type { AcpToolCall, ChatMessage } from "./types";
+import { sikemuxToolRow, toolArguments } from "./toolRows";
+import type { ChatRows } from "./rows";
+import type { ToolCall } from "./types";
 
 // Splits `mcp__server__tool` so the server name can be de-emphasized.
 export function toolLabel(title: string): { scope?: string; name: string } {
@@ -24,7 +25,7 @@ const ACTIVITY_BY_KIND: Record<string, string> = {
 /* A tool titles itself with what it was handed — often a whole shell command.
    The running row is one line, so say what the agent is doing rather than
    quote it back. */
-export function activityLabel(tool: AcpToolCall): string {
+export function activityLabel(tool: ToolCall): string {
     const row = sikemuxToolRow(tool);
     if (row) {
         const said = `${row.verb} ${row.target}`.trim();
@@ -48,7 +49,7 @@ const KIND_WORDS: Record<string, string> = {
     switch_mode: "mode",
 };
 
-export function toolKind(tool: AcpToolCall): string {
+export function toolKind(tool: ToolCall): string {
     const row = sikemuxToolRow(tool);
     if (row) return row.verb;
     const byKind = KIND_WORDS[tool.kind ?? ""];
@@ -59,7 +60,7 @@ export function toolKind(tool: AcpToolCall): string {
 
 /* The row has one line for the target, so a path shows the name it ends in and
    keeps the rest in the tooltip. A command is not a path and stays as typed. */
-export function toolTarget(tool: AcpToolCall): string {
+export function toolTarget(tool: ToolCall): string {
     const row = sikemuxToolRow(tool);
     if (row) return row.target;
     const { scope, name } = toolLabel(tool.title);
@@ -70,20 +71,12 @@ export function toolTarget(tool: AcpToolCall): string {
 }
 
 // Our tools name the argument worth showing; another server's call shows its first short one.
-export function toolDetail(tool: AcpToolCall): string | null {
+export function toolDetail(tool: ToolCall): string | null {
     const row = sikemuxToolRow(tool);
     if (row) return row.detail;
     if (toolLabel(tool.title).scope === undefined) return null;
     const first = Object.values(toolArguments(tool)).find((value) => typeof value === "string" && value.trim() && !value.includes("\n"));
     return typeof first === "string" && first.length <= 120 ? first.trim() : null;
-}
-
-// What of a call's arguments its row shows, which outlives the rest of what it was handed.
-export function toolRowArguments(tool: AcpToolCall): Record<string, string> | null {
-    const row = rowArguments(tool);
-    if (row) return row;
-    const detail = toolDetail(tool);
-    return detail ? { detail } : null;
 }
 
 export function toolUrl(target: string): { before: string; raw: string; url: string; after: string } | null {
@@ -97,28 +90,21 @@ export function toolUrl(target: string): { before: string; raw: string; url: str
 /* Which file a call was about: the one it reported touching, or the one its
    title names when it reported nothing. A shell command is not a file, and a
    title with a space in it is a command. */
-export function toolPath(tool: AcpToolCall): string | null {
+export function toolPath(tool: ToolCall): string | null {
     if (sikemuxToolRow(tool)) return null;
-    const first = Array.isArray(tool.locations) ? tool.locations[0] : null;
-    if (first && typeof first === "object") {
-        const { path, line } = first as { path?: unknown; line?: unknown };
-        if (typeof path === "string" && path) return typeof line === "number" ? `${path}:${line}` : path;
-    }
+    if (tool.path) return tool.path;
     const named = toolLabel(tool.title).name.split("\n")[0].trim();
     return named.includes("/") && !/\s/.test(named) && !safeWebUrl(named) ? named : null;
 }
 
-export function toolRunning(tool: AcpToolCall): boolean {
+export function toolRunning(tool: ToolCall): boolean {
     const status = tool.status ?? "pending";
     return status !== "completed" && status !== "failed" && status !== "cancelled";
 }
 
-export function activeToolLabel(messages: ChatMessage[]): string | null {
-    const parts = messages.at(-1)?.parts ?? [];
-    for (let index = parts.length - 1; index >= 0; index -= 1) {
-        const part = parts[index];
-        if (part.kind !== "tool") continue;
-        return toolRunning(part.tool) ? activityLabel(part.tool) : null;
-    }
-    return null;
+/** What the running call at the end of the chat is doing, in its row's words. */
+export function activeToolLabel(chat: Pick<ChatRows, "messages" | "activeTool">): string | null {
+    if (!chat.activeTool) return null;
+    const part = chat.messages.at(-1)?.parts.find((candidate) => candidate.id === chat.activeTool);
+    return part?.kind === "tool" ? activityLabel(part.tool) : null;
 }

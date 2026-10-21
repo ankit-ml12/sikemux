@@ -4,12 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
-import { toolDiff } from '@mac/chat/diff';
 import { unknownCommand } from '@mac/chat/composerInput';
+import { recordOf } from '@mac/lib/guards';
 import { contextShare, contextTone, money, tokenCount } from '@mac/chat/contextUsage';
 import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from '@mac/chat/sessionConfig';
 import { toolKind, toolLabel, toolPath } from '@mac/chat/toolLabels';
-import type { AcpAvailableCommand, AcpPermissionRequest, AcpToolCall, ChatState, ContextUsage } from '@mac/chat/types';
+import type { ChatRows } from '@mac/chat/rows';
+import type { ChatCommandInfo, ContextUsage, PermissionAsk, ToolCall } from '@mac/chat/types';
 import { canSwitchMode, isYolo } from '@mac/agents/agentLaunch';
 import { agentLabel } from '@mac/agents/catalog';
 import { problem } from '@/core/problem';
@@ -29,7 +30,7 @@ import type { Attachment } from './uploads';
 import { useDraft } from './useChat';
 import { matchingCommands } from './commands';
 
-export function askTitle(request: AcpPermissionRequest): string {
+export function askTitle(request: PermissionAsk): string {
   const kind = toolKind(request.toolCall);
   if (kind === 'run') return 'Run a command?';
   if (kind === 'edit' || kind === 'move' || kind === 'delete') return 'Change a file?';
@@ -38,7 +39,7 @@ export function askTitle(request: AcpPermissionRequest): string {
 }
 
 /** All of what the agent asks to run or touch, since the end of a command can change what it does. */
-function asked(tool: AcpToolCall): string {
+function asked(tool: ToolCall): string {
   const command = (tool.rawInput as { command?: unknown } | undefined)?.command;
   if (typeof command === 'string' && command.trim()) return command.trim();
   if (Array.isArray(command) && command.every((word) => typeof word === 'string')) return command.join(' ');
@@ -55,7 +56,7 @@ function PermissionDock({
   answering,
   onAnswer,
 }: {
-  requests: AcpPermissionRequest[];
+  requests: PermissionAsk[];
   provider: string;
   answering: ReadonlySet<string>;
   onAnswer: (requestId: string, optionId: string | null) => void;
@@ -73,7 +74,6 @@ function PermissionDock({
   const ordered = [...cancel, ...rejects, ...always, ...once];
   const primary = once[0] ?? always[0];
   const run = toolKind(request.toolCall) === 'run';
-  const diff = toolDiff(request.toolCall);
   const title = askTitle(request);
   return (
     <View
@@ -119,11 +119,6 @@ function PermissionDock({
           {run ? <Text style={{ color: colors.toolRun }}>$ </Text> : null}
           {asked(request.toolCall)}
         </Text>
-        {diff ? (
-          <Text style={[styles.dockCmdText, { marginTop: 4 }]}>
-            <Text style={{ color: colors.gitAdded }}>+{diff.adds}</Text> <Text style={{ color: colors.gitDeleted }}>−{diff.dels}</Text>
-          </Text>
-        ) : null}
       </ScrollView>
       <View style={styles.dockActs}>
         {ordered.map((option) => {
@@ -152,7 +147,7 @@ function PermissionDock({
   );
 }
 
-function Commands({ matches, onPick }: { matches: AcpAvailableCommand[]; onPick: (name: string) => void }) {
+function Commands({ matches, onPick }: { matches: ChatCommandInfo[]; onPick: (name: string) => void }) {
   const styles = useStyles(makeStyles);
   if (!matches.length) return null;
   return (
@@ -300,7 +295,7 @@ function ConfigSheet({
   onClose: () => void;
   provider: string;
   configs: SessionConfig[];
-  usage: ChatState['usage'];
+  usage: ChatRows['usage'];
   onPick: (config: SessionConfig, value: string) => void;
 }) {
   const colors = useColors();
@@ -424,11 +419,11 @@ export const Composer = memo(function Composer({
   session: ChatSession;
   provider: string;
   running: boolean;
-  setup: ChatState['setup'];
-  usage: ChatState['usage'];
-  commands: AcpAvailableCommand[];
+  setup: ChatRows['setup'];
+  usage: ChatRows['usage'];
+  commands: ChatCommandInfo[];
   /** The permission requests waiting on an answer, the first one shown first. */
-  requests: AcpPermissionRequest[];
+  requests: PermissionAsk[];
   answering: ReadonlySet<string>;
   placeholder: string;
   permissionMode: string;
@@ -461,7 +456,7 @@ export const Composer = memo(function Composer({
   const input = inputRef ?? ownInput;
   const [sheet, setSheet] = useState(false);
   const typing = useKeyboardShown();
-  const configs = sessionConfigs(setup);
+  const configs = sessionConfigs(recordOf(setup) ?? {});
   const slots = pickerSlots(configs, provider);
   const model = currentLabel(slots[0]?.config);
   const effort = currentLabel(slots[1]?.config);

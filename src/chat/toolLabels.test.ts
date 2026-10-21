@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { activeToolLabel, activityLabel, toolDetail, toolKind, toolLabel, toolPath, toolRowArguments, toolTarget, toolUrl } from "./toolLabels";
-import type { AcpToolCall, ChatMessage, ChatPart } from "./types";
+import { activeToolLabel, activityLabel, toolDetail, toolKind, toolLabel, toolPath, toolTarget, toolUrl } from "./toolLabels";
+import type { ToolCall, ChatMessage, ChatPart } from "./types";
 
-const call = (title: string, extra: Partial<AcpToolCall> = {}): AcpToolCall => ({ toolCallId: "t1", title, ...extra });
+const call = (title: string, extra: Partial<ToolCall> = {}): ToolCall => ({ toolCallId: "t1", title, ...extra });
 
 describe("toolLabel", () => {
     it("splits an MCP tool into its server and name", () => {
@@ -103,14 +103,6 @@ describe("our own tools", () => {
         expect(activityLabel(navigate({ url: `https://a.dev/${"x".repeat(40)}` }))).toBe("open");
     });
 
-    it("draw the same row from the arguments a finished call keeps", () => {
-        const live = call("mcp__sikemux-tools__browser_upload", { rawInput: { paths: ["/tmp/a.png"], index: 3, report: "full" } });
-        const kept = call(live.title, { rawInput: toolRowArguments(live) });
-        expect([toolTarget(kept), toolDetail(kept)]).toEqual([toolTarget(live), toolDetail(live)]);
-        const act = call("mcp__sikemux-tools__browser_act", { rawInput: { steps: [{ action: "click" }, { action: "press" }] } });
-        expect(toolTarget(call(act.title, { rawInput: toolRowArguments(act) }))).toBe("2-step sequence");
-    });
-
     it("say nothing rather than fill in a default, and give waits as durations", () => {
         expect(toolTarget(call("mcp__sikemux-tools__browser_screenshot", { rawInput: {} }))).toBe("");
         expect(toolTarget(call("mcp__sikemux-tools__browser_wait", { rawInput: { ms: 4000 } }))).toBe("4s");
@@ -154,14 +146,13 @@ describe("toolUrl", () => {
 });
 
 describe("toolPath", () => {
-    it("prefers the location the call reported, with its line", () => {
-        expect(toolPath(call("Read", { locations: [{ path: "/a/b.ts", line: 12 }] }))).toBe("/a/b.ts:12");
-        expect(toolPath(call("Read", { locations: [{ path: "/a/b.ts" }] }))).toBe("/a/b.ts");
+    it("prefers the file the call reported, with its line", () => {
+        expect(toolPath(call("Read", { path: "/a/b.ts:12" }))).toBe("/a/b.ts:12");
+        expect(toolPath(call("Read", { path: "/a/b.ts" }))).toBe("/a/b.ts");
     });
 
     it("falls back to a path in the title", () => {
-        expect(toolPath(call("src/app.tsx", { locations: [{ path: "" }] }))).toBe("src/app.tsx");
-        expect(toolPath(call("src/app.tsx", { locations: ["junk"] }))).toBe("src/app.tsx");
+        expect(toolPath(call("src/app.tsx"))).toBe("src/app.tsx");
     });
 
     it("does not read a command, a URL or a bare word as a file", () => {
@@ -172,20 +163,17 @@ describe("toolPath", () => {
 });
 
 describe("activeToolLabel", () => {
-    const tool = (id: string, extra: Partial<AcpToolCall>): ChatPart => ({ id, kind: "tool", tool: call("x", { toolCallId: id, ...extra }) });
+    const tool = (id: string, extra: Partial<ToolCall>): ChatPart => ({ id, kind: "tool", tool: call("x", { toolCallId: id, ...extra }) });
     const message = (parts: ChatPart[]): ChatMessage => ({ id: "m", role: "assistant", parts });
 
-    it("names what the last call in the last message is doing", () => {
+    it("names what the call the core says is running is doing", () => {
         const parts = [tool("a", { status: "completed" }), tool("b", { kind: "read" }), { id: "t", kind: "text", text: "hi" } as ChatPart];
-        expect(activeToolLabel([message(parts)])).toBe("Reading…");
+        expect(activeToolLabel({ messages: [message(parts)], activeTool: "b" })).toBe("Reading…");
     });
 
-    it("says nothing once the last call has finished", () => {
-        expect(activeToolLabel([message([tool("a", { kind: "read" }), tool("b", { status: "completed" })])])).toBeNull();
-    });
-
-    it("says nothing without calls or messages", () => {
-        expect(activeToolLabel([message([{ id: "t", kind: "text", text: "hi" }])])).toBeNull();
-        expect(activeToolLabel([])).toBeNull();
+    it("says nothing without a running call, or for one the last message does not hold", () => {
+        expect(activeToolLabel({ messages: [message([tool("a", { kind: "read" })])] })).toBeNull();
+        expect(activeToolLabel({ messages: [message([tool("a", { kind: "read" })])], activeTool: "gone" })).toBeNull();
+        expect(activeToolLabel({ messages: [], activeTool: "a" })).toBeNull();
     });
 });

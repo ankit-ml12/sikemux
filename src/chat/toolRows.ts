@@ -2,7 +2,7 @@ import { recordOf } from "../lib/guards";
 import { basename } from "../lib/paths";
 import { durationLabel } from "./durationLabel";
 import { TOOL_ROWS } from "./generated/toolRows";
-import type { AcpToolCall } from "./types";
+import type { ToolCall } from "./types";
 
 export type ToolRowIcon =
     | "activity"
@@ -93,7 +93,7 @@ function rowSpec(title: string): ToolRowSpec | null {
 }
 
 // Some agents hand over the server and tool beside the arguments rather than the arguments alone.
-export function toolArguments(tool: AcpToolCall): Record<string, unknown> {
+export function toolArguments(tool: ToolCall): Record<string, unknown> {
     const input = recordOf(tool.rawInput);
     if (!input) return {};
     return recordOf(input.arguments) ?? input;
@@ -124,7 +124,7 @@ function fill(templates: readonly string[] | undefined, args: Record<string, unk
     return null;
 }
 
-export function sikemuxToolRow(tool: AcpToolCall): ToolRowText | null {
+export function sikemuxToolRow(tool: ToolCall): ToolRowText | null {
     const spec = rowSpec(tool.title);
     if (!spec) return null;
     const args = toolArguments(tool);
@@ -138,20 +138,4 @@ export function sikemuxToolRow(tool: AcpToolCall): ToolRowText | null {
         detail: detail && detail !== target ? detail : null,
         plugin: spec.plugin ?? null,
     };
-}
-
-/* A finished call lets go of what it was handed, so the arguments its row
-   names are kept as the short text the row shows. */
-export function rowArguments(tool: AcpToolCall): Record<string, string> | null {
-    const spec = rowSpec(tool.title);
-    if (!spec) return null;
-    const args = toolArguments(tool);
-    const kept: Record<string, string> = {};
-    for (const template of [...spec.target, ...(spec.detail ?? [])]) {
-        for (const [, key] of template.matchAll(/\{(\w+)\}/g)) {
-            const value = valueText(key, args[key]);
-            if (value !== null) kept[key] = value;
-        }
-    }
-    return kept;
 }

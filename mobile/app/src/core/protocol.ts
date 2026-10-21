@@ -101,6 +101,3 @@ function keepInbox(previous: Inbox, next: Inbox): Inbox {
 
 export const readHost = (json: string) => readCore<HostInfo>(json);
 export const readPairing = (json: string) => readCore<RemotePairing>(json);
-
-/** A chat event as the Mac app's chat code reads it. */
-export type CoreChatEvent = { kind: string; payload: Record<string, unknown> };

@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { attachmentName, decodedFenceName, formatDetail, groupParts, groupTasks, runningSubagents, subagentActivity, taskDetail } from "./transcript";
-import type { AcpAsyncTask, AcpSubagent, ChatMessage, ChatPart } from "./types";
+import { attachmentName, decodedFenceName, formatDetail, groupParts, groupTasks, subagentActivity, taskDetail } from "./transcript";
+import type { AsyncTask, SubagentCard, ChatPart } from "./types";
 
 const text = (id: string): ChatPart => ({ id, kind: "text", text: id });
 const tool = (id: string, title = "cargo test", kind?: string): ChatPart => ({ id, kind: "tool", tool: { toolCallId: id, title, kind } });
-const subagent = (overrides: Partial<AcpSubagent> = {}): AcpSubagent => ({
+const subagent = (overrides: Partial<SubagentCard> = {}): SubagentCard => ({
     sessionId: "s1",
     name: "explorer",
     task: "Find the bug\nThen explain it",
     state: "running",
-    messages: [],
-    nextId: 0,
+    calls: 0,
     ...overrides,
 });
-const message = (id: string, parts: ChatPart[]): ChatMessage => ({ id, role: "assistant", parts });
-const task = (overrides: Partial<AcpAsyncTask>): AcpAsyncTask => ({
+const task = (overrides: Partial<AsyncTask>): AsyncTask => ({
     asyncTaskId: "t1",
     name: "dev server",
     taskType: "shell",
@@ -77,30 +75,12 @@ describe("groupParts", () => {
 
 describe("subagentActivity", () => {
     it("reports the last tool the subagent called", () => {
-        const agent = subagent({
-            messages: [message("m1", [tool("a", "/src/one.ts", "read")]), message("m2", [tool("b", "/src/two.ts", "read"), text("c")])],
-        });
+        const agent = subagent({ calls: 2, lastTool: { toolCallId: "b", title: "/src/two.ts", kind: "read" } });
         expect(subagentActivity(agent)).toBe("read two.ts");
     });
 
     it("falls back to its task before it has called anything", () => {
-        expect(subagentActivity(subagent({ messages: [message("m1", [text("a")])] }))).toBe("Find the bug");
-    });
-});
-
-describe("runningSubagents", () => {
-    it("lists only subagents still at work, in transcript order", () => {
-        const first = subagent({ sessionId: "s1" });
-        const done = subagent({ sessionId: "s2", state: "completed" });
-        const second = subagent({ sessionId: "s3" });
-        const messages = [
-            message("m1", [{ id: "p1", kind: "subagent", subagent: first }, text("x")]),
-            message("m2", [
-                { id: "p2", kind: "subagent", subagent: done },
-                { id: "p3", kind: "subagent", subagent: second },
-            ]),
-        ];
-        expect(runningSubagents(messages)).toEqual([first, second]);
+        expect(subagentActivity(subagent())).toBe("Find the bug");
     });
 });
 

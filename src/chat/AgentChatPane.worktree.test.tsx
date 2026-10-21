@@ -3,14 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetResourcesForTests } from "../state/resources";
 import { setState } from "../state/store";
 import type { Agent, AgentWorktree } from "../state/types";
+import type { AcpAttachment } from "../api/acp";
 import { AgentChatPane } from "./AgentChatPane";
+import type { ChatView } from "./types";
 import type { PreparedWorktree } from "./useChatWorktree";
 import { draftOf, typeDraft } from "../test/draft";
 
 const mocks = vi.hoisted(() => ({
     prompt: vi.fn(async () => {}),
-    start: vi.fn(async (_agentId: string) => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
-    started: null as { sessionId: string; capabilities: object; setup: object } | null,
+    start: vi.fn(async (_agentId: string) => {}),
+    started: false,
     create: vi.fn(),
     setAgentWorktree: vi.fn(),
     setAgentWorktreeDefault: vi.fn(),
@@ -32,15 +34,14 @@ vi.mock("../api/core", async (importOriginal) => {
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => {
-            const start = mocks.started;
-            mocks.started = null;
-            return start
-                ? { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
-                : { status: "missing" };
+        attach: vi.fn(async (): Promise<AcpAttachment> => {
+            const started = mocks.started;
+            mocks.started = false;
+            return started ? { status: "live", view: readyChat, feed: "feed-1", seq: 0 } : { status: "missing" };
         }),
         startChat: vi.fn(async (agentId: string) => {
-            mocks.started = await mocks.start(agentId);
+            await mocks.start(agentId);
+            mocks.started = true;
         }),
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
@@ -79,6 +80,25 @@ const worktree: AgentWorktree = {
     startSha: "abc",
 };
 
+const readyChat: ChatView = {
+    head: {
+        sessionId: "session-1",
+        connection: "ready",
+        running: false,
+        turned: false,
+        permissionMode: "workspace-write",
+        commands: [],
+        capabilities: {},
+        setup: {},
+        permissions: [],
+        tasks: [],
+        runningSubagents: [],
+        queued: [],
+        earlierLost: false,
+    },
+    rows: [],
+};
+
 let resolveCreate: (prepared: PreparedWorktree) => void = () => {};
 
 function renderPane() {
@@ -104,7 +124,7 @@ async function sendFirstMessage(text: string): Promise<HTMLElement> {
 
 beforeEach(() => {
     vi.clearAllMocks();
-    mocks.started = null;
+    mocks.started = false;
     resetResourcesForTests();
     setState({ agentWorktreeDefaults: {} });
     mocks.create.mockImplementation(

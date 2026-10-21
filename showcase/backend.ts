@@ -619,19 +619,26 @@ export class ShowcaseBackend implements IpcTransport {
     this.onCore(["modelProviders"], () => []);
     // Each time a pane opens a chat the demo starts it again from its script, as acp_start did:
     // the first attach finds nothing, startChat plays the history, and the next attach takes it up.
-    this.on("acp_attach", ({ agentId }) => {
-      const start = this.justStarted.get(agentId as string);
-      if (!start) return { status: "missing" };
-      this.justStarted.delete(agentId as string);
-      return {
-        status: "live",
-        start,
-        permissionMode: "workspace-write",
-        running: false,
-        turned: true,
-        feed: `feed-${String(agentId)}`,
-        olderBefore: null,
+    this.on("acp_attach", async ({ agentId }) => {
+      const chat = agentId as string;
+      if (!this.justStarted.delete(chat)) return { status: "missing" };
+      await this.folding.get(chat);
+      const { view, seq } = await server<{ view: unknown; seq: number }>(
+        "fold",
+        { chat, view: true },
+      );
+      return { status: "live", view, feed: `feed-${chat}`, seq };
+    });
+    this.onCore(["chatToolDetail"], async ({ params }) => {
+      const { agentId, toolCallId } = params as {
+        agentId: string;
+        toolCallId: string;
       };
+      const { detail } = await server<{ detail: unknown }>("fold", {
+        chat: agentId,
+        detail: toolCallId,
+      });
+      return detail ?? {};
     });
     this.on("acp_list", () => []);
     this.on("pty_sessions", () => []);
@@ -901,11 +908,12 @@ export class ShowcaseBackend implements IpcTransport {
     );
     while (this.stepLive(agentId) >= 0);
     for (const agentId of agents)
-      this.emit("acp_event", {
-        agentId,
-        kind: "turn_completed",
-        payload: { stopReason: "end_turn", at: Date.now() },
-      });
+      this.fold(agentId, [
+        {
+          kind: "turn_completed",
+          payload: { stopReason: "end_turn", at: Date.now() },
+        },
+      ]);
   }
 
   /**
@@ -952,11 +960,46 @@ export class ShowcaseBackend implements IpcTransport {
     };
   }
 
+  /** What each chat's folding is up to, so its changes go out in the order its script says them. */
+  private readonly folding = new Map<string, Promise<void>>();
+
+  /** Hands a chat's events to the core's fold and sends the page what it changed, as the core would. */
+  private fold(
+    agentId: string,
+    events: { kind: string; payload: unknown }[],
+    reset = false,
+  ): void {
+    const before = this.folding.get(agentId) ?? Promise.resolve();
+    const next = before
+      .then(() =>
+        server<{ changes: unknown[]; seq: number }>("fold", {
+          chat: agentId,
+          events,
+          reset,
+        }),
+      )
+      .then(({ changes, seq }) => {
+        if (changes.length)
+          this.emit("acp_event", {
+            agentId,
+            kind: "changes",
+            seq,
+            payload: changes,
+          });
+      });
+    this.folding.set(
+      agentId,
+      next.catch(() => {}),
+    );
+  }
+
   private batchFor(agentId: string) {
     const sessionId = `session-${agentId}`;
-    return (updates: Record<string, unknown>[]) => ({
-      updates: updates.map((update) => ({ sessionId, update })),
-    });
+    return (updates: Record<string, unknown>[]) =>
+      updates.map((update) => ({
+        kind: "session_update",
+        payload: { sessionId, update },
+      }));
   }
 
   /**
@@ -977,15 +1020,13 @@ export class ShowcaseBackend implements IpcTransport {
   private queueLiveTurn(
     agentId: string,
     live: Record<string, unknown>[],
-    batch: (updates: Record<string, unknown>[]) => unknown,
+    batch: (
+      updates: Record<string, unknown>[],
+    ) => { kind: string; payload: unknown }[],
     completes = false,
   ) {
     const send = (updates: Record<string, unknown>[]) =>
-      this.emit("acp_event", {
-        agentId,
-        kind: "session_update",
-        payload: batch(updates),
-      });
+      this.fold(agentId, batch(updates));
     const strip = ({
       durationMs: _durationMs,
       board: _board,
@@ -997,11 +1038,9 @@ export class ShowcaseBackend implements IpcTransport {
     this.liveSteps.push({
       agentId,
       run: () =>
-        this.emit("acp_event", {
-          agentId,
-          kind: "turn_started",
-          payload: { at: Date.now() },
-        }),
+        this.fold(agentId, [
+          { kind: "turn_started", payload: { at: Date.now() } },
+        ]),
       holdMs: 400,
     });
     let finishing: Record<string, unknown> | null = null;
@@ -1039,24 +1078,25 @@ export class ShowcaseBackend implements IpcTransport {
             this.emit("browser-agent-acting", agentId);
           }
           if (update.asks)
-            this.emit("acp_event", {
-              agentId,
-              kind: "permission_request",
-              payload: {
-                requestId: `ask-${String(update.toolCallId)}`,
-                sessionId: `session-${agentId}`,
-                toolCall: strip(update),
-                options: [
-                  { optionId: "allow", name: "Allow", kind: "allow_once" },
-                  {
-                    optionId: "always",
-                    name: "Always allow",
-                    kind: "allow_always",
-                  },
-                  { optionId: "deny", name: "Deny", kind: "reject_once" },
-                ],
+            this.fold(agentId, [
+              {
+                kind: "permission_request",
+                payload: {
+                  requestId: `ask-${String(update.toolCallId)}`,
+                  sessionId: `session-${agentId}`,
+                  toolCall: strip(update),
+                  options: [
+                    { optionId: "allow", name: "Allow", kind: "allow_once" },
+                    {
+                      optionId: "always",
+                      name: "Always allow",
+                      kind: "allow_always",
+                    },
+                    { optionId: "deny", name: "Deny", kind: "reject_once" },
+                  ],
+                },
               },
-            });
+            ]);
         },
         holdMs: Number(update.durationMs ?? (isTool ? 1200 : 600)),
       });
@@ -1074,11 +1114,12 @@ export class ShowcaseBackend implements IpcTransport {
               status: "completed",
             },
           ]);
-        this.emit("acp_event", {
-          agentId,
-          kind: "turn_completed",
-          payload: { stopReason: "end_turn", at: Date.now() },
-        });
+        this.fold(agentId, [
+          {
+            kind: "turn_completed",
+            payload: { stopReason: "end_turn", at: Date.now() },
+          },
+        ]);
       },
       holdMs: 400,
     });
@@ -1092,10 +1133,7 @@ export class ShowcaseBackend implements IpcTransport {
     new URLSearchParams(location.search).has("video") ? [AGENTS.hero.id] : [],
   );
 
-  private readonly justStarted = new Map<
-    string,
-    { sessionId: string; capabilities: object; setup: object }
-  >();
+  private readonly justStarted = new Set<string>();
 
   private startAgent(agentId: string, provider: string) {
     const full = AGENT_SCRIPTS[agentId];
@@ -1115,24 +1153,22 @@ export class ShowcaseBackend implements IpcTransport {
     const setup = { configOptions: MODEL_OPTIONS[provider] ?? [] };
     const sessionId = `session-${agentId}`;
     const batch = this.batchFor(agentId);
-    if (script) {
-      this.emit("acp_event", {
-        agentId,
-        kind: "session_update",
-        payload: batch([
-          ...recorded(script.history),
-          { sessionUpdate: "usage_update", ...script.usage },
-        ]),
-      });
-    }
-    this.emit("acp_event", {
-      agentId,
-      kind: "ready",
-      payload: { capabilities: {}, setup },
-    });
-    if (script?.live) this.queueLiveTurn(agentId, script.live, batch);
     const start = { sessionId, capabilities: {}, setup };
-    this.justStarted.set(agentId, start);
+    this.fold(
+      agentId,
+      [
+        { kind: "ready", payload: start },
+        ...(script
+          ? batch([
+              ...recorded(script.history),
+              { sessionUpdate: "usage_update", ...script.usage },
+            ])
+          : []),
+      ],
+      true,
+    );
+    if (script?.live) this.queueLiveTurn(agentId, script.live, batch);
+    this.justStarted.add(agentId);
     return start;
   }
 }

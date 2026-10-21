@@ -5,7 +5,6 @@
 pub(crate) mod feed;
 mod history;
 mod kept;
-mod markdown;
 mod native;
 pub(crate) mod offered;
 pub(crate) mod queue;
@@ -29,8 +28,8 @@ use crate::acp::{bounded_text, current_choice, native as acp_native, permission,
 use crate::launch::providers::ROUTED_ENV;
 use crate::launch::PermissionMode;
 use crate::protocol::{
-    Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatEventKind, ChatInfo,
-    ChatLaunch, ChatMark, ChatStart, ChatState, Event, RequestId, Response,
+    Attention, AttentionKind, ChatAccount, ChatAttachment, ChatContext, ChatInfo, ChatLaunch,
+    ChatMark, ChatStart, ChatState, Event, RequestId, Response,
 };
 
 use super::activity::Activity;
@@ -40,6 +39,7 @@ use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
 use native::Begin;
+pub(crate) use sikemux_fold::ChatEventKind;
 use sikemux_process::clock::epoch_ms;
 
 const MAX_AGENT_ID: usize = 200;
@@ -47,9 +47,6 @@ const START_TIMEOUT: Duration = Duration::from_secs(150);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(15);
 const NOT_RUNNING: &str = "ACP session is not running";
 const STOPPED: &str = "ACP session stopped";
-
-/// No client: a message that went in on its own, which every client is told of.
-pub(crate) const NOBODY: super::connection::ClientId = 0;
 
 /// How long a stop waits for an agent's process to be gone.
 const STOP_SETTLE: Duration = Duration::from_secs(2);
@@ -70,7 +67,6 @@ const RESTART_WINDOW: Duration = Duration::from_secs(5 * 60);
 
 pub(crate) enum ChatCommand {
     Prompt {
-        from: ClientId,
         /// Names the message for a later edit of it.
         message_id: Option<String>,
         text: String,
@@ -87,7 +83,6 @@ pub(crate) enum ChatCommand {
         reply: oneshot::Sender<Result<Value, String>>,
     },
     Steer {
-        from: ClientId,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
@@ -108,7 +103,6 @@ pub(crate) enum ChatCommand {
     /// Takes the conversation back to before the person's message
     /// `message_id` and sends `text` in its place.
     Edit {
-        from: ClientId,
         message_id: String,
         text: String,
         paths: Vec<String>,
@@ -1644,7 +1638,7 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
 /// saying what cut it short.
 pub(crate) fn carry_on_prompt(what: &str) -> rebind::Replay {
     rebind::Replay {
-        announce: None,
+        announce: false,
         message_id: None,
         text: format!("{what}, so your last turn stopped part-way. Check what got done, since a step that was cut off may not have finished, then carry on where you left off."),
         paths: Vec::new(),
@@ -1892,9 +1886,22 @@ pub(crate) fn history(
         .feed
         .history(feed, before, turns as usize)?;
     Ok(Response::ChatHistory {
-        events: page.events,
-        older_before: page.older_before,
+        page: serde_json::to_value(page).map_err(|error| CoreError::from(error.to_string()))?,
     })
+}
+
+/// The change a chat's tool call made and what it printed, for a client that
+/// opened the call's row.
+pub(crate) fn tool_detail(
+    core: &Core,
+    agent_id: &str,
+    tool_call_id: &str,
+) -> CoreResult<sikemux_wire::chat::ToolDetail> {
+    core.chats
+        .running(agent_id)?
+        .feed
+        .tool_detail(tool_call_id)
+        .ok_or_else(|| CoreError::from("that call left nothing to show"))
 }
 
 pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
@@ -1905,7 +1912,6 @@ pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
 
 pub(crate) fn prompt(
     core: &Core,
-    from: ClientId,
     agent_id: &str,
     message_id: Option<String>,
     text: String,
@@ -1924,7 +1930,6 @@ pub(crate) fn prompt(
     });
     super::workspace::retitle(core, agent_id, title, true);
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
-        from,
         message_id,
         text,
         paths,
@@ -1934,7 +1939,6 @@ pub(crate) fn prompt(
 
 pub(crate) async fn edit(
     core: &Core,
-    from: ClientId,
     agent_id: &str,
     message_id: String,
     text: String,
@@ -1944,7 +1948,6 @@ pub(crate) async fn edit(
     bounded_text("message id", &message_id, 256)?;
     let (reply, answer) = oneshot::channel();
     core.chats.running(agent_id)?.send(ChatCommand::Edit {
-        from,
         message_id,
         text,
         paths,
@@ -1959,7 +1962,6 @@ pub(crate) async fn edit(
 
 pub(crate) async fn steer(
     core: &Core,
-    from: ClientId,
     agent_id: &str,
     text: String,
     paths: Vec<String>,
@@ -1967,7 +1969,6 @@ pub(crate) async fn steer(
 ) -> CoreResult<String> {
     let (reply, answer) = oneshot::channel();
     core.chats.running(agent_id)?.send(ChatCommand::Steer {
-        from,
         text,
         paths,
         context,

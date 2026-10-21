@@ -1,22 +1,26 @@
 #![cfg(unix)]
 
+mod folded;
+
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use folded::{prompts, Chat, Folded};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr};
 use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::grid::{decode_frame, Screen};
 use sikemux_core::protocol::{
-    Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
-    ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus,
-    SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
+    Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatLaunch, ChatMark,
+    ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus, SessionId,
+    SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
 use sikemux_core::server::{self, ServerConfig, ServerError};
+use sikemux_wire::chat::{ChatChange, ChatPage, ChatRole};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -421,24 +425,28 @@ async fn keep_agent(app: &CoreClient, agent_id: &str, title: &str, asleep: bool)
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_replay() {
+async fn a_prompt_reaches_everyone_watching_and_stays_in_the_replay() {
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Full);
     let core = start_core(&core_key, &[&phone]);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, app_events) = CoreClient::connect(&core.socket).await.expect("app");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
-    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+    let (client, events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     let (agent_id, _) = client
         .start_chat("opencode:fake".into(), "sess-tmp".into(), None)
         .await
         .expect("the phone starts a chat");
-    app.acp_attach(agent_id.clone())
-        .await
-        .expect("the app watches");
+    let mut watching = Chat::new(app_events, &agent_id);
+    watching.attached(
+        &app.acp_attach(agent_id.clone())
+            .await
+            .expect("the app watches"),
+    );
+    let mut sending = Chat::new(events, &agent_id);
 
     client
         .acp_prompt(
@@ -450,38 +458,20 @@ async fn a_prompt_reaches_everyone_watching_but_its_sender_and_stays_in_the_repl
         )
         .await
         .expect("prompt");
-    let prompt = loop {
-        let event = tokio::time::timeout(WAIT, app_events.recv())
-            .await
-            .expect("the app never heard the prompt")
-            .expect("the app's connection closed");
-        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
-            if event.kind == ChatEventKind::Prompt {
-                break event;
-            }
-        }
-    };
-    assert_eq!(prompt.payload["text"], "from the phone");
+    watching
+        .until(|chat| chat.prompts() == ["from the phone"])
+        .await;
 
-    until_said(&mut events, &agent_id, "from the phone").await;
-    while let Ok(event) = events.try_recv() {
-        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
-            assert_ne!(
-                event.kind,
-                ChatEventKind::Prompt,
-                "the sender already shows its prompt"
-            );
-        }
-    }
+    sending.until_said("echo: from the phone").await;
+    assert_eq!(
+        sending.prompts(),
+        ["from the phone"],
+        "the sender is sent its prompt as a row too"
+    );
 
-    let ChatAttachment::Live { replay, .. } = app.acp_attach(agent_id).await.expect("attach")
-    else {
-        panic!("the chat is running");
-    };
-    assert!(replay
-        .iter()
-        .any(|event| event.kind == ChatEventKind::Prompt
-            && event.payload["text"] == "from the phone"));
+    let mut replayed = Folded::default();
+    replayed.attached(&app.acp_attach(agent_id).await.expect("attach"));
+    assert_eq!(replayed.prompts(), ["from the phone"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -489,13 +479,14 @@ async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() 
     let core_key = SecretKey::generate();
     let phone = Device::new("Phone", DeviceAccess::Watch);
     let core = start_core_with(&core_key, &[&phone], true);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, app_events) = CoreClient::connect(&core.socket).await.expect("app");
     publish_fake_agent(&app).await;
     let start = app
         .acp_start(fake_launch("agent-long"))
         .await
         .expect("the app starts a chat");
     assert!(!start.session_id.is_empty());
+    let mut chat = Chat::new(app_events, "agent-long");
     for n in 0..55 {
         app.acp_prompt(
             "agent-long".into(),
@@ -506,32 +497,13 @@ async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() 
         )
         .await
         .expect("prompt");
-        loop {
-            let event = tokio::time::timeout(WAIT, app_events.recv())
-                .await
-                .expect("the turn never ended")
-                .expect("the app's connection closed");
-            if let ClientEvent::Event(Event::Chat { event, .. }) = event {
-                if event.kind == ChatEventKind::TurnCompleted {
-                    break;
-                }
-            }
-        }
+        chat.until_turns_ended(n + 1).await;
     }
-    let prompts = |events: &[sikemux_core::protocol::ChatEvent]| -> Vec<String> {
-        events
-            .iter()
-            .filter(|event| event.kind == ChatEventKind::Prompt)
-            .map(|event| {
-                event.payload["text"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned()
-            })
-            .collect()
-    };
     let turns = |range: std::ops::Range<usize>| -> Vec<String> {
         range.map(|n| format!("turn {n}")).collect()
+    };
+    let page = |page: serde_json::Value| -> ChatPage {
+        serde_json::from_value(page).expect("a chat page")
     };
 
     let status = listening(&app).await;
@@ -539,44 +511,47 @@ async fn a_phone_is_sent_a_long_chat_s_last_turns_and_pages_back_to_its_start() 
     let (client, _events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
-    let ChatAttachment::Live {
-        replay,
-        mark,
-        older_before: Some(before),
-        ..
-    } = client
+    let attachment = client
         .acp_attach("agent-long".into())
         .await
-        .expect("attach")
-    else {
-        panic!("the phone is sent the chat's end, with more before it");
+        .expect("attach");
+    let ChatAttachment::Live { mark, .. } = &attachment else {
+        panic!("the phone is sent the chat as it stands");
     };
-    assert_eq!(prompts(&replay), turns(5..55));
-    assert_eq!(replay[0].kind, ChatEventKind::Prompt);
+    let mut shown = Folded::default();
+    shown.attached(&attachment);
+    let before = shown
+        .view
+        .older_before
+        .expect("the phone is sent the chat's end, with more before it");
+    assert_eq!(shown.prompts(), turns(5..55));
+    assert_eq!(shown.view.rows[0].role, ChatRole::User);
 
-    let (events, older) = client
-        .acp_history("agent-long".into(), mark.feed.clone(), before, 3)
-        .await
-        .expect("a watching phone reads the history");
-    assert_eq!(prompts(&events), turns(2..5));
-    let older = older.expect("there is more");
-    let (events, older) = client
-        .acp_history("agent-long".into(), mark.feed, older, 3)
-        .await
-        .expect("history");
-    assert_eq!(prompts(&events), turns(0..2));
-    assert_eq!(older, None);
+    let earlier = page(
+        client
+            .acp_history("agent-long".into(), mark.feed.clone(), before, 3)
+            .await
+            .expect("a watching phone reads the history"),
+    );
+    assert_eq!(prompts(&earlier.rows), turns(2..5));
+    let older = earlier.older_before.expect("there is more");
+    let earliest = page(
+        client
+            .acp_history("agent-long".into(), mark.feed.clone(), older, 3)
+            .await
+            .expect("history"),
+    );
+    assert_eq!(prompts(&earliest.rows), turns(0..2));
+    assert_eq!(earliest.older_before, None);
 
-    let ChatAttachment::Live {
-        replay,
-        older_before,
-        ..
-    } = app.acp_attach("agent-long".into()).await.expect("attach")
-    else {
-        panic!("the app takes the chat up");
-    };
-    assert_eq!(prompts(&replay), turns(0..55));
-    assert_eq!(older_before, None);
+    let mut taken = Folded::default();
+    taken.attached(&app.acp_attach("agent-long".into()).await.expect("attach"));
+    assert_eq!(
+        taken.drawn(),
+        shown.drawn(),
+        "the app opens the chat at the same end the phone does"
+    );
+    assert_eq!(taken.view.older_before, Some(before));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -704,26 +679,6 @@ fn fake_launch(agent_id: &str) -> ChatLaunch {
     }
 }
 
-async fn until_said(events: &mut UnboundedReceiver<ClientEvent>, agent: &str, needle: &str) {
-    let mut said = String::new();
-    while !said.contains(needle) {
-        let event = tokio::time::timeout(WAIT, events.recv())
-            .await
-            .expect("timed out waiting for the agent")
-            .expect("the device's connection closed");
-        let ClientEvent::Event(Event::Chat {
-            agent_id, event, ..
-        }) = event
-        else {
-            continue;
-        };
-        if agent_id != agent || event.kind != ChatEventKind::SessionUpdate {
-            continue;
-        }
-        said.push_str(&event.payload.to_string());
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     let core_key = SecretKey::generate();
@@ -734,7 +689,7 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
     let status = listening(&app).await;
 
     let endpoint = phone.endpoint().await;
-    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+    let (client, events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     let workspace = client.workspace().await.expect("workspace");
@@ -777,7 +732,9 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
         )
         .await
         .expect("prompt");
-    until_said(&mut events, &agent_id, "hello from the phone").await;
+    Chat::new(events, &agent_id)
+        .until_said("echo: hello from the phone")
+        .await;
 
     let chats = client.acp_list().await.expect("list chats");
     let chat = chats
@@ -826,20 +783,23 @@ async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
     let phone = Device::new("Phone", DeviceAccess::Full);
     let watcher = Device::new("Watcher", DeviceAccess::Watch);
     let core = start_core(&core_key, &[&phone, &watcher]);
-    let (app, mut app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let (app, app_events) = CoreClient::connect(&core.socket).await.expect("app");
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
-    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+    let (client, events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     let (agent_id, _) = client
         .start_chat("opencode:fake".into(), "sess-tmp".into(), None)
         .await
         .expect("the phone starts a chat");
-    app.acp_attach(agent_id.clone())
-        .await
-        .expect("the app watches");
+    let mut app_chat = Chat::new(app_events, &agent_id);
+    app_chat.attached(
+        &app.acp_attach(agent_id.clone())
+            .await
+            .expect("the app watches"),
+    );
 
     let picture = vec![0xffu8, 0xd8, 0xff, 0xe0, 1, 2, 3];
     let path = client
@@ -921,19 +881,19 @@ async fn a_device_sends_a_file_for_a_chat_and_the_agent_is_given_its_path() {
         )
         .await
         .expect("prompt");
-    let prompt = loop {
-        let event = tokio::time::timeout(WAIT, app_events.recv())
-            .await
-            .expect("the app never heard the prompt")
-            .expect("the app's connection closed");
-        if let ClientEvent::Event(Event::Chat { event, .. }) = event {
-            if event.kind == ChatEventKind::Prompt {
-                break event;
-            }
-        }
-    };
-    assert_eq!(prompt.payload["paths"], json!([sent]));
-    until_said(&mut events, &agent_id, "look at this").await;
+    let prompted = app_chat
+        .until(|chat| !chat.prompts().is_empty())
+        .await
+        .view
+        .rows
+        .iter()
+        .find(|row| row.role == ChatRole::User)
+        .expect("the prompt")
+        .clone();
+    assert_eq!(prompted.attachments, [sent]);
+    Chat::new(events, &agent_id)
+        .until_said("look at this")
+        .await;
 }
 
 /// The next view the core sends that `wanted` accepts.
@@ -969,7 +929,7 @@ async fn a_watching_device_sees_a_permission_request_it_never_attached_to_and_an
         .await
         .expect("the watch connects");
     let phone_endpoint = phone.endpoint().await;
-    let (driver, mut driver_events) = remote::connect(&phone_endpoint, core_addr(&status))
+    let (driver, driver_events) = remote::connect(&phone_endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     let (agent_id, _) = driver
@@ -1011,7 +971,9 @@ async fn a_watching_device_sees_a_permission_request_it_never_attached_to_and_an
         .expect("the watch answers");
     until_view(&mut watcher_events, |view| view.attentions.is_empty()).await;
     assert!(watcher.attentions().await.expect("attentions").is_empty());
-    until_said(&mut driver_events, &agent_id, &option).await;
+    Chat::new(driver_events, &agent_id)
+        .until_said(&option)
+        .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1052,25 +1014,14 @@ async fn a_device_is_sent_its_view_on_connecting_and_again_when_it_changes() {
     }
 }
 
-/// The chat events the device hears, numbered, until one says `needle`.
-async fn numbered_until(
-    events: &mut UnboundedReceiver<ClientEvent>,
-    needle: &str,
-) -> Vec<(u64, ChatEventKind)> {
+/// The numbers of the chat frames `chat` hears until its agent has said
+/// `needle` and the turn has ended.
+async fn numbered_until(chat: &mut Chat, needle: &str) -> Vec<u64> {
     let mut heard = Vec::new();
-    loop {
-        let event = tokio::time::timeout(WAIT, events.recv())
-            .await
-            .expect("timed out waiting for the agent")
-            .expect("the device's connection closed");
-        let ClientEvent::Event(Event::Chat { seq, event, .. }) = event else {
-            continue;
-        };
-        heard.push((seq, event.kind));
-        if event.payload.to_string().contains(needle) {
-            return heard;
-        }
+    while !chat.text().contains(needle) || chat.head().running {
+        heard.push(chat.next_frame().await);
     }
+    heard
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1082,18 +1033,23 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
-    let (first, mut first_events) = remote::connect(&endpoint, core_addr(&status))
+    let (first, first_events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     let (agent_id, _) = first
         .start_chat("opencode:fake".into(), "sess-tmp".into(), None)
         .await
         .expect("start");
-    let ChatAttachment::Live { mark, .. } =
-        first.acp_attach(agent_id.clone()).await.expect("attach")
-    else {
+    app.acp_attach(agent_id.clone())
+        .await
+        .expect("the app watches, which keeps the chat folded");
+    let mut chat = Chat::new(first_events, &agent_id);
+    let attachment = first.acp_attach(agent_id.clone()).await.expect("attach");
+    let ChatAttachment::Live { mark, .. } = &attachment else {
         panic!("the chat is running");
     };
+    let mark = mark.clone();
+    chat.attached(&attachment);
     first
         .acp_prompt(
             agent_id.clone(),
@@ -1104,22 +1060,20 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
         )
         .await
         .expect("prompt");
-    let heard = numbered_until(&mut first_events, "one").await;
-    let seqs: Vec<u64> = heard.iter().map(|(seq, _)| *seq).collect();
+    let seqs = numbered_until(&mut chat, "echo: say one").await;
     assert!(
         seqs.windows(2).all(|pair| pair[1] > pair[0]),
-        "events are numbered in the order they are sent"
+        "changes are numbered in the order they are sent"
     );
     assert!(
-        heard
-            .iter()
-            .any(|(seq, kind)| *seq > mark.seq && *kind == ChatEventKind::TurnStarted),
+        seqs.iter().all(|seq| *seq > mark.seq),
         "the prompt's turn follows the attach answer's mark"
     );
-    let seen = sikemux_core::protocol::ChatMark {
+    let seen = ChatMark {
         feed: mark.feed.clone(),
         seq: *seqs.last().unwrap(),
     };
+    let held = chat.folded.clone();
     first
         .acp_prompt(
             agent_id.clone(),
@@ -1130,9 +1084,9 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
         )
         .await
         .expect("prompt");
-    numbered_until(&mut first_events, "four").await;
+    numbered_until(&mut chat, "echo: say four").await;
     drop(first);
-    drop(first_events);
+    drop(chat);
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     app.acp_prompt(
@@ -1148,28 +1102,38 @@ async fn a_device_that_reconnects_hears_only_what_it_missed_and_detaching_stops_
         .await
         .expect("the phone reconnects");
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let ChatAttachment::Resumed { events, mark } = second
+    let resumed = second
         .acp_attach_since(agent_id.clone(), Some(seen.clone()))
         .await
-        .expect("resume")
-    else {
+        .expect("resume");
+    let ChatAttachment::Resumed { changes, mark } = &resumed else {
         panic!("the core still had what the phone missed");
     };
     assert!(mark.seq > seen.seq);
-    assert!(events
+    let changes: Vec<ChatChange> =
+        serde_json::from_value(changes.clone()).expect("a list of chat changes");
+    let sent: Vec<String> = changes
         .iter()
-        .any(|event| event.kind == ChatEventKind::Prompt && event.payload["text"] == "say two"));
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.kind == ChatEventKind::Prompt && event.payload["text"] != "say two"),
-        "the phone already shows the prompts it sent"
+        .filter_map(|change| match change {
+            ChatChange::Row { row, .. } if row.role == ChatRole::User => {
+                Some(prompts(std::slice::from_ref(row)).concat())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        ["say four", "say two"],
+        "the phone is sent only the rows it missed"
     );
-    assert!(events
-        .iter()
-        .any(|event| event.payload.to_string().contains("four")));
+    let mut caught_up = held;
+    caught_up.attached(&resumed);
+    assert_eq!(caught_up.prompts(), ["say one", "say four", "say two"]);
+    let text = caught_up.text();
+    assert!(text.contains("echo: say four"), "{text}");
+    assert!(text.contains("echo: say two"), "{text}");
 
-    let stale = sikemux_core::protocol::ChatMark {
+    let stale = ChatMark {
         feed: "another run".into(),
         seq: seen.seq,
     };
@@ -1210,19 +1174,22 @@ async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_
     publish_fake_agent(&app).await;
     let status = listening(&app).await;
     let endpoint = phone.endpoint().await;
-    let (client, mut events) = remote::connect(&endpoint, core_addr(&status))
+    let (client, events) = remote::connect(&endpoint, core_addr(&status))
         .await
         .expect("the phone connects");
     app.acp_start(fake_launch("agent-again"))
         .await
         .expect("the app starts a chat");
-    let ChatAttachment::Live { mark: before, .. } = client
+    let mut chat = Chat::new(events, "agent-again");
+    let attachment = client
         .acp_attach("agent-again".into())
         .await
-        .expect("attach")
-    else {
+        .expect("attach");
+    let ChatAttachment::Live { mark: before, .. } = &attachment else {
         panic!("the chat is running");
     };
+    let before = before.clone();
+    chat.attached(&attachment);
     client
         .acp_prompt(
             "agent-again".into(),
@@ -1233,17 +1200,17 @@ async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_
         )
         .await
         .expect("prompt");
-    let heard = numbered_until(&mut events, "first run").await;
-    let seen = sikemux_core::protocol::ChatMark {
+    let heard = numbered_until(&mut chat, "first run").await;
+    let seen = ChatMark {
         feed: before.feed.clone(),
-        seq: heard.last().map_or(before.seq, |(seq, _)| *seq),
+        seq: heard.last().copied().unwrap_or(before.seq),
     };
 
     app.acp_stop("agent-again".into()).await.expect("stop");
     app.acp_start(fake_launch("agent-again"))
         .await
         .expect("the app starts it again");
-    let ChatAttachment::Live { mark, replay, .. } = client
+    let ChatAttachment::Live { mark, view } = client
         .acp_attach_since("agent-again".into(), Some(seen))
         .await
         .expect("attach")
@@ -1251,7 +1218,5 @@ async fn a_device_holding_a_mark_from_before_the_chat_restarted_is_sent_the_new_
         panic!("a mark from the run before is answered with the whole new run");
     };
     assert_ne!(mark.feed, before.feed);
-    assert!(!replay
-        .iter()
-        .any(|event| event.payload.to_string().contains("first run")));
+    assert!(!view.to_string().contains("first run"), "{view}");
 }

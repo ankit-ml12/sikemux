@@ -64,11 +64,10 @@ impl EventSink for RemoteSink {
                 json!({ "id": self.host.page_id(id), "title": title }),
             ),
             Event::Chat {
-                agent_id, event, ..
-            } => crate::acp::deliver(&self.app, &agent_id, event),
-            Event::AttentionCleared { id, agent_id } => {
-                crate::acp::permission_cleared(&self.app, &agent_id, id)
-            }
+                agent_id,
+                seq,
+                changes,
+            } => crate::acp::deliver(&self.app, &agent_id, seq, changes),
             Event::DeviceView { view } => {
                 if let Some(hosts) = self.app.try_state::<Hosts>() {
                     hosts.emit_view(&self.host, view);
@@ -97,7 +96,8 @@ impl EventSink for RemoteSink {
             | Event::ChatBegun { .. }
             | Event::Network { .. }
             | Event::FocusAgent { .. }
-            | Event::Attention { .. } => {}
+            | Event::Attention { .. }
+            | Event::AttentionCleared { .. } => {}
         }
     }
 

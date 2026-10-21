@@ -1,20 +1,19 @@
 import { durationLabel, elapsedLabel } from "./durationLabel";
-import { toolDescription } from "./toolOutput";
 import { toolKind, toolLabel, toolRunning } from "./toolLabels";
 import { sikemuxToolRow, type ToolRowIcon } from "./toolRows";
-import type { AcpToolCall, ChatPart } from "./types";
+import type { ChatPart, ToolCall } from "./types";
 
 type ToolPart = Extract<ChatPart, { kind: "tool" }>;
 
 /** Our own tools take the kind they declare, like the built-in ones; another MCP call is named for the server it went to. */
-export function toolRowKind(tool: AcpToolCall): string | undefined {
+export function toolRowKind(tool: ToolCall): string | undefined {
     return sikemuxToolRow(tool)?.kind ?? (toolLabel(tool.title).scope !== undefined ? "mcp" : tool.kind);
 }
 
 export type ToolIconName = ToolRowIcon | "agent" | "command" | "file" | "move" | "pencil" | "plug" | "trash" | "warning" | "wrench";
 
 /** The icon a call's row shows. Each side draws the name with its own icon. */
-export function toolIconName(tool: AcpToolCall): ToolIconName {
+export function toolIconName(tool: ToolCall): ToolIconName {
     if (tool.status === "failed") return "warning";
     const row = sikemuxToolRow(tool);
     if (row) return row.icon;
@@ -70,7 +69,7 @@ export function toolGroupSummary(tools: readonly ToolPart[]): ToolGroupSummary {
     );
     return {
         current,
-        said: current ? toolDescription(current.tool) : null,
+        said: current?.tool.description ?? null,
         spent,
         kindWidth: Math.min(16, Math.max(4, ...tools.map((part) => toolKind(part.tool).length))),
     };

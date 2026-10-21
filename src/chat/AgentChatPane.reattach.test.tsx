@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpAttachment, AcpEvent } from "../api/acp";
+import type { ChatChange, ChatMessage, ChatPart, ChatView } from "./types";
 import { moveChat } from "../agents/accounts";
 import { resetResourcesForTests } from "../state/resources";
 import type { Agent, ProviderProfile } from "../state/types";
@@ -62,38 +63,44 @@ const agent: Agent = {
     resumeId: "session-old",
 };
 
-const live: AcpAttachment = {
-    status: "live",
-    start: { sessionId: "session-kept", capabilities: {}, setup: {} },
-    permissionMode: "workspace-write",
-    running: true,
-    turned: true,
-    feed: "feed-1",
-    olderBefore: null,
+const text = (id: string, said: string): ChatPart => ({ kind: "text", id, text: said });
+const row = (id: string, role: ChatMessage["role"], said: string): ChatMessage => ({ id, role, parts: [text(`${id}.0`, said)] });
+
+/* The chat as the core kept it: a finished turn, a turn still running and the permission request it waits on. */
+const keptChat: ChatView = {
+    head: {
+        sessionId: "session-kept",
+        connection: "ready",
+        running: true,
+        turned: true,
+        permissionMode: "workspace-write",
+        commands: [],
+        capabilities: {},
+        setup: {},
+        permissions: [
+            {
+                requestId: "request-1",
+                sessionId: "session-kept",
+                toolCall: { toolCallId: "call-1", title: "Touch a file" },
+                options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+            },
+        ],
+        tasks: [],
+        runningSubagents: [],
+        queued: [],
+        earlierLost: false,
+    },
+    rows: [row("m1", "user", "Earlier question"), row("m2", "assistant", "Earlier answer"), row("m3", "assistant", "Still working on it")],
 };
 
-function emit(kind: AcpEvent["kind"], payload: Record<string, unknown> = {}) {
-    act(() => mocks.listener?.({ agentId: agent.id, kind, payload }));
+/* The view is the chat as of change 2; changes numbered past it follow. */
+const live: AcpAttachment = { status: "live", view: keptChat, feed: "feed-1", seq: 2 };
+
+function emit(event: { kind: "reattach" } | { kind: "changes"; seq: number; payload: ChatChange[] }) {
+    act(() => mocks.listener?.({ agentId: agent.id, payload: null, ...event } as AcpEvent));
 }
 
-function said(kind: string, text: string) {
-    return { sessionId: "session-kept", update: { sessionUpdate: kind, content: { type: "text", text } } };
-}
-
-/* What the core replays before it answers: the chat so far, a turn still
-   running and the permission request it waits on. */
-function replayKeptChat() {
-    emit("session_update", { updates: [said("user_message_chunk", "Earlier question"), said("agent_message_chunk", "Earlier answer")] });
-    emit("turn_completed", { stopReason: "end_turn" });
-    emit("turn_started");
-    emit("session_update", { updates: [said("agent_message_chunk", "Still working on it")] });
-    emit("permission_request", {
-        requestId: "request-1",
-        sessionId: "session-kept",
-        toolCall: { toolCallId: "call-1", title: "Touch a file" },
-        options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
-    });
-}
+const appended = (seq: number, said: string) => emit({ kind: "changes", seq, payload: [{ op: "text", row: "m3", part: "m3.0", text: said }] });
 
 /* jsdom measures everything as nothing, and the transcript keeps its rows
    out of the DOM until its scroller has a size and says so. */
@@ -148,11 +155,13 @@ afterEach(cleanup);
 describe("AgentChatPane with a chat the core kept", () => {
     it("takes the running chat up where it is instead of starting another", async () => {
         mocks.attach.mockImplementation(async () => {
-            replayKeptChat();
+            appended(2, " already held");
+            appended(3, " and");
             return live;
         });
         renderPane();
-        await showsText("Still working on it");
+        await showsText("Still working on it and");
+        expect(transcript()).not.toContain("already held");
         expect(transcript()).toContain("Earlier question");
         expect(transcript()).toContain("Earlier answer");
         expect(screen.getByRole("region", { name: "Permission required for Touch a file" })).toBeInTheDocument();
@@ -160,7 +169,7 @@ describe("AgentChatPane with a chat the core kept", () => {
         expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
 
-        emit("session_update", { updates: [said("agent_message_chunk", " and done")] });
+        appended(4, " done");
         await showsText("Still working on it and done");
     });
 
@@ -173,14 +182,11 @@ describe("AgentChatPane with a chat the core kept", () => {
     });
 
     it("takes the chat up again when the core comes back with it, without stopping it", async () => {
-        mocks.attach.mockImplementation(async () => {
-            replayKeptChat();
-            return live;
-        });
+        mocks.attach.mockResolvedValue(live);
         renderPane();
         await showsText("Still working on it");
 
-        emit("reattach");
+        emit({ kind: "reattach" });
         await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
         await showsText("Still working on it");
         expect(transcript().split("Earlier answer")).toHaveLength(2);
@@ -198,10 +204,7 @@ describe("AgentChatPane with a chat the core kept", () => {
     });
 
     it("takes a chat moved to another account up where it is, mid-turn, without stopping it", async () => {
-        mocks.attach.mockImplementation(async () => {
-            replayKeptChat();
-            return live;
-        });
+        mocks.attach.mockResolvedValue(live);
         const view = renderPane();
         await showsText("Still working on it");
 

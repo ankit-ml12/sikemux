@@ -605,15 +605,16 @@ impl Connection {
         }
     }
 
-    /// The turns before event `before` of the chat's run `feed`, a page at a
-    /// time, for a chat the phone was sent only the end of.
+    /// The rows before event `before` of the chat's run `feed`, a page at a
+    /// time, as the core's `ChatPage` JSON, for a chat the phone was sent only
+    /// the end of.
     pub async fn chat_history(
         &self,
         agent_id: String,
         feed: String,
         before: u64,
         turns: u32,
-    ) -> Result<ChatHistory, MobileError> {
+    ) -> Result<String, MobileError> {
         let request = Request::AcpHistory {
             agent_id,
             feed,
@@ -621,13 +622,7 @@ impl Connection {
             turns,
         };
         match self.ask(request).await? {
-            Response::ChatHistory {
-                events,
-                older_before,
-            } => Ok(ChatHistory {
-                events_json: records::json(&events),
-                older_before,
-            }),
+            Response::ChatHistory { page } => Ok(records::json(&page)),
             _ => Err(unexpected()),
         }
     }
@@ -638,16 +633,18 @@ impl Connection {
     }
 
     /// `paths` are files on the host, such as those [`Self::attach_file`]
-    /// answers with.
+    /// answers with. `message_id` names the message, so the phone knows the
+    /// row the host shows it in, and so it can be edited later.
     pub async fn prompt(
         &self,
         agent_id: String,
+        message_id: Option<String>,
         text: String,
         paths: Vec<String>,
     ) -> Result<(), MobileError> {
         self.done(Request::AcpPrompt {
             agent_id,
-            message_id: None,
+            message_id,
             text,
             paths,
             context: Vec::new(),
@@ -1095,10 +1092,7 @@ mod tests {
         Event::Chat {
             agent_id: "agent".into(),
             seq,
-            event: sikemux_wire::protocol::ChatEvent {
-                kind: sikemux_wire::protocol::ChatEventKind::TurnStarted,
-                payload: serde_json::json!({}),
-            },
+            changes: serde_json::json!([]),
         }
     }
 

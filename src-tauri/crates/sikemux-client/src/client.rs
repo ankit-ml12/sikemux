@@ -18,8 +18,8 @@ use tokio::task::JoinHandle;
 use sikemux_wire::protocol::{
     decode_grid, decode_lines, decode_snapshot, encode_control, encode_input, read_frame,
     AllowedDevice, Attention, BackdropImage, BuildIdentity, CallId, ChatAccount, ChatAttachment,
-    ChatContext, ChatEvent, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess,
-    Event, FrameKind, HostRegistration, LaunchIdentity, RemoteStatus, Request, RequestId, Response,
+    ChatContext, ChatInfo, ChatLaunch, ChatMark, ChatStart, ClientMessage, DeviceAccess, Event,
+    FrameKind, HostRegistration, LaunchIdentity, RemoteStatus, Request, RequestId, Response,
     ServerMessage, SessionId, SessionInfo, SpawnTarget, StreamId, WindowAnswer, WindowCall,
     Workspace, MAX_FRAME_BYTES, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
@@ -621,15 +621,16 @@ impl CoreClient {
         }
     }
 
-    /// The chat's turns before event `before` of its run `feed`, and where
-    /// the page before them starts, for a client shown only the chat's end.
+    /// The chat's rows before event `before` of its run `feed`, a
+    /// [`sikemux_wire::chat::ChatPage`] as JSON, for a client shown only the
+    /// chat's end.
     pub async fn acp_history(
         &self,
         agent_id: String,
         feed: String,
         before: u64,
         turns: u32,
-    ) -> Result<(Vec<ChatEvent>, Option<u64>), ClientError> {
+    ) -> Result<serde_json::Value, ClientError> {
         let request = Request::AcpHistory {
             agent_id,
             feed,
@@ -637,10 +638,7 @@ impl CoreClient {
             turns,
         };
         match self.request(request).await? {
-            Response::ChatHistory {
-                events,
-                older_before,
-            } => Ok((events, older_before)),
+            Response::ChatHistory { page } => Ok(page),
             _ => Err(ClientError::UnexpectedReply),
         }
     }

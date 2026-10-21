@@ -39,7 +39,7 @@ import { showImage } from "../state/imageViewer";
 import { canSwitchMode } from "../agents/agentLaunch";
 import { AgentMark } from "../agents/AgentMark";
 import { receiveForAgent } from "../agents/agentInbox";
-import type { AcpAvailableCommand, ChatState, ContextUsage } from "./types";
+import type { ChatCommandInfo, ChatRows, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
 import { registerComposer } from "./draftHandoff";
 import type { PromptContext } from "../api/acp";
@@ -237,10 +237,10 @@ export function ChatComposer({
     profile?: ProviderProfile;
     paneRef: RefObject<HTMLDivElement | null>;
     visible: boolean;
-    connection: ChatState["connection"];
+    connection: ChatRows["connection"];
     running: boolean;
     steerable: boolean;
-    commands: AcpAvailableCommand[];
+    commands: ChatCommandInfo[];
     setup: Record<string, unknown>;
     awaitingPermission: boolean;
     agentLocked: boolean;
@@ -433,9 +433,9 @@ export function ChatComposer({
     const [trackedList, setTrackedList] = useState<TrackedMatches>({ state: "loading" });
     const menuKeys = useRef<MenuKeys | null>(null);
 
-    const selectCommand = (command: AcpAvailableCommand) => {
+    const selectCommand = (command: ChatCommandInfo) => {
         if (!token) return;
-        const spaced = Boolean(command.input?.hint) && !/^\s/.test(draft.slice(caret));
+        const spaced = Boolean(command.hint) && !/^\s/.test(draft.slice(caret));
         const written = `/${command.name}${spaced ? " " : ""}`;
         setDraft(`${draft.slice(0, token.start)}${written}${draft.slice(caret)}`);
         placeCaret(token.start + written.length);

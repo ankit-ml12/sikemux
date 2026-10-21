@@ -142,6 +142,15 @@ impl ClientConn {
         self.kick.notify_one();
     }
 
+    pub(crate) fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+
+    /// The bytes sent to the client that it has not read yet.
+    pub(crate) fn backlog(&self) -> usize {
+        self.queued.load(Ordering::Acquire)
+    }
+
     pub(crate) fn send_message(&self, message: &ServerMessage) {
         let Ok(frame) = encode_control(message) else {
             return;
@@ -793,9 +802,7 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                let result = chat::prompt(
-                    &core, client.id, &agent_id, message_id, text, paths, context,
-                );
+                let result = chat::prompt(&core, &agent_id, message_id, text, paths, context);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::AcpEdit {
@@ -806,10 +813,8 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result = chat::edit(
-                        &core, client.id, &agent_id, message_id, text, paths, context,
-                    )
-                    .await;
+                    let result =
+                        chat::edit(&core, &agent_id, message_id, text, paths, context).await;
                     client.respond(request_id, result.map(|()| Response::Done));
                 });
             }
@@ -820,8 +825,7 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result =
-                        chat::steer(&core, client.id, &agent_id, text, paths, context).await;
+                    let result = chat::steer(&core, &agent_id, text, paths, context).await;
                     client.respond(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),

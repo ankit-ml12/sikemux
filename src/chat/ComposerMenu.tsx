@@ -23,7 +23,7 @@ import {
 import { ContextMark } from "./ContextChip";
 import { earlierUri, useClosedNamed, useEarlierChats, type EarlierChat } from "./earlierChats";
 import type { TrackedMatches } from "./TrackedSource";
-import type { AcpAvailableCommand } from "./types";
+import type { ChatCommandInfo } from "./types";
 
 function matchMates(mates: readonly Mate[], needle: string, limit: number): Mate[] {
     const wanted = needle.toLowerCase();
@@ -32,7 +32,7 @@ function matchMates(mates: readonly Mate[], needle: string, limit: number): Mate
 
 /** What the person picked from the menu. */
 export type MenuPick =
-    | { kind: "command"; command: AcpAvailableCommand }
+    | { kind: "command"; command: ChatCommandInfo }
     | { kind: "mate"; mate: Mate }
     | { kind: "earlier"; earlier: EarlierChat; uri: string }
     | { kind: "entry"; entry: ProjectEntry }
@@ -117,7 +117,7 @@ export default function ComposerMenu({
     token: ComposerToken;
     agentId: string;
     cwd: string;
-    commands: readonly AcpAvailableCommand[];
+    commands: readonly ChatCommandInfo[];
     mates: readonly Mate[];
     /** The uris of what the message already carries. */
     taken: readonly string[];
@@ -160,7 +160,7 @@ export default function ComposerMenu({
                               <>
                                   <code>/{command.name}</code>
                                   <span>{command.description}</span>
-                                  {command.input?.hint && <em>{command.input.hint}</em>}
+                                  {command.hint && <em>{command.hint}</em>}
                               </>
                           ),
                       })),

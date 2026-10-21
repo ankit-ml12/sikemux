@@ -110,6 +110,10 @@ calls! { core, client, params;
                 .await?,
         )
     },
+    "chatToolDetail": Watch, any_program => {
+        let params: ToolDetailParams = parse(params)?;
+        answer(super::chat::tool_detail(&core, &params.agent_id, &params.tool_call_id)?)
+    },
     "dropQueued": Full => {
         let params: QueuedParams = parse(params)?;
         answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
@@ -467,6 +471,13 @@ async fn chat_file(core: &Core, peer: &Peer, params: ChatFileParams) -> CoreResu
     }
     let data = blocking(move || attachments::read(&path)).await?;
     Ok(ChatFile { data })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolDetailParams {
+    agent_id: String,
+    tool_call_id: String,
 }
 
 #[derive(Deserialize)]

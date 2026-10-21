@@ -73,6 +73,11 @@ export interface WorkspaceAgent {
     id: string;
     /** The CLI it runs, such as `claude`. */
     provider: string;
+    /**
+     * What the core calls it, such as Otter, open or asleep. The core fills
+     * it in; clients only read it.
+     */
+    name?: string;
     /** Its project, by id. */
     project: string;
     cwd: string;

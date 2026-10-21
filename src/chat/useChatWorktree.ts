@@ -10,7 +10,7 @@ import { gitWorktreesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import type { Agent, AgentWorktree } from "../state/types";
 import type { OutgoingMessage } from "./queuedMessages";
-import type { ChatState } from "./types";
+import type { ChatRows } from "./types";
 
 /** The checkout the core cut for an agent and moved it into. */
 export interface PreparedWorktree {
@@ -47,7 +47,7 @@ export function useChatWorktree({
     cwd: string;
     visible: boolean;
     started: boolean;
-    connection: ChatState["connection"];
+    connection: ChatRows["connection"];
     running: boolean;
     send: (message: OutgoingMessage, steerNow: boolean) => boolean;
     onError: (message: string | null) => void;

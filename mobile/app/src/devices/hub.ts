@@ -21,8 +21,8 @@ export type Live =
 /** Which side needs a newer Sikemux before the two can talk. */
 export type Outdated = 'host' | 'phone';
 
-/** One of a chat's events as the host numbered it. */
-export type ChatDelivery = { agentId: string; seq: bigint; eventJson: string };
+/** What changed in a chat, as the host numbered it: a list of the core's `ChatChange` as JSON. */
+export type ChatDelivery = { agentId: string; seq: bigint; changesJson: string };
 
 /** A device nobody is looking at keeps its connection this long, for a quick return. */
 const LINGER_MS = 30_000;
