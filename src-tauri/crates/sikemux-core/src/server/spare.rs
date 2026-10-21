@@ -268,32 +268,36 @@ fn opening_size(core: &Core) -> (u16, u16) {
 /// Opens a terminal tab in `project` on the shell started ahead when it fits,
 /// or on a new one. Answers the tab's id.
 pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreResult<String> {
-    let id = match take(
+    let id = project_shell(core, &params.project).await?;
+    super::layout::show_terminal(core, params.project, id, None)
+}
+
+/// A shell in `project`'s folder for a new terminal: the one started ahead
+/// when it fits, or a new one.
+pub(crate) async fn project_shell(core: &Arc<Core>, project: &str) -> CoreResult<SessionId> {
+    if let Some(taken) = take(
         core,
         TakeParams {
-            project: params.project.clone(),
+            project: project.to_owned(),
         },
     ) {
-        Some(taken) => taken.id,
-        None => {
-            let (path, name) = project_folder(core, &params.project)
-                .ok_or_else(|| CoreError::from("that project is not on this host"))?;
-            let size = opening_size(core);
-            let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
-            let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
-            shell(
-                core,
-                &params.project,
-                path,
-                name,
-                size,
-                (&window_id, &pane_id),
-                None,
-            )
-            .await?
-        }
-    };
-    super::layout::show_terminal(core, params.project, id, None)
+        return Ok(taken.id);
+    }
+    let (path, name) = project_folder(core, project)
+        .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+    let size = opening_size(core);
+    let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
+    let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
+    shell(
+        core,
+        project,
+        path,
+        name,
+        size,
+        (&window_id, &pane_id),
+        None,
+    )
+    .await
 }
 
 /// Opens a terminal tab titled `title` in `project`, running `startup` in a

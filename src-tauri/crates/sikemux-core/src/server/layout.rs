@@ -3,7 +3,7 @@
 //! end of its project's strip, and a tab goes once nothing it shows is left.
 
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
 use sikemux_process::sync::Locked;
@@ -460,27 +460,59 @@ pub(crate) struct TabParams {
     tab: String,
     /// Where `moveTab` puts it, counted in the strip as it is now.
     to: Option<usize>,
+    /// The name `renameTab` gives it; an empty one gives back its own name.
+    title: Option<String>,
 }
 
 /// Closes a tab. Agents it shows close with it, since an agent always has a
 /// tab; terminals keep running until a client ends them.
 pub(crate) fn close_tab(core: &Core, params: TabParams) -> CoreResult<()> {
+    close(core, &params.project, params.host.as_deref(), &[params.tab])
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TabsParams {
+    #[serde(default)]
+    project: String,
+    host: Option<String>,
+    tabs: Vec<String>,
+}
+
+/// Closes several tabs of one strip at once, as `closeTab` closes one.
+pub(crate) fn close_tabs(core: &Core, params: TabsParams) -> CoreResult<()> {
+    close(core, &params.project, params.host.as_deref(), &params.tabs)
+}
+
+fn close(core: &Core, project: &str, host: Option<&str>, tabs: &[String]) -> CoreResult<()> {
     let agents = edit(core, |layout| {
-        let strip = strip_of(layout, &params)?;
-        let at = strip
-            .tabs
-            .iter()
-            .position(|tab| tab.id == params.tab)
-            .ok_or("that tab is not open")?;
-        let closed = strip.tabs.remove(at);
-        if strip.active.as_deref() == Some(params.tab.as_str()) {
+        let strip = strip_at(layout, project, host)?;
+        let closing = |tab: &Tab| tabs.contains(&tab.id);
+        if !strip.tabs.iter().any(closing) {
+            return Err("that tab is not open".into());
+        }
+        let active = strip
+            .active
+            .as_ref()
+            .and_then(|active| strip.tabs.iter().position(|tab| &tab.id == active));
+        let mut agents = Vec::new();
+        let mut kept_before_active = 0;
+        let mut active_closed = false;
+        for (at, tab) in std::mem::take(&mut strip.tabs).into_iter().enumerate() {
+            if closing(&tab) {
+                agents_in(&tab.pane, &mut agents);
+                active_closed |= Some(at) == active;
+            } else {
+                kept_before_active += usize::from(active.is_some_and(|active| at < active));
+                strip.tabs.push(tab);
+            }
+        }
+        if active_closed {
             strip.active = strip
                 .tabs
-                .get(at.min(strip.tabs.len().saturating_sub(1)))
+                .get(kept_before_active.min(strip.tabs.len().saturating_sub(1)))
                 .map(|tab| tab.id.clone());
         }
-        let mut agents = Vec::new();
-        agents_in(&closed.pane, &mut agents);
         Ok(agents)
     })?;
     if !agents.is_empty() {
@@ -501,6 +533,101 @@ pub(crate) fn keep_tab(core: &Core, params: TabParams) -> CoreResult<()> {
         tab.preview = false;
         Ok(())
     })
+}
+
+/// Names a tab, or gives it back the name its view gives it.
+pub(crate) fn rename_tab(core: &Core, params: TabParams) -> CoreResult<()> {
+    edit(core, |layout| {
+        let strip = strip_of(layout, &params)?;
+        let tab = strip
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id == params.tab)
+            .ok_or("that tab is not open")?;
+        tab.title = params
+            .title
+            .map(|title| title.trim().to_owned())
+            .filter(|title| !title.is_empty());
+        Ok(())
+    })
+}
+
+/// Opens a copy of a project's tab beside it, with a new shell in place of
+/// each terminal it shows. Answers the copy's id.
+pub(crate) async fn duplicate_tab(core: &Arc<Core>, params: TabParams) -> CoreResult<String> {
+    if params.host.is_some() {
+        return Err("a host's tabs are not copied".into());
+    }
+    let source = view(core, &core.workspace_view(), &core.session_infos())
+        .projects
+        .get(&params.project)
+        .and_then(|strip| strip.tabs.iter().find(|tab| tab.id == params.tab))
+        .cloned()
+        .ok_or("that tab is not open")?;
+    let mut agents = Vec::new();
+    agents_in(&source.pane, &mut agents);
+    if !agents.is_empty() {
+        return Err("an agent's tab is not copied".into());
+    }
+    let mut shells = Vec::new();
+    for _ in 0..terminals_in(&source.pane) {
+        shells.push(super::spare::project_shell(core, &params.project).await?);
+    }
+    let mut shells = shells.into_iter();
+    let copy = Tab {
+        id: format!("tab-{}", uuid::Uuid::new_v4().simple()),
+        title: source.title.as_ref().map(|title| format!("{title} copy")),
+        preview: false,
+        pane: copied(&source.pane, &mut shells),
+    };
+    edit(core, |layout| {
+        let strip = strip(layout, &params.project)?;
+        if strip.tabs.len() >= MAX_TABS {
+            return Err("that project already has as many tabs as the core keeps".into());
+        }
+        let at = strip
+            .tabs
+            .iter()
+            .position(|tab| tab.id == params.tab)
+            .map_or(strip.tabs.len(), |at| at + 1);
+        let id = copy.id.clone();
+        strip.tabs.insert(at, copy);
+        strip.active = Some(id.clone());
+        layout.active_project = Some(params.project.clone());
+        layout.active_host = None;
+        Ok(id)
+    })
+}
+
+fn terminals_in(pane: &Pane) -> usize {
+    match pane {
+        Pane::View { kind, .. } => usize::from(*kind == PaneKind::Terminal),
+        Pane::Split { panes, .. } => panes.iter().map(terminals_in).sum(),
+    }
+}
+
+/// `pane` with new ids, its terminals swapped in turn for `shells`.
+fn copied(pane: &Pane, shells: &mut impl Iterator<Item = SessionId>) -> Pane {
+    match pane {
+        Pane::View { kind, target, .. } => Pane::View {
+            id: view_id(),
+            kind: *kind,
+            target: match kind {
+                PaneKind::Terminal => shells
+                    .next()
+                    .map_or_else(|| target.clone(), |shell| shell.to_string()),
+                _ => target.clone(),
+            },
+        },
+        Pane::Split {
+            dir, panes, sizes, ..
+        } => Pane::Split {
+            id: view_id(),
+            dir: *dir,
+            panes: panes.iter().map(|pane| copied(pane, shells)).collect(),
+            sizes: sizes.clone(),
+        },
+    }
 }
 
 pub(crate) fn activate_tab(core: &Core, params: TabParams) -> CoreResult<()> {
@@ -655,6 +782,7 @@ pub(crate) fn close_pane(core: &Core, params: PaneParams) -> CoreResult<()> {
                 host: params.host,
                 tab: params.tab,
                 to: None,
+                title: None,
             },
         ),
         (view, true) => {
