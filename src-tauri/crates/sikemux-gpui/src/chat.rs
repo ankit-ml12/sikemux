@@ -187,17 +187,23 @@ fn merge(on: &mut Value, fields: &Value) {
 }
 
 actions!(questions, [PreviousChoice, NextChoice, PreviousQuestion, NextQuestion, Tick, Confirm]);
+actions!(composer, [OlderPrompt, NewerPrompt, StopTurn]);
 
 /// Picks the choice at this index of the question on show, from its number key.
 #[derive(Clone, PartialEq, gpui::Action)]
 #[action(name = "questions.choose", no_json)]
 pub struct Choose(pub usize);
 
-/// Binds a transcript's keys, and those the open question in front takes while the draft is
-/// empty, whether the draft or something else in the chat holds the focus.
+/// Binds a transcript's keys, the composer's, and those the open question in front takes while
+/// the draft is empty, whether the draft or something else in the chat holds the focus. The
+/// question's come last, so they win over the composer's while it asks.
 pub fn install(cx: &mut App) {
     gpui_transcript::init(cx);
-    let mut bindings = Vec::new();
+    let mut bindings = vec![
+        KeyBinding::new("up", OlderPrompt, Some("ChatComposer > Input")),
+        KeyBinding::new("down", NewerPrompt, Some("ChatComposer > Input")),
+        KeyBinding::new("escape", StopTurn, Some("ChatComposer > Input")),
+    ];
     for context in ["QuestionDock > Input", "QuestionDock"] {
         bindings.extend((1..=9).map(|n| KeyBinding::new(&n.to_string(), Choose(n - 1), Some(context))));
         bindings.extend([
@@ -256,6 +262,8 @@ pub struct Chat {
     groups_folded: HashSet<String>,
     /// The choice of the open question on show the arrow keys moved to.
     cursor: Option<(String, usize)>,
+    /// The sent prompt the arrows brought back into the draft, and what was typed before.
+    recalled: Option<(usize, String)>,
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -348,6 +356,7 @@ impl Chat {
             writing: None,
             groups_folded: HashSet::new(),
             cursor: None,
+            recalled: None,
         }
     }
 
@@ -562,6 +571,50 @@ impl Chat {
         }
     }
 
+    /// What the person sent in this chat, oldest first, then what waits behind the turn, with
+    /// a prompt sent again back to back kept once.
+    fn prompts(&self, cx: &App) -> Vec<String> {
+        let rows = self.transcript.read(cx).rows();
+        let sent = rows.iter().map(|row| &row.message).filter(|message| message.role == ChatRole::User && message.letters.is_empty());
+        let texts = sent.map(|message| message.parts.iter().filter_map(text_of).map(|(text, _)| text).collect::<String>());
+        let queued = self.state.iter().flat_map(|head| head.queued.iter().map(|queued| queued.text.clone()));
+        let mut prompts: Vec<String> = Vec::new();
+        for text in texts.chain(queued) {
+            let text = text.trim();
+            if !text.is_empty() && prompts.last().map(String::as_str) != Some(text) {
+                prompts.push(text.to_owned());
+            }
+        }
+        prompts
+    }
+
+    /// One step through the sent prompts, as a shell's arrows: up from an empty draft, and either
+    /// way while the draft still shows a prompt they brought back. Stepping past the latest gives
+    /// back what was typed. None leaves the arrow to the draft's text.
+    pub fn recall(&mut self, older: bool, draft: &str, cx: &App) -> Option<String> {
+        let prompts = self.prompts(cx);
+        let showing = self.recalled.as_ref().is_some_and(|(at, _)| prompts.get(*at).map(String::as_str) == Some(draft));
+        if !showing {
+            self.recalled = None;
+            if !older || !draft.trim().is_empty() {
+                return None;
+            }
+        }
+        let (at, typed) = self.recalled.take().unwrap_or((prompts.len(), draft.to_owned()));
+        if older {
+            let at = at.checked_sub(1)?;
+            self.recalled = Some((at, typed));
+            return Some(prompts[at].clone());
+        }
+        match prompts.get(at + 1) {
+            Some(prompt) => {
+                self.recalled = Some((at + 1, typed));
+                Some(prompt.clone())
+            }
+            None => Some(typed),
+        }
+    }
+
     /// What the empty draft says, as the chat stands: what typing answers, or where words go.
     pub fn hint(&self, agent: &str, questions: &[Question], resumes: bool) -> String {
         let open: Vec<&Question> = questions.iter().filter(|question| question.of(agent, "open")).collect();
@@ -688,6 +741,7 @@ impl Chat {
     /// What the composer's text asks of the core: the answer to the question it answers, or
     /// words for the agent, which steer a running turn unless queued behind it.
     pub fn sent(&mut self, agent: &str, text: String, queue: bool, open: &[&Question]) -> Option<Ask> {
+        self.recalled = None;
         if let Some(id) = self.writing.take() {
             return Some(Ask::Call { method: "answerQuestion", params: json!({ "id": id, "answer": text }) });
         }
@@ -768,7 +822,14 @@ pub fn pane(bench: &Workbench, agent: &AgentRow, chat: &Chat, welcome: Option<An
         .children(permissions)
         .children(assumed)
         .children(stack)
-        .children(composer(bench, agent, chat, cx))
+        .children(composer(bench, agent, chat, cx).map(|composer| {
+            div()
+                .key_context("ChatComposer")
+                .on_action(recall::<OlderPrompt>(id, true, cx))
+                .on_action(recall::<NewerPrompt>(id, false, cx))
+                .on_action(stop_turn(id, cx))
+                .child(composer)
+        }))
 }
 
 /// Hands a key's action to the question on show; one it does not take goes on to the draft.
@@ -789,6 +850,40 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
             taken.then(|| cx.notify())
         });
         if !matches!(taken, Ok(Some(()))) {
+            cx.propagate();
+        }
+    }
+}
+
+/// Brings an older or newer sent prompt into the draft; the arrow goes on to the text when
+/// there is none to bring.
+fn recall<A: gpui::Action>(agent: &str, older: bool, cx: &mut Context<Workbench>) -> impl Fn(&A, &mut Window, &mut App) + use<A> {
+    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    move |_: &A, window: &mut Window, cx: &mut App| {
+        let brought = this.update(cx, |bench, cx| {
+            let chat = bench.chats.get_mut(&agent)?;
+            let draft = chat.composer.as_ref()?.draft.clone();
+            let typed = draft.read(cx).value().to_string();
+            let prompt = chat.recall(older, &typed, cx)?;
+            draft.update(cx, |draft, cx| draft.set_value(prompt, window, cx));
+            Some(())
+        });
+        if !matches!(brought, Ok(Some(()))) {
+            cx.propagate();
+        }
+    }
+}
+
+/// Stops the running turn from an empty draft, so a half-written message never stops the agent.
+fn stop_turn(agent: &str, cx: &mut Context<Workbench>) -> impl Fn(&StopTurn, &mut Window, &mut App) + use<> {
+    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    move |_: &StopTurn, _: &mut Window, cx: &mut App| {
+        let stopped = this.update(cx, |bench, cx| {
+            let chat = bench.chats.get(&agent)?;
+            let empty = chat.composer.as_ref()?.draft.read(cx).value().is_empty();
+            (chat.running() && empty).then(|| bench.ask_chat(ChatAsk::Cancel { agent: agent.clone() }))
+        });
+        if !matches!(stopped, Ok(Some(()))) {
             cx.propagate();
         }
     }
