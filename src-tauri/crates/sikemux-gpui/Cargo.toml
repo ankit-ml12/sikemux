@@ -59,21 +59,21 @@ opt-level = 3
 
 # GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.
 [patch.crates-io]
-gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
-gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "bd0747139ec6b0f824ca159a38c6319fce4eb0e1" }
+gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }
+gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "50262805ba36b5465677c8c0adbc91625bd606ab" }

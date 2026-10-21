@@ -29,6 +29,12 @@ draws the row at an index with the `Pen` it is given, calling `markdown` for
 the text the row holds, in the order `Row::docs` lists it. Outside a
 transcript, `Pen::new(style)` draws markdown without selection.
 
+## Features
+
+- `fork`: uses what GPUI gains in [sikemux/gpui](https://github.com/sikemux/gpui):
+  letter spacing for table headings, and inline code drawn at 0.88 of the text's
+  size. Without it the crate builds on `gpui-pre` as published.
+
 ## The tree and its patches
 
 Blocks arrive as JSON. Each block is an object tagged by `t` (`p`, `h`,

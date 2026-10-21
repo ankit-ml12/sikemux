@@ -18,9 +18,10 @@ Tauri app does. A dev core takes requests only from the program named
 
 GPUI comes from the `sikemux` branch of sikemux/gpui, our fork of sonorahq/gpui,
 pinned by commit in `[patch.crates-io]`. That branch is upstream plus our
-commits and one last commit that renames the crates to the gpui-pre names and
-version GPUI Kit pins. To move onto a newer upstream, rebase our commits, drop
-the rename commit and run `node tooling/gpui-pre-names.mjs <version>` again.
+commits and a commit that renames the crates to the gpui-pre names and version
+GPUI Kit pins; commits made since sit on top of it, so the pin keeps working.
+To move onto a newer upstream, rebase our commits, drop the rename commit and
+run `node tooling/gpui-pre-names.mjs <version>` again.
 
 It talks to the core at `SIKEMUX_CORE_SOCKET`, else `~/.config/sikemux/core.dev.sock`
 in a dev build and `core.sock` in a release one.

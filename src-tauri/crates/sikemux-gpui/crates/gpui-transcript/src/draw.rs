@@ -614,9 +614,8 @@ impl Draw<'_> {
                     .when(y > 0, Div::border_t_1);
                 row.when(head, |row| {
                     let size = style.table_size - px(1.5);
-                    row.bg(style.table_head)
+                    spaced(row.bg(style.table_head))
                         .text_size(size)
-                        .letter_spacing(0.06)
                         .text_color(style.ink_dim)
                 })
                 .children(cells)
@@ -740,11 +739,25 @@ fn highlight(marks: Marks, style: &Style) -> HighlightStyle {
     if marks.has(Marks::CODE) {
         highlight.color = Some(style.code_ink);
         highlight.background_color = Some(style.mark_ground);
+        #[cfg(feature = "fork")]
+        {
+            highlight.font_scale = Some(gpui::FontScale(0.88));
+        }
     }
     if marks.has(Marks::LINK) {
         highlight.color = Some(style.accent);
     }
     highlight
+}
+
+#[cfg(feature = "fork")]
+fn spaced(row: Div) -> Div {
+    row.letter_spacing(0.06)
+}
+
+#[cfg(not(feature = "fork"))]
+fn spaced(row: Div) -> Div {
+    row
 }
 
 fn task_box(checked: bool, style: &Style) -> Div {

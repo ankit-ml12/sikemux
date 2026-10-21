@@ -9,6 +9,11 @@ keywords = ["gpui", "chat", "markdown", "streaming"]
 categories = ["gui"]
 publish = false
 
+[features]
+# Letter spacing and runs drawn at a share of the font size, which GPUI gains in
+# sikemux/gpui: table headings get their spacing and inline code sits smaller.
+fork = []
+
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.9" }
 serde = { version = "1", features = ["derive"] }
