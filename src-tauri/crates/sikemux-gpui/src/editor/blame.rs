@@ -4,7 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::component::input::{EditorState, Position, RopeExt};
+use gpui_kit::component::input::{EditorState, RopeExt};
 use gpui_kit::{
     canvas, point, px, Context, Entity, FontStyle, Hsla, IntoElement, Pixels, SharedString, Styled,
     Task, TextAlign, TextRun,
@@ -92,9 +92,7 @@ fn blame(bench: &mut Workbench, path: &Path, wait: Option<Duration>, cx: &mut Co
         if let Some(wait) = wait {
             cx.background_executor().timer(wait).await;
         }
-        let Ok(contents) = state.read_with(cx, |state, _| state.value().to_string()) else {
-            return;
-        };
+        let contents = state.read_with(cx, |state, _| state.value().to_string());
         let asked = json!({ "repo": project, "path": relative, "contents": contents });
         let Ok(blamed) = core::request(&asks, "git.blame", asked).await else {
             return;
@@ -154,10 +152,7 @@ pub(super) fn overlay(
                 return;
             };
             let text = state.text();
-            let start = text.position_to_offset(&Position::new(line, 0));
-            let slice = text.line(line as usize);
-            let length = slice.len_bytes() - usize::from(slice.chars().last() == Some('\n'));
-            let end = start + length;
+            let end = text.line_end_offset(line as usize);
             let Some(bounds) = state.range_to_bounds(&(end..end)) else {
                 return;
             };

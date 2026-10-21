@@ -400,7 +400,7 @@ fn price_form(
                 })
                 .child(
                     ui::Button::new("price-cancel", "Cancel", ui::Variant::Outline).on_click(
-                        move |_, _, cx| cancel.update(cx, |bench, cx| close_form(bench, cx)),
+                        move |_, _, cx| cancel.update(cx, close_form),
                     ),
                 )
                 .child(
@@ -425,7 +425,6 @@ fn price_form(
 }
 
 fn models(
-    bench: &Workbench,
     summary: &Value,
     fields: &Fields,
     this: &Entity<Workbench>,
@@ -577,7 +576,7 @@ pub fn render(
             .map(|all| all.iter().take(limit).cloned().collect::<Vec<_>>())
     };
     let by_model = summary
-        .map(|summary| models(bench, summary, fields, this, cx))
+        .map(|summary| models(summary, fields, this, cx))
         .unwrap_or_else(|| div().into_any_element());
     let by_agent = list("agents", usize::MAX)
         .map(|agents| shares(bench, &agents, true, key, cx))

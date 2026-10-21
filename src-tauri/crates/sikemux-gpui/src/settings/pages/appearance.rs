@@ -8,7 +8,7 @@ use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, AppContext, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
+    ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Window,
 };
 use serde_json::{json, Value};

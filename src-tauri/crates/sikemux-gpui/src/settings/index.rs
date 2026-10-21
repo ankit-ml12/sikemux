@@ -95,13 +95,12 @@ impl Page {
 }
 
 /// One place in settings a search can take the person to: a section, or a
-/// row in one, which the page scrolls to by its `target`.
+/// row in one.
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {
     pub page: Page,
     pub section: &'static str,
     pub label: &'static str,
-    pub target: &'static str,
     pub keywords: &'static str,
     /// The command a search for its shortcut found, which the page filters to.
     pub shortcut: Option<&'static str>,
@@ -112,7 +111,6 @@ const fn section(page: Page, title: &'static str, keywords: &'static str) -> Ent
         page,
         section: title,
         label: title,
-        target: title,
         keywords,
         shortcut: None,
     }
@@ -128,7 +126,6 @@ const fn row(
         page,
         section,
         label,
-        target: label,
         keywords,
         shortcut: None,
     }
@@ -238,7 +235,6 @@ pub fn search(query: &str, cx: &App) -> Vec<Entry> {
             page: Keybindings,
             section: "Shortcuts",
             label: shortcut.label,
-            target: "Shortcuts",
             keywords: shortcut.detail,
             shortcut: Some(shortcut.id),
         };

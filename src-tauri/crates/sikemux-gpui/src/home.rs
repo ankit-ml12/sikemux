@@ -4,8 +4,8 @@ use chrono::{Datelike, NaiveDate};
 use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, IntoElement, ParentElement,
-    SharedString, Styled, Window,
+    div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::PaneKind;

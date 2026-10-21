@@ -51,7 +51,7 @@ enum Outline {
     #[default]
     Unavailable,
     Loading(PathBuf),
-    Failed(PathBuf),
+    Failed,
     Symbols(PathBuf, Vec<Symbol>),
 }
 
@@ -151,7 +151,7 @@ fn read_outline(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>)
                     flatten(&symbols, 0, &mut flat);
                     Outline::Symbols(path, flat)
                 }
-                Err(_) => Outline::Failed(path),
+                Err(_) => Outline::Failed,
             };
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -399,7 +399,7 @@ pub(super) fn bar(
                         .unwrap_or_default();
                     let said = match outline {
                         Outline::Loading(_) => "Loading outline…".to_owned(),
-                        Outline::Failed(_) => {
+                        Outline::Failed => {
                             "The language server could not provide an outline".to_owned()
                         }
                         Outline::Symbols(..) => format!("No symbols in {name}"),

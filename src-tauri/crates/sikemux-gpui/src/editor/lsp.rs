@@ -185,9 +185,7 @@ pub(super) fn changed(
     let (asks, state) = (asks.clone(), document.state.clone());
     served.sync = cx.spawn(async move |_, cx| {
         cx.background_executor().timer(CHANGE_DEBOUNCE).await;
-        let Ok(content) = state.read_with(cx, |state, _| state.value().to_string()) else {
-            return;
-        };
+        let content = state.read_with(cx, |state, _| state.value().to_string());
         params["content"] = content.into();
         let _ = core::request(&asks, "lsp.change", params).await;
     });
@@ -333,7 +331,7 @@ impl DefinitionProvider for Definitions {
                     return Ok(links);
                 }
             }
-            Ok(Vec::new())
+            anyhow::Ok(Vec::new())
         });
         let found = self.found.clone();
         cx.spawn(async move |_| {

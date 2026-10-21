@@ -11,8 +11,8 @@ use gpui_kit::component::input::{
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, FontWeight,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, SharedString, Styled, Subscription,
-    Window,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{Pane, PaneKind};
@@ -294,7 +294,7 @@ pub fn pane(
                         &path,
                         &document.state,
                         &document.gutter,
-                        document.state.read(cx).text().len_lines(),
+                        gpui_kit::component::input::RopeExt::lines_len(document.state.read(cx).text()),
                     ))
                     .child(blame::overlay(
                         &document.state,
@@ -622,6 +622,9 @@ fn close_goto(
 
 /// The bar over an editor saying it could not read or save its file, or
 /// that the file changed on disk under unsaved edits.
+/// Something a notice bar's button does to the open file.
+type Run = dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>);
+
 fn notice_bar(
     this: &Entity<Workbench>,
     path: &Path,
@@ -654,7 +657,7 @@ fn notice_bar(
         |id: &'static str,
          label: &'static str,
          variant,
-         run: Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>| {
+         run: Rc<Run>| {
             let this = this.clone();
             ui::Button::new(id, label, variant).on_click(move |_, window, cx| {
                 let run = run.clone();

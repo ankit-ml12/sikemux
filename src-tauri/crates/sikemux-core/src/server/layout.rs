@@ -445,6 +445,7 @@ pub(crate) fn show_terminal(
             kind: PaneKind::Terminal,
             target: id.to_string(),
             title,
+            preview: false,
         },
     )
 }
