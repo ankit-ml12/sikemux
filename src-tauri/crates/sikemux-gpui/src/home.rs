@@ -10,6 +10,7 @@ use gpui_kit::{
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
+use sikemux_wire::protocol::AgentStatus;
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
@@ -255,6 +256,7 @@ fn pane_header(
             .on_click(open_share)
             .into_any_element(),
     };
+    let chat = chat_controls(bench, agent, cx);
     let id = agent.id.clone();
     let editing = bench
         .retitling
@@ -291,7 +293,14 @@ fn pane_header(
         )
         .action(share)
         .action(more)
-        .controls(Segmented::new("agent-view", views, 0).pill())
+        .controls(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .children(chat)
+                .child(Segmented::new("agent-view", views, 0).pill()),
+        )
         .side(
             IconButton::new(
                 "agent-desk",
@@ -305,6 +314,57 @@ fn pane_header(
             .glyph(13.)
             .on_click(cx.listener(move |bench, _, _, _| bench.toggle_desk(&tab, &view, &agent_id))),
         )
+}
+
+/// What holds for the whole chat, shown in its pane's header: the worktree it works in and the
+/// account it runs on, which another of the person's accounts can take over once it has started.
+fn chat_controls(
+    bench: &Workbench,
+    agent: &AgentRow,
+    cx: &mut Context<Workbench>,
+) -> Vec<AnyElement> {
+    let Some(saved) = bench.view.as_ref().and_then(|view| {
+        view.workspace
+            .agents
+            .iter()
+            .find(|saved| saved.id == agent.id)
+    }) else {
+        return Vec::new();
+    };
+    let mut controls = Vec::new();
+    if let Some(switch) =
+        crate::worktree_switch::state(saved.worktree.as_ref(), false, true, None, false)
+    {
+        let flip: crate::worktree_switch::Flip = std::rc::Rc::new(|_, _| {});
+        controls.push(crate::worktree_switch::toggle(
+            format!("worktree-{}", agent.id),
+            &switch,
+            flip,
+            cx,
+        ));
+    }
+    let on = saved.profile_id.clone().or_else(|| {
+        bench
+            .accounts
+            .current(&agent.provider)
+            .map(|profile| profile.id.clone())
+    });
+    if let (Some(on), true) = (
+        on,
+        saved.resume_id.is_some() && bench.chats.contains_key(&agent.id),
+    ) {
+        let chat = crate::account_picker::Chat {
+            agent: &agent.id,
+            provider: &agent.provider,
+            on: &on,
+        };
+        let running = matches!(agent.status, AgentStatus::Working | AgentStatus::Starting);
+        let this = cx.entity();
+        controls.extend(crate::account_picker::picker(
+            bench, chat, running, false, &this, cx,
+        ));
+    }
+    controls
 }
 
 pub(crate) fn number(value: &Value) -> f64 {

@@ -226,6 +226,7 @@ pub struct AgentRow {
 impl Workbench {
     pub fn new(link: Link, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
+        cx.defer_in(window, |bench, _, cx| crate::accounts::read(bench, cx));
         crate::faces::install(cx);
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
