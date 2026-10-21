@@ -5873,6 +5873,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-linked"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde_json",
+ "sikemux-client",
+ "sikemux-wire",
+ "tokio",
+]
+
+[[package]]
 name = "sikemux-loopback"
 version = "0.1.0"
 dependencies = [
