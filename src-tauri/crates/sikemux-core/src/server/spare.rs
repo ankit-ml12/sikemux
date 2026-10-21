@@ -261,7 +261,7 @@ async fn terminal(
 }
 
 /// The size a terminal opened by the core starts at: the last one a client gave.
-fn opening_size(core: &Core) -> (u16, u16) {
+pub(crate) fn opening_size(core: &Core) -> (u16, u16) {
     core.spares.held.locked().size.unwrap_or((80, 24))
 }
 

@@ -61,6 +61,16 @@ impl Drafts {
         }))
     }
 
+    /// The text of the draft under `key`, taken out of it; whatever the draft
+    /// holds beside its text stays.
+    pub(crate) fn take_text(&self, key: &str) -> CoreResult<String> {
+        let Some(draft) = self.get(Some(&[key.to_owned()])).remove(key) else {
+            return Ok(String::new());
+        };
+        self.set(key, String::new(), draft.extra)?;
+        Ok(draft.text)
+    }
+
     /// The drafts under `keys`, else every one, by key.
     pub(crate) fn get(&self, keys: Option<&[String]>) -> BTreeMap<String, Draft> {
         let drafts = self.0.drafts.locked();

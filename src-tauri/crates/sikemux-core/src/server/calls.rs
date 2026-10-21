@@ -93,6 +93,7 @@ calls! { core, client, params;
         let params: AgentParams = parse(params)?;
         answer(json!({ "stopped": super::lifecycle::sleep(&core, &params.agent_id) }))
     },
+    "switchAgentView": Person => answer(super::agent_view::switch(&core, parse(params)?).await?),
     "sleepAgent": Person => {
         let params: AgentParams = parse(params)?;
         answer(super::lifecycle::sleep_agent(&core, &params.agent_id)?)
@@ -632,9 +633,7 @@ struct TypeWhenReadyParams {
 
 impl TypeWhenReadyParams {
     fn input(&self) -> Option<Vec<u8>> {
-        let draft = self.draft.replace('\0', "");
-        let draft = draft.trim();
-        (!draft.is_empty()).then(|| format!("\x1b[200~{draft}\x1b[201~").into_bytes())
+        super::session::pasted(&self.draft)
     }
 }
 

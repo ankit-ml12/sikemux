@@ -6,6 +6,7 @@ pub(crate) mod activity_log;
 mod agent;
 mod agent_accounts;
 mod agent_sign_in;
+mod agent_view;
 mod agent_worktree;
 mod ansi;
 mod attachments;

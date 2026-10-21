@@ -949,6 +949,14 @@ fn type_waiting(session: &Session) {
 
 /// Types `bytes` into the session once it is ready for them: at its shell's
 /// prompt, or a moment after it starts when the core cannot see a prompt.
+/// `draft` as a terminal takes it pasted, to sit at the prompt unsent; none
+/// when there is nothing to paste.
+pub(crate) fn pasted(draft: &str) -> Option<Vec<u8>> {
+    let draft = draft.replace('\0', "");
+    let draft = draft.trim();
+    (!draft.is_empty()).then(|| format!("\x1b[200~{draft}\x1b[201~").into_bytes())
+}
+
 pub(crate) fn type_when_ready(session: &Arc<Session>, bytes: Vec<u8>) {
     let screen = session.screen.locked();
     if session.shell_protocol && at_prompt(&screen) {
