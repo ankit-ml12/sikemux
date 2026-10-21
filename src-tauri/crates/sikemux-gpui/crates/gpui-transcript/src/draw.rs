@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    div, img, point, px, relative, rgb, rgba, size, AnyElement, App, AvailableSpace, Bounds,
-    ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight, GlobalElementId,
-    HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText, IntoElement,
-    LayoutId, ParentElement, Pixels, SharedString, Stateful, StatefulInteractiveElement,
-    StrikethroughStyle, Styled, StyledText, Window,
+    combine_highlights, div, img, point, px, relative, rgb, rgba, size, AnyElement, App,
+    AvailableSpace, Bounds, ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight,
+    GlobalElementId, HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText,
+    IntoElement, LayoutId, ParentElement, Pixels, SharedString, Stateful,
+    StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, Window,
 };
 
 use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Piece, Rich};
@@ -26,6 +26,11 @@ pub struct Fence {
 
 pub type OnLink = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 pub type DrawFence = Rc<dyn Fn(Fence, &mut Window, &mut App) -> AnyElement>;
+/// Styled runs over a code block's text, in bytes from its start.
+pub type CodeRuns = Rc<[(Range<usize>, HighlightStyle)]>;
+/// A fenced code block's colours from its language and text, once the host has them.
+pub type CodeColours =
+    Rc<dyn Fn(Option<&SharedString>, &SharedString, &mut App) -> Option<CodeRuns>>;
 /// Draws a picture from its address and its alt text.
 pub type DrawImage = Rc<dyn Fn(&str, &str, &mut Window, &mut App) -> AnyElement>;
 
@@ -54,6 +59,7 @@ pub struct Style {
     pub radius: Pixels,
     pub on_link: Option<OnLink>,
     pub fence: Option<DrawFence>,
+    pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
 }
 
@@ -82,6 +88,7 @@ impl Default for Style {
             radius: px(5.),
             on_link: None,
             fence: None,
+            code: None,
             image: None,
         }
     }
@@ -393,6 +400,11 @@ impl Draw<'_> {
     }
 
     fn rich(&mut self, rich: &Rich) -> AnyElement {
+        self.coloured(rich, None)
+    }
+
+    /// Text with `colours` beneath its own marks and the selection.
+    fn coloured(&mut self, rich: &Rich, colours: Option<CodeRuns>) -> AnyElement {
         let on = self.on;
         let style = &*on.style;
         self.texts += 1;
@@ -405,8 +417,13 @@ impl Draw<'_> {
             .marks
             .iter()
             .filter(|(_, marks)| marks.has(Marks::CODE));
+        let own = highlights(rich, selected, style);
+        let looks = match colours {
+            Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
+            None => own,
+        };
         let text = StyledText::new(rich.text.clone())
-            .with_highlights(highlights(rich, selected, style))
+            .with_highlights(looks)
             .with_font_family_overrides(
                 mono.map(|(range, _)| (range.clone(), style.mono.family.clone())),
             );
@@ -499,6 +516,10 @@ impl Draw<'_> {
                 cx,
             );
         }
+        let colours = style
+            .code
+            .clone()
+            .and_then(|colour| colour(lang.as_ref(), &code.text, cx));
         let title = div()
             .h(px(23.))
             .px(px(10.))
@@ -520,7 +541,7 @@ impl Draw<'_> {
             .text_size(style.code_size)
             .line_height(relative(1.55))
             .text_color(style.ink_dim)
-            .child(self.rich(code));
+            .child(self.coloured(code, colours));
         let frame = div()
             .rounded(style.radius)
             .border_1()

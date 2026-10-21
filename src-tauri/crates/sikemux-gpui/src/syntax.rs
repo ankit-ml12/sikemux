@@ -3,6 +3,7 @@
 //! scripts/generate-syntax.mjs from the same sources.
 
 use std::cell::{Ref, RefCell};
+use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -36,6 +37,8 @@ const AHEAD: usize = 200;
 const SYNC_MAX_LINES: usize = 400;
 /// Lines tokenized between letting go of the document, so drawing never waits long.
 const BACKGROUND_CHUNK: usize = 100;
+/// How much text `colour_lines` keeps coloured, as today's diff colours keep.
+const COLOURED_MAX_BYTES: usize = 4 * 1024 * 1024;
 
 struct Shared {
     library: Library,
@@ -72,6 +75,11 @@ struct PaletteState {
     highlight: ThemeHighlight,
     /// Each role's style, then plain text's, made the first time code is drawn.
     styles: Vec<HighlightStyle>,
+    /// Texts coloured for drawing once, by language and content, in this theme.
+    coloured: HashMap<(SharedString, SharedString), Arc<[LineRuns]>>,
+    /// Their texts' length, kept under `COLOURED_MAX_BYTES` by dropping the oldest.
+    coloured_bytes: usize,
+    coloured_order: VecDeque<(SharedString, SharedString)>,
 }
 
 impl PaletteState {
@@ -80,6 +88,22 @@ impl PaletteState {
             text: tokens.editor.fg.clone(),
             highlight: tokens.highlight.clone(),
             styles: Vec::new(),
+            coloured: HashMap::new(),
+            coloured_bytes: 0,
+            coloured_order: VecDeque::new(),
+        }
+    }
+
+    fn keep(&mut self, key: (SharedString, SharedString), lines: Arc<[LineRuns]>) {
+        self.coloured_bytes += key.1.len();
+        self.coloured_order.push_back(key.clone());
+        self.coloured.insert(key, lines);
+        while self.coloured_bytes > COLOURED_MAX_BYTES {
+            let Some(oldest) = self.coloured_order.pop_front() else {
+                break;
+            };
+            self.coloured_bytes -= oldest.1.len();
+            self.coloured.remove(&oldest);
         }
     }
 }
@@ -138,14 +162,12 @@ fn colour(highlight: &ThemeHighlight, role: &str) -> Option<gpui_kit::Hsla> {
     Some(theme::color(css))
 }
 
-/// A token's style; plain text takes the palette's last entry, the editor's text colour.
-fn resolve(style: Style, palette: &[HighlightStyle]) -> HighlightStyle {
+/// A token's style, with `plain` for text no role colours.
+fn resolve(style: Style, palette: &[HighlightStyle], plain: HighlightStyle) -> HighlightStyle {
     let mut resolved = style
         .role
-        .and_then(|role| palette.get(role as usize))
-        .or(palette.last())
-        .copied()
-        .unwrap_or_default();
+        .and_then(|role| palette.get(role as usize).copied())
+        .unwrap_or(plain);
     if style.italic {
         resolved.font_style = Some(FontStyle::Italic);
     }
@@ -167,28 +189,55 @@ pub fn knows(language: &str) -> bool {
     shared().library.language(language).is_some()
 }
 
-/// Styled runs of `text` in `language`, in bytes from its start, for code shown once
-/// rather than edited: chat code blocks and diffs.
-pub fn highlight(
-    language: &str,
-    text: &str,
-    cx: &App,
-) -> Option<Vec<(Range<usize>, HighlightStyle)>> {
-    let shared = shared();
-    let lines = textmate_highlight::highlight(&shared.library, &shared.styles, language, text)?;
-    let palette = cx.global::<Palette>().styles();
-    let mut runs = Vec::new();
-    let mut start = 0;
-    for (line, spans) in text.split('\n').zip(&lines) {
-        runs.extend(spans.iter().map(|span| {
-            (
-                start + span.start as usize..start + span.end as usize,
-                resolve(span.style, &palette),
-            )
-        }));
-        start += line.len() + 1;
+/// A line's styled runs, in bytes from the line's start. Plain text has none.
+pub type LineRuns = Vec<(Range<usize>, HighlightStyle)>;
+
+/// Every line of `text` coloured in `language`, for code drawn rather than edited,
+/// such as chat code blocks and diffs, worked out off the main thread. `None` for a
+/// language with no grammar.
+pub fn colour_lines(language: &str, text: SharedString, cx: &App) -> Task<Option<Arc<[LineRuns]>>> {
+    if let Some(lines) = coloured_lines(language, &text, cx) {
+        return Task::ready(Some(lines));
     }
-    Some(runs)
+    let language = SharedString::from(language.to_owned());
+    let spans = cx.background_executor().spawn({
+        let (language, text) = (language.clone(), text.clone());
+        async move {
+            let shared = shared();
+            textmate_highlight::highlight(&shared.library, &shared.styles, &language, &text)
+        }
+    });
+    cx.spawn(async move |cx| {
+        let spans = spans.await?;
+        Some(cx.update(|cx| {
+            let palette = cx.global::<Palette>().clone();
+            let lines: Arc<[LineRuns]> = {
+                let styles = palette.styles();
+                spans
+                    .iter()
+                    .map(|line| {
+                        line.iter()
+                            .map(|span| {
+                                let style = resolve(span.style, &styles, HighlightStyle::default());
+                                (span.start as usize..span.end as usize, style)
+                            })
+                            .collect()
+                    })
+                    .collect()
+            };
+            palette.0.borrow_mut().keep((language, text), lines.clone());
+            lines
+        }))
+    })
+}
+
+/// The lines `colour_lines` worked out for this text in this theme, if it has.
+pub fn coloured_lines(language: &str, text: &SharedString, cx: &App) -> Option<Arc<[LineRuns]>> {
+    let state = cx.global::<Palette>().0.borrow();
+    state
+        .coloured
+        .get(&(SharedString::from(language.to_owned()), text.clone()))
+        .cloned()
 }
 
 /// The editor's highlighters: one per document, for a language id with a grammar.
@@ -434,7 +483,7 @@ impl InputHighlighter for Highlighter {
     ) -> Vec<(Range<usize>, HighlightStyle)> {
         let mut model = lock(&self.model);
         let palette = self.palette.styles();
-        let plain = resolve(Style::default(), &palette);
+        let plain = palette.last().copied().unwrap_or_default();
         let mut runs = Vec::new();
         let mut cursor = range.start;
         let first = model.text.offset_to_point(range.start).row;
@@ -457,7 +506,7 @@ impl InputHighlighter for Highlighter {
                     if cursor < start {
                         runs.push((cursor..start, plain));
                     }
-                    runs.push((start..end, resolve(span.style, &palette)));
+                    runs.push((start..end, resolve(span.style, &palette, plain)));
                     cursor = end;
                 }
             }

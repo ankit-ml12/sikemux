@@ -1,6 +1,7 @@
 //! An agent's chat: the rows the core folds, kept in a transcript, and how
 //! each row draws. Rows change only by the core's changes.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
 use std::path::PathBuf;
@@ -15,7 +16,7 @@ use gpui_kit::{
     Radians, SharedString, StatefulInteractiveElement, Styled, StyledText, Subscription,
     Transformation, WeakEntity, Window,
 };
-use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
+use gpui_transcript::{Change, CodeColours, CodeRuns, Markdown, Pen, Row, Style, Transcript};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
@@ -27,6 +28,7 @@ use sikemux_wire::protocol::{ChatAttachment, ChatMark, MidTurnSend};
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
 use crate::icons::Icon;
+use crate::syntax;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
@@ -2100,6 +2102,59 @@ impl Tints {
     }
 }
 
+/// Colours a code block once syntax.rs has worked it out: the first draw asks for it,
+/// and the chat redraws when it arrives. Plain text takes the editor's text colour.
+fn code_colours(reader: Entity<Reading>, plain: Hsla) -> CodeColours {
+    let asked = RefCell::new(HashSet::<(SharedString, SharedString)>::new());
+    Rc::new(move |lang, code, cx| {
+        let language = SharedString::from(lang?.to_lowercase());
+        if !syntax::knows(&language) {
+            return None;
+        }
+        if let Some(lines) = syntax::coloured_lines(&language, code, cx) {
+            return Some(spread(&lines, code, plain));
+        }
+        if asked.borrow_mut().insert((language.clone(), code.clone())) {
+            let coloured = syntax::colour_lines(&language, code.clone(), cx);
+            let reader = reader.downgrade();
+            cx.spawn(async move |cx| {
+                if coloured.await.is_some() {
+                    let _ = reader.update(cx, |_, cx| cx.notify());
+                }
+            })
+            .detach();
+        }
+        None
+    })
+}
+
+/// Each line's runs as runs over the whole text, with plain text filled in.
+fn spread(lines: &[syntax::LineRuns], code: &str, plain: Hsla) -> CodeRuns {
+    let plain_style = HighlightStyle {
+        color: Some(plain),
+        ..HighlightStyle::default()
+    };
+    let mut runs = Vec::new();
+    let mut start = 0;
+    for (line, runs_of_line) in code.split('\n').zip(lines) {
+        let mut cursor = start;
+        for (range, style) in runs_of_line {
+            let (from, to) = (start + range.start, start + range.end);
+            if cursor < from {
+                runs.push((cursor..from, plain_style));
+            }
+            let color = style.color.or(Some(plain));
+            runs.push((from..to, HighlightStyle { color, ..*style }));
+            cursor = to;
+        }
+        if cursor < start + line.len() {
+            runs.push((cursor..start + line.len(), plain_style));
+        }
+        start += line.len() + 1;
+    }
+    runs.into()
+}
+
 impl Looks {
     fn new(
         t: &Tokens,
@@ -2131,6 +2186,7 @@ impl Looks {
                 a: 0.72,
                 ..t.surface_sunken
             },
+            code: Some(code_colours(reader.clone(), theme::color(&t.editor.fg))),
             ..Style::default()
         };
         let thought = Style {

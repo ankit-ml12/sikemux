@@ -13,6 +13,6 @@ mod markdown;
 mod select;
 mod transcript;
 
-pub use draw::{DrawFence, DrawImage, Fence, OnLink, Pen, Style};
+pub use draw::{CodeColours, CodeRuns, DrawFence, DrawImage, Fence, OnLink, Pen, Style};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
 pub use transcript::{init, Change, Copy, Row, Transcript};
