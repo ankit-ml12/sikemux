@@ -235,6 +235,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 .get("buddy")
                 .filter(|buddy| buddy.is_object())
                 .cloned(),
+            face: None,
             pty_id,
             created_at: 0,
             provider,

@@ -901,6 +901,7 @@ impl Workspaces {
             asleep: false,
             worktree,
             buddy: None,
+            face: None,
             pty_id: None,
             created_at: epoch_ms(),
         };

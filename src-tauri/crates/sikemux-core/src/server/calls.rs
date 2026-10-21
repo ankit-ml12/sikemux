@@ -259,6 +259,11 @@ calls! { core, client, params;
         let params = parse(params)?;
         answer(blocking(move || super::project_files::read(params).map_err(CoreError::from)).await?)
     },
+    "setFaceStyle": Person => {
+        let style = core.faces.set_style(parse(params)?)?;
+        core.view_changed();
+        answer(style)
+    },
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),

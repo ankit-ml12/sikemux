@@ -42,6 +42,7 @@ mod notify;
 pub mod plugins;
 mod ports;
 mod project_files;
+mod faces;
 mod prepare;
 mod questions;
 mod remote;
@@ -367,6 +368,8 @@ pub(crate) struct Core {
     pub(crate) inbox: inbox::Inbox,
     /// Hosts linked with this one, and the agents of teams shared with them.
     pub(crate) hosts: hosts::Hosts,
+    /// The faces agents wear, and the style the person picked for them.
+    pub(crate) faces: faces::Faces,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
     /// The app's terminal theme, which programs asking for colours are told.
@@ -451,6 +454,7 @@ impl Core {
             notify: notify::Notifier::default(),
             inbox: inbox::Inbox::default(),
             hosts,
+            faces: faces::Faces::new(data_dir),
             device_view: Mutex::new(Vec::new()),
             terminal_colors: Mutex::default(),
         }))
@@ -788,8 +792,26 @@ impl Core {
 
     /// The workspace as clients are sent it, each agent under its name.
     pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
+        self.workspace_view_with(&self.chat_infos(), &self.session_infos())
+    }
+
+    /// The workspace, each agent wearing its face in the state its chat or
+    /// terminal in `chats` and `sessions` is in.
+    fn workspace_view_with(
+        &self,
+        chats: &[crate::protocol::ChatInfo],
+        sessions: &[crate::protocol::SessionInfo],
+    ) -> crate::protocol::Workspace {
         let mut workspace = self.workspaces.view();
         self.names.fill(&mut workspace.agents);
+        let groups: HashMap<&str, AgentGroup> = chats
+            .iter()
+            .map(|chat| (chat.agent_id.as_str(), chat.group))
+            .chain(sessions.iter().filter_map(|session| {
+                Some((session.agent_id.as_deref()?, session.group?))
+            }))
+            .collect();
+        self.faces.fill(&mut workspace.agents, &groups);
         let chips = self.git_chips.locked();
         let hosts = self.code_hosts.locked();
         for project in &mut workspace.projects {
@@ -821,7 +843,7 @@ impl Core {
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
         let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
-        let workspace = self.workspace_view();
+        let workspace = self.workspace_view_with(&chats, &sessions);
         let layout = Box::new(layout::view(self, &workspace, &sessions));
         let view = DeviceView {
             workspace,
@@ -832,6 +854,7 @@ impl Core {
             inbox,
             layout,
             account: self.account.shown().map(Box::new),
+            face_style: Box::new(self.faces.style()),
         };
         let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },

@@ -19,6 +19,7 @@ export interface DeviceView {
     layout: Layout;
     /** Who this host is signed in to Sikemux as; none while nobody is. */
     account: AccountInfo | null;
+    faceStyle: FaceStyle;
 }
 
 export interface Workspace {
@@ -164,11 +165,33 @@ export interface WorkspaceAgent {
     worktree?: unknown;
     /** The character drawn for it. */
     buddy?: unknown;
+    /**
+     * The face it wears in place of its CLI's logo, from `buddy` and the
+     * person's face style; none while it shows the logo. The core fills it
+     * in; clients only read it.
+     */
+    face?: AgentFace;
     /** The terminal session running it, for an agent in a terminal. */
     ptyId?: number;
     /** Unix milliseconds. */
     createdAt: number;
 }
+
+/** The face an agent wears, drawn by each client from the same art. */
+export interface AgentFace {
+    pack: string;
+    shape: string;
+    /** Which of the pack's colours, in the order its palette lists them. */
+    color: number;
+    state: FaceState;
+    /**
+     * The part of the shape's 24-unit square its drawing fills, as an SVG
+     * viewBox.
+     */
+    box: string;
+}
+
+export type FaceState = "idle" | "working" | "waiting" | "done";
 
 /** A saved chat kept at the top of the list, open or closed. */
 export interface PinnedChat {
@@ -636,6 +659,18 @@ export interface AccountInfo {
     email: string | null;
     /** Names the picture `accountPicture` answers, which changes with it. */
     pictureHash: string | null;
+}
+
+/** How agents' faces look, as the person picked. */
+export interface FaceStyle {
+    /** Every agent wears a face; otherwise only one with a name does. */
+    on: boolean;
+    /** A pack's id, or `all` for a pack per agent. */
+    pack: string;
+    /** A shape's id, or `mixed` for a shape per agent. */
+    shape: string;
+    /** Faces move with what their agents are doing. */
+    motion: boolean;
 }
 
 /**

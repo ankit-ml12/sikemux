@@ -1033,12 +1033,67 @@ pub struct WorkspaceAgent {
     /// The character drawn for it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buddy: Option<Value>,
+    /// The face it wears in place of its CLI's logo, from `buddy` and the
+    /// person's face style; none while it shows the logo. The core fills it
+    /// in; clients only read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<AgentFace>,
     /// The terminal session running it, for an agent in a terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pty_id: Option<SessionId>,
     /// Unix milliseconds.
     #[serde(default)]
     pub created_at: u64,
+}
+
+/// The face an agent wears, drawn by each client from the same art.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentFace {
+    pub pack: String,
+    pub shape: String,
+    /// Which of the pack's colours, in the order its palette lists them.
+    pub color: u32,
+    pub state: FaceState,
+    /// The part of the shape's 24-unit square its drawing fills, as an SVG
+    /// viewBox.
+    #[serde(rename = "box")]
+    pub view_box: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FaceState {
+    #[default]
+    Idle,
+    Working,
+    Waiting,
+    Done,
+}
+
+/// How agents' faces look, as the person picked.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FaceStyle {
+    /// Every agent wears a face; otherwise only one with a name does.
+    pub on: bool,
+    /// A pack's id, or `all` for a pack per agent.
+    pub pack: String,
+    /// A shape's id, or `mixed` for a shape per agent.
+    pub shape: String,
+    /// Faces move with what their agents are doing.
+    pub motion: bool,
+}
+
+impl Default for FaceStyle {
+    fn default() -> Self {
+        Self {
+            on: false,
+            pack: "all".into(),
+            shape: "mixed".into(),
+            motion: true,
+        }
+    }
 }
 
 /// What a device learns about a launcher: never its program or environment.
@@ -1608,6 +1663,8 @@ pub struct DeviceView {
     /// Who this host is signed in to Sikemux as; none while nobody is.
     #[serde(default)]
     pub account: Option<Box<AccountInfo>>,
+    #[serde(default)]
+    pub face_style: Box<FaceStyle>,
 }
 
 /// The Sikemux account this host is signed in to, as clients show it.
@@ -1968,6 +2025,7 @@ mod tests {
             inbox: Value::Null,
             layout: Box::default(),
             account: None,
+            face_style: Box::default(),
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");
