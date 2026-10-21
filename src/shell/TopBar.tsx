@@ -2,6 +2,7 @@ import { RunChip } from "../tasks/RunChip";
 import { useProjectRepo } from "../git/projectRepo";
 import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { BuiltPlugin } from "../plugins/enabled";
+import { TopBarPlace } from "./TopBarPlace";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
 import { useNow } from "../hooks/useNow";
@@ -171,6 +172,7 @@ export const TopBar = memo(function TopBar() {
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
             <div className="tb-grow" />
+            <TopBarPlace />
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
                 <VoicePill />
