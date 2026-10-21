@@ -33,7 +33,7 @@ fn catalogue() -> &'static Catalogue {
         let ghostty = packed
             .into_iter()
             .filter(|(name, _)| !taken.contains(&slugify(name).replace('-', "")))
-            .filter_map(|(name, packed)| ghostty_theme(&name, &unpack(&packed)?))
+            .filter_map(|(name, packed)| ghostty_theme(&name, &unpack(&packed)?, None))
             .collect();
         Catalogue { sikemux, ghostty }
     })
@@ -288,6 +288,23 @@ pub(crate) fn by_name(tokens: &UiTokens) -> std::collections::BTreeMap<String, S
         .unwrap_or_default()
 }
 
+/// The palette an unsaved theme would draw with, for a theme editor's preview.
+pub(crate) fn palette_of(theme: Theme) -> Palette {
+    Palette {
+        tokens: tokens(&theme),
+        theme,
+    }
+}
+
+/// A theme worked out from a terminal palette as Ghostty's are: background,
+/// foreground, cursor, cursor text, selection (or empty) and the 16 ANSI
+/// colours, each `#rrggbb`, with the accent when the caller picked one.
+pub(crate) fn from_colours(name: &str, colours: &[String], accent: Option<&str>) -> Option<Theme> {
+    let colours: Vec<Option<[u8; 3]>> = colours.iter().map(|colour| hex(colour)).collect();
+    (colours.len() == 21).then_some(())?;
+    ghostty_theme(name, &colours, accent.and_then(hex))
+}
+
 /// Every theme to pick from: the person's own first, then Sikemux's, then Ghostty's.
 pub(crate) fn summaries(preferences: &Preferences) -> Vec<ThemeSummary> {
     let catalogue = catalogue();
@@ -456,7 +473,11 @@ fn saturation([r, g, b]: [u8; 3]) -> f64 {
 
 /// The app's, editor's and syntax colours worked out from a terminal palette,
 /// the way the Mac app worked them out for Ghostty's themes.
-fn ghostty_theme(name: &str, colours: &[Option<[u8; 3]>]) -> Option<Theme> {
+fn ghostty_theme(
+    name: &str,
+    colours: &[Option<[u8; 3]>],
+    accent: Option<[u8; 3]>,
+) -> Option<Theme> {
     let (bg, raw_fg, cursor, cursor_text) = (colours[0]?, colours[1]?, colours[2]?, colours[3]?);
     let raw_selection = colours[4];
     let ansi: Vec<[u8; 3]> = colours[5..].iter().copied().collect::<Option<_>>()?;
@@ -470,12 +491,14 @@ fn ghostty_theme(name: &str, colours: &[Option<[u8; 3]>]) -> Option<Theme> {
         if dark { white } else { black },
         5.,
     );
-    let acc = [
-        ansi[4], ansi[12], ansi[5], ansi[13], ansi[6], ansi[14], ansi[3], ansi[11],
-    ]
-    .into_iter()
-    .find(|&candidate| saturation(candidate) >= 0.35 && contrast(candidate, bg) >= 3.)
-    .unwrap_or(fg);
+    let acc = accent.unwrap_or_else(|| {
+        [
+            ansi[4], ansi[12], ansi[5], ansi[13], ansi[6], ansi[14], ansi[3], ansi[11],
+        ]
+        .into_iter()
+        .find(|&candidate| saturation(candidate) >= 0.35 && contrast(candidate, bg) >= 3.)
+        .unwrap_or(fg)
+    });
     let line = mix(bg, fg, if dark { 0.11 } else { 0.13 });
     let selection = raw_selection
         .filter(|&selection| contrast(selection, fg) >= 2.)

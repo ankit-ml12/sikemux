@@ -296,8 +296,23 @@ calls! { core, client, params;
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
     },
-    "theme": Watch, any_program => answer(core.palette()),
+    "theme": Watch, any_program => {
+        let params: ThemeParams = serde_json::from_value(params).unwrap_or_default();
+        match params.id {
+            Some(theme_id) => answer(super::themes::palette(&crate::protocol::Preferences { theme_id, ..core.preferences.get() })),
+            None => answer(core.palette()),
+        }
+    },
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
+    "themePalette": Watch => {
+        let params: ThemePaletteParams = parse(params)?;
+        answer(super::themes::palette_of(params.theme))
+    },
+    "themeFromColours": Watch => {
+        let params: ThemeFromColoursParams = parse(params)?;
+        let theme = super::themes::from_colours(&params.name, &params.colours, params.accent.as_deref());
+        answer(theme.ok_or("a theme needs 21 colours, each #rrggbb, the selection's may be empty")?)
+    },
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
@@ -489,6 +504,25 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
+}
+
+/// Which theme to answer for; the person's pick when none is named.
+#[derive(Deserialize, Default)]
+struct ThemeParams {
+    id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ThemePaletteParams {
+    theme: sikemux_wire::theme::Theme,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThemeFromColoursParams {
+    name: String,
+    colours: Vec<String>,
+    accent: Option<String>,
 }
 
 #[derive(Deserialize)]
