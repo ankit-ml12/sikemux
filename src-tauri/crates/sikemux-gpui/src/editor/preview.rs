@@ -46,7 +46,7 @@ pub(super) fn first_mode(path: &Path) -> Mode {
 }
 
 /// `text` as the tree the transcript draws.
-pub(super) fn render(text: &str) -> Markdown {
+pub(crate) fn render(text: &str) -> Markdown {
     let blocks = match Doc::read(text, OPTIONS).into_iter().next() {
         Some(Op::List { c, .. }) => Value::Array(c),
         _ => Value::Array(Vec::new()),

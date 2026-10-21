@@ -1,7 +1,7 @@
-//! What the window's renderer paints behind panes with the shaders in `assets/shaders`:
-//! the moving grain, or the person's own picture dithered in its place. The grain moves
-//! by showing the last frame again with the renderer's clock moved on, so no view draws
-//! again for it.
+//! What the window's renderer paints behind panes and overlays with the shaders in
+//! `assets/shaders`: the moving grain, the person's own picture dithered in its place,
+//! and the sky over the welcome screen and the release notes. They move by showing the
+//! last frame again with the renderer's clock moved on, so no view draws again for them.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -10,12 +10,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{
-    canvas, relative, App, AppContext, Context, Global, IntoElement, RenderImage, ShaderProgram,
-    Styled, Task, Window,
+    canvas, relative, App, AppContext, Context, Global, Hsla, IntoElement, RenderImage,
+    ShaderProgram, Styled, Task, Window,
 };
 use sikemux_wire::protocol::Preferences;
 
-use crate::theme::{Tokens, RADIUS_3};
+use crate::theme::{self, Tokens, RADIUS_3};
 use crate::workbench::Workbench;
 
 macro_rules! program {
@@ -30,11 +30,13 @@ macro_rules! program {
 
 static FIELD: ShaderProgram = program!("field");
 static PICTURE: ShaderProgram = program!("picture");
+static SKY: ShaderProgram = program!("sky");
 
 const FRAMES_PER_SECOND: u64 = 30;
 /// Slower on battery, where every frame is paid for out of the charge.
 const BATTERY_FRAMES_PER_SECOND: u64 = 20;
 const FIELD_SPEED: f32 = 0.5;
+const SKY_SPEED: f32 = 0.35;
 /// Where the clock stands for a person who asked for less motion, so everything holds still.
 const STILL: f32 = 2.5;
 /// High, because the grain's dots are the only paint and nothing is drawn between them.
@@ -45,7 +47,7 @@ const PICTURE_BAND: f32 = 0.6;
 /// The picture is drawn in two-pixel dots, so no more of it than one texel per dot is kept.
 const PICTURE_LONGEST: u32 = 2560;
 
-/// What panes show behind them, as the person's preferences say.
+/// What panes show behind them, as the person's preferences say, and whether a sky is up.
 #[derive(Clone)]
 pub struct Grain {
     shown: bool,
@@ -53,6 +55,7 @@ pub struct Grain {
     strength: f32,
     picture_path: Option<String>,
     picture: Picture,
+    skies: usize,
 }
 
 #[derive(Clone)]
@@ -66,18 +69,19 @@ impl Global for Grain {}
 
 impl Grain {
     fn moving(&self) -> bool {
-        self.shown && !matches!(self.picture, Picture::Loaded(_))
+        self.skies > 0 || (self.shown && !matches!(self.picture, Picture::Loaded(_)))
     }
 }
 
 /// Takes the preferences for what panes show, loading a newly chosen picture.
 pub fn set(preferences: &Preferences, cx: &mut App) {
     let path = preferences.pane_image.clone();
-    let kept = cx
-        .try_global::<Grain>()
-        .filter(|grain| grain.picture_path == path)
-        .map(|grain| grain.picture.clone());
-    let picture = match kept {
+    let known = cx.try_global::<Grain>().map(|grain| {
+        let kept = (grain.picture_path == path).then(|| grain.picture.clone());
+        (kept, grain.skies)
+    });
+    let skies = known.as_ref().map_or(0, |(_, skies)| *skies);
+    let picture = match known.and_then(|(kept, _)| kept) {
         Some(kept) => kept,
         None => {
             if let Some(path) = &path {
@@ -99,6 +103,7 @@ pub fn set(preferences: &Preferences, cx: &mut App) {
         strength: preferences.pane_strength as f32,
         picture_path: path,
         picture,
+        skies,
     });
     cx.refresh_windows();
 }
@@ -198,6 +203,43 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
         .inset_0()
         .into_any_element(),
     )
+}
+
+/// The release sky, in the accent running through the syntax pink to the syntax green,
+/// fading out from `fade_from` of the way down to nothing at the bottom.
+pub fn sky(fade_from: f32, opacity: f32, cx: &App) -> impl IntoElement + Styled {
+    let t = Tokens::get(cx);
+    let hues = [
+        t.accent,
+        theme::color(&t.highlight.function),
+        theme::color(&t.highlight.string),
+    ]
+    .map(|hue: Hsla| hue.to_rgb());
+    let (start, speed) = clock(SKY_SPEED, cx);
+    canvas(
+        |_, _, _| {},
+        move |bounds, (), window, _| {
+            let mut params = [0.; gpui::SHADER_PARAMS];
+            params[..4].copy_from_slice(&[start, speed, window.scale_factor(), fade_from]);
+            for (slot, hue) in params[4..].as_chunks_mut::<4>().0.iter_mut().zip(hues) {
+                slot.copy_from_slice(&[hue.r, hue.g, hue.b, hue.a * opacity]);
+            }
+            let _ = window.paint_shader(bounds, &SKY, params, None);
+        },
+    )
+}
+
+/// Keeps the sky moving while a screen that shows one is up, even with panes' grain off.
+pub fn sky_shown(shown: bool, cx: &mut App) {
+    let Some(grain) = cx.try_global::<Grain>() else {
+        return;
+    };
+    let mut grain = grain.clone();
+    grain.skies = match shown {
+        true => grain.skies + 1,
+        false => grain.skies.saturating_sub(1),
+    };
+    cx.set_global(grain);
 }
 
 /// Where a shader's clock starts and how fast it runs, holding still for less motion.

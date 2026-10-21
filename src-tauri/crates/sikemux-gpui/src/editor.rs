@@ -28,7 +28,7 @@ mod blame;
 mod gutter;
 mod insights;
 mod lsp;
-mod preview;
+pub(crate) mod preview;
 mod viewer;
 
 /// Opens a file in the editor with the cursor at a line, counted from 0, and

@@ -194,6 +194,14 @@ pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
     }
 }
 
+/// Whether `keystroke` is the keys command `id` is bound to now.
+pub fn pressed(id: &str, keystroke: &Keystroke, cx: &App) -> bool {
+    let bound = cx
+        .try_global::<Keymap>()
+        .and_then(|keymap| keymap.bound.get(id));
+    bound.is_some_and(|keys| spelling(keystroke).as_ref() == Some(keys))
+}
+
 /// The keys `id` is bound to as the app shows them, such as ⌘⇧P, or none when it is unbound.
 pub fn hint(id: &str, cx: &App) -> Option<SharedString> {
     label(cx.try_global::<Keymap>()?.bound.get(id)?)

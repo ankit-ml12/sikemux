@@ -17,6 +17,7 @@ pub mod core;
 mod desk;
 mod drag;
 pub mod editor;
+mod experience;
 mod faces;
 pub mod file_icons;
 mod files;
@@ -55,6 +56,8 @@ mod theme_palette;
 mod track;
 mod ui;
 pub mod voice;
+mod welcome;
+mod whats_new;
 pub mod workbench;
 pub mod worktree_switch;
 

@@ -64,6 +64,8 @@ pub struct Style {
     pub fence: Option<DrawFence>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
+    /// Level-two headings lead with their number, `01` and on, in the accent's mono face.
+    pub numbered_sections: bool,
 }
 
 impl Default for Style {
@@ -95,6 +97,7 @@ impl Default for Style {
             fence: None,
             code: None,
             image: None,
+            numbered_sections: false,
         }
     }
 }
@@ -344,6 +347,17 @@ impl Draw<'_> {
         match &node.kind {
             Kind::Heading(level) => {
                 let scale = [2., 1.5, 1.17, 1., 0.83, 0.67][usize::from(level.clamp(&1, &6) - 1)];
+                let blocks = &self.on.blocks;
+                let top_level = blocks
+                    .get(ix)
+                    .is_some_and(|block| std::ptr::eq(&**block, node));
+                let number = (style.numbered_sections && *level == 2 && top_level).then(|| {
+                    let before = blocks[..ix]
+                        .iter()
+                        .filter(|block| matches!(block.kind, Kind::Heading(2)))
+                        .count();
+                    format!("{:02}", before + 1)
+                });
                 div()
                     .when(ix > 0, |heading| {
                         heading.pt(style.text_size * (scale * 0.4))
@@ -351,6 +365,17 @@ impl Draw<'_> {
                     .text_size(style.text_size * scale)
                     .line_height(relative(1.3))
                     .font_weight(FontWeight::SEMIBOLD)
+                    .when_some(number, |heading, number| {
+                        heading.flex().items_baseline().gap(px(10.)).child(
+                            div()
+                                .flex_none()
+                                .font(style.mono.clone())
+                                .text_size(style.code_size * 0.92)
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(style.accent)
+                                .child(number),
+                        )
+                    })
                     .child(self.flow(node, window, cx))
                     .into_any_element()
             }

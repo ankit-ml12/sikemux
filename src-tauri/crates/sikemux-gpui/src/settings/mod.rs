@@ -127,7 +127,7 @@ pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
 pub use pages::remote_moved;
 
 /// Sets one of the person's preferences in the core.
-pub(super) fn set(bench: &Workbench, key: &str, value: impl Into<Value>) {
+pub(crate) fn set(bench: &Workbench, key: &str, value: impl Into<Value>) {
     let _ = bench.asks.send(Ask::Call {
         method: "setPreference",
         params: json!({ "key": key, "value": value.into() }),

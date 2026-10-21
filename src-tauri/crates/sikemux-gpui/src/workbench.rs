@@ -60,6 +60,9 @@ pub struct Workbench {
     watched_project: Option<String>,
     pub battery: Option<Battery>,
     pub agent_setup: crate::agent_setup::Setup,
+    /// The welcome or the release notes, while one is over the window.
+    pub experience: Option<crate::experience::Experience>,
+    pub shown: crate::experience::Shown,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
     /// The account's picture, and the hash the core named the one asked for by.
@@ -350,6 +353,10 @@ impl Workbench {
             "preferences",
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
+        let _ = asks.send(Ask::Watch(
+            "whatsNew",
+            Watch::new("whatsNew", json!({}), &["preferences"]),
+        ));
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
         let _ = asks.send(Ask::Follow("lsp"));
@@ -388,6 +395,8 @@ impl Workbench {
             watched_ci: None,
             battery: crate::battery::read(),
             agent_setup: Default::default(),
+            experience: None,
+            shown: Default::default(),
             picture: None,
             picture_hash: None,
             signing_in: false,
@@ -549,6 +558,9 @@ impl Workbench {
                 let already = self.read("update").is_some_and(ready);
                 let now = ready(&value);
                 self.reads.insert("update", value);
+                if self.experience.is_some() {
+                    self.parts.redraw(&self.parts.over, cx);
+                }
                 if now && !already {
                     // The core put the update in place of this app; opening the app again starts it.
                     cx.restart();
@@ -620,6 +632,7 @@ impl Workbench {
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
                     crate::ui::grain::set(&preferences, cx);
+                    crate::experience::preferences_read(self, &preferences, cx);
                 }
                 self.reads.insert("preferences", value);
                 crate::notifications::introduce(self, cx);
@@ -645,6 +658,7 @@ impl Workbench {
                 self.reads.insert(key, value);
                 self.time_run(cx);
             }
+            Update::Read("whatsNew", value) => crate::experience::whats_new_read(self, &value, cx),
             Update::Read(key, value) if crate::codehost::watches(key) => {
                 if let Some(host) = &self.host {
                     host.update(cx, |host, cx| host.read(key, &value, cx));
@@ -2394,6 +2408,8 @@ pub struct Parts {
     pub stage: Entity<Part>,
     pub tabs: Entity<Part>,
     pub finder: Entity<Part>,
+    /// The welcome or the release notes over the whole window.
+    pub over: Entity<Part>,
 }
 
 impl Parts {
@@ -2440,11 +2456,16 @@ impl Parts {
                 },
                 true,
             ),
+            over: part(crate::experience::draw, true),
         }
     }
 
     pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {
         part.update(cx, |_, cx| cx.notify());
+        // What is over the window can show the stage's state too, such as an install's terminal.
+        if part == &self.stage {
+            self.over.update(cx, |_, cx| cx.notify());
+        }
     }
 }
 
@@ -2686,6 +2707,14 @@ impl Render for Workbench {
                     )
                 },
             )
+            .when(self.experience.is_some(), |shell| {
+                shell.child(
+                    parts
+                        .over
+                        .clone()
+                        .cached(StyleRefinement::default().absolute().inset_0()),
+                )
+            })
     }
 }
 
