@@ -4,10 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use sikemux_client::accounts::network;
 use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
+use sikemux_client::remote::SecretKey;
 use sikemux_host::cli_paths;
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch};
+use sikemux_linked::{Happened, Linked};
 use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
@@ -50,6 +53,12 @@ pub enum Update {
         project: Option<String>,
         paths: Option<Vec<String>>,
     },
+    /// Another host's view, by the host's key, as its core sends it.
+    HostView(String, Box<DeviceView>),
+    /// Whether this app reaches another host now, by the host's key.
+    HostReach(String, bool),
+    /// Why this app cannot reach the account's other hosts at all.
+    HostsUnavailable(String),
 }
 
 pub enum ChatNews {
@@ -159,6 +168,13 @@ pub enum Ask {
     /// A call whose answer goes back to the one asking, for answers that belong to
     /// what asked, such as one file's diff.
     Request {
+        method: &'static str,
+        params: Value,
+        reply: oneshot::Sender<Result<Value, String>>,
+    },
+    /// A call to another host's core, by the host's key, whose answer goes back to the one asking.
+    HostRequest {
+        host: String,
         method: &'static str,
         params: Value,
         reply: oneshot::Sender<Result<Value, String>>,
@@ -336,6 +352,113 @@ impl Default for Home {
     }
 }
 
+/// Asks another host's core one of its methods, by the host's key, and waits for the answer.
+pub fn request_on(
+    asks: &mpsc::UnboundedSender<Ask>,
+    host: &str,
+    method: &'static str,
+    params: Value,
+) -> impl std::future::Future<Output = Result<Value, String>> {
+    let (reply, answer) = oneshot::channel();
+    let sent = asks.send(Ask::HostRequest {
+        host: host.to_owned(),
+        method,
+        params,
+        reply,
+    });
+    async move {
+        let gone = "the core is not connected";
+        sent.map_err(|_| gone.to_owned())?;
+        answer.await.map_err(|_| gone.to_owned())?
+    }
+}
+
+/// Where this app's key on the network is kept, apart from the Mac app's, so each is a
+/// device of its own on the account.
+const DEVICE_KEY: &str = "sikemux-gpui-device";
+
+/// What the account calls this app, before " on <host>".
+const DEVICE_NAME: &str = "Sikemux GPUI";
+
+/// This app's key on the network, made the first time it is needed and kept where
+/// `sikemux_keychain` keeps secrets; a build that keeps none cannot have one.
+fn device_key() -> Result<SecretKey, String> {
+    let account = if cfg!(debug_assertions) {
+        "dev"
+    } else {
+        "default"
+    };
+    let unavailable = |error: sikemux_keychain::KeychainError| error.to_string();
+    let saved = sikemux_keychain::read(DEVICE_KEY, account).map_err(unavailable)?;
+    if let Some(key) = saved.as_deref().and_then(sikemux_linked::key_from_text) {
+        return Ok(key);
+    }
+    let key = sikemux_linked::new_key();
+    sikemux_keychain::write(DEVICE_KEY, account, &sikemux_linked::key_text(&key))
+        .map_err(unavailable)?;
+    Ok(key)
+}
+
+/// Goes on the network as this app's own device, once the core's host is on an account.
+async fn reach_hosts(
+    client: &CoreClient,
+    updates: &mpsc::UnboundedSender<Update>,
+) -> Option<(Arc<Linked>, mpsc::UnboundedReceiver<Happened>)> {
+    let owned = client
+        .remote_status()
+        .await
+        .is_ok_and(|status| status.owner.is_some());
+    if !owned {
+        return None;
+    }
+    let unavailable = |reason: String| {
+        let _ = updates.send(Update::HostsUnavailable(reason));
+    };
+    let key = match tokio::task::spawn_blocking(device_key).await {
+        Ok(Ok(key)) => key,
+        Ok(Err(reason)) => {
+            unavailable(reason);
+            return None;
+        }
+        Err(error) => {
+            unavailable(error.to_string());
+            return None;
+        }
+    };
+    let relays = network::fetch(&sikemux_core::accounts::api_base())
+        .await
+        .and_then(|network| network::usable_relays(&network))
+        .unwrap_or_default();
+    match Linked::bind(key, relays, DEVICE_NAME, "macos").await {
+        Ok(linked) => Some(linked),
+        Err(error) => {
+            unavailable(error.to_string());
+            None
+        }
+    }
+}
+
+/// Joins every host the core is linked with, and lets go of the rest.
+fn follow_links(linked: &Option<Arc<Linked>>, client: &Arc<CoreClient>) {
+    let Some(linked) = linked.clone() else {
+        return;
+    };
+    let client = client.clone();
+    tokio::spawn(async move {
+        if let Err(error) = linked.follow(client).await {
+            eprintln!("sikemux: the account's other hosts could not be followed: {error}");
+        }
+    });
+}
+
+/// What another host said next, or never while this app reaches none.
+async fn heard_from(heard: &mut Option<mpsc::UnboundedReceiver<Happened>>) -> Option<Happened> {
+    match heard {
+        Some(heard) => heard.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
 /// Asks the core one of its methods and waits for the answer.
 pub fn request(
     asks: &mpsc::UnboundedSender<Ask>,
@@ -431,6 +554,8 @@ async fn run(
 ) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let mut followed: Vec<&'static str> = Vec::new();
+    let mut linked: Option<Arc<Linked>> = None;
+    let mut heard: Option<mpsc::UnboundedReceiver<Happened>> = None;
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
     loop {
         if let Some(launch) = &home.launch {
@@ -462,6 +587,13 @@ async fn run(
                 for (key, watch) in &watches {
                     read(&client, key, watch, &current, &updates);
                 }
+                if linked.is_none() {
+                    if let Some((reached, events)) = reach_hosts(&client, &updates).await {
+                        linked = Some(reached);
+                        heard = Some(events);
+                    }
+                }
+                follow_links(&linked, &client);
                 let mut streams = Streams::new(&client, &updates);
                 let mut streamed: HashMap<u64, mpsc::UnboundedSender<Part>> = HashMap::new();
                 loop {
@@ -480,6 +612,7 @@ async fn run(
                                 let _ = updates.send(Update::Notice { title, body, agent: agent_id });
                             }
                             Some(ClientEvent::Event(Event::Remote { status })) => {
+                                follow_links(&linked, &client);
                                 let _ = updates.send(Update::Remote(Box::new(status)));
                             }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
@@ -505,6 +638,20 @@ async fn run(
                             }
                             Some(_) => {}
                             None => break,
+                        },
+                        happened = heard_from(&mut heard) => match happened {
+                            Some(Happened::Connected(host)) => {
+                                let _ = updates.send(Update::HostReach(host, true));
+                            }
+                            Some(Happened::Lost(host)) => {
+                                let _ = updates.send(Update::HostReach(host, false));
+                            }
+                            Some(Happened::Event(host, event)) => {
+                                if let ClientEvent::Event(Event::DeviceView { view }) = *event {
+                                    let _ = updates.send(Update::HostView(host, Box::new(view)));
+                                }
+                            }
+                            None => heard = None,
                         },
                         ask = asks.recv() => match ask {
                             Some(Ask::Watch(key, mut watch)) => {
@@ -534,6 +681,19 @@ async fn run(
                                         Ok(value) => Update::Read(key, value),
                                         Err(error) => Update::Refused(key, error.to_string()),
                                     });
+                                });
+                            }
+                            Some(Ask::HostRequest { host, method, params, reply }) => {
+                                let linked = linked.clone();
+                                tokio::spawn(async move {
+                                    let answer = match linked {
+                                        Some(linked) => match linked.client(&host).await {
+                                            Ok(client) => client.call(method, params).await.map_err(|error| error.to_string()),
+                                            Err(error) => Err(error.to_string()),
+                                        },
+                                        None => Err("this app does not reach other hosts".to_owned()),
+                                    };
+                                    let _ = reply.send(answer);
                                 });
                             }
                             Some(Ask::Stream { stream, method, params, parts }) => {

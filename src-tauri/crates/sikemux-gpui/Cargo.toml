@@ -41,6 +41,8 @@ sikemux-host = { path = "../sikemux-host", default-features = false }
 sikemux-markdown = { path = "../sikemux-markdown" }
 sikemux-process = { path = "../sikemux-process" }
 sikemux-client = { path = "../sikemux-client" }
+sikemux-keychain = { path = "../sikemux-keychain" }
+sikemux-linked = { path = "../sikemux-linked" }
 sikemux-wire = { path = "../sikemux-wire" }
 sikemux-voice = { path = "../sikemux-voice" }
 textmate-highlight = { path = "crates/textmate-highlight" }

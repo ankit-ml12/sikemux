@@ -140,6 +140,12 @@ pub struct Workbench {
     pub retitling: Option<Retitling>,
     /// The question the shell is putting to the person, over the window.
     asking: Option<Asking>,
+    /// The account's other hosts this app reaches, by key: each one's view, as its core sends it.
+    pub host_views: HashMap<String, DeviceView>,
+    /// The account's other hosts this app is connected to now, by key.
+    pub hosts_reached: HashSet<String>,
+    /// Why this app reaches none of the account's other hosts, when it cannot.
+    pub hosts_unavailable: Option<String>,
     /// The stage's tabs while they move between one another.
     pub(crate) track: crate::track::Slide<String>,
     /// The tab rail's pages while they move between one another.
@@ -423,6 +429,9 @@ impl Workbench {
             resizers: [cx.focus_handle(), cx.focus_handle()],
             retitling: None,
             asking: None,
+            host_views: HashMap::new(),
+            hosts_reached: HashSet::new(),
+            hosts_unavailable: None,
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
@@ -490,6 +499,29 @@ impl Workbench {
                 }
                 self.terminals.reattach(&self.asks);
                 self.files.relist_shown(&self.asks);
+            }
+            Update::HostView(host, view) => {
+                self.host_views.insert(host, *view);
+            }
+            Update::HostReach(host, reached) => {
+                if reached {
+                    self.hosts_reached.insert(host);
+                } else {
+                    self.hosts_reached.remove(&host);
+                }
+            }
+            Update::HostsUnavailable(reason) => self.hosts_unavailable = Some(reason),
+            Update::Read("hosts", value) => {
+                let linked = |id: &String| {
+                    value
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|host| host["id"] == id.as_str())
+                };
+                self.host_views.retain(|id, _| linked(id));
+                self.hosts_reached.retain(linked);
+                self.reads.insert("hosts", value);
             }
             Update::View(view) => {
                 self.view = Some(*view);

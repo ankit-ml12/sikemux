@@ -1,6 +1,8 @@
 //! The account this host is signed in to, remote access, the phones that
 //! reach it and the other hosts on the account.
 
+use std::collections::HashMap;
+
 use gpui_kit::base::Popover;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::switch::Switch;
@@ -32,6 +34,9 @@ const DELETE_ACCOUNT_URL: &str = "https://app.sikemux.com/delete-account";
 pub struct Fields {
     links: Option<Vec<Value>>,
     renaming: Option<(String, Entity<InputState>, Subscription)>,
+    /// Whether each other host asks before a new device reaches it, read on that host itself;
+    /// none for a host this app cannot reach now.
+    approvals: HashMap<String, Option<bool>>,
 }
 
 fn make(bench: &mut Workbench, _: &mut Window, cx: &mut Context<Workbench>) {
@@ -54,12 +59,26 @@ pub fn read_links(bench: &Workbench, cx: &mut Context<Workbench>) {
             return;
         };
         let links = pairing["links"].as_array().cloned().unwrap_or_default();
+        let hosts: Vec<String> = links
+            .iter()
+            .filter_map(|link| link["id"].as_str().map(str::to_owned))
+            .collect();
         let _ = bench.update(cx, |bench, cx| {
             if let Some(fields) = fields_of(bench) {
                 fields.links = Some(links);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
+        for host in hosts {
+            let read = core::request_on(&asks, &host, "requireApproval", Value::Null).await;
+            let on = read.ok().and_then(|read| read["requireApproval"].as_bool());
+            let _ = bench.update(cx, |bench, cx| {
+                if let Some(fields) = fields_of(bench) {
+                    fields.approvals.insert(host, on);
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            });
+        }
     })
     .detach();
 }
@@ -427,6 +446,26 @@ fn remove_host(
     .detach();
 }
 
+/// Has another host ask, or stop asking, before a new device reaches it, through this app's
+/// own connection to it.
+fn set_host_approval(bench: &Workbench, host: String, on: bool, cx: &mut Context<Workbench>) {
+    let asks = bench.asks.clone();
+    cx.spawn(async move |bench, cx| {
+        let params = json!({ "requireApproval": on });
+        let set = core::request_on(&asks, &host, "setRequireApproval", params).await;
+        if set.is_err() {
+            return;
+        }
+        let _ = bench.update(cx, |bench, cx| {
+            if let Some(fields) = fields_of(bench) {
+                fields.approvals.insert(host, Some(on));
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
+        });
+    })
+    .detach();
+}
+
 fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let id = link["id"].as_str().unwrap_or_default().to_owned();
@@ -454,7 +493,8 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             })
             .into_any_element(),
     };
-    let (rename_this, remove_this) = (this.clone(), this.clone());
+    let (rename_this, remove_this, approve_this) = (this.clone(), this.clone(), this.clone());
+    let approval = fields.approvals.get(&id).copied().flatten();
     let menu = Popover::new(SharedString::from(format!("host-menu-{id}")))
         .anchor(Anchor::TopRight)
         .offset(px(4.))
@@ -469,6 +509,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             let (rename_id, remove_id) = (id.clone(), id.clone());
             let (rename_name, remove_name) = (name.clone(), name.clone());
             let shut = popover.clone();
+            let (approve_id, approve_shut) = (id.clone(), popover.clone());
             Menu::new()
                 .child(
                     MenuItem::new("host-rename", "Rename")
@@ -479,6 +520,24 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
                             popover.update(cx, |popover, cx| popover.dismiss(window, cx));
                         }),
                 )
+                .child({
+                    let (approve_this, approve_id, shut) = (
+                        approve_this.clone(),
+                        approve_id.clone(),
+                        approve_shut.clone(),
+                    );
+                    MenuItem::new("host-approval", "Require approval for new devices")
+                        .icon(Icon::Shield)
+                        .checked(approval == Some(true))
+                        .disabled(approval.is_none())
+                        .on_click(move |_, window, cx| {
+                            let host = approve_id.clone();
+                            approve_this.update(cx, |bench, cx| {
+                                set_host_approval(bench, host, approval != Some(true), cx)
+                            });
+                            shut.update(cx, |popover, cx| popover.dismiss(window, cx));
+                        })
+                })
                 .child(
                     MenuItem::new("host-remove", "Remove from account")
                         .icon(Icon::Trash)

@@ -134,9 +134,20 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 "failed" => Tone::Failed,
                 _ => Tone::Idle,
             };
+            let agents = host["id"]
+                .as_str()
+                .and_then(|id| bench.host_views.get(id))
+                .map_or(0, |view| view.workspace.agents.len());
             let detail = match reach {
-                "away" if linked => Some("out of reach"),
-                "connecting" if linked => Some("connecting"),
+                "away" if linked => Some("out of reach".to_owned()),
+                "connecting" if linked => Some("connecting".to_owned()),
+                _ if linked && bench.hosts_unavailable.is_some() => {
+                    Some("needs the signed app".to_owned())
+                }
+                _ if agents > 0 => Some(match agents {
+                    1 => "1 agent".to_owned(),
+                    count => format!("{count} agents"),
+                }),
                 _ => None,
             };
             let alias = host["ssh"].as_str().filter(|_| !linked).map(str::to_owned);
