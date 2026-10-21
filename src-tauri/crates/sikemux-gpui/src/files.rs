@@ -318,7 +318,11 @@ fn row_view(row: Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Opt
             .child(ui::icon(Icon::Folder, 17.).text_color(t.text_tertiary))
             .into_any_element()
     } else {
-        ui::mark_box(22., ui::icon(Icon::File, 16.).text_color(t.text_tertiary)).into_any_element()
+        let glyph = match crate::file_icons::icon(&row.entry.name, cx) {
+            Some(icon) => gpui_kit::img(icon).size(px(16.)).flex_none().into_any_element(),
+            None => ui::icon(Icon::File, 16.).text_color(t.text_tertiary).into_any_element(),
+        };
+        ui::mark_box(22., glyph).into_any_element()
     };
     let tail = match mark {
         Some((Some(letter), mark)) if !row.entry.dir => Some(

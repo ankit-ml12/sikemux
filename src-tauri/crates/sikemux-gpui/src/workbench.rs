@@ -90,6 +90,7 @@ impl Workbench {
     pub fn new(link: Link, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
         crate::faces::install(cx);
+        crate::file_icons::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
