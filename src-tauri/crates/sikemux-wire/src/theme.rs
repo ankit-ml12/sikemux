@@ -117,24 +117,75 @@ pub enum ThemeSource {
     Ghostty,
 }
 
-/// The picked theme with the colours every app works out from it, nudged
-/// until they read on the theme's grounds.
+/// The picked theme with the colours every app draws with, worked out from it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Palette {
     pub theme: Theme,
+    pub tokens: UiTokens,
+}
+
+/// DESIGN.md's colours for one theme, each `#rrggbb`, or `rgba(r, g, b, a)`
+/// when see-through. Phones read them by these names from the device view.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiTokens {
+    /// The darkest ground, behind panes.
+    pub sunken: String,
+    pub ground: String,
+    pub raised: String,
+    pub overlay: String,
+    /// One step above the ground, where a phone's composer sits.
+    pub composer: String,
+    /// What the Mac's chat composer and its docked strips are filled with.
+    pub surface_composer: String,
+    pub hover: String,
+    pub chosen: String,
+    pub active: String,
+    pub selected: String,
+    pub tooltip: String,
+    pub border: String,
+    pub border_strong: String,
+    pub border_selected: String,
+    pub line: String,
+    pub line_soft: String,
+    pub ink: String,
+    pub secondary: String,
     /// Text that recedes: labels, hints, timestamps.
-    pub ink_muted: String,
-    pub danger: String,
+    pub tertiary: String,
+    pub disabled: String,
+    pub ink_dim: String,
+    pub ink_faint: String,
+    pub rest: String,
+    /// Header actions and other glyphs that recede until hovered.
+    pub icon_quiet: String,
+    pub accent: String,
+    pub accent_soft: String,
+    pub on_accent: String,
     /// Running, connected, passing.
     pub live: String,
     /// Waiting on the person, or at risk.
     pub warn: String,
+    pub danger: String,
     /// Commands and the names of things that run.
     pub cmd: String,
+    /// The mark of a host on the account.
+    pub host: String,
+    /// An SSH host's mark.
+    pub ssh: String,
+    pub tree_spine: String,
+    pub tree_tick: String,
+    pub git_added: String,
     pub git_modified: String,
     pub git_untracked: String,
-    pub git_added: String,
     pub git_deleted: String,
     pub git_renamed: String,
+    /// What each kind of tool call is marked with in a chat.
+    pub tool_read: String,
+    pub tool_edit: String,
+    pub tool_delete: String,
+    pub tool_run: String,
+    pub tool_mcp: String,
+    /// The dots of the pane grain behind a phone's panes.
+    pub shader_dot: String,
 }

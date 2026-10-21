@@ -8,7 +8,7 @@ use base64::Engine;
 use sikemux_wire::grid::TerminalColors;
 use sikemux_wire::theme::{
     Palette, Theme, ThemeChrome, ThemeEditor, ThemeHighlight, ThemeSource, ThemeSummary,
-    ThemeTerminal,
+    ThemeTerminal, UiTokens,
 };
 
 use crate::protocol::{Preferences, DEFAULT_THEME_ID};
@@ -64,29 +64,93 @@ pub fn default_palette() -> Palette {
 /// The picked theme with the colours worked out from it for drawing.
 pub(crate) fn palette(preferences: &Preferences) -> Palette {
     let theme = resolve(preferences);
-    let c = &theme.chrome;
+    Palette {
+        tokens: tokens(&theme),
+        theme,
+    }
+}
+
+/// The tokens DESIGN.md names, worked out from a theme's colours as the Mac's
+/// stylesheet and theme code work them out.
+fn tokens(theme: &Theme) -> UiTokens {
+    let (c, h) = (&theme.chrome, &theme.highlight);
+    let (ink, bg, acc, bg_dim, ink_dim, line) = (
+        rgba(&c.ink),
+        rgba(&c.bg),
+        rgba(&c.acc),
+        rgba(&c.bg_dim),
+        rgba(&c.ink_dim),
+        rgba(&c.line),
+    );
+    let gray = |percent: f64| mix_oklab(ink, bg, percent / 100.);
     let readable_on = |color: &str, grounds: &[&str]| readable_css(color, grounds, &c.ink, 4.6);
-    let all = [c.bg.as_str(), c.bg_dim.as_str(), c.bg_raised.as_str()];
+    let grounds = [c.bg.as_str(), c.bg_dim.as_str(), c.bg_raised.as_str()];
     let near = [c.bg.as_str(), c.bg_raised.as_str()];
-    let tone = |dark: &str, light: &str| {
+    let seed = |dark: &str, light: &str| {
         if theme.dark {
             dark.to_owned()
         } else {
             light.to_owned()
         }
     };
-    Palette {
-        ink_muted: readable_on(&c.ink_dim, &all),
-        danger: readable_on(&c.danger, &all),
-        live: readable_on(&tone("#78dca1", "#247345"), &near),
-        warn: readable_on(&tone("#e9ba6c", "#875508"), &near),
-        cmd: theme.highlight.function.clone(),
-        git_modified: readable_on(&tone("#e2c08d", "#875508"), &all),
-        git_untracked: readable_on(&tone("#73c991", "#247345"), &all),
-        git_added: readable_on(&tone("#81b88b", "#247345"), &all),
-        git_deleted: readable_on(&tone("#ed806b", "#aa3824"), &all),
-        git_renamed: readable_on(&tone("#94b1ef", "#345bad"), &all),
-        theme,
+    let muted = readable_on(&c.ink_dim, &grounds);
+    let live = readable_on(&seed("#78dca1", "#247345"), &near);
+    let git_modified = readable_on(&seed("#e2c08d", "#875508"), &grounds);
+    let git_deleted = readable_on(&seed("#ed806b", "#aa3824"), &grounds);
+    let git_renamed = readable_on(&seed("#94b1ef", "#345bad"), &grounds);
+    let cmd = rgba(&h.function);
+    let toward_dim = |color: &str, amount: f64| show(mix_oklab(rgba(color), ink_dim, amount));
+    UiTokens {
+        sunken: show(bg_dim),
+        ground: show(bg),
+        raised: show(gray(7.)),
+        overlay: show(gray(4.)),
+        composer: show(gray(5.)),
+        surface_composer: show(mix_srgb(gray(7.), bg_dim, 0.55)),
+        hover: show(with_alpha(ink, 0.06)),
+        chosen: show(with_alpha(ink, 0.09)),
+        active: show(with_alpha(ink, 0.10)),
+        selected: show(with_alpha(acc, 0.14)),
+        tooltip: show(mix_srgb([1., 1., 1., 1.], gray(7.), 0.06 / 1.03)),
+        border: show(gray(11.)),
+        border_strong: show(gray(22.)),
+        border_selected: show(with_alpha(acc, 0.42)),
+        line: show(line),
+        line_soft: show(rgba(&c.bg_raised)),
+        ink: show(ink),
+        secondary: show(gray(76.)),
+        tertiary: muted.clone(),
+        disabled: show(gray(32.)),
+        ink_dim: show(ink_dim),
+        ink_faint: muted.clone(),
+        rest: show(gray(32.)),
+        icon_quiet: show(gray(42.)),
+        accent: show(acc),
+        accent_soft: show(with_alpha(acc, 0.10)),
+        on_accent: show(bg_dim),
+        warn: readable_on(&seed("#e9ba6c", "#875508"), &near),
+        danger: readable_on(&c.danger, &grounds),
+        cmd: show(cmd),
+        host: show(mix_oklab(acc, ink_dim, 0.8)),
+        ssh: show(mix_oklab(cmd, ink_dim, 0.7)),
+        tree_spine: show(mix_srgb(acc, line, 0.52)),
+        tree_tick: show(with_alpha(acc, 0.72)),
+        git_added: readable_on(&seed("#81b88b", "#247345"), &grounds),
+        git_untracked: readable_on(&seed("#73c991", "#247345"), &grounds),
+        tool_read: toward_dim(&git_renamed, 0.76),
+        tool_edit: toward_dim(&git_modified, 0.76),
+        tool_delete: toward_dim(&git_deleted, 0.76),
+        tool_run: show(mix_oklab(cmd, ink_dim, 0.70)),
+        tool_mcp: toward_dim(&live, 0.66),
+        shader_dot: if theme.dark {
+            show(rgba(&c.bg_raised))
+        } else {
+            show(mix_srgb(line, rgba(&muted), 0.9))
+        },
+        git_modified,
+        git_deleted,
+        git_renamed,
+        live,
     }
 }
 
@@ -104,6 +168,124 @@ fn readable_css(color: &str, grounds: &[&str], ink: &str, minimum: f64) -> Strin
         (Some(color), Some(ink), Some(grounds)) => css(readable(color, &grounds, ink, minimum)),
         _ => ink.to_owned(),
     }
+}
+
+/// Red, green, blue and alpha, each 0 to 1.
+type Rgba = [f64; 4];
+
+/// A CSS colour as themes write them: `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
+/// `rgba()` or `transparent`; anything else reads as opaque black.
+fn rgba(color: &str) -> Rgba {
+    let color = color.trim();
+    if color == "transparent" {
+        return [0.; 4];
+    }
+    if let Some([r, g, b]) = hex(color) {
+        let alpha = color
+            .strip_prefix('#')
+            .filter(|digits| digits.len() == 8)
+            .and_then(|digits| u8::from_str_radix(&digits[6..], 16).ok())
+            .map_or(1., |alpha| f64::from(alpha) / 255.);
+        return [
+            f64::from(r) / 255.,
+            f64::from(g) / 255.,
+            f64::from(b) / 255.,
+            alpha,
+        ];
+    }
+    let inside = color
+        .strip_prefix("rgba(")
+        .or_else(|| color.strip_prefix("rgb("))
+        .and_then(|rest| rest.strip_suffix(')'));
+    let parts: Vec<f64> = inside
+        .into_iter()
+        .flat_map(|rest| rest.split(','))
+        .filter_map(|part| part.trim().parse().ok())
+        .collect();
+    match parts.as_slice() {
+        [r, g, b, rest @ ..] => [
+            r / 255.,
+            g / 255.,
+            b / 255.,
+            rest.first().copied().unwrap_or(1.),
+        ],
+        _ => [0., 0., 0., 1.],
+    }
+}
+
+/// How a phone draws a colour: `#rrggbb`, or `rgba(r, g, b, a)` when see-through.
+fn show([r, g, b, a]: Rgba) -> String {
+    let byte = |channel: f64| (channel.clamp(0., 1.) * 255.).round() as u8;
+    let alpha = byte(a);
+    if alpha == 255 {
+        return css([byte(r), byte(g), byte(b)]);
+    }
+    let alpha = (f64::from(alpha) / 255. * 100.).round() / 100.;
+    format!("rgba({}, {}, {}, {alpha})", byte(r), byte(g), byte(b))
+}
+
+fn with_alpha([r, g, b, _]: Rgba, alpha: f64) -> Rgba {
+    [r, g, b, alpha]
+}
+
+/// CSS `color-mix(in srgb, a amount, b)`.
+fn mix_srgb(a: Rgba, b: Rgba, amount: f64) -> Rgba {
+    std::array::from_fn(|index| a[index] * amount + b[index] * (1. - amount))
+}
+
+/// CSS `color-mix(in oklab, a amount, b)`.
+fn mix_oklab(a: Rgba, b: Rgba, amount: f64) -> Rgba {
+    let (from, to) = (oklab(a), oklab(b));
+    let mixed: [f64; 3] =
+        std::array::from_fn(|index| from[index] * amount + to[index] * (1. - amount));
+    let [r, g, bl] = from_oklab(mixed);
+    [r, g, bl, a[3] * amount + b[3] * (1. - amount)]
+}
+
+fn oklab([r, g, b, _]: Rgba) -> [f64; 3] {
+    let linear = |c: f64| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let (r, g, b) = (linear(r), linear(g), linear(b));
+    let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+    let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+    let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+    [
+        0.210_454_255_3 * l + 0.793_617_785_0 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205_0 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766_0 * s,
+    ]
+}
+
+fn from_oklab([l, a, b]: [f64; 3]) -> [f64; 3] {
+    let l_ = (l + 0.396_337_777_4 * a + 0.215_803_757_3 * b).powi(3);
+    let m_ = (l - 0.105_561_345_8 * a - 0.063_854_172_8 * b).powi(3);
+    let s_ = (l - 0.089_484_177_5 * a - 1.291_485_548_0 * b).powi(3);
+    let gamma = |c: f64| {
+        let c = c.clamp(0., 1.);
+        if c <= 0.003_130_8 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1. / 2.4) - 0.055
+        }
+    };
+    [
+        gamma(4.076_741_662_1 * l_ - 3.307_711_591_3 * m_ + 0.230_969_929_2 * s_),
+        gamma(-1.268_438_004_6 * l_ + 2.609_757_401_1 * m_ - 0.341_319_396_5 * s_),
+        gamma(-0.004_196_086_3 * l_ - 0.703_418_614_7 * m_ + 1.707_614_701_0 * s_),
+    ]
+}
+
+/// The tokens by name, as a device view carries them to phones.
+pub(crate) fn by_name(tokens: &UiTokens) -> std::collections::BTreeMap<String, String> {
+    serde_json::to_value(tokens)
+        .ok()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
 }
 
 /// Every theme to pick from: the person's own first, then Sikemux's, then Ghostty's.

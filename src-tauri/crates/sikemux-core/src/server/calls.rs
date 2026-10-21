@@ -296,7 +296,7 @@ calls! { core, client, params;
         core.changes.changed(Topic::Preferences, None, None);
         answer(preferences)
     },
-    "theme": Watch, any_program => answer(super::themes::palette(&core.preferences.get())),
+    "theme": Watch, any_program => answer(core.palette()),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),

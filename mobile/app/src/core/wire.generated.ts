@@ -1414,26 +1414,75 @@ export type UpdateChannel = 'stable' | 'nightly';
 
 export type RailDensity = 'comfortable' | 'compact';
 
-/**
- * The picked theme with the colours every app works out from it, nudged
- * until they read on the theme's grounds.
- */
+/** The picked theme with the colours every app draws with, worked out from it. */
 export interface Palette {
   theme: Theme;
+  tokens: UiTokens;
+}
+
+/**
+ * DESIGN.md's colours for one theme, each `#rrggbb`, or `rgba(r, g, b, a)`
+ * when see-through. Phones read them by these names from the device view.
+ */
+export interface UiTokens {
+  /** The darkest ground, behind panes. */
+  sunken: string;
+  ground: string;
+  raised: string;
+  overlay: string;
+  /** One step above the ground, where a phone's composer sits. */
+  composer: string;
+  /** What the Mac's chat composer and its docked strips are filled with. */
+  surfaceComposer: string;
+  hover: string;
+  chosen: string;
+  active: string;
+  selected: string;
+  tooltip: string;
+  border: string;
+  borderStrong: string;
+  borderSelected: string;
+  line: string;
+  lineSoft: string;
+  ink: string;
+  secondary: string;
   /** Text that recedes: labels, hints, timestamps. */
-  inkMuted: string;
-  danger: string;
+  tertiary: string;
+  disabled: string;
+  inkDim: string;
+  inkFaint: string;
+  rest: string;
+  /** Header actions and other glyphs that recede until hovered. */
+  iconQuiet: string;
+  accent: string;
+  accentSoft: string;
+  onAccent: string;
   /** Running, connected, passing. */
   live: string;
   /** Waiting on the person, or at risk. */
   warn: string;
+  danger: string;
   /** Commands and the names of things that run. */
   cmd: string;
+  /** The mark of a host on the account. */
+  host: string;
+  /** An SSH host's mark. */
+  ssh: string;
+  treeSpine: string;
+  treeTick: string;
+  gitAdded: string;
   gitModified: string;
   gitUntracked: string;
-  gitAdded: string;
   gitDeleted: string;
   gitRenamed: string;
+  /** What each kind of tool call is marked with in a chat. */
+  toolRead: string;
+  toolEdit: string;
+  toolDelete: string;
+  toolRun: string;
+  toolMcp: string;
+  /** The dots of the pane grain behind a phone's panes. */
+  shaderDot: string;
 }
 
 /** A theme as a picker lists it: its name, where it comes from and its colours at a glance. */

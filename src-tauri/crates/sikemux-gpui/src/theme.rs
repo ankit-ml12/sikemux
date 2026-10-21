@@ -1,5 +1,4 @@
-//! DESIGN.md's tokens, derived from the palette the core resolves the way
-//! src/styles/tokens.css derives them.
+//! DESIGN.md's tokens for the theme the core resolves, as GPUI colours.
 
 use std::borrow::Cow;
 
@@ -80,61 +79,55 @@ impl Global for Tokens {}
 
 impl Tokens {
     pub fn new(palette: &Palette) -> Self {
-        let (c, t) = (&palette.theme.chrome, &palette.theme.terminal);
-        let ink = parse(&c.ink);
-        let base = parse(&c.bg);
-        let gray = |percent: f32| mix_oklab(ink, base, percent / 100.);
-        let tint = |color: Rgba, alpha: f32| Rgba { a: alpha, ..color };
-        let acc = parse(&c.acc);
-        let (bg_dim, ink_dim, line, cmd) = (parse(&c.bg_dim), parse(&c.ink_dim), parse(&c.line), parse(&palette.cmd));
+        let (k, t) = (&palette.tokens, &palette.theme.terminal);
         let ansi = [
             &t.black, &t.red, &t.green, &t.yellow, &t.blue, &t.magenta, &t.cyan, &t.white, &t.bright_black, &t.bright_red,
             &t.bright_green, &t.bright_yellow, &t.bright_blue, &t.bright_magenta, &t.bright_cyan, &t.bright_white,
         ];
         Self {
-            surface_sunken: bg_dim.into(),
-            surface: base.into(),
-            surface_raised: gray(7.).into(),
-            surface_composer: mix_srgb(gray(7.), bg_dim, 0.55).into(),
-            surface_overlay: gray(4.).into(),
-            surface_hover: tint(ink, 0.06).into(),
-            surface_chosen: tint(ink, 0.09).into(),
-            surface_active: tint(ink, 0.10).into(),
-            surface_selected: tint(acc, 0.14).into(),
-            surface_tooltip: mix_srgb(hex(0xffffff), gray(7.), 0.06 / 1.03).into(),
-            border: gray(11.).into(),
-            border_strong: gray(22.).into(),
-            border_selected: tint(acc, 0.42).into(),
-            line: line.into(),
-            line_soft: parse(&c.bg_raised).into(),
-            text_primary: ink.into(),
-            text_secondary: gray(76.).into(),
-            text_tertiary: parse(&palette.ink_muted).into(),
-            text_disabled: gray(32.).into(),
-            git_modified: parse(&palette.git_modified).into(),
-            git_untracked: parse(&palette.git_untracked).into(),
-            git_added: parse(&palette.git_added).into(),
-            git_deleted: parse(&palette.git_deleted).into(),
-            git_renamed: parse(&palette.git_renamed).into(),
-            icon_quiet: gray(42.).into(),
-            accent: acc.into(),
-            on_accent: bg_dim.into(),
-            danger: parse(&palette.danger).into(),
-            live: parse(&palette.live).into(),
-            warn: parse(&palette.warn).into(),
-            cmd: cmd.into(),
-            host: mix_oklab(acc, ink_dim, 0.8).into(),
-            ssh: mix_oklab(cmd, ink_dim, 0.7).into(),
-            tree_spine: mix_srgb(acc, line, 0.52).into(),
-            tree_tick: tint(acc, 0.72).into(),
+            surface_sunken: color(&k.sunken),
+            surface: color(&k.ground),
+            surface_raised: color(&k.raised),
+            surface_composer: color(&k.surface_composer),
+            surface_overlay: color(&k.overlay),
+            surface_hover: color(&k.hover),
+            surface_chosen: color(&k.chosen),
+            surface_active: color(&k.active),
+            surface_selected: color(&k.selected),
+            surface_tooltip: color(&k.tooltip),
+            border: color(&k.border),
+            border_strong: color(&k.border_strong),
+            border_selected: color(&k.border_selected),
+            line: color(&k.line),
+            line_soft: color(&k.line_soft),
+            text_primary: color(&k.ink),
+            text_secondary: color(&k.secondary),
+            text_tertiary: color(&k.tertiary),
+            text_disabled: color(&k.disabled),
+            git_modified: color(&k.git_modified),
+            git_untracked: color(&k.git_untracked),
+            git_added: color(&k.git_added),
+            git_deleted: color(&k.git_deleted),
+            git_renamed: color(&k.git_renamed),
+            icon_quiet: color(&k.icon_quiet),
+            accent: color(&k.accent),
+            on_accent: color(&k.on_accent),
+            danger: color(&k.danger),
+            live: color(&k.live),
+            warn: color(&k.warn),
+            cmd: color(&k.cmd),
+            host: color(&k.host),
+            ssh: color(&k.ssh),
+            tree_spine: color(&k.tree_spine),
+            tree_tick: color(&k.tree_tick),
             terminal: TerminalColors {
                 foreground: bytes(parse(&t.foreground)),
                 background: bytes(parse(&t.background)),
                 cursor: Some(bytes(parse(&t.cursor))),
                 ansi: ansi.map(|color| bytes(parse(color))),
             },
-            terminal_cursor_text: parse(&t.cursor_accent).into(),
-            terminal_selection: parse(&t.selection_background).into(),
+            terminal_cursor_text: color(&t.cursor_accent),
+            terminal_selection: color(&t.selection_background),
             terminal_match: hex(FIND_MATCH).into(),
             terminal_match_current: hex(FIND_CURRENT).into(),
             editor: palette.theme.editor.clone(),
@@ -271,11 +264,6 @@ fn parse(css: &str) -> Rgba {
 
 fn hex(value: u32) -> Rgba {
     gpui_kit::rgb(value)
-}
-
-fn mix_srgb(a: Rgba, b: Rgba, amount: f32) -> Rgba {
-    let lerp = |x: f32, y: f32| x * amount + y * (1. - amount);
-    Rgba { r: lerp(a.r, b.r), g: lerp(a.g, b.g), b: lerp(a.b, b.b), a: 1. }
 }
 
 /// CSS `color-mix(in oklab, a amount, b)` for two opaque colours.

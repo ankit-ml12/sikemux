@@ -385,6 +385,8 @@ pub(crate) struct Core {
     device_view: Mutex<Vec<u8>>,
     /// The app's terminal theme, which programs asking for colours are told.
     terminal_colors: Mutex<sikemux_wire::grid::TerminalColors>,
+    /// The person's theme resolved, kept until their preferences change.
+    palette: Mutex<sikemux_wire::theme::Palette>,
 }
 
 /// Session and window call ids start from the clock, so an id a client still
@@ -470,6 +472,7 @@ impl Core {
             streams: streams::Streams::default(),
             device_view: Mutex::new(Vec::new()),
             terminal_colors: Mutex::default(),
+            palette: Mutex::new(themes::default_palette()),
         });
         from_app::carry(&core, data_dir);
         core.theme_changed();
@@ -493,9 +496,16 @@ impl Core {
         *self.terminal_colors.locked() = colors;
     }
 
-    /// Answers programs' colour queries with the person's theme from here on.
+    /// Resolves the person's theme again, for apps, devices and programs' colour queries.
     pub(crate) fn theme_changed(&self) {
-        self.set_terminal_colors(themes::terminal_colors(&themes::resolve(&self.preferences.get())));
+        let palette = themes::palette(&self.preferences.get());
+        self.set_terminal_colors(themes::terminal_colors(&palette.theme));
+        *self.palette.locked() = palette;
+        self.view_changed();
+    }
+
+    pub(crate) fn palette(&self) -> sikemux_wire::theme::Palette {
+        self.palette.locked().clone()
     }
 
     /// Resolves once the core starts handing itself over.
@@ -831,6 +841,7 @@ impl Core {
     /// in its face.
     pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
         let mut workspace = self.workspaces.view();
+        workspace.palette = themes::by_name(&self.palette.locked().tokens);
         self.names.fill(&mut workspace.agents);
         self.faces.fill(&mut workspace.agents);
         let chips = self.git_chips.locked();
