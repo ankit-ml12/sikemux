@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
     activityApi,
-    type ActivityDay,
     type ActivityModel,
     type ActivityPricing,
     type ActivityShare,
@@ -9,7 +8,7 @@ import {
     type ActivityTotals,
     type PriceOverride,
 } from "../api/activity";
-import { calendarColumns, dayDate, levelOf, levelThresholds, localDay, streaks } from "../lib/activityCalendar";
+import { calendarColumns, dayDate, localDay } from "../lib/activityCalendar";
 import { basename, prettyPath } from "../lib/paths";
 import { agentLabel } from "../agents/catalog";
 import { useStore } from "../state/store";
@@ -35,7 +34,6 @@ const WHOLE = new Intl.NumberFormat();
 const LONG_DATE = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 const SINCE_DATE = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 const WEEKDAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
-const NO_DAYS: ActivityDay[] = [];
 const PRICE_DATE = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
 function money(usd: number): string {
@@ -112,7 +110,7 @@ export function ActivityPage() {
                 )}
             </SettingsSection>
             <SettingsSection title="Calendar">
-                <Calendar days={summary?.days ?? NO_DAYS} loaded={!!summary} metric={metric} onMetric={setMetric} />
+                <Calendar summary={summary} metric={metric} onMetric={setMetric} />
             </SettingsSection>
             <SettingsSection title="By model">
                 <ModelList models={summary?.models} prices={summary?.pricing.overrides} />
@@ -181,13 +179,11 @@ function Stat({ label, badge, value, detail, title }: { label: string; badge?: s
 }
 
 export function Calendar({
-    days,
-    loaded,
+    summary,
     metric: shownMetric,
     onMetric,
 }: {
-    days: ActivityDay[];
-    loaded: boolean;
+    summary: ActivitySummary | null;
     metric?: Metric;
     onMetric?: (metric: Metric) => void;
 }) {
@@ -197,17 +193,13 @@ export function Calendar({
     const [hovered, setHovered] = useState<number | null>(null);
     const today = localDay();
     const columns = useMemo(() => calendarColumns(today), [today]);
-    const byDay = useMemo(() => new Map(days.map((day) => [day.day, day])), [days]);
-    const thresholds = useMemo(() => levelThresholds(days.map((day) => day[metric])), [days, metric]);
-    const run = useMemo(
-        () => streaks(new Set(days.filter((day) => day.sessions + day.agentMs + day.commits + day.tokens > 0).map((day) => day.day)), today),
-        [days, today],
-    );
+    const byDay = useMemo(() => new Map((summary?.days ?? []).map((day) => [day.day, day])), [summary]);
+    const run = summary?.streaks;
 
     const readout =
         hovered !== null
             ? `${LONG_DATE.format(dayDate(hovered))} · ${metricText(metric, byDay.get(hovered)?.[metric] ?? 0)}`
-            : !loaded
+            : !run
               ? ""
               : run.activeDays === 0
                 ? "No activity yet"
@@ -251,7 +243,7 @@ export function Calendar({
                                     <span
                                         key={day}
                                         className={`activity-cell${hovered === day ? " hovered" : ""}`}
-                                        data-level={levelOf(byDay.get(day)?.[metric] ?? 0, thresholds)}
+                                        data-level={byDay.get(day)?.levels[metric] ?? 0}
                                         onMouseEnter={() => setHovered(day)}
                                     />
                                 ),

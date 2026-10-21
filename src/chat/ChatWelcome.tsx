@@ -22,7 +22,7 @@ export function ChatWelcome({ cwd, agent }: { cwd: string; agent: Agent }) {
             {!failed && (
                 <div className="chat-welcome-activity">
                     {!isEmptyActivity(totals) && <Overview totals={totals} />}
-                    <Calendar days={summary?.days ?? []} loaded={!!summary} />
+                    <Calendar summary={summary} />
                 </div>
             )}
         </div>
