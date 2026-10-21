@@ -1,0 +1,36 @@
+# sikemux-gpui
+
+The desktop UI on GPUI (issue #115), a client of the core. It draws only what
+the core sends.
+
+## Run
+
+```sh
+node fork.mjs      # checks out sonorahq/gpui as gpui-pre, with fork.patch
+node icons.mjs     # after an icon in src/ui/Icons.tsx changes
+cargo run --release
+```
+
+It talks to the core at `SIKEMUX_CORE_SOCKET`, else `~/.config/sikemux/core.sock`.
+It is a workspace of its own, so GPUI stays out of the app's lockfile and
+workspace-hack.
+
+## Rules
+
+- Built from scratch and lean. Port the Tauri app's behaviour and look, never
+  its structure.
+- One source of truth. The core owns the data. The UI keeps one store of the
+  core's view, fed by the core's changes, plus UI-only state: focus, open menus,
+  scroll, sizes. No view keeps a copy of core data or a cache of its own, and
+  no fact reaches a view by two paths.
+- One-way data flow. Core changes go into the store, the store notifies views,
+  views render. What the person does goes out as core calls. No view writes
+  another view's state.
+- A small shared component set first, on GPUI Kit and themed from one token
+  set taken from DESIGN.md: buttons, rows, list, tabs, menu, popover, input,
+  pane chrome, icon, mark box. Screens are built from these. A one-off widget
+  means the set is missing something: add it there, once.
+- Fewer, bigger pieces. No pass-through layers, and no per-screen copies of the
+  same row or header.
+- Line counts stay well below today's TypeScript and CSS for the same area.
+- Before a screen lands, check it against these rules and simplify it.

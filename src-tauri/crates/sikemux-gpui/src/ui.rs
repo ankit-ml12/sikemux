@@ -1,5 +1,7 @@
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, svg, Div, FontWeight, IntoElement, ParentElement, Rgba, SharedString, Styled,
+    div, img, px, svg, Div, FontWeight, InteractiveElement, IntoElement, ParentElement, Rgba,
+    SharedString, Styled,
 };
 use sikemux_wire::protocol::AgentStatus;
 
@@ -27,6 +29,33 @@ pub fn slot(slot: f32, child: impl IntoElement) -> Div {
         .items_center()
         .justify_center()
         .child(child)
+}
+
+/// The rails' row: a mark slot, then what it says, on the hover and chosen tints.
+pub fn row(height: f32, chosen: bool) -> Div {
+    div()
+        .h(px(height))
+        .pl(px(3.))
+        .pr(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(theme::RADIUS_2)
+        .when(chosen, |row| row.bg(theme::chosen()))
+        .when(!chosen, |row| row.hover(|row| row.bg(theme::hover())))
+}
+
+/// A row's title, cut short with an ellipsis when it does not fit.
+pub fn title(value: impl Into<SharedString>) -> Div {
+    div()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .text_ellipsis()
+        .whitespace_nowrap()
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(theme::primary())
+        .child(value.into())
 }
 
 pub fn text(value: impl Into<SharedString>, size: f32, weight: f32, color: Rgba) -> Div {

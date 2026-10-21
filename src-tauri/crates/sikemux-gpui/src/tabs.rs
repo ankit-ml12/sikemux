@@ -32,9 +32,12 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .pr(px(12.))
                 .flex()
                 .items_center()
+                .overflow_hidden()
                 .child(
                     div()
                         .h_full()
+                        .min_w_0()
+                        .overflow_hidden()
                         .px(px(4.))
                         .flex()
                         .items_center()

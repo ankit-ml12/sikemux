@@ -183,23 +183,27 @@ fn project_tree(
                 })
                 .child(project.name.clone()),
         )
-        .child(
-            div().flex().flex_none().items_center().children(
-                agents
-                    .iter()
-                    .take(5)
-                    .enumerate()
-                    .map(|(index, agent)| {
-                        slot(20., agent_mark(&agent.provider, 20.))
-                            .when(index > 0, |pip| pip.ml(px(-6.)))
-                    }),
-            ),
-        );
+        .child(faces(&agents));
     div()
         .flex()
         .flex_col()
         .child(row)
         .when(active, |tree| tree.pb(px(4.)).child(children()))
+}
+
+/// Up to five agent marks, each overlapping the one before by 6px.
+fn faces(agents: &[crate::workbench::AgentRow]) -> impl IntoElement {
+    let shown = agents.len().min(5);
+    div()
+        .relative()
+        .flex_none()
+        .h(px(20.))
+        .w(px(if shown == 0 { 0. } else { 20. + 14. * (shown - 1) as f32 }))
+        .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
+            slot(20., agent_mark(&agent.provider, 20.))
+                .absolute()
+                .left(px(14. * index as f32))
+        }))
 }
 
 const SURFACES: [(&str, &str, &str); 6] = [

@@ -9,7 +9,7 @@ use gpui_kit::component::input::Input;
 
 use crate::rail::{header_action, panel};
 use crate::theme;
-use crate::ui::{agent_mark, group_header, icon, kbd, slot, status_mark, text};
+use crate::ui::{agent_mark, group_header, icon, kbd, row, slot, status_mark, text, title};
 use crate::workbench::{AgentRow, Workbench};
 
 pub const TAB_RAIL_WIDTH: f32 = 288.;
@@ -141,15 +141,7 @@ fn label(provider: &str) -> &'static str {
 }
 
 fn new_row(path: &'static str, label: &'static str, keys: &'static str) -> impl IntoElement {
-    div()
-        .h(px(28.))
-        .pl(px(3.))
-        .pr(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .rounded(theme::RADIUS_2)
-        .hover(|row| row.bg(theme::hover()))
+    row(28., false)
         .child(slot(22., icon(path, 15., theme::secondary())))
         .child(div().flex_1().text_color(theme::secondary()).child(label))
         .child(kbd(keys))
@@ -200,20 +192,12 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
         .flatten()
         .map(|project| project.name.clone());
     let id = agent.id.clone();
-    div()
+    row(if project.is_some() { 40. } else { 28. }, active)
         .id(SharedString::from(format!("agent-{}", agent.id)))
         .relative()
         .my(px(1.))
-        .h(px(if project.is_some() { 40. } else { 28. }))
-        .pl(px(3.))
         .pr(px(if status.is_some() { 28. } else { 8. }))
-        .flex()
-        .items_center()
         .when(project.is_some(), |row| row.items_start().pt(px(4.)))
-        .gap(px(8.))
-        .rounded(theme::RADIUS_2)
-        .when(active, |row| row.bg(theme::chosen()))
-        .when(!active, |row| row.hover(|row| row.bg(theme::hover())))
         .on_click(cx.listener(move |bench, _, _, cx| {
             bench.agent = Some(id.clone());
             cx.notify();
@@ -225,16 +209,7 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .child(
-                    div()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .line_height(px(18.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme::primary())
-                        .child(agent.title.clone()),
-                )
+                .child(title(agent.title.clone()).line_height(px(18.)))
                 .children(project.map(|project| {
                     div()
                         .flex()
@@ -285,28 +260,10 @@ fn counts(agent: &AgentRow) -> Option<Div> {
     )
 }
 
-fn recent_row(provider: &str, title: &str, at: u64) -> impl IntoElement {
-    div()
-        .h(px(28.))
-        .pl(px(3.))
-        .pr(px(8.))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .rounded(theme::RADIUS_2)
-        .hover(|row| row.bg(theme::hover()))
+fn recent_row(provider: &str, name: &str, at: u64) -> impl IntoElement {
+    row(28., false)
         .child(slot(22., agent_mark(provider, 20.)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .text_ellipsis()
-                .whitespace_nowrap()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(theme::primary())
-                .child(title.to_owned()),
-        )
+        .child(title(name.to_owned()))
         .child(
             div()
                 .font_family(theme::MONO)
