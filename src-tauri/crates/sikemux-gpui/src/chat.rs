@@ -2176,6 +2176,9 @@ fn composer(
         branch: bench
             .project()
             .and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
+        chat: agent.id.clone(),
+        cwd: saved.cwd.to_string_lossy().into_owned(),
+        bench: cx.entity(),
     });
     let on_add = {
         let (this, agent) = (this.clone(), agent.id.clone());
@@ -2231,9 +2234,9 @@ fn composer(
         .running(chat.running())
         .steers(bench.preferences().mid_turn_send == MidTurnSend::Steer)
         .usage(head.and_then(|head| head.usage.clone()));
-    if head.is_some_and(|head| head.model.is_some() || head.effort.is_some()) {
+    let pick: crate::model_picker::Set = {
         let (this, agent) = (this.clone(), agent.id.clone());
-        let pick = Rc::new(
+        Rc::new(
             move |config: &str, value: &str, _: &mut Window, cx: &mut App| {
                 let ask = ChatAsk::Config {
                     agent: agent.clone(),
@@ -2242,12 +2245,52 @@ fn composer(
                 };
                 this.update(cx, |bench, _| bench.ask_chat(ask)).ok();
             },
-        );
-        composer = composer.pickers(
-            head.and_then(|head| head.model.clone()),
-            head.and_then(|head| head.effort.clone()),
-            pick,
-        );
+        )
+    };
+    let model = head.and_then(|head| head.model.clone());
+    if let Some(saved) = saved.filter(|_| fresh || model.is_some()) {
+        let moving: crate::model_picker::Move = {
+            let (this, agent) = (this.clone(), agent.id.clone());
+            let renamed = saved.renamed;
+            Rc::new(move |to: crate::model_picker::Moving, _, cx| {
+                this.update(cx, |bench, _| {
+                    let account = to
+                        .profile
+                        .as_deref()
+                        .and_then(|id| bench.accounts.profile(id));
+                    let title = account.map_or(to.provider.as_str(), |account| &account.name);
+                    let mut patch = json!({
+                        "provider": to.provider,
+                        "profileId": to.profile,
+                        "model": to.model,
+                        "modelProvider": to.model_provider,
+                        "effort": null,
+                        "resumeId": null,
+                    });
+                    if !renamed {
+                        patch["title"] = title.into();
+                    }
+                    bench.ask_chat(ChatAsk::Move {
+                        agent: agent.clone(),
+                        patch,
+                    });
+                })
+                .ok();
+            })
+        };
+        let picked = crate::model_picker::Picked {
+            provider: agent.provider.clone(),
+            profile: saved.profile_id.clone(),
+            model: model.clone(),
+            model_provider: saved.model_provider.clone(),
+            locked: !fresh,
+            set: pick.clone(),
+            moving,
+        };
+        composer = composer.model_menu(picked, cx.entity());
+    }
+    if model.is_some() || head.is_some_and(|head| head.effort.is_some()) {
+        composer = composer.pickers(model, head.and_then(|head| head.effort.clone()), pick);
     }
     if kind.is_some_and(|kind| kind["bypass"] == true) {
         let on = head.is_some_and(|head| head.permission_mode == "bypass");

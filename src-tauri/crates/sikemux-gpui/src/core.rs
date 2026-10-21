@@ -225,6 +225,12 @@ pub enum ChatAsk {
     Restart {
         agent: String,
     },
+    /// Moves a chat that has not started to another agent, account or model: its session
+    /// stops, the core changes the agent by `patch`, and a session starts on what it is now.
+    Move {
+        agent: String,
+        patch: Value,
+    },
     Detach {
         agent: String,
     },
@@ -643,16 +649,21 @@ async fn run(
 
 async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender<Update>) {
     let (agent, news) = match ask {
-        ChatAsk::Restart { agent } => {
-            let started = client.call("startChat", json!({ "agentId": agent })).await;
-            if let Err(error) = started {
-                return eprintln!("sikemux: the core did not start chat {agent} again: {error}");
+        ChatAsk::Restart { agent } => match restarted(client, agent).await {
+            Some(news) => news,
+            None => return,
+        },
+        ChatAsk::Move { agent, patch } => {
+            report("stop", client.acp_stop(agent.clone()).await);
+            let changed = client
+                .call("updateAgent", json!({ "agentId": agent, "patch": patch }))
+                .await;
+            if let Err(error) = changed {
+                return eprintln!("sikemux: the core did not move chat {agent}: {error}");
             }
-            match attach(client, &agent, None).await {
-                Ok(attachment) => (agent, ChatNews::Attached(attachment)),
-                Err(error) => {
-                    return eprintln!("sikemux: the core refused to attach chat {agent}: {error}")
-                }
+            match restarted(client, agent).await {
+                Some(news) => news,
+                None => return,
             }
         }
         ChatAsk::Attach { agent, since } => match attach(client, &agent, since).await {
@@ -766,6 +777,22 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
 }
 
 /// Attaches to a chat, starting it again first when its agent has gone to sleep.
+/// Starts `agent`'s session again and attaches to it.
+async fn restarted(client: &CoreClient, agent: String) -> Option<(String, ChatNews)> {
+    let started = client.call("startChat", json!({ "agentId": agent })).await;
+    if let Err(error) = started {
+        eprintln!("sikemux: the core did not start chat {agent} again: {error}");
+        return None;
+    }
+    match attach(client, &agent, None).await {
+        Ok(attachment) => Some((agent, ChatNews::Attached(attachment))),
+        Err(error) => {
+            eprintln!("sikemux: the core refused to attach chat {agent}: {error}");
+            None
+        }
+    }
+}
+
 async fn attach(
     client: &CoreClient,
     agent: &str,

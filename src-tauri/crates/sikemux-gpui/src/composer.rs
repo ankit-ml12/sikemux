@@ -15,8 +15,10 @@ use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
 
 use crate::icons::Icon;
+use crate::model_picker::Picked;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, DockMenu, IconButton, Menu, MenuItem};
+use crate::workbench::Workbench;
 
 type Act = Rc<dyn Fn(&mut Window, &mut App)>;
 type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
@@ -28,6 +30,11 @@ pub struct Strip {
     pub project: SharedString,
     pub path: SharedString,
     pub branch: Option<SharedString>,
+    /// The chat its project name moves to another project, the folder the chat is in now,
+    /// and the workbench that moves it.
+    pub chat: String,
+    pub cwd: String,
+    pub bench: Entity<Workbench>,
 }
 
 /// A chat's composer: its draft, and the bar of what the chat lets the person change, as the
@@ -43,6 +50,9 @@ pub struct Composer {
     steers: bool,
     yolo: Option<(bool, Act)>,
     pickers: Option<(Option<ConfigPicker>, Option<ConfigPicker>, Pick)>,
+    /// The model menu, which before the chat starts also moves it to another agent, account
+    /// or paying provider.
+    model_menu: Option<(Picked, Entity<Workbench>)>,
     usage: Option<ContextUsage>,
     /// The files going with the message, the button that picks more, what a paste of
     /// files or pictures does, and how the draft draws the tags that name them.
@@ -76,6 +86,7 @@ impl Composer {
             steers: true,
             yolo: None,
             pickers: None,
+            model_menu: None,
             usage: None,
             attachments: None,
             menu: None,
@@ -122,6 +133,11 @@ impl Composer {
         pick: Pick,
     ) -> Self {
         self.pickers = Some((model, effort, pick));
+        self
+    }
+
+    pub fn model_menu(mut self, picked: Picked, bench: Entity<Workbench>) -> Self {
+        self.model_menu = Some((picked, bench));
         self
     }
 
@@ -191,8 +207,20 @@ impl RenderOnce for Composer {
         if let Some((on, toggle)) = self.yolo {
             bar = bar.child(yolo(on, settable, &self.agent_label, toggle, cx));
         }
+        let model_menu = self.model_menu.map(|(picked, bench)| {
+            let enabled = settable || !picked.locked;
+            let label = picked.model.as_ref().map_or_else(
+                || self.agent_label.to_string(),
+                |model| chosen(model, "Model"),
+            );
+            let trigger =
+                picker_trigger("model", label, "Model", Some(&self.provider), enabled, cx);
+            crate::model_picker::around(trigger, &self.provider, picked, &bench)
+        });
+        let has_menu = model_menu.is_some();
+        bar = bar.children(model_menu);
         if let Some((model, effort, pick)) = self.pickers {
-            bar = bar.children(model.map(|model| {
+            bar = bar.children(model.filter(|_| !has_menu).map(|model| {
                 picker(
                     model,
                     "Model",
@@ -299,7 +327,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         .border_color(t.border)
         .rounded_t(theme::RADIUS_3)
         .bg(fill)
-        .child(
+        .child(crate::project_switcher::around(
             BaseButton::new("composer-project")
                 .accessibility_label("Project")
                 .h(px(26.))
@@ -328,7 +356,10 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                         .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
                         .text_color(t.text_tertiary),
                 ),
-        )
+            &strip.chat,
+            &strip.cwd,
+            &strip.bench,
+        ))
         .child(
             div()
                 .ml_auto()
@@ -416,28 +447,32 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
 }
 
 /// One of the session's settings, such as its model, with a menu of the values it takes.
-fn picker(
-    picker: ConfigPicker,
-    name: &'static str,
-    provider: Option<&str>,
-    settable: bool,
-    pick: Pick,
-    cx: &App,
-) -> impl IntoElement {
-    let t = Tokens::get(cx).clone();
+/// What a choice is called, as its picker's trigger shows it.
+fn chosen(picker: &ConfigPicker, name: &str) -> String {
     let label = picker
         .choices
         .iter()
         .find(|choice| choice.value == picker.current)
         .map_or_else(|| picker.current.clone(), |choice| choice.label.clone());
-    let label = if label.is_empty() {
+    if label.is_empty() {
         name.split(' ').next_back().unwrap_or(name).to_owned()
     } else {
         label
-    };
+    }
+}
+
+/// The button a picker opens from: the agent's mark beside the first, the choice, a chevron.
+fn picker_trigger(
+    id: &str,
+    label: String,
+    name: &'static str,
+    provider: Option<&str>,
+    enabled: bool,
+    cx: &App,
+) -> BaseButton {
+    let t = Tokens::get(cx).clone();
     let first = provider.is_some();
-    let enabled = settable && !picker.choices.is_empty();
-    let trigger = BaseButton::new(SharedString::from(format!("picker-{}", picker.id)))
+    BaseButton::new(SharedString::from(format!("picker-{id}")))
         .accessibility_label(name)
         .disabled(!enabled)
         .h(px(31.))
@@ -465,7 +500,7 @@ fn picker(
                 .overflow_hidden()
                 .text_ellipsis()
                 .whitespace_nowrap()
-                .child(label.clone()),
+                .child(label),
         )
         .child(
             div().opacity(0.6).child(
@@ -473,7 +508,21 @@ fn picker(
                     .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
                     .text_color(t.text_tertiary),
             ),
-        );
+        )
+}
+
+fn picker(
+    picker: ConfigPicker,
+    name: &'static str,
+    provider: Option<&str>,
+    settable: bool,
+    pick: Pick,
+    cx: &App,
+) -> impl IntoElement {
+    let label = chosen(&picker, name);
+    let first = provider.is_some();
+    let enabled = settable && !picker.choices.is_empty();
+    let trigger = picker_trigger(&picker.id, label, name, provider, enabled, cx);
     if !enabled {
         return trigger.into_any_element();
     }
