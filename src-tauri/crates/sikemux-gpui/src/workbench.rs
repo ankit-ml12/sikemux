@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Timelike;
@@ -9,21 +9,22 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, Styled, StyleRefinement, Subscription, WeakEntity, Window,
+    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Image, ImageFormat,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString, StyleRefinement, Styled,
+    Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
-    AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind, Preferences, ProjectInfo, RecentInfo, SessionInfo,
-    Tab,
+    AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
+    Preferences, ProjectInfo, RecentInfo, SessionInfo, Tab,
 };
 use tokio::sync::mpsc;
 
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question};
+use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
-use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
 
@@ -130,19 +131,45 @@ impl Workbench {
                 while let Ok(update) = updates.try_recv() {
                     batch.push(update);
                 }
-                if this.update(cx, |this, cx| batch.into_iter().for_each(|update| this.apply(update, cx))).is_err() {
+                if this
+                    .update(cx, |this, cx| {
+                        batch.into_iter().for_each(|update| this.apply(update, cx))
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
         })
         .detach();
-        let _ = asks.send(Ask::Watch("theme", Watch::new("theme", json!({}), &["preferences"])));
-        let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
-        let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
-        let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
-        let _ = asks.send(Ask::Watch("questions", Watch::new("questions", json!({}), &["questions"])));
-        let _ = asks.send(Ask::Watch("catalog", Watch::new("agentCatalog", json!({}), &[])));
-        let _ = asks.send(Ask::Watch("preferences", Watch::new("preferences", json!({}), &["preferences"])));
+        let _ = asks.send(Ask::Watch(
+            "theme",
+            Watch::new("theme", json!({}), &["preferences"]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "plugins",
+            Watch::new("plugins", json!({}), &["plugins"]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "hosts",
+            Watch::new("hosts", json!({}), &["hosts"]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "runs",
+            Watch::new("taskRuns", json!({}), &["runs"]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "questions",
+            Watch::new("questions", json!({}), &["questions"]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "catalog",
+            Watch::new("agentCatalog", json!({}), &[]),
+        ));
+        let _ = asks.send(Ask::Watch(
+            "preferences",
+            Watch::new("preferences", json!({}), &["preferences"]),
+        ));
         let _ = asks.send(Ask::Follow("git"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
@@ -190,7 +217,10 @@ impl Workbench {
 
     /// Reads every account's plan limits again, as they are whenever usage changes.
     pub fn read_usage(&self) {
-        let _ = self.asks.send(Ask::Watch("usage", Watch::new("agentUsages", json!({}), &["usage"])));
+        let _ = self.asks.send(Ask::Watch(
+            "usage",
+            Watch::new("agentUsages", json!({}), &["usage"]),
+        ));
     }
 
     fn apply(&mut self, update: Update, cx: &mut Context<Self>) {
@@ -199,14 +229,23 @@ impl Workbench {
                 self.version = version;
                 self.lost = None;
                 for (agent, chat) in &self.chats {
-                    self.ask_chat(ChatAsk::Attach { agent: agent.clone(), since: chat.mark.clone() });
+                    self.ask_chat(ChatAsk::Attach {
+                        agent: agent.clone(),
+                        since: chat.mark.clone(),
+                    });
                 }
                 self.terminals.reattach(&self.asks);
             }
             Update::View(view) => {
                 self.view = Some(*view);
-                let sessions = &self.view.as_ref().map_or(&[][..], |view| view.sessions.as_slice());
-                self.terminals.keep(|id| sessions.iter().any(|session| session.id == id), &self.asks);
+                let sessions = &self
+                    .view
+                    .as_ref()
+                    .map_or(&[][..], |view| view.sessions.as_slice());
+                self.terminals.keep(
+                    |id| sessions.iter().any(|session| session.id == id),
+                    &self.asks,
+                );
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
@@ -223,10 +262,16 @@ impl Workbench {
                         let gap = chat.changed(seq, changes, cx);
                         let (since, wanted) = (chat.mark.clone(), chat.wanted());
                         if gap {
-                            self.ask_chat(ChatAsk::Attach { agent: agent.clone(), since });
+                            self.ask_chat(ChatAsk::Attach {
+                                agent: agent.clone(),
+                                since,
+                            });
                         }
                         for tool in wanted {
-                            self.ask_chat(ChatAsk::Detail { agent: agent.clone(), tool });
+                            self.ask_chat(ChatAsk::Detail {
+                                agent: agent.clone(),
+                                tool,
+                            });
                         }
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
@@ -253,7 +298,11 @@ impl Workbench {
             Update::Read("sign-in", value) => match value["url"].as_str() {
                 Some(url) => {
                     cx.open_url(url);
-                    let _ = self.asks.send(Ask::Answer { key: "sign-in-finished", method: "accountSignInFinish", params: json!({}) });
+                    let _ = self.asks.send(Ask::Answer {
+                        key: "sign-in-finished",
+                        method: "accountSignInFinish",
+                        params: json!({}),
+                    });
                 }
                 None => self.signing_in = false,
             },
@@ -288,8 +337,16 @@ impl Workbench {
                 return self.parts.redraw(&self.parts.stage, cx);
             }
             Update::Lost(reason) => self.lost = Some(reason),
-            Update::Changed { topic, project, paths } => {
-                let root = self.files.root.as_ref().map(|root| root.to_string_lossy().into_owned());
+            Update::Changed {
+                topic,
+                project,
+                paths,
+            } => {
+                let root = self
+                    .files
+                    .root
+                    .as_ref()
+                    .map(|root| root.to_string_lossy().into_owned());
                 if topic == "git" && (project.is_none() || project == root) {
                     self.files.changed(paths.as_deref(), &self.asks);
                     if self.finder.is_some() {
@@ -308,7 +365,12 @@ impl Workbench {
 
     /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
     fn open_chat(&mut self, cx: &mut Context<Self>) {
-        let Some(AgentRow { id: agent, provider, .. }) = self.agent() else {
+        let Some(AgentRow {
+            id: agent,
+            provider,
+            ..
+        }) = self.agent()
+        else {
             return;
         };
         if self.chats.contains_key(&agent) {
@@ -324,31 +386,59 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
-        let Some(chat) = self.chats.get_mut(&agent).filter(|chat| chat.composer.is_none()) else {
+        let Some(chat) = self
+            .chats
+            .get_mut(&agent)
+            .filter(|chat| chat.composer.is_none())
+        else {
             return;
         };
-        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true));
-        let secret = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Type the answer"));
+        let draft = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .auto_grow(2, 12)
+                .submit_on_enter(true)
+        });
+        let secret = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Type the answer")
+        });
         let sending = {
             let agent = agent.clone();
             let was_empty = Cell::new(true);
-            cx.subscribe_in(&draft, window, move |bench, draft, event: &InputEvent, window, cx| match event {
-                InputEvent::PressEnter { shift: false, secondary } => bench.send(&agent, *secondary, window, cx),
-                InputEvent::Change => {
-                    let empty = draft.read(cx).value().is_empty();
-                    if was_empty.replace(empty) != empty {
-                        cx.notify();
+            cx.subscribe_in(
+                &draft,
+                window,
+                move |bench, draft, event: &InputEvent, window, cx| match event {
+                    InputEvent::PressEnter {
+                        shift: false,
+                        secondary,
+                    } => bench.send(&agent, *secondary, window, cx),
+                    InputEvent::Change => {
+                        let empty = draft.read(cx).value().is_empty();
+                        if was_empty.replace(empty) != empty {
+                            cx.notify();
+                        }
                     }
-                }
-                _ => {}
-            })
+                    _ => {}
+                },
+            )
         };
-        let keeping = cx.subscribe_in(&secret, window, move |bench, _, event: &InputEvent, window, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                bench.keep_secret(&agent, window, cx);
-            }
+        let keeping = cx.subscribe_in(
+            &secret,
+            window,
+            move |bench, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    bench.keep_secret(&agent, window, cx);
+                }
+            },
+        );
+        chat.composer = Some(Composing {
+            draft,
+            secret,
+            hint: SharedString::default(),
+            _heard: [sending, keeping],
         });
-        chat.composer = Some(Composing { draft, secret, hint: SharedString::default(), _heard: [sending, keeping] });
     }
 
     /// Keeps what the empty draft of the chat in front says in step with how the chat stands.
@@ -356,42 +446,72 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
-        let resumes = self.view.as_ref().is_some_and(|view| view.workspace.agents.iter().any(|saved| saved.id == agent && saved.resume_id.is_some()));
+        let resumes = self.view.as_ref().is_some_and(|view| {
+            view.workspace
+                .agents
+                .iter()
+                .any(|saved| saved.id == agent && saved.resume_id.is_some())
+        });
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
         let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
-        let Some(composing) = chat.composer.as_mut().filter(|composing| composing.hint != hint) else {
+        let Some(composing) = chat
+            .composer
+            .as_mut()
+            .filter(|composing| composing.hint != hint)
+        else {
             return;
         };
         composing.hint = hint.clone();
-        composing.draft.update(cx, |draft, cx| draft.set_placeholder(hint, window, cx));
+        composing
+            .draft
+            .update(cx, |draft, cx| draft.set_placeholder(hint, window, cx));
     }
 
     /// Sends what the person wrote: the answer to a question it answers, else words for
     /// the agent, which join a running turn or wait behind it as the person prefers,
     /// and ⌘ does the other. ⌘ with nothing written sends the questions' answers, else
     /// steers in the messages waiting.
-    pub fn send(&mut self, agent: &str, primary: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(draft) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.draft.clone())) else {
+    pub fn send(
+        &mut self,
+        agent: &str,
+        primary: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(draft) = self
+            .chats
+            .get(agent)
+            .and_then(|chat| Some(chat.composer.as_ref()?.draft.clone()))
+        else {
             return;
         };
         let text = draft.read(cx).value().trim().to_owned();
         if text.is_empty() {
             if primary {
-                self.answer(agent, |chat, open| chat.send_answers(open).or_else(|| chat.steer_waiting(agent)));
+                self.answer(agent, |chat, open| {
+                    chat.send_answers(open)
+                        .or_else(|| chat.steer_waiting(agent))
+                });
                 cx.notify();
             }
             return;
         }
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
-        self.answer(agent, |chat, open| chat.sent(agent, text, primary == steers, open));
+        self.answer(agent, |chat, open| {
+            chat.sent(agent, text, primary == steers, open)
+        });
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         cx.notify();
     }
 
     pub fn keep_secret(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(field) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.secret.clone())) else {
+        let Some(field) = self
+            .chats
+            .get(agent)
+            .and_then(|chat| Some(chat.composer.as_ref()?.secret.clone()))
+        else {
             return;
         };
         let text = field.read(cx).value().to_string();
@@ -404,17 +524,35 @@ impl Workbench {
     }
 
     /// Changes the chat of `agent` with its open questions to hand, and asks the core what that asks.
-    pub fn answer(&mut self, agent: &str, change: impl FnOnce(&mut Chat, &[&Question]) -> Option<Ask>) {
-        let open: Vec<&Question> = self.questions.iter().filter(|question| question.of(agent, "open")).collect();
-        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| change(chat, &open)) {
+    pub fn answer(
+        &mut self,
+        agent: &str,
+        change: impl FnOnce(&mut Chat, &[&Question]) -> Option<Ask>,
+    ) {
+        let open: Vec<&Question> = self
+            .questions
+            .iter()
+            .filter(|question| question.of(agent, "open"))
+            .collect();
+        if let Some(ask) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| change(chat, &open))
+        {
             let _ = self.asks.send(ask);
         }
     }
 
     /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
     pub fn switch_mode(&self, agent: &str, mode: &str) {
-        let _ = self.asks.send(Ask::Call { method: "updateAgent", params: json!({ "agentId": agent, "patch": { "permissionMode": mode } }) });
-        self.ask_chat(ChatAsk::Mode { agent: agent.to_owned(), mode: mode.to_owned() });
+        let _ = self.asks.send(Ask::Call {
+            method: "updateAgent",
+            params: json!({ "agentId": agent, "patch": { "permissionMode": mode } }),
+        });
+        self.ask_chat(ChatAsk::Mode {
+            agent: agent.to_owned(),
+            mode: mode.to_owned(),
+        });
     }
 
     /// Lets go of the chats whose agents no longer have a tab.
@@ -422,9 +560,18 @@ impl Workbench {
         let Some(view) = &self.view else {
             return;
         };
-        let tabs = view.layout.projects.values().flat_map(|layout| &layout.tabs);
+        let tabs = view
+            .layout
+            .projects
+            .values()
+            .flat_map(|layout| &layout.tabs);
         let shown: Vec<&String> = tabs.filter_map(|tab| shows(tab, PaneKind::Agent)).collect();
-        let gone: Vec<String> = self.chats.keys().filter(|agent| !shown.contains(agent)).cloned().collect();
+        let gone: Vec<String> = self
+            .chats
+            .keys()
+            .filter(|agent| !shown.contains(agent))
+            .cloned()
+            .collect();
         for agent in gone {
             self.chats.remove(&agent);
             self.ask_chat(ChatAsk::Detach { agent });
@@ -433,22 +580,40 @@ impl Workbench {
 
     /// Asks for the turns before the earliest the chat holds.
     pub fn ask_earlier(&mut self, agent: &str) {
-        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| chat.earlier(agent)) {
+        if let Some(ask) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.earlier(agent))
+        {
             self.ask_chat(ask);
         }
     }
 
     /// Points the watches that follow the project in front at it.
     fn watch_project(&mut self) {
-        let path = self.project().map(|project| project.path.to_string_lossy().into_owned());
+        let path = self
+            .project()
+            .map(|project| project.path.to_string_lossy().into_owned());
         if path == self.watched_project {
             return;
         }
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
-        let _ = self.asks.send(Ask::Watch("activity", Watch::new("activitySummary", activity, &["activity"])));
-        let _ = self.asks.send(Ask::Watch("tasks", Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"])));
-        let _ = self.asks.send(Ask::Watch("ports", Watch::new("ports", json!({ "project": path }), &["ports"])));
-        let _ = self.asks.send(Ask::Watch("git-overview", Watch::new("git.overview", json!({ "repo": path }), &["git"])));
+        let _ = self.asks.send(Ask::Watch(
+            "activity",
+            Watch::new("activitySummary", activity, &["activity"]),
+        ));
+        let _ = self.asks.send(Ask::Watch(
+            "tasks",
+            Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
+        ));
+        let _ = self.asks.send(Ask::Watch(
+            "ports",
+            Watch::new("ports", json!({ "project": path }), &["ports"]),
+        ));
+        let _ = self.asks.send(Ask::Watch(
+            "git-overview",
+            Watch::new("git.overview", json!({ "repo": path }), &["git"]),
+        ));
         self.files.show(path.clone().map(PathBuf::from), &self.asks);
         self.watched_project = path;
     }
@@ -463,20 +628,32 @@ impl Workbench {
             .iter()
             .map(|ci| json!({ "provider": ci.host, "owner": ci.owner, "name": ci.name, "account": ci.account, "host": null }))
             .collect();
-        let _ = self.asks.send(Ask::Watch("ci-shown", Watch::new("showCi", json!({ "repos": repos }), &[])));
+        let _ = self.asks.send(Ask::Watch(
+            "ci-shown",
+            Watch::new("showCi", json!({ "repos": repos }), &[]),
+        ));
         if let Some(ci) = &shown {
             let runs = json!({ "owner": ci.owner, "name": ci.name, "account": ci.account, "branch": ci.branch, "perPage": 1 });
             let call = json!({ "plugin": format!("sikemux.{}", ci.host), "method": "runs", "params": runs });
-            let _ = self.asks.send(Ask::Watch("ci", Watch::new("plugin", call, &["ci"])));
+            let _ = self
+                .asks
+                .send(Ask::Watch("ci", Watch::new("plugin", call, &["ci"])));
         }
         self.watched_ci = shown;
     }
 
     fn ci_repo(&self) -> Option<CiRepo> {
         let project = self.project()?;
-        let host = project.code_host.as_ref().filter(|host| host.host == "github")?;
+        let host = project
+            .code_host
+            .as_ref()
+            .filter(|host| host.host == "github")?;
         let plugin = format!("sikemux.{}", host.host);
-        let signed_in = self.read("plugins")?.as_array()?.iter().any(|entry| entry["id"] == plugin.as_str() && entry["signedIn"] == true);
+        let signed_in = self
+            .read("plugins")?
+            .as_array()?
+            .iter()
+            .any(|entry| entry["id"] == plugin.as_str() && entry["signedIn"] == true);
         let (owner, name) = host.repo.split_once('/')?;
         if !signed_in {
             return None;
@@ -485,7 +662,10 @@ impl Workbench {
             host: host.host.clone(),
             owner: owner.to_owned(),
             name: name.to_owned(),
-            account: project.code_hosts.get(&host.host).and_then(|choice| choice.account.clone()),
+            account: project
+                .code_hosts
+                .get(&host.host)
+                .and_then(|choice| choice.account.clone()),
             branch: project.git.as_ref()?.branch.clone(),
         })
     }
@@ -498,13 +678,19 @@ impl Workbench {
 
     /// Asks for the account's picture when it is one this window has not got.
     fn watch_picture(&mut self) {
-        let hash = self.view.as_ref().and_then(|view| view.account.as_ref()?.picture_hash.clone());
+        let hash = self
+            .view
+            .as_ref()
+            .and_then(|view| view.account.as_ref()?.picture_hash.clone());
         if hash == self.picture_hash {
             return;
         }
         self.picture = None;
         if let Some(hash) = &hash {
-            let _ = self.asks.send(Ask::Watch("picture", Watch::new("accountPicture", json!({ "hash": hash }), &[])));
+            let _ = self.asks.send(Ask::Watch(
+                "picture",
+                Watch::new("accountPicture", json!({ "hash": hash }), &[]),
+            ));
         }
         self.picture_hash = hash;
     }
@@ -514,7 +700,11 @@ impl Workbench {
         let now = chrono::Local::now();
         let into_second = Duration::from_nanos(u64::from(now.timestamp_subsec_nanos()));
         let counting = self.person_runs().0.is_some() || self.chats.values().any(Chat::running);
-        let seconds = if counting { 1 } else { 60 - u64::from(now.second()) };
+        let seconds = if counting {
+            1
+        } else {
+            60 - u64::from(now.second())
+        };
         Duration::from_secs(seconds) - into_second
     }
 
@@ -530,8 +720,16 @@ impl Workbench {
             .flatten()
             .filter(|run| run["project"] == path && run["agentId"].is_null())
             .collect();
-        let active = |run: &Value| matches!(run["status"].as_str(), Some("awaiting-trust" | "starting" | "running" | "stopping"));
-        (mine.iter().rev().find(|run| active(run)).copied(), mine.last().copied())
+        let active = |run: &Value| {
+            matches!(
+                run["status"].as_str(),
+                Some("awaiting-trust" | "starting" | "running" | "stopping")
+            )
+        };
+        (
+            mine.iter().rev().find(|run| active(run)).copied(),
+            mine.last().copied(),
+        )
     }
 
     pub fn start_task(&self, task: &str) {
@@ -549,7 +747,9 @@ impl Workbench {
     }
 
     pub fn preferences(&self) -> Preferences {
-        self.read("preferences").and_then(|read| serde_json::from_value(read.clone()).ok()).unwrap_or_default()
+        self.read("preferences")
+            .and_then(|read| serde_json::from_value(read.clone()).ok())
+            .unwrap_or_default()
     }
 
     pub fn read(&self, key: &str) -> Option<&Value> {
@@ -561,18 +761,24 @@ impl Workbench {
     }
 
     pub fn projects(&self) -> &[ProjectInfo] {
-        self.view.as_ref().map_or(&[], |view| view.workspace.projects.as_slice())
+        self.view
+            .as_ref()
+            .map_or(&[], |view| view.workspace.projects.as_slice())
     }
 
     /// The project in front, as the core's layout says.
     pub fn project(&self) -> Option<&ProjectInfo> {
         let active = self.view.as_ref()?.layout.active_project.as_deref();
         let projects = self.projects();
-        active.and_then(|id| projects.iter().find(|project| project.id == id)).or(projects.first())
+        active
+            .and_then(|id| projects.iter().find(|project| project.id == id))
+            .or(projects.first())
     }
 
     pub fn launchers(&self) -> &[LauncherInfo] {
-        self.view.as_ref().map_or(&[], |view| view.workspace.launchers.as_slice())
+        self.view
+            .as_ref()
+            .map_or(&[], |view| view.workspace.launchers.as_slice())
     }
 
     /// What a new chat started from the rail starts with.
@@ -588,9 +794,17 @@ impl Workbench {
 
     /// The most of any window of its plan the launcher's account has used.
     pub fn usage_peak(&self, launcher: &str) -> Option<f64> {
-        let account = self.read("usage")?.as_array()?.iter().find(|account| account["launcher"] == launcher)?;
+        let account = self
+            .read("usage")?
+            .as_array()?
+            .iter()
+            .find(|account| account["launcher"] == launcher)?;
         let windows = account["usage"]["windows"].as_array()?;
-        windows.iter().filter_map(|window| window["usedPercent"].as_f64()).map(|used| used.clamp(0., 100.)).reduce(f64::max)
+        windows
+            .iter()
+            .filter_map(|window| window["usedPercent"].as_f64())
+            .map(|used| used.clamp(0., 100.))
+            .reduce(f64::max)
     }
 
     /// The file the tab in front shows, when it is an editor.
@@ -602,7 +816,10 @@ impl Workbench {
     /// Brings the file's editor tab to the front, opening one when none shows it.
     pub fn open_file(&self, path: &Path) {
         if let Some(project) = self.project() {
-            self.call("openTab", json!({ "project": project.id, "kind": "files", "target": path.to_string_lossy() }));
+            self.call(
+                "openTab",
+                json!({ "project": project.id, "kind": "files", "target": path.to_string_lossy() }),
+            );
         }
     }
 
@@ -622,7 +839,11 @@ impl Workbench {
         let project = self.project()?;
         let layout = self.view.as_ref()?.layout.projects.get(&project.id)?;
         let tabs = layout.tabs.as_slice();
-        layout.active.as_deref().and_then(|id| tabs.iter().find(|tab| tab.id == id)).or(tabs.first())
+        layout
+            .active
+            .as_deref()
+            .and_then(|id| tabs.iter().find(|tab| tab.id == id))
+            .or(tabs.first())
     }
 
     pub fn activate_tab(&self, project: &str, tab: &str) {
@@ -635,7 +856,11 @@ impl Workbench {
 
     /// Brings an agent's tab to the front.
     pub fn activate_agent(&self, agent: &AgentRow) {
-        if let Some(tab) = self.tabs(&agent.project).iter().find(|tab| shows(tab, PaneKind::Agent) == Some(&agent.id)) {
+        if let Some(tab) = self
+            .tabs(&agent.project)
+            .iter()
+            .find(|tab| shows(tab, PaneKind::Agent) == Some(&agent.id))
+        {
             self.activate_project(&agent.project);
             self.activate_tab(&agent.project, &tab.id);
         }
@@ -645,17 +870,26 @@ impl Workbench {
     pub fn agent(&self) -> Option<AgentRow> {
         let project = self.project()?;
         let target = shows(self.tab()?, PaneKind::Agent)?;
-        self.agents_of(&project.id).into_iter().find(|agent| &agent.id == target)
+        self.agents_of(&project.id)
+            .into_iter()
+            .find(|agent| &agent.id == target)
     }
 
     pub fn session(&self, id: &str) -> Option<&SessionInfo> {
-        self.view.as_ref()?.sessions.iter().find(|session| session.id.to_string() == id)
+        self.view
+            .as_ref()?
+            .sessions
+            .iter()
+            .find(|session| session.id.to_string() == id)
     }
 
     /// Terminals started outside every project, which the core numbers.
     pub fn loose_terminals(&self) -> Vec<&SessionInfo> {
         self.view.as_ref().map_or(Vec::new(), |view| {
-            view.sessions.iter().filter(|session| session.rail_name.is_some() && session.exit.is_none()).collect()
+            view.sessions
+                .iter()
+                .filter(|session| session.rail_name.is_some() && session.exit.is_none())
+                .collect()
         })
     }
 
@@ -677,7 +911,10 @@ impl Workbench {
             .filter(|agent| agent.project == project)
             .map(|agent| {
                 let chat = view.chats.iter().find(|chat| chat.agent_id == agent.id);
-                let session = view.sessions.iter().find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
+                let session = view
+                    .sessions
+                    .iter()
+                    .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
                 AgentRow {
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
@@ -686,25 +923,42 @@ impl Workbench {
                     status: chat
                         .map(|chat| chat.status)
                         .or_else(|| session.and_then(|session| session.status))
-                        .unwrap_or(if agent.asleep { AgentStatus::Asleep } else { AgentStatus::Idle }),
+                        .unwrap_or(if agent.asleep {
+                            AgentStatus::Asleep
+                        } else {
+                            AgentStatus::Idle
+                        }),
                     subagents: chat.map_or(0, |chat| chat.subagents),
                     tasks: chat.map_or(0, |chat| chat.tasks),
                     project: agent.project.clone(),
                     face: agent.face.clone(),
-                    group: chat.map(|chat| chat.group).or_else(|| session.and_then(|session| session.group)).unwrap_or_default(),
+                    group: chat
+                        .map(|chat| chat.group)
+                        .or_else(|| session.and_then(|session| session.group))
+                        .unwrap_or_default(),
                 }
             })
             .collect();
-        rows.sort_by_key(|row| ranked.iter().position(|id| *id == row.id).unwrap_or(usize::MAX));
+        rows.sort_by_key(|row| {
+            ranked
+                .iter()
+                .position(|id| *id == row.id)
+                .unwrap_or(usize::MAX)
+        });
         rows
     }
 
     /// The rows the agent rail lists: this project's, or every project's.
     pub fn listed_agents(&self) -> Vec<AgentRow> {
         let mut rows = if self.all_projects {
-            self.projects().iter().flat_map(|project| self.agents_of(&project.id)).collect()
+            self.projects()
+                .iter()
+                .flat_map(|project| self.agents_of(&project.id))
+                .collect()
         } else {
-            self.project().map(|project| self.agents_of(&project.id)).unwrap_or_default()
+            self.project()
+                .map(|project| self.agents_of(&project.id))
+                .unwrap_or_default()
         };
         rows.retain(|row| row.title.to_lowercase().contains(&self.filter_text));
         rows
@@ -716,7 +970,12 @@ impl Workbench {
             view.recent
                 .iter()
                 .filter(|recent| recent.project == project && recent.agent_id.is_none())
-                .filter(|recent| self.all_harnesses || self.launcher().is_some_and(|launcher| launcher.provider == recent.provider))
+                .filter(|recent| {
+                    self.all_harnesses
+                        || self
+                            .launcher()
+                            .is_some_and(|launcher| launcher.provider == recent.provider)
+                })
                 .filter(|recent| recent.title.to_lowercase().contains(&self.filter_text))
                 .collect()
         })
@@ -724,7 +983,11 @@ impl Workbench {
 
     pub fn sign_in(&mut self) {
         self.signing_in = true;
-        let _ = self.asks.send(Ask::Answer { key: "sign-in", method: "accountSignIn", params: json!({}) });
+        let _ = self.asks.send(Ask::Answer {
+            key: "sign-in",
+            method: "accountSignIn",
+            params: json!({}),
+        });
     }
 
     /// Ends a sign-in the browser has not finished, which settles the one waiting on it.
@@ -743,12 +1006,14 @@ impl Workbench {
             return;
         }
         let filter = cx.new(|cx| InputState::new(window, cx).placeholder("filter recent chats…"));
-        self._filtering = Some(cx.subscribe(&filter, |bench, filter, event: &InputEvent, cx| {
-            if let InputEvent::Change = event {
-                bench.filter_text = filter.read(cx).value().to_lowercase();
-                cx.notify();
-            }
-        }));
+        self._filtering = Some(
+            cx.subscribe(&filter, |bench, filter, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    bench.filter_text = filter.read(cx).value().to_lowercase();
+                    cx.notify();
+                }
+            }),
+        );
         filter.update(cx, |state, cx| state.focus(window, cx));
         self.filter = Some(filter);
     }
@@ -758,14 +1023,20 @@ impl Workbench {
 fn decode_picture(value: &Value) -> Option<Arc<Image>> {
     use base64::Engine;
     let format = ImageFormat::from_mime_type(value["mime"].as_str()?)?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(value["data"].as_str()?).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(value["data"].as_str()?)
+        .ok()?;
     Some(Arc::new(Image::from_bytes(format, bytes)))
 }
 
 /// What a tab's pane shows when it is one view of `kind`.
 pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
     match &tab.pane {
-        Pane::View { kind: shown, target, .. } if *shown == kind => Some(target),
+        Pane::View {
+            kind: shown,
+            target,
+            ..
+        } if *shown == kind => Some(target),
         _ => None,
     }
 }
@@ -782,8 +1053,15 @@ pub struct Part {
 impl Render for Part {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let draw = self.draw;
-        let drawn = self.bench.update(cx, |bench, cx| draw(bench, window, cx)).unwrap_or_else(|_| div().into_any_element());
-        div().size_full().flex().when(self.column, |part| part.flex_col()).child(drawn)
+        let drawn = self
+            .bench
+            .update(cx, |bench, cx| draw(bench, window, cx))
+            .unwrap_or_else(|_| div().into_any_element());
+        div()
+            .size_full()
+            .flex()
+            .when(self.column, |part| part.flex_col())
+            .child(drawn)
     }
 }
 
@@ -801,12 +1079,25 @@ pub struct Parts {
 impl Parts {
     fn new(cx: &mut Context<Workbench>) -> Self {
         let bench = cx.entity();
-        let mut part = |draw: fn(&mut Workbench, &mut Window, &mut Context<Workbench>) -> AnyElement, column: bool| {
-            cx.new(|cx| Part { bench: bench.downgrade(), draw, column, _store: cx.observe(&bench, |_, _, cx| cx.notify()) })
-        };
+        let mut part =
+            |draw: fn(&mut Workbench, &mut Window, &mut Context<Workbench>) -> AnyElement,
+             column: bool| {
+                cx.new(|cx| Part {
+                    bench: bench.downgrade(),
+                    draw,
+                    column,
+                    _store: cx.observe(&bench, |_, _, cx| cx.notify()),
+                })
+            };
         Self {
-            top: part(|bench, _, cx| tabs::top_bar(bench, cx).into_any_element(), true),
-            rail: part(|bench, _, cx| rail::side_rail(bench, cx).into_any_element(), false),
+            top: part(
+                |bench, _, cx| tabs::top_bar(bench, cx).into_any_element(),
+                true,
+            ),
+            rail: part(
+                |bench, _, cx| rail::side_rail(bench, cx).into_any_element(),
+                false,
+            ),
             stage: part(
                 |bench, window, cx| {
                     bench.compose(window, cx);
@@ -816,7 +1107,13 @@ impl Parts {
                 false,
             ),
             tabs: part(|bench, _, cx| agents::tab_rail(bench, cx), false),
-            finder: part(|bench, window, cx| crate::finder::overlay(bench, window, cx).unwrap_or_else(|| div().into_any_element()), true),
+            finder: part(
+                |bench, window, cx| {
+                    crate::finder::overlay(bench, window, cx)
+                        .unwrap_or_else(|| div().into_any_element())
+                },
+                true,
+            ),
         }
     }
 
@@ -846,7 +1143,12 @@ impl Render for Workbench {
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
             .text_color(t.text_secondary)
-            .child(parts.top.clone().cached(StyleRefinement::default().w_full().h(px(34.)).flex_none()))
+            .child(
+                parts
+                    .top
+                    .clone()
+                    .cached(StyleRefinement::default().w_full().h(px(34.)).flex_none()),
+            )
             .child(
                 div()
                     .flex()
@@ -856,10 +1158,36 @@ impl Render for Workbench {
                     .pt(px(4.))
                     .px(px(10.))
                     .pb(px(10.))
-                    .child(parts.rail.clone().cached(StyleRefinement::default().w(px(rail::SIDE_RAIL_WIDTH)).h_full().flex_none()))
-                    .child(parts.stage.clone().cached(StyleRefinement::default().flex_1().min_w_0().h_full()))
-                    .child(parts.tabs.clone().cached(StyleRefinement::default().w(px(agents::TAB_RAIL_WIDTH)).h_full().flex_none())),
+                    .child(
+                        parts.rail.clone().cached(
+                            StyleRefinement::default()
+                                .w(px(rail::SIDE_RAIL_WIDTH))
+                                .h_full()
+                                .flex_none(),
+                        ),
+                    )
+                    .child(
+                        parts
+                            .stage
+                            .clone()
+                            .cached(StyleRefinement::default().flex_1().min_w_0().h_full()),
+                    )
+                    .child(
+                        parts.tabs.clone().cached(
+                            StyleRefinement::default()
+                                .w(px(agents::TAB_RAIL_WIDTH))
+                                .h_full()
+                                .flex_none(),
+                        ),
+                    ),
             )
-            .when(self.finder.is_some(), |shell| shell.child(parts.finder.clone().cached(StyleRefinement::default().absolute().inset_0())))
+            .when(self.finder.is_some(), |shell| {
+                shell.child(
+                    parts
+                        .finder
+                        .clone()
+                        .cached(StyleRefinement::default().absolute().inset_0()),
+                )
+            })
     }
 }

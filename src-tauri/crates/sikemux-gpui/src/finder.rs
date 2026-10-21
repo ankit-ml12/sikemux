@@ -6,8 +6,9 @@ use std::sync::Arc;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement, IntoElement,
-    KeyBinding, MouseButton, ParentElement, ScrollStrategy, StatefulInteractiveElement, Styled, Subscription, Task,
+    actions, div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FocusHandle,
+    FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement,
+    ScrollStrategy, StatefulInteractiveElement, Styled, Subscription, Task,
     UniformListScrollHandle, Window,
 };
 use serde_json::{json, Value};
@@ -29,7 +30,11 @@ pub struct OpenFile;
 const SHOWN: usize = 200;
 
 pub fn install(cx: &mut App) {
-    let open = if cfg!(target_os = "macos") { "cmd-p" } else { "ctrl-alt-p" };
+    let open = if cfg!(target_os = "macos") {
+        "cmd-p"
+    } else {
+        "ctrl-alt-p"
+    };
     cx.bind_keys([
         KeyBinding::new(open, OpenFile, None),
         KeyBinding::new("down", Next, Some("Finder > Input")),
@@ -59,11 +64,18 @@ impl ProjectFiles {
             return;
         };
         if self.project.as_deref() != Some(project) {
-            *self = Self { project: Some(project.to_owned()), ..Self::default() };
+            *self = Self {
+                project: Some(project.to_owned()),
+                ..Self::default()
+            };
         }
         self.asked = Some(project.to_owned());
         let params = json!({ "project": project, "since": self.scan });
-        let _ = asks.send(Ask::Answer { key: "projectFiles", method: "projectFiles", params });
+        let _ = asks.send(Ask::Answer {
+            key: "projectFiles",
+            method: "projectFiles",
+            params,
+        });
     }
 
     /// Takes the core's answer in, telling whether the list changed.
@@ -74,7 +86,8 @@ impl ProjectFiles {
         let Some(scan) = answer["scanId"].as_u64() else {
             return false;
         };
-        let paths = |key: &str| -> Option<Vec<String>> { serde_json::from_value(answer[key].clone()).ok() };
+        let paths =
+            |key: &str| -> Option<Vec<String>> { serde_json::from_value(answer[key].clone()).ok() };
         self.scan = Some(scan);
         if let Some(files) = paths("files") {
             self.files = Arc::new(files);
@@ -151,7 +164,8 @@ impl Finder {
 
     fn select(&mut self, selected: usize) {
         self.selected = selected;
-        self.scroll.scroll_to_item(selected, ScrollStrategy::Nearest);
+        self.scroll
+            .scroll_to_item(selected, ScrollStrategy::Nearest);
     }
 
     fn step(&mut self, by: isize) {
@@ -162,7 +176,10 @@ impl Finder {
     }
 
     fn chosen(&self, place: usize) -> Option<&str> {
-        self.shown.get(place).and_then(|&file| self.ranked.get(file)).map(String::as_str)
+        self.shown
+            .get(place)
+            .and_then(|&file| self.ranked.get(file))
+            .map(String::as_str)
     }
 }
 
@@ -172,7 +189,9 @@ impl Workbench {
             return self.close_finder(window, cx);
         }
         self.finder = Some(Finder::open(window, cx));
-        let project = self.project().map(|project| project.path.to_string_lossy().into_owned());
+        let project = self
+            .project()
+            .map(|project| project.path.to_string_lossy().into_owned());
         self.project_files.read(project.as_deref(), &self.asks);
         self.rank(cx);
     }
@@ -206,7 +225,11 @@ impl Workbench {
         let Some(finder) = self.finder.take() else {
             return;
         };
-        finder.before.as_ref().unwrap_or(&self.focus).focus(window, cx);
+        finder
+            .before
+            .as_ref()
+            .unwrap_or(&self.focus)
+            .focus(window, cx);
         cx.notify();
     }
 
@@ -221,7 +244,11 @@ impl Workbench {
     }
 }
 
-pub fn overlay(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+pub fn overlay(
+    bench: &Workbench,
+    window: &Window,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
     let finder = bench.finder.as_ref()?;
     let t = Tokens::get(cx).clone();
     let project = bench.project().is_some();
@@ -245,7 +272,10 @@ pub fn overlay(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) 
             .justify_center()
             .items_start()
             .pt(window.viewport_size().height * 0.13)
-            .bg(Hsla { a: 0.68, ..t.surface_sunken })
+            .bg(Hsla {
+                a: 0.68,
+                ..t.surface_sunken
+            })
             .occlude()
             .on_mouse_down(MouseButton::Left, close)
             .child(
@@ -274,7 +304,9 @@ pub fn overlay(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) 
                         let selected = bench.finder.as_ref().map_or(0, |finder| finder.selected);
                         bench.choose(selected, window, cx);
                     }))
-                    .on_action(cx.listener(|bench, _: &Close, window, cx| bench.close_finder(window, cx)))
+                    .on_action(
+                        cx.listener(|bench, _: &Close, window, cx| bench.close_finder(window, cx)),
+                    )
                     .child(
                         div()
                             .flex()
@@ -296,14 +328,22 @@ pub fn overlay(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) 
                             ),
                     )
                     .map(|panel| match empty {
-                        Some(empty) => panel.child(div().p(px(28.)).text_center().text_color(t.text_tertiary).child(empty)),
+                        Some(empty) => panel.child(
+                            div()
+                                .p(px(28.))
+                                .text_center()
+                                .text_color(t.text_tertiary)
+                                .child(empty),
+                        ),
                         None => panel.child(
                             uniform_list(
                                 "finder-rows",
                                 count,
-                                cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
-                                    range.map(|place| row(bench, place, cx)).collect::<Vec<_>>()
-                                }),
+                                cx.processor(
+                                    |bench: &mut Workbench, range: Range<usize>, _window, cx| {
+                                        range.map(|place| row(bench, place, cx)).collect::<Vec<_>>()
+                                    },
+                                ),
                             )
                             .track_scroll(&finder.scroll)
                             .h(px(30. * count as f32 + 8.))
@@ -336,10 +376,18 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .px(px(6.))
         .rounded(theme::RADIUS_2)
         .text_size(px(13.))
-        .text_color(if selected { t.text_primary } else { t.text_secondary })
+        .text_color(if selected {
+            t.text_primary
+        } else {
+            t.text_secondary
+        })
         .when(selected, |row| row.bg(t.surface_chosen))
         .on_mouse_move(cx.listener(move |bench, _, _, cx| {
-            if let Some(finder) = bench.finder.as_mut().filter(|finder| finder.selected != place) {
+            if let Some(finder) = bench
+                .finder
+                .as_mut()
+                .filter(|finder| finder.selected != place)
+            {
                 finder.selected = place;
                 bench.parts.redraw(&bench.parts.finder, cx);
             }
@@ -351,9 +399,25 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
                 .flex_none()
                 .flex()
                 .justify_center()
-                .children(crate::file_icons::icon(name, cx).map(|icon| gpui_kit::img(icon).size(px(14.)))),
+                .children(
+                    crate::file_icons::icon(name, cx).map(|icon| gpui_kit::img(icon).size(px(14.))),
+                ),
         )
-        .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(name.to_owned()))
-        .child(div().flex_none().pl(px(12.)).text_size(px(11.)).text_color(t.text_tertiary).child(dir.to_owned()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .child(name.to_owned()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .pl(px(12.))
+                .text_size(px(11.))
+                .text_color(t.text_tertiary)
+                .child(dir.to_owned()),
+        )
         .into_any_element()
 }

@@ -29,7 +29,10 @@ pub fn icon(icon: Icon, size: f32) -> Svg {
 /// A mark at `size`: a picture as it is drawn, or a glyph in `tint`.
 pub fn picture(glyph: Icon, size: f32, tint: Hsla) -> AnyElement {
     if glyph.is_picture() {
-        img(glyph.path()).size(px(size)).flex_none().into_any_element()
+        img(glyph.path())
+            .size(px(size))
+            .flex_none()
+            .into_any_element()
     } else {
         icon(glyph, size).text_color(tint).into_any_element()
     }
@@ -61,16 +64,31 @@ pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
         "cancelled" => ended(t.text_tertiary, Icon::MarkCancelled),
         "skipped" => ended(t.text_tertiary, Icon::MarkSkipped),
         "queued" => div().size(px(size * 0.55)).rounded_full().bg(t.warn),
-        "running" | "blocked" => div().size(px(size * 0.82)).rounded_full().border(px(1.5)).border_color(t.warn),
-        _ => div().size(px(size * 0.8)).rounded_full().border(px(size * 1.3 / 16.)).border_color(t.text_tertiary),
+        "running" | "blocked" => div()
+            .size(px(size * 0.82))
+            .rounded_full()
+            .border(px(1.5))
+            .border_color(t.warn),
+        _ => div()
+            .size(px(size * 0.8))
+            .rounded_full()
+            .border(px(size * 1.3 / 16.))
+            .border_color(t.text_tertiary),
     };
     mark_box(size, mark).into_any_element()
 }
 
 /// An agent's face, or its agent's mark while it wears none.
 pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
-    match agent.face.as_ref().and_then(|face| crate::faces::image(face, agent.group, cx)) {
-        Some(face) => gpui_kit::img(face).size(px(size)).flex_none().into_any_element(),
+    match agent
+        .face
+        .as_ref()
+        .and_then(|face| crate::faces::image(face, agent.group, cx))
+    {
+        Some(face) => gpui_kit::img(face)
+            .size(px(size))
+            .flex_none()
+            .into_any_element(),
         None => mark(&agent.provider, size),
     }
 }
@@ -106,7 +124,8 @@ pub fn mono(value: impl Into<SharedString>, size: f32, cx: &App) -> Div {
         .font_family(theme::MONO)
         .font_features(theme::tabular())
         .text_color(Tokens::get(cx).text_tertiary);
-    mono.text_style().font_fallbacks = Some(FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
+    mono.text_style().font_fallbacks =
+        Some(FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
     mono
 }
 
@@ -179,7 +198,12 @@ pub fn dot(tone: Tone, cx: &App) -> Div {
         Tone::Idle => {
             let mut ring = dot.border_color(t.text_tertiary);
             let width = Some(px(1.5).into());
-            ring.style().border_widths = gpui_kit::EdgesRefinement { top: width, right: width, bottom: width, left: width };
+            ring.style().border_widths = gpui_kit::EdgesRefinement {
+                top: width,
+                right: width,
+                bottom: width,
+                left: width,
+            };
             ring
         }
         Tone::Failed => dot.bg(t.danger),

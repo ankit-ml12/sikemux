@@ -99,7 +99,10 @@ impl Row {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -125,7 +128,11 @@ impl RenderOnce for Row {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let two_lines = self.subtitle.is_some();
-        let right = if self.status.is_some() { 28. } else { self.right };
+        let right = if self.status.is_some() {
+            28.
+        } else {
+            self.right
+        };
         let on_click = self.on_click;
         BaseButton::new(self.id)
             .group(ROW)
@@ -139,13 +146,30 @@ impl RenderOnce for Row {
             .flex()
             .justify_start()
             .gap(px(8.))
-            .map(|row| if two_lines { row.items_start().pt(px(4.)) } else { row.items_center() })
+            .map(|row| {
+                if two_lines {
+                    row.items_start().pt(px(4.))
+                } else {
+                    row.items_center()
+                }
+            })
             .rounded(RADIUS_2)
-            .text_color(if self.chosen { t.text_primary } else { t.text_secondary })
+            .text_color(if self.chosen {
+                t.text_primary
+            } else {
+                t.text_secondary
+            })
             .when(self.chosen, |row| row.bg(t.surface_chosen))
-            .when(!self.chosen, |row| row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary)))
-            .when_some(on_click, |row, handler| row.on_click(move |event, window, cx| handler(event, window, cx)))
-            .children(self.mark.map(|mark| mark_box(self.slot, mark).when(two_lines, |slot| slot.mt(px(-2.)))))
+            .when(!self.chosen, |row| {
+                row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
+            })
+            .when_some(on_click, |row, handler| {
+                row.on_click(move |event, window, cx| handler(event, window, cx))
+            })
+            .children(
+                self.mark
+                    .map(|mark| mark_box(self.slot, mark).when(two_lines, |slot| slot.mt(px(-2.)))),
+            )
             .child(
                 div()
                     .flex_1()
@@ -164,7 +188,11 @@ impl RenderOnce for Row {
                                     .text_ellipsis()
                                     .whitespace_nowrap()
                                     .line_height(px(18.))
-                                    .font_weight(if self.bold { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
+                                    .font_weight(if self.bold {
+                                        FontWeight::SEMIBOLD
+                                    } else {
+                                        FontWeight::MEDIUM
+                                    })
                                     .when(!self.quiet, |title| title.text_color(t.text_primary))
                                     .child(self.title),
                             )
@@ -173,7 +201,10 @@ impl RenderOnce for Row {
                     .children(self.subtitle),
             )
             .children(self.trailing)
-            .children(self.status.map(|status| div().absolute().right(px(4.)).child(mark_box(20., status))))
+            .children(
+                self.status
+                    .map(|status| div().absolute().right(px(4.)).child(mark_box(20., status))),
+            )
     }
 }
 
@@ -239,7 +270,12 @@ impl RenderOnce for Group {
                     .children(self.actions),
             )
             .when(empty, |group| {
-                group.child(div().p(px(12.)).child(text(self.empty, 12., FontWeight::NORMAL).text_color(Tokens::get(cx).text_tertiary)))
+                group.child(
+                    div().p(px(12.)).child(
+                        text(self.empty, 12., FontWeight::NORMAL)
+                            .text_color(Tokens::get(cx).text_tertiary),
+                    ),
+                )
             })
             .children(self.rows)
     }
@@ -292,7 +328,10 @@ impl Tab {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -301,7 +340,10 @@ impl Tab {
 impl RenderOnce for Tab {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let edge = gpui_kit::Hsla { a: 0.06, ..t.text_primary };
+        let edge = gpui_kit::Hsla {
+            a: 0.06,
+            ..t.text_primary
+        };
         let on_click = self.on_click;
         BaseButton::new(self.id)
             .selected(self.active)
@@ -319,11 +361,16 @@ impl RenderOnce for Tab {
                 if self.active {
                     tab.bg(t.surface_chosen).text_color(t.text_primary)
                 } else {
-                    tab.bg(t.surface).border_1().border_color(edge).text_color(t.text_tertiary)
+                    tab.bg(t.surface)
+                        .border_1()
+                        .border_color(edge)
+                        .text_color(t.text_tertiary)
                 }
             })
             .hover(move |style| style.bg(t.surface_hover).text_color(t.text_secondary))
-            .when_some(on_click, |tab, handler| tab.on_click(move |event, window, cx| handler(event, window, cx)))
+            .when_some(on_click, |tab, handler| {
+                tab.on_click(move |event, window, cx| handler(event, window, cx))
+            })
             .children(self.mark.map(|mark| mark_box(22., mark)))
             .child(
                 text(self.label, 12., FontWeight::MEDIUM)
@@ -332,6 +379,12 @@ impl RenderOnce for Tab {
                     .text_ellipsis(),
             )
             .children(self.note.map(|note| meta(note, cx)))
-            .child(div().size(px(20.)).mr(px(8.)).flex_none().children(self.tail))
+            .child(
+                div()
+                    .size(px(20.))
+                    .mr(px(8.))
+                    .flex_none()
+                    .children(self.tail),
+            )
     }
 }

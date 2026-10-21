@@ -4,7 +4,13 @@ fn main() {
     println!("cargo:rerun-if-changed=assets/faces");
     let mut shapes: Vec<String> = std::fs::read_dir("assets/faces")
         .expect("assets/faces")
-        .map(|entry| entry.expect("a face file").file_name().into_string().expect("a file name"))
+        .map(|entry| {
+            entry
+                .expect("a face file")
+                .file_name()
+                .into_string()
+                .expect("a file name")
+        })
         .filter(|name| name.ends_with(".json.gz"))
         .collect();
     shapes.sort();
@@ -16,5 +22,9 @@ fn main() {
         })
         .collect();
     let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("faces.rs");
-    std::fs::write(out, format!("static DRAWINGS: &[(&str, &[u8])] = &[\n{entries}];\n")).expect("write faces.rs");
+    std::fs::write(
+        out,
+        format!("static DRAWINGS: &[(&str, &[u8])] = &[\n{entries}];\n"),
+    )
+    .expect("write faces.rs");
 }

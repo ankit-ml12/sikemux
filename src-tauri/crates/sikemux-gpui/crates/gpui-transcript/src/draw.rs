@@ -141,7 +141,10 @@ impl Pen {
             blocks: doc.blocks().to_vec(),
             style: style.clone(),
             selecting: self.selecting.clone(),
-            doc: self.selecting.as_ref().map_or(0, |selecting| selecting.place_of(doc)),
+            doc: self
+                .selecting
+                .as_ref()
+                .map_or(0, |selecting| selecting.place_of(doc)),
             width: doc.width.clone(),
             turned: doc.turned.clone(),
         };

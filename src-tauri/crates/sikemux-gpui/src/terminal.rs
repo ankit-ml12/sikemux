@@ -8,13 +8,19 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
-    anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent, ClipboardItem, Context, CursorStyle, Entity,
-    FocusHandle, FontFallbacks, Hsla, InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers,
-    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Rgba,
+    anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent,
+    ClipboardItem, Context, CursorStyle, Entity, FocusHandle, FontFallbacks, Hsla, InputHandler,
+    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton as Button,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Rgba,
     ScrollWheelEvent, SharedString, Styled, Subscription, Task, UTF16Selection, Window,
 };
-use gpui_terminal_grid::{Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline};
-use sikemux_wire::grid::{self as wire, Color, FindOptions, FindResult, GridPoint, Mods, MouseAction, MouseButton, Row, Screen, TerminalInput};
+use gpui_terminal_grid::{
+    Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
+};
+use sikemux_wire::grid::{
+    self as wire, Color, FindOptions, FindResult, GridPoint, Mods, MouseAction, MouseButton, Row,
+    Screen, TerminalInput,
+};
 use sikemux_wire::protocol::SessionId;
 use tokio::sync::mpsc;
 
@@ -86,7 +92,10 @@ struct Link {
 impl Link {
     /// The address to open: only web pages, and none carrying a user name or password.
     fn web_address(&self) -> Option<&str> {
-        let rest = self.uri.strip_prefix("https://").or_else(|| self.uri.strip_prefix("http://"))?;
+        let rest = self
+            .uri
+            .strip_prefix("https://")
+            .or_else(|| self.uri.strip_prefix("http://"))?;
         let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
         (!host.is_empty() && !host.contains('@')).then_some(self.uri.as_str())
     }
@@ -98,13 +107,18 @@ impl Terminal {
     }
 
     fn top_line(&self) -> u64 {
-        self.top.unwrap_or(self.screen.header.history_end).max(self.first_line())
+        self.top
+            .unwrap_or(self.screen.header.history_end)
+            .max(self.first_line())
     }
 
     fn row(&self, line: u64) -> Option<&Row> {
         let end = self.screen.header.history_end;
         if line >= end {
-            self.screen.rows.get(usize::try_from(line - end).ok()?).map(|row| &**row)
+            self.screen
+                .rows
+                .get(usize::try_from(line - end).ok()?)
+                .map(|row| &**row)
         } else {
             self.history.get(&line).map(|row| &**row)
         }
@@ -118,7 +132,10 @@ impl Terminal {
             let pieces: Vec<&str> = if span.cluster {
                 vec![span.text.as_str()]
             } else {
-                span.text.char_indices().map(|(at, character)| &span.text[at..at + character.len_utf8()]).collect()
+                span.text
+                    .char_indices()
+                    .map(|(at, character)| &span.text[at..at + character.len_utf8()])
+                    .collect()
             };
             let step = if span.wide { 2 } else { 1 };
             for (index, piece) in pieces.into_iter().enumerate() {
@@ -138,7 +155,11 @@ impl Terminal {
         let Some(cells) = self.cells(point.line) else {
             return;
         };
-        let word = |col: usize| cells.get(col).is_some_and(|cell| !cell.is_empty() && !WORD_SEPARATORS.contains(*cell));
+        let word = |col: usize| {
+            cells
+                .get(col)
+                .is_some_and(|cell| !cell.is_empty() && !WORD_SEPARATORS.contains(*cell))
+        };
         let mut from = usize::from(point.col);
         let mut to = from;
         if word(from) {
@@ -149,7 +170,16 @@ impl Terminal {
                 to += 1;
             }
         }
-        self.selection = Some((GridPoint { line: point.line, col: from as u16 }, GridPoint { line: point.line, col: to as u16 }));
+        self.selection = Some((
+            GridPoint {
+                line: point.line,
+                col: from as u16,
+            },
+            GridPoint {
+                line: point.line,
+                col: to as u16,
+            },
+        ));
     }
 
     fn select_line(&mut self, point: GridPoint) {
@@ -161,17 +191,33 @@ impl Terminal {
         while self.row(last).is_some_and(|row| row.wrapped) {
             last += 1;
         }
-        let end = GridPoint { line: last, col: self.screen.header.cols.saturating_sub(1) };
-        self.selection = Some((GridPoint { line: first, col: 0 }, end));
+        let end = GridPoint {
+            line: last,
+            col: self.screen.header.cols.saturating_sub(1),
+        };
+        self.selection = Some((
+            GridPoint {
+                line: first,
+                col: 0,
+            },
+            end,
+        ));
     }
 
     /// The link at a cell: one the program marked, or a web address in the text.
     fn link_at(&self, point: GridPoint) -> Option<Link> {
         let row = self.row(point.line)?;
-        let span = row.spans.iter().find(|span| (span.col..span.col + span.width).contains(&point.col));
+        let span = row
+            .spans
+            .iter()
+            .find(|span| (span.col..span.col + span.width).contains(&point.col));
         if let Some((span, uri)) = span.and_then(|span| Some((span, span.style.link.clone()?))) {
             let mut columns = span.col..span.col + span.width;
-            for other in row.spans.iter().filter(|other| other.style.link.as_deref() == Some(&*uri)) {
+            for other in row
+                .spans
+                .iter()
+                .filter(|other| other.style.link.as_deref() == Some(&*uri))
+            {
                 if other.col + other.width == columns.start {
                     columns.start = other.col;
                 }
@@ -179,19 +225,38 @@ impl Terminal {
                     columns.end = other.col + other.width;
                 }
             }
-            return Some(Link { line: point.line, columns, uri: uri.to_string() });
+            return Some(Link {
+                line: point.line,
+                columns,
+                uri: uri.to_string(),
+            });
         }
         let cells = self.cells(point.line)?;
         let text: String = cells.concat();
-        let columns_at: Vec<u16> = cells.iter().enumerate().flat_map(|(col, cell)| std::iter::repeat_n(col as u16, cell.len())).collect();
+        let columns_at: Vec<u16> = cells
+            .iter()
+            .enumerate()
+            .flat_map(|(col, cell)| std::iter::repeat_n(col as u16, cell.len()))
+            .collect();
         let mut from = 0;
-        while let Some(found) = ["https://", "http://"].iter().filter_map(|scheme| text[from..].find(scheme)).min() {
+        while let Some(found) = ["https://", "http://"]
+            .iter()
+            .filter_map(|scheme| text[from..].find(scheme))
+            .min()
+        {
             let start = from + found;
-            let length = text[start..].find(|c: char| c.is_whitespace() || "\"'<>`".contains(c)).unwrap_or(text.len() - start);
-            let uri = text[start..start + length].trim_end_matches(|c: char| ".,;:!?)]}".contains(c));
+            let length = text[start..]
+                .find(|c: char| c.is_whitespace() || "\"'<>`".contains(c))
+                .unwrap_or(text.len() - start);
+            let uri =
+                text[start..start + length].trim_end_matches(|c: char| ".,;:!?)]}".contains(c));
             let columns = columns_at[start]..columns_at[start + uri.len() - 1] + 1;
             if columns.contains(&point.col) {
-                return Some(Link { line: point.line, columns, uri: uri.to_owned() });
+                return Some(Link {
+                    line: point.line,
+                    columns,
+                    uri: uri.to_owned(),
+                });
             }
             from = start + length.max(1);
         }
@@ -201,14 +266,27 @@ impl Terminal {
     fn select_all(&mut self) {
         let header = &self.screen.header;
         let last = header.history_end + u64::from(header.rows.saturating_sub(1));
-        self.selection = Some((GridPoint { line: self.first_line(), col: 0 }, GridPoint { line: last, col: header.cols.saturating_sub(1) }));
+        self.selection = Some((
+            GridPoint {
+                line: self.first_line(),
+                col: 0,
+            },
+            GridPoint {
+                line: last,
+                col: header.cols.saturating_sub(1),
+            },
+        ));
     }
 
     /// The selected text when it lies on one row, for a search to start from.
     fn selected_words(&self) -> Option<String> {
-        let (start, end) = self.selection.filter(|(start, end)| start.line == end.line)?;
+        let (start, end) = self
+            .selection
+            .filter(|(start, end)| start.line == end.line)?;
         let cells = self.cells(start.line)?;
-        let text = cells.get(usize::from(start.col)..=usize::from(end.col).min(cells.len().saturating_sub(1)))?.concat();
+        let text = cells
+            .get(usize::from(start.col)..=usize::from(end.col).min(cells.len().saturating_sub(1)))?
+            .concat();
         Some(text.trim().to_owned()).filter(|text| !text.is_empty())
     }
 
@@ -253,19 +331,28 @@ impl Terminals {
             Screenful::Lines(lines) => {
                 terminal.pages_asked.remove(&lines.start);
                 if lines.epoch == terminal.screen.header.epoch {
-                    terminal.history.extend((lines.start..).zip(lines.rows.into_iter().map(Arc::new)));
+                    terminal
+                        .history
+                        .extend((lines.start..).zip(lines.rows.into_iter().map(Arc::new)));
                 }
                 if terminal.history.len() > HISTORY_KEPT {
                     let middle = terminal.top_line();
                     let half = HISTORY_KEPT as u64 / 2;
-                    terminal.history.retain(|line, _| line.abs_diff(middle) < half);
+                    terminal
+                        .history
+                        .retain(|line, _| line.abs_diff(middle) < half);
                 }
             }
             Screenful::Copied(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
             Screenful::Found(found) => {
                 let rows = u64::from(terminal.screen.header.rows);
-                let current = found.current.and_then(|current| found.matches.get(current)).map(|(start, _)| start.line);
-                if let Some(line) = current.filter(|line| !(terminal.top_line()..terminal.top_line() + rows).contains(line)) {
+                let current = found
+                    .current
+                    .and_then(|current| found.matches.get(current))
+                    .map(|(start, _)| start.line);
+                if let Some(line) = current.filter(|line| {
+                    !(terminal.top_line()..terminal.top_line() + rows).contains(line)
+                }) {
                     let end = terminal.screen.header.history_end;
                     let top = line.saturating_sub(rows / 2).max(terminal.first_line());
                     terminal.top = (top < end).then_some(top);
@@ -298,7 +385,12 @@ impl Terminals {
 }
 
 /// The terminal a pane shows, attaching it the first time it is drawn.
-pub fn pane(bench: &Workbench, this: &Entity<Workbench>, session: &str, window: &Window) -> AnyElement {
+pub fn pane(
+    bench: &Workbench,
+    this: &Entity<Workbench>,
+    session: &str,
+    window: &Window,
+) -> AnyElement {
     let Ok(id) = session.parse::<SessionId>() else {
         return div().into_any_element();
     };
@@ -307,67 +399,104 @@ pub fn pane(bench: &Workbench, this: &Entity<Workbench>, session: &str, window: 
         .id(("terminal", id))
         .size_full()
         .p(px(8.))
-        .on_key_down(window.listener_for(&this, move |bench, event: &KeyDownEvent, window, cx| {
-            if key(bench, id, &event.keystroke, window, cx) {
-                cx.stop_propagation();
+        .on_key_down(
+            window.listener_for(&this, move |bench, event: &KeyDownEvent, window, cx| {
+                if key(bench, id, &event.keystroke, window, cx) {
+                    cx.stop_propagation();
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }
+            }),
+        )
+        .on_mouse_down(
+            Button::Left,
+            window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
+                mouse_down(bench, id, event, window, cx);
                 bench.parts.redraw(&bench.parts.stage, cx);
-            }
-        }))
-        .on_mouse_down(Button::Left, window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
-            mouse_down(bench, id, event, window, cx);
-            bench.parts.redraw(&bench.parts.stage, cx);
-        }))
-        .on_mouse_move(window.listener_for(&this, move |bench, event: &MouseMoveEvent, _, cx| {
-            if mouse_move(bench, id, event) {
+            }),
+        )
+        .on_mouse_move(
+            window.listener_for(&this, move |bench, event: &MouseMoveEvent, _, cx| {
+                if mouse_move(bench, id, event) {
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }
+            }),
+        )
+        .on_mouse_down(
+            Button::Right,
+            window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
+                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+                    window.focus(&terminal.focus, cx);
+                    terminal.menu = Some(event.position);
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }
+            }),
+        )
+        .on_mouse_up(
+            Button::Left,
+            window.listener_for(&this, move |bench, event: &MouseUpEvent, _, cx| {
+                mouse_up(bench, id, event, cx);
                 bench.parts.redraw(&bench.parts.stage, cx);
-            }
-        }))
-        .on_mouse_down(Button::Right, window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
-            if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                window.focus(&terminal.focus, cx);
-                terminal.menu = Some(event.position);
-                bench.parts.redraw(&bench.parts.stage, cx);
-            }
-        }))
-        .on_mouse_up(Button::Left, window.listener_for(&this, move |bench, event: &MouseUpEvent, _, cx| {
-            mouse_up(bench, id, event, cx);
-            bench.parts.redraw(&bench.parts.stage, cx);
-        }))
-        .on_scroll_wheel(window.listener_for(&this, move |bench, event: &ScrollWheelEvent, _, cx| {
-            if wheel(bench, id, event) {
-                bench.parts.redraw(&bench.parts.stage, cx);
-            }
-        }));
+            }),
+        )
+        .on_scroll_wheel(window.listener_for(
+            &this,
+            move |bench, event: &ScrollWheelEvent, _, cx| {
+                if wheel(bench, id, event) {
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }
+            },
+        ));
     if let Some(terminal) = bench.terminals.open.get(&id) {
         pane = pane.track_focus(&terminal.focus);
         if terminal.link.is_some() {
             pane = pane.cursor(CursorStyle::PointingHand);
         }
         if let Some(find) = &terminal.find {
-            pane = pane.child(FindBar { bench: this.clone(), id, input: find.input.clone(), options: find.options.clone(), found: find.label() });
+            pane = pane.child(FindBar {
+                bench: this.clone(),
+                id,
+                input: find.input.clone(),
+                options: find.options.clone(),
+                found: find.label(),
+            });
         }
         if let Some(position) = terminal.menu {
-            let menu = TerminalMenu { bench: this.clone(), id, selection: terminal.selection };
+            let menu = TerminalMenu {
+                bench: this.clone(),
+                id,
+                selection: terminal.selection,
+            };
             pane = pane.child(deferred(anchored().position(position).child(menu)).with_priority(1));
         }
     }
-    pane.relative().child(
-        div().size_full().overflow_hidden().child(
-            canvas(
-                {
-                    let this = this.clone();
-                    move |bounds, window, cx| this.update(cx, |bench, cx| layout(bench, id, bounds, window, cx))
-                },
-                move |_, (layout, focus), window, cx| {
-                    let cursor = layout.cursor_bounds();
-                    window.handle_input(&focus, Typing { bench: this, id, cursor }, cx);
-                    layout.paint(window, cx);
-                },
-            )
-            .size_full(),
-        ),
-    )
-    .into_any_element()
+    pane.relative()
+        .child(
+            div().size_full().overflow_hidden().child(
+                canvas(
+                    {
+                        let this = this.clone();
+                        move |bounds, window, cx| {
+                            this.update(cx, |bench, cx| layout(bench, id, bounds, window, cx))
+                        }
+                    },
+                    move |_, (layout, focus), window, cx| {
+                        let cursor = layout.cursor_bounds();
+                        window.handle_input(
+                            &focus,
+                            Typing {
+                                bench: this,
+                                id,
+                                cursor,
+                            },
+                            cx,
+                        );
+                        layout.paint(window, cx);
+                    },
+                )
+                .size_full(),
+            ),
+        )
+        .into_any_element()
 }
 
 /// Attaches the terminal the first time, fits it to its bounds, acknowledges
@@ -408,8 +537,12 @@ fn layout(
             menu: None,
             blink_from: Instant::now(),
             _focus_changes: [
-                cx.on_focus_in(&focus, window, move |bench, _, cx| focus_changed(bench, id, true, cx)),
-                cx.on_focus_out(&focus, window, move |bench, _, _, cx| focus_changed(bench, id, false, cx)),
+                cx.on_focus_in(&focus, window, move |bench, _, cx| {
+                    focus_changed(bench, id, true, cx)
+                }),
+                cx.on_focus_out(&focus, window, move |bench, _, _, cx| {
+                    focus_changed(bench, id, false, cx)
+                }),
             ],
             focus,
             acked: 0,
@@ -434,16 +567,31 @@ fn layout(
     let mut page = top / PAGE * PAGE;
     while page < end.min(header.history_end) {
         let start = page.max(terminal.first_line());
-        let missing = (start..(page + PAGE).min(header.history_end)).any(|line| !terminal.history.contains_key(&line));
+        let missing = (start..(page + PAGE).min(header.history_end))
+            .any(|line| !terminal.history.contains_key(&line));
         if missing && terminal.pages_asked.insert(start) {
             let count = (page + PAGE).min(header.history_end) - start;
-            let _ = asks.send(Ask::Terminal(id, TerminalAsk::Lines { start, count: count as u32 }));
+            let _ = asks.send(Ask::Terminal(
+                id,
+                TerminalAsk::Lines {
+                    start,
+                    count: count as u32,
+                },
+            ));
         }
         page += PAGE;
     }
     let tokens = Tokens::get(cx);
-    let view = View { terminal, top, tokens, focused: terminal.focus.is_focused(window) };
-    (Layout::new(&view, bounds.origin, &metrics, window), terminal.focus.clone())
+    let view = View {
+        terminal,
+        top,
+        tokens,
+        focused: terminal.focus.is_focused(window),
+    };
+    (
+        Layout::new(&view, bounds.origin, &metrics, window),
+        terminal.focus.clone(),
+    )
 }
 
 /// A terminal as the grid draws it: the rows from `top`, coloured by the theme.
@@ -456,14 +604,30 @@ struct View<'a> {
 
 impl View<'_> {
     /// Tints the cells from one point to another, inclusive, where they are in view.
-    fn tint(&self, (start, end): (GridPoint, GridPoint), color: Hsla, each: &mut dyn FnMut(Highlight)) {
+    fn tint(
+        &self,
+        (start, end): (GridPoint, GridPoint),
+        color: Hsla,
+        each: &mut dyn FnMut(Highlight),
+    ) {
         let header = &self.terminal.screen.header;
         let first = start.line.max(self.top);
-        let last = end.line.min(self.top + u64::from(header.rows).saturating_sub(1));
+        let last = end
+            .line
+            .min(self.top + u64::from(header.rows).saturating_sub(1));
         for line in first..=last {
             let from = if line == start.line { start.col } else { 0 };
-            let to = if line == end.line { end.col + 1 } else { header.cols };
-            each(Highlight { row: (line - self.top) as u16, columns: from..to, color, underline: false });
+            let to = if line == end.line {
+                end.col + 1
+            } else {
+                header.cols
+            };
+            each(Highlight {
+                row: (line - self.top) as u16,
+                columns: from..to,
+                color,
+                underline: false,
+            });
         }
     }
 
@@ -473,7 +637,13 @@ impl View<'_> {
             Color::Named(index) => self.named(index),
             Color::Indexed(index) => self.named(u16::from(index)),
         };
-        Rgba { r: f32::from(r) / 255., g: f32::from(g) / 255., b: f32::from(b) / 255., a: 1. }.into()
+        Rgba {
+            r: f32::from(r) / 255.,
+            g: f32::from(g) / 255.,
+            b: f32::from(b) / 255.,
+            a: 1.,
+        }
+        .into()
     }
 
     fn named(&self, index: u16) -> [u8; 3] {
@@ -481,13 +651,19 @@ impl View<'_> {
         palette
             .iter()
             .find(|(named, _)| *named == index)
-            .map_or_else(|| self.tokens.terminal.color(usize::from(index)), |(_, rgb)| *rgb)
+            .map_or_else(
+                || self.tokens.terminal.color(usize::from(index)),
+                |(_, rgb)| *rgb,
+            )
     }
 
     fn look(&self, style: &wire::Style) -> Look {
         let flags = style.flags;
         let default_bg = style.bg == Color::Named(wire::NAMED_BACKGROUND);
-        let (mut fg, mut bg) = (self.rgb(style.fg), (!default_bg).then(|| self.rgb(style.bg)));
+        let (mut fg, mut bg) = (
+            self.rgb(style.fg),
+            (!default_bg).then(|| self.rgb(style.bg)),
+        );
         if flags & wire::STYLE_INVERSE != 0 {
             (fg, bg) = (bg.unwrap_or_else(|| self.rgb(style.bg)), Some(fg));
         }
@@ -520,7 +696,10 @@ impl View<'_> {
 
 impl Grid for View<'_> {
     fn size(&self) -> (u16, u16) {
-        (self.terminal.screen.header.cols, self.terminal.screen.header.rows)
+        (
+            self.terminal.screen.header.cols,
+            self.terminal.screen.header.rows,
+        )
     }
 
     fn row(&self, row: u16, each: &mut dyn FnMut(Span<'_>)) {
@@ -528,15 +707,26 @@ impl Grid for View<'_> {
             return;
         };
         for span in &line.spans {
-            each(Span { column: span.col, text: &span.text, wide: span.wide, cluster: span.cluster, look: self.look(&span.style) });
+            each(Span {
+                column: span.col,
+                text: &span.text,
+                wide: span.wide,
+                cluster: span.cluster,
+                look: self.look(&span.style),
+            });
         }
     }
 
     fn cursor(&self) -> Option<Cursor> {
         let header = &self.terminal.screen.header;
         let line = header.history_end + u64::from(header.cursor.row);
-        let row = u16::try_from(line.checked_sub(self.top)?).ok().filter(|row| *row < header.rows)?;
-        if self.focused && header.cursor.shape & wire::CURSOR_BLINKS != 0 && blinked_off(self.terminal.blink_from) {
+        let row = u16::try_from(line.checked_sub(self.top)?)
+            .ok()
+            .filter(|row| *row < header.rows)?;
+        if self.focused
+            && header.cursor.shape & wire::CURSOR_BLINKS != 0
+            && blinked_off(self.terminal.blink_from)
+        {
             return None;
         }
         let shape = match header.cursor.shape & !wire::CURSOR_BLINKS {
@@ -548,19 +738,38 @@ impl Grid for View<'_> {
             _ => CursorShape::Block,
         };
         let color = self.rgb(Color::Named(258));
-        Some(Cursor { row, column: header.cursor.col, shape, color, text: self.tokens.terminal_cursor_text })
+        Some(Cursor {
+            row,
+            column: header.cursor.col,
+            shape,
+            color,
+            text: self.tokens.terminal_cursor_text,
+        })
     }
 
     fn highlights(&self, each: &mut dyn FnMut(Highlight)) {
         if let Some(link) = &self.terminal.link {
-            if let Some(row) = link.line.checked_sub(self.top).and_then(|row| u16::try_from(row).ok()) {
+            if let Some(row) = link
+                .line
+                .checked_sub(self.top)
+                .and_then(|row| u16::try_from(row).ok())
+            {
                 let color = self.rgb(Color::Named(wire::NAMED_FOREGROUND));
-                each(Highlight { row, columns: link.columns.clone(), color, underline: true });
+                each(Highlight {
+                    row,
+                    columns: link.columns.clone(),
+                    color,
+                    underline: true,
+                });
             }
         }
         if let Some(find) = &self.terminal.find {
             for (index, &range) in find.found.matches.iter().enumerate() {
-                let color = if find.found.current == Some(index) { self.tokens.terminal_match_current } else { self.tokens.terminal_match };
+                let color = if find.found.current == Some(index) {
+                    self.tokens.terminal_match_current
+                } else {
+                    self.tokens.terminal_match
+                };
                 self.tint(range, color, each);
             }
         }
@@ -572,8 +781,17 @@ impl Grid for View<'_> {
     fn marked(&self) -> Option<Marked<'_>> {
         let text = self.terminal.marked.as_deref()?;
         let header = &self.terminal.screen.header;
-        let row = u16::try_from((header.history_end + u64::from(header.cursor.row)).checked_sub(self.top)?).ok()?;
-        Some(Marked { row, column: header.cursor.col, text, fg: self.rgb(Color::Named(wire::NAMED_FOREGROUND)), bg: self.rgb(Color::Named(wire::NAMED_BACKGROUND)) })
+        let row = u16::try_from(
+            (header.history_end + u64::from(header.cursor.row)).checked_sub(self.top)?,
+        )
+        .ok()?;
+        Some(Marked {
+            row,
+            column: header.cursor.col,
+            text,
+            fg: self.rgb(Color::Named(wire::NAMED_FOREGROUND)),
+            bg: self.rgb(Color::Named(wire::NAMED_BACKGROUND)),
+        })
     }
 }
 
@@ -582,11 +800,18 @@ fn send(bench: &mut Workbench, id: SessionId, input: TerminalInput) {
         terminal.top = None;
         terminal.blink_from = Instant::now();
     }
-    let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
+    let _ = bench
+        .asks
+        .send(Ask::Terminal(id, TerminalAsk::Input(input)));
 }
 
 fn mods(modifiers: &Modifiers) -> Mods {
-    Mods { shift: modifiers.shift, alt: modifiers.alt, ctrl: modifiers.control, meta: modifiers.platform }
+    Mods {
+        shift: modifiers.shift,
+        alt: modifiers.alt,
+        ctrl: modifiers.control,
+        meta: modifiers.platform,
+    }
 }
 
 /// A key GPUI names as the `KeyboardEvent.key` the core's encoder takes.
@@ -606,7 +831,10 @@ fn named_key(key: &str) -> Option<String> {
         "pagedown" => "PageDown".into(),
         "insert" => "Insert".into(),
         "delete" => "Delete".into(),
-        _ if key.len() > 1 && key.starts_with('f') && key[1..].parse::<u8>().is_ok_and(|n| (1..=12).contains(&n)) => {
+        _ if key.len() > 1
+            && key.starts_with('f')
+            && key[1..].parse::<u8>().is_ok_and(|n| (1..=12).contains(&n)) =>
+        {
             key.to_uppercase()
         }
         _ => return None,
@@ -614,8 +842,19 @@ fn named_key(key: &str) -> Option<String> {
 }
 
 /// Handles a key, answering whether the terminal took it.
-fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, window: &mut Window, cx: &mut Context<Workbench>) -> bool {
-    let Some(terminal) = bench.terminals.open.get_mut(&id).filter(|terminal| terminal.focus.is_focused(window)) else {
+fn key(
+    bench: &mut Workbench,
+    id: SessionId,
+    keystroke: &Keystroke,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) -> bool {
+    let Some(terminal) = bench
+        .terminals
+        .open
+        .get_mut(&id)
+        .filter(|terminal| terminal.focus.is_focused(window))
+    else {
         return false;
     };
     let modifiers = &keystroke.modifiers;
@@ -624,33 +863,51 @@ fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, window: &mut
     if modifiers.platform {
         match key {
             "c" if terminal.selection.is_some() => {
-                let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Copy(terminal.selection)));
+                let _ = bench
+                    .asks
+                    .send(Ask::Terminal(id, TerminalAsk::Copy(terminal.selection)));
             }
             "a" => terminal.select_all(),
             "v" => paste(bench, id, cx),
             "f" => open_find(bench, id, window, cx),
             "left" | "right" | "backspace" => {
-                let input = TerminalInput::Key { key: named_key(key).unwrap_or_default(), mods: mods(modifiers) };
+                let input = TerminalInput::Key {
+                    key: named_key(key).unwrap_or_default(),
+                    mods: mods(modifiers),
+                };
                 send(bench, id, input);
             }
             _ => return false,
         }
         return true;
     }
-    if modifiers.shift && matches!(key, "pageup" | "pagedown") && header.modes & wire::MODE_ALT_SCREEN == 0 {
+    if modifiers.shift
+        && matches!(key, "pageup" | "pagedown")
+        && header.modes & wire::MODE_ALT_SCREEN == 0
+    {
         let rows = i64::from(header.rows);
         scroll(terminal, if key == "pageup" { -rows } else { rows });
         return true;
     }
     let input = if let Some(name) = named_key(key) {
-        TerminalInput::Key { key: name, mods: mods(modifiers) }
+        TerminalInput::Key {
+            key: name,
+            mods: mods(modifiers),
+        }
     } else if modifiers.control || modifiers.alt {
         let typed = if key == "space" { " " } else { key };
         if typed.chars().count() != 1 {
             return false;
         }
-        let typed = if modifiers.shift { typed.to_uppercase() } else { typed.to_owned() };
-        TerminalInput::Key { key: typed, mods: mods(modifiers) }
+        let typed = if modifiers.shift {
+            typed.to_uppercase()
+        } else {
+            typed.to_owned()
+        };
+        TerminalInput::Key {
+            key: typed,
+            mods: mods(modifiers),
+        }
     } else {
         return false;
     };
@@ -668,7 +925,13 @@ struct Typing {
 
 impl Typing {
     fn marked(&self, cx: &App) -> Option<String> {
-        self.bench.read(cx).terminals.open.get(&self.id)?.marked.clone()
+        self.bench
+            .read(cx)
+            .terminals
+            .open
+            .get(&self.id)?
+            .marked
+            .clone()
     }
 
     fn set_marked(&self, marked: Option<String>, cx: &mut App) {
@@ -683,31 +946,61 @@ impl Typing {
 }
 
 impl InputHandler for Typing {
-    fn selected_text_range(&mut self, _: bool, _: &mut Window, cx: &mut App) -> Option<UTF16Selection> {
-        let end = self.marked(cx).map_or(0, |text| text.encode_utf16().count());
-        Some(UTF16Selection { range: end..end, reversed: false })
+    fn selected_text_range(
+        &mut self,
+        _: bool,
+        _: &mut Window,
+        cx: &mut App,
+    ) -> Option<UTF16Selection> {
+        let end = self
+            .marked(cx)
+            .map_or(0, |text| text.encode_utf16().count());
+        Some(UTF16Selection {
+            range: end..end,
+            reversed: false,
+        })
     }
 
     fn marked_text_range(&mut self, _: &mut Window, cx: &mut App) -> Option<Range<usize>> {
         self.marked(cx).map(|text| 0..text.encode_utf16().count())
     }
 
-    fn text_for_range(&mut self, range: Range<usize>, adjusted: &mut Option<Range<usize>>, _: &mut Window, cx: &mut App) -> Option<String> {
+    fn text_for_range(
+        &mut self,
+        range: Range<usize>,
+        adjusted: &mut Option<Range<usize>>,
+        _: &mut Window,
+        cx: &mut App,
+    ) -> Option<String> {
         let units: Vec<u16> = self.marked(cx)?.encode_utf16().collect();
         let range = range.start.min(units.len())..range.end.min(units.len());
         *adjusted = Some(range.clone());
         String::from_utf16(&units[range]).ok()
     }
 
-    fn replace_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut App) {
+    fn replace_text_in_range(
+        &mut self,
+        _: Option<Range<usize>>,
+        text: &str,
+        _: &mut Window,
+        cx: &mut App,
+    ) {
         self.set_marked(None, cx);
         if !text.is_empty() {
             let (id, text) = (self.id, text.to_owned());
-            self.bench.update(cx, |bench, _| send(bench, id, TerminalInput::Text { text }));
+            self.bench
+                .update(cx, |bench, _| send(bench, id, TerminalInput::Text { text }));
         }
     }
 
-    fn replace_and_mark_text_in_range(&mut self, _: Option<Range<usize>>, text: &str, _: Option<Range<usize>>, _: &mut Window, cx: &mut App) {
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        _: Option<Range<usize>>,
+        text: &str,
+        _: Option<Range<usize>>,
+        _: &mut Window,
+        cx: &mut App,
+    ) {
         self.set_marked(Some(text.to_owned()), cx);
     }
 
@@ -715,11 +1008,21 @@ impl InputHandler for Typing {
         self.set_marked(None, cx);
     }
 
-    fn bounds_for_range(&mut self, _: Range<usize>, _: &mut Window, _: &mut App) -> Option<Bounds<Pixels>> {
+    fn bounds_for_range(
+        &mut self,
+        _: Range<usize>,
+        _: &mut Window,
+        _: &mut App,
+    ) -> Option<Bounds<Pixels>> {
         self.cursor
     }
 
-    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut App) -> Option<usize> {
+    fn character_index_for_point(
+        &mut self,
+        _: Point<Pixels>,
+        _: &mut Window,
+        _: &mut App,
+    ) -> Option<usize> {
         None
     }
 }
@@ -727,7 +1030,10 @@ impl InputHandler for Typing {
 /// Moves the view by `lines`, negative toward older output.
 fn scroll(terminal: &mut Terminal, lines: i64) {
     let end = terminal.screen.header.history_end;
-    let top = terminal.top_line().saturating_add_signed(lines).clamp(terminal.first_line(), end);
+    let top = terminal
+        .top_line()
+        .saturating_add_signed(lines)
+        .clamp(terminal.first_line(), end);
     terminal.top = (top < end).then_some(top);
 }
 
@@ -735,14 +1041,26 @@ fn scroll(terminal: &mut Terminal, lines: i64) {
 fn point_at(terminal: &Terminal, metrics: &Metrics, position: Point<Pixels>) -> (GridPoint, u16) {
     let header = &terminal.screen.header;
     let (col, row) = metrics.cell_at(position - terminal.origin, (header.cols, header.rows));
-    (GridPoint { line: terminal.top_line() + u64::from(row), col }, row)
+    (
+        GridPoint {
+            line: terminal.top_line() + u64::from(row),
+            col,
+        },
+        row,
+    )
 }
 
 fn reports_mouse(terminal: &Terminal, modifiers: &Modifiers) -> bool {
     terminal.screen.header.modes & wire::MODE_MOUSE_ANY != 0 && !modifiers.shift && !modifiers.alt
 }
 
-fn mouse_down(bench: &mut Workbench, id: SessionId, event: &MouseDownEvent, window: &mut Window, cx: &mut App) {
+fn mouse_down(
+    bench: &mut Workbench,
+    id: SessionId,
+    event: &MouseDownEvent,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return;
     };
@@ -752,8 +1070,16 @@ fn mouse_down(bench: &mut Workbench, id: SessionId, event: &MouseDownEvent, wind
     window.focus(&terminal.focus, cx);
     let (point, row) = point_at(terminal, &metrics, event.position);
     if reports_mouse(terminal, &event.modifiers) {
-        let input = TerminalInput::Mouse { action: MouseAction::Press, button: MouseButton::Left, col: point.col, row, mods: mods(&event.modifiers) };
-        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let input = TerminalInput::Mouse {
+            action: MouseAction::Press,
+            button: MouseButton::Left,
+            col: point.col,
+            row,
+            mods: mods(&event.modifiers),
+        };
+        let _ = bench
+            .asks
+            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
         return;
     }
     terminal.dragged = false;
@@ -777,13 +1103,28 @@ fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> b
     if reports_mouse(terminal, &event.modifiers) {
         let pressed = event.pressed_button == Some(Button::Left);
         if modes & wire::MODE_MOUSE_MOTION != 0 || (pressed && modes & wire::MODE_MOUSE_DRAG != 0) {
-            let button = if pressed { MouseButton::Left } else { MouseButton::None };
-            let input = TerminalInput::Mouse { action: MouseAction::Move, button, col: point.col, row, mods: mods(&event.modifiers) };
-            let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
+            let button = if pressed {
+                MouseButton::Left
+            } else {
+                MouseButton::None
+            };
+            let input = TerminalInput::Mouse {
+                action: MouseAction::Move,
+                button,
+                col: point.col,
+                row,
+                mods: mods(&event.modifiers),
+            };
+            let _ = bench
+                .asks
+                .send(Ask::Terminal(id, TerminalAsk::Input(input)));
         }
         return false;
     }
-    let Some(anchor) = terminal.anchor.filter(|_| event.pressed_button == Some(Button::Left)) else {
+    let Some(anchor) = terminal
+        .anchor
+        .filter(|_| event.pressed_button == Some(Button::Left))
+    else {
         let link = terminal.link_at(point);
         let changed = link != terminal.link;
         terminal.link = link;
@@ -793,7 +1134,11 @@ fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> b
         return false;
     }
     terminal.dragged = true;
-    terminal.selection = Some(if point < anchor { (point, anchor) } else { (anchor, point) });
+    terminal.selection = Some(if point < anchor {
+        (point, anchor)
+    } else {
+        (anchor, point)
+    });
     true
 }
 
@@ -805,13 +1150,26 @@ fn mouse_up(bench: &mut Workbench, id: SessionId, event: &MouseUpEvent, cx: &mut
         return;
     };
     let clicked = terminal.anchor.take().is_some() && !terminal.dragged && event.click_count == 1;
-    if let Some(address) = terminal.link.as_ref().filter(|_| clicked).and_then(Link::web_address) {
+    if let Some(address) = terminal
+        .link
+        .as_ref()
+        .filter(|_| clicked)
+        .and_then(Link::web_address)
+    {
         cx.open_url(address);
     }
     if reports_mouse(terminal, &event.modifiers) {
         let (point, row) = point_at(terminal, &metrics, event.position);
-        let input = TerminalInput::Mouse { action: MouseAction::Release, button: MouseButton::Left, col: point.col, row, mods: mods(&event.modifiers) };
-        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let input = TerminalInput::Mouse {
+            action: MouseAction::Release,
+            button: MouseButton::Left,
+            col: point.col,
+            row,
+            mods: mods(&event.modifiers),
+        };
+        let _ = bench
+            .asks
+            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
     }
 }
 
@@ -832,14 +1190,20 @@ fn wheel(bench: &mut Workbench, id: SessionId, event: &ScrollWheelEvent) -> bool
     let alternate = modes & wire::MODE_ALT_SCREEN != 0 && modes & wire::MODE_ALTERNATE_SCROLL != 0;
     if reports_mouse(terminal, &event.modifiers) || alternate {
         let (point, row) = point_at(terminal, &metrics, event.position);
-        let input = TerminalInput::Wheel { col: point.col, row, lines: -(lines as i32), mods: mods(&event.modifiers) };
-        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let input = TerminalInput::Wheel {
+            col: point.col,
+            row,
+            lines: -(lines as i32),
+            mods: mods(&event.modifiers),
+        };
+        let _ = bench
+            .asks
+            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
         return false;
     }
     scroll(terminal, -(lines as i64));
     true
 }
-
 
 /// The find bar's state: what is typed in it, how it matches, and what the core found.
 struct Find {
@@ -852,7 +1216,13 @@ struct Find {
 impl Find {
     fn label(&self) -> SharedString {
         match self.found.current {
-            Some(current) => format!("{}/{}{}", current + 1, self.found.matches.len(), if self.found.more { "+" } else { "" }).into(),
+            Some(current) => format!(
+                "{}/{}{}",
+                current + 1,
+                self.found.matches.len(),
+                if self.found.more { "+" } else { "" }
+            )
+            .into(),
             None => "0/0".into(),
         }
     }
@@ -866,7 +1236,12 @@ enum Step {
     Previous,
 }
 
-fn open_find(bench: &mut Workbench, id: SessionId, window: &mut Window, cx: &mut Context<Workbench>) {
+fn open_find(
+    bench: &mut Workbench,
+    id: SessionId,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
@@ -875,14 +1250,25 @@ fn open_find(bench: &mut Workbench, id: SessionId, window: &mut Window, cx: &mut
         Some(find) => find.input.clone(),
         None => {
             let input = cx.new(|cx| InputState::new(window, cx).placeholder("Find in terminal"));
-            let typing = cx.subscribe(&input, move |bench, _, event: &InputEvent, cx| {
-                match event {
+            let typing = cx.subscribe(
+                &input,
+                move |bench, _, event: &InputEvent, cx| match event {
                     InputEvent::Change => find(bench, id, Step::Typed, cx),
-                    InputEvent::PressEnter { shift, .. } => find(bench, id, if *shift { Step::Previous } else { Step::Next }, cx),
+                    InputEvent::PressEnter { shift, .. } => find(
+                        bench,
+                        id,
+                        if *shift { Step::Previous } else { Step::Next },
+                        cx,
+                    ),
                     _ => {}
-                }
+                },
+            );
+            terminal.find = Some(Find {
+                input: input.clone(),
+                options: FindOptions::default(),
+                found: FindResult::default(),
+                _typing: typing,
             });
-            terminal.find = Some(Find { input: input.clone(), options: FindOptions::default(), found: FindResult::default(), _typing: typing });
             input
         }
     };
@@ -916,7 +1302,11 @@ fn find(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workb
         find.found = FindResult::default();
         return bench.parts.redraw(&bench.parts.stage, cx);
     }
-    let current = find.found.current.and_then(|current| find.found.matches.get(current)).map(|(start, _)| *start);
+    let current = find
+        .found
+        .current
+        .and_then(|current| find.found.matches.get(current))
+        .map(|(start, _)| *start);
     let ask = TerminalAsk::Find {
         query,
         options: find.options.clone(),
@@ -947,22 +1337,31 @@ impl RenderOnce for FindBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
         let (bench, id) = (self.bench.clone(), self.id);
-        let act = move |change: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
-            let bench = bench.clone();
-            move |_: &ClickEvent, window: &mut Window, cx: &mut App| bench.update(cx, |bench, cx| change(bench, id, window, cx))
-        };
-        let option = |name: &'static str, label: &'static str, pressed: bool, flip: fn(&mut FindOptions)| {
-            let bench = self.bench.clone();
-            Toggle::new(name, label, pressed).on_click(move |_, _, cx| {
-                bench.update(cx, |bench, cx| {
-                    if let Some(find) = bench.terminals.open.get_mut(&id).and_then(|terminal| terminal.find.as_mut()) {
-                        flip(&mut find.options);
-                        find.found = FindResult::default();
-                    }
-                    find(bench, id, Step::Typed, cx);
-                });
-            })
-        };
+        let act =
+            move |change: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
+                let bench = bench.clone();
+                move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    bench.update(cx, |bench, cx| change(bench, id, window, cx))
+                }
+            };
+        let option =
+            |name: &'static str, label: &'static str, pressed: bool, flip: fn(&mut FindOptions)| {
+                let bench = self.bench.clone();
+                Toggle::new(name, label, pressed).on_click(move |_, _, cx| {
+                    bench.update(cx, |bench, cx| {
+                        if let Some(find) = bench
+                            .terminals
+                            .open
+                            .get_mut(&id)
+                            .and_then(|terminal| terminal.find.as_mut())
+                        {
+                            flip(&mut find.options);
+                            find.found = FindResult::default();
+                        }
+                        find(bench, id, Step::Typed, cx);
+                    });
+                })
+            };
         div()
             .absolute()
             .top(px(7.))
@@ -986,13 +1385,45 @@ impl RenderOnce for FindBar {
                 }
             })
             .child(div().w(px(250.)).child(Field::new(&self.input)))
-            .child(div().min_w(px(42.)).flex().justify_center().child(ui::mono(self.found, 10., cx)))
-            .child(option("find-case", "Aa", self.options.case_sensitive, |options| options.case_sensitive ^= true))
-            .child(option("find-word", "W", self.options.whole_word, |options| options.whole_word ^= true))
-            .child(option("find-regex", ".*", self.options.regex, |options| options.regex ^= true))
-            .child(IconButton::new("find-previous", Icon::ArrowUp, "Previous match").small().on_click(act(|bench, id, _, cx| find(bench, id, Step::Previous, cx))))
-            .child(IconButton::new("find-next", Icon::ArrowDown, "Next match").small().on_click(act(|bench, id, _, cx| find(bench, id, Step::Next, cx))))
-            .child(IconButton::new("find-close", Icon::Close, "Close").small().on_click(act(|bench, id, window, cx| close_find(bench, id, window, cx))))
+            .child(
+                div()
+                    .min_w(px(42.))
+                    .flex()
+                    .justify_center()
+                    .child(ui::mono(self.found, 10., cx)),
+            )
+            .child(option(
+                "find-case",
+                "Aa",
+                self.options.case_sensitive,
+                |options| options.case_sensitive ^= true,
+            ))
+            .child(option(
+                "find-word",
+                "W",
+                self.options.whole_word,
+                |options| options.whole_word ^= true,
+            ))
+            .child(option("find-regex", ".*", self.options.regex, |options| {
+                options.regex ^= true
+            }))
+            .child(
+                IconButton::new("find-previous", Icon::ArrowUp, "Previous match")
+                    .small()
+                    .on_click(act(|bench, id, _, cx| find(bench, id, Step::Previous, cx))),
+            )
+            .child(
+                IconButton::new("find-next", Icon::ArrowDown, "Next match")
+                    .small()
+                    .on_click(act(|bench, id, _, cx| find(bench, id, Step::Next, cx))),
+            )
+            .child(
+                IconButton::new("find-close", Icon::Close, "Close")
+                    .small()
+                    .on_click(act(|bench, id, window, cx| {
+                        close_find(bench, id, window, cx)
+                    })),
+            )
     }
 }
 
@@ -1007,17 +1438,27 @@ struct TerminalMenu {
 impl RenderOnce for TerminalMenu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let (bench, id) = (self.bench.clone(), self.id);
-        let item = move |name: &'static str, label: &'static str, glyph: Icon, run: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
+        let item = move |name: &'static str,
+                         label: &'static str,
+                         glyph: Icon,
+                         run: fn(
+            &mut Workbench,
+            SessionId,
+            &mut Window,
+            &mut Context<Workbench>,
+        )| {
             let bench = bench.clone();
-            MenuItem::new(name, label).icon(glyph).on_click(move |_, window, cx| {
-                bench.update(cx, |bench, cx| {
-                    if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                        terminal.menu = None;
-                    }
-                    run(bench, id, window, cx);
-                    bench.parts.redraw(&bench.parts.stage, cx);
+            MenuItem::new(name, label)
+                .icon(glyph)
+                .on_click(move |_, window, cx| {
+                    bench.update(cx, |bench, cx| {
+                        if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+                            terminal.menu = None;
+                        }
+                        run(bench, id, window, cx);
+                        bench.parts.redraw(&bench.parts.stage, cx);
+                    })
                 })
-            })
         };
         let close = self.bench.clone();
         div()
@@ -1034,31 +1475,58 @@ impl RenderOnce for TerminalMenu {
                 Menu::new()
                     .child(
                         item("terminal-copy", "Copy", Icon::Copy, |bench, id, _, _| {
-                            if let Some(selection) = bench.terminals.open.get(&id).and_then(|terminal| terminal.selection) {
-                                let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Copy(Some(selection))));
+                            if let Some(selection) = bench
+                                .terminals
+                                .open
+                                .get(&id)
+                                .and_then(|terminal| terminal.selection)
+                            {
+                                let _ = bench
+                                    .asks
+                                    .send(Ask::Terminal(id, TerminalAsk::Copy(Some(selection))));
                             }
                         })
                         .hint("⌘C")
                         .disabled(self.selection.is_none()),
                     )
-                    .child(item("terminal-paste", "Paste", Icon::Text, |bench, id, _, cx| paste(bench, id, cx)).hint("⌘V"))
                     .child(
-                        item("terminal-select-all", "Select All", Icon::Text, |bench, id, _, _| {
-                            if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                                terminal.select_all();
-                            }
+                        item("terminal-paste", "Paste", Icon::Text, |bench, id, _, cx| {
+                            paste(bench, id, cx)
                         })
+                        .hint("⌘V"),
+                    )
+                    .child(
+                        item(
+                            "terminal-select-all",
+                            "Select All",
+                            Icon::Text,
+                            |bench, id, _, _| {
+                                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+                                    terminal.select_all();
+                                }
+                            },
+                        )
                         .hint("⌘A"),
                     )
                     .separator(cx)
                     .child(item("terminal-find", "Find", Icon::Search, open_find).hint("⌘F"))
-                    .child(item("terminal-copy-scrollback", "Copy Scrollback", Icon::Copy, |bench, id, _, _| {
-                        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Copy(None)));
-                    }))
+                    .child(item(
+                        "terminal-copy-scrollback",
+                        "Copy Scrollback",
+                        Icon::Copy,
+                        |bench, id, _, _| {
+                            let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Copy(None)));
+                        },
+                    ))
                     .separator(cx)
-                    .child(item("terminal-clear", "Clear Terminal", Icon::Discard, |bench, id, _, _| {
-                        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Clear));
-                    })),
+                    .child(item(
+                        "terminal-clear",
+                        "Clear Terminal",
+                        Icon::Discard,
+                        |bench, id, _, _| {
+                            let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Clear));
+                        },
+                    )),
             )
     }
 }
@@ -1079,7 +1547,10 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
     };
     terminal.blink_from = Instant::now();
     if terminal.screen.header.modes & wire::MODE_FOCUS_REPORTS != 0 {
-        let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Input(TerminalInput::Focus { focused })));
+        let _ = bench.asks.send(Ask::Terminal(
+            id,
+            TerminalAsk::Input(TerminalInput::Focus { focused }),
+        ));
     }
     if focused {
         bench.terminals.focused = Some(id);
@@ -1089,8 +1560,13 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
     if bench.terminals.focused.is_some() && bench.terminals.blinking.is_none() {
         bench.terminals.blinking = Some(cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, cx| {
-                let terminal = bench.terminals.focused.and_then(|id| bench.terminals.open.get(&id));
-                let blinking = terminal.filter(|terminal| terminal.screen.header.cursor.shape & wire::CURSOR_BLINKS != 0);
+                let terminal = bench
+                    .terminals
+                    .focused
+                    .and_then(|id| bench.terminals.open.get(&id));
+                let blinking = terminal.filter(|terminal| {
+                    terminal.screen.header.cursor.shape & wire::CURSOR_BLINKS != 0
+                });
                 let wait = blinking.map(|terminal| BLINK - phase(terminal) + BLINK_MARGIN);
                 if wait.is_none() {
                     bench.terminals.blinking = None;

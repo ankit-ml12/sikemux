@@ -1,5 +1,8 @@
 use gpui_kit::prelude::FluentBuilder;
-use gpui_kit::{div, px, AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window};
+use gpui_kit::{
+    div, px, AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce,
+    SharedString, Styled, Window,
+};
 use smallvec::SmallVec;
 
 use super::{mark_box, meta, text};
@@ -26,7 +29,10 @@ pub fn pill(cx: &App) -> Div {
         .border_1()
         .border_color(t.border)
         .rounded_full()
-        .bg(Hsla { a: 0.62, ..t.surface_sunken })
+        .bg(Hsla {
+            a: 0.62,
+            ..t.surface_sunken
+        })
         .backdrop_blur(px(14.))
 }
 
@@ -100,7 +106,12 @@ impl RenderOnce for PaneHeader {
                     .pr(px(4.))
                     .gap(px(8.))
                     .children(self.mark.map(|mark| mark_box(18., mark)))
-                    .child(text(self.title, 13., FontWeight::MEDIUM).overflow_hidden().text_ellipsis().text_color(primary))
+                    .child(
+                        text(self.title, 13., FontWeight::MEDIUM)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .text_color(primary),
+                    )
                     .children(self.name.map(|name| meta(name, cx).text_size(px(12.))))
                     .children(self.actions),
             )
@@ -109,8 +120,13 @@ impl RenderOnce for PaneHeader {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .children(self.controls.map(|controls| pill(cx).px(px(3.)).gap(px(6.)).child(controls)))
-                    .when_some(self.side, |end, side| end.child(pill(cx).size(px(32.)).justify_center().child(side))),
+                    .children(
+                        self.controls
+                            .map(|controls| pill(cx).px(px(3.)).gap(px(6.)).child(controls)),
+                    )
+                    .when_some(self.side, |end, side| {
+                        end.child(pill(cx).size(px(32.)).justify_center().child(side))
+                    }),
             )
     }
 }

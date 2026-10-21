@@ -27,7 +27,11 @@ fn score_field(query: &Finder, text: &[u8]) -> Option<u32> {
     let (mut from, mut score, mut previous) = (0, 0, usize::MAX - 1);
     for &letter in query.needle() {
         let found = from + memchr::memchr(letter, &text[from..])?;
-        score += if found == previous.wrapping_add(1) { 0 } else { found as u32 };
+        score += if found == previous.wrapping_add(1) {
+            0
+        } else {
+            found as u32
+        };
         previous = found;
         from = found + 1;
     }
@@ -48,10 +52,15 @@ pub fn rank_paths(query: &str, paths: &[String], limit: usize) -> Vec<usize> {
     let mut substring = false;
     for (place, path) in paths.iter().enumerate() {
         let path = lower(path, &mut buffer);
-        let Some(whole) = score_field(&query, &path).filter(|whole| !substring || *whole < SUBSEQUENCE) else {
+        let Some(whole) =
+            score_field(&query, &path).filter(|whole| !substring || *whole < SUBSEQUENCE)
+        else {
             continue;
         };
-        let name = path.iter().rposition(|&byte| byte == b'/').map_or(&path[..], |slash| &path[slash + 1..]);
+        let name = path
+            .iter()
+            .rposition(|&byte| byte == b'/')
+            .map_or(&path[..], |slash| &path[slash + 1..]);
         let score = score_field(&query, name).map_or(whole + 1, |name| name.min(whole + 1));
         if score < SUBSEQUENCE {
             if !substring {
@@ -66,5 +75,8 @@ pub fn rank_paths(query: &str, paths: &[String], limit: usize) -> Vec<usize> {
             best.pop();
         }
     }
-    best.into_sorted_vec().into_iter().map(|(_, place)| place).collect()
+    best.into_sorted_vec()
+        .into_iter()
+        .map(|(_, place)| place)
+        .collect()
 }

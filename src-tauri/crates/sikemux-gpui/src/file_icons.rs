@@ -29,7 +29,10 @@ impl Bundle {
     fn language_of(&self, name: &str) -> Option<&str> {
         let name = name.to_lowercase();
         let name = name.rsplit(['/', '\\']).next().unwrap_or_default();
-        let extension = name.rfind('.').filter(|dot| *dot > 0).map_or("", |dot| &name[dot + 1..]);
+        let extension = name
+            .rfind('.')
+            .filter(|dot| *dot > 0)
+            .map_or("", |dot| &name[dot + 1..]);
         self.language_names
             .get(name)
             .map(String::as_str)
@@ -37,7 +40,11 @@ impl Bundle {
             .or_else(|| name.starts_with(".env.").then_some("dotenv"))
             .or_else(|| self.known.get(name).map(String::as_str))
             .or_else(|| self.language_extensions.get(extension).map(String::as_str))
-            .or_else(|| (!extension.is_empty()).then(|| self.known.get(extension).map(String::as_str)).flatten())
+            .or_else(|| {
+                (!extension.is_empty())
+                    .then(|| self.known.get(extension).map(String::as_str))
+                    .flatten()
+            })
     }
 
     /// The icon a file shows, picked as the app's `fileIconOf` picks it: by its whole name,
@@ -52,7 +59,9 @@ impl Bundle {
                 return icon;
             }
         }
-        self.language_of(name).and_then(|language| self.languages.get(language)).unwrap_or(&self.file)
+        self.language_of(name)
+            .and_then(|language| self.languages.get(language))
+            .unwrap_or(&self.file)
     }
 }
 
@@ -84,7 +93,13 @@ pub fn icon(name: &str, cx: &App) -> Option<Arc<Image>> {
         return Some(image.clone());
     }
     let svg = bundle.icons.get(icon)?;
-    let image = Arc::new(Image::from_bytes(ImageFormat::Svg, svg.clone().into_bytes()));
-    icons.images.borrow_mut().insert(icon.to_owned(), image.clone());
+    let image = Arc::new(Image::from_bytes(
+        ImageFormat::Svg,
+        svg.clone().into_bytes(),
+    ));
+    icons
+        .images
+        .borrow_mut()
+        .insert(icon.to_owned(), image.clone());
     Some(image)
 }

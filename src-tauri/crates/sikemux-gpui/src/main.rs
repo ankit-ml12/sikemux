@@ -6,7 +6,10 @@ fn main() {
     // starts or upgrades the core the Mac app uses.
     if std::env::var_os(sikemux_process::vars::CONFIG_DIR).is_none() {
         if let Some(home) = sikemux_process::paths::home() {
-            std::env::set_var(sikemux_process::vars::CONFIG_DIR, home.join(".config").join("sikemux-gpui"));
+            std::env::set_var(
+                sikemux_process::vars::CONFIG_DIR,
+                home.join(".config").join("sikemux-gpui"),
+            );
         }
     }
     let link = core::start(core::Home::default());

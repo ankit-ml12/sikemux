@@ -5,11 +5,15 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use sikemux_client::client::{Attached, ClientError, ClientEvent, CoreClient};
+use sikemux_host::cli_paths;
 use sikemux_host::core_start::{self, StartError};
 use sikemux_host::login_item::{self, CoreLaunch};
-use sikemux_host::cli_paths;
-use sikemux_wire::grid::{decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput};
-use sikemux_wire::protocol::{ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId};
+use sikemux_wire::grid::{
+    decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
+};
+use sikemux_wire::protocol::{
+    ChatAttachment, ChatMark, DeviceView, Event, Request, SessionId, StreamId,
+};
 use tokio::sync::mpsc;
 
 pub enum Update {
@@ -25,17 +29,27 @@ pub enum Update {
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
     /// The core said something under a followed topic moved; no paths means anything may have.
-    Changed { topic: String, project: Option<String>, paths: Option<Vec<String>> },
+    Changed {
+        topic: String,
+        project: Option<String>,
+        paths: Option<Vec<String>>,
+    },
 }
 
 pub enum ChatNews {
     Attached(ChatAttachment),
     /// The chat's changes numbered `seq`, a list of `ChatChange` as JSON.
-    Changes { seq: u64, changes: Value },
+    Changes {
+        seq: u64,
+        changes: Value,
+    },
     /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
     Page(Value),
     /// A `ToolDetail` as JSON.
-    Detail { tool: String, detail: Value },
+    Detail {
+        tool: String,
+        detail: Value,
+    },
 }
 
 /// What an attached terminal sends, decoded on the core's thread.
@@ -55,12 +69,21 @@ pub enum TerminalAsk {
     /// The window drew this frame, so the core may send the next.
     Ack(u32),
     Resize(u16, u16),
-    Lines { start: u64, count: u32 },
+    Lines {
+        start: u64,
+        count: u32,
+    },
     /// Its text between two cells, or all of it, sent back as `Screenful::Copied`.
     Copy(Option<(GridPoint, GridPoint)>),
     /// Matches of `query` in the screen and history, the current one the
     /// first after `from`, or before it going `backwards`. Sent back as `Screenful::Found`.
-    Find { query: String, options: FindOptions, from: Option<GridPoint>, backwards: bool, inclusive: bool },
+    Find {
+        query: String,
+        options: FindOptions,
+        from: Option<GridPoint>,
+        backwards: bool,
+        inclusive: bool,
+    },
     Clear,
 }
 
@@ -77,7 +100,12 @@ pub struct Watch {
 
 impl Watch {
     pub fn new(method: &'static str, params: Value, topics: &'static [&'static str]) -> Self {
-        Self { method, params, topics, generation: 0 }
+        Self {
+            method,
+            params,
+            topics,
+            generation: 0,
+        }
     }
 }
 
@@ -87,9 +115,16 @@ pub enum Ask {
     Watch(&'static str, Watch),
     /// One of the core's methods, for something the person did. What it changes
     /// comes back with the next view.
-    Call { method: &'static str, params: Value },
+    Call {
+        method: &'static str,
+        params: Value,
+    },
     /// A call whose answer the window waits for, sent back under `key`.
-    Answer { key: &'static str, method: &'static str, params: Value },
+    Answer {
+        key: &'static str,
+        method: &'static str,
+        params: Value,
+    },
     Terminal(SessionId, TerminalAsk),
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
@@ -98,19 +133,51 @@ pub enum Ask {
 
 pub enum ChatAsk {
     /// Starts hearing a chat's changes, from `since` when the window held it before.
-    Attach { agent: String, since: Option<ChatMark> },
-    Detach { agent: String },
-    History { agent: String, feed: String, before: u64, turns: u32 },
-    Prompt { agent: String, text: String },
-    Cancel { agent: String },
+    Attach {
+        agent: String,
+        since: Option<ChatMark>,
+    },
+    Detach {
+        agent: String,
+    },
+    History {
+        agent: String,
+        feed: String,
+        before: u64,
+        turns: u32,
+    },
+    Prompt {
+        agent: String,
+        text: String,
+    },
+    Cancel {
+        agent: String,
+    },
     /// The person's answer to a tool's request for permission; none turns it down.
-    Permission { agent: String, request: String, option: Option<String> },
-    Mode { agent: String, mode: String },
+    Permission {
+        agent: String,
+        request: String,
+        option: Option<String>,
+    },
+    Mode {
+        agent: String,
+        mode: String,
+    },
     /// One of the session's settings, such as its model, set to one of its choices.
-    Config { agent: String, config: String, value: String },
-    StopTask { agent: String, task: String },
+    Config {
+        agent: String,
+        config: String,
+        value: String,
+    },
+    StopTask {
+        agent: String,
+        task: String,
+    },
     /// What a tool call changed and printed, which its row opens on.
-    Detail { agent: String, tool: String },
+    Detail {
+        agent: String,
+        tool: String,
+    },
 }
 
 pub struct Link {
@@ -119,7 +186,11 @@ pub struct Link {
 }
 
 /// The app's own identifier, so its folders and its core's login item are never the Mac app's.
-pub const IDENTIFIER: &str = if cfg!(debug_assertions) { "com.nodelike.sikemux.gpui.dev" } else { "com.nodelike.sikemux.gpui" };
+pub const IDENTIFIER: &str = if cfg!(debug_assertions) {
+    "com.nodelike.sikemux.gpui.dev"
+} else {
+    "com.nodelike.sikemux.gpui"
+};
 
 /// Where this build's core listens, and how it is started when none does.
 pub struct Home {
@@ -131,15 +202,25 @@ pub struct Home {
 impl Default for Home {
     fn default() -> Self {
         let library = sikemux_process::paths::home().map(|home| home.join("Library"));
-        let support = library.as_ref().map(|library| library.join("Application Support").join(IDENTIFIER));
+        let support = library
+            .as_ref()
+            .map(|library| library.join("Application Support").join(IDENTIFIER));
         let socket = sikemux_core::default_socket_path().unwrap_or_default();
         let launch = cli_paths::cli_executable_path().map(|binary| CoreLaunch {
             binary,
             socket: socket.clone(),
-            log: library.map_or_else(std::env::temp_dir, |library| library.join("Logs").join(IDENTIFIER)).join("core.log"),
+            log: library
+                .map_or_else(std::env::temp_dir, |library| {
+                    library.join("Logs").join(IDENTIFIER)
+                })
+                .join("core.log"),
             args: login_item::core_args(support.clone()),
         });
-        Self { socket, launch, manifest_dir: support.map(|support| support.join("agent-detection")) }
+        Self {
+            socket,
+            launch,
+            manifest_dir: support.map(|support| support.join("agent-detection")),
+        }
     }
 }
 
@@ -160,13 +241,19 @@ pub fn start(home: Home) -> Link {
     Link { updates, asks }
 }
 
-async fn run(home: Home, updates: mpsc::UnboundedSender<Update>, mut asks: mpsc::UnboundedReceiver<Ask>) {
+async fn run(
+    home: Home,
+    updates: mpsc::UnboundedSender<Update>,
+    mut asks: mpsc::UnboundedReceiver<Ask>,
+) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
     let mut followed: Vec<&'static str> = Vec::new();
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
     loop {
         if let Some(launch) = &home.launch {
-            match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false).await {
+            match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false)
+                .await
+            {
                 Ok(()) | Err(StartError::Unreachable(_)) => {}
                 Err(StartError::Incompatible { reason, .. }) => {
                     eprintln!("sikemux: the core cannot be used: {reason}");
@@ -269,41 +356,84 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
     let (agent, news) = match ask {
         ChatAsk::Attach { agent, since } => match attach(client, &agent, since).await {
             Ok(attachment) => (agent, ChatNews::Attached(attachment)),
-            Err(error) => return eprintln!("sikemux: the core refused to attach chat {agent}: {error}"),
+            Err(error) => {
+                return eprintln!("sikemux: the core refused to attach chat {agent}: {error}")
+            }
         },
-        ChatAsk::History { agent, feed, before, turns } => {
+        ChatAsk::History {
+            agent,
+            feed,
+            before,
+            turns,
+        } => {
             let page = client.acp_history(agent.clone(), feed, before, turns).await;
             (agent, ChatNews::Page(page.unwrap_or_default()))
         }
         ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
-        ChatAsk::Prompt { agent, text } => return report("prompt", client.acp_prompt(agent, None, text, Vec::new(), Vec::new()).await),
+        ChatAsk::Prompt { agent, text } => {
+            return report(
+                "prompt",
+                client
+                    .acp_prompt(agent, None, text, Vec::new(), Vec::new())
+                    .await,
+            )
+        }
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
-        ChatAsk::Permission { agent, request, option } => {
-            return report("answer", client.acp_permission_reply(agent, request, option).await)
+        ChatAsk::Permission {
+            agent,
+            request,
+            option,
+        } => {
+            return report(
+                "answer",
+                client.acp_permission_reply(agent, request, option).await,
+            )
         }
-        ChatAsk::Config { agent, config, value } => {
-            return report("change the settings of", client.acp_set_config(agent, config, value).await.map(drop))
+        ChatAsk::Config {
+            agent,
+            config,
+            value,
+        } => {
+            return report(
+                "change the settings of",
+                client.acp_set_config(agent, config, value).await.map(drop),
+            )
         }
-        ChatAsk::StopTask { agent, task } => return report("stop a task of", client.acp_stop_task(agent, task).await),
+        ChatAsk::StopTask { agent, task } => {
+            return report("stop a task of", client.acp_stop_task(agent, task).await)
+        }
         ChatAsk::Detail { agent, tool } => {
             let asked = json!({ "agentId": agent, "toolCallId": tool });
             match client.call("chatToolDetail", asked).await {
                 Ok(detail) => (agent, ChatNews::Detail { tool, detail }),
-                Err(error) => return eprintln!("sikemux: the core refused a tool's detail: {error}"),
+                Err(error) => {
+                    return eprintln!("sikemux: the core refused a tool's detail: {error}")
+                }
             }
         }
-        ChatAsk::Mode { agent, mode } => return report("switch the mode of", client.acp_set_permission_mode(agent, mode).await),
+        ChatAsk::Mode { agent, mode } => {
+            return report(
+                "switch the mode of",
+                client.acp_set_permission_mode(agent, mode).await,
+            )
+        }
     };
     let _ = updates.send(Update::Chat(agent, news));
 }
 
 /// Attaches to a chat, starting it again first when its agent has gone to sleep.
-async fn attach(client: &CoreClient, agent: &str, since: Option<ChatMark>) -> Result<ChatAttachment, ClientError> {
+async fn attach(
+    client: &CoreClient,
+    agent: &str,
+    since: Option<ChatMark>,
+) -> Result<ChatAttachment, ClientError> {
     let attached = client.acp_attach_since(agent.to_owned(), since).await?;
     if !matches!(attached, ChatAttachment::Missing) {
         return Ok(attached);
     }
-    client.call("startChat", json!({ "agentId": agent })).await?;
+    client
+        .call("startChat", json!({ "agentId": agent }))
+        .await?;
     let attached = client.acp_attach_since(agent.to_owned(), None).await?;
     if matches!(attached, ChatAttachment::Missing) {
         eprintln!("sikemux: chat {agent} stopped as soon as it started");
@@ -389,7 +519,9 @@ impl Streams {
                 tokio::spawn(async move {
                     match client.attach(session).await {
                         Ok(attached) => drop(settle.send(Settled::Attached(session, attached))),
-                        Err(error) => eprintln!("sikemux: terminal {session} would not attach: {error}"),
+                        Err(error) => {
+                            eprintln!("sikemux: terminal {session} would not attach: {error}")
+                        }
                     }
                 });
             }
@@ -408,12 +540,23 @@ impl Streams {
                     client.ack(stream, frame);
                 }
             }
-            TerminalAsk::Input(input) => drop(tokio::spawn(async move { client.input(session, input).await })),
-            TerminalAsk::Resize(cols, rows) => drop(tokio::spawn(async move { client.resize(session, cols, rows).await })),
+            TerminalAsk::Input(input) => {
+                drop(tokio::spawn(
+                    async move { client.input(session, input).await },
+                ))
+            }
+            TerminalAsk::Resize(cols, rows) => drop(tokio::spawn(async move {
+                client.resize(session, cols, rows).await
+            })),
             TerminalAsk::Lines { start, count } => {
                 let updates = self.updates.clone();
                 tokio::spawn(async move {
-                    if let Some(lines) = client.lines(session, start, count).await.ok().and_then(|bytes| decode_lines(&bytes)) {
+                    if let Some(lines) = client
+                        .lines(session, start, count)
+                        .await
+                        .ok()
+                        .and_then(|bytes| decode_lines(&bytes))
+                    {
                         let _ = updates.send(Update::Terminal(session, Screenful::Lines(lines)));
                     }
                 });
@@ -426,9 +569,22 @@ impl Streams {
                     }
                 });
             }
-            TerminalAsk::Find { query, options, from, backwards, inclusive } => {
+            TerminalAsk::Find {
+                query,
+                options,
+                from,
+                backwards,
+                inclusive,
+            } => {
                 let updates = self.updates.clone();
-                let request = Request::TerminalFind { id: session, query, options, from, backwards, inclusive };
+                let request = Request::TerminalFind {
+                    id: session,
+                    query,
+                    options,
+                    from,
+                    backwards,
+                    inclusive,
+                };
                 tokio::spawn(async move {
                     let found = client.find(request).await.unwrap_or_default();
                     let _ = updates.send(Update::Terminal(session, Screenful::Found(found)));
@@ -446,7 +602,12 @@ fn read(
     current: &Arc<Mutex<HashMap<&'static str, u64>>>,
     updates: &mpsc::UnboundedSender<Update>,
 ) {
-    let (client, updates, watch, current) = (client.clone(), updates.clone(), watch.clone(), current.clone());
+    let (client, updates, watch, current) = (
+        client.clone(),
+        updates.clone(),
+        watch.clone(),
+        current.clone(),
+    );
     tokio::spawn(async move {
         let value = match client.call(watch.method, watch.params).await {
             Ok(value) => value,

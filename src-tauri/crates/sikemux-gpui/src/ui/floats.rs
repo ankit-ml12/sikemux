@@ -3,9 +3,9 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div, ElementId,
-    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    SharedString, Styled, Window,
+    div, px, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div, ElementId, FontWeight,
+    Hsla, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
+    Window,
 };
 use smallvec::SmallVec;
 
@@ -18,7 +18,10 @@ use crate::theme::{Tokens, RADIUS_2, RADIUS_4};
 pub fn float(cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
-        .bg(Hsla { a: 0.94, ..t.surface_overlay })
+        .bg(Hsla {
+            a: 0.94,
+            ..t.surface_overlay
+        })
         .border_1()
         .border_color(t.border)
         .rounded(RADIUS_4)
@@ -34,12 +37,21 @@ pub struct Menu {
 
 impl Menu {
     pub fn new() -> Self {
-        Self { items: SmallVec::new() }
+        Self {
+            items: SmallVec::new(),
+        }
     }
 
     /// A hairline between groups of items.
     pub fn separator(mut self, cx: &App) -> Self {
-        self.items.push(div().h(px(1.)).mx(px(2.)).my(px(4.)).bg(Tokens::get(cx).border).into_any_element());
+        self.items.push(
+            div()
+                .h(px(1.))
+                .mx(px(2.))
+                .my(px(4.))
+                .bg(Tokens::get(cx).border)
+                .into_any_element(),
+        );
         self
     }
 }
@@ -117,7 +129,10 @@ impl MenuItem {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -143,8 +158,12 @@ impl RenderOnce for MenuItem {
             .text_size(px(12.))
             .line_height(px(17.))
             .text_color(if self.disabled { t.text_tertiary } else { rest })
-            .when(!self.disabled, |item| item.hover(move |style| style.bg(wash).text_color(hover)))
-            .when_some(on_click, |item, handler| item.on_click(move |event, window, cx| handler(event, window, cx)))
+            .when(!self.disabled, |item| {
+                item.hover(move |style| style.bg(wash).text_color(hover))
+            })
+            .when_some(on_click, |item, handler| {
+                item.on_click(move |event, window, cx| handler(event, window, cx))
+            })
             .children(self.icon.map(|glyph| {
                 div().min_w(px(14.)).mr(px(-2.)).child(
                     icon(glyph, 13.)
@@ -152,10 +171,26 @@ impl RenderOnce for MenuItem {
                         .group_hover(GROUP, move |style| style.text_color(hover)),
                 )
             }))
-            .children(self.mark.map(|mark| div().min_w(px(14.)).mr(px(-2.)).child(mark)))
-            .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(self.label))
-            .children(self.hint.map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(t.text_tertiary)))
-            .when(self.checked, |item| item.child(icon(Icon::Check, 11.).text_color(t.accent)))
+            .children(
+                self.mark
+                    .map(|mark| div().min_w(px(14.)).mr(px(-2.)).child(mark)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(self.label),
+            )
+            .children(
+                self.hint
+                    .map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(t.text_tertiary)),
+            )
+            .when(self.checked, |item| {
+                item.child(icon(Icon::Check, 11.).text_color(t.accent))
+            })
     }
 }
 
@@ -177,7 +212,10 @@ impl Render for TooltipView {
             .rounded(RADIUS_2)
             .bg(t.surface_tooltip)
             .border_1()
-            .border_color(Hsla { a: 0.72, ..t.border_strong })
+            .border_color(Hsla {
+                a: 0.72,
+                ..t.border_strong
+            })
             .text_size(px(11.5))
             .line_height(px(16.))
             .text_color(t.text_primary)

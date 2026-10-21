@@ -41,9 +41,16 @@ pub fn image(face: &AgentFace, group: AgentGroup, cx: &App) -> Option<Arc<Image>
         return Some(image.clone());
     }
     let mut shapes = faces.shapes.borrow_mut();
-    let drawings = shapes.entry(shape.clone()).or_insert_with(|| unpack(&shape)).as_ref()?;
+    let drawings = shapes
+        .entry(shape.clone())
+        .or_insert_with(|| unpack(&shape))
+        .as_ref()?;
     let drawing = drawings.get(face.color as usize)?.get(&state)?;
-    let cropped = drawing.replacen(r#"viewBox="0 0 24 24""#, &format!(r#"viewBox="{}""#, face.view_box), 1);
+    let cropped = drawing.replacen(
+        r#"viewBox="0 0 24 24""#,
+        &format!(r#"viewBox="{}""#, face.view_box),
+        1,
+    );
     let image = Arc::new(Image::from_bytes(ImageFormat::Svg, cropped.into_bytes()));
     faces.images.borrow_mut().insert(key, image.clone());
     Some(image)

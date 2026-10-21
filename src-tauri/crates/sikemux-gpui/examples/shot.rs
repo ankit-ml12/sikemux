@@ -13,23 +13,32 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    point, px, size, AppContext, HeadlessAppContext, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
+    point, px, size, AppContext, HeadlessAppContext, Keystroke, Modifiers, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent,
+    TouchPhase,
 };
-use sikemux_wire::protocol::AccountInfo;
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
+use sikemux_wire::protocol::AccountInfo;
 
 fn main() -> anyhow::Result<()> {
     let out = std::env::args().nth(1).unwrap_or_else(|| "shot.png".into());
-    let wait: f64 = std::env::args().nth(2).and_then(|seconds| seconds.parse().ok()).unwrap_or(3.);
+    let wait: f64 = std::env::args()
+        .nth(2)
+        .and_then(|seconds| seconds.parse().ok())
+        .unwrap_or(3.);
     let option = |name: &str| {
         let args: Vec<String> = std::env::args().collect();
-        args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1).cloned())
+        args.iter()
+            .position(|arg| arg == name)
+            .and_then(|at| args.get(at + 1).cloned())
     };
     let account = option("--account");
     let files = std::env::args().any(|arg| arg == "--files");
     let scroll: Option<f32> = option("--scroll").and_then(|pixels| pixels.parse().ok());
-    let steps: Vec<String> = std::env::args().skip_while(|arg| arg != "--then").skip(1).collect();
+    let steps: Vec<String> = std::env::args()
+        .skip_while(|arg| arg != "--then")
+        .skip(1)
+        .collect();
     let bench = Rc::new(RefCell::new(None));
     let kept = bench.clone();
     let mut cx = HeadlessAppContext::with_platform(
@@ -61,10 +70,12 @@ fn main() -> anyhow::Result<()> {
     })?;
     if files {
         if let Some(bench) = bench.borrow().clone() {
-            cx.update(|cx| bench.update(cx, |bench, cx| {
-                bench.rail_page = workbench::RailPage::Files;
-                cx.notify();
-            }));
+            cx.update(|cx| {
+                bench.update(cx, |bench, cx| {
+                    bench.rail_page = workbench::RailPage::Files;
+                    cx.notify();
+                })
+            });
         }
     }
     let started = Instant::now();
@@ -73,14 +84,24 @@ fn main() -> anyhow::Result<()> {
         std::thread::sleep(Duration::from_millis(50));
     }
     if let (Some(account), Some(bench)) = (account, bench.borrow().clone()) {
-        let (name, email) = account.split_once(" <").map_or((account.as_str(), ""), |(name, email)| (name, email.trim_end_matches('>')));
-        let shown = AccountInfo { name: Some(name.into()), email: Some(email.into()), picture_hash: None };
-        cx.update(|cx| bench.update(cx, |bench, cx| {
-            if let Some(view) = bench.view.as_mut() {
-                view.account = Some(Box::new(shown));
-            }
-            cx.notify();
-        }));
+        let (name, email) = account
+            .split_once(" <")
+            .map_or((account.as_str(), ""), |(name, email)| {
+                (name, email.trim_end_matches('>'))
+            });
+        let shown = AccountInfo {
+            name: Some(name.into()),
+            email: Some(email.into()),
+            picture_hash: None,
+        };
+        cx.update(|cx| {
+            bench.update(cx, |bench, cx| {
+                if let Some(view) = bench.view.as_mut() {
+                    view.account = Some(Box::new(shown));
+                }
+                cx.notify();
+            })
+        });
     }
     cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
     if let Some(pixels) = scroll {
@@ -102,18 +123,48 @@ fn main() -> anyhow::Result<()> {
         cx.update_window(window.into(), |_, window, cx| -> anyhow::Result<()> {
             match verb {
                 "click" => {
-                    let (x, y) = rest.split_once(',').ok_or_else(|| anyhow::anyhow!("click x,y"))?;
+                    let (x, y) = rest
+                        .split_once(',')
+                        .ok_or_else(|| anyhow::anyhow!("click x,y"))?;
                     let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
                     let modifiers = Modifiers::default();
-                    window.dispatch_event(PlatformInput::MouseMove(MouseMoveEvent { position, pressed_button: None, modifiers }), cx);
+                    window.dispatch_event(
+                        PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            pressed_button: None,
+                            modifiers,
+                        }),
+                        cx,
+                    );
                     window.draw(cx).clear(cx);
                     let (button, click_count) = (MouseButton::Left, 1);
-                    window.dispatch_event(PlatformInput::MouseDown(MouseDownEvent { button, position, modifiers, click_count, first_mouse: false }), cx);
-                    window.dispatch_event(PlatformInput::MouseUp(MouseUpEvent { button, position, modifiers, click_count }), cx);
+                    window.dispatch_event(
+                        PlatformInput::MouseDown(MouseDownEvent {
+                            button,
+                            position,
+                            modifiers,
+                            click_count,
+                            first_mouse: false,
+                        }),
+                        cx,
+                    );
+                    window.dispatch_event(
+                        PlatformInput::MouseUp(MouseUpEvent {
+                            button,
+                            position,
+                            modifiers,
+                            click_count,
+                        }),
+                        cx,
+                    );
                 }
                 "type" => {
                     for letter in rest.chars() {
-                        let key = if letter == ' ' { "space".to_owned() } else { letter.to_string() };
+                        let key = if letter == ' ' {
+                            "space".to_owned()
+                        } else {
+                            letter.to_string()
+                        };
                         window.dispatch_keystroke(Keystroke::parse(&key)?, cx);
                     }
                 }
@@ -124,7 +175,11 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         })??;
-        let pause = if verb == "wait" { rest.parse().unwrap_or(1.) } else { 0.3 };
+        let pause = if verb == "wait" {
+            rest.parse().unwrap_or(1.)
+        } else {
+            0.3
+        };
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs_f64(pause) {
             cx.run_until_parked();

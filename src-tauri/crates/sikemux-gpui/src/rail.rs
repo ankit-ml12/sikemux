@@ -40,19 +40,24 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .child(
                     Group::new("Projects", "no projects")
                         .first()
-                        .actions(actions(Some("⌘O"), [("add-project", Icon::Plus, "Open project — ⌘O")], cx))
-                        .child(
-                            div()
-                                .mb(px(6.))
-                                .child(Button::new("new-space", "New space", Variant::Dashed).icon(Icon::Plus)),
-                        )
+                        .actions(actions(
+                            Some("⌘O"),
+                            [("add-project", Icon::Plus, "Open project — ⌘O")],
+                            cx,
+                        ))
+                        .child(div().mb(px(6.)).child(
+                            Button::new("new-space", "New space", Variant::Dashed).icon(Icon::Plus),
+                        ))
                         .children(projects),
                 )
                 .child(
                     Group::new("Hosts", "no hosts")
                         .actions(actions(
                             Some("⌘⇧S"),
-                            [("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"), ("add-host", Icon::Plus, "Find a host — ⌘⇧S")],
+                            [
+                                ("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"),
+                                ("add-host", Icon::Plus, "Find a host — ⌘⇧S"),
+                            ],
                             cx,
                         ))
                         .child(this_host(bench, cx))
@@ -61,7 +66,11 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .child(Group::new("Plugins", "no plugins").children(plugins(bench, cx)))
                 .child(
                     Group::new("Terminals", "no terminals")
-                        .actions(actions(None, [("add-terminal", Icon::Plus, "New terminal")], cx))
+                        .actions(actions(
+                            None,
+                            [("add-terminal", Icon::Plus, "New terminal")],
+                            cx,
+                        ))
                         .children(terminals(bench, cx)),
                 ),
         )
@@ -71,12 +80,25 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
 /// The host this window runs on, where new work starts.
 fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let agents = bench.view.as_ref().map_or(0, |view| view.workspace.agents.len());
+    let agents = bench
+        .view
+        .as_ref()
+        .map_or(0, |view| view.workspace.agents.len());
     Row::new("this-host", "This host")
-        .mark(16., ui::icon(Icon::Laptop, 14.).text_color(t.text_secondary).group_hover(ui::ROW, move |style| style.text_color(t.text_primary)))
+        .mark(
+            16.,
+            ui::icon(Icon::Laptop, 14.)
+                .text_color(t.text_secondary)
+                .group_hover(ui::ROW, move |style| style.text_color(t.text_primary)),
+        )
         .quiet()
         .tag("here")
-        .when(agents > 0, |row| row.child(ui::meta(format!("{agents} {}", if agents == 1 { "agent" } else { "agents" }), cx)))
+        .when(agents > 0, |row| {
+            row.child(ui::meta(
+                format!("{agents} {}", if agents == 1 { "agent" } else { "agents" }),
+                cx,
+            ))
+        })
         .status(Some(ui::dot(Tone::Ok, cx)))
 }
 
@@ -100,7 +122,10 @@ fn hosts(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
                 _ => None,
             };
             Row::new(SharedString::from(format!("host-{name}")), name)
-                .mark(16., ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }))
+                .mark(
+                    16.,
+                    ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }),
+                )
                 .quiet()
                 .children(detail.map(|detail| ui::meta(detail, cx)))
                 .status(Some(ui::dot(tone, cx)))
@@ -116,13 +141,19 @@ fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
         .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
         .filter_map(|plugin| {
             let mark = plugin_mark(plugin["id"].as_str()?)?;
-            let tone = plugin["signedIn"].as_bool().map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
+            let tone =
+                plugin["signedIn"]
+                    .as_bool()
+                    .map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
             Some(
-                Row::new(SharedString::from(format!("plugin-{}", plugin["id"].as_str()?)), plugin["name"].as_str()?.to_owned())
-                    .mark(16., ui::picture(mark, 13., ink))
-                    .quiet()
-                    .status(tone.map(|tone| ui::dot(tone, cx)))
-                    .into_any_element(),
+                Row::new(
+                    SharedString::from(format!("plugin-{}", plugin["id"].as_str()?)),
+                    plugin["name"].as_str()?.to_owned(),
+                )
+                .mark(16., ui::picture(mark, 13., ink))
+                .quiet()
+                .status(tone.map(|tone| ui::dot(tone, cx)))
+                .into_any_element(),
             )
         })
         .collect()
@@ -152,10 +183,13 @@ fn terminals(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
         .loose_terminals()
         .into_iter()
         .map(|session| {
-            Row::new(SharedString::from(format!("terminal-{}", session.id)), session.rail_name.clone().unwrap_or_default())
-                .mark(16., ui::icon(Icon::Terminal, 13.).text_color(live))
-                .quiet()
-                .into_any_element()
+            Row::new(
+                SharedString::from(format!("terminal-{}", session.id)),
+                session.rail_name.clone().unwrap_or_default(),
+            )
+            .mark(16., ui::icon(Icon::Terminal, 13.).text_color(live))
+            .quiet()
+            .into_any_element()
         })
         .collect()
 }
@@ -178,7 +212,11 @@ fn masthead(bench: &Workbench, cx: &App) -> impl IntoElement {
         .border_b_1()
         .border_color(t.border)
         .child(ui::icon(Icon::Logo, 14.).text_color(t.accent))
-        .child(ui::text("Sikemux", 13., FontWeight::SEMIBOLD).text_color(t.text_primary).ml(px(1.)))
+        .child(
+            ui::text("Sikemux", 13., FontWeight::SEMIBOLD)
+                .text_color(t.text_primary)
+                .ml(px(1.)),
+        )
         .child(
             div()
                 .flex()
@@ -197,7 +235,11 @@ fn masthead(bench: &Workbench, cx: &App) -> impl IntoElement {
                         .text_color(t.text_tertiary)
                 })),
         )
-        .child(div().ml_auto().child(IconButton::new("hide-side-rail", Icon::PanelLeft, "Hide the side rail")))
+        .child(div().ml_auto().child(IconButton::new(
+            "hide-side-rail",
+            Icon::PanelLeft,
+            "Hide the side rail",
+        )))
 }
 
 /// `0.4.0-nightly.10` as the release `0.4.0` and the channel `nightly 10`.
@@ -208,7 +250,11 @@ fn split_version(version: &str) -> (String, Option<String>) {
     }
 }
 
-fn actions<const N: usize>(keys: Option<&'static str>, buttons: [(&'static str, Icon, &'static str); N], cx: &App) -> impl IntoElement {
+fn actions<const N: usize>(
+    keys: Option<&'static str>,
+    buttons: [(&'static str, Icon, &'static str); N],
+    cx: &App,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -217,7 +263,11 @@ fn actions<const N: usize>(keys: Option<&'static str>, buttons: [(&'static str, 
         .children(buttons.map(|(id, glyph, label)| IconButton::new(id, glyph, label).small()))
 }
 
-fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workbench>) -> impl IntoElement {
+fn project_tree(
+    bench: &Workbench,
+    project: &ProjectInfo,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let active = bench.project().is_some_and(|front| front.id == project.id);
     let agents = bench.agents_of(&project.id);
@@ -226,16 +276,28 @@ fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workb
         .flex()
         .flex_col()
         .child(
-            Row::new(SharedString::from(format!("project-{}", project.id)), project.name.clone())
-                .mark(16., ui::icon(Icon::Folder, 13.).text_color(t.live))
-                .quiet()
-                .bold(active)
-                .chosen(active)
-                .padding_right(4.)
-                .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
-                .child(faces(&agents, cx)),
+            Row::new(
+                SharedString::from(format!("project-{}", project.id)),
+                project.name.clone(),
+            )
+            .mark(16., ui::icon(Icon::Folder, 13.).text_color(t.live))
+            .quiet()
+            .bold(active)
+            .chosen(active)
+            .padding_right(4.)
+            .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
+            .child(faces(&agents, cx)),
         )
-        .when(active, |tree| tree.pb(px(4.)).child(surfaces(project, bench.tab().and_then(|tab| tabs::first_view(&tab.pane)).map(|(kind, _)| kind), cx)))
+        .when(active, |tree| {
+            tree.pb(px(4.)).child(surfaces(
+                project,
+                bench
+                    .tab()
+                    .and_then(|tab| tabs::first_view(&tab.pane))
+                    .map(|(kind, _)| kind),
+                cx,
+            ))
+        })
 }
 
 /// Up to five agents' faces, each overlapping the one before by 6px.
@@ -245,7 +307,11 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
         .relative()
         .flex_none()
         .h(px(20.))
-        .w(px(if shown == 0 { 0. } else { 20. + 14. * (shown - 1) as f32 }))
+        .w(px(if shown == 0 {
+            0.
+        } else {
+            20. + 14. * (shown - 1) as f32
+        }))
         .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
             ui::mark_box(20., ui::agent_mark(agent, 20., cx))
                 .absolute()
@@ -255,10 +321,17 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
 
 /// What a project opens, in the order the rail lists them: its own surfaces,
 /// with its code host's sections after Git.
-fn surface_rows(project: &ProjectInfo) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>)> {
+fn surface_rows(
+    project: &ProjectInfo,
+) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>)> {
     let mut rows = vec![
         (Icon::Editor, "Files".into(), "⌘E", Some(PaneKind::Files)),
-        (Icon::Terminal, "Terminal".into(), "⌘⌥2", Some(PaneKind::Terminal)),
+        (
+            Icon::Terminal,
+            "Terminal".into(),
+            "⌘⌥2",
+            Some(PaneKind::Terminal),
+        ),
         (Icon::Agent, "Agents".into(), "⌘⌥4", Some(PaneKind::Agent)),
         (Icon::Git, "Git".into(), "⌘⌥3", Some(PaneKind::Git)),
     ];
@@ -275,7 +348,12 @@ fn surface_rows(project: &ProjectInfo) -> Vec<(Icon, SharedString, &'static str,
     }
     rows.extend([
         (Icon::Search, "Search".into(), "⌘⇧F", Some(PaneKind::Search)),
-        (Icon::Board, "Agent board".into(), "⌘⌥6", Some(PaneKind::Board)),
+        (
+            Icon::Board,
+            "Agent board".into(),
+            "⌘⌥6",
+            Some(PaneKind::Board),
+        ),
     ]);
     rows
 }
@@ -291,34 +369,69 @@ fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl In
         .ml(px(20.))
         .py(px(2.))
         .pr(px(6.))
-        .children(rows.into_iter().enumerate().map(move |(index, (glyph, label, keys, kind))| {
-            let tail = index == last;
-            let lit = kind.is_some() && kind == front;
-            let spine = div().absolute().left_0().top_0();
-            div()
-                .relative()
-                .h(px(25.))
-                .pr(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .rounded(RADIUS_2)
-                .text_color(if lit { t.accent } else { t.text_tertiary })
-                .when(!lit, |row| row.hover(move |style| style.text_color(t.text_primary)))
-                .child(if tail {
-                    spine.w(px(9.)).h(px(13.)).border_l_1().border_b_1().border_color(t.tree_spine).rounded_bl(px(4.))
-                } else {
-                    spine.bottom_0().w(px(1.)).bg(t.tree_spine)
-                })
-                .when(!tail, |row| row.child(div().absolute().left_0().top(px(12.)).w(px(9.)).h(px(1.)).bg(t.tree_tick)))
-                .child(div().w(px(9.)).flex_none())
-                .child(ui::mark_box(16., ui::icon(glyph, 13.).text_color(if lit { t.live } else { t.text_tertiary })))
-                .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
-                .when(!keys.is_empty(), |row| {
-                    let keys = ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
-                    row.child(div().ml_auto().when(!lit, |keys| keys.opacity(0.5)).child(keys))
-                })
-        }))
+        .children(
+            rows.into_iter()
+                .enumerate()
+                .map(move |(index, (glyph, label, keys, kind))| {
+                    let tail = index == last;
+                    let lit = kind.is_some() && kind == front;
+                    let spine = div().absolute().left_0().top_0();
+                    div()
+                        .relative()
+                        .h(px(25.))
+                        .pr(px(8.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .rounded(RADIUS_2)
+                        .text_color(if lit { t.accent } else { t.text_tertiary })
+                        .when(!lit, |row| {
+                            row.hover(move |style| style.text_color(t.text_primary))
+                        })
+                        .child(if tail {
+                            spine
+                                .w(px(9.))
+                                .h(px(13.))
+                                .border_l_1()
+                                .border_b_1()
+                                .border_color(t.tree_spine)
+                                .rounded_bl(px(4.))
+                        } else {
+                            spine.bottom_0().w(px(1.)).bg(t.tree_spine)
+                        })
+                        .when(!tail, |row| {
+                            row.child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .top(px(12.))
+                                    .w(px(9.))
+                                    .h(px(1.))
+                                    .bg(t.tree_tick),
+                            )
+                        })
+                        .child(div().w(px(9.)).flex_none())
+                        .child(ui::mark_box(
+                            16.,
+                            ui::icon(glyph, 13.).text_color(if lit {
+                                t.live
+                            } else {
+                                t.text_tertiary
+                            }),
+                        ))
+                        .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
+                        .when(!keys.is_empty(), |row| {
+                            let keys =
+                                ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
+                            row.child(
+                                div()
+                                    .ml_auto()
+                                    .when(!lit, |keys| keys.opacity(0.5))
+                                    .child(keys),
+                            )
+                        })
+                }),
+        )
 }
 
 /// Who the host is signed in as, or the card that signs it in.
@@ -327,30 +440,37 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let Some(account) = bench.view.as_ref().and_then(|view| view.account.as_deref()) else {
         return sign_in(bench, cx).into_any_element();
     };
-    let who = account.name.clone().or_else(|| account.email.clone()).unwrap_or_else(|| "Signed in".into());
+    let who = account
+        .name
+        .clone()
+        .or_else(|| account.email.clone())
+        .unwrap_or_else(|| "Signed in".into());
     let initials = initials(account.name.as_deref(), account.email.as_deref());
     let row = Row::new("account", who)
-                .mark(
-                    24.,
-                    div()
-                        .size(px(24.))
-                        .rounded_full()
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.surface_raised)
-                        .overflow_hidden()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_size(px(9.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(t.text_secondary)
-                        .map(|face| match bench.picture() {
-                            Some(picture) => face.child(gpui_kit::img(picture).size_full()),
-                            None => face.child(initials),
-                        }),
-                )
-                .when_some(account.name.as_ref().and(account.email.clone()), |row, email| row.subtitle(ui::meta(email, cx)));
+        .mark(
+            24.,
+            div()
+                .size(px(24.))
+                .rounded_full()
+                .border_1()
+                .border_color(t.border)
+                .bg(t.surface_raised)
+                .overflow_hidden()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(9.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(t.text_secondary)
+                .map(|face| match bench.picture() {
+                    Some(picture) => face.child(gpui_kit::img(picture).size_full()),
+                    None => face.child(initials),
+                }),
+        )
+        .when_some(
+            account.name.as_ref().and(account.email.clone()),
+            |row, email| row.subtitle(ui::meta(email, cx)),
+        );
     let sign_out = Rc::new(cx.listener(|bench, _, _, _| bench.sign_out()));
     let menu = Popover::new("account-menu")
         .anchor(Anchor::BottomLeft)
@@ -359,10 +479,14 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .content(move |_, _, cx| {
             let popover = cx.entity();
             let sign_out = sign_out.clone();
-            Menu::new().child(MenuItem::new("sign-out", "Sign out").icon(Icon::LogOut).on_click(move |event, window, cx| {
-                sign_out(event, window, cx);
-                popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-            }))
+            Menu::new().child(
+                MenuItem::new("sign-out", "Sign out")
+                    .icon(Icon::LogOut)
+                    .on_click(move |event, window, cx| {
+                        sign_out(event, window, cx);
+                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                    }),
+            )
         });
     div()
         .flex_none()
@@ -374,14 +498,23 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .border_t_1()
         .border_color(t.border)
         .child(div().flex_1().min_w_0().child(menu))
-        .child(IconButton::new("settings", Icon::Settings, "Settings — ⌘,").glyph(14.).width(28.))
+        .child(
+            IconButton::new("settings", Icon::Settings, "Settings — ⌘,")
+                .glyph(14.)
+                .width(28.),
+        )
         .into_any_element()
 }
 
 /// The first letters of the first and last words of the name, else the email's first.
 fn initials(name: Option<&str>, email: Option<&str>) -> String {
     let words: Vec<&str> = name.unwrap_or_default().split_whitespace().collect();
-    let first = |word: &str| word.chars().next().map(|letter| letter.to_uppercase().to_string()).unwrap_or_default();
+    let first = |word: &str| {
+        word.chars()
+            .next()
+            .map(|letter| letter.to_uppercase().to_string())
+            .unwrap_or_default()
+    };
     match words.as_slice() {
         [] => email.map(first).unwrap_or_default(),
         [only] => first(only),
@@ -394,15 +527,18 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let (copy, button) = if bench.signing_in {
         (
             "Finish signing in in your browser.",
-            Button::new("sign-in", "Cancel", Variant::Outline).on_click(cx.listener(|bench, _, _, _| bench.cancel_sign_in())),
+            Button::new("sign-in", "Cancel", Variant::Outline)
+                .on_click(cx.listener(|bench, _, _, _| bench.cancel_sign_in())),
         )
     } else {
         (
             "Sign in to reach this host from your phone and other devices.",
-            Button::new("sign-in", "Sign in", Variant::Primary).icon(Icon::LogIn).on_click(cx.listener(|bench, _, _, cx| {
-                bench.sign_in();
-                cx.notify();
-            })),
+            Button::new("sign-in", "Sign in", Variant::Primary)
+                .icon(Icon::LogIn)
+                .on_click(cx.listener(|bench, _, _, cx| {
+                    bench.sign_in();
+                    cx.notify();
+                })),
         )
     };
     div()
@@ -414,7 +550,10 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .flex_col()
         .gap(px(8.))
         .rounded(RADIUS_2)
-        .bg(gpui_kit::Hsla { a: 0.04, ..t.text_primary })
+        .bg(gpui_kit::Hsla {
+            a: 0.04,
+            ..t.text_primary
+        })
         .child(
             div()
                 .text_size(px(12.))

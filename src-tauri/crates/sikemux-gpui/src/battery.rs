@@ -28,7 +28,9 @@ mod mac {
     use core_foundation::base::{CFType, CFTypeRef, TCFType};
     use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
     use core_foundation::number::CFNumber;
-    use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopSource, CFRunLoopSourceRef};
+    use core_foundation::runloop::{
+        kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopSource, CFRunLoopSourceRef,
+    };
     use core_foundation::string::CFString;
 
     use super::Battery;
@@ -38,7 +40,10 @@ mod mac {
         fn IOPSCopyPowerSourcesInfo() -> CFTypeRef;
         fn IOPSCopyPowerSourcesList(blob: CFTypeRef) -> CFArrayRef;
         fn IOPSGetPowerSourceDescription(blob: CFTypeRef, source: CFTypeRef) -> CFDictionaryRef;
-        fn IOPSNotificationCreateRunLoopSource(callback: extern "C" fn(*mut c_void), context: *mut c_void) -> CFRunLoopSourceRef;
+        fn IOPSNotificationCreateRunLoopSource(
+            callback: extern "C" fn(*mut c_void),
+            context: *mut c_void,
+        ) -> CFRunLoopSourceRef;
     }
 
     thread_local! {
@@ -60,24 +65,41 @@ mod mac {
             }
             let list: CFArray<CFType> = CFArray::wrap_under_create_rule(list);
             list.iter().find_map(|source| {
-                let description = IOPSGetPowerSourceDescription(blob.as_CFTypeRef(), source.as_CFTypeRef());
+                let description =
+                    IOPSGetPowerSourceDescription(blob.as_CFTypeRef(), source.as_CFTypeRef());
                 if description.is_null() {
                     return None;
                 }
-                let description: CFDictionary<CFString, CFType> = CFDictionary::wrap_under_get_rule(description);
+                let description: CFDictionary<CFString, CFType> =
+                    CFDictionary::wrap_under_get_rule(description);
                 let text = |key: &'static str| {
-                    description.find(CFString::from_static_string(key)).and_then(|value| value.downcast::<CFString>()).map(|text| text.to_string())
+                    description
+                        .find(CFString::from_static_string(key))
+                        .and_then(|value| value.downcast::<CFString>())
+                        .map(|text| text.to_string())
                 };
                 let number = |key: &'static str| {
-                    description.find(CFString::from_static_string(key)).and_then(|value| value.downcast::<CFNumber>()).and_then(|number| number.to_i64())
+                    description
+                        .find(CFString::from_static_string(key))
+                        .and_then(|value| value.downcast::<CFNumber>())
+                        .and_then(|number| number.to_i64())
                 };
                 if text("Type").as_deref() != Some("InternalBattery") {
                     return None;
                 }
                 let charging = text("Power Source State").as_deref() == Some("AC Power");
                 let percent = number("Current Capacity")? * 100 / number("Max Capacity")?.max(1);
-                let minutes = number(if charging { "Time to Full Charge" } else { "Time to Empty" }).filter(|minutes| *minutes > 0);
-                Some(Battery { percent: percent.clamp(0, 100) as u8, charging, minutes: minutes.map(|minutes| minutes as u32) })
+                let minutes = number(if charging {
+                    "Time to Full Charge"
+                } else {
+                    "Time to Empty"
+                })
+                .filter(|minutes| *minutes > 0);
+                Some(Battery {
+                    percent: percent.clamp(0, 100) as u8,
+                    charging,
+                    minutes: minutes.map(|minutes| minutes as u32),
+                })
             })
         }
     }

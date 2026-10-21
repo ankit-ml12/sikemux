@@ -26,24 +26,40 @@ fn main() -> anyhow::Result<()> {
 
 async fn run() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let socket = PathBuf::from(args.next().ok_or_else(|| anyhow::anyhow!("which core's socket?"))?);
-    let agent = args.next().ok_or_else(|| anyhow::anyhow!("where is sikemux-fake-acp-agent?"))?;
+    let socket = PathBuf::from(
+        args.next()
+            .ok_or_else(|| anyhow::anyhow!("which core's socket?"))?,
+    );
+    let agent = args
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("where is sikemux-fake-acp-agent?"))?;
     let (client, _events) = CoreClient::connect(&socket).await?;
     client.register_window().await?;
     let provider = std::env::var("FAKE_PROVIDER").unwrap_or("opencode".into());
     let profile = json!({ "id": "fake", "name": "Fake", "provider": provider, "accent": "#a277ff", "executablePath": agent });
-    client.call("setAgentAccounts", json!({ "profiles": [profile] })).await?;
+    client
+        .call("setAgentAccounts", json!({ "profiles": [profile] }))
+        .await?;
     let project = json!({ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() });
     client.call("addProject", project).await?;
-    let (chat, _) = client.start_chat(format!("{provider}:fake"), "tmp".into(), None).await?;
-    client.call("openTab", json!({ "project": "tmp", "kind": "agent", "target": chat })).await?;
+    let (chat, _) = client
+        .start_chat(format!("{provider}:fake"), "tmp".into(), None)
+        .await?;
+    client
+        .call(
+            "openTab",
+            json!({ "project": "tmp", "kind": "agent", "target": chat }),
+        )
+        .await?;
     println!("chat {chat}");
     if let Ok(mode) = std::env::var("FAKE_MODE") {
         std::thread::sleep(Duration::from_secs(2));
         client.acp_set_permission_mode(chat.clone(), mode).await?;
     }
     for prompt in args {
-        client.acp_prompt(chat.clone(), None, prompt, Vec::new(), Vec::new()).await?;
+        client
+            .acp_prompt(chat.clone(), None, prompt, Vec::new(), Vec::new())
+            .await?;
         std::thread::sleep(Duration::from_secs(2));
     }
     Ok(())

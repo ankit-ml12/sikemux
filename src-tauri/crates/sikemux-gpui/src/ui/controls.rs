@@ -4,9 +4,8 @@ use gpui_kit::base::{Button as BaseButton, Selectable};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window,
+    div, px, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::{icon, text};
@@ -81,7 +80,10 @@ impl IconButton {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -90,7 +92,11 @@ impl IconButton {
 impl RenderOnce for IconButton {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
-        let rest = if self.quiet { t.icon_quiet } else { t.text_tertiary };
+        let rest = if self.quiet {
+            t.icon_quiet
+        } else {
+            t.text_tertiary
+        };
         let (hover, primary, chosen) = (t.surface_hover, t.text_primary, t.surface_chosen);
         let on_click = self.on_click;
         BaseButton::new(self.id)
@@ -103,11 +109,19 @@ impl RenderOnce for IconButton {
             .flex()
             .items_center()
             .justify_center()
-            .map(|button| if self.round { button.rounded_full() } else { button.rounded(RADIUS_2) })
+            .map(|button| {
+                if self.round {
+                    button.rounded_full()
+                } else {
+                    button.rounded(RADIUS_2)
+                }
+            })
             .text_color(rest)
             .when(self.pressed, |button| button.bg(chosen).text_color(primary))
             .hover(move |style| style.bg(hover).text_color(primary))
-            .when_some(on_click, |button, handler| button.on_click(move |event, window, cx| handler(event, window, cx)))
+            .when_some(on_click, |button, handler| {
+                button.on_click(move |event, window, cx| handler(event, window, cx))
+            })
             .child(
                 icon(self.icon, self.glyph)
                     .text_color(if self.pressed { primary } else { rest })
@@ -166,7 +180,10 @@ impl Button {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -193,7 +210,12 @@ impl RenderOnce for Button {
                 .border_color(t.border)
                 .text_size(px(11.5))
                 .text_color(t.text_secondary)
-                .hover(move |style| style.bg(t.surface_hover).border_color(t.border_strong).text_color(t.text_primary)),
+                .hover(move |style| {
+                    style
+                        .bg(t.surface_hover)
+                        .border_color(t.border_strong)
+                        .text_color(t.text_primary)
+                }),
             Variant::Primary => base
                 .h(px(28.))
                 .px(px(12.))
@@ -219,12 +241,20 @@ impl RenderOnce for Button {
             Variant::Outline => (11., t.text_secondary),
             Variant::Dashed => (11., t.text_tertiary),
         };
-        let hover = if self.variant == Variant::Primary { t.on_accent } else { t.text_primary };
-        base.when_some(on_click, |button, handler| button.on_click(move |event, window, cx| handler(event, window, cx)))
-            .children(self.icon.map(|icon_name| {
-                icon(icon_name, glyph).text_color(rest).group_hover(GROUP, move |style| style.text_color(hover))
-            }))
-            .child(self.label)
+        let hover = if self.variant == Variant::Primary {
+            t.on_accent
+        } else {
+            t.text_primary
+        };
+        base.when_some(on_click, |button, handler| {
+            button.on_click(move |event, window, cx| handler(event, window, cx))
+        })
+        .children(self.icon.map(|icon_name| {
+            icon(icon_name, glyph)
+                .text_color(rest)
+                .group_hover(GROUP, move |style| style.text_color(hover))
+        }))
+        .child(self.label)
     }
 }
 
@@ -239,7 +269,11 @@ pub struct Segmented {
 }
 
 impl Segmented {
-    pub fn new(id: impl Into<ElementId>, options: Vec<(Icon, SharedString)>, selected: usize) -> Self {
+    pub fn new(
+        id: impl Into<ElementId>,
+        options: Vec<(Icon, SharedString)>,
+        selected: usize,
+    ) -> Self {
         Self {
             id: id.into(),
             options,
@@ -273,41 +307,67 @@ impl RenderOnce for Segmented {
                 if pill {
                     track.h(px(24.)).p(px(2.)).rounded_full()
                 } else {
-                    track.h(px(30.)).p(px(3.)).rounded(RADIUS_2).border_1().border_color(t.border)
+                    track
+                        .h(px(30.))
+                        .p(px(3.))
+                        .rounded(RADIUS_2)
+                        .border_1()
+                        .border_color(t.border)
                 }
             })
-            .children(self.options.into_iter().enumerate().map(|(index, (glyph, label))| {
-                let chosen = index == self.selected;
-                let on_select = on_select.clone();
-                BaseButton::new(("segment", index))
-                    .group(GROUP)
-                    .selected(chosen)
-                    .accessibility_label(label.clone())
-                    .when(!pill, |segment| segment.flex_1().min_w_0())
-                    .h_full()
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(if pill { 5. } else { 7. }))
-                    .map(|segment| if pill { segment.rounded_full() } else { segment.rounded(px(3.)) })
-                    .text_color(if chosen { t.text_primary } else { t.text_tertiary })
-                    .when(chosen, |segment| segment.bg(t.surface_active))
-                    .hover(move |style| style.text_color(t.text_primary))
-                    .when_some(on_select, |segment, handler| {
-                        segment.on_click(move |_, window, cx| handler(&index, window, cx))
-                    })
-                    .child(
-                        icon(glyph, 13.)
-                            .text_color(if chosen { t.text_primary } else { t.text_tertiary })
-                            .group_hover(GROUP, move |style| style.text_color(t.text_primary)),
-                    )
-                    .child(
-                        text(label, if pill { 10.5 } else { 11. }, FontWeight::NORMAL)
-                            .overflow_hidden()
-                            .text_ellipsis(),
-                    )
-            }))
+            .children(
+                self.options
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (glyph, label))| {
+                        let chosen = index == self.selected;
+                        let on_select = on_select.clone();
+                        BaseButton::new(("segment", index))
+                            .group(GROUP)
+                            .selected(chosen)
+                            .accessibility_label(label.clone())
+                            .when(!pill, |segment| segment.flex_1().min_w_0())
+                            .h_full()
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap(px(if pill { 5. } else { 7. }))
+                            .map(|segment| {
+                                if pill {
+                                    segment.rounded_full()
+                                } else {
+                                    segment.rounded(px(3.))
+                                }
+                            })
+                            .text_color(if chosen {
+                                t.text_primary
+                            } else {
+                                t.text_tertiary
+                            })
+                            .when(chosen, |segment| segment.bg(t.surface_active))
+                            .hover(move |style| style.text_color(t.text_primary))
+                            .when_some(on_select, |segment, handler| {
+                                segment.on_click(move |_, window, cx| handler(&index, window, cx))
+                            })
+                            .child(
+                                icon(glyph, 13.)
+                                    .text_color(if chosen {
+                                        t.text_primary
+                                    } else {
+                                        t.text_tertiary
+                                    })
+                                    .group_hover(GROUP, move |style| {
+                                        style.text_color(t.text_primary)
+                                    }),
+                            )
+                            .child(
+                                text(label, if pill { 10.5 } else { 11. }, FontWeight::NORMAL)
+                                    .overflow_hidden()
+                                    .text_ellipsis(),
+                            )
+                    }),
+            )
     }
 }
 
@@ -344,9 +404,15 @@ impl RenderOnce for Field {
             .border_1()
             .border_color(t.line)
             .rounded(RADIUS_2)
-            .bg(Hsla { a: 0.62, ..t.line_soft })
+            .bg(Hsla {
+                a: 0.62,
+                ..t.line_soft
+            })
             .text_color(t.text_tertiary)
-            .children(self.icon.map(|glyph| icon(glyph, 12.).text_color(t.text_tertiary)))
+            .children(
+                self.icon
+                    .map(|glyph| icon(glyph, 12.).text_color(t.text_tertiary)),
+            )
             .child(
                 div()
                     .flex_1()
@@ -378,7 +444,10 @@ impl Toggle {
         }
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -396,13 +465,23 @@ impl RenderOnce for Toggle {
             .flex()
             .items_center()
             .border_1()
-            .border_color(if self.pressed { t.border } else { Hsla::transparent_black() })
+            .border_color(if self.pressed {
+                t.border
+            } else {
+                Hsla::transparent_black()
+            })
             .when(self.pressed, |toggle| toggle.bg(t.surface_chosen))
             .text_size(px(11.))
             .font_weight(FontWeight::MEDIUM)
-            .text_color(if self.pressed { t.text_primary } else { t.text_tertiary })
+            .text_color(if self.pressed {
+                t.text_primary
+            } else {
+                t.text_tertiary
+            })
             .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
-            .when_some(on_click, |toggle, handler| toggle.on_click(move |event, window, cx| handler(event, window, cx)))
+            .when_some(on_click, |toggle, handler| {
+                toggle.on_click(move |event, window, cx| handler(event, window, cx))
+            })
             .child(self.label)
     }
 }

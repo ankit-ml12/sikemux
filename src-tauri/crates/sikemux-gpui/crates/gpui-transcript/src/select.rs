@@ -42,7 +42,10 @@ impl Span {
 
 impl Selecting {
     pub fn place_of(&self, doc: &Markdown) -> usize {
-        self.docs.iter().position(|held| std::ptr::eq(*held, doc)).unwrap_or(self.docs.len())
+        self.docs
+            .iter()
+            .position(|held| std::ptr::eq(*held, doc))
+            .unwrap_or(self.docs.len())
     }
 }
 

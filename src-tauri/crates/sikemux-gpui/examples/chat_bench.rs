@@ -17,8 +17,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    point, px, size, AnyWindowHandle, AppContext, Entity, HeadlessAppContext, Modifiers, PlatformInput, ScrollDelta,
-    ScrollWheelEvent, TouchPhase,
+    point, px, size, AnyWindowHandle, AppContext, Entity, HeadlessAppContext, Modifiers,
+    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
 };
 use gpui_transcript::Row;
 use serde_json::{json, Value};
@@ -45,8 +45,9 @@ const SCROLL_STEP: f32 = 60.;
 const FEED: &str = "perf-chat";
 
 const WORDS: [&str; 24] = [
-    "the", "core", "folds", "each", "event", "into", "rows", "and", "sends", "only", "what", "changed", "since", "last", "frame",
-    "so", "a", "long", "chat", "stays", "cheap", "to", "draw", "here",
+    "the", "core", "folds", "each", "event", "into", "rows", "and", "sends", "only", "what",
+    "changed", "since", "last", "frame", "so", "a", "long", "chat", "stays", "cheap", "to", "draw",
+    "here",
 ];
 
 /// `showcase/perf/chat.ts`'s generator, so both runs read the same words.
@@ -54,7 +55,10 @@ struct Words(u64);
 
 impl Words {
     fn next(&mut self, below: usize) -> usize {
-        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         (self.0 >> 33) as usize % below.max(1)
     }
 
@@ -74,16 +78,27 @@ impl Words {
                 let strong = self.sentence().trim_end().to_owned();
                 (format!("**{strong}**"), strong.len())
             }
-            2 => ("[the docs](https://sikemux.com)".to_owned(), "the docs".len()),
+            2 => (
+                "[the docs](https://sikemux.com)".to_owned(),
+                "the docs".len(),
+            ),
             _ => ("*once per frame*".to_owned(), "once per frame".len()),
         };
         let last = format!(" {}", self.sentence());
-        (format!("{first}{md}{last}").trim_end().to_owned(), first.len() + seen + last.len())
+        (
+            format!("{first}{md}{last}").trim_end().to_owned(),
+            first.len() + seen + last.len(),
+        )
     }
 
     fn items(&mut self, count: usize, marker: impl Fn(usize) -> String) -> (String, usize) {
         let items: Vec<(String, usize)> = (0..count).map(|_| self.inline()).collect();
-        let md = items.iter().enumerate().map(|(ix, (md, _))| format!("{} {md}", marker(ix))).collect::<Vec<_>>().join("\n");
+        let md = items
+            .iter()
+            .enumerate()
+            .map(|(ix, (md, _))| format!("{} {md}", marker(ix)))
+            .collect::<Vec<_>>()
+            .join("\n");
         (md, items.iter().map(|(_, seen)| seen).sum())
     }
 
@@ -104,18 +119,33 @@ impl Words {
                 self.items(count, |ix| format!("{}.", ix + 1))
             }
             4 => {
-                let lines: String = (0..4 + self.next(20)).map(|ix| format!("    let row_{ix} = rows.put(message({ix}));\n")).collect();
+                let lines: String = (0..4 + self.next(20))
+                    .map(|ix| format!("    let row_{ix} = rows.put(message({ix}));\n"))
+                    .collect();
                 let code = format!("fn main() {{\n{lines}}}\n");
                 (format!("```rust\n{code}```"), code.len())
             }
             5 => {
                 let count = 3 + self.next(4);
                 let rows: Vec<[String; 3]> = (0..count)
-                    .map(|ix| [format!("step {ix}"), (100 + self.next(900)).to_string(), self.sentence().trim_end().to_owned()])
+                    .map(|ix| {
+                        [
+                            format!("step {ix}"),
+                            (100 + self.next(900)).to_string(),
+                            self.sentence().trim_end().to_owned(),
+                        ]
+                    })
                     .collect();
                 let line = |cells: &[String]| format!("| {} |", cells.join(" | "));
-                let head = [line(&["Phase".into(), "Frames".into(), "Note".into()]), line(&["---".into(), "---:".into(), "---".into()])];
-                let md = head.into_iter().chain(rows.iter().map(|row| line(row))).collect::<Vec<_>>().join("\n");
+                let head = [
+                    line(&["Phase".into(), "Frames".into(), "Note".into()]),
+                    line(&["---".into(), "---:".into(), "---".into()]),
+                ];
+                let md = head
+                    .into_iter()
+                    .chain(rows.iter().map(|row| line(row)))
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 (md, rows.iter().flatten().map(String::len).sum())
             }
             6 => {
@@ -134,7 +164,10 @@ impl Words {
                     return self.sentence().trim_end().to_owned();
                 }
                 let blocks = 1 + self.next(5);
-                (0..blocks).map(|_| self.block().0).collect::<Vec<_>>().join("\n\n")
+                (0..blocks)
+                    .map(|_| self.block().0)
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
             })
             .collect()
     }
@@ -157,7 +190,10 @@ fn event(kind: &str, payload: Value) -> ChatEvent {
 
 fn said(kind: &str, message: &str, text: &str) -> ChatEvent {
     let update = json!({ "sessionUpdate": kind, "messageId": message, "content": { "type": "text", "text": text } });
-    event("session_update", json!({ "sessionId": format!("session-{FEED}"), "update": update }))
+    event(
+        "session_update",
+        json!({ "sessionId": format!("session-{FEED}"), "update": update }),
+    )
 }
 
 /// The chat folded as the core folds it: every event with its index, its head,
@@ -174,10 +210,17 @@ struct Folded {
 impl Folded {
     fn new() -> Folded {
         let mut fold = Fold::new("workspace-write");
-        let ready = event("ready", json!({ "sessionId": format!("session-{FEED}"), "capabilities": {}, "setup": { "configOptions": [] } }));
+        let ready = event(
+            "ready",
+            json!({ "sessionId": format!("session-{FEED}"), "capabilities": {}, "setup": { "configOptions": [] } }),
+        );
         let mut events = vec![(0, ready)];
         for (ix, text) in Words(7).rows(ROWS).iter().enumerate() {
-            let kind = if ix % 2 == 0 { "user_message_chunk" } else { "agent_message_chunk" };
+            let kind = if ix % 2 == 0 {
+                "user_message_chunk"
+            } else {
+                "agent_message_chunk"
+            };
             events.push((ix as u64 + 1, said(kind, &format!("{FEED}-{ix}"), text)));
         }
         for (index, event) in &events {
@@ -188,13 +231,38 @@ impl Folded {
         let rows = fold.page(&events, u64::MAX, None).rows;
         assert_eq!(rows.len(), ROWS, "the fold made {} rows", rows.len());
         let answer = Words(11).answer(TOKENS);
-        let mut folded = Folded { fold, events, head, rows, flushes: Vec::new(), chars: answer.len() };
-        folded.flush(vec![event("turn_started", json!({ "at": 0 })), said("user_message_chunk", &format!("{FEED}-ask"), "Write it all up.")]);
-        let chunks: Vec<String> = answer.as_bytes().chunks(CHARS_PER_FLUSH).map(|chunk| String::from_utf8_lossy(chunk).into_owned()).collect();
+        let mut folded = Folded {
+            fold,
+            events,
+            head,
+            rows,
+            flushes: Vec::new(),
+            chars: answer.len(),
+        };
+        folded.flush(vec![
+            event("turn_started", json!({ "at": 0 })),
+            said(
+                "user_message_chunk",
+                &format!("{FEED}-ask"),
+                "Write it all up.",
+            ),
+        ]);
+        let chunks: Vec<String> = answer
+            .as_bytes()
+            .chunks(CHARS_PER_FLUSH)
+            .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
+            .collect();
         for chunk in chunks {
-            folded.flush(vec![said("agent_message_chunk", &format!("{FEED}-answer"), &chunk)]);
+            folded.flush(vec![said(
+                "agent_message_chunk",
+                &format!("{FEED}-answer"),
+                &chunk,
+            )]);
         }
-        folded.flush(vec![event("turn_completed", json!({ "stopReason": "end_turn", "at": 0 }))]);
+        folded.flush(vec![event(
+            "turn_completed",
+            json!({ "stopReason": "end_turn", "at": 0 }),
+        )]);
         folded
     }
 
@@ -211,21 +279,34 @@ impl Folded {
     /// The view a client opens on: the rows from `start`, with earlier ones paged in.
     fn view(&self, start: usize) -> Value {
         let older_before = (start > 0).then_some(start as u64 + 1);
-        let view = ChatView { head: self.head.clone(), rows: self.rows[start..].to_vec(), subagents: BTreeMap::new(), older_before };
+        let view = ChatView {
+            head: self.head.clone(),
+            rows: self.rows[start..].to_vec(),
+            subagents: BTreeMap::new(),
+            older_before,
+        };
         serde_json::to_value(view).expect("a view")
     }
 
     /// The page before event `before`, as the core answers `AcpHistory`.
     fn page(&self, before: u64) -> Value {
         let start = before.saturating_sub(PAGE).max(1);
-        let events: Vec<(u64, ChatEvent)> = self.events.iter().filter(|(index, _)| (start..before).contains(index)).cloned().collect();
+        let events: Vec<(u64, ChatEvent)> = self
+            .events
+            .iter()
+            .filter(|(index, _)| (start..before).contains(index))
+            .cloned()
+            .collect();
         let older_before = (start > 1).then_some(start);
         serde_json::to_value(self.fold.page(&events, before, older_before)).expect("a page")
     }
 }
 
 fn thread_cpu_ms() -> f64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: clock_gettime only writes the struct it is handed.
     unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
     time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
@@ -273,7 +354,9 @@ impl Bench {
         self.cx.advance_clock(FRAME);
         self.cx.run_until_parked();
         let cpu = thread_cpu_ms();
-        self.cx.update_window(self.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
+        self.cx
+            .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
+            .ok();
         self.frames.push(thread_cpu_ms() - cpu);
     }
 
@@ -285,11 +368,18 @@ impl Bench {
                     self.agent = Some(agent.clone());
                     self.attach();
                 }
-                Ask::Chat(ChatAsk::History { before, .. }) => self.pages.push((self.frame_ix + FRAMES_PER_PAGE, before)),
+                Ask::Chat(ChatAsk::History { before, .. }) => {
+                    self.pages.push((self.frame_ix + FRAMES_PER_PAGE, before))
+                }
                 _ => {}
             }
         }
-        let due: Vec<u64> = self.pages.iter().filter(|(at, _)| *at <= self.frame_ix).map(|(_, before)| *before).collect();
+        let due: Vec<u64> = self
+            .pages
+            .iter()
+            .filter(|(at, _)| *at <= self.frame_ix)
+            .map(|(_, before)| *before)
+            .collect();
         self.pages.retain(|(at, _)| *at > self.frame_ix);
         for before in due {
             self.served += 1;
@@ -306,7 +396,13 @@ impl Bench {
 
     fn attach(&mut self) {
         let view = self.shown.clone();
-        self.send(ChatNews::Attached(ChatAttachment::Live { view, mark: ChatMark { feed: FEED.into(), seq: 0 } }));
+        self.send(ChatNews::Attached(ChatAttachment::Live {
+            view,
+            mark: ChatMark {
+                feed: FEED.into(),
+                seq: 0,
+            },
+        }));
     }
 
     /// Opens the chat on the rows from `start`, as the core does when it tells the window to attach again.
@@ -326,7 +422,10 @@ impl Bench {
             let list = transcript.list();
             let top = list.logical_scroll_top();
             Place {
-                row: transcript.rows().get(top.item_ix).map(|row| row.id().to_owned()),
+                row: transcript
+                    .rows()
+                    .get(top.item_ix)
+                    .map(|row| row.id().to_owned()),
                 first: top.item_ix == 0,
                 offset: top.offset_in_item,
                 held: transcript.rows().len(),
@@ -342,7 +441,11 @@ impl Bench {
             modifiers: Modifiers::default(),
             touch_phase: TouchPhase::Moved,
         };
-        self.cx.update_window(self.window, |_, window, cx| window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx)).ok();
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx)
+            })
+            .ok();
     }
 
     /// Scrolls up a step a frame until the first row is at the top and every row is held,
@@ -369,7 +472,12 @@ impl Bench {
     fn report(&mut self, phase: &str, extra: String) {
         let mut frames = std::mem::take(&mut self.frames);
         frames.sort_by(f64::total_cmp);
-        let at = |q: f64| frames.get(((frames.len() as f64 - 1.) * q).round() as usize).copied().unwrap_or(0.);
+        let at = |q: f64| {
+            frames
+                .get(((frames.len() as f64 - 1.) * q).round() as usize)
+                .copied()
+                .unwrap_or(0.)
+        };
         let total: f64 = frames.iter().sum();
         let over = frames.iter().filter(|frame| **frame > 8.33).count();
         let simulated = frames.len() as f64 * FRAME.as_secs_f64();
@@ -387,7 +495,10 @@ impl Bench {
 }
 
 fn layout() -> anyhow::Result<DeviceView> {
-    let socket = PathBuf::from(std::env::var("SIKEMUX_CORE_SOCKET").map_err(|_| anyhow::anyhow!("which core's socket?"))?);
+    let socket = PathBuf::from(
+        std::env::var("SIKEMUX_CORE_SOCKET")
+            .map_err(|_| anyhow::anyhow!("which core's socket?"))?,
+    );
     tokio::runtime::Runtime::new()?.block_on(async {
         let (client, mut events) = CoreClient::connect(&socket).await?;
         client.watch_view().await?;
@@ -411,7 +522,11 @@ fn main() -> anyhow::Result<()> {
         folded.flushes.len(),
         made.elapsed().as_secs_f64()
     );
-    let mut cx = HeadlessAppContext::with_platform(gpui_platform::bench_text_system(), Arc::new(icons::Icons), gpui_platform::current_headless_renderer);
+    let mut cx = HeadlessAppContext::with_platform(
+        gpui_platform::bench_text_system(),
+        Arc::new(icons::Icons),
+        gpui_platform::current_headless_renderer,
+    );
     let (updates, updates_rx) = mpsc::unbounded_channel();
     let (asks_tx, asks) = mpsc::unbounded_channel();
     let held = Rc::new(Cell::new(None));
@@ -430,7 +545,16 @@ fn main() -> anyhow::Result<()> {
                 ..Default::default()
             },
             |window, cx| {
-                let bench = cx.new(|cx| Workbench::new(Link { updates: updates_rx, asks: asks_tx }, window, cx));
+                let bench = cx.new(|cx| {
+                    Workbench::new(
+                        Link {
+                            updates: updates_rx,
+                            asks: asks_tx,
+                        },
+                        window,
+                        cx,
+                    )
+                });
                 kept.set(Some(bench.clone()));
                 cx.new(|cx| gpui_kit::base::Root::new(bench, window, cx))
             },
@@ -467,7 +591,10 @@ fn main() -> anyhow::Result<()> {
     for _ in 0..59 {
         run.frame();
     }
-    run.report(&format!("open {ROWS} rows"), format!(" · first frame {first:.2} ms"));
+    run.report(
+        &format!("open {ROWS} rows"),
+        format!(" · first frame {first:.2} ms"),
+    );
 
     run.scroll_to_top(ROWS);
     run.report("scroll to the top", String::new());
@@ -478,7 +605,10 @@ fn main() -> anyhow::Result<()> {
     }
     run.frames.clear();
     let (pages, kept) = run.scroll_to_top(ROWS);
-    run.report(&format!("scroll up as {} pages arrive", run.served), format!(" · the view stayed put for {kept} of {pages}"));
+    run.report(
+        &format!("scroll up as {} pages arrive", run.served),
+        format!(" · the view stayed put for {kept} of {pages}"),
+    );
 
     run.open(ROWS - STREAM_TAIL);
     for _ in 0..30 {
@@ -493,7 +623,10 @@ fn main() -> anyhow::Result<()> {
             lost = Some(seq);
         }
         let changes = serde_json::to_value(changes)?;
-        run.send(ChatNews::Changes { seq: seq as u64 + 1, changes });
+        run.send(ChatNews::Changes {
+            seq: seq as u64 + 1,
+            changes,
+        });
         for _ in 0..FRAMES_PER_FLUSH {
             run.frame();
         }
@@ -503,9 +636,14 @@ fn main() -> anyhow::Result<()> {
         Some(seq) => format!("stopped following the end at flush {seq}"),
     };
     if let Ok(path) = std::env::var("CHAT_BENCH_SHOT") {
-        run.cx.update_window(run.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
+        run.cx
+            .update_window(run.window, |_, window, cx| window.draw(cx).clear(cx))
+            .ok();
         run.cx.capture_screenshot(run.window)?.save(path)?;
     }
-    run.report(&format!("stream {} characters in {count} flushes", run.folded.chars), format!(" · {end} after"));
+    run.report(
+        &format!("stream {} characters in {count} flushes", run.folded.chars),
+        format!(" · {end} after"),
+    );
     Ok(())
 }

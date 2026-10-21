@@ -18,7 +18,11 @@ const CONTEXT: &str = "Transcript";
 
 /// Binds the keys a transcript takes; call it once when the app starts.
 pub fn init(cx: &mut App) {
-    let copy = if cfg!(target_os = "macos") { "cmd-c" } else { "ctrl-c" };
+    let copy = if cfg!(target_os = "macos") {
+        "cmd-c"
+    } else {
+        "ctrl-c"
+    };
     cx.bind_keys([KeyBinding::new(copy, Copy, Some(CONTEXT))]);
 }
 
@@ -294,7 +298,11 @@ impl<R: Row> Render for Transcript<R> {
                 let selecting = this.rows.get(ix).map(|row| Selecting {
                     row: row.id().to_owned().into(),
                     ix,
-                    docs: row.docs().into_iter().map(|doc| doc as *const Markdown).collect(),
+                    docs: row
+                        .docs()
+                        .into_iter()
+                        .map(|doc| doc as *const Markdown)
+                        .collect(),
                     span,
                     shown: this.shown.clone(),
                 });

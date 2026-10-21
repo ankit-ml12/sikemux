@@ -5,11 +5,13 @@
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Radians, SharedString,
-    StatefulInteractiveElement, Styled, Transformation,
+    div, px, AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement,
+    Radians, SharedString, StatefulInteractiveElement, Styled, Transformation,
 };
 use serde_json::json;
-use sikemux_wire::chat::{AsyncTask, QueuedMessage, SubagentCard, TaskState, WorkflowAgent, WorkflowAgentState};
+use sikemux_wire::chat::{
+    AsyncTask, QueuedMessage, SubagentCard, TaskState, WorkflowAgent, WorkflowAgentState,
+};
 
 use super::tools::word;
 use super::Chat;
@@ -24,7 +26,11 @@ pub fn stack(groups: Vec<AnyElement>, t: &Tokens) -> Option<AnyElement> {
     if groups.is_empty() {
         return None;
     }
-    let ruled = groups.into_iter().enumerate().map(|(ix, group)| div().when(ix > 0, |group| group.border_t_1().border_color(t.border)).child(group));
+    let ruled = groups.into_iter().enumerate().map(|(ix, group)| {
+        div()
+            .when(ix > 0, |group| group.border_t_1().border_color(t.border))
+            .child(group)
+    });
     let docked = div()
         .w_full()
         .max_w(px(780.))
@@ -37,7 +43,15 @@ pub fn stack(groups: Vec<AnyElement>, t: &Tokens) -> Option<AnyElement> {
         .rounded_t(theme::RADIUS_3)
         .bg(t.surface_composer)
         .children(ruled);
-    Some(div().w_full().px(px(36.)).flex().justify_center().child(docked).into_any_element())
+    Some(
+        div()
+            .w_full()
+            .px(px(36.))
+            .flex()
+            .justify_center()
+            .child(docked)
+            .into_any_element(),
+    )
 }
 
 /// The line that says what kind of work a group is and how much of it, which
@@ -60,8 +74,18 @@ impl Label {
         let (agent, key) = (agent.to_owned(), self.key.clone());
         let chevron = self.folds.then(|| {
             let chevron = ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled);
-            let chevron = chevron.when(!self.folded, |chevron| chevron.with_transformation(Transformation::rotate(Radians(std::f32::consts::FRAC_PI_2))));
-            div().ml_auto().w(px(18.)).flex_none().flex().justify_center().child(chevron)
+            let chevron = chevron.when(!self.folded, |chevron| {
+                chevron.with_transformation(Transformation::rotate(Radians(
+                    std::f32::consts::FRAC_PI_2,
+                )))
+            });
+            div()
+                .ml_auto()
+                .w(px(18.))
+                .flex_none()
+                .flex()
+                .justify_center()
+                .child(chevron)
         });
         div()
             .id(SharedString::from(format!("group:{}", self.key)))
@@ -76,18 +100,35 @@ impl Label {
             .text_size(px(10.))
             .text_color(t.text_disabled)
             .when(self.folds, |label| {
-                label.cursor_pointer().on_click(cx.listener(move |bench, _, _, cx| {
-                    if let Some(chat) = bench.chats.get_mut(&agent) {
-                        chat.toggle_group(&key);
-                    }
-                    cx.notify();
-                }))
+                label
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |bench, _, _, cx| {
+                        if let Some(chat) = bench.chats.get_mut(&agent) {
+                            chat.toggle_group(&key);
+                        }
+                        cx.notify();
+                    }))
             })
             .when(self.folded, |label| label.child(self.icon))
             .child(div().child(self.word.to_uppercase()))
-            .child(div().font_family(theme::MONO).text_color(t.text_tertiary).child(self.count.to_string()))
+            .child(
+                div()
+                    .font_family(theme::MONO)
+                    .text_color(t.text_tertiary)
+                    .child(self.count.to_string()),
+            )
             .when(self.folded, |label| {
-                label.child(div().flex_1().min_w_0().ml(px(2.)).truncate().font_family(theme::MONO).text_size(px(10.5)).text_color(t.text_tertiary).child(self.peek.join(" · ")))
+                label.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .ml(px(2.))
+                        .truncate()
+                        .font_family(theme::MONO)
+                        .text_size(px(10.5))
+                        .text_color(t.text_tertiary)
+                        .child(self.peek.join(" · ")),
+                )
             })
             .children(self.action)
             .children(chevron)
@@ -111,12 +152,23 @@ struct Tints {
 
 impl Tints {
     fn new(t: &Tokens) -> Tints {
-        Tints { agent: theme::mix(t.accent, t.text_disabled, 0.62), task: theme::mix(t.live, t.text_disabled, 0.58) }
+        Tints {
+            agent: theme::mix(t.accent, t.text_disabled, 0.62),
+            task: theme::mix(t.live, t.text_disabled, 0.58),
+        }
     }
 }
 
 /// A row of running work: its mark, name and what it is doing, then what it cost and how it stands.
-fn task_row(t: &Tokens, tint: Hsla, mark: AnyElement, name: String, detail: Option<String>, cost: Option<String>, end: Option<AnyElement>) -> Div {
+fn task_row(
+    t: &Tokens,
+    tint: Hsla,
+    mark: AnyElement,
+    name: String,
+    detail: Option<String>,
+    cost: Option<String>,
+    end: Option<AnyElement>,
+) -> Div {
     div()
         .min_w_0()
         .pt(px(4.))
@@ -129,14 +181,46 @@ fn task_row(t: &Tokens, tint: Hsla, mark: AnyElement, name: String, detail: Opti
         .text_size(px(11.))
         .text_color(tint)
         .child(div().flex_none().child(mark))
-        .child(div().min_w_0().truncate().font_family(theme::MONO).text_size(px(10.5)).text_color(t.text_primary).child(name))
-        .child(div().flex_1().min_w_0().truncate().text_size(px(10.5)).text_color(t.text_disabled).children(detail))
-        .children(cost.map(|cost| div().flex_none().font_family(theme::MONO).text_size(px(10.)).text_color(t.text_disabled).child(cost)))
-        .child(div().w(px(18.)).flex_none().flex().justify_center().children(end))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_family(theme::MONO)
+                .text_size(px(10.5))
+                .text_color(t.text_primary)
+                .child(name),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(10.5))
+                .text_color(t.text_disabled)
+                .children(detail),
+        )
+        .children(cost.map(|cost| {
+            div()
+                .flex_none()
+                .font_family(theme::MONO)
+                .text_size(px(10.))
+                .text_color(t.text_disabled)
+                .child(cost)
+        }))
+        .child(
+            div()
+                .w(px(18.))
+                .flex_none()
+                .flex()
+                .justify_center()
+                .children(end),
+        )
 }
 
 fn tokens(tokens: Option<u64>) -> Option<String> {
-    tokens.filter(|tokens| *tokens > 0).map(|tokens| format!("{} tokens", crate::home::compact(tokens as f64)))
+    tokens
+        .filter(|tokens| *tokens > 0)
+        .map(|tokens| format!("{} tokens", crate::home::compact(tokens as f64)))
 }
 
 fn cost(parts: [Option<String>; 2]) -> Option<String> {
@@ -146,7 +230,10 @@ fn cost(parts: [Option<String>; 2]) -> Option<String> {
 
 /// The chat's subagents still at work, where the reader looks for live work.
 pub fn subagents(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let running: &[SubagentCard] = chat.state.as_ref().map_or(&[], |head| head.running_subagents.as_slice());
+    let running: &[SubagentCard] = chat
+        .state
+        .as_ref()
+        .map_or(&[], |head| head.running_subagents.as_slice());
     if running.is_empty() {
         return None;
     }
@@ -167,14 +254,47 @@ pub fn subagents(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> 
     .draw(&agent.id, cx);
     let rows = running.iter().map(|card| {
         let activity = match &card.last_tool {
-            Some(tool) => format!("{} {}", word(&tool.row), tool.row.target).trim().to_owned(),
-            None => card.task.split('\n').next().unwrap_or_default().trim().to_owned(),
+            Some(tool) => format!("{} {}", word(&tool.row), tool.row.target)
+                .trim()
+                .to_owned(),
+            None => card
+                .task
+                .split('\n')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
         };
-        let calls = (card.calls > 0).then(|| format!("{} {}", card.calls, if card.calls == 1 { "call" } else { "calls" }));
-        let working = ui::icon(Icon::Hourglass, 11.).text_color(tint).into_any_element();
-        task_row(&t, tint, ui::mark(&agent.provider, 16.), card.name.clone(), Some(activity), cost([tokens(card.tokens), calls]), Some(working)).into_any_element()
+        let calls = (card.calls > 0).then(|| {
+            format!(
+                "{} {}",
+                card.calls,
+                if card.calls == 1 { "call" } else { "calls" }
+            )
+        });
+        let working = ui::icon(Icon::Hourglass, 11.)
+            .text_color(tint)
+            .into_any_element();
+        task_row(
+            &t,
+            tint,
+            ui::mark(&agent.provider, 16.),
+            card.name.clone(),
+            Some(activity),
+            cost([tokens(card.tokens), calls]),
+            Some(working),
+        )
+        .into_any_element()
     });
-    Some(div().pb(px(7.)).flex().flex_col().child(label).when(!folded, |group| group.children(rows)).into_any_element())
+    Some(
+        div()
+            .pb(px(7.))
+            .flex()
+            .flex_col()
+            .child(label)
+            .when(!folded, |group| group.children(rows))
+            .into_any_element(),
+    )
 }
 
 fn task_icon(kind: &str) -> Icon {
@@ -187,10 +307,15 @@ fn task_icon(kind: &str) -> Icon {
 
 /// What a task row says beside its name: who started it, and the first thing that says more than the name.
 fn task_detail(task: &AsyncTask) -> Option<String> {
-    let said = [task.summary.as_deref(), Some(task.description.as_str()), task.last_tool_name.as_deref(), Some(task.task_type.as_str())]
-        .into_iter()
-        .flatten()
-        .find(|text| !text.is_empty() && *text != task.name);
+    let said = [
+        task.summary.as_deref(),
+        Some(task.description.as_str()),
+        task.last_tool_name.as_deref(),
+        Some(task.task_type.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|text| !text.is_empty() && *text != task.name);
     let owner = task.owner.as_ref().map(|owner| format!("from {owner}"));
     let detail: Vec<String> = owner.into_iter().chain(said.map(str::to_owned)).collect();
     (!detail.is_empty()).then(|| detail.join(" · "))
@@ -198,10 +323,17 @@ fn task_detail(task: &AsyncTask) -> Option<String> {
 
 /// The background tasks, a group for each kind the agent named them by.
 pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
-    let tasks: &[AsyncTask] = chat.state.as_ref().map_or(&[], |head| head.tasks.as_slice());
+    let tasks: &[AsyncTask] = chat
+        .state
+        .as_ref()
+        .map_or(&[], |head| head.tasks.as_slice());
     let mut kinds: Vec<(&str, Vec<&AsyncTask>)> = Vec::new();
     for task in tasks {
-        let kind = if task.task_type.is_empty() { "task" } else { task.task_type.as_str() };
+        let kind = if task.task_type.is_empty() {
+            "task"
+        } else {
+            task.task_type.as_str()
+        };
         match kinds.iter_mut().find(|(held, _)| *held == kind) {
             Some((_, group)) => group.push(task),
             None => kinds.push((kind, vec![task])),
@@ -219,7 +351,9 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                 count: group.len(),
                 folds: true,
                 folded,
-                icon: ui::icon(task_icon(kind), 12.).text_color(tints.task).into_any_element(),
+                icon: ui::icon(task_icon(kind), 12.)
+                    .text_color(tints.task)
+                    .into_any_element(),
                 peek: group.iter().map(|task| task.name.clone()).collect(),
                 action: None,
                 key,
@@ -227,16 +361,61 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
             .draw(&agent.id, cx);
             let mut rows: Vec<AnyElement> = Vec::new();
             for task in group {
-                let tint = if task.state == TaskState::Paused { t.text_disabled } else { tints.task };
+                let tint = if task.state == TaskState::Paused {
+                    t.text_disabled
+                } else {
+                    tints.task
+                };
                 let stop = task.can_stop.then(|| stop(&agent.id, task, &t, cx));
-                let finished = task.agents.iter().filter(|agent| matches!(agent.state, WorkflowAgentState::Completed | WorkflowAgentState::Failed)).count();
-                let agents = (!task.agents.is_empty())
-                    .then(|| format!("{finished}/{} {}", task.agents.len(), if task.agents.len() == 1 { "agent" } else { "agents" }));
-                let mark = ui::icon(task_icon(kind), 12.).text_color(tint).into_any_element();
-                rows.push(task_row(&t, tint, mark, task.name.clone(), task_detail(task), agents, stop).into_any_element());
-                rows.extend(task.agents.iter().map(|worker| workflow_agent(agent, worker, &t, &tints)));
+                let finished = task
+                    .agents
+                    .iter()
+                    .filter(|agent| {
+                        matches!(
+                            agent.state,
+                            WorkflowAgentState::Completed | WorkflowAgentState::Failed
+                        )
+                    })
+                    .count();
+                let agents = (!task.agents.is_empty()).then(|| {
+                    format!(
+                        "{finished}/{} {}",
+                        task.agents.len(),
+                        if task.agents.len() == 1 {
+                            "agent"
+                        } else {
+                            "agents"
+                        }
+                    )
+                });
+                let mark = ui::icon(task_icon(kind), 12.)
+                    .text_color(tint)
+                    .into_any_element();
+                rows.push(
+                    task_row(
+                        &t,
+                        tint,
+                        mark,
+                        task.name.clone(),
+                        task_detail(task),
+                        agents,
+                        stop,
+                    )
+                    .into_any_element(),
+                );
+                rows.extend(
+                    task.agents
+                        .iter()
+                        .map(|worker| workflow_agent(agent, worker, &t, &tints)),
+                );
             }
-            div().pb(px(7.)).flex().flex_col().child(label).when(!folded, |group| group.children(rows)).into_any_element()
+            div()
+                .pb(px(7.))
+                .flex()
+                .flex_col()
+                .child(label)
+                .when(!folded, |group| group.children(rows))
+                .into_any_element()
         })
         .collect()
 }
@@ -252,30 +431,57 @@ fn stop(agent: &str, task: &AsyncTask, t: &Tokens, cx: &mut Context<Workbench>) 
         .rounded(theme::RADIUS_1)
         .text_color(t.text_disabled)
         .hover(move |stop| stop.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
-        .on_click(cx.listener(move |bench, _, _, _| bench.ask_chat(ChatAsk::StopTask { agent: agent.clone(), task: id.clone() })))
+        .on_click(cx.listener(move |bench, _, _, _| {
+            bench.ask_chat(ChatAsk::StopTask {
+                agent: agent.clone(),
+                task: id.clone(),
+            })
+        }))
         .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled))
         .into_any_element()
 }
 
 /// One of the agents a workflow started, set in under the workflow.
-fn workflow_agent(agent: &AgentRow, worker: &WorkflowAgent, t: &Tokens, tints: &Tints) -> AnyElement {
+fn workflow_agent(
+    agent: &AgentRow,
+    worker: &WorkflowAgent,
+    t: &Tokens,
+    tints: &Tints,
+) -> AnyElement {
     let detail = match worker.state {
         WorkflowAgentState::Failed => worker.error.clone().or(worker.phase.clone()),
         WorkflowAgentState::Running if worker.activity.is_some() => worker.activity.clone(),
         _ => worker.phase.clone(),
     };
-    let calls = worker.tool_calls.filter(|calls| *calls > 0).map(|calls| format!("{calls} tools"));
+    let calls = worker
+        .tool_calls
+        .filter(|calls| *calls > 0)
+        .map(|calls| format!("{calls} tools"));
     let end = match worker.state {
         WorkflowAgentState::Running => Some(ui::icon(Icon::Hourglass, 11.).text_color(tints.agent)),
         WorkflowAgentState::Completed => Some(ui::icon(Icon::Check, 10.).text_color(tints.task)),
         WorkflowAgentState::Failed => Some(ui::icon(Icon::Close, 10.).text_color(t.danger)),
         WorkflowAgentState::Queued => None,
     };
-    let quiet = matches!(worker.state, WorkflowAgentState::Queued | WorkflowAgentState::Completed);
-    let mark = div().when(quiet, |mark| mark.opacity(0.6)).child(ui::mark(&agent.provider, 16.)).into_any_element();
-    task_row(t, tints.agent, mark, worker.label.clone(), detail, cost([tokens(worker.tokens), calls]), end.map(IntoElement::into_any_element))
-        .pl(px(26.))
-        .into_any_element()
+    let quiet = matches!(
+        worker.state,
+        WorkflowAgentState::Queued | WorkflowAgentState::Completed
+    );
+    let mark = div()
+        .when(quiet, |mark| mark.opacity(0.6))
+        .child(ui::mark(&agent.provider, 16.))
+        .into_any_element();
+    task_row(
+        t,
+        tints.agent,
+        mark,
+        worker.label.clone(),
+        detail,
+        cost([tokens(worker.tokens), calls]),
+        end.map(IntoElement::into_any_element),
+    )
+    .pl(px(26.))
+    .into_any_element()
 }
 
 /// What a queued message says in its one line: its words, else what it carries.
@@ -283,8 +489,14 @@ fn queued_label(message: &QueuedMessage) -> String {
     if !message.text.is_empty() {
         return message.text.clone();
     }
-    let paths = message.paths.iter().map(|path| path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned());
-    paths.chain(message.context.iter().map(|item| item.title.clone())).collect::<Vec<_>>().join(", ")
+    let paths = message
+        .paths
+        .iter()
+        .map(|path| path.rsplit(['/', '\\']).next().unwrap_or(path).to_owned());
+    paths
+        .chain(message.context.iter().map(|item| item.title.clone()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Messages the person sent while a turn runs, waiting for it to end; while it
@@ -315,14 +527,29 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .text_size(px(10.5))
             .text_color(t.text_primary)
             .on_click(cx.listener(move |bench, _, _, _| {
-                let _ = bench.asks.send(Ask::Call { method: "steerQueued", params: json!({ "agentId": agent, "ids": ids, "message": null }) });
+                let _ = bench.asks.send(Ask::Call {
+                    method: "steerQueued",
+                    params: json!({ "agentId": agent, "ids": ids, "message": null }),
+                });
             }))
             .child(label.to_owned())
-            .when(keys, |button| button.child(div().text_size(px(9.5)).text_color(t.text_disabled).child("⌘↵")))
+            .when(keys, |button| {
+                button.child(
+                    div()
+                        .text_size(px(9.5))
+                        .text_color(t.text_disabled)
+                        .child("⌘↵"),
+                )
+            })
             .into_any_element()
     };
     let all = waiting.iter().map(|message| message.id.clone()).collect();
-    let action = (steerable && waiting.len() > 1).then(|| div().ml_auto().child(steer(all, "Steer all", true, cx)).into_any_element());
+    let action = (steerable && waiting.len() > 1).then(|| {
+        div()
+            .ml_auto()
+            .child(steer(all, "Steer all", true, cx))
+            .into_any_element()
+    });
     let label = Label {
         key: "queued".into(),
         word: "queued".into(),
@@ -337,7 +564,8 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
     let rows: Vec<AnyElement> = waiting
         .iter()
         .map(|message| {
-            let steer_one = steerable.then(|| steer(vec![message.id.clone()], "Steer", waiting.len() == 1, cx));
+            let steer_one =
+                steerable.then(|| steer(vec![message.id.clone()], "Steer", waiting.len() == 1, cx));
             let (agent, id, danger) = (agent.to_owned(), message.id.clone(), t.danger);
             let drop = BaseButton::new(SharedString::from(format!("drop:{id}")))
                 .accessibility_label(format!("Drop {} from the queue", queued_label(message)))
@@ -349,7 +577,10 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                 .text_color(t.text_disabled)
                 .hover(move |drop| drop.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
                 .on_click(cx.listener(move |bench, _, _, _| {
-                    let _ = bench.asks.send(Ask::Call { method: "dropQueued", params: json!({ "agentId": agent, "ids": [id] }) });
+                    let _ = bench.asks.send(Ask::Call {
+                        method: "dropQueued",
+                        params: json!({ "agentId": agent, "ids": [id] }),
+                    });
                 }))
                 .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
             div()
@@ -361,12 +592,32 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                 .items_center()
                 .gap(px(7.))
                 .text_color(t.text_tertiary)
-                .child(ui::icon(Icon::Clock, 12.).flex_none().text_color(t.text_tertiary))
-                .child(div().flex_1().min_w_0().truncate().text_size(px(12.)).text_color(t.text_secondary).child(queued_label(message)))
+                .child(
+                    ui::icon(Icon::Clock, 12.)
+                        .flex_none()
+                        .text_color(t.text_tertiary),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(t.text_secondary)
+                        .child(queued_label(message)),
+                )
                 .children(steer_one)
                 .child(drop)
                 .into_any_element()
         })
         .collect();
-    Some(div().pb(px(7.)).flex().flex_col().child(label).children(rows).into_any_element())
+    Some(
+        div()
+            .pb(px(7.))
+            .flex()
+            .flex_col()
+            .child(label)
+            .children(rows)
+            .into_any_element(),
+    )
 }

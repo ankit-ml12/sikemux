@@ -81,8 +81,22 @@ impl Tokens {
     pub fn new(palette: &Palette) -> Self {
         let (k, t) = (&palette.tokens, &palette.theme.terminal);
         let ansi = [
-            &t.black, &t.red, &t.green, &t.yellow, &t.blue, &t.magenta, &t.cyan, &t.white, &t.bright_black, &t.bright_red,
-            &t.bright_green, &t.bright_yellow, &t.bright_blue, &t.bright_magenta, &t.bright_cyan, &t.bright_white,
+            &t.black,
+            &t.red,
+            &t.green,
+            &t.yellow,
+            &t.blue,
+            &t.magenta,
+            &t.cyan,
+            &t.white,
+            &t.bright_black,
+            &t.bright_red,
+            &t.bright_green,
+            &t.bright_yellow,
+            &t.bright_blue,
+            &t.bright_magenta,
+            &t.bright_cyan,
+            &t.bright_white,
         ];
         Self {
             surface_sunken: color(&k.sunken),
@@ -141,7 +155,12 @@ impl Tokens {
 
     /// DESIGN.md's `--shadow-4`, for anything that floats.
     pub fn shadow_float(&self) -> Vec<BoxShadow> {
-        let black = |alpha: f32| Hsla { h: 0., s: 0., l: 0., a: alpha };
+        let black = |alpha: f32| Hsla {
+            h: 0.,
+            s: 0.,
+            l: 0.,
+            a: alpha,
+        };
         vec![
             BoxShadow {
                 color: black(0.44),
@@ -220,7 +239,10 @@ pub fn apply(palette: &Palette, cx: &mut App) {
     kit.input = tokens.border;
     kit.ring = tokens.border_selected;
     kit.caret = tokens.text_primary;
-    kit.selection = Hsla { a: 0.30, ..tokens.accent };
+    kit.selection = Hsla {
+        a: 0.30,
+        ..tokens.accent
+    };
     kit.accent = tokens.surface_hover;
     kit.accent_foreground = tokens.text_primary;
     kit.list_hover = tokens.surface_hover;
@@ -228,7 +250,10 @@ pub fn apply(palette: &Palette, cx: &mut App) {
     kit.primary = tokens.accent;
     kit.primary_foreground = tokens.on_accent;
     kit.danger = tokens.danger;
-    kit.scrollbar_thumb = Hsla { a: 0.42, ..tokens.text_tertiary };
+    kit.scrollbar_thumb = Hsla {
+        a: 0.42,
+        ..tokens.text_tertiary
+    };
     cx.set_global(tokens);
 }
 
@@ -244,21 +269,47 @@ pub fn color(css: &str) -> Hsla {
 fn parse(css: &str) -> Rgba {
     let css = css.trim();
     if css == "transparent" {
-        return Rgba { r: 0., g: 0., b: 0., a: 0. };
+        return Rgba {
+            r: 0.,
+            g: 0.,
+            b: 0.,
+            a: 0.,
+        };
     }
     if let Some(digits) = css.strip_prefix('#') {
-        let digits: String = if digits.len() == 3 { digits.chars().flat_map(|digit| [digit, digit]).collect() } else { digits.to_owned() };
+        let digits: String = if digits.len() == 3 {
+            digits.chars().flat_map(|digit| [digit, digit]).collect()
+        } else {
+            digits.to_owned()
+        };
         match (digits.len(), u32::from_str_radix(&digits, 16)) {
             (6, Ok(value)) => return gpui_kit::rgb(value),
             (8, Ok(value)) => return gpui_kit::rgba(value),
             _ => {}
         }
     }
-    let channels = css.strip_prefix("rgba(").or_else(|| css.strip_prefix("rgb(")).and_then(|rest| rest.strip_suffix(')'));
-    let parts: Vec<f32> = channels.into_iter().flat_map(|rest| rest.split(',')).filter_map(|part| part.trim().parse().ok()).collect();
+    let channels = css
+        .strip_prefix("rgba(")
+        .or_else(|| css.strip_prefix("rgb("))
+        .and_then(|rest| rest.strip_suffix(')'));
+    let parts: Vec<f32> = channels
+        .into_iter()
+        .flat_map(|rest| rest.split(','))
+        .filter_map(|part| part.trim().parse().ok())
+        .collect();
     match parts.as_slice() {
-        [r, g, b, rest @ ..] => Rgba { r: r / 255., g: g / 255., b: b / 255., a: rest.first().copied().unwrap_or(1.) },
-        _ => Rgba { r: 0., g: 0., b: 0., a: 1. },
+        [r, g, b, rest @ ..] => Rgba {
+            r: r / 255.,
+            g: g / 255.,
+            b: b / 255.,
+            a: rest.first().copied().unwrap_or(1.),
+        },
+        _ => Rgba {
+            r: 0.,
+            g: 0.,
+            b: 0.,
+            a: 1.,
+        },
     }
 }
 
@@ -280,7 +331,13 @@ fn mix_oklab(a: Rgba, b: Rgba, amount: f32) -> Rgba {
 }
 
 fn oklab(color: Rgba) -> [f32; 3] {
-    let linear = |c: f32| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
+    let linear = |c: f32| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
     let (r, g, b) = (linear(color.r), linear(color.g), linear(color.b));
     let l = (0.412_221_47 * r + 0.536_332_55 * g + 0.051_445_99 * b).cbrt();
     let m = (0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b).cbrt();
@@ -298,7 +355,11 @@ fn from_oklab([l, a, b]: [f32; 3]) -> Rgba {
     let s_ = (l - 0.089_484_18 * a - 1.291_485_5 * b).powi(3);
     let gamma = |c: f32| {
         let c = c.clamp(0., 1.);
-        if c <= 0.003_130_8 { 12.92 * c } else { 1.055 * c.powf(1. / 2.4) - 0.055 }
+        if c <= 0.003_130_8 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1. / 2.4) - 0.055
+        }
     };
     Rgba {
         r: gamma(4.076_741_7 * l_ - 3.307_711_6 * m_ + 0.230_969_94 * s_),

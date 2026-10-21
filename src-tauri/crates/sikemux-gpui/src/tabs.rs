@@ -2,8 +2,9 @@ use std::f32::consts::FRAC_PI_2;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Transformation, WindowControlArea,
+    div, px, radians, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation,
+    WindowControlArea,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
@@ -22,7 +23,15 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
             bench
                 .tabs(&project.id)
                 .iter()
-                .map(|tab| strip_tab(bench, &project.id, tab, front.as_deref() == Some(tab.id.as_str()), cx))
+                .map(|tab| {
+                    strip_tab(
+                        bench,
+                        &project.id,
+                        tab,
+                        front.as_deref() == Some(tab.id.as_str()),
+                        cx,
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -44,7 +53,17 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .flex()
                 .items_center()
                 .overflow_hidden()
-                .child(div().h_full().min_w_0().overflow_hidden().px(px(4.)).flex().items_center().gap(px(4.)).children(tabs))
+                .child(
+                    div()
+                        .h_full()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .px(px(4.))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .children(tabs),
+                )
                 .child(IconButton::new("new-tab", Icon::Plus, "New tab").glyph(13.)),
         )
         .child(
@@ -54,18 +73,40 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .items_center()
                 .gap(px(8.))
                 .pr(px(16.))
-                .children(git_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
-                .children(run_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
-                .children(ports_chip(bench, cx).map(|chip| [chip, separator(cx)]).into_iter().flatten())
+                .children(
+                    git_chip(bench, cx)
+                        .map(|chip| [chip, separator(cx)])
+                        .into_iter()
+                        .flatten(),
+                )
+                .children(
+                    run_chip(bench, cx)
+                        .map(|chip| [chip, separator(cx)])
+                        .into_iter()
+                        .flatten(),
+                )
+                .children(
+                    ports_chip(bench, cx)
+                        .map(|chip| [chip, separator(cx)])
+                        .into_iter()
+                        .flatten(),
+                )
                 .children(ci_glyph(bench, cx))
                 .children(battery_chip(bench, cx))
                 .child(clock(cx))
-                .child(IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B").width(30.)),
+                .child(
+                    IconButton::new("focus", Icon::Focus, "Focus mode — hide rails — ⌘B")
+                        .width(30.),
+                ),
         )
 }
 
 fn separator(cx: &App) -> AnyElement {
-    div().w(px(1.)).h(px(16.)).bg(Tokens::get(cx).line).into_any_element()
+    div()
+        .w(px(1.))
+        .h(px(16.))
+        .bg(Tokens::get(cx).line)
+        .into_any_element()
 }
 
 /// Where the project's repository stands: its branch, and how far it is from its upstream.
@@ -75,16 +116,25 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let git = project.git.as_ref()?;
     let host = project.code_host.as_ref();
     let mark = match host {
-        Some(host) if host.host == "github" => ui::icon(Icon::Github, 12.).text_color(t.text_primary),
+        Some(host) if host.host == "github" => {
+            ui::icon(Icon::Github, 12.).text_color(t.text_primary)
+        }
         _ => ui::icon(Icon::Git, 12.).text_color(if git.dirty { t.warn } else { t.live }),
     };
-    let mut about: Vec<String> = host.map(|host| vec![host_label(&host.host).to_owned(), host.repo.clone()]).unwrap_or_default();
+    let mut about: Vec<String> = host
+        .map(|host| vec![host_label(&host.host).to_owned(), host.repo.clone()])
+        .unwrap_or_default();
     about.push(git.branch.clone());
-    about.push(if git.dirty { "changed".into() } else { "clean".into() });
+    about.push(if git.dirty {
+        "changed".into()
+    } else {
+        "clean".into()
+    });
     about.extend((git.ahead > 0).then(|| format!("ahead {}", git.ahead)));
     about.extend((git.behind > 0).then(|| format!("behind {}", git.behind)));
     let count = |arrow: &str, count: u32, color| {
-        (count > 0).then(|| ui::text(format!("{arrow}{count}"), 10., FontWeight::NORMAL).text_color(color))
+        (count > 0)
+            .then(|| ui::text(format!("{arrow}{count}"), 10., FontWeight::NORMAL).text_color(color))
     };
     Some(
         div()
@@ -102,9 +152,23 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .hover(move |style| style.text_color(t.text_primary))
             .tooltip(ui::tooltip(about.join(" · ")))
             .child(mark)
-            .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(t.text_primary).child(git.branch.clone()))
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .text_color(t.text_primary)
+                    .child(git.branch.clone()),
+            )
             .when(git.ahead > 0 || git.behind > 0, |chip| {
-                chip.child(div().flex().gap(px(4.)).children(count("↑", git.ahead, t.live)).children(count("↓", git.behind, t.warn)))
+                chip.child(
+                    div()
+                        .flex()
+                        .gap(px(4.))
+                        .children(count("↑", git.ahead, t.live))
+                        .children(count("↓", git.behind, t.warn)),
+                )
             })
             .into_any_element(),
     )
@@ -117,7 +181,11 @@ fn ports_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     if count == 0 {
         return None;
     }
-    let about = if count == 1 { "1 listening port".to_owned() } else { format!("{count} listening ports") };
+    let about = if count == 1 {
+        "1 listening port".to_owned()
+    } else {
+        format!("{count} listening ports")
+    };
     Some(
         div()
             .id("ports-chip")
@@ -144,12 +212,19 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let run = bench.latest_run()?;
     let outcome = run["outcome"].as_str()?;
     let number = run["runNumber"].as_u64()?;
-    let ago = chrono::DateTime::parse_from_rfc3339(run["createdAt"].as_str()?).ok()?.timestamp_millis().max(0) as u64;
+    let ago = chrono::DateTime::parse_from_rfc3339(run["createdAt"].as_str()?)
+        .ok()?
+        .timestamp_millis()
+        .max(0) as u64;
     let ago = match crate::agents::age(ago) {
         now if now == "now" => now,
         age => format!("{age} ago"),
     };
-    let about = format!("{} · {} #{number} · {ago}", outcome_label(outcome), run["name"].as_str().unwrap_or_default());
+    let about = format!(
+        "{} · {} #{number} · {ago}",
+        outcome_label(outcome),
+        run["name"].as_str().unwrap_or_default()
+    );
     Some(
         div()
             .id("ci-glyph")
@@ -164,7 +239,11 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .hover(move |style| style.text_color(t.text_primary))
             .tooltip(ui::tooltip(about))
             .child(ui::status_of_run(outcome, 12., cx))
-            .child(ui::mono(format!("#{number}"), 11., cx).font_features(crate::theme::tabular()).text_color(t.text_secondary))
+            .child(
+                ui::mono(format!("#{number}"), 11., cx)
+                    .font_features(crate::theme::tabular())
+                    .text_color(t.text_secondary),
+            )
             .into_any_element(),
     )
 }
@@ -180,7 +259,9 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
         11..=20 => t.warn,
         _ => t.accent,
     };
-    let time = battery.minutes.map(|minutes| format!("{}:{:02}", minutes / 60, minutes % 60));
+    let time = battery
+        .minutes
+        .map(|minutes| format!("{}:{:02}", minutes / 60, minutes % 60));
     let about = match (battery.charging, time) {
         (true, Some(time)) => format!("{percent}% · charging · {time} until full"),
         (true, None) => format!("{percent}% · charging"),
@@ -190,18 +271,60 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     let unit = 12. / 13.;
     let at = |units: f32| px(units * unit);
     let level = f32::from(percent) / 100.;
-    let fill = if level > 0. { (20.5 * level).max(2.2) } else { 0. };
+    let fill = if level > 0. {
+        (20.5 * level).max(2.2)
+    } else {
+        0.
+    };
     let frame = Hsla { a: 0.45, ..tint };
-    let bolt = |glyph: Icon, color: Hsla| ui::icon(glyph, 19. * unit).w(at(12.)).absolute().left(at(7.)).top(at(-3.)).text_color(color);
+    let bolt = |glyph: Icon, color: Hsla| {
+        ui::icon(glyph, 19. * unit)
+            .w(at(12.))
+            .absolute()
+            .left(at(7.))
+            .top(at(-3.))
+            .text_color(color)
+    };
     let icon = div()
         .relative()
         .flex_none()
         .w(at(28.))
         .h(at(13.))
-        .child(div().absolute().left_0().top_0().w(at(24.5)).h(at(13.)).border(at(1.)).border_color(frame).rounded(at(4.1)))
-        .child(div().absolute().left(at(25.4)).top(at(4.4)).w(at(1.6)).h(at(4.2)).rounded_r(at(1.6)).bg(frame))
-        .child(div().absolute().left(at(2.)).top(at(2.)).w(at(fill)).h(at(9.)).rounded(at(2.2)).bg(tint))
-        .when(battery.charging, |icon| icon.child(bolt(Icon::BatteryBoltGap, t.surface_sunken)).child(bolt(Icon::BatteryBolt, tint)));
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .w(at(24.5))
+                .h(at(13.))
+                .border(at(1.))
+                .border_color(frame)
+                .rounded(at(4.1)),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(at(25.4))
+                .top(at(4.4))
+                .w(at(1.6))
+                .h(at(4.2))
+                .rounded_r(at(1.6))
+                .bg(frame),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(at(2.))
+                .top(at(2.))
+                .w(at(fill))
+                .h(at(9.))
+                .rounded(at(2.2))
+                .bg(tint),
+        )
+        .when(battery.charging, |icon| {
+            icon.child(bolt(Icon::BatteryBoltGap, t.surface_sunken))
+                .child(bolt(Icon::BatteryBolt, tint))
+        });
     Some(
         div()
             .id("battery")
@@ -210,7 +333,11 @@ fn battery_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .gap(px(5.))
             .tooltip(ui::tooltip(about))
             .child(icon)
-            .child(ui::text(format!("{percent}%"), 11., FontWeight::SEMIBOLD).font_features(crate::theme::tabular()).text_color(tint))
+            .child(
+                ui::text(format!("{percent}%"), 11., FontWeight::SEMIBOLD)
+                    .font_features(crate::theme::tabular())
+                    .text_color(tint),
+            )
             .into_any_element(),
     )
 }
@@ -247,34 +374,60 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let id = selected["id"].as_str()?.to_owned();
     let label = selected["label"].as_str()?.to_owned();
     let last = last.filter(|run| running.is_none() && run["taskId"] == id.as_str());
-    let failed = last.filter(|run| run["status"] == "failed").map(|run| match run["exitCode"].as_i64() {
-        Some(code) => format!("exited {code}"),
-        None => "failed".into(),
-    });
+    let failed =
+        last.filter(|run| run["status"] == "failed")
+            .map(|run| match run["exitCode"].as_i64() {
+                Some(code) => format!("exited {code}"),
+                None => "failed".into(),
+            });
     let status = match (running, &failed) {
         (Some(run), _) => {
-            let since = run["startedAt"].as_i64().map_or(0, |at| (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000);
+            let since = run["startedAt"].as_i64().map_or(0, |at| {
+                (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
+            });
             Some((format!("{since}s"), t.text_tertiary))
         }
         (None, Some(failed)) => Some((failed.clone(), t.danger)),
         _ => None,
     };
     let dot = match (running, &failed) {
-        (Some(_), _) => Some(div().size(px(7.)).rounded_full().border(px(1.5)).border_color(t.warn)),
+        (Some(_), _) => Some(
+            div()
+                .size(px(7.))
+                .rounded_full()
+                .border(px(1.5))
+                .border_color(t.warn),
+        ),
         (None, Some(_)) => Some(div().size(px(7.)).rounded_full().bg(t.danger)),
         _ => None,
     };
-    let execution = running.and_then(|run| run["executionId"].as_str()).map(str::to_owned);
-    let primary = if running.is_some() { format!("Stop {label}") } else { format!("Run {label}") };
-    let (glyph, word, tint) = if running.is_some() { (Icon::Stop, "Stop", t.danger) } else { (Icon::Run, "Run", t.live) };
+    let execution = running
+        .and_then(|run| run["executionId"].as_str())
+        .map(str::to_owned);
+    let primary = if running.is_some() {
+        format!("Stop {label}")
+    } else {
+        format!("Run {label}")
+    };
+    let (glyph, word, tint) = if running.is_some() {
+        (Icon::Stop, "Stop", t.danger)
+    } else {
+        (Icon::Run, "Run", t.live)
+    };
     Some(
         div()
             .h(px(24.))
             .flex()
             .rounded(crate::theme::RADIUS_2)
-            .bg(Hsla { a: 0.94, ..t.surface })
+            .bg(Hsla {
+                a: 0.94,
+                ..t.surface
+            })
             .border_1()
-            .border_color(Hsla { a: 0.06, ..t.text_primary })
+            .border_color(Hsla {
+                a: 0.06,
+                ..t.text_primary
+            })
             .child(
                 div()
                     .id("run-task")
@@ -304,36 +457,78 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .items_center()
                     .gap(px(5.))
                     .border_l_1()
-                    .border_color(Hsla { a: 0.08, ..t.text_primary })
+                    .border_color(Hsla {
+                        a: 0.08,
+                        ..t.text_primary
+                    })
                     .font_family(crate::theme::MONO)
                     .text_size(px(11.))
                     .text_color(t.text_tertiary)
                     .hover(move |style| style.text_color(t.text_primary))
                     .children(dot)
-                    .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(label))
-                    .children(status.map(|(text, color)| div().text_color(color).child(format!("· {text}"))))
-                    .child(ui::icon(Icon::Chevron, 10.).with_transformation(Transformation::rotate(radians(FRAC_PI_2))).text_color(t.text_tertiary)),
+                    .child(
+                        div()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .child(label),
+                    )
+                    .children(
+                        status.map(|(text, color)| {
+                            div().text_color(color).child(format!("· {text}"))
+                        }),
+                    )
+                    .child(
+                        ui::icon(Icon::Chevron, 10.)
+                            .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                            .text_color(t.text_tertiary),
+                    ),
             )
             .into_any_element(),
     )
 }
 
-fn strip_tab(bench: &Workbench, project: &str, tab: &LayoutTab, active: bool, cx: &mut Context<Workbench>) -> AnyElement {
+fn strip_tab(
+    bench: &Workbench,
+    project: &str,
+    tab: &LayoutTab,
+    active: bool,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let (project_id, tab_id) = (project.to_owned(), tab.id.clone());
-    let base = Tab::new(SharedString::from(format!("tab-{}", tab.id)), label(bench, tab))
-        .active(active)
-        .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&project_id, &tab_id)));
+    let base = Tab::new(
+        SharedString::from(format!("tab-{}", tab.id)),
+        label(bench, tab),
+    )
+    .active(active)
+    .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&project_id, &tab_id)));
     let view = first_view(&tab.pane);
     match view {
-        Some((PaneKind::Agent, target)) => match bench.agents_of(project).into_iter().find(|agent| &agent.id == target) {
+        Some((PaneKind::Agent, target)) => match bench
+            .agents_of(project)
+            .into_iter()
+            .find(|agent| &agent.id == target)
+        {
             Some(agent) => base
                 .mark(ui::agent_mark(&agent, 19., cx))
-                .note(agent.name.as_ref().map(|name| SharedString::from(format!("@{name}"))))
+                .note(
+                    agent
+                        .name
+                        .as_ref()
+                        .map(|name| SharedString::from(format!("@{name}"))),
+                )
                 .tail(ui::status_mark(agent.status, cx)),
             None => base,
         },
-        Some((kind, _)) => base.mark(ui::icon(kind_icon(kind), 13.).text_color(if kind == PaneKind::Terminal { t.live } else { t.text_tertiary })),
+        Some((kind, _)) => base.mark(ui::icon(kind_icon(kind), 13.).text_color(
+            if kind == PaneKind::Terminal {
+                t.live
+            } else {
+                t.text_tertiary
+            },
+        )),
         None => base,
     }
     .into_any_element()
@@ -348,11 +543,21 @@ fn label(bench: &Workbench, tab: &LayoutTab) -> SharedString {
         Some((PaneKind::Agent, target)) => bench
             .view
             .as_ref()
-            .and_then(|view| view.workspace.agents.iter().find(|agent| &agent.id == target))
+            .and_then(|view| {
+                view.workspace
+                    .agents
+                    .iter()
+                    .find(|agent| &agent.id == target)
+            })
             .map_or_else(|| "Agent".into(), |agent| agent.title.clone().into()),
         Some((PaneKind::Terminal, target)) => bench
             .session(target)
-            .and_then(|session| session.window_title.clone().or_else(|| session.title.clone()))
+            .and_then(|session| {
+                session
+                    .window_title
+                    .clone()
+                    .or_else(|| session.title.clone())
+            })
             .map_or_else(|| "Terminal".into(), SharedString::from),
         Some((kind, _)) => kind_label(kind).into(),
         None => "".into(),
@@ -399,6 +604,14 @@ fn clock(cx: &App) -> impl IntoElement {
         .flex()
         .items_baseline()
         .font_features(crate::theme::tabular())
-        .child(ui::text(now.format("%-I:%M").to_string(), 12., FontWeight::SEMIBOLD).text_color(t.text_secondary))
-        .child(ui::text(now.format("%p").to_string(), 10., FontWeight::SEMIBOLD).letter_spacing(0.06).ml(px(4.)).text_color(t.text_tertiary))
+        .child(
+            ui::text(now.format("%-I:%M").to_string(), 12., FontWeight::SEMIBOLD)
+                .text_color(t.text_secondary),
+        )
+        .child(
+            ui::text(now.format("%p").to_string(), 10., FontWeight::SEMIBOLD)
+                .letter_spacing(0.06)
+                .ml(px(4.))
+                .text_color(t.text_tertiary),
+        )
 }

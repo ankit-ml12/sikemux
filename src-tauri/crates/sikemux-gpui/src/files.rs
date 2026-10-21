@@ -8,8 +8,8 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, uniform_list, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, Transformation,
+    div, px, radians, uniform_list, AnyElement, Context, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, SharedString, Styled, Transformation,
 };
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedSender;
@@ -58,7 +58,10 @@ impl FileTree {
         if root == self.root {
             return;
         }
-        *self = FileTree { root: root.clone(), ..FileTree::default() };
+        *self = FileTree {
+            root: root.clone(),
+            ..FileTree::default()
+        };
         if let Some(root) = root {
             list(asks, &[root], None);
         }
@@ -67,7 +70,9 @@ impl FileTree {
     /// Takes in a `files.list` answer, asking for the next page of any folder it left short.
     pub fn listed(&mut self, answer: &Value, asks: &UnboundedSender<Ask>) {
         for folder in answer.as_array().into_iter().flatten() {
-            let Some(dir) = folder["dir"].as_str().map(PathBuf::from) else { continue };
+            let Some(dir) = folder["dir"].as_str().map(PathBuf::from) else {
+                continue;
+            };
             if folder["error"].is_string() {
                 continue;
             }
@@ -104,9 +109,15 @@ impl FileTree {
     /// Lists again the folders shown that `paths` (relative to the project) could have changed,
     /// or every shown folder when the core did not say what moved.
     pub fn changed(&mut self, paths: Option<&[String]>, asks: &UnboundedSender<Ask>) {
-        let Some(root) = self.root.clone() else { return };
-        let shown: Vec<PathBuf> = std::iter::once(root.clone()).chain(self.expanded.iter().cloned()).collect();
-        let stale: Vec<PathBuf> = match paths.filter(|paths| !paths.is_empty() && !paths.iter().any(|path| path == ".git")) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let shown: Vec<PathBuf> = std::iter::once(root.clone())
+            .chain(self.expanded.iter().cloned())
+            .collect();
+        let stale: Vec<PathBuf> = match paths
+            .filter(|paths| !paths.is_empty() && !paths.iter().any(|path| path == ".git"))
+        {
             None => shown,
             Some(paths) => {
                 let moved: Vec<PathBuf> = paths.iter().map(|path| root.join(path)).collect();
@@ -140,8 +151,14 @@ impl FileTree {
     }
 
     pub fn is_dir(&self, path: &Path) -> bool {
-        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else { return false };
-        self.listed.get(parent).into_iter().flatten().any(|entry| entry.dir && entry.name == name.to_string_lossy())
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            return false;
+        };
+        self.listed
+            .get(parent)
+            .into_iter()
+            .flatten()
+            .any(|entry| entry.dir && entry.name == name.to_string_lossy())
     }
 
     pub fn collapse_all(&mut self) {
@@ -174,7 +191,12 @@ impl FileTree {
         for entry in self.listed.get(dir).into_iter().flatten() {
             let path = dir.join(&entry.name);
             let open = entry.dir && self.expanded.contains(&path);
-            rows.push(Row { path: path.clone(), depth, entry: entry.clone(), open });
+            rows.push(Row {
+                path: path.clone(),
+                depth,
+                entry: entry.clone(),
+                open,
+            });
             if open {
                 self.walk(&path, depth + 1, rows);
             }
@@ -215,9 +237,20 @@ impl Mark {
 fn git_marks(root: &Path, overview: &Value) -> HashMap<PathBuf, (Option<char>, Mark)> {
     let mut marks: HashMap<PathBuf, (Option<char>, Mark)> = HashMap::new();
     for file in overview["status"]["files"].as_array().into_iter().flatten() {
-        let Some(path) = file["path"].as_str() else { continue };
-        let sides = [file["index"].as_str().unwrap_or(" "), file["worktree"].as_str().unwrap_or(" ")];
-        let Some((letter, mark)) = sides.into_iter().filter_map(Mark::of).max_by_key(|(_, mark)| *mark) else { continue };
+        let Some(path) = file["path"].as_str() else {
+            continue;
+        };
+        let sides = [
+            file["index"].as_str().unwrap_or(" "),
+            file["worktree"].as_str().unwrap_or(" "),
+        ];
+        let Some((letter, mark)) = sides
+            .into_iter()
+            .filter_map(Mark::of)
+            .max_by_key(|(_, mark)| *mark)
+        else {
+            continue;
+        };
         let full = root.join(path.trim_end_matches('/'));
         let mut folder = full.parent();
         marks.insert(full.clone(), (Some(letter), mark));
@@ -233,13 +266,20 @@ fn git_marks(root: &Path, overview: &Value) -> HashMap<PathBuf, (Option<char>, M
 }
 
 fn list(asks: &UnboundedSender<Ask>, dirs: &[PathBuf], from: Option<usize>) {
-    let dirs: Vec<String> = dirs.iter().map(|dir| dir.to_string_lossy().into_owned()).collect();
+    let dirs: Vec<String> = dirs
+        .iter()
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .collect();
     for batch in dirs.chunks(512) {
         let params = match from {
             Some(from) => json!({ "dirs": batch, "from": from }),
             None => json!({ "dirs": batch }),
         };
-        let _ = asks.send(Ask::Answer { key: "files.list", method: "files.list", params });
+        let _ = asks.send(Ask::Answer {
+            key: "files.list",
+            method: "files.list",
+            params,
+        });
     }
 }
 
@@ -255,9 +295,14 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         .root
         .as_ref()
         .and_then(|root| root.file_name())
-        .map_or_else(|| "files".to_owned(), |name| name.to_string_lossy().into_owned());
+        .map_or_else(
+            || "files".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        );
     let count = bench.files.rows().len();
-    let action = |id: &'static str, glyph: Icon, label: &'static str| IconButton::new(id, glyph, label).small();
+    let action = |id: &'static str, glyph: Icon, label: &'static str| {
+        IconButton::new(id, glyph, label).small()
+    };
     div()
         .flex_1()
         .min_h_0()
@@ -275,22 +320,31 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 .items_center()
                 .justify_between()
                 .gap(px(8.))
-                .child(ui::text(name.to_uppercase(), 10., FontWeight::SEMIBOLD).letter_spacing(0.08).text_color(t.text_tertiary))
+                .child(
+                    ui::text(name.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                        .letter_spacing(0.08)
+                        .text_color(t.text_tertiary),
+                )
                 .child(
                     div()
                         .flex()
                         .gap(px(2.))
                         .opacity(0.6)
-                        .child(action("files-find", Icon::Search, "Find a file").on_click(cx.listener(|bench, _, window, cx| {
-                            bench.toggle_finder(window, cx);
-                            cx.notify();
-                        })))
+                        .child(action("files-find", Icon::Search, "Find a file").on_click(
+                            cx.listener(|bench, _, window, cx| {
+                                bench.toggle_finder(window, cx);
+                                cx.notify();
+                            }),
+                        ))
                         .child(action("files-new", Icon::FilePlus, "New file"))
                         .child(action("files-new-folder", Icon::FolderPlus, "New folder"))
-                        .child(action("files-collapse", Icon::CollapseAll, "Collapse folders").on_click(cx.listener(|bench, _, _, cx| {
-                            bench.files.collapse_all();
-                            cx.notify();
-                        }))),
+                        .child(
+                            action("files-collapse", Icon::CollapseAll, "Collapse folders")
+                                .on_click(cx.listener(|bench, _, _, cx| {
+                                    bench.files.collapse_all();
+                                    cx.notify();
+                                })),
+                        ),
                 ),
         )
         .child(
@@ -300,7 +354,10 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
                     let front = bench.front_file();
                     let rows = bench.files.rows();
-                    rows[range.start.min(rows.len())..range.end.min(rows.len())].iter().map(|row| row_view(row, &bench.files.marks, front.as_deref(), cx)).collect::<Vec<_>>()
+                    rows[range.start.min(rows.len())..range.end.min(rows.len())]
+                        .iter()
+                        .map(|row| row_view(row, &bench.files.marks, front.as_deref(), cx))
+                        .collect::<Vec<_>>()
                 }),
             )
             .flex_1()
@@ -309,7 +366,12 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         )
 }
 
-fn row_view(row: &Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Option<&Path>, cx: &mut Context<Workbench>) -> AnyElement {
+fn row_view(
+    row: &Row,
+    marks: &HashMap<PathBuf, (Option<char>, Mark)>,
+    front: Option<&Path>,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
     let colour = |mark: Mark| match mark {
@@ -336,23 +398,41 @@ fn row_view(row: &Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Op
             .gap(px(5.))
             .child(
                 ui::icon(Icon::Chevron, 11.)
-                    .when(row.open, |chevron| chevron.with_transformation(Transformation::rotate(radians(FRAC_PI_2))))
+                    .when(row.open, |chevron| {
+                        chevron.with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                    })
                     .text_color(t.text_disabled),
             )
             .child(ui::icon(Icon::Folder, 17.).text_color(t.text_tertiary))
             .into_any_element()
     } else {
         let glyph = match crate::file_icons::icon(&row.entry.name, cx) {
-            Some(icon) => gpui_kit::img(icon).size(px(16.)).flex_none().into_any_element(),
-            None => ui::icon(Icon::File, 16.).text_color(t.text_tertiary).into_any_element(),
+            Some(icon) => gpui_kit::img(icon)
+                .size(px(16.))
+                .flex_none()
+                .into_any_element(),
+            None => ui::icon(Icon::File, 16.)
+                .text_color(t.text_tertiary)
+                .into_any_element(),
         };
         ui::mark_box(22., glyph).into_any_element()
     };
     let tail = match mark {
         Some((Some(letter), mark)) if !row.entry.dir => Some(
-            ui::text(letter.to_string(), 10., FontWeight::BOLD).ml_auto().pl(px(8.)).opacity(0.8).text_color(colour(mark)).into_any_element(),
+            ui::text(letter.to_string(), 10., FontWeight::BOLD)
+                .ml_auto()
+                .pl(px(8.))
+                .opacity(0.8)
+                .text_color(colour(mark))
+                .into_any_element(),
         ),
-        Some((_, mark)) if row.entry.dir => Some(ui::text("●", 7., FontWeight::NORMAL).ml_auto().pl(px(8.)).text_color(colour(mark)).into_any_element()),
+        Some((_, mark)) if row.entry.dir => Some(
+            ui::text("●", 7., FontWeight::NORMAL)
+                .ml_auto()
+                .pl(px(8.))
+                .text_color(colour(mark))
+                .into_any_element(),
+        ),
         _ => None,
     };
     BaseButton::new(SharedString::from(format!("file-{}", row.path.display())))
@@ -370,7 +450,9 @@ fn row_view(row: &Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Op
         .font_weight(FontWeight::MEDIUM)
         .text_color(ink)
         .when(active, |row| row.bg(t.surface_chosen))
-        .when(!active, |row| row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary)))
+        .when(!active, |row| {
+            row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
+        })
         .on_click(cx.listener(move |bench, _, _, cx| {
             if bench.files.expanded.contains(&path) || bench.files.is_dir(&path) {
                 bench.files.toggle(&path, &bench.asks.clone());
@@ -380,7 +462,14 @@ fn row_view(row: &Row, marks: &HashMap<PathBuf, (Option<char>, Mark)>, front: Op
             cx.notify();
         }))
         .child(lead)
-        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.entry.name.clone()))
+        .child(
+            div()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap()
+                .child(row.entry.name.clone()),
+        )
         .children(tail)
         .into_any_element()
 }

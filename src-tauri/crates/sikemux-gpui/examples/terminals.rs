@@ -16,8 +16,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Element, ElementId, GlobalElementId, InspectorElementId, LayoutId, Pixels, div, point, px, relative, size, AnyWindowHandle, AppContext, Bounds, Context, Entity, HeadlessAppContext,
-    IntoElement, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PlatformInput, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
+    div, point, px, relative, size, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context,
+    Element, ElementId, Entity, GlobalElementId, HeadlessAppContext, InspectorElementId,
+    IntoElement, Keystroke, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, PlatformInput, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
     WindowBounds, WindowOptions,
 };
 use sikemux_client::client::CoreClient;
@@ -39,14 +41,23 @@ impl Render for Panes {
         let bench = self.bench.read(cx);
         let columns = self.shown.len().clamp(1, 3);
         let rows = self.shown.len().div_ceil(columns).max(1);
-        div().size_full().flex().flex_wrap().bg(gpui::rgb(0x0f0f13)).font_family(theme::MONO).children(
-            self.shown.iter().map(|id| {
+        div()
+            .size_full()
+            .flex()
+            .flex_wrap()
+            .bg(gpui::rgb(0x0f0f13))
+            .font_family(theme::MONO)
+            .children(self.shown.iter().map(|id| {
                 div()
                     .w(relative(1. / columns as f32))
                     .h(relative(1. / rows as f32))
-                    .child(Timed(terminal::pane(bench, &self.bench, &id.to_string(), window)))
-            }),
-        )
+                    .child(Timed(terminal::pane(
+                        bench,
+                        &self.bench,
+                        &id.to_string(),
+                        window,
+                    )))
+            }))
     }
 }
 
@@ -79,17 +90,40 @@ impl Element for Timed {
         None
     }
 
-    fn request_layout(&mut self, _: Option<&GlobalElementId>, _: Option<&InspectorElementId>, window: &mut Window, cx: &mut App) -> (LayoutId, ()) {
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
         (self.0.request_layout(window, cx), ())
     }
 
-    fn prepaint(&mut self, _: Option<&GlobalElementId>, _: Option<&InspectorElementId>, _: Bounds<Pixels>, _: &mut (), window: &mut Window, cx: &mut App) {
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         let began = Instant::now();
         self.0.prepaint(window, cx);
         add_to_draw(began);
     }
 
-    fn paint(&mut self, _: Option<&GlobalElementId>, _: Option<&InspectorElementId>, _: Bounds<Pixels>, _: &mut (), _: &mut (), window: &mut Window, cx: &mut App) {
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         let began = Instant::now();
         self.0.paint(window, cx);
         add_to_draw(began);
@@ -105,7 +139,10 @@ fn add_to_draw(began: Instant) {
 }
 
 fn thread_cpu_ms() -> f64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
     time.tv_sec as f64 * 1e3 + time.tv_nsec as f64 / 1e6
 }
@@ -135,7 +172,9 @@ impl Run {
         std::thread::sleep(wait);
         self.last = Instant::now();
         self.pump();
-        self.cx.update_window(self.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
+        self.cx
+            .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
+            .ok();
     }
 
     fn show(&mut self, shown: Vec<SessionId>) {
@@ -150,12 +189,19 @@ impl Run {
     }
 
     fn frame_number(&mut self, id: SessionId) -> u32 {
-        self.bench.read_with(&self.cx, |bench, _| bench.terminals.screen(id).map_or(0, |screen| screen.header.frame))
+        self.bench.read_with(&self.cx, |bench, _| {
+            bench
+                .terminals
+                .screen(id)
+                .map_or(0, |screen| screen.header.frame)
+        })
     }
 
     fn cursor(&mut self, id: SessionId) -> (u16, u16) {
         self.bench.read_with(&self.cx, |bench, _| {
-            bench.terminals.screen(id).map_or((0, 0), |screen| (screen.header.cursor.row, screen.header.cursor.col))
+            bench.terminals.screen(id).map_or((0, 0), |screen| {
+                (screen.header.cursor.row, screen.header.cursor.col)
+            })
         })
     }
 
@@ -172,7 +218,11 @@ impl Run {
 
     fn key(&mut self, key: &str) {
         let keystroke = Keystroke::parse(key).expect("a keystroke");
-        self.cx.update_window(self.window, |_, window, cx| window.dispatch_keystroke(keystroke, cx)).ok();
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.dispatch_keystroke(keystroke, cx)
+            })
+            .ok();
     }
 
     /// Types `count` keys a few frames apart, timing each to its echo.
@@ -188,9 +238,15 @@ impl Run {
                 self.pump();
                 std::thread::sleep(Duration::from_micros(200));
             }
-            self.cx.update_window(self.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
+            self.cx
+                .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
+                .ok();
             latencies.push(began.elapsed().as_secs_f64() * 1e3);
-            if latencies.len() >= 3 && latencies[latencies.len() - 3..].iter().all(|latency| *latency >= 1000.) {
+            if latencies.len() >= 3
+                && latencies[latencies.len() - 3..]
+                    .iter()
+                    .all(|latency| *latency >= 1000.)
+            {
                 eprintln!("three keys went unanswered: GPUI's test scheduler lost the window's wake-up; run again");
                 std::process::exit(3);
             }
@@ -209,21 +265,46 @@ impl Run {
             ..Default::default()
         };
         self.cx
-            .update_window(self.window, |_, window, cx| window.dispatch_event(PlatformInput::ScrollWheel(event), cx))
+            .update_window(self.window, |_, window, cx| {
+                window.dispatch_event(PlatformInput::ScrollWheel(event), cx)
+            })
             .ok();
     }
 
     /// Moves the mouse over a cell of a lone pane, then clicks it `clicks` times.
     fn point(&mut self, row: u16, col: u16, clicks: Option<usize>) {
-        let cell = self.bench.read_with(&self.cx, |bench, _| bench.terminals.cell()).unwrap_or_default();
-        let position = point(px(16.) + cell.width * (f32::from(col) + 0.5), px(8.) + cell.height * (f32::from(row) + 0.5));
-        let mut events = vec![PlatformInput::MouseMove(MouseMoveEvent { position, ..Default::default() })];
+        let cell = self
+            .bench
+            .read_with(&self.cx, |bench, _| bench.terminals.cell())
+            .unwrap_or_default();
+        let position = point(
+            px(16.) + cell.width * (f32::from(col) + 0.5),
+            px(8.) + cell.height * (f32::from(row) + 0.5),
+        );
+        let mut events = vec![PlatformInput::MouseMove(MouseMoveEvent {
+            position,
+            ..Default::default()
+        })];
         for click_count in 1..=clicks.unwrap_or(0) {
-            events.push(PlatformInput::MouseDown(MouseDownEvent { button: MouseButton::Left, position, click_count, ..Default::default() }));
-            events.push(PlatformInput::MouseUp(MouseUpEvent { button: MouseButton::Left, position, click_count, ..Default::default() }));
+            events.push(PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                click_count,
+                ..Default::default()
+            }));
+            events.push(PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Left,
+                position,
+                click_count,
+                ..Default::default()
+            }));
         }
         for event in events {
-            self.cx.update_window(self.window, |_, window, cx| window.dispatch_event(event, cx)).ok();
+            self.cx
+                .update_window(self.window, |_, window, cx| {
+                    window.dispatch_event(event, cx)
+                })
+                .ok();
         }
         for _ in 0..10 {
             self.frame();
@@ -231,10 +312,25 @@ impl Run {
     }
 
     fn right_click(&mut self, row: u16, col: u16) {
-        let cell = self.bench.read_with(&self.cx, |bench, _| bench.terminals.cell()).unwrap_or_default();
-        let position = point(px(16.) + cell.width * (f32::from(col) + 0.5), px(8.) + cell.height * (f32::from(row) + 0.5));
-        let event = PlatformInput::MouseDown(MouseDownEvent { button: MouseButton::Right, position, click_count: 1, ..Default::default() });
-        self.cx.update_window(self.window, |_, window, cx| window.dispatch_event(event, cx)).ok();
+        let cell = self
+            .bench
+            .read_with(&self.cx, |bench, _| bench.terminals.cell())
+            .unwrap_or_default();
+        let position = point(
+            px(16.) + cell.width * (f32::from(col) + 0.5),
+            px(8.) + cell.height * (f32::from(row) + 0.5),
+        );
+        let event = PlatformInput::MouseDown(MouseDownEvent {
+            button: MouseButton::Right,
+            position,
+            click_count: 1,
+            ..Default::default()
+        });
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.dispatch_event(event, cx)
+            })
+            .ok();
         for _ in 0..10 {
             self.frame();
         }
@@ -244,7 +340,9 @@ impl Run {
         let Some(folder) = folder else {
             return;
         };
-        self.cx.update_window(self.window, |_, window, cx| window.draw(cx).clear(cx)).ok();
+        self.cx
+            .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
+            .ok();
         if let Ok(image) = self.cx.capture_screenshot(self.window) {
             image.save(folder.join(format!("{name}.png"))).ok();
         }
@@ -253,8 +351,20 @@ impl Run {
 
 fn spread(mut values: Vec<f64>) -> String {
     values.sort_by(f64::total_cmp);
-    let at = |q: f64| values.get(((values.len().max(1) - 1) as f64 * q).round() as usize).copied().unwrap_or(0.);
-    format!("p50 {:.2} ms, p90 {:.2}, p99 {:.2}, max {:.2} ({} samples)", at(0.5), at(0.9), at(0.99), at(1.), values.len())
+    let at = |q: f64| {
+        values
+            .get(((values.len().max(1) - 1) as f64 * q).round() as usize)
+            .copied()
+            .unwrap_or(0.)
+    };
+    format!(
+        "p50 {:.2} ms, p90 {:.2}, p99 {:.2}, max {:.2} ({} samples)",
+        at(0.5),
+        at(0.9),
+        at(0.99),
+        at(1.),
+        values.len()
+    )
 }
 
 /// The most memory this process has held, in MB.
@@ -272,16 +382,25 @@ fn spawn(runtime: &tokio::runtime::Runtime, client: &CoreClient, script: &str) -
         startup: Some(script.into()),
         ..TerminalSpawn::default()
     });
-    let launch = LaunchIdentity { version: "0.0.0-bench".into(), ..LaunchIdentity::default() };
-    runtime.block_on(client.spawn(launch, target)).expect("a terminal starts")
+    let launch = LaunchIdentity {
+        version: "0.0.0-bench".into(),
+        ..LaunchIdentity::default()
+    };
+    runtime
+        .block_on(client.spawn(launch, target))
+        .expect("a terminal starts")
 }
 
 fn main() {
     let Ok(socket) = std::env::var(sikemux_core::SOCKET_ENV) else {
-        eprintln!("set SIKEMUX_CORE_SOCKET and a HOME of its own, so the core it starts is not yours");
+        eprintln!(
+            "set SIKEMUX_CORE_SOCKET and a HOME of its own, so the core it starts is not yours"
+        );
         std::process::exit(2);
     };
-    let log = std::env::args().nth(1).unwrap_or_else(|| "/tmp/termbench/buildlog-crlf.txt".into());
+    let log = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "/tmp/termbench/buildlog-crlf.txt".into());
     let shots = std::env::args().nth(2).map(PathBuf::from);
     let link = core::start(core::Home::default());
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -289,14 +408,20 @@ fn main() {
     let client = loop {
         match runtime.block_on(CoreClient::connect(std::path::Path::new(&socket))) {
             Ok((client, _events)) => break client,
-            Err(_) if started.elapsed() < Duration::from_secs(20) => std::thread::sleep(Duration::from_millis(200)),
+            Err(_) if started.elapsed() < Duration::from_secs(20) => {
+                std::thread::sleep(Duration::from_millis(200))
+            }
             Err(error) => panic!("no core answers at {socket}: {error}"),
         }
     };
     let typist = spawn(&runtime, &client, "stty -icanon; exec cat");
     let flood = format!("while :; do cat '{log}'; done");
     let floods: Vec<SessionId> = (0..4).map(|_| spawn(&runtime, &client, &flood)).collect();
-    let history = spawn(&runtime, &client, "seq 1 20000; echo 'docs live at https://sikemux.com/docs/terminal.'; exec cat");
+    let history = spawn(
+        &runtime,
+        &client,
+        "seq 1 20000; echo 'docs live at https://sikemux.com/docs/terminal.'; exec cat",
+    );
 
     let mut cx = HeadlessAppContext::with_platform(
         gpui_platform::bench_text_system(),
@@ -324,7 +449,10 @@ fn main() {
                     let bench = cx.new(|cx| Workbench::new(link, window, cx));
                     let panes = cx.new(|cx: &mut Context<Panes>| {
                         cx.observe(&bench, |_, _, cx| cx.notify()).detach();
-                        Panes { bench: bench.clone(), shown: Vec::new() }
+                        Panes {
+                            bench: bench.clone(),
+                            shown: Vec::new(),
+                        }
                     });
                     parts = Some((bench, panes.clone()));
                     panes
@@ -334,8 +462,16 @@ fn main() {
         .expect("window opens")
         .into();
     let (bench, panes) = parts.expect("window parts");
-    cx.update_window(window, |_, window, _| window.activate_window()).ok();
-    let mut run = Run { cx, window, bench, panes, last: Instant::now(), clock: Instant::now() };
+    cx.update_window(window, |_, window, _| window.activate_window())
+        .ok();
+    let mut run = Run {
+        cx,
+        window,
+        bench,
+        panes,
+        last: Instant::now(),
+        clock: Instant::now(),
+    };
 
     run.show(vec![typist]);
     let idle = run.typing(typist, 100);
@@ -355,13 +491,21 @@ fn main() {
         let mut shown = vec![typist];
         shown.extend(&floods[..count]);
         run.show(shown);
-        let before: Vec<u32> = floods[..count].iter().map(|id| run.frame_number(*id)).collect();
+        let before: Vec<u32> = floods[..count]
+            .iter()
+            .map(|id| run.frame_number(*id))
+            .collect();
         let (began, cpu) = (Instant::now(), thread_cpu_ms());
         for _ in 0..360 {
             run.frame();
         }
         let busy = (thread_cpu_ms() - cpu) / (began.elapsed().as_secs_f64() * 1e3) * 100.;
-        let applied: Vec<u32> = floods[..count].iter().map(|id| run.frame_number(*id)).zip(&before).map(|(after, before)| after - before).collect();
+        let applied: Vec<u32> = floods[..count]
+            .iter()
+            .map(|id| run.frame_number(*id))
+            .zip(&before)
+            .map(|(after, before)| after - before)
+            .collect();
         let painted = DRAWS.with_borrow_mut(std::mem::take);
         println!(
             "{count} flooding: each pane took {applied:?} frames in {:.1}s; window thread {busy:.0}% busy; panes laid out and painted {}",
@@ -379,7 +523,10 @@ fn main() {
         run.wheel(4.);
         run.frame();
     }
-    println!("scrolling back 1,600 lines of 20,000, 4 lines a frame: panes laid out and painted {}", spread(DRAWS.with_borrow_mut(std::mem::take)));
+    println!(
+        "scrolling back 1,600 lines of 20,000, 4 lines a frame: panes laid out and painted {}",
+        spread(DRAWS.with_borrow_mut(std::mem::take))
+    );
     run.shot(&shots, "history");
     for _ in 0..500 {
         run.wheel(-8.);
