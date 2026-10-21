@@ -1,0 +1,154 @@
+{
+  "packs": [
+    {
+      "id": "buddies",
+      "shapes": [
+        "mochi",
+        "bean",
+        "ghostie",
+        "blob",
+        "cloud",
+        "heart",
+        "star",
+        "peach",
+        "egg",
+        "onigiri",
+        "dumpling",
+        "pudding",
+        "toast",
+        "marshmallow",
+        "penguin",
+        "slime"
+      ],
+      "colors": 10
+    },
+    {
+      "id": "glow",
+      "shapes": [
+        "squircle",
+        "orb",
+        "pill",
+        "monitor",
+        "dome"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "googly",
+      "shapes": [
+        "pair",
+        "lashes",
+        "sleepy",
+        "specs",
+        "trio",
+        "big"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "soot",
+      "shapes": [
+        "soot",
+        "fluff",
+        "konpeito",
+        "puff"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "peekers",
+      "shapes": [
+        "peek",
+        "frog",
+        "owl"
+      ],
+      "colors": 10
+    },
+    {
+      "id": "cyclops",
+      "shapes": [
+        "orb",
+        "drop",
+        "squish",
+        "spook"
+      ],
+      "colors": 10
+    },
+    {
+      "id": "matrix",
+      "shapes": [
+        "matrix",
+        "round",
+        "visor"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "screens",
+      "shapes": [
+        "telly",
+        "pet",
+        "pocket",
+        "desktop",
+        "laptop",
+        "phone",
+        "watch",
+        "arcade",
+        "handheld",
+        "classic",
+        "camera",
+        "washer",
+        "microwave",
+        "boombox"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "japan",
+      "shapes": [
+        "daruma",
+        "neko",
+        "kokeshi",
+        "kitsune",
+        "teru",
+        "nigiri",
+        "onigiri"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "chibi",
+      "shapes": [
+        "bob",
+        "spiky",
+        "hime",
+        "buns",
+        "hood",
+        "side"
+      ],
+      "colors": 8
+    },
+    {
+      "id": "personas",
+      "shapes": [
+        "ceo",
+        "cto",
+        "cpo",
+        "scientist",
+        "designer",
+        "engineer",
+        "devops",
+        "publisher",
+        "marketer",
+        "sales",
+        "data",
+        "qa",
+        "security",
+        "support",
+        "cfo",
+        "intern"
+      ],
+      "colors": 10
+    }
+  ]
+}
