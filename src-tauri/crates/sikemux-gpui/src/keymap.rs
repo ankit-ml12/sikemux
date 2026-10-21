@@ -3,11 +3,12 @@
 //! An id no part of the app has an action for yet stays unbound.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::{
-    actions, App, Global, KeyBinding, Menu, MenuItem, OsAction, SharedString, SystemMenuType,
-    Window,
+    actions, App, Global, KeyBinding, Keystroke, Menu, MenuItem, OsAction, SharedString,
+    SystemMenuType, Window,
 };
 use serde::Deserialize;
 
@@ -70,27 +71,53 @@ commands! {
 #[action(name = "app.quitAndStopEverything")]
 pub struct QuitAndStopEverything;
 
-/// One command, as the shared table names and binds it by default.
+/// One command, as the shared table names, describes and binds it by default.
 #[derive(Deserialize)]
 pub struct Shortcut {
-    pub id: String,
-    mac: Option<String>,
-    other: Option<String>,
+    pub id: &'static str,
+    pub label: &'static str,
+    pub detail: &'static str,
+    pub category: &'static str,
+    mac: Option<&'static str>,
+    other: Option<&'static str>,
 }
 
-/// The table, and the keys each command is bound to now in the table's own spelling,
-/// such as `Meta+Shift+KeyP`.
+impl Shortcut {
+    pub fn default_keys(&self) -> Option<&'static str> {
+        match cfg!(target_os = "macos") {
+            true => self.mac,
+            false => self.other,
+        }
+    }
+
+    /// The keys the person chose for it, else its default.
+    pub fn keys(&self, overrides: &BTreeMap<String, Option<String>>) -> Option<String> {
+        match overrides.get(self.id) {
+            Some(chosen) => chosen.clone(),
+            None => self.default_keys().map(str::to_owned),
+        }
+    }
+}
+
+/// The categories shortcuts are listed under, in the order they are shown.
+pub const CATEGORIES: &[&str] = &["Workspace", "Agents", "Panes", "Navigation", "Browser"];
+
+/// Every command in the shared table.
+pub fn shortcuts() -> &'static [Shortcut] {
+    static SHORTCUTS: LazyLock<Vec<Shortcut>> =
+        LazyLock::new(|| serde_json::from_str(TABLE).expect("the shortcut table reads"));
+    &SHORTCUTS
+}
+
+/// The keys each command is bound to now in the table's own spelling, such as `Meta+Shift+KeyP`.
 pub struct Keymap {
-    pub shortcuts: Vec<Shortcut>,
     bound: BTreeMap<String, String>,
 }
 
 impl Global for Keymap {}
 
 pub fn install(cx: &mut App) {
-    let shortcuts = serde_json::from_str(TABLE).expect("the shortcut table reads");
     cx.set_global(Keymap {
-        shortcuts,
         bound: BTreeMap::new(),
     });
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -115,17 +142,14 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
     let keymap = cx.global::<Keymap>();
     let mut bound = BTreeMap::new();
     let mut bindings = Vec::new();
-    for shortcut in &keymap.shortcuts {
-        let keys = match overrides.get(&shortcut.id) {
-            Some(chosen) => chosen.clone(),
-            None if cfg!(target_os = "macos") => shortcut.mac.clone(),
-            None => shortcut.other.clone(),
-        };
-        let Some((keys, gpui_keys)) = keys.and_then(|keys| Some((keys.clone(), keystroke(&keys)?)))
+    for shortcut in shortcuts() {
+        let Some((keys, gpui_keys)) = shortcut
+            .keys(overrides)
+            .and_then(|keys| Some((keys.clone(), keystroke(&keys)?)))
         else {
             continue;
         };
-        let Ok(action) = cx.build_action(&shortcut.id, None) else {
+        let Ok(action) = cx.build_action(shortcut.id, None) else {
             continue;
         };
         if let Ok(binding) = KeyBinding::load(
@@ -137,7 +161,7 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
             &gpui::DummyKeyboardMapper,
         ) {
             bindings.push(binding);
-            bound.insert(shortcut.id.clone(), keys);
+            bound.insert(shortcut.id.to_owned(), keys);
         }
     }
     let released: Vec<KeyBinding> = keymap
@@ -161,7 +185,11 @@ pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
 
 /// The keys `id` is bound to as the app shows them, such as ⌘⇧P, or none when it is unbound.
 pub fn hint(id: &str, cx: &App) -> Option<SharedString> {
-    let keys = cx.try_global::<Keymap>()?.bound.get(id)?;
+    label(cx.try_global::<Keymap>()?.bound.get(id)?)
+}
+
+/// Keys in the table's spelling as the app shows them, such as ⌘⇧P.
+pub fn label(keys: &str) -> Option<SharedString> {
     let mut parts: Vec<&str> = keys.split('+').collect();
     let code = parts.pop()?;
     let mac = cfg!(target_os = "macos");
@@ -173,28 +201,89 @@ pub fn hint(id: &str, cx: &App) -> Option<SharedString> {
         (part, _) => part,
     });
     let label = match code {
-        "Backquote" => "`".to_owned(),
-        "Backslash" => "\\".to_owned(),
-        "BracketLeft" => "[".to_owned(),
-        "BracketRight" => "]".to_owned(),
-        "Comma" => ",".to_owned(),
         "Enter" => "↵".to_owned(),
-        "Equal" => "=".to_owned(),
         "Escape" => "Esc".to_owned(),
-        "Minus" => "-".to_owned(),
-        "Period" => ".".to_owned(),
-        "Quote" => "'".to_owned(),
-        "Semicolon" => ";".to_owned(),
-        "Slash" => "/".to_owned(),
-        code => code
-            .strip_prefix("Key")
-            .or_else(|| code.strip_prefix("Digit"))
-            .or_else(|| code.strip_prefix("Arrow"))
-            .unwrap_or(code)
-            .to_owned(),
+        code => NAMED
+            .iter()
+            .find(|(named, _)| *named == code)
+            .filter(|(_, key)| key.chars().count() == 1)
+            .map(|(_, key)| (*key).to_owned())
+            .unwrap_or_else(|| {
+                code.strip_prefix("Key")
+                    .or_else(|| code.strip_prefix("Digit"))
+                    .or_else(|| code.strip_prefix("Arrow"))
+                    .unwrap_or(code)
+                    .to_owned()
+            }),
     };
     let text: Vec<String> = modifiers.map(str::to_owned).chain([label]).collect();
     Some(text.join(if mac { "" } else { "+" }).into())
+}
+
+/// A key pressed, in the table's spelling, such as `Meta+Shift+KeyP`.
+pub fn spelling(keystroke: &Keystroke) -> Option<String> {
+    let key = keystroke.key.as_str();
+    let code = match key.chars().collect::<Vec<_>>().as_slice() {
+        [letter] if letter.is_ascii_alphabetic() => format!("Key{}", letter.to_ascii_uppercase()),
+        [digit] if digit.is_ascii_digit() => format!("Digit{digit}"),
+        _ if key.starts_with('f') && key[1..].parse::<u8>().is_ok() => key.to_uppercase(),
+        _ => NAMED
+            .iter()
+            .chain(SHIFTED)
+            .find(|(_, named)| *named == key)?
+            .0
+            .to_owned(),
+    };
+    let modifiers = &keystroke.modifiers;
+    let held = [
+        (modifiers.platform, "Meta"),
+        (modifiers.control, "Ctrl"),
+        (modifiers.alt, "Alt"),
+        (modifiers.shift, "Shift"),
+    ];
+    let parts: Vec<&str> = held
+        .into_iter()
+        .filter(|(down, _)| *down)
+        .map(|(_, name)| name)
+        .chain([code.as_str()])
+        .collect();
+    Some(parts.join("+"))
+}
+
+/// Shift alone only changes what a key types, so a shortcut needs one of the others.
+pub fn has_modifier(keys: &str) -> bool {
+    keys.split('+')
+        .any(|part| matches!(part, "Meta" | "Ctrl" | "Alt"))
+}
+
+/// What the system or every text field already does with these keys, when that is taken.
+pub fn reserved(keys: &str) -> Option<&'static str> {
+    let reserved: &[(&str, &str)] = match cfg!(target_os = "macos") {
+        true => &[
+            ("Meta+KeyQ", "Quit"),
+            ("Meta+KeyH", "Hide"),
+            ("Meta+Alt+KeyH", "Hide Others"),
+            ("Meta+KeyM", "Minimize"),
+            ("Meta+Tab", "the app switcher"),
+            ("Meta+Space", "Spotlight"),
+            ("Meta+KeyC", "Copy"),
+            ("Meta+KeyV", "Paste"),
+            ("Meta+KeyX", "Cut"),
+            ("Meta+KeyA", "Select All"),
+            ("Meta+KeyZ", "Undo"),
+            ("Meta+Shift+KeyZ", "Redo"),
+        ],
+        false => &[
+            ("Alt+Tab", "the window switcher"),
+            ("Alt+F4", "closing the window"),
+            ("Ctrl+Shift+KeyC", "Copy"),
+            ("Ctrl+Shift+KeyV", "Paste"),
+        ],
+    };
+    reserved
+        .iter()
+        .find(|(taken, _)| *taken == keys)
+        .map(|(_, what)| *what)
 }
 
 /// A binding in the table's spelling, `Meta+Shift+KeyP`, as GPUI writes it, `cmd-shift-p`.
@@ -224,38 +313,68 @@ fn key(code: &str) -> Option<String> {
     if let Some(number) = code.strip_prefix('F').filter(|n| n.parse::<u8>().is_ok()) {
         return Some(format!("f{number}"));
     }
-    Some(
-        match code {
-            "Backquote" => "`",
-            "Backslash" => "\\",
-            "BracketLeft" => "[",
-            "BracketRight" => "]",
-            "Comma" => ",",
-            "Equal" => "=",
-            "Minus" => "-",
-            "Period" => ".",
-            "Quote" => "'",
-            "Semicolon" => ";",
-            "Slash" => "/",
-            "Enter" | "NumpadEnter" => "enter",
-            "Escape" => "escape",
-            "Tab" => "tab",
-            "Space" => "space",
-            "Backspace" => "backspace",
-            "Delete" => "delete",
-            "ArrowLeft" => "left",
-            "ArrowRight" => "right",
-            "ArrowUp" => "up",
-            "ArrowDown" => "down",
-            "Home" => "home",
-            "End" => "end",
-            "PageUp" => "pageup",
-            "PageDown" => "pagedown",
-            _ => return None,
-        }
-        .to_owned(),
-    )
+    if code == "NumpadEnter" {
+        return Some("enter".to_owned());
+    }
+    NAMED
+        .iter()
+        .find(|(named, _)| *named == code)
+        .map(|(_, key)| (*key).to_owned())
 }
+
+/// Keys the table names by what they are, beside what GPUI calls them.
+const NAMED: &[(&str, &str)] = &[
+    ("Backquote", "`"),
+    ("Backslash", "\\"),
+    ("BracketLeft", "["),
+    ("BracketRight", "]"),
+    ("Comma", ","),
+    ("Equal", "="),
+    ("Minus", "-"),
+    ("Period", "."),
+    ("Quote", "'"),
+    ("Semicolon", ";"),
+    ("Slash", "/"),
+    ("Enter", "enter"),
+    ("Escape", "escape"),
+    ("Tab", "tab"),
+    ("Space", "space"),
+    ("Backspace", "backspace"),
+    ("Delete", "delete"),
+    ("ArrowLeft", "left"),
+    ("ArrowRight", "right"),
+    ("ArrowUp", "up"),
+    ("ArrowDown", "down"),
+    ("Home", "home"),
+    ("End", "end"),
+    ("PageUp", "pageup"),
+    ("PageDown", "pagedown"),
+];
+
+/// What a key types with Shift held, which is how some layouts report it.
+const SHIFTED: &[(&str, &str)] = &[
+    ("Backquote", "~"),
+    ("Digit1", "!"),
+    ("Digit2", "@"),
+    ("Digit3", "#"),
+    ("Digit4", "$"),
+    ("Digit5", "%"),
+    ("Digit6", "^"),
+    ("Digit7", "&"),
+    ("Digit8", "*"),
+    ("Digit9", "("),
+    ("Digit0", ")"),
+    ("Minus", "_"),
+    ("Equal", "+"),
+    ("BracketLeft", "{"),
+    ("BracketRight", "}"),
+    ("Backslash", "|"),
+    ("Semicolon", ":"),
+    ("Quote", "\""),
+    ("Comma", "<"),
+    ("Period", ">"),
+    ("Slash", "?"),
+];
 
 /// The menu bar, as today's app has it.
 fn menus() -> Vec<Menu> {

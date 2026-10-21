@@ -1,6 +1,9 @@
 //! Every page of settings, and every place in them a search can find.
 
+use gpui_kit::App;
+
 use crate::icons::Icon;
+use crate::keymap;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Page {
@@ -100,6 +103,8 @@ pub struct Entry {
     pub label: &'static str,
     pub target: &'static str,
     pub keywords: &'static str,
+    /// The command a search for its shortcut found, which the page filters to.
+    pub shortcut: Option<&'static str>,
 }
 
 const fn section(page: Page, title: &'static str, keywords: &'static str) -> Entry {
@@ -109,6 +114,7 @@ const fn section(page: Page, title: &'static str, keywords: &'static str) -> Ent
         label: title,
         target: title,
         keywords,
+        shortcut: None,
     }
 }
 
@@ -124,6 +130,7 @@ const fn row(
         label,
         target: label,
         keywords,
+        shortcut: None,
     }
 }
 
@@ -217,19 +224,34 @@ pub const ENTRIES: &[Entry] = &[
 ];
 
 /// The places whose words hold every word of `query`, those whose label
-/// starts with it first, then those whose label holds it.
-pub fn search(query: &str) -> Vec<Entry> {
+/// starts with it first, then those whose label holds it. Every command is a
+/// place too, found by its name, what it does or its keys.
+pub fn search(query: &str, cx: &App) -> Vec<Entry> {
     let query = query.trim().to_lowercase();
     let words: Vec<&str> = query.split_whitespace().collect();
     if words.is_empty() {
         return Vec::new();
     }
+    let shortcuts = keymap::shortcuts().iter().map(|shortcut| {
+        let keys = keymap::hint(shortcut.id, cx).unwrap_or_default();
+        let entry = Entry {
+            page: Keybindings,
+            section: "Shortcuts",
+            label: shortcut.label,
+            target: "Shortcuts",
+            keywords: shortcut.detail,
+            shortcut: Some(shortcut.id),
+        };
+        (entry, format!("shortcut {keys}"))
+    });
     let mut found: Vec<(usize, usize, Entry)> = ENTRIES
         .iter()
+        .map(|entry| (*entry, String::new()))
+        .chain(shortcuts)
         .enumerate()
-        .filter(|(_, entry)| {
+        .filter(|(_, (entry, more))| {
             let haystack = format!(
-                "{} {} {} {}",
+                "{} {} {} {} {more}",
                 entry.label,
                 entry.section,
                 entry.page.name(),
@@ -238,14 +260,14 @@ pub fn search(query: &str) -> Vec<Entry> {
             .to_lowercase();
             words.iter().all(|word| haystack.contains(word))
         })
-        .map(|(order, entry)| {
+        .map(|(order, (entry, _))| {
             let label = entry.label.to_lowercase();
             let rank = match () {
                 _ if label.starts_with(&query) => 0,
                 _ if label.contains(&query) => 1,
                 _ => 2,
             };
-            (rank, order, *entry)
+            (rank, order, entry)
         })
         .collect();
     found.sort_by_key(|(rank, order, _)| (*rank, *order));

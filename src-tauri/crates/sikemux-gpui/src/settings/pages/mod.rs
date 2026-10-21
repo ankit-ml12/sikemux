@@ -11,6 +11,7 @@ mod appearance;
 mod cli;
 mod cloud;
 mod general;
+mod keybindings;
 mod plugins;
 
 /// What the pages keep while settings are open: what the core last answered
@@ -20,6 +21,9 @@ pub struct State {
     pub appearance: Option<appearance::Fields>,
     pub cloud: Option<cloud::Fields>,
     pub general: Option<general::Fields>,
+    pub keybindings: Option<keybindings::Fields>,
+    /// The command a search found, which the shortcuts page opens filtered to.
+    pub shortcut: Option<&'static str>,
     /// The command line's install, as the core last said.
     pub cli: Option<Value>,
     pub cli_busy: bool,
@@ -30,7 +34,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
     match page {
         Page::General => general::SECTIONS,
         Page::Appearance => appearance::SECTIONS,
-        Page::Keybindings => &["Shortcuts"],
+        Page::Keybindings => keybindings::SECTIONS,
         Page::Activity => &["Overview", "Calendar", "By model", "By agent", "By project"],
         Page::About => about::SECTIONS,
         Page::Agents => &[
@@ -74,6 +78,7 @@ pub fn render(
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Plugins => plugins::render(bench, &lit, this, cx),
         Page::General => general::render(bench, &settings.pages, &lit, this, window, cx),
+        Page::Keybindings => keybindings::render(bench, &settings.pages, &lit, this, window, cx),
         _ => Vec::new(),
     }
 }

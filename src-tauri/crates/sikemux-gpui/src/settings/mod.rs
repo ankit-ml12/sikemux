@@ -133,6 +133,10 @@ fn go_to(
     };
     settings.page = entry.page;
     settings.query = SharedString::default();
+    if entry.shortcut.is_some() {
+        settings.pages.shortcut = entry.shortcut;
+        settings.pages.keybindings = None;
+    }
     settings.flash = Some((entry.section, Instant::now()));
     settings
         .search
@@ -163,7 +167,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
     };
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
-    let found = index::search(&settings.query);
+    let found = index::search(&settings.query, cx);
     let searching = !settings.query.trim().is_empty();
     let close_keys = crate::keymap::hint("settings.toggle", cx)
         .map_or_else(|| "Esc".to_owned(), |keys| format!("Esc / {keys}"));
@@ -228,7 +232,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                 }))
                 .on_action(window.listener_for(&this, |bench, _: &ResultDown, _, cx| {
                     if let Some(settings) = bench.settings.as_mut() {
-                        let found = index::search(&settings.query).len();
+                        let found = index::search(&settings.query, cx).len();
                         settings.chosen = (settings.chosen + 1).min(found.saturating_sub(1));
                         bench.parts.redraw(&bench.parts.stage, cx);
                     }
@@ -236,7 +240,9 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                 .on_action(
                     window.listener_for(&this, |bench, _: &OpenResult, window, cx| {
                         let chosen = bench.settings.as_ref().and_then(|settings| {
-                            index::search(&settings.query).get(settings.chosen).copied()
+                            index::search(&settings.query, cx)
+                                .get(settings.chosen)
+                                .copied()
                         });
                         if let Some(entry) = chosen {
                             go_to(bench, entry, window, cx);
