@@ -11,7 +11,7 @@ import { selectedAgentRuntimeProfiles } from "./agentProfiles";
 import { agentStatusLabel } from "./agentStatus";
 import { agentLabel, installCommand, loginArgs, type AgentType } from "./catalog";
 import { basename, dirname, expandHome } from "../lib/paths";
-import type { PtyDirectCommand } from "../state/types";
+import { shellQuote } from "../lib/shell";
 
 /** A sign-in the agent offered itself, in place of the catalog's. */
 interface OfferedSignIn {
@@ -61,19 +61,23 @@ function accountDir(configPath: string, home: string): string {
     return CONFIG_FILES.has(basename(path)) ? dirname(path) : path;
 }
 
-/** What the sheet runs, and the words it shows for it. */
-export function sheetCommand(job: Job, home: string): { direct: PtyDirectCommand; shown: string } {
+/**
+ * What the sheet runs, as the shell's startup line, and the words it shows for it.
+ * `exec` hands the terminal to the command, so its exit code is the terminal's.
+ */
+export function sheetCommand(job: Job, home: string): { startup: string; shown: string } {
+    const run = (words: readonly string[]) => ["exec", ...words.map(shellQuote)].join(" ");
     if (job.kind === "install") {
         const command = installCommand(job.type)!;
-        return { direct: { program: "/bin/bash", args: ["-c", command] }, shown: command };
+        return { startup: run(["/bin/bash", "-c", command]), shown: command };
     }
     const args = [...(job.method?.args ?? loginArgs(job.type)!)];
     const shown = [job.type, ...args].join(" ");
     const variable = ACCOUNT_VARIABLE[job.type];
     const env = (job.method?.env ?? []).map(([name, value]) => `${name}=${value}`);
     if (variable && job.configPath) env.push(`${variable}=${accountDir(job.configPath, home)}`);
-    if (env.length === 0) return { direct: { program: job.program, args }, shown };
-    return { direct: { program: "/usr/bin/env", args: [...env, job.program, ...args] }, shown };
+    if (env.length === 0) return { startup: run([job.program, ...args]), shown };
+    return { startup: run(["/usr/bin/env", ...env, job.program, ...args]), shown };
 }
 
 interface PtyExited {
@@ -102,7 +106,7 @@ function AgentSheet({ job }: { job: Job }) {
     const type = job.type;
     const label = agentLabel(type);
     const title = job.kind === "install" ? `Install ${label}` : `Sign in to ${label}`;
-    const [{ direct, shown }] = useState(() => sheetCommand(job, getState().home));
+    const [{ startup, shown }] = useState(() => sheetCommand(job, getState().home));
     const [listening, setListening] = useState(false);
     const [ptyId, setPtyId] = useState<number | null>(null);
     const [exit, setExit] = useState<PtyExited | null>(null);
@@ -145,7 +149,7 @@ function AgentSheet({ job }: { job: Job }) {
                     <span>{title}</span>
                     <code className="agent-install-command">{shown}</code>
                 </header>
-                {listening ? <TerminalPane key={attempt} directCommand={direct} active visible onPtySession={setPtyId} /> : <div />}
+                {listening ? <TerminalPane key={attempt} startup={startup} active visible onPtySession={setPtyId} /> : <div />}
                 <footer>
                     <span className="agent-install-state" role="status">
                         {job.kind === "install" ? <InstallState phase={phase} label={label} /> : <SignInState phase={phase} label={label} />}
