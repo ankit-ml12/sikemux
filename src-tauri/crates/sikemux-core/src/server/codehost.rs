@@ -104,18 +104,37 @@ enum Place {
     Repo(Named),
 }
 
+/// A list of one repository as one account sees it, shared by every project
+/// and connection that shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
-    place: Place,
+    /// As a `ci` change names it.
+    repo: String,
+    account: Option<String>,
     list: List,
+}
+
+impl Key {
+    fn of(repo: &Repo, list: List) -> Self {
+        Self {
+            repo: repo.key(),
+            account: repo.account().map(str::to_owned),
+            list,
+        }
+    }
 }
 
 struct Kept {
     answer: Value,
-    /// The repository it is on, as a `ci` change names it.
-    repo: String,
+    repo: Repo,
     read: Instant,
     asked: Instant,
+}
+
+/// The repository a project's code host shows, as the core last worked it out.
+struct Found {
+    repo: Repo,
+    read: Instant,
 }
 
 /// The runs on one commit, and when they were read.
@@ -130,6 +149,8 @@ struct State {
     /// The list of each kind each connection last asked for, which it shows
     /// until it asks for another or leaves.
     shown: HashMap<(ClientId, Place, u8), Key>,
+    /// By project.
+    found: HashMap<String, Found>,
     /// By repository and commit.
     commits: HashMap<(String, String), CommitRuns>,
 }
@@ -236,12 +257,15 @@ async fn answered(core: &Arc<Core>, client: ClientId, project: String, list: Lis
 }
 
 async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: List) -> Answer {
-    let key = Key { place, list };
+    let repo = match repo_of(core, &place).await {
+        Ok(repo) => repo,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let kind = list.kind();
+    let key = Key::of(&repo, list);
     let kept = {
         let mut state = core.code_host_lists.state.locked();
-        state
-            .shown
-            .insert((client, key.place.clone(), key.list.kind()), key.clone());
+        state.shown.insert((client, place, kind), key.clone());
         state.kept.get_mut(&key).and_then(|kept| {
             kept.asked = Instant::now();
             (kept.read.elapsed() < FRESH).then(|| kept.answer.clone())
@@ -250,8 +274,8 @@ async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: Lis
     if let Some(answer) = kept {
         return Answer::Value(answer);
     }
-    match read(core, &key).await {
-        Ok((answer, repo)) => {
+    match read(core, &repo, &key.list).await {
+        Ok(answer) => {
             keep(core, key, answer.clone(), repo);
             Answer::Value(answer)
         }
@@ -259,7 +283,44 @@ async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: Lis
     }
 }
 
-fn keep(core: &Arc<Core>, key: Key, answer: Value, repo: String) {
+/// The repository `place` shows; a project's is worked out again once a minute.
+async fn repo_of(core: &Arc<Core>, place: &Place) -> Result<Repo, Failure> {
+    let project = match place {
+        Place::Project(project) => project,
+        Place::Repo(named) => {
+            return Repo::named(
+                &named.provider,
+                &named.owner,
+                &named.name,
+                named.account.clone(),
+            )
+        }
+    };
+    let found = core
+        .code_host_lists
+        .state
+        .locked()
+        .found
+        .get(project)
+        .filter(|found| found.read.elapsed() < FRESH)
+        .map(|found| found.repo.clone());
+    if let Some(repo) = found {
+        return Ok(repo);
+    }
+    let repo = of_project(core, project).await?;
+    let found = Found {
+        repo: repo.clone(),
+        read: Instant::now(),
+    };
+    core.code_host_lists
+        .state
+        .locked()
+        .found
+        .insert(project.clone(), found);
+    Ok(repo)
+}
+
+fn keep(core: &Arc<Core>, key: Key, answer: Value, repo: Repo) {
     {
         let mut state = core.code_host_lists.state.locked();
         let now = Instant::now();
@@ -310,6 +371,17 @@ fn follow(core: &Arc<Core>) {
                 state
                     .commits
                     .retain(|_, commit| commit.read.elapsed() < SETTLED_RUNS);
+                let projects: HashSet<String> = state
+                    .shown
+                    .keys()
+                    .filter_map(|(_, place, _)| match place {
+                        Place::Project(project) => Some(project.clone()),
+                        Place::Repo(_) => None,
+                    })
+                    .collect();
+                state.found.retain(|project, found| {
+                    projects.contains(project) || found.read.elapsed() < GRACE
+                });
                 if state.kept.is_empty() {
                     core.code_host_lists.ticking.store(false, Ordering::Release);
                     return;
@@ -326,26 +398,45 @@ fn follow(core: &Arc<Core>) {
     });
 }
 
-/// Reads `keys` again, telling clients about each project whose lists changed.
+/// Reads `keys` again, telling clients about each project that shows a list
+/// that changed.
 async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
     let mut moved = HashSet::new();
     for key in keys {
-        let Ok((answer, repo)) = read(core, &key).await else {
+        let repo = core
+            .code_host_lists
+            .state
+            .locked()
+            .kept
+            .get(&key)
+            .map(|kept| kept.repo.clone());
+        let Some(repo) = repo else { continue };
+        let Ok(answer) = read(core, &repo, &key.list).await else {
             continue;
         };
         let mut state = core.code_host_lists.state.locked();
         let Some(kept) = state.kept.get_mut(&key) else {
             continue;
         };
-        if kept.answer != answer {
-            moved.insert(match &key.place {
-                Place::Project(project) => Some(project.clone()),
-                Place::Repo(_) => None,
-            });
+        if kept.answer == answer {
+            kept.read = Instant::now();
+            continue;
         }
         kept.answer = answer;
-        kept.repo = repo;
         kept.read = Instant::now();
+        let showing: Vec<Option<String>> = state
+            .shown
+            .iter()
+            .filter(|(_, shown)| **shown == key)
+            .map(|((_, place, _), _)| match place {
+                Place::Project(project) => Some(project.clone()),
+                Place::Repo(_) => None,
+            })
+            .collect();
+        if showing.is_empty() {
+            moved.insert(None);
+        }
+        moved.extend(showing);
     }
     for project in moved {
         core.changes
@@ -354,16 +445,15 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
 }
 
 /// The person picked another repository or account for the project at
-/// `project`, so its lists are read afresh.
+/// `project`, so it is worked out again.
 pub(crate) fn picked(core: &Core, project: &str) {
-    let forgot = {
-        let mut state = core.code_host_lists.state.locked();
-        let before = state.kept.len();
-        state
-            .kept
-            .retain(|key, _| key.place != Place::Project(project.to_owned()));
-        state.kept.len() != before
-    };
+    let forgot = core
+        .code_host_lists
+        .state
+        .locked()
+        .found
+        .remove(project)
+        .is_some();
     if forgot {
         core.changes.changed(Topic::CodeHost, Some(project), None);
     }
@@ -405,9 +495,9 @@ pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value
         .state
         .locked()
         .kept
-        .iter()
-        .filter(|(_, kept)| kept.repo == repo)
-        .map(|(key, _)| key.clone())
+        .keys()
+        .filter(|key| key.repo == repo)
+        .cloned()
         .collect();
     if keys.is_empty() {
         return;
@@ -423,21 +513,26 @@ pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value
 /// The refs of `projects` moved, as a push, pull or commit moves them, so
 /// their pull requests and runs are read again now.
 pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
-    let keys: Vec<Key> = core
-        .code_host_lists
-        .state
-        .locked()
-        .kept
-        .keys()
-        .filter(|key| {
-            matches!(&key.place, Place::Project(project) if projects.contains(project))
-                && matches!(
-                    key.list,
-                    List::Pulls { .. } | List::Runs(_) | List::Tracked | List::Pull { .. }
-                )
-        })
-        .cloned()
-        .collect();
+    let keys: Vec<Key> = {
+        let state = core.code_host_lists.state.locked();
+        let repos: HashSet<String> = projects
+            .iter()
+            .filter_map(|project| state.found.get(project))
+            .map(|found| found.repo.key())
+            .collect();
+        state
+            .kept
+            .keys()
+            .filter(|key| {
+                repos.contains(&key.repo)
+                    && matches!(
+                        key.list,
+                        List::Pulls { .. } | List::Runs(_) | List::Tracked | List::Pull { .. }
+                    )
+            })
+            .cloned()
+            .collect()
+    };
     if keys.is_empty() {
         return;
     }
@@ -453,15 +548,15 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
         .state
         .locked()
         .kept
-        .iter()
-        .filter(|(key, kept)| {
-            kept.repo == repo
+        .keys()
+        .filter(|key| {
+            key.repo == repo
                 && matches!(
                     key.list,
                     List::Pulls { .. } | List::Runs(_) | List::Pull { .. }
                 )
         })
-        .map(|(key, _)| key.clone())
+        .cloned()
         .collect();
     if keys.is_empty() {
         return;
@@ -470,25 +565,15 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
     tokio::spawn(async move { refresh(&core, keys).await });
 }
 
-async fn read(core: &Arc<Core>, key: &Key) -> Result<(Value, String), Failure> {
-    let repo = match &key.place {
-        Place::Project(project) => of_project(core, project).await?,
-        Place::Repo(named) => Repo::named(
-            &named.provider,
-            &named.owner,
-            &named.name,
-            named.account.clone(),
-        )?,
-    };
-    let answer = match &key.list {
-        List::Pulls { state } => shaped(&repo, pull_list(core, &repo, state).await?),
-        List::Runs(query) => shaped(&repo, run_list(&repo, query).await?),
-        List::Issues { state, page } => shaped(&repo, issue_list(&repo, state, *page).await?),
-        List::Releases => shaped(&repo, release_list(&repo).await?),
-        List::Tracked => shaped(&repo, tracked_list(&repo).await?),
-        List::Pull { number } => shaped(&repo, open_pull(&repo, *number).await?),
-    }?;
-    Ok((answer, repo.key()))
+async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Value, Failure> {
+    match list {
+        List::Pulls { state } => shaped(repo, pull_list(core, repo, state).await?),
+        List::Runs(query) => shaped(repo, run_list(repo, query).await?),
+        List::Issues { state, page } => shaped(repo, issue_list(repo, state, *page).await?),
+        List::Releases => shaped(repo, release_list(repo).await?),
+        List::Tracked => shaped(repo, tracked_list(repo).await?),
+        List::Pull { number } => shaped(repo, open_pull(repo, *number).await?),
+    }
 }
 
 fn shaped(repo: &Repo, list: impl Serialize) -> Result<Value, Failure> {

@@ -251,6 +251,10 @@ impl Repo {
         &self.owner
     }
 
+    pub(crate) fn account(&self) -> Option<&str> {
+        self.account.as_deref()
+    }
+
     /// What a `ci` change names the repository by.
     pub(crate) fn key(&self) -> String {
         format!("{}:{}/{}", self.host.plugin(), self.owner, self.name)
