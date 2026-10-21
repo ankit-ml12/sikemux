@@ -157,16 +157,19 @@ export function filesOn(host: FilesHost) {
 
 export type HostFiles = ReturnType<typeof filesOn>;
 
+/** The largest file an inline diff reads whole. */
+const INLINE_TEXT_LIMIT = 1024 * 1024;
+
 export const fsapi = {
     ...filesOn(undefined),
     keepDroppedPaths: (paths: string[]) => invoke<string[]>("keep_dropped_paths", { paths }),
-    readTextFileLimited: (path: string) => invoke<string>("read_text_file_limited", { path }),
+    readTextFileLimited: (path: string) => coreCall<string>("files.readText", { path, limit: INLINE_TEXT_LIMIT }),
     previewFile: (path: string) => invoke<FilePreview>("preview_file", { path }),
-    copyIntoDir: (src: string, dir: string) => invoke<string>("copy_into_dir", { src, dir }),
+    copyIntoDir: (src: string, dir: string) => coreCall<string>("files.copyInto", { from: src, dir }),
     downloadsDir: () => invoke<string>("downloads_dir"),
     chatAttachmentDir: () => invoke<string>("chat_attachment_dir"),
     saveClipboardImage: (name: string) => invoke<string | null>("save_clipboard_image", { name }),
-    saveBase64IntoDir: (dir: string, name: string, data: string) => invoke<string>("save_base64_into_dir", { dir, name, data }),
+    saveBase64IntoDir: (dir: string, name: string, data: string) => coreCall<string>("files.writeBytes", { dir, name, base64: data }),
     openInDefaultApp: (path: string) => invoke<void>("open_in_default_app", { path }),
     revealInFinder: (path: string) => invoke<void>("reveal_in_finder", { path }),
 };

@@ -389,8 +389,8 @@ export class ShowcaseBackend implements IpcTransport {
         { alias: "db-replica", hostname: "10.20.0.31", user: "edon", port: 22 },
       ]),
     );
-    this.on(
-      "scan_project_roots",
+    this.onCore(
+      ["projectRoots"],
       constant(DEMO_PROJECTS.map(({ name, path }) => ({ name, path }))),
     );
 
@@ -415,12 +415,14 @@ export class ShowcaseBackend implements IpcTransport {
       content: await server<string>("read_file", { path }),
       version: "showcase",
     }));
-    this.on("read_text_file_limited", ({ path }) =>
-      server("read_file", { path }),
+    this.onCore(["files.readText"], ({ params }) =>
+      server("read_file", { path: (params as Args).path }),
     );
-    this.on("list_project_files_snapshot", async ({ repo }) => ({
+    this.onCore(["projectFiles"], async ({ params }) => ({
       scanId: 1,
-      files: await server<string[]>("list_files", { repo }),
+      files: await server<string[]>("list_files", {
+        repo: (params as Args).project,
+      }),
     }));
     const projectAt = (repo: unknown) =>
       DEMO_PROJECTS.find((candidate) => candidate.path === repo)?.name;

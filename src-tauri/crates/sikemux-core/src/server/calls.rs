@@ -273,6 +273,15 @@ calls! { core, client, params;
         core.streams.cancel(client.id, params.stream);
         answer(Value::Null)
     },
+    "projectRoots": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || super::project_roots::scan(params).map_err(CoreError::from)).await?)
+    },
+    "resolvePath": Full => {
+        let params = parse(params)?;
+        answer(blocking(move || Ok(super::project_roots::resolve(params))).await?)
+    },
+    "sshConfigFile": Full => answer(blocking(|| super::ssh::config_file().map_err(CoreError::from)).await?),
     "faceStyle": Watch => answer(core.faces.style()),
     "setFaceStyle": Person => {
         let style = core.faces.set_style(parse(params)?)?;
@@ -422,7 +431,9 @@ fn search_stream(
     client: &ClientConn,
     params: SearchStreamParams,
 ) -> CoreResult<Value> {
-    let stream = core.streams.open(connection_of(core, client)?, params.stream)?;
+    let stream = core
+        .streams
+        .open(connection_of(core, client)?, params.stream)?;
     let owner = client.id.to_string();
     tokio::task::spawn_blocking(move || {
         let found = super::search::search(params.search, &owner, &|file| {

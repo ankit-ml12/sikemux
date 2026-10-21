@@ -42,6 +42,7 @@ mod notify;
 pub mod plugins;
 mod ports;
 mod project_files;
+mod project_roots;
 mod faces;
 mod search;
 mod streams;

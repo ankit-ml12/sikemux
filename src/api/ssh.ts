@@ -1,5 +1,4 @@
 import { coreCall } from "./core";
-import { invokeCommand as invoke } from "./invoke";
 
 /** A host in the person's SSH config, as the core reads it. */
 export interface SshHost {
@@ -13,5 +12,5 @@ export interface SshHost {
 
 export const sshApi = {
     hosts: (): Promise<SshHost[]> => coreCall<SshHost[]>("sshHosts"),
-    configEnsure: (): Promise<string> => invoke<string>("ssh_config_ensure"),
+    configEnsure: (): Promise<string> => coreCall<string>("sshConfigFile"),
 };

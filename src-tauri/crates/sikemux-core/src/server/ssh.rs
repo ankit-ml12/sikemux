@@ -125,6 +125,28 @@ fn watch(core: &Core) {
     });
 }
 
+/// The SSH config's path, creating an empty one the editor can open when
+/// there is none. An existing config is never changed. Runs on a blocking
+/// thread.
+pub(crate) fn config_file() -> Result<String, String> {
+    let path = config_path().ok_or("HOME is not set")?;
+    let folder = path.parent().ok_or("the SSH config has no folder")?;
+    if !folder.exists() {
+        fs::create_dir_all(folder).map_err(|error| error.to_string())?;
+        #[cfg(unix)]
+        fs::set_permissions(folder, std::os::unix::fs::PermissionsExt::from_mode(0o700))
+            .map_err(|error| error.to_string())?;
+    }
+    if !path.exists() {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        options.open(&path).map_err(|error| error.to_string())?;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// A terminal to an SSH host started, ended, or changed how it reaches it.
 pub(crate) fn moved(core: &Core) {
     core.changes.changed(Topic::Ssh, None, None);

@@ -1,17 +1,12 @@
-// Backend bits for the settings page:
-//   - scan_project_roots: a root emits itself when it is a git repo, or
-//     when `self_index` is set — that flag replaces the separate list of
-//     pinned projects. Subdirectories within the configured `depth` are emitted
-//     ONLY if they are git repos — and the walk does not descend INTO a
-//     git repo (its inner src/, vendor/, etc. shouldn't pollute the
-//     picker). Dotfile dirs are skipped at every level.
-//   - expand_path: resolves `~` against $HOME on the Rust side.
+//! The project picker's scan of the folders the person keeps projects in:
+//! a root is a project itself when it is a git repo or set to index itself,
+//! and below it, within its depth, each git repo is one. The walk never goes
+//! into a repo or a dot folder.
 
 use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use sikemux_process::paths::expand_home;
 
@@ -21,14 +16,14 @@ const MAX_VISITED_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_PROJECTS: usize = 4_096;
 
 #[derive(Serialize)]
-pub struct ProjectEntry {
+pub(crate) struct ProjectEntry {
     name: String,
     path: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectRoot {
+pub(crate) struct ProjectRoot {
     path: String,
     #[serde(default = "default_depth")]
     depth: i64,
@@ -70,16 +65,27 @@ fn is_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
 
-#[tauri::command]
-pub async fn expand_path(path: String) -> String {
-    expand_home(&path).to_string_lossy().into_owned()
+/// What is at a path as the person typed it, `~` and all.
+#[derive(Serialize)]
+pub(crate) struct Resolved {
+    path: String,
+    kind: Option<&'static str>,
 }
 
-#[tauri::command]
-pub async fn is_directory(path: String) -> bool {
-    tauri::async_runtime::spawn_blocking(move || expand_home(&path).is_dir())
-        .await
-        .unwrap_or(false)
+#[derive(Deserialize)]
+pub(crate) struct ResolveParams {
+    path: String,
+}
+
+pub(crate) fn resolve(params: ResolveParams) -> Resolved {
+    let path = expand_home(&params.path);
+    let kind = fs::metadata(&path)
+        .ok()
+        .map(|meta| if meta.is_dir() { "dir" } else { "file" });
+    Resolved {
+        path: path.to_string_lossy().into_owned(),
+        kind,
+    }
 }
 
 // DFS within `root` up to `remaining` levels deep. Within the walk, only
@@ -91,7 +97,7 @@ fn walk(
     out: &mut Vec<ProjectEntry>,
     seen_projects: &mut HashSet<String>,
     visited: &mut HashSet<PathBuf>,
-) -> AppResult<()> {
+) -> Result<(), String> {
     let mut pending = VecDeque::from([(root.to_path_buf(), depth)]);
     while let Some((dir, remaining)) = pending.pop_front() {
         if remaining <= 0 {
@@ -104,9 +110,9 @@ fn walk(
             continue;
         }
         if visited.len() > MAX_VISITED_DIRECTORIES {
-            return Err(AppError::BadArg(
-                "project discovery visited too many directories; narrow the roots or depth",
-            ));
+            return Err(
+                "project discovery visited too many directories; narrow the roots or depth".into(),
+            );
         }
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
@@ -133,7 +139,7 @@ fn walk(
                 let path = canonical.to_string_lossy().into_owned();
                 if seen_projects.insert(path.clone()) {
                     if out.len() >= MAX_DISCOVERED_PROJECTS {
-                        return Err(AppError::BadArg("project discovery found too many repositories; narrow the roots or depth"));
+                        return Err("project discovery found too many repositories; narrow the roots or depth".into());
                     }
                     out.push(ProjectEntry {
                         name: relative_name(root, &p),
@@ -148,16 +154,19 @@ fn walk(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn scan_project_roots(roots: Vec<ProjectRoot>) -> AppResult<Vec<ProjectEntry>> {
-    tauri::async_runtime::spawn_blocking(move || scan_project_roots_sync(roots))
-        .await
-        .map_err(|error| AppError::Other(format!("scan_project_roots join: {error}")))?
+#[derive(Deserialize)]
+pub(crate) struct ScanParams {
+    roots: Vec<ProjectRoot>,
 }
 
-fn scan_project_roots_sync(roots: Vec<ProjectRoot>) -> AppResult<Vec<ProjectEntry>> {
+/// Runs on a blocking thread.
+pub(crate) fn scan(params: ScanParams) -> Result<Vec<ProjectEntry>, String> {
+    scan_project_roots_sync(params.roots)
+}
+
+fn scan_project_roots_sync(roots: Vec<ProjectRoot>) -> Result<Vec<ProjectEntry>, String> {
     if roots.len() > MAX_PROJECT_ROOTS {
-        return Err(AppError::BadArg("too many project discovery roots"));
+        return Err("too many project discovery roots".into());
     }
     let mut out: Vec<ProjectEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();

@@ -904,13 +904,12 @@ function GeneralPage({ projectRoots, home, pretty }: GeneralPageProps) {
     const [draftSelfIndex, setDraftSelfIndex] = useState(false);
 
     const resolveDirectory = async (raw: string) => {
-        const expanded = await settingsApi.expandPath(raw);
-        const ok = await settingsApi.isDirectory(expanded);
-        if (!ok) {
-            notify("error", `settings: not a directory: ${pretty(expanded)}`);
+        const { path, kind } = await settingsApi.resolvePath(raw);
+        if (kind !== "dir") {
+            notify("error", `settings: not a directory: ${pretty(path)}`);
             return null;
         }
-        return expanded;
+        return path;
     };
 
     const commitDraft = async () => {

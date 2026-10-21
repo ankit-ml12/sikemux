@@ -34,11 +34,9 @@ mod pty;
 mod relaunch;
 mod release_credits;
 mod remote;
-mod settings;
 mod share;
 mod sim;
 mod simulator;
-mod ssh;
 mod state;
 mod system;
 mod transparency;
@@ -297,18 +295,15 @@ pub fn run() {
             state::state_save,
             agents::executable::available_agents,
             fs::keep_dropped_paths,
-            fs::read_text_file_limited,
             fs::open_in_default_app,
             preview::preview_file,
             pages::page_theme,
             pages::page_shown,
             document_preview::document_preview_show,
             document_preview::document_preview_hide,
-            fs::copy_into_dir,
             fs::downloads_dir,
             fs::chat_attachment_dir,
             fs::save_clipboard_image,
-            fs::save_base64_into_dir,
             fs::reveal_in_finder,
             lsp::lsp_languages,
             lsp::lsp_install_server,
@@ -323,15 +318,11 @@ pub fn run() {
             lsp::lsp_document_symbols,
             diff::diff_hunks,
             markdown::markdown_parse,
-            settings::scan_project_roots,
-            settings::expand_path,
-            settings::is_directory,
             wallpaper::wallpaper_image,
             agent_notification::post_notification,
             agent_notification::focus_claim,
             dialogs::pick_paths,
             dialogs::pick_save_path,
-            ssh::ssh_config_ensure,
             external::open_url,
             external::macos_focus_app,
             transparency::set_window_blur,
@@ -484,7 +475,8 @@ mod ipc_command_boundary_tests {
         let app = mock_builder()
             .manage(UiWatchdogState::start().expect("start managed watchdog state"))
             .invoke_handler(tauri::generate_handler![
-                crate::fs::read_text_file_limited,
+                crate::fs::keep_dropped_paths,
+                crate::fs::reveal_in_finder,
                 crate::observability::observability_ui_heartbeat,
             ])
             .build(mock_context(noop_assets()))
@@ -493,22 +485,23 @@ mod ipc_command_boundary_tests {
             .build()
             .expect("build mock webview");
 
-        let text = get_ipc_response(
+        let path = repo.path().join("src").join("main.rs");
+        let kept = get_ipc_response(
             &webview,
             request(
-                "read_text_file_limited",
-                json!({ "path": repo.path().join("src").join("main.rs").to_string_lossy() }),
+                "keep_dropped_paths",
+                json!({ "paths": [path.to_string_lossy()] }),
             ),
         )
         .expect("filesystem command must cross the IPC boundary successfully")
         .deserialize::<Value>()
         .expect("filesystem response must be JSON");
-        assert_eq!(text, json!("fn main() {}\n"));
+        assert_eq!(kept, json!([path.to_string_lossy()]));
 
         let error = get_ipc_response(
             &webview,
             request(
-                "read_text_file_limited",
+                "reveal_in_finder",
                 json!({ "path": repo.path().join("missing.txt").to_string_lossy() }),
             ),
         )
