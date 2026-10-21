@@ -785,6 +785,11 @@ pub enum TerminalInput {
     Paste {
         text: String,
     },
+    /// Files dropped on the terminal, pasted as words the person's shell
+    /// reads back as those paths.
+    Paths {
+        paths: Vec<String>,
+    },
     Mouse {
         action: MouseAction,
         button: MouseButton,

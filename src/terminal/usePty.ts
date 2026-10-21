@@ -5,7 +5,6 @@ import { workspaceSent } from "../state/workspaceSent";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
-import { IS_WINDOWS } from "../lib/platform";
 import type { PtyContext, PtyDirectCommand } from "../state/types";
 import { paneResource } from "./paneResources";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
@@ -15,19 +14,14 @@ import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
 import { readRailNames } from "./railNames";
-import { integrationHealth } from "../api/system";
 
 type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
-export type TerminalShellSemantics = "posix" | "powershell";
-
-const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell" : "posix";
 
 interface PtyResourceConfiguration {
     readonly cwd?: string;
     readonly startup?: string;
     readonly directCommand?: PtyDirectCommand;
-    readonly initialDropPaths?: readonly string[];
     readonly initialDraft?: string;
     readonly context?: PtyContext;
     readonly taskTerminalKey?: string;
@@ -98,7 +92,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
-    typeWhenReady: (id, pastes, draft) => ptyCall(id, "typeWhenReady", { pastes, draft }),
+    typeWhenReady: (id, draft) => ptyCall(id, "typeWhenReady", { draft }),
     input: (id, input) => invoke<void>("pty_input", { id, input }),
     resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: coreSessionsApi.kill,
@@ -122,56 +116,6 @@ const nativeChannels: PtyChannelAdapter<NativeChannel> = {
     },
 };
 
-function requireLiteralPath(path: string): void {
-    if (path.includes("\0")) throw new TypeError("terminal drop paths cannot contain NUL bytes");
-}
-
-/** Encode one path as a single POSIX shell word without evaluating any of it. */
-export function encodePosixShellLiteral(path: string): string {
-    requireLiteralPath(path);
-    return `'${path.replaceAll("'", "'\\''")}'`;
-}
-
-/** Encode one path as a PowerShell single-quoted string literal. */
-export function encodePowerShellLiteral(path: string): string {
-    requireLiteralPath(path);
-    return `'${path.replaceAll("'", "''")}'`;
-}
-
-/** Determine quoting rules from the configured executable, independent of host OS. */
-export function shellSemanticsForExecutable(shell: string): TerminalShellSemantics | null {
-    const trimmed = shell.trim();
-    const unquoted =
-        trimmed.length >= 2 && ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))
-            ? trimmed.slice(1, -1)
-            : trimmed;
-    const executable =
-        unquoted
-            .split(/[\\/]/)
-            .at(-1)
-            ?.toLowerCase()
-            .replace(/\.exe$/, "") ?? "";
-    if (executable === "powershell" || executable === "pwsh") return "powershell";
-    if (["sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "fish"].includes(executable)) return "posix";
-    return null;
-}
-
-async function configuredShellSemantics(): Promise<TerminalShellSemantics> {
-    try {
-        const { shell } = await integrationHealth();
-        return shellSemanticsForExecutable(shell) ?? DEFAULT_SHELL_SEMANTICS;
-    } catch {
-        // invokeCommand already records the failed IPC. Keep drag/drop usable
-        // with the same default the native PTY launcher uses on this platform.
-    }
-    return DEFAULT_SHELL_SEMANTICS;
-}
-
-function encodeDroppedPaths(paths: readonly string[], semantics: TerminalShellSemantics): string {
-    const encode = semantics === "powershell" ? encodePowerShellLiteral : encodePosixShellLiteral;
-    return paths.map(encode).join(" ");
-}
-
 function recordControllerError(event: PtyControllerErrorEvent): void {
     performanceTelemetry.incrementCounter(`terminal.controller.errors.${event.operation}`);
 }
@@ -186,7 +130,6 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         configuration.directCommand?.args ?? null,
         configuration.directCommand?.profile?.configPath ?? null,
         configuration.directCommand?.profile?.environmentKeys ?? null,
-        configuration.initialDropPaths ?? null,
         configuration.initialDraft ?? null,
         context?.sessionId ?? null,
         context?.sessionName ?? null,
@@ -209,8 +152,6 @@ export function usePty(opts: {
     cwd?: string;
     startup?: string;
     directCommand?: PtyDirectCommand;
-    /** Native file drops replayed as independent paste events before the first task. */
-    initialDropPaths?: readonly string[];
     /** Pasted once the program starts and never submitted. */
     initialDraft?: string;
     onInitialInputDelivered?: () => void;
@@ -276,9 +217,6 @@ export function usePty(opts: {
                 startup: initial.startup,
                 directCommand: initial.directCommand,
                 context: initial.context,
-                initialPastes: externallyOwned
-                    ? undefined
-                    : initial.initialDropPaths?.map((path) => encodeDroppedPaths([path], DEFAULT_SHELL_SEMANTICS)),
                 initialDraft: externallyOwned ? undefined : initial.initialDraft,
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,
@@ -292,26 +230,9 @@ export function usePty(opts: {
         controllerRef.current = controller;
 
         const host = hostRef.current;
-        let active = true;
-        let shellSemanticsPromise: Promise<TerminalShellSemantics> | null = null;
-        const resolveShellSemantics = () => (shellSemanticsPromise ??= configuredShellSemantics());
         const unregisterDrop = host
             ? registerPtyDrop(host, (paths) => {
-                  if (paths.length === 0) return;
-                  const droppedPaths = [...paths];
-                  if (droppedPaths.some((path) => path.includes("\0"))) {
-                      performanceTelemetry.incrementCounter("terminal.drop.rejected.nul");
-                      return;
-                  }
-                  void resolveShellSemantics()
-                      .then((semantics) => {
-                          if (!active) return;
-                          const body = encodeDroppedPaths(droppedPaths, semantics);
-                          return controller.write(`\x1b[200~${body}\x1b[201~`);
-                      })
-                      // PtyLifecycleController is the sole reporter for write
-                      // failures; this catch only prevents an unhandled promise.
-                      .catch(() => {});
+                  if (paths.length > 0) void controller.input({ type: "paths", paths: [...paths] });
               })
             : () => {};
         const unregisterTextInsert = host
@@ -322,7 +243,6 @@ export function usePty(opts: {
             : () => {};
 
         return () => {
-            active = false;
             unregisterDrop();
             unregisterTextInsert();
             if (controllerRef.current === controller) controllerRef.current = null;

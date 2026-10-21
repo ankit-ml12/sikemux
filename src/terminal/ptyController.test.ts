@@ -49,7 +49,7 @@ class FakeChannels implements PtyChannelAdapter<FakeChannel> {
 function fakeApi() {
     const spawn = vi.fn(async (_request: PtySpawnRequest<TestContext>) => 42);
     const write = vi.fn(async (_id: number, _data: string) => {});
-    const typeWhenReady = vi.fn(async (_id: number, _pastes: readonly string[], _draft: string | null) => {});
+    const typeWhenReady = vi.fn(async (_id: number, _draft: string) => {});
     const input = vi.fn(async (_id: number, _input: TerminalInput) => {});
     const resize = vi.fn(async (_id: number, _cols: number, _rows: number) => {});
     const kill = vi.fn(async (_id: number) => {});
@@ -309,7 +309,7 @@ describe("PtyLifecycleController process ownership", () => {
 
     it("kills exactly once when disposed during a coalesced start", async () => {
         const spawned = deferred<number>();
-        const { fakes, options } = controllerOptions({ initialPastes: ["private first task"] });
+        const { fakes, options } = controllerOptions({ initialDraft: "private first task" });
         fakes.spawn.mockReturnValue(spawned.promise);
         const controller = new PtyLifecycleController(options);
         const starting = controller.start();
@@ -329,7 +329,7 @@ describe("PtyLifecycleController process ownership", () => {
     it("takes back a process that is still there instead of spawning, without sending its first input again", async () => {
         const onProcess = vi.fn();
         const resume = vi.fn(async (_id: number) => true);
-        const { fakes, options } = controllerOptions({ resumePtyId: 1_759_300_000_005, initialPastes: ["Build it."], onProcess });
+        const { fakes, options } = controllerOptions({ resumePtyId: 1_759_300_000_005, initialDraft: "Build it.", onProcess });
         const controller = new PtyLifecycleController({ ...options, api: { ...fakes.api, resume } });
 
         await expect(controller.start()).resolves.toBe(1_759_300_000_005);
@@ -364,11 +364,7 @@ describe("PtyLifecycleController process ownership", () => {
 
     it("hands initial input to the core at most once and reports it", async () => {
         const delivered = vi.fn();
-        const { fakes, options } = controllerOptions({
-            initialPastes: ["'/tmp/first image.png'", "'/tmp/second image.jpg'"],
-            initialDraft: "and then this",
-            onInitialInputDelivered: delivered,
-        });
+        const { fakes, options } = controllerOptions({ initialDraft: "and then this", onInitialInputDelivered: delivered });
         const controller = new PtyLifecycleController(options);
 
         await controller.start();
@@ -376,14 +372,14 @@ describe("PtyLifecycleController process ownership", () => {
         await controller.start();
 
         expect(fakes.typeWhenReady).toHaveBeenCalledOnce();
-        expect(fakes.typeWhenReady).toHaveBeenCalledWith(42, ["'/tmp/first image.png'", "'/tmp/second image.jpg'"], "and then this");
+        expect(fakes.typeWhenReady).toHaveBeenCalledWith(42, "and then this");
         expect(fakes.write).not.toHaveBeenCalled();
         expect(delivered).toHaveBeenCalledOnce();
     });
 
     it("does not retry an ambiguous failed initial-input write", async () => {
         const writeError = new Error("bridge response lost");
-        const { fakes, errors, options } = controllerOptions({ initialPastes: ["run once"] });
+        const { fakes, errors, options } = controllerOptions({ initialDraft: "run once" });
         fakes.typeWhenReady.mockRejectedValue(writeError);
         const controller = new PtyLifecycleController(options);
 
@@ -660,7 +656,7 @@ describe("PtyLifecycleController safety boundaries", () => {
     });
 
     it("exposes content-free runtime snapshots and rejects persistence", async () => {
-        const { options } = controllerOptions({ initialPastes: ["secret first task"] });
+        const { options } = controllerOptions({ initialDraft: "secret first task" });
         const controller = new PtyLifecycleController(options);
         await controller.start();
 

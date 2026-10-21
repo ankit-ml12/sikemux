@@ -375,6 +375,7 @@ export type TerminalInput =
     | { type: "key"; key: string; mods: Mods }
     | { type: "text"; text: string }
     | { type: "paste"; text: string }
+    | { type: "paths"; paths: string[] }
     | { type: "mouse"; action: "press" | "release" | "move"; button: MouseButton; col: number; row: number; mods: Mods }
     | { type: "wheel"; col: number; row: number; lines: number; mods: Mods }
     | { type: "focus"; focused: boolean };

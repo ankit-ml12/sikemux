@@ -35,8 +35,8 @@ export interface PtyApi<ChannelTransport, Context = unknown> {
     write(id: number, data: string): Promise<void>;
     /** A key, text, paste, mouse or focus change, which the core encodes for the program. */
     input(id: number, input: TerminalInput): Promise<void>;
-    /** Pastes submitted, then a draft left unsent, which the core types once the program is ready for them. */
-    typeWhenReady(id: number, pastes: readonly string[], draft: string | null): Promise<void>;
+    /** A draft left unsent at the program's prompt, which the core types once the program is ready for it. */
+    typeWhenReady(id: number, draft: string): Promise<void>;
     resize(id: number, cols: number, rows: number): Promise<void>;
     kill(id: number): Promise<void>;
     attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
@@ -125,9 +125,7 @@ export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unkno
     readonly context?: Context;
     readonly cols?: number;
     readonly rows?: number;
-    /** Pasted one by one and submitted once the program starts. */
-    readonly initialPastes?: readonly string[];
-    /** Pasted after the pastes and never submitted, so it waits at the prompt to be edited or sent. */
+    /** Pasted once the program starts and never submitted, so it waits at the prompt to be edited or sent. */
     readonly initialDraft?: string;
     readonly onInitialInputDelivered?: () => void;
     readonly onError?: (event: PtyControllerErrorEvent) => void;
@@ -308,7 +306,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private failureOperation: PtyOperation | null = null;
     private initialInputStatus: PtyInitialInputStatus;
     private initialDraft: string | null;
-    private initialPasteChunks: string[] | null;
     private initialInputAttempted = false;
     private externalPtyId: number | null;
     private resumePtyId: number | null;
@@ -354,10 +351,8 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.maxAttachments = requirePositiveInteger("maxAttachments", options.maxAttachments ?? DEFAULT_MAX_ATTACHMENTS);
         this.onInitialInputDelivered = options.onInitialInputDelivered;
         this.onError = options.onError;
-        const initialPastes = (options.initialPastes ?? []).filter((value) => value.length > 0);
-        this.initialPasteChunks = initialPastes.length > 0 ? initialPastes : null;
         this.initialDraft = options.initialDraft?.trim() ? options.initialDraft : null;
-        this.initialInputStatus = this.initialPasteChunks || this.initialDraft ? "pending" : "none";
+        this.initialInputStatus = this.initialDraft ? "pending" : "none";
     }
 
     getSnapshot(): PtyControllerSnapshot {
@@ -451,7 +446,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private skipInitialInput(): void {
-        this.initialPasteChunks = null;
+        this.initialDraft = null;
         this.initialInputAttempted = true;
         if (this.initialInputStatus === "pending") this.initialInputStatus = "none";
     }
@@ -725,7 +720,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                     await Promise.allSettled([this.killOnce(this.ptyId)]);
                 }
                 this.ptyId = null;
-                this.initialPasteChunks = null;
+                this.initialDraft = null;
                 this.status = "disposed";
                 this.failureOperation = null;
                 this.emitState();
@@ -827,21 +822,15 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private async deliverInitialInput(id: number): Promise<void> {
-        if (this.initialInputAttempted || (!this.initialPasteChunks && !this.initialDraft)) return;
-        if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) {
-            this.initialPasteChunks = null;
-            this.initialDraft = null;
-            return;
-        }
+        const draft = this.initialDraft;
+        if (this.initialInputAttempted || !draft) return;
+        this.initialDraft = null;
+        if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) return;
         this.initialInputAttempted = true;
         this.initialInputStatus = "delivering";
-        const pasteChunks = this.initialPasteChunks;
-        const draft = this.initialDraft;
-        this.initialPasteChunks = null;
-        this.initialDraft = null;
         this.emitState();
         try {
-            await this.api.typeWhenReady(id, pasteChunks ?? [], draft);
+            await this.api.typeWhenReady(id, draft);
             if (this.disposeRequested || this.ptyId !== id) {
                 this.initialInputStatus = "cancelled";
                 this.emitState();
@@ -877,7 +866,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private cancelInitialInput(): void {
-        this.initialPasteChunks = null;
         this.initialDraft = null;
     }
 

@@ -5,6 +5,7 @@ use alacritty_terminal::term::TermMode;
 use sikemux_wire::grid::{Mods, MouseAction, MouseButton, TerminalInput};
 
 use super::Terminal;
+use crate::user_shell::configured_shell;
 
 fn modifier(mods: Mods) -> u8 {
     1 + u8::from(mods.shift)
@@ -162,6 +163,51 @@ fn mouse_mods(mods: Mods) -> u8 {
     4 * u8::from(mods.shift) + 8 * u8::from(mods.alt) + 16 * u8::from(mods.ctrl)
 }
 
+fn paste(out: &mut Vec<u8>, text: &str, mode: TermMode) {
+    let text = text.replace("\r\n", "\r").replace('\n', "\r");
+    if mode.contains(TermMode::BRACKETED_PASTE) {
+        out.extend_from_slice(b"\x1b[200~");
+        out.extend_from_slice(text.replace("\x1b[201~", "").as_bytes());
+        out.extend_from_slice(b"\x1b[201~");
+    } else {
+        out.extend_from_slice(text.as_bytes());
+    }
+}
+
+/// `paths` as words `shell` reads back literally, evaluating none of them.
+/// Nothing when a path holds a NUL, which no shell word can carry.
+fn shell_words(paths: &[String], shell: &str) -> Option<String> {
+    if paths.iter().any(|path| path.contains('\0')) {
+        return None;
+    }
+    let powershell = reads_powershell(shell).unwrap_or(cfg!(windows));
+    let quote = |path: &String| {
+        if powershell {
+            format!("'{}'", path.replace('\'', "''"))
+        } else {
+            format!("'{}'", path.replace('\'', r"'\''"))
+        }
+    };
+    Some(paths.iter().map(quote).collect::<Vec<_>>().join(" "))
+}
+
+/// Whether the shell at `shell` quotes like PowerShell rather than a POSIX
+/// shell, going by its name whatever the platform. Nothing for a shell it
+/// does not know.
+fn reads_powershell(shell: &str) -> Option<bool> {
+    let shell = shell.trim();
+    let unquoted = ['"', '\'']
+        .iter()
+        .find_map(|quote| shell.strip_prefix(*quote)?.strip_suffix(*quote))
+        .unwrap_or(shell);
+    let name = unquoted.rsplit(['/', '\\']).next()?.to_ascii_lowercase();
+    match name.strip_suffix(".exe").unwrap_or(&name) {
+        "powershell" | "pwsh" => Some(true),
+        "sh" | "bash" | "zsh" | "dash" | "ash" | "ksh" | "mksh" | "fish" => Some(false),
+        _ => None,
+    }
+}
+
 impl Terminal {
     /// The bytes to write to the program for `input`, if it takes any.
     pub fn encode(&self, input: &TerminalInput) -> Vec<u8> {
@@ -170,14 +216,10 @@ impl Terminal {
         match input {
             TerminalInput::Key { key: name, mods } => key(&mut out, name, *mods, mode),
             TerminalInput::Text { text } => out.extend_from_slice(text.as_bytes()),
-            TerminalInput::Paste { text } => {
-                let text = text.replace("\r\n", "\r").replace('\n', "\r");
-                if mode.contains(TermMode::BRACKETED_PASTE) {
-                    out.extend_from_slice(b"\x1b[200~");
-                    out.extend_from_slice(text.replace("\x1b[201~", "").as_bytes());
-                    out.extend_from_slice(b"\x1b[201~");
-                } else {
-                    out.extend_from_slice(text.as_bytes());
+            TerminalInput::Paste { text } => paste(&mut out, text, mode),
+            TerminalInput::Paths { paths } => {
+                if let Some(words) = shell_words(paths, &configured_shell()) {
+                    paste(&mut out, &words, mode);
                 }
             }
             TerminalInput::Focus { focused } => {
@@ -243,5 +285,58 @@ impl Terminal {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{reads_powershell, shell_words};
+
+    #[test]
+    fn a_posix_word_keeps_every_metacharacter_inside_single_quotes() {
+        let path =
+            "-literal path\n$(touch nope)`whoami`;pipe|glob*?[x]>out<in\\slash'quote".to_owned();
+        assert_eq!(
+            shell_words(&[path], "/bin/zsh").as_deref(),
+            Some("'-literal path\n$(touch nope)`whoami`;pipe|glob*?[x]>out<in\\slash'\\''quote'")
+        );
+    }
+
+    #[test]
+    fn a_powershell_word_doubles_its_single_quotes() {
+        let path = "C:\\O'Brien\\-literal path\n$env:TEMP\\$(x)`x;pipe|glob*?>out<in".to_owned();
+        assert_eq!(
+            shell_words(&[path], "pwsh").as_deref(),
+            Some("'C:\\O''Brien\\-literal path\n$env:TEMP\\$(x)`x;pipe|glob*?>out<in'")
+        );
+    }
+
+    #[test]
+    fn paths_are_words_apart_and_a_nul_drops_them_all() {
+        let paths = ["/tmp/a b", "/tmp/O'Brien"].map(String::from);
+        assert_eq!(
+            shell_words(&paths, "/bin/bash").as_deref(),
+            Some("'/tmp/a b' '/tmp/O'\\''Brien'")
+        );
+        let unsafe_paths = ["/tmp/safe", "/tmp/unsafe\0suffix"].map(String::from);
+        assert_eq!(shell_words(&unsafe_paths, "/bin/bash"), None);
+    }
+
+    #[test]
+    fn the_quoting_follows_the_shell_named_not_the_platform() {
+        assert_eq!(reads_powershell("/bin/zsh"), Some(false));
+        assert_eq!(
+            reads_powershell("C:\\Program Files\\Git\\bin\\bash.exe"),
+            Some(false)
+        );
+        assert_eq!(
+            reads_powershell("\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\""),
+            Some(true)
+        );
+        assert_eq!(
+            reads_powershell("/opt/microsoft/powershell/7/PWSH"),
+            Some(true)
+        );
+        assert_eq!(reads_powershell("/bin/custom-shell"), None);
     }
 }

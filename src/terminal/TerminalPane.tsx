@@ -32,7 +32,6 @@ export function TerminalPane({
     startup,
     reconnects,
     directCommand,
-    initialDropPaths,
     initialDraft,
     onInitialInputDelivered,
     active,
@@ -51,8 +50,6 @@ export function TerminalPane({
     /** An ssh terminal, which connects again when the pane becomes active and its shell sits at the prompt, as after SSH gave up. */
     reconnects?: boolean;
     directCommand?: PtyDirectCommand;
-    /** Native file drops replayed before the first submitted task. */
-    initialDropPaths?: readonly string[];
     /** Pasted at the program's prompt once it starts, and never submitted. */
     initialDraft?: string;
     onInitialInputDelivered?: () => void;
@@ -97,7 +94,6 @@ export function TerminalPane({
         cwd,
         startup,
         directCommand,
-        initialDropPaths,
         initialDraft,
         onInitialInputDelivered,
         hostRef,
