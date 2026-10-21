@@ -81,9 +81,9 @@ function keepDraft(repo: string, text: string): Promise<void> {
  * Takes the commit messages the core keeps. One follows the core's only while nothing
  * was typed here since they last agreed, so words typed here are never overwritten.
  */
-function takeDrafts(drafts: Record<string, Draft>): void {
-    const repos = new Set([...kept.keys()]);
-    for (const key of Object.keys(drafts)) if (key.startsWith("git:")) repos.add(key.slice(4));
+function takeDrafts(drafts: Record<string, Draft>, asked: readonly string[] | null): void {
+    const repos = new Set(asked ? [] : [...kept.keys()]);
+    for (const key of asked ?? Object.keys(drafts)) if (key.startsWith("git:")) repos.add(key.slice(4));
     const current = useGitWorkbench.getState().drafts;
     const next = { ...current };
     let changed = false;
@@ -111,13 +111,16 @@ async function carry(): Promise<void> {
 /** Keeps the commit messages in step with the drafts the core keeps. */
 export function watchDrafts(): () => void {
     let alive = true;
-    const read = () =>
-        coreCall<Record<string, Draft>>("drafts")
-            .then((drafts) => alive && takeDrafts(drafts))
+    const read = (keys: readonly string[] | null) =>
+        coreCall<Record<string, Draft>>("drafts", keys ? { keys } : null)
+            .then((drafts) => alive && takeDrafts(drafts, keys))
             .catch(swallow("read the kept drafts"));
-    void carry().catch(swallow("hand the core the saved commit messages")).then(read);
+    void carry()
+        .catch(swallow("hand the core the saved commit messages"))
+        .then(() => read(null));
     const stop = onCoreChanged("drafts", (change) => {
-        if (!change.paths || change.paths.some((key) => key.startsWith("git:"))) void read();
+        const keys = change.paths?.filter((key) => key.startsWith("git:")) ?? null;
+        if (!keys || keys.length) void read(keys);
     });
     return () => {
         alive = false;

@@ -61,14 +61,19 @@ impl Drafts {
         }))
     }
 
-    /// Every draft, by key.
-    pub(crate) fn get(&self) -> BTreeMap<String, Draft> {
-        self.0
-            .drafts
-            .locked()
-            .iter()
-            .map(|(key, draft)| (key.clone(), draft.shown.clone()))
-            .collect()
+    /// The drafts under `keys`, else every one, by key.
+    pub(crate) fn get(&self, keys: Option<&[String]>) -> BTreeMap<String, Draft> {
+        let drafts = self.0.drafts.locked();
+        match keys {
+            Some(keys) => keys
+                .iter()
+                .filter_map(|key| Some((key.clone(), drafts.get(key)?.shown.clone())))
+                .collect(),
+            None => drafts
+                .iter()
+                .map(|(key, draft)| (key.clone(), draft.shown.clone()))
+                .collect(),
+        }
     }
 
     /// Keeps `text` and `extra` as the draft for `key`; an empty text with no extra

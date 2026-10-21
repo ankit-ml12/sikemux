@@ -302,7 +302,10 @@ calls! { core, client, params;
         answer(style)
     },
     "preferences": Watch => answer(core.preferences.get()),
-    "drafts": Watch => answer(core.drafts.get()),
+    "drafts": Watch => {
+        let params: DraftsParams = serde_json::from_value(params).unwrap_or_default();
+        answer(core.drafts.get(params.keys.as_deref()))
+    },
     "setDraft": Person => {
         let params: SetDraftParams = parse(params)?;
         core.drafts.set(&params.key, params.text, params.extra)?;
@@ -628,6 +631,12 @@ struct ThemeFromColoursParams {
     name: String,
     colours: Vec<String>,
     accent: Option<String>,
+}
+
+/// The drafts to read: those under `keys`, else every one.
+#[derive(Deserialize, Default)]
+struct DraftsParams {
+    keys: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
