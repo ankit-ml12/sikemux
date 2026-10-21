@@ -78,6 +78,8 @@ pub fn run(method: &str, params: Value, piece: u64) -> Result<Value> {
         "files.readText" => answer(read_text(parse(params)?)?),
         "files.copyInto" => answer(copy_into(parse(params)?)?),
         "files.writeBytes" => answer(write_bytes(parse(params)?)?),
+        "files.preview" => answer(preview(parse(params)?)?),
+        "files.bytes" => answer(bytes(parse(params)?)?),
         _ => Err(format!("this host does not know {method}").into()),
     }
 }
@@ -394,6 +396,70 @@ fn write_bytes(params: WriteBytesParams) -> Result<String> {
         .decode(params.base64.as_bytes())
         .map_err(|error| format!("invalid argument: the bytes are not base64: {error}"))?;
     write_new_in_dir(dir, name, |destination| destination.write_all(&bytes))
+}
+
+#[derive(Deserialize)]
+struct PreviewParams {
+    path: String,
+}
+
+/// What a file is, for a preview: its type, size and when it last changed,
+/// in epoch milliseconds.
+#[derive(Serialize)]
+struct Preview {
+    mime: &'static str,
+    size: u64,
+    modified: u64,
+}
+
+fn preview(params: PreviewParams) -> Result<Preview> {
+    let path = absolute(&params.path)?;
+    let meta = open_regular(path)?.metadata()?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_millis() as u64);
+    Ok(Preview {
+        mime: crate::http::mime_of(path)?,
+        size: meta.len(),
+        modified,
+    })
+}
+
+/// The most of a file one `files.bytes` answers with.
+const MAX_BYTES_PIECE: u64 = 1024 * 1024;
+
+#[derive(Deserialize)]
+struct BytesParams {
+    path: String,
+    #[serde(default)]
+    at: u64,
+    length: u64,
+}
+
+/// A piece of a file as base64, for a client that cannot read this host's
+/// disk to show a picture or play media.
+#[derive(Serialize)]
+struct Bytes {
+    base64: String,
+    size: u64,
+}
+
+fn bytes(params: BytesParams) -> Result<Bytes> {
+    use base64::Engine;
+    let path = absolute(&params.path)?;
+    let mut file = open_regular(path)?;
+    let size = file.metadata()?.len();
+    let at = params.at.min(size);
+    file.seek(SeekFrom::Start(at))?;
+    let mut piece = Vec::new();
+    file.take(params.length.min(MAX_BYTES_PIECE))
+        .read_to_end(&mut piece)?;
+    Ok(Bytes {
+        base64: base64::engine::general_purpose::STANDARD.encode(piece),
+        size,
+    })
 }
 
 /// Writes a new file into `dir` under `name`, or under "name (N)" when that

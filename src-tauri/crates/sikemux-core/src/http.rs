@@ -165,6 +165,81 @@ fn is_public(ip: IpAddr) -> bool {
     }
 }
 
+/// The type a file's name says it is; `application/octet-stream` when the
+/// name says nothing.
+pub fn content_type(path: &std::path::Path) -> &'static str {
+    let extension = path
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "json" | "map" => "application/json",
+        "txt" | "md" | "csv" | "log" => "text/plain; charset=utf-8",
+        "xml" => "application/xml",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "tif" | "tiff" => "image/tiff",
+        "heic" => "image/heic",
+        "heif" => "image/heif",
+        "psd" => "image/vnd.adobe.photoshop",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "otf" => "font/otf",
+        "wasm" => "application/wasm",
+        "pdf" => "application/pdf",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        "wav" => "audio/wav",
+        "flac" => "audio/flac",
+        "aif" | "aiff" => "audio/aiff",
+        "ogg" | "oga" | "opus" => "audio/ogg",
+        "rtf" => "application/rtf",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        "pages" => "application/vnd.apple.pages",
+        "numbers" => "application/vnd.apple.numbers",
+        "key" => "application/vnd.apple.keynote",
+        "epub" => "application/epub+zip",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
+}
+
+/// What a file is: what its name says, else what its first bytes announce.
+pub fn mime_of(path: &std::path::Path) -> std::io::Result<&'static str> {
+    use std::io::Read;
+    let named = content_type(path);
+    if named != "application/octet-stream" {
+        return Ok(named);
+    }
+    let mut head = Vec::with_capacity(64);
+    std::fs::File::open(path)?.take(64).read_to_end(&mut head)?;
+    Ok(sniff(&head).unwrap_or(named))
+}
+
 /// The type a file's first bytes announce, for files whose name does not say
 /// and downloads whose server cannot be trusted to.
 pub fn sniff(head: &[u8]) -> Option<&'static str> {
@@ -252,6 +327,17 @@ pub fn sniff(head: &[u8]) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_decide_the_type() {
+        use std::path::Path;
+        assert_eq!(content_type(Path::new("/a/b.PDF")), "application/pdf");
+        assert_eq!(content_type(Path::new("/a/song.m4a")), "audio/mp4");
+        assert_eq!(
+            content_type(Path::new("/a/noext")),
+            "application/octet-stream"
+        );
+    }
 
     #[test]
     fn only_public_addresses_count_as_the_internet() {
