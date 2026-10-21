@@ -180,7 +180,7 @@ fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
 
 /// The mark of a plugin that has a place of its own in the rail; code hosts show
 /// under their projects instead.
-fn plugin_mark(id: &str) -> Option<Icon> {
+pub(crate) fn plugin_mark(id: &str) -> Option<Icon> {
     Some(match id.strip_prefix("sikemux.")? {
         "aws" => Icon::Aws,
         "bruno" => Icon::Bruno,

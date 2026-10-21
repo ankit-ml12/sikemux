@@ -10,6 +10,7 @@ mod about;
 mod appearance;
 mod cli;
 mod cloud;
+mod plugins;
 
 /// What the pages keep while settings are open: what the core last answered
 /// for them, and the fields being typed in.
@@ -50,7 +51,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
         Page::Cli => cli::SECTIONS,
         Page::Devices => &["Your account", "Remote access", "Phones"],
         Page::Cloud => cloud::SECTIONS,
-        Page::Plugins => &["Built-in plugins"],
+        Page::Plugins => plugins::SECTIONS,
     }
 }
 
@@ -69,6 +70,7 @@ pub fn render(
         Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
+        Page::Plugins => plugins::render(bench, &lit, this, cx),
         _ => Vec::new(),
     }
 }

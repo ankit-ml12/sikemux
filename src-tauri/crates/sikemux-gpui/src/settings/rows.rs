@@ -71,15 +71,27 @@ pub fn row(
     control: impl IntoElement,
     cx: &App,
 ) -> Div {
+    row_with(None, label, about.map(SharedString::from), control, cx)
+}
+
+/// A row with a mark before its name, and a line about it made as it is drawn.
+pub fn row_with(
+    mark: Option<AnyElement>,
+    label: impl Into<SharedString>,
+    about: Option<SharedString>,
+    control: impl IntoElement,
+    cx: &App,
+) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex()
         .items_center()
-        .gap(px(16.))
+        .gap(px(12.))
         .px(px(14.))
         .py(px(10.))
         .border_b_1()
         .border_color(t.line_soft)
+        .children(mark)
         .child(
             div()
                 .flex_1()
