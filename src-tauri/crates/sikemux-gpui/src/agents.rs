@@ -2,6 +2,7 @@ use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
+use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -10,35 +11,33 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Transformation,
 };
 use serde_json::Value;
+use sikemux_wire::protocol::{PaneKind, RecentInfo};
 
+use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
-use crate::workbench::{AgentRow, Edge, RailPage, Workbench};
+use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
 
-pub const TAB_RAIL_WIDTH: f32 = 288.;
+pub const TAB_RAIL: RailWidth = RailWidth {
+    min: 240.,
+    max: 560.,
+    initial: 288.,
+};
 
 pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    if bench.rail_page == RailPage::Files {
-        let t = Tokens::get(cx).clone();
-        return ui::panel(cx)
-            .w(px(TAB_RAIL_WIDTH))
-            .min_w(px(240.))
-            .flex_none()
-            .child(
-                div()
-                    .flex_none()
-                    .min_h(px(40.))
-                    .px(px(14.))
-                    .flex()
-                    .items_center()
-                    .border_b_1()
-                    .border_color(t.line_soft)
-                    .child(ui::text("Files", 13., FontWeight::SEMIBOLD).text_color(t.text_primary)),
-            )
-            .child(crate::files::page(bench, cx))
-            .child(pages(bench, cx))
-            .into_any_element();
+    match bench.rail_page {
+        RailPage::Files => {
+            return ui::panel(cx)
+                .w(px(bench.rail_width(Edge::End)))
+                .flex_none()
+                .child(page_header("Files", cx))
+                .child(crate::files::page(bench, cx))
+                .child(pages(bench, cx))
+                .into_any_element();
+        }
+        RailPage::Terminals => return terminals_page(bench, cx),
+        RailPage::Agents => {}
     }
     let project = bench.project();
     let agents = bench.listed_agents();
@@ -46,38 +45,67 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .iter()
         .map(|agent| agent_row(bench, agent, cx).into_any_element())
         .collect();
-    let recent: Vec<_> = project
+    let (pinned, recent): (Vec<_>, Vec<_>) = project
         .map(|project| bench.recent_of(&project.id))
         .unwrap_or_default()
         .into_iter()
-        .map(|recent| {
-            Row::new(
-                SharedString::from(format!("recent-{}", recent.id)),
-                recent.title.clone(),
-            )
-            .mark(22., ui::mark(&recent.provider, 20.))
-            .child(ui::mono(age(recent.active_at), 11., cx))
-            .on_click(cx.listener({
-                let recent = recent.clone();
-                move |bench, _, _, _| bench.resume_chat(&recent)
-            }))
-            .into_any_element()
-        })
+        .partition(|recent| recent.pinned);
+    let recent_row = |recent: &RecentInfo, cx: &mut Context<Workbench>| {
+        Row::new(
+            SharedString::from(format!("recent-{}", recent.id)),
+            recent.title.clone(),
+        )
+        .mark(22., ui::mark(&recent.provider, 20.))
+        .child(ui::mono(age(recent.active_at), 11., cx))
+        .on_click(cx.listener({
+            let recent = recent.clone();
+            move |bench, _, _, _| bench.resume_chat(&recent)
+        }))
+        .into_any_element()
+    };
+    let pinned: Vec<_> = pinned
+        .into_iter()
+        .map(|recent| recent_row(recent, cx))
         .collect();
-    let scope = vec![
-        (
-            Icon::Folder,
-            SharedString::from(
-                project
-                    .map(|project| project.name.clone())
-                    .unwrap_or_default(),
-            ),
-        ),
-        (Icon::Stack, SharedString::from("All projects")),
-    ];
+    let recent: Vec<_> = recent
+        .into_iter()
+        .map(|recent| recent_row(recent, cx))
+        .collect();
+    let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
+        if project.is_none() {
+            rail_empty(
+                Icon::Agent,
+                "No project open",
+                Some(("project.open", "open one")),
+                cx,
+            )
+        } else if bench.launchers().is_empty() {
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .child(rail_empty(Icon::Agent, "No agents set up", None, cx))
+                .child(
+                    ui::Button::new("set-up-agent", "Set one up", ui::Variant::Outline).on_click(
+                        cx.listener(|bench, _, window, cx| {
+                            bench.open_settings(crate::settings::Page::Agents, window, cx)
+                        }),
+                    ),
+                )
+                .into_any_element()
+        } else if !bench.filter_text.is_empty() {
+            rail_empty(Icon::Search, "No chats match", None, cx)
+        } else {
+            rail_empty(
+                Icon::Agent,
+                "No agents yet",
+                Some(("agent.new", "start one")),
+                cx,
+            )
+        }
+    });
     ui::panel(cx)
-        .w(px(TAB_RAIL_WIDTH))
-        .min_w(px(240.))
+        .w(px(bench.rail_width(Edge::End)))
         .flex_none()
         .child(header(bench, cx))
         .children(bench.filter.as_ref().map(|filter| {
@@ -119,14 +147,7 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                         crate::keymap::dispatch("browser.tabNew", window, cx)
                     }),
                 )
-                .child(div().mt(px(8.)).child(
-                    Segmented::new("scope", scope, usize::from(bench.all_projects)).on_select(
-                        cx.listener(|bench, all: &usize, _, cx| {
-                            bench.all_projects = *all == 1;
-                            cx.notify();
-                        }),
-                    ),
-                )),
+                .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
         )
         .child(
             div()
@@ -137,7 +158,11 @@ pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .px(px(10.))
                 .pb(px(16.))
                 .overflow_y_scrollbar()
+                .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows))
+                .when(!pinned.is_empty(), |scroll| {
+                    scroll.child(Group::new("Pinned", "").children(pinned))
+                })
                 .when(!recent.is_empty(), |scroll| {
                     scroll.child(Group::new("Recent", "").children(recent))
                 }),
@@ -333,8 +358,9 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
         .flatten()
         .map(|project| project.name.clone());
     let chosen = bench.agent().is_some_and(|front| front.id == agent.id);
-    let (id, home) = (agent.id.clone(), agent.project.clone());
-    Row::new(
+    let id = agent.id.clone();
+    let menu = AgentMenu::new(bench, &agent.id, cx);
+    let row = Row::new(
         SharedString::from(format!("agent-{}", agent.id)),
         agent.title.clone(),
     )
@@ -352,22 +378,21 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
         )
     })
     .status(ui::status_mark(agent.status, cx))
-    .on_click(cx.listener(move |bench, _, _, _| {
-        if let Some(agent) = bench
-            .agents_of(&home)
-            .into_iter()
-            .find(|agent| agent.id == id)
-        {
-            bench.activate_agent(&agent);
-        }
-    }))
+    .on_click(cx.listener(move |bench, _, _, _| bench.open_agent(&id)))
     .children(
         agent
             .name
             .clone()
             .map(|name| ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.))),
     )
-    .children(counts(agent, cx))
+    .children(counts(agent, cx));
+    div()
+        .id(SharedString::from(format!("agent-menu-{}", agent.id)))
+        .child(row)
+        .context_menu(move |popup, window, cx| match &menu {
+            Some(menu) => menu.build(popup, window, cx),
+            None => popup,
+        })
 }
 
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
@@ -666,6 +691,187 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             RailPage::Agents,
             cx,
         ))
-        .child(IconButton::new("page-terminals", Icon::Terminal, "Terminals").width(32.))
+        .child(page(
+            "page-terminals",
+            Icon::Terminal,
+            "Terminals",
+            RailPage::Terminals,
+            cx,
+        ))
         .child(page("page-files", Icon::File, "Files", RailPage::Files, cx))
+}
+
+/// A rail page's title bar.
+fn page_header(title: &'static str, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    div()
+        .flex_none()
+        .min_h(px(40.))
+        .px(px(14.))
+        .flex()
+        .items_center()
+        .border_b_1()
+        .border_color(t.line_soft)
+        .child(ui::text(title, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))
+}
+
+/// A rail page with nothing to list: a faint mark, what is missing, and the key that fills it.
+fn rail_empty(
+    glyph: Icon,
+    title: &'static str,
+    press: Option<(&str, &'static str)>,
+    cx: &App,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let press = press.and_then(|(command, doing)| {
+        let keys = crate::keymap::hint(command, cx)?;
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .text_size(px(12.))
+                .text_color(t.text_tertiary)
+                .child("Press")
+                .child(ui::kbd(keys, cx))
+                .child(format!("to {doing}")),
+        )
+    });
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(8.))
+        .pt(px(40.))
+        .pb(px(24.))
+        .child(ui::icon(glyph, 20.).text_color(t.text_tertiary))
+        .child(ui::text(title, 13., FontWeight::MEDIUM).text_color(t.text_secondary))
+        .children(press)
+        .into_any_element()
+}
+
+/// The project's terminal tabs, or every project's, to bring forward or start.
+fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let front = bench.tab().map(|tab| tab.id.clone());
+    let strips: Vec<Strip> = if bench.all_projects {
+        bench
+            .projects()
+            .iter()
+            .map(|project| Strip::Project(project.id.clone()))
+            .collect()
+    } else {
+        bench.strip().into_iter().collect()
+    };
+    let mut rows = Vec::new();
+    for strip in &strips {
+        let project = match strip {
+            Strip::Project(id) if bench.all_projects => bench
+                .projects()
+                .iter()
+                .find(|project| &project.id == id)
+                .map(|project| project.name.clone()),
+            _ => None,
+        };
+        for tab in bench.tabs(strip) {
+            if !matches!(
+                crate::tabs::first_view(&tab.pane),
+                Some((PaneKind::Terminal, _))
+            ) {
+                continue;
+            }
+            let (shown, id) = (strip.clone(), tab.id.clone());
+            let row = Row::new(
+                SharedString::from(format!("terminal-{}", tab.id)),
+                crate::tabs::label(bench, tab),
+            )
+            .mark(22., ui::icon(Icon::Terminal, 15.).text_color(t.live))
+            .chosen(front.as_deref() == Some(tab.id.as_str()))
+            .when_some(project.clone(), |row, project| {
+                row.subtitle(ui::meta(project, cx))
+            })
+            .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&shown, &id)));
+            rows.push(
+                div()
+                    .id(SharedString::from(format!("terminal-menu-{}", tab.id)))
+                    .child(row)
+                    .context_menu(crate::tabs::tab_menu(bench, strip, tab, cx))
+                    .into_any_element(),
+            );
+        }
+    }
+    let empty = rows.is_empty().then(|| {
+        if strips.is_empty() {
+            rail_empty(
+                Icon::Terminal,
+                "No project open",
+                Some(("project.open", "open one")),
+                cx,
+            )
+        } else {
+            rail_empty(
+                Icon::Terminal,
+                "No terminals open",
+                Some(("terminal.new", "start one")),
+                cx,
+            )
+        }
+    });
+    ui::panel(cx)
+        .w(px(bench.rail_width(Edge::End)))
+        .flex_none()
+        .child(page_header("Terminals", cx))
+        .child(
+            div()
+                .flex_none()
+                .pt(px(4.))
+                .px(px(10.))
+                .child(
+                    new_row(
+                        "new-terminal",
+                        Icon::Plus,
+                        "New terminal",
+                        "terminal.new",
+                        cx,
+                    )
+                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                )
+                .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
+        )
+        .child(
+            div()
+                .id("terminals-scroll")
+                .flex_1()
+                .min_h_0()
+                .pt(px(8.))
+                .px(px(10.))
+                .pb(px(16.))
+                .overflow_y_scrollbar()
+                .children(empty)
+                .child(div().flex().flex_col().gap(px(2.)).children(rows)),
+        )
+        .child(pages(bench, cx))
+        .into_any_element()
+}
+
+/// This project's things, or every project's.
+fn scope_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let scope = vec![
+        (
+            Icon::Folder,
+            SharedString::from(
+                bench
+                    .project()
+                    .map(|project| project.name.clone())
+                    .unwrap_or_default(),
+            ),
+        ),
+        (Icon::Stack, SharedString::from("All projects")),
+    ];
+    Segmented::new("scope", scope, usize::from(bench.all_projects)).on_select(cx.listener(
+        |bench, all: &usize, _, cx| {
+            bench.all_projects = *all == 1;
+            cx.notify();
+        },
+    ))
 }

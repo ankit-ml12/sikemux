@@ -845,6 +845,7 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
                 return;
             };
             let first = !document.loaded;
+            let was_dirty = document.dirty;
             match read {
                 Ok((_, version)) if document.version.as_ref() == Some(&version) => {}
                 Ok(_) if document.dirty => {
@@ -874,12 +875,16 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
                 }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
             }
+            let flipped = document.dirty != was_dirty;
             if first && document.loaded {
                 lsp::attach(bench, path.clone(), window, cx);
                 gutter::read_base(bench, &path, cx);
                 blame::read(bench, &path, cx);
             } else {
                 gutter::changed(&path, bench, cx);
+            }
+            if flipped {
+                bench.parts.redraw(&bench.parts.top, cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -910,6 +915,7 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
                 return;
             };
             let landed = saved.is_ok();
+            let was_dirty = document.dirty;
             match saved {
                 Ok(version) => {
                     lsp::saved(document, &text, &bench.asks);
@@ -924,8 +930,12 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
                 }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
             }
+            let flipped = document.dirty != was_dirty;
             if landed {
                 blame::read(bench, &path, cx);
+            }
+            if flipped {
+                bench.parts.redraw(&bench.parts.top, cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });

@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce,
-    SharedString, Styled, Window,
+    div, px, AnyElement, App, ClickEvent, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smallvec::SmallVec;
 
@@ -42,6 +44,9 @@ pub fn pill(cx: &App) -> Div {
 pub struct PaneHeader {
     mark: Option<AnyElement>,
     title: SharedString,
+    /// What shows in the title's place, such as a field editing it.
+    title_view: Option<AnyElement>,
+    on_title_double_click: Option<super::controls::OnClick>,
     name: Option<SharedString>,
     actions: SmallVec<[AnyElement; 2]>,
     controls: Option<AnyElement>,
@@ -53,11 +58,26 @@ impl PaneHeader {
         Self {
             mark: None,
             title: title.into(),
+            title_view: None,
+            on_title_double_click: None,
             name: None,
             actions: SmallVec::new(),
             controls: None,
             side: None,
         }
+    }
+
+    pub fn title_view(mut self, view: Option<impl IntoElement>) -> Self {
+        self.title_view = view.map(IntoElement::into_any_element);
+        self
+    }
+
+    pub fn on_title_double_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_title_double_click = Some(Rc::new(handler));
+        self
     }
 
     pub fn mark(mut self, mark: impl IntoElement) -> Self {
@@ -106,12 +126,22 @@ impl RenderOnce for PaneHeader {
                     .pr(px(4.))
                     .gap(px(8.))
                     .children(self.mark.map(|mark| mark_box(18., mark)))
-                    .child(
+                    .child(self.title_view.unwrap_or_else(|| {
+                        let double_click = self.on_title_double_click;
                         text(self.title, 13., FontWeight::MEDIUM)
+                            .id("pane-title")
                             .overflow_hidden()
                             .text_ellipsis()
-                            .text_color(primary),
-                    )
+                            .text_color(primary)
+                            .when_some(double_click, |title, handler| {
+                                title.on_click(move |event, window, cx| {
+                                    if event.click_count() == 2 {
+                                        handler(event, window, cx)
+                                    }
+                                })
+                            })
+                            .into_any_element()
+                    }))
                     .children(self.name.map(|name| meta(name, cx).text_size(px(12.))))
                     .children(self.actions),
             )

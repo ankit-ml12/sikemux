@@ -8,8 +8,8 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, uniform_list, AnyElement, Context, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, SharedString, Styled, Transformation,
+    div, px, radians, uniform_list, AnyElement, ClickEvent, Context, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Transformation,
 };
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedSender;
@@ -485,11 +485,15 @@ fn row_view(
         .when(!active, |row| {
             row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
         })
-        .on_click(cx.listener(move |bench, _, _, cx| {
+        .on_click(cx.listener(move |bench, event: &ClickEvent, _, cx| {
             if bench.files.expanded.contains(&path) || bench.files.is_dir(&path) {
-                bench.files.toggle(&path, &bench.asks.clone());
-            } else {
+                if event.click_count() == 1 {
+                    bench.files.toggle(&path, &bench.asks.clone());
+                }
+            } else if event.click_count() == 2 {
                 bench.open_file(&path);
+            } else {
+                bench.preview_file(&path);
             }
             cx.notify();
         }))

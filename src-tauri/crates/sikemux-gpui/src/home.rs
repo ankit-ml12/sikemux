@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 
 use chrono::{Datelike, NaiveDate};
-use gpui_kit::base::Popover;
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
+use gpui_kit::component::input::Input;
+use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use crate::core::Ask;
+use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Button, IconButton, Menu, MenuItem, PaneHeader, Segmented, Toggle, Variant};
+use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::{chat, panes};
 
@@ -81,8 +83,8 @@ pub fn agent_view(
     });
     let header = agent
         .as_ref()
-        .zip(project)
-        .map(|(agent, project)| pane_header(bench, agent, &project.id, tab, view, cx));
+        .filter(|_| project.is_some())
+        .map(|agent| pane_header(bench, agent, tab, view, cx));
     if let Some((agent, chat)) = agent
         .as_ref()
         .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
@@ -201,34 +203,23 @@ pub fn welcome(
 fn pane_header(
     bench: &Workbench,
     agent: &AgentRow,
-    project: &str,
     tab: &str,
     view: &str,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
-    let asks = bench.asks.clone();
-    let close = json!({ "project": project, "tab": tab, "pane": view });
-    let menu = Popover::new("agent-menu")
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(
-            IconButton::new("agent-more", Icon::More, "More")
-                .round()
-                .glyph(14.),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            Menu::new().child(
-                MenuItem::new("close-agent", "Close")
-                    .icon(Icon::Close)
-                    .on_click(move |_, window, cx| {
-                        let _ = asks.send(Ask::Call {
-                            method: "closePane",
-                            params: close.clone(),
-                        });
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    }),
-            )
+    let t = Tokens::get(cx).clone();
+    let menu = AgentMenu::new(bench, &agent.id, cx);
+    let more = KitButton::new("agent-more")
+        .ghost()
+        .compact()
+        .rounded_full()
+        .w(px(24.))
+        .h(px(24.))
+        .tooltip("More")
+        .child(ui::icon(Icon::More, 14.).text_color(t.text_secondary))
+        .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| match &menu {
+            Some(menu) => menu.build(popup, window, cx),
+            None => popup,
         });
     let desk_open = bench.desk_of(tab, &agent.id).is_some();
     let (tab, view, agent_id) = (tab.to_owned(), view.to_owned(), agent.id.clone());
@@ -236,7 +227,61 @@ fn pane_header(
         (Icon::Agent, SharedString::from("GUI")),
         (Icon::Terminal, SharedString::from("TUI")),
     ];
+    let shared = agent.id.clone();
+    let open_share = cx.listener(move |bench, _, window, cx| bench.open_share(&shared, window, cx));
+    let share = match bench.share_of(&agent.id) {
+        Some(share) => {
+            let viewers = share.viewers();
+            div()
+                .id("agent-share")
+                .h(px(24.))
+                .min_w(px(24.))
+                .px(px(6.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(px(3.))
+                .rounded_full()
+                .text_size(px(12.))
+                .text_color(t.live)
+                .tooltip(ui::tooltip(share.watching()))
+                .on_click(open_share)
+                .child(ui::icon(Icon::Eye, 13.).text_color(t.live))
+                .when(viewers > 0, |button| button.child(viewers.to_string()))
+                .into_any_element()
+        }
+        None => IconButton::new("agent-share", Icon::Share, "Share this chat read-only")
+            .round()
+            .on_click(open_share)
+            .into_any_element(),
+    };
+    let id = agent.id.clone();
+    let editing = bench
+        .retitling
+        .as_ref()
+        .filter(|retitling| retitling.agent == agent.id)
+        .map(|retitling| {
+            div()
+                .key_context("Retitle")
+                .min_w(px(160.))
+                .on_action(
+                    cx.listener(|bench, _: &crate::keymap::CancelRetitle, _, cx| {
+                        bench.finish_retitle(false, cx)
+                    }),
+                )
+                .child(
+                    Input::new(&retitling.input)
+                        .appearance(false)
+                        .p_0()
+                        .text_size(px(13.))
+                        .text_color(t.text_primary),
+                )
+        });
     PaneHeader::new(agent.title.clone())
+        .title_view(editing)
+        .on_title_double_click(
+            cx.listener(move |bench, _, window, cx| bench.retitle(&id, window, cx)),
+        )
         .mark(ui::mark(&agent.provider, 16.))
         .name(
             agent
@@ -244,8 +289,8 @@ fn pane_header(
                 .as_ref()
                 .map(|name| SharedString::from(format!("@{name}"))),
         )
-        .action(IconButton::new("agent-share", Icon::Share, "Share").round())
-        .action(menu)
+        .action(share)
+        .action(more)
         .controls(Segmented::new("agent-view", views, 0).pill())
         .side(
             IconButton::new(

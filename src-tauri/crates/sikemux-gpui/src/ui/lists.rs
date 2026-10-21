@@ -300,6 +300,8 @@ pub struct Tab {
     note: Option<SharedString>,
     tail: Option<AnyElement>,
     active: bool,
+    /// A preview tab, which the next file opened replaces, draws its label slanted.
+    italic: bool,
     on_click: Option<OnClick>,
     on_close: Option<OnClick>,
 }
@@ -313,6 +315,7 @@ impl Tab {
             note: None,
             tail: None,
             active: false,
+            italic: false,
             on_click: None,
             on_close: None,
         }
@@ -320,6 +323,11 @@ impl Tab {
 
     pub fn mark(mut self, mark: impl IntoElement) -> Self {
         self.mark = Some(mark.into_any_element());
+        self
+    }
+
+    pub fn italic(mut self, italic: bool) -> Self {
+        self.italic = italic;
         self
     }
 
@@ -425,7 +433,8 @@ impl RenderOnce for Tab {
                         text(self.label, 12., FontWeight::MEDIUM)
                             .max_w(px(160.))
                             .overflow_hidden()
-                            .text_ellipsis(),
+                            .text_ellipsis()
+                            .when(self.italic, |label| label.italic()),
                     )
                     .children(self.note.map(|note| meta(note, cx))),
             )

@@ -99,7 +99,16 @@ pub fn language(name: &str, cx: &App) -> Option<String> {
 pub fn icon(name: &str, cx: &App) -> Option<Arc<Image>> {
     let icons = cx.try_global::<FileIcons>()?;
     let bundle = bundle(icons)?;
-    let icon = bundle.icon_of(name);
+    drawn(icons, bundle, bundle.icon_of(name))
+}
+
+/// The bundle's icon called `icon`, such as `nodejs`.
+pub fn named(icon: &str, cx: &App) -> Option<Arc<Image>> {
+    let icons = cx.try_global::<FileIcons>()?;
+    drawn(icons, bundle(icons)?, icon)
+}
+
+fn drawn(icons: &FileIcons, bundle: &Bundle, icon: &str) -> Option<Arc<Image>> {
     if let Some(image) = icons.images.borrow().get(icon) {
         return Some(image.clone());
     }

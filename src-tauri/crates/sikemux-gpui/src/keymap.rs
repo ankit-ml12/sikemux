@@ -66,6 +66,12 @@ commands! {
     TextSizeReset = "text.sizeReset",
 }
 
+actions!(
+    rail_resizer,
+    [EdgeLeft, EdgeRight, EdgeFarLeft, EdgeFarRight]
+);
+actions!(retitle, [CancelRetitle]);
+
 /// Stops every agent and terminal the core runs, then quits.
 #[derive(Clone, Default, PartialEq, gpui::Action)]
 #[action(name = "app.quitAndStopEverything")]
@@ -131,6 +137,11 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("alt-cmd-q", QuitAndStopEverything, None),
         KeyBinding::new("cmd-m", Minimize, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+        KeyBinding::new("left", EdgeLeft, Some("RailResizer")),
+        KeyBinding::new("right", EdgeRight, Some("RailResizer")),
+        KeyBinding::new("shift-left", EdgeFarLeft, Some("RailResizer")),
+        KeyBinding::new("shift-right", EdgeFarRight, Some("RailResizer")),
+        KeyBinding::new("escape", CancelRetitle, Some("Retitle > Input")),
     ]);
     bind(&BTreeMap::new(), cx);
     cx.set_menus(menus());

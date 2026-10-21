@@ -15,9 +15,13 @@ use crate::keymap;
 use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
-use crate::workbench::{AgentRow, Edge, Strip, Workbench};
+use crate::workbench::{AgentRow, Edge, RailWidth, Strip, Workbench};
 
-pub const SIDE_RAIL_WIDTH: f32 = 258.;
+pub const SIDE_RAIL: RailWidth = RailWidth {
+    min: 180.,
+    max: 480.,
+    initial: 258.,
+};
 
 pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let space = bench.space();
@@ -32,7 +36,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
         None => "no projects".to_owned(),
     };
     ui::panel(cx)
-        .w(px(SIDE_RAIL_WIDTH))
+        .w(px(bench.rail_width(Edge::Start)))
         .flex_none()
         .child(masthead(bench, cx))
         .child(
@@ -238,6 +242,8 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
         )
         .child(
             div()
+                .min_w_0()
+                .overflow_hidden()
                 .flex()
                 .items_center()
                 .gap(px(4.))
@@ -255,7 +261,7 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 })),
         )
         .child(
-            div().ml_auto().child(
+            div().ml_auto().flex_none().child(
                 IconButton::new(
                     "hide-side-rail",
                     Icon::PanelLeft,

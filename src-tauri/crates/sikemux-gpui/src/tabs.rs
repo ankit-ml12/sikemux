@@ -4,19 +4,21 @@ use std::rc::Rc;
 
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
 use gpui_kit::component::Side;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation, WeakEntity,
-    WindowControlArea,
+    div, px, radians, AnyElement, App, ClickEvent, ClipboardItem, Context, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Transformation, WeakEntity, Window, WindowControlArea,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
 
+use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
+use crate::ports::PortRow;
 use crate::theme::Tokens;
 use crate::ui::{self, IconButton, Tab};
 use crate::workbench::{Strip, Workbench};
@@ -99,7 +101,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                         .flatten(),
                 )
                 .children(
-                    ports_chip(bench, cx)
+                    crate::ports::chip(bench, cx)
                         .map(|chip| [chip, separator(cx)])
                         .into_iter()
                         .flatten(),
@@ -173,6 +175,7 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
             .text_color(t.text_tertiary)
             .hover(move |style| style.text_color(t.text_primary))
             .tooltip(ui::tooltip(about.join(" · ")))
+            .on_click(|_, window, cx| crate::keymap::dispatch("window.git", window, cx))
             .child(mark)
             .child(
                 div()
@@ -192,38 +195,6 @@ fn git_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
                         .children(count("↓", git.behind, t.warn)),
                 )
             })
-            .into_any_element(),
-    )
-}
-
-/// How many ports the project's terminals, tasks and agents listen on.
-fn ports_chip(bench: &Workbench, cx: &App) -> Option<AnyElement> {
-    let t = Tokens::get(cx).clone();
-    let count = bench.read("ports")?.as_array()?.len();
-    if count == 0 {
-        return None;
-    }
-    let about = if count == 1 {
-        "1 listening port".to_owned()
-    } else {
-        format!("{count} listening ports")
-    };
-    Some(
-        div()
-            .id("ports-chip")
-            .h(px(24.))
-            .px(px(4.))
-            .flex()
-            .items_center()
-            .gap(px(5.))
-            .rounded(crate::theme::RADIUS_1)
-            .font_family(crate::theme::MONO)
-            .text_size(px(11.))
-            .text_color(t.text_tertiary)
-            .hover(move |style| style.text_color(t.text_primary))
-            .tooltip(ui::tooltip(about))
-            .child(ui::icon(Icon::Plug, 12.).text_color(t.text_tertiary))
-            .child(div().text_color(t.text_primary).child(count.to_string()))
             .into_any_element(),
     )
 }
@@ -250,6 +221,7 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     Some(
         div()
             .id("ci-glyph")
+            .on_click(|_, window, cx| crate::keymap::dispatch("window.git", window, cx))
             .h(px(24.))
             .px(px(4.))
             .flex()
@@ -468,7 +440,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         others: ports
             .iter()
             .filter(|other| other["owner"]["kind"] != "terminal" && Some(*other) != port)
-            .filter_map(OtherPort::from_port)
+            .filter_map(|other| PortRow::new(other, bench))
             .collect(),
     });
     let primary = if running.is_some() {
@@ -568,7 +540,7 @@ struct RunMenu {
     groups: Vec<TaskGroup>,
     selected: String,
     /// Other things listening in the project, that tasks or agents started.
-    others: Vec<OtherPort>,
+    others: Vec<PortRow>,
 }
 
 struct RunningTask {
@@ -583,35 +555,6 @@ struct TaskGroup {
     meta: Option<String>,
     /// Each task's id, and its label without the folder the group's heading names.
     tasks: Vec<(String, String)>,
-}
-
-struct OtherPort {
-    port: u64,
-    process: String,
-    owner: String,
-    session: Option<u64>,
-    agent: Option<String>,
-    execution: Option<String>,
-}
-
-impl OtherPort {
-    fn from_port(port: &Value) -> Option<Self> {
-        let owner = &port["owner"];
-        let text = |value: &Value| value.as_str().map(str::to_owned);
-        Some(Self {
-            port: port["port"].as_u64()?,
-            process: text(&port["process"])
-                .filter(|process| !process.is_empty())
-                .unwrap_or_else(|| "process".into()),
-            owner: match owner["kind"].as_str() {
-                Some("agent") => text(&owner["label"]).unwrap_or_default(),
-                _ => "You".into(),
-            },
-            session: owner["sessionId"].as_u64(),
-            agent: text(&owner["agentId"]),
-            execution: text(&owner["executionId"]),
-        })
-    }
 }
 
 impl RunMenu {
@@ -632,23 +575,19 @@ impl RunMenu {
                         .on_click(move |_, _, cx| cx.open_url(&url)),
                 );
             }
-            let (bench, task) = (self.bench.clone(), running.id.clone());
+            let task = running.id.clone();
             popup = popup.item(PopupMenuItem::new("Restart").icon(Icon::Refresh).on_click(
-                move |_, _, cx| {
-                    let _ = bench.update(cx, |bench, _| bench.start_task(&task));
-                },
+                on_bench(&self.bench, move |bench, _| bench.start_task(&task)),
             ));
         }
         if let Some((session, label)) = &self.output {
-            let (bench, session, label) = (self.bench.clone(), *session, label.clone());
+            let (session, label) = (session.to_string(), label.clone());
             popup = popup.item(
                 PopupMenuItem::new("Show output")
                     .icon(Icon::Terminal)
-                    .on_click(move |_, _, cx| {
-                        let _ = bench.update(cx, |bench, _| {
-                            bench.show("terminal", &session.to_string(), Some(&label))
-                        });
-                    }),
+                    .on_click(on_bench(&self.bench, move |bench, _| {
+                        bench.show("terminal", &session, Some(&label))
+                    })),
             );
         }
         for group in &self.groups {
@@ -657,14 +596,14 @@ impl RunMenu {
                 None => group.title.clone(),
             });
             for (task, label) in &group.tasks {
-                let (bench, task) = (self.bench.clone(), task.clone());
+                let picked = task.clone();
                 popup = popup.item(
                     PopupMenuItem::new(label.clone())
                         .icon(Icon::Run)
-                        .checked(task == self.selected)
-                        .on_click(move |_, _, cx| {
-                            let _ = bench.update(cx, |bench, cx| bench.pick_task(&task, cx));
-                        }),
+                        .checked(*task == self.selected)
+                        .on_click(on_bench(&self.bench, move |bench, cx| {
+                            bench.pick_task(&picked, cx)
+                        })),
                 );
             }
         }
@@ -672,60 +611,9 @@ impl RunMenu {
             popup = popup.separator().label("Running now");
         }
         for other in &self.others {
-            popup = popup.item(other.item(&self.bench));
+            popup = popup.item(other.running_item(&self.bench));
         }
         popup
-    }
-}
-
-impl OtherPort {
-    fn item(&self, bench: &WeakEntity<Workbench>) -> PopupMenuItem {
-        let (port, process, owner) = (self.port, self.process.clone(), self.owner.clone());
-        let stop = self
-            .execution
-            .clone()
-            .map(|execution| (bench.clone(), execution));
-        let reveal = match (self.session, &self.agent) {
-            (Some(session), _) => Some(("terminal", session.to_string())),
-            (None, Some(agent)) => Some(("agent", agent.clone())),
-            _ => None,
-        };
-        let shown = bench.clone();
-        PopupMenuItem::element(move |_, cx| {
-            let t = Tokens::get(cx).clone();
-            let stop = stop.clone().map(|(bench, execution)| {
-                div()
-                    .id(("stop-port", port as usize))
-                    .p(px(3.))
-                    .rounded(crate::theme::RADIUS_2)
-                    .hover(move |style| style.bg(t.surface_hover))
-                    .on_click(move |_, _, cx| {
-                        cx.stop_propagation();
-                        let _ = bench.update(cx, |bench, _| bench.stop_run(&execution));
-                    })
-                    .child(ui::icon(Icon::Stop, 9.).text_color(t.danger))
-            });
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(div().size(px(7.)).rounded_full().bg(t.live))
-                .child(div().flex_1().min_w_0().truncate().child(process.clone()))
-                .child(
-                    div()
-                        .font_family(crate::theme::MONO)
-                        .text_color(t.text_tertiary)
-                        .child(format!(":{port}")),
-                )
-                .child(div().text_color(t.text_tertiary).child(owner.clone()))
-                .children(stop)
-        })
-        .on_click(move |_, _, cx| {
-            if let Some((kind, target)) = &reveal {
-                let _ = shown.update(cx, |bench, _| bench.show(kind, target, None));
-            }
-        })
     }
 }
 
@@ -820,21 +708,26 @@ fn strip_tab(
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let tab_id = tab.id.clone();
+    let menu = tab_menu(bench, strip, tab, cx);
     let base = Tab::new(
         SharedString::from(format!("tab-{}", tab.id)),
         label(bench, tab),
     )
     .active(active)
+    .italic(tab.preview)
     .on_click(cx.listener({
         let (strip, tab) = (strip.clone(), tab_id.clone());
-        move |bench, _, _, _| bench.activate_tab(&strip, &tab)
+        move |bench, event: &ClickEvent, _, _| match event.click_count() {
+            2 => bench.keep_tab(&strip, &tab),
+            _ => bench.activate_tab(&strip, &tab),
+        }
     }))
     .on_close(cx.listener({
         let strip = strip.clone();
         move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
     }));
     let view = first_view(&tab.pane);
-    let drawn = match view {
+    let shown = match view {
         Some((PaneKind::Agent, target)) => match match strip {
             Strip::Project(project) => bench.agents_of(project),
             Strip::Host(_) => Vec::new(),
@@ -853,16 +746,26 @@ fn strip_tab(
                 .tail(ui::status_mark(agent.status, cx)),
             None => base,
         },
-        Some((kind, _)) => base.mark(ui::icon(kind_icon(kind), 13.).text_color(
-            if kind == PaneKind::Terminal {
-                t.live
-            } else {
-                t.text_tertiary
-            },
-        )),
+        Some((kind, target)) => {
+            let unsaved = kind == PaneKind::Files && bench.editors.is_dirty(Path::new(target));
+            base.mark(
+                ui::icon(kind_icon(kind), 13.).text_color(if kind == PaneKind::Terminal {
+                    t.live
+                } else {
+                    t.text_tertiary
+                }),
+            )
+            .tail(unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)))
+        }
         None => base,
-    }
-    .into_any_element();
+    };
+    let drawn = div()
+        .id(SharedString::from(format!("tab-menu-{}", tab.id)))
+        .flex()
+        .min_w_0()
+        .child(shown)
+        .context_menu(menu)
+        .into_any_element();
     let index = bench
         .tabs(strip)
         .iter()
@@ -876,8 +779,163 @@ fn strip_tab(
     crate::drag::tab(drawn, dragged, index, &cx.entity(), cx).into_any_element()
 }
 
+/// What right-clicking a tab offers, wherever it is listed: an agent's menu for an
+/// agent's tab, else the tab's own.
+pub fn tab_menu(
+    bench: &Workbench,
+    strip: &Strip,
+    tab: &LayoutTab,
+    cx: &Context<Workbench>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    let tab_menu = TabMenu::new(bench, strip, tab, cx);
+    let agent_menu = match first_view(&tab.pane) {
+        Some((PaneKind::Agent, agent)) => AgentMenu::new(bench, agent, cx),
+        _ => None,
+    };
+    move |popup, window, cx| match &agent_menu {
+        Some(menu) => menu.build(popup, window, cx),
+        None => tab_menu.build(popup),
+    }
+}
+
+/// What right-clicking a strip tab offers, as today's tab menu does.
+struct TabMenu {
+    bench: WeakEntity<Workbench>,
+    strip: Strip,
+    tab: String,
+    kind: Option<PaneKind>,
+    /// The file a Files tab shows, and that path inside its project.
+    file: Option<(String, String)>,
+    named: bool,
+    /// The other tabs Close Others closes, which leaves agents' tabs open.
+    others: Vec<String>,
+}
+
+impl TabMenu {
+    fn new(bench: &Workbench, strip: &Strip, tab: &LayoutTab, cx: &Context<Workbench>) -> Self {
+        let view = first_view(&tab.pane);
+        let project = match strip {
+            Strip::Project(id) => bench
+                .projects()
+                .iter()
+                .find(|project| &project.id == id)
+                .map(|project| project.path.clone()),
+            Strip::Host(_) => None,
+        };
+        let file = view
+            .filter(|(kind, _)| *kind == PaneKind::Files)
+            .map(|(_, path)| {
+                let relative = project
+                    .as_deref()
+                    .and_then(|project| Path::new(path).strip_prefix(project).ok())
+                    .map_or_else(
+                        || path.clone(),
+                        |inside| inside.to_string_lossy().into_owned(),
+                    );
+                (path.clone(), relative)
+            });
+        Self {
+            bench: cx.entity().downgrade(),
+            strip: strip.clone(),
+            tab: tab.id.clone(),
+            kind: view.map(|(kind, _)| kind),
+            file,
+            named: tab.title.is_some(),
+            others: bench
+                .tabs(strip)
+                .iter()
+                .filter(|other| other.id != tab.id)
+                .filter(|other| !matches!(first_view(&other.pane), Some((PaneKind::Agent, _))))
+                .map(|other| other.id.clone())
+                .collect(),
+        }
+    }
+
+    fn build(&self, mut popup: PopupMenu) -> PopupMenu {
+        let (strip, tab) = (self.strip.clone(), self.tab.clone());
+        if self.kind == Some(PaneKind::Terminal) && self.named {
+            let (strip, tab) = (strip.clone(), tab.clone());
+            popup = popup
+                .item(
+                    PopupMenuItem::new("Use Automatic Name")
+                        .icon(Icon::Rotate)
+                        .on_click(on_bench(&self.bench, move |bench, _| {
+                            bench.rename_tab(&strip, &tab, "")
+                        })),
+                )
+                .separator();
+        }
+        if self.kind != Some(PaneKind::Agent) {
+            let (strip, tab) = (strip.clone(), tab.clone());
+            popup = popup.item(
+                PopupMenuItem::new("Duplicate")
+                    .icon(Icon::SquarePlus)
+                    .on_click(on_bench(&self.bench, move |bench, _| {
+                        bench.duplicate_tab(&strip, &tab)
+                    })),
+            );
+        }
+        let close = {
+            let (strip, tab) = (strip.clone(), tab.clone());
+            on_bench(&self.bench, move |bench, _| bench.close_tab(&strip, &tab))
+        };
+        let others = self.others.clone();
+        popup = popup
+            .item(
+                PopupMenuItem::new("Close")
+                    .icon(Icon::Close)
+                    .action(Box::new(crate::keymap::CloseTab))
+                    .on_click(close),
+            )
+            .item(
+                PopupMenuItem::new("Close Others")
+                    .icon(Icon::Close)
+                    .disabled(others.is_empty())
+                    .on_click(on_bench(&self.bench, move |bench, _| {
+                        bench.close_tabs(&strip, &others)
+                    })),
+            );
+        if let Some((path, relative)) = &self.file {
+            let (copied, relative, revealed) = (path.clone(), relative.clone(), path.clone());
+            popup =
+                popup
+                    .separator()
+                    .item(PopupMenuItem::new("Copy Path").icon(Icon::Copy).on_click(
+                        move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
+                        },
+                    ))
+                    .item(
+                        PopupMenuItem::new("Copy Relative Path")
+                            .icon(Icon::Copy)
+                            .on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(relative.clone()))
+                            }),
+                    )
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("Reveal in Finder")
+                            .icon(Icon::Folder)
+                            .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
+                    );
+        }
+        popup
+    }
+}
+
+/// A menu item's click, doing `work` on the store.
+fn on_bench(
+    bench: &WeakEntity<Workbench>,
+    work: impl Fn(&mut Workbench, &mut Context<Workbench>) + 'static,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let bench = bench.clone();
+    move |_, _, cx| {
+        let _ = bench.update(cx, |bench, cx| work(bench, cx));
+    }
+}
+
 /// A tab's name: the person's, else what its first view shows.
-fn label(bench: &Workbench, tab: &LayoutTab) -> SharedString {
+pub fn label(bench: &Workbench, tab: &LayoutTab) -> SharedString {
     if let Some(title) = &tab.title {
         return title.clone().into();
     }

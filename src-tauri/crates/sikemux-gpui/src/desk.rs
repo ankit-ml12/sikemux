@@ -404,14 +404,7 @@ impl Workbench {
         let Some(engine) = self.desks.engine.clone() else {
             return false;
         };
-        let row = self
-            .projects()
-            .iter()
-            .flat_map(|project| self.agents_of(&project.id))
-            .find(|row| row.id == agent);
-        if let Some(row) = row {
-            self.activate_agent(&row);
-        }
+        self.open_agent(agent);
         if !self.desk_open_anywhere(agent) {
             self.reveal_desk(agent);
         }

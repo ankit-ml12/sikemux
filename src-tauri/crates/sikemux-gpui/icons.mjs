@@ -115,6 +115,8 @@ const DRAWN = {
   resize: [ICONS, "IconResize"],
   rocket: [ICONS, "IconRocket"],
   rotate: [ICONS, "IconRotate"],
+  pin: [ICONS, "IconPin"],
+  power: [ICONS, "IconPower"],
   "square-plus": [ICONS, "IconSquarePlus"],
   status: [ICONS, "IconStatus"],
   steps: [ICONS, "IconSteps"],

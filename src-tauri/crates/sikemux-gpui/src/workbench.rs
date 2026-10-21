@@ -9,9 +9,10 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task, WeakEntity, Window,
+    div, px, AnyElement, App, AppContext, Context, DragMoveEvent, Entity, EventEmitter,
+    FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
+    WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -65,6 +66,10 @@ pub struct Workbench {
     /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
     pub side_rail_open: bool,
     pub tab_rail_open: bool,
+    side_rail_width: f32,
+    tab_rail_width: f32,
+    /// The handles beside the rails, which arrow keys move once focused.
+    resizers: [FocusHandle; 2],
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
     run_clock: Option<Task<()>>,
@@ -96,6 +101,8 @@ pub struct Workbench {
     pub git: Option<Entity<GitPane>>,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
+    /// The agent whose title is being edited in place in its header.
+    pub retitling: Option<Retitling>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
@@ -140,9 +147,35 @@ pub enum Edge {
     End,
 }
 
+/// How wide a rail can be dragged, and how wide it starts.
+#[derive(Clone, Copy)]
+pub struct RailWidth {
+    pub min: f32,
+    pub max: f32,
+    pub initial: f32,
+}
+
+/// An agent's title while it is edited in place, in a field holding it.
+pub struct Retitling {
+    pub agent: String,
+    pub input: Entity<InputState>,
+    title: String,
+    _events: Subscription,
+}
+
+/// A rail's handle while it is dragged.
+struct DraggedRail(Edge);
+
+impl Render for DraggedRail {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui_kit::Empty
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RailPage {
     Agents,
+    Terminals,
     Files,
 }
 
@@ -159,6 +192,8 @@ pub struct AgentRow {
     /// The face it wears, else none and its agent's mark is drawn.
     pub face: Option<AgentFace>,
     pub group: AgentGroup,
+    /// When it last worked, in Unix milliseconds; 0 when the core does not know.
+    pub active_at: u64,
 }
 
 impl Workbench {
@@ -271,6 +306,10 @@ impl Workbench {
             space: None,
             side_rail_open: true,
             tab_rail_open: true,
+            side_rail_width: rail::SIDE_RAIL.initial,
+            tab_rail_width: agents::TAB_RAIL.initial,
+            resizers: [cx.focus_handle(), cx.focus_handle()],
+            retitling: None,
             peeking: None,
             unpeek: None,
             run_clock: None,
@@ -1064,7 +1103,7 @@ impl Workbench {
         self.reads.get(key)
     }
 
-    pub(crate) fn call(&self, method: &'static str, params: Value) {
+    pub fn call(&self, method: &'static str, params: Value) {
         let _ = self.asks.send(Ask::Call { method, params });
     }
 
@@ -1176,6 +1215,122 @@ impl Workbench {
         *open = !*open;
         self.peeking = None;
         cx.notify();
+    }
+
+    /// Swaps an agent's title in its header for a field holding it, which Enter or
+    /// clicking away saves and Escape leaves unchanged.
+    pub fn retitle(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(title) = self.view.as_ref().and_then(|view| {
+            view.workspace
+                .agents
+                .iter()
+                .find(|kept| kept.id == agent)
+                .map(|kept| kept.title.clone())
+        }) else {
+            return;
+        };
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(title.clone()));
+        input.update(cx, |state, cx| {
+            state.focus(window, cx);
+            state.select_all(window, cx);
+        });
+        let events = cx.subscribe(&input, |bench, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                bench.finish_retitle(true, cx);
+            }
+        });
+        self.retitling = Some(Retitling {
+            agent: agent.to_owned(),
+            input,
+            title,
+            _events: events,
+        });
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    pub fn finish_retitle(&mut self, save: bool, cx: &mut Context<Self>) {
+        let Some(retitling) = self.retitling.take() else {
+            return;
+        };
+        let title: String = retitling
+            .input
+            .read(cx)
+            .value()
+            .trim()
+            .chars()
+            .take(72)
+            .collect();
+        if save && !title.is_empty() && title != retitling.title {
+            self.call(
+                "updateAgent",
+                json!({ "agentId": retitling.agent, "patch": { "title": title, "renamed": true } }),
+            );
+        }
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    pub fn rail_width(&self, edge: Edge) -> f32 {
+        match edge {
+            Edge::Start => self.side_rail_width,
+            Edge::End => self.tab_rail_width,
+        }
+    }
+
+    /// Sets a rail's width, within what that rail allows, and draws it at once.
+    fn resize_rail(&mut self, edge: Edge, width: f32, window: &mut Window) {
+        let (kept, range) = match edge {
+            Edge::Start => (&mut self.side_rail_width, rail::SIDE_RAIL),
+            Edge::End => (&mut self.tab_rail_width, agents::TAB_RAIL),
+        };
+        let width = width.clamp(range.min, range.max).round();
+        if *kept != width {
+            *kept = width;
+            window.refresh();
+        }
+    }
+
+    /// Moves the edge between a rail and the stage `by` points to the right.
+    fn nudge_rail(&mut self, edge: Edge, by: f32, window: &mut Window) {
+        let outward = match edge {
+            Edge::Start => by,
+            Edge::End => -by,
+        };
+        self.resize_rail(edge, self.rail_width(edge) + outward, window);
+    }
+
+    /// The handle between a rail and the stage, dragged or moved by arrow keys to resize the rail.
+    fn rail_resizer(&self, edge: Edge, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::keymap::{EdgeFarLeft, EdgeFarRight, EdgeLeft, EdgeRight};
+        div()
+            .id(match edge {
+                Edge::Start => "resize-side-rail",
+                Edge::End => "resize-tab-rail",
+            })
+            .flex_none()
+            .w(px(10.))
+            .h_full()
+            .cursor_col_resize()
+            .key_context("RailResizer")
+            .track_focus(&self.resizers[edge as usize])
+            .tooltip(crate::ui::tooltip("Drag or use arrow keys to resize"))
+            .on_click(cx.listener(move |bench, _, window, cx| {
+                bench.resizers[edge as usize].focus(window, cx)
+            }))
+            .on_action(cx.listener(move |bench, _: &EdgeLeft, window, _| {
+                bench.nudge_rail(edge, -16., window)
+            }))
+            .on_action(cx.listener(move |bench, _: &EdgeRight, window, _| {
+                bench.nudge_rail(edge, 16., window)
+            }))
+            .on_action(cx.listener(move |bench, _: &EdgeFarLeft, window, _| {
+                bench.nudge_rail(edge, -40., window)
+            }))
+            .on_action(cx.listener(move |bench, _: &EdgeFarRight, window, _| {
+                bench.nudge_rail(edge, 40., window)
+            }))
+            .on_drag(DraggedRail(edge), |rail, _, _, cx| {
+                cx.new(|_| DraggedRail(rail.0))
+            })
     }
 
     /// Opens both rails when either is closed, else closes both.
@@ -1395,20 +1550,47 @@ impl Workbench {
         self.call("keepTab", strip.with(json!({ "tab": tab })));
     }
 
+    pub fn close_tabs(&self, strip: &Strip, tabs: &[String]) {
+        self.call("closeTabs", strip.with(json!({ "tabs": tabs })));
+    }
+
+    /// Names a tab; an empty name gives back the one its view gives it.
+    pub fn rename_tab(&self, strip: &Strip, tab: &str, title: &str) {
+        self.call(
+            "renameTab",
+            strip.with(json!({ "tab": tab, "title": title })),
+        );
+    }
+
+    /// Opens a copy of a tab beside it, with new shells for its terminals.
+    pub fn duplicate_tab(&self, strip: &Strip, tab: &str) {
+        self.call("duplicateTab", strip.with(json!({ "tab": tab })));
+    }
+
     /// Opens a terminal to an SSH host, in that host's strip.
     pub fn open_ssh_terminal(&self, alias: &str) {
         self.call("openSshTerminal", json!({ "host": alias }));
     }
 
     /// Brings an agent's tab to the front.
-    pub fn activate_agent(&self, agent: &AgentRow) {
-        let strip = Strip::Project(agent.project.clone());
+    /// Brings the tab of the agent `id` to the front, in its project.
+    pub fn open_agent(&self, id: &str) {
+        let Some(project) = self.view.as_ref().and_then(|view| {
+            view.workspace
+                .agents
+                .iter()
+                .find(|agent| agent.id == id)
+                .map(|agent| agent.project.clone())
+        }) else {
+            return;
+        };
+        let strip = Strip::Project(project.clone());
         if let Some(tab) = self
             .tabs(&strip)
             .iter()
-            .find(|tab| shows(tab, PaneKind::Agent) == Some(&agent.id))
+            .find(|tab| shows(tab, PaneKind::Agent).is_some_and(|shown| shown == id))
         {
-            self.activate_project(&agent.project);
+            self.activate_project(&project);
             self.activate_tab(&strip, &tab.id);
         }
     }
@@ -1462,7 +1644,15 @@ impl Workbench {
                     .sessions
                     .iter()
                     .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
+                let active_at = view.inbox["agents"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|row| row["agentId"] == agent.id.as_str())
+                    .and_then(|row| row["activeAt"].as_u64())
+                    .unwrap_or(0);
                 AgentRow {
+                    active_at,
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
                     title: agent.title.clone(),
@@ -1688,8 +1878,8 @@ impl Workbench {
     /// A closed rail's edge of the window, which brings the rail out over the stage.
     fn rail_edge(&self, edge: Edge, cx: &mut Context<Self>) -> impl IntoElement {
         let (part, width) = match edge {
-            Edge::Start => (&self.parts.rail, rail::SIDE_RAIL_WIDTH),
-            Edge::End => (&self.parts.tabs, agents::TAB_RAIL_WIDTH),
+            Edge::Start => (&self.parts.rail, self.side_rail_width),
+            Edge::End => (&self.parts.tabs, self.tab_rail_width),
         };
         let peeking = self.peeking == Some(edge);
         let zone = div()
@@ -1790,22 +1980,34 @@ impl Render for Workbench {
             )
             .child(
                 div()
+                    .id("shell-row")
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .gap(px(10.))
                     .pt(px(4.))
                     .px(px(10.))
                     .pb(px(10.))
+                    .on_drag_move(cx.listener(
+                        |bench, event: &DragMoveEvent<DraggedRail>, window, cx| {
+                            let edge = event.drag(cx).0;
+                            let (x, bounds) = (event.event.position.x, event.bounds);
+                            let width = match edge {
+                                Edge::Start => x - bounds.left(),
+                                Edge::End => bounds.right() - x,
+                            };
+                            bench.resize_rail(edge, f32::from(width) - 15., window);
+                        },
+                    ))
                     .when(self.side_rail_open, |row| {
                         row.child(
                             parts.rail.clone().cached(
                                 StyleRefinement::default()
-                                    .w(px(rail::SIDE_RAIL_WIDTH))
+                                    .w(px(self.side_rail_width))
                                     .h_full()
                                     .flex_none(),
                             ),
                         )
+                        .child(self.rail_resizer(Edge::Start, cx))
                     })
                     .child(
                         parts
@@ -1814,10 +2016,10 @@ impl Render for Workbench {
                             .cached(StyleRefinement::default().flex_1().min_w_0().h_full()),
                     )
                     .when(self.tab_rail_open, |row| {
-                        row.child(
+                        row.child(self.rail_resizer(Edge::End, cx)).child(
                             parts.tabs.clone().cached(
                                 StyleRefinement::default()
-                                    .w(px(agents::TAB_RAIL_WIDTH))
+                                    .w(px(self.tab_rail_width))
                                     .h_full()
                                     .flex_none(),
                             ),

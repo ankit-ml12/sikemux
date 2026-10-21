@@ -1,6 +1,7 @@
 //! The desktop UI on GPUI, a client of the core.
 
 mod accounts;
+mod agent_menu;
 mod agents;
 mod battery;
 mod chat;
@@ -20,6 +21,7 @@ pub mod icons;
 mod keymap;
 mod panes;
 mod picture;
+mod ports;
 mod rail;
 pub mod settings;
 mod share;
