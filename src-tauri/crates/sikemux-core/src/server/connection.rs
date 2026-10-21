@@ -563,6 +563,7 @@ async fn run_requests(
             }
             Request::RegisterWindow => {
                 core.window.register(client.clone());
+                super::notch::follow(&core);
                 if let Some(listening) = core.listening.get() {
                     crate::waiting::wake(&listening.config.socket);
                 }

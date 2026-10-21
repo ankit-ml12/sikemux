@@ -211,7 +211,7 @@ fn os_release_field(text: &str, key: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn os_version() -> Option<String> {
+pub(crate) fn os_version() -> Option<String> {
     let mut buffer = [0u8; 32];
     let mut length = buffer.len();
     // SAFETY: the name is nul-terminated and sysctl writes at most `length`
@@ -236,7 +236,7 @@ fn os_version() -> Option<String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn os_version() -> Option<String> {
+pub(crate) fn os_version() -> Option<String> {
     None
 }
 

@@ -300,6 +300,9 @@ calls! { core, client, params;
         let params: SetPreferenceParams = parse(params)?;
         core.preferences.set(&params.key, params.value)?;
         super::about::introduced(&core, &params.key)?;
+        if params.key == "notch" {
+            super::notch::follow(&core);
+        }
         let preferences = core.preferences.get();
         core.theme_changed();
         core.changes.changed(Topic::Preferences, None, None);

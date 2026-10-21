@@ -40,7 +40,6 @@
     "allow-share-viewer-hello",
     "allow-core-call",
     "allow-core-request",
-    "allow-notch-configure",
     "allow-remote-publish",
     "allow-app-quit-and-stop-everything",
     "allow-agent-detection-explain",

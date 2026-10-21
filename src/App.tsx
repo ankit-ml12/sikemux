@@ -47,7 +47,6 @@ import { AgentBoardBridge } from "./shell/AgentBoardBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
 import { PairingPrompt } from "./shell/PairingPrompt";
-import { NotchBridge } from "./notch/NotchBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
@@ -926,7 +925,6 @@ export default function App() {
             <DeepLinkBridge />
             <HarnessBridge />
             <RemoteWorkspaceBridge />
-            <NotchBridge />
             <RemoteChatBridge />
             <AgentNameBridge />
             <AgentQuestionBridge />

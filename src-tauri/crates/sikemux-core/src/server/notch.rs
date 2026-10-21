@@ -1,28 +1,30 @@
 //! The island over the MacBook notch. The `sikemux-notch` helper draws it and
-//! reads the core's device view; the app gives it the core's binary, whose
-//! `start` runs the core as the app would. It keeps running after the app
-//! quits, as the core does.
+//! reads the core's device view; the core starts it once a window opens and
+//! stops it when the person turns it off. It keeps running after the window
+//! closes, as the core does.
 
-use tauri::{AppHandle, State};
+use super::Core;
 
-use crate::error::AppResult;
-use crate::pty::PtyManager;
-
-/// Starts or stops the helper, as the person's Notch preferences say; the
-/// helper reads the rest of them from the core.
-#[tauri::command]
-pub async fn notch_configure(
-    app: AppHandle,
-    manager: State<'_, PtyManager>,
-    enabled: bool,
-) -> AppResult<()> {
+/// Starts or stops the helper, as the person's Notch preferences say.
+pub(crate) fn follow(core: &Core) {
     #[cfg(target_os = "macos")]
-    return mac::configure(&app, &manager, enabled);
-    #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, manager, enabled);
-        Ok(())
+        let Some(socket) = core
+            .listening
+            .get()
+            .map(|listening| listening.config.socket.clone())
+        else {
+            return;
+        };
+        let enabled = core.preferences.get().notch.enabled;
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = mac::configure(&socket, enabled) {
+                eprintln!("sikemux core: the notch did not start: {error}");
+            }
+        });
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = core;
 }
 
 #[cfg(target_os = "macos")]
@@ -34,14 +36,12 @@ mod mac {
     use std::process::Stdio;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use tauri::{AppHandle, Manager};
+    use crate::server::local_peer::{BUNDLED_NOTCH, NOTCH_EXECUTABLE};
 
-    use crate::error::{AppError, AppResult};
-    use crate::login_item::CoreLaunch;
-    use crate::pty::PtyManager;
+    const DEV_HELPER: &str = "Sikemux Notch Dev.app/Contents/MacOS/sikemux-notch";
 
-    /// Set once this run of the app has started the helper, which replaces any
-    /// helper an earlier run left behind.
+    /// Set once this core has started the helper, which replaces any helper
+    /// an earlier core left behind.
     static STARTED: AtomicBool = AtomicBool::new(false);
 
     fn dev() -> bool {
@@ -55,44 +55,33 @@ mod mac {
             .unwrap_or_else(std::env::temp_dir)
     }
 
-    fn lock_path(state_dir: &Path) -> PathBuf {
+    fn state_file(state_dir: &Path, extension: &str) -> PathBuf {
         state_dir.join(if dev() {
-            "notch.dev.lock"
+            format!("notch.dev.{extension}")
         } else {
-            "notch.lock"
+            format!("notch.{extension}")
         })
     }
 
-    /// The helper built beside the app, or the one `SIKEMUX_NOTCH_EXECUTABLE` names.
     /// The helper inside its own app, which it must run from: the window server
     /// plays a background process's trackpad haptics only for a real app. A
-    /// release carries it in Contents/Helpers; a dev build beside its binary.
-    fn helper() -> Option<PathBuf> {
+    /// release carries it in the app bundle's Helpers; a dev build beside the
+    /// core's binary. `SIKEMUX_NOTCH_EXECUTABLE` names another.
+    fn helper(core: &Path) -> Option<PathBuf> {
         if let Some(path) = std::env::var_os("SIKEMUX_NOTCH_EXECUTABLE") {
             return Some(PathBuf::from(path));
         }
-        let macos = std::env::current_exe().ok()?.parent()?.to_path_buf();
-        let executable = |app: PathBuf| app.join("Contents/MacOS/sikemux-notch");
-        let candidates = if dev() {
-            vec![executable(macos.join("Sikemux Notch Dev.app"))]
-        } else {
-            vec![executable(
-                macos.parent()?.join("Helpers/Sikemux Notch.app"),
-            )]
+        let path = match sikemux_process::paths::app_bundle_of_core(core) {
+            Some(bundle) => bundle.join(BUNDLED_NOTCH).join(NOTCH_EXECUTABLE),
+            None if dev() => core.parent()?.join(DEV_HELPER),
+            None => return None,
         };
-        candidates.into_iter().find(|path| path.is_file())
-    }
-
-    /// The app bundle, which the helper opens when the window it asks for is closed.
-    fn bundle() -> Option<PathBuf> {
-        let exe = std::env::current_exe().ok()?;
-        let bundle = exe.parent()?.parent()?.parent()?;
-        (bundle.extension()? == "app").then(|| bundle.to_path_buf())
+        path.is_file().then_some(path)
     }
 
     /// The pid of the helper holding this build's lock, or None when none runs.
     fn running(state_dir: &Path) -> Option<libc::pid_t> {
-        let path = lock_path(state_dir);
+        let path = state_file(state_dir, "lock");
         let file = std::fs::File::open(&path).ok()?;
         use std::os::fd::AsRawFd;
         // SAFETY: flock only reads the descriptor of a file this function owns.
@@ -118,34 +107,26 @@ mod mac {
         STARTED.store(false, Ordering::Release);
     }
 
-    fn start(app: &AppHandle, launch: &CoreLaunch) -> AppResult<()> {
+    fn start(socket: &Path, state_dir: &Path) -> std::io::Result<()> {
+        let core = std::env::current_exe()?;
         let helper =
-            helper().ok_or_else(|| AppError::Other("this build has no notch helper".into()))?;
-        let state_dir = state_dir(&launch.socket);
-        let log_path = app
-            .path()
-            .app_log_dir()
-            .unwrap_or_else(|_| std::env::temp_dir())
-            .join("notch.log");
-        if let Some(directory) = log_path.parent() {
-            let _ = std::fs::create_dir_all(directory);
-        }
+            helper(&core).ok_or_else(|| std::io::Error::other("this build has no notch helper"))?;
         let log = OpenOptions::new()
             .create(true)
             .append(true)
             .mode(0o600)
-            .open(&log_path)?;
+            .open(state_file(state_dir, "log"))?;
         let mut command = sikemux_process::user_environment::command(&helper);
         command
             .arg("--socket")
-            .arg(&launch.socket)
+            .arg(socket)
             .arg("--protocol-version")
-            .arg(sikemux_core::protocol::PROTOCOL_VERSION.to_string())
+            .arg(crate::protocol::PROTOCOL_VERSION.to_string())
             .arg("--state-dir")
-            .arg(&state_dir)
+            .arg(state_dir)
             .arg("--core-binary")
-            .arg(&launch.binary);
-        if let Some(bundle) = bundle() {
+            .arg(&core);
+        if let Some(bundle) = sikemux_process::paths::app_bundle_of_core(&core) {
             command.arg("--app").arg(bundle);
         }
         if dev() {
@@ -160,7 +141,7 @@ mod mac {
             .stderr(log);
         // SAFETY: the hook runs in the forked child before exec and calls only
         // fork, setsid and _exit, which are async-signal-safe. The helper is never
-        // this app's child, so it outlives the app and is never left a zombie.
+        // the core's child, so it outlives the core and is never left a zombie.
         unsafe {
             command.pre_exec(|| match libc::fork() {
                 -1 => Err(std::io::Error::last_os_error()),
@@ -178,28 +159,24 @@ mod mac {
         Ok(())
     }
 
-    /// The helper is SwiftUI for macOS 14, while the app runs on older systems.
+    /// The helper is SwiftUI for macOS 14, while the core runs on older systems.
     fn supported() -> bool {
-        objc2_foundation::NSProcessInfo::processInfo()
-            .operatingSystemVersion()
-            .majorVersion
-            >= 14
+        crate::usage::os_version()
+            .and_then(|version| version.split('.').next()?.parse::<u32>().ok())
+            .is_some_and(|major| major >= 14)
     }
 
-    pub(super) fn configure(app: &AppHandle, manager: &PtyManager, enabled: bool) -> AppResult<()> {
+    pub(super) fn configure(socket: &Path, enabled: bool) -> std::io::Result<()> {
         if !supported() {
             return Ok(());
         }
-        let launch = manager
-            .core_launch()
-            .ok_or_else(|| AppError::Other("the terminal core is not configured yet".into()))?;
-        let state_dir = state_dir(&launch.socket);
+        let state_dir = state_dir(socket);
         if !enabled {
             stop(&state_dir);
             return Ok(());
         }
         if !STARTED.load(Ordering::Acquire) || running(&state_dir).is_none() {
-            start(app, &launch)?;
+            start(socket, &state_dir)?;
         }
         Ok(())
     }

@@ -48,6 +48,7 @@ mod model_providers;
 mod move_agent;
 mod names;
 mod network_watch;
+mod notch;
 mod notify;
 mod open_files;
 mod plugin_views;

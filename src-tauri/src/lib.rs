@@ -22,7 +22,6 @@ mod harness;
 mod hosts;
 mod inbox;
 mod markdown;
-mod notch;
 pub mod observability;
 mod pages;
 mod plugins;
@@ -272,7 +271,6 @@ pub fn run() {
             share::share_viewer_hello,
             core_call::core_call,
             core_call::core_request,
-            notch::notch_configure,
             remote::remote_publish,
             pty::commands::app_quit_and_stop_everything,
             pty::commands::agent_detection_explain,

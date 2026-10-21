@@ -23,7 +23,6 @@ export const IPC_COMMANDS = [
     "share_viewer_hello",
     "core_call",
     "core_request",
-    "notch_configure",
     "remote_publish",
     "app_quit_and_stop_everything",
     "agent_detection_explain",
