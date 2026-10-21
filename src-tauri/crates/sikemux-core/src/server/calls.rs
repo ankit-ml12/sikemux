@@ -309,6 +309,16 @@ calls! { core, client, params;
         super::session::type_when_ready(&session, params.input());
         answer(json!({}))
     },
+    "reconnectSsh": Full => {
+        let params: SessionParams = parse(params)?;
+        let session = core.session(params.id).ok_or("that terminal is not on this host")?;
+        blocking(move || {
+            super::session::reconnect_ssh(&session);
+            Ok(())
+        })
+        .await?;
+        answer(json!({}))
+    },
     "takeSpareShell": Local => answer(super::spare::take(&core, parse(params)?)),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "themePalette": Watch => {
@@ -519,6 +529,11 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
+}
+
+#[derive(Deserialize)]
+struct SessionParams {
+    id: crate::protocol::SessionId,
 }
 
 /// What to type into a terminal once it is ready: text pasted and submitted,

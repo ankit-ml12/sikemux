@@ -971,6 +971,18 @@ pub(crate) fn type_when_ready(session: &Arc<Session>, bytes: Vec<u8>) {
     });
 }
 
+/// Connects an ssh terminal again when it has given up and sits at the local
+/// shell's prompt.
+pub(crate) fn reconnect_ssh(session: &Session) {
+    let Some(host) = session.owner.ssh_host.as_deref() else {
+        return;
+    };
+    if session.shell_at_prompt() {
+        let command = format!("{}\r", super::ssh::startup(host));
+        queue_input(session, command.into_bytes(), Box::new(|_| {}));
+    }
+}
+
 /// The first line on the screen containing `containing`, once one shows,
 /// whether or not anyone watches the terminal. Nothing if it ends first.
 pub(crate) fn line_shown(

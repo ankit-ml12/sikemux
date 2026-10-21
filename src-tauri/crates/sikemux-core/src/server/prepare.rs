@@ -113,6 +113,14 @@ pub(crate) fn prepare_terminal(
     } = spawn;
     validate_pty_dimensions(cols, rows)?;
     let startup = startup.filter(|value| !value.is_empty());
+    let mut owner = Owner::from_context(context.as_ref());
+    let startup = startup.or_else(|| {
+        owner
+            .ssh_host
+            .as_deref()
+            .filter(|_| direct_command.is_none())
+            .map(super::ssh::startup)
+    });
     if startup.is_some() && direct_command.is_some() {
         return Err(
             "invalid argument: PTY startup and direct command are mutually exclusive".into(),
@@ -141,7 +149,6 @@ pub(crate) fn prepare_terminal(
         launch.cli_endpoint.as_deref(),
         &HashMap::new(),
     );
-    let mut owner = Owner::from_context(context.as_ref());
     owner.plain = startup.is_none()
         && direct_command.is_none()
         && context

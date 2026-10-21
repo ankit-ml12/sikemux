@@ -328,21 +328,21 @@ pub async fn pty_write(
     finish(outcome, operation)
 }
 
-/// Pastes, then a draft left unsent, typed once the program is ready to read them.
+/// One of the core's calls about a terminal the page names, given the id the
+/// terminal has in the core that runs it.
 #[tauri::command]
-pub async fn pty_type_when_ready(
+pub async fn pty_call(
     manager: State<'_, PtyManager>,
     hosts: State<'_, Hosts>,
     id: SessionId,
-    pastes: Vec<String>,
-    draft: Option<String>,
-) -> AppResult<()> {
+    method: String,
+    mut params: serde_json::Map<String, serde_json::Value>,
+) -> AppResult<serde_json::Value> {
     let (client, id) = session_client(&manager, &hosts, id).await?;
-    let params = serde_json::json!({ "id": id, "pastes": pastes, "draft": draft });
+    params.insert("id".into(), id.into());
     client
-        .call("typeWhenReady", params)
+        .call(&method, params.into())
         .await
-        .map(drop)
         .map_err(core_error)
 }
 

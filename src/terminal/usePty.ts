@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
 import { Channel } from "@tauri-apps/api/core";
-import { coreCall } from "../api/core";
+import { coreCall, ptyCall } from "../api/core";
 import { workspaceSent } from "../state/workspaceSent";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
@@ -98,7 +98,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
-    typeWhenReady: (id, pastes, draft) => invoke<void>("pty_type_when_ready", { id, pastes, draft }),
+    typeWhenReady: (id, pastes, draft) => ptyCall(id, "typeWhenReady", { pastes, draft }),
     input: (id, input) => invoke<void>("pty_input", { id, input }),
     resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: coreSessionsApi.kill,

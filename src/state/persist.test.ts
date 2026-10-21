@@ -150,7 +150,7 @@ describe("frontend persistence", () => {
         expect(
             applyHydrate(
                 JSON.stringify({
-                    version: 22,
+                    version: 23,
                     sessions: [],
                     itemStates: {},
                 }),
@@ -637,7 +637,7 @@ describe("frontend persistence", () => {
 
         await expect(flushPersist()).resolves.toBe(true);
         const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.version).toBe(21);
+        expect(saved.version).toBe(22);
         expect(saved.editorViews).toBeUndefined();
         expect(saved.itemStates).toEqual({
             [editorPane.id]: {
@@ -774,7 +774,7 @@ describe("frontend persistence", () => {
         const migrated = invoke.mock.calls[0][1].data as string;
         expect(migrated).not.toContain("legacy-secret");
         expect(migrated).not.toContain("agentBookmarks");
-        expect(JSON.parse(migrated).version).toBe(21);
+        expect(JSON.parse(migrated).version).toBe(22);
         carry(JSON.parse(migrated).prefs);
         expect(brunoSettings.get()).toEqual({ collectionPath: "/legacy", selectedEnvs: { "/legacy": "dev" }, workspaces: ["/legacy"] });
         expect(rundeckSettings.get().activeProject).toBe("");
@@ -971,7 +971,7 @@ describe("frontend persistence", () => {
         expect((await savedPrefs()).keybindingOverrides).toEqual({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA" });
     });
 
-    it("upgrades saved SSH terminals to the reconnecting startup command", () => {
+    it("forgets the command saved SSH terminals ran, which the core builds now", () => {
         const sid = getState().activeSessionId;
         const session = getState().sessions[sid];
         const window = getState().windows[session.activeWindowId];
@@ -998,6 +998,7 @@ describe("frontend persistence", () => {
         const restored = getState().windows[session.activeWindowId].root;
         expect(restored.type).toBe("pane");
         if (restored.type === "pane") {
+            expect(restored.startup).toBeUndefined();
         }
     });
 

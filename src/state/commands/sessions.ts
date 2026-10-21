@@ -7,7 +7,6 @@ import { filesApi } from "../../api/files";
 import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
 import { dirname } from "../../lib/paths";
-import { sshStartup } from "../../terminal/sshStartup";
 import { getState, mutate, setState } from "../store";
 import { reportError, swallow } from "../toast";
 import { agentIdsOf } from "../selectors";
@@ -62,7 +61,7 @@ export function createSshSession(alias: string): void {
             d.activeSessionId = existing.id;
             return;
         }
-        const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
+        const win = makeWindow("", alias, { role: "named" });
         attachSession(d, makeSession("ssh", alias, "", win.id), [win]);
     });
 }
@@ -71,7 +70,7 @@ export function createSshSession(alias: string): void {
 export function newSshTerminal(alias: string): void {
     withActiveSession((d, session) => {
         if (session.kind !== "ssh") return;
-        const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
+        const win = makeWindow("", alias, { role: "named" });
         d.windows[win.id] = win;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];
         d.sessions[session.id].activeWindowId = win.id;

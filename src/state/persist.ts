@@ -1,6 +1,5 @@
 import { invokeCommand as invoke } from "../api/invoke";
 import { fixedSessionName } from "./sessionNames";
-import { sshStartup } from "../terminal/sshStartup";
 import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
 import type { ProjectInfo, Workspace } from "../api/generated/wire";
@@ -35,7 +34,7 @@ import type {
     Window,
 } from "./types";
 
-export const VERSION = 21;
+export const VERSION = 22;
 const MIN_SUPPORTED_VERSION = 4;
 const ONBOARDING_MIGRATION_VERSION = 6;
 const ITEM_STATES_MIGRATION_VERSION = 7;
@@ -49,9 +48,9 @@ const RUNDECK_GROUPS_MIGRATION_VERSION = 15;
 const DESK_MIGRATION_VERSION = 16;
 const GITHUB_IN_GIT_PANE_MIGRATION_VERSION = 17;
 const CORE_SESSION_MIGRATION_VERSION = 18;
-const SSH_LOOP_MIGRATION_VERSION = 18;
 const PANE_TITLE_MIGRATION_VERSION = 20;
 const TAB_RAIL_MIGRATION_VERSION = 21;
+const SSH_LOOP_MIGRATION_VERSION = 22;
 const RETRY_MS = 1500;
 let lastSaved = "";
 let activeSnapshot: string | null = null;
@@ -487,8 +486,8 @@ function foldPinnedProjectsIntoRoots(decoded: Record<string, unknown>): void {
     decoded.prefs = { ...rest, projectRoots: mergePinnedIntoRoots(roots, pinnedProjects) };
 }
 
-/** Before v18 an SSH tab ran `ssh` itself, or a reconnect loop in the login shell; it runs the loop under /bin/sh now. */
-function upgradeSshStartups(decoded: Record<string, unknown>): void {
+/** Before v22 an SSH tab saved the command it ran; the core builds it from the host now. */
+function forgetSshStartups(decoded: Record<string, unknown>): void {
     const sessions = Array.isArray(decoded.sessions) ? decoded.sessions : [];
     const aliases = new Map(
         sessions.flatMap((row) => (isRecord(row) && row.kind === "ssh" && typeof row.name === "string" ? [[row.id, row.name]] : [])),
@@ -496,7 +495,7 @@ function upgradeSshStartups(decoded: Record<string, unknown>): void {
     eachSavedPane(decoded, (pane, session) => {
         const alias = aliases.get(session);
         if (alias === undefined || pane.kind !== "terminal" || typeof pane.startup !== "string") return;
-        if (pane.startup === `ssh ${alias}` || pane.startup.includes("sikemux_ssh_retries")) pane.startup = sshStartup(alias);
+        if (pane.startup === `ssh ${alias}` || pane.startup.includes("sikemux_ssh_retries")) delete pane.startup;
     });
 }
 
@@ -780,9 +779,9 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
     if (decoded.version < DESK_MIGRATION_VERSION) moveBrowserPanesOntoDesks(decoded);
     if (decoded.version < GITHUB_IN_GIT_PANE_MIGRATION_VERSION) closeGithubSessions(decoded);
     if (decoded.version < CORE_SESSION_MIGRATION_VERSION) forgetCoreSessions(decoded);
-    if (decoded.version < SSH_LOOP_MIGRATION_VERSION) upgradeSshStartups(decoded);
     if (decoded.version < PANE_TITLE_MIGRATION_VERSION) capitalisePaneTitles(decoded);
     if (decoded.version < TAB_RAIL_MIGRATION_VERSION) renameAgentRailPrefs(decoded);
+    if (decoded.version < SSH_LOOP_MIGRATION_VERSION) forgetSshStartups(decoded);
 
     const projects = new Map((workspace?.projects ?? []).map((project) => [project.id, project]));
     const sessions: Record<string, Session> = {};

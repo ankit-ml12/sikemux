@@ -77,8 +77,8 @@ export function agentPaneId(win: Window): string | null {
  * title, else the name it opened with. A renamed tab's name belongs to the terminal it opened with.
  */
 export function terminalLabel(win: Window | undefined, pane: PaneNode, titles: Readonly<Record<string, string | undefined>>): string {
-    /* The title such a terminal reports is the local shell that runs its command, not anything a person named. */
-    if (pane.startup) return win?.customName || win?.name || pane.title;
+    /* The title a named tab's terminal reports is the local shell that runs its command, such as ssh, not anything a person named. */
+    if (pane.startup || win?.role === "named") return win?.customName || win?.name || pane.title;
     const home = win?.role === "term" ? collectPanes(win.root).find((candidate) => candidate.kind === "terminal") : undefined;
     if (win?.customName && home?.id === pane.id) return win.customName;
     return (pane.ptyId !== undefined ? titles[pane.ptyId] : undefined) || pane.title || win?.name || "Terminal";

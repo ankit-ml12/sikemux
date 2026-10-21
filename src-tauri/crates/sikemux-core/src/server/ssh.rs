@@ -152,3 +152,84 @@ pub(crate) fn moved(core: &Core) {
     core.changes.changed(Topic::Ssh, None, None);
     core.changes.changed(Topic::Hosts, None, None);
 }
+
+/// How many times a dropped connection is retried before the terminal goes
+/// back to the local shell.
+const RETRIES: &str = "5";
+
+/// The command an ssh terminal runs, through the person's own shell: ssh to
+/// `alias`, retried a few times when the connection drops, then back to the
+/// local shell. It reports where the connection stands for the rail.
+pub(crate) fn startup(alias: &str) -> String {
+    if cfg!(windows) {
+        windows_startup(alias)
+    } else {
+        format!("/bin/sh -c {}", portable_quote(&unix_loop(alias)))
+    }
+}
+
+fn posix_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r#"'"'"'"#))
+}
+
+/// Reads the same in POSIX shells and in fish, where `\\` and `\'` are
+/// escapes even inside single quotes.
+fn portable_quote(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for character in value.chars() {
+        match character {
+            '\'' => quoted.push_str(r#"'"'"'"#),
+            '\\' => quoted.push_str(r#"'"\\"'"#),
+            character => quoted.push(character),
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn unix_loop(alias: &str) -> String {
+    const LOOP: &str = r#"sikemux_ssh_link() { printf '\033]6973;ssh;%s\007' "$1"; }; trap 'sikemux_ssh_link disconnected' EXIT; trap 'exit 130' INT TERM HUP; sikemux_ssh_link connecting; sikemux_ssh_retries=0; while :; do command ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o PermitLocalCommand=yes -o "LocalCommand=/usr/bin/printf '\033]6973;ssh;connected\007'" @HOST@; sikemux_ssh_status=$?; stty sane 2>/dev/null || true; printf '\033[0m\033[?25h\033[?1l\033>\033[?2004l\033[?1000l\033[?1002l\033[?1003l\033[?1006l'; if [ "$sikemux_ssh_status" -eq 0 ]; then break; fi; if [ "$sikemux_ssh_status" -eq 130 ]; then printf '\r\nSSH reconnect cancelled. Back at your local shell.\r\n'; break; fi; if [ "$sikemux_ssh_retries" -ge @RETRIES@ ]; then printf '\r\nSSH could not reconnect after @RETRIES@ retries. Back at your local shell.\r\n'; break; fi; sikemux_ssh_retries=$((sikemux_ssh_retries + 1)); printf '\r\nSSH connection lost. Retrying (%s/@RETRIES@) in 3 seconds… Press Ctrl-C to stop.\r\n' "$sikemux_ssh_retries"; sikemux_ssh_link connecting; sleep 3 || break; done"#;
+    LOOP.replace("@RETRIES@", RETRIES)
+        .replacen("@HOST@", &posix_quote(alias), 1)
+}
+
+fn windows_startup(alias: &str) -> String {
+    const LOOP: &str = r#"$sikemuxSshRetries = 0; while ($true) { & ssh -o ServerAliveInterval=15 -o ServerAliveCountMax=3 @HOST@; $sikemuxSshStatus = $LASTEXITCODE; [Console]::Write(([char]27 + '[0m' + [char]27 + '[?25h' + [char]27 + '[?1l' + [char]27 + '>' + [char]27 + '[?2004l' + [char]27 + '[?1000l' + [char]27 + '[?1002l' + [char]27 + '[?1003l' + [char]27 + '[?1006l')); if ($sikemuxSshStatus -eq 0) { break }; if ($sikemuxSshStatus -eq 130) { Write-Host 'SSH reconnect cancelled. Back at your local shell.'; break }; if ($sikemuxSshRetries -ge @RETRIES@) { Write-Host 'SSH could not reconnect after @RETRIES@ retries. Back at your local shell.'; break }; $sikemuxSshRetries++; Write-Host "SSH connection lost. Retrying ($sikemuxSshRetries/@RETRIES@) in 3 seconds... Press Ctrl-C to stop."; Start-Sleep -Seconds 3 }"#;
+    let host = format!("'{}'", alias.replace('\'', "''"));
+    LOOP.replace("@RETRIES@", RETRIES)
+        .replacen("@HOST@", &host, 1)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn runs_ssh_with_the_alias_as_one_argument_from_any_login_shell() {
+        let directory = tempfile::tempdir().unwrap();
+        let record = directory.path().join("args");
+        let ssh = directory.path().join("ssh");
+        let script = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            record.display()
+        );
+        std::fs::write(&ssh, script).unwrap();
+        std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!(
+            "{}:{}",
+            directory.path().display(),
+            std::env::var("PATH").unwrap()
+        );
+        let alias = "odd 'host' \\ $HOME";
+        for shell in ["/bin/sh", "/bin/zsh", "/bin/bash"] {
+            sikemux_process::user_environment::command(shell)
+                .arg("-c")
+                .arg(super::startup(alias))
+                .env("PATH", &path)
+                .output()
+                .unwrap();
+            let args = std::fs::read_to_string(&record).unwrap();
+            assert_eq!(args.lines().last(), Some(alias), "{shell}");
+        }
+    }
+}

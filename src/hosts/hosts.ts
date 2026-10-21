@@ -7,7 +7,6 @@ import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
 import { createSshSession } from "../state/commands/sessions";
-import { sshStartup } from "../terminal/sshStartup";
 import { offerResumableSessions } from "../terminal/sessionResume";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
@@ -226,7 +225,7 @@ export function newSshTerminalOn(alias: string): void {
     mutate((d) => {
         const session = d.sessionOrder.map((id) => d.sessions[id]).find((candidate) => candidate?.kind === "ssh" && candidate.name === alias);
         if (!session) return;
-        const window = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
+        const window = makeWindow("", alias, { role: "named" });
         d.windows[window.id] = window;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
         session.activeWindowId = window.id;
