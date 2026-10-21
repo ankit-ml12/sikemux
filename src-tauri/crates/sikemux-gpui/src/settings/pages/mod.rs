@@ -7,6 +7,7 @@ use super::{Page, Settings};
 use crate::workbench::Workbench;
 
 mod about;
+mod appearance;
 mod cli;
 mod cloud;
 
@@ -14,6 +15,7 @@ mod cloud;
 /// for them, and the fields being typed in.
 #[derive(Default)]
 pub struct State {
+    pub appearance: Option<appearance::Fields>,
     pub cloud: Option<cloud::Fields>,
     /// The command line's install, as the core last said.
     pub cli: Option<Value>,
@@ -24,7 +26,7 @@ pub struct State {
 pub fn sections(page: Page) -> &'static [&'static str] {
     match page {
         Page::General => &["Project folders"],
-        Page::Appearance => &["Theme", "Interface", "Buddies", "Window"],
+        Page::Appearance => appearance::SECTIONS,
         Page::Keybindings => &["Shortcuts"],
         Page::Activity => &["Overview", "Calendar", "By model", "By agent", "By project"],
         Page::About => about::SECTIONS,
@@ -64,6 +66,7 @@ pub fn render(
     let lit = |section: &str| flash == Some(section);
     match settings.page {
         Page::About => about::render(bench, &lit, this, cx),
+        Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),
         _ => Vec::new(),
