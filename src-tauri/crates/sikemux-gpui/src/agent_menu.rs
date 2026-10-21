@@ -1,6 +1,8 @@
 //! What right-clicking an agent offers, wherever it is shown: its tab, its rail row or its header.
 
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::{App, ClickEvent, ClipboardItem, Context, WeakEntity, Window};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use std::rc::Rc;
@@ -103,22 +105,69 @@ impl AgentMenu {
     ) -> PopupMenu {
         let agent = &self.agent;
         let id = agent.id.clone();
-        if self.in_front {
-            let (bench, retitled) = (self.bench.clone(), id.clone());
-            popup = popup
-                .item(
-                    PopupMenuItem::new("Edit Title…")
-                        .icon(Icon::Pencil)
-                        .on_click(move |_, window, cx| {
-                            let (bench, retitled) = (bench.clone(), retitled.clone());
+        let (bench, renamed, name) = (
+            self.bench.clone(),
+            id.clone(),
+            agent.name.clone().unwrap_or_default(),
+        );
+        popup = popup.item(PopupMenuItem::new("Rename…").icon(Icon::Pencil).on_click(
+            move |_, _, cx| {
+                let (renamed, name) = (renamed.clone(), name.clone());
+                let _ = bench.update(cx, |bench, cx| {
+                    bench.prompt(
+                        "Rename agent",
+                        name.clone(),
+                        move |bench, typed, _, _| {
+                            if !typed.is_empty() && typed != name {
+                                bench.call(
+                                    "renameAgent",
+                                    json!({ "agentId": renamed, "name": typed }),
+                                );
+                            }
+                        },
+                        cx,
+                    )
+                });
+            },
+        ));
+        let (bench, retitled, title, in_front) = (
+            self.bench.clone(),
+            id.clone(),
+            agent.title.clone(),
+            self.in_front,
+        );
+        popup = popup
+            .item(
+                PopupMenuItem::new("Edit Title…")
+                    .icon(Icon::Pencil)
+                    .on_click(move |_, window, cx| {
+                        let (bench, retitled, title) =
+                            (bench.clone(), retitled.clone(), title.clone());
+                        if in_front {
                             window.defer(cx, move |window, cx| {
                                 let _ = bench
                                     .update(cx, |bench, cx| bench.retitle(&retitled, window, cx));
                             });
-                        }),
-                )
-                .separator();
-        }
+                            return;
+                        }
+                        let _ = bench.update(cx, |bench, cx| {
+                            bench.prompt(
+                                "Edit title",
+                                title.clone(),
+                                move |bench, typed, _, _| {
+                                    if !typed.is_empty() && typed != title {
+                                        bench.call(
+                                            "updateAgent",
+                                            json!({ "agentId": retitled, "patch": { "title": typed, "renamed": true } }),
+                                        );
+                                    }
+                                },
+                                cx,
+                            )
+                        });
+                    }),
+            )
+            .separator();
         if let Some(resume) = &agent.resume_id {
             let pin = PinnedChat {
                 provider: agent.provider.clone(),
@@ -207,6 +256,17 @@ impl AgentMenu {
                 },
             )
         };
+        if agent.worktree.is_some() {
+            let (bench, removed) = (self.bench.clone(), id.clone());
+            popup = popup.separator().item(
+                PopupMenuItem::new("Remove worktree…")
+                    .icon(Icon::Trash)
+                    .on_click(move |_, window, cx| {
+                        let _ = bench
+                            .update(cx, |bench, cx| bench.remove_worktree(&removed, window, cx));
+                    }),
+            );
+        }
         popup = popup
             .separator()
             .item(
@@ -257,9 +317,10 @@ impl AgentMenu {
             PopupMenuItem::new("Copy Link")
                 .icon(Icon::Copy)
                 .disabled(link.is_none())
-                .on_click(move |_, _, cx| {
+                .on_click(move |_, window, cx| {
                     if let Some(link) = &link {
                         cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
+                        window.push_notification(Notification::success("Copied link"), cx);
                     }
                 }),
         )

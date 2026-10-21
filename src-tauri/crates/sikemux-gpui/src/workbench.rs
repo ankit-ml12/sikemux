@@ -1,12 +1,15 @@
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, Context, DragMoveEvent, Entity, EventEmitter,
@@ -103,6 +106,10 @@ pub struct Workbench {
     pub settings: Option<crate::settings::Settings>,
     /// The agent whose title is being edited in place in its header.
     pub retitling: Option<Retitling>,
+    /// The question the shell is putting to the person, over the window.
+    asking: Option<Asking>,
+    /// The core's trust questions already put to the person, by id.
+    trust_asked: HashSet<String>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
@@ -153,6 +160,26 @@ pub struct RailWidth {
     pub min: f32,
     pub max: f32,
     pub initial: f32,
+}
+
+type Confirmed = Rc<dyn Fn(&mut Workbench, bool, &mut Window, &mut Context<Workbench>)>;
+type Typed = Rc<dyn Fn(&mut Workbench, String, &mut Window, &mut Context<Workbench>)>;
+
+/// A question the shell puts to the person over the window, and what its answer does.
+enum Asking {
+    Confirm {
+        title: SharedString,
+        body: SharedString,
+        yes: SharedString,
+        destructive: bool,
+        then: Confirmed,
+    },
+    Prompt {
+        title: SharedString,
+        initial: String,
+        field: Option<Entity<InputState>>,
+        then: Typed,
+    },
 }
 
 /// An agent's title while it is edited in place, in a field holding it.
@@ -260,6 +287,10 @@ impl Workbench {
             Watch::new("taskRuns", json!({}), &["runs"]),
         ));
         let _ = asks.send(Ask::Watch(
+            "trust",
+            Watch::new("trustAsks", json!({}), &["trust"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "questions",
             Watch::new("questions", json!({}), &["questions"]),
         ));
@@ -312,6 +343,8 @@ impl Workbench {
             tab_rail_width: agents::TAB_RAIL.initial,
             resizers: [cx.focus_handle(), cx.focus_handle()],
             retitling: None,
+            asking: None,
+            trust_asked: HashSet::new(),
             peeking: None,
             unpeek: None,
             run_clock: None,
@@ -511,6 +544,10 @@ impl Workbench {
                     pane.update(cx, |pane, cx| pane.catalog(&value, cx));
                 }
                 self.reads.insert("catalog", value);
+            }
+            Update::Read("trust", value) => {
+                self.reads.insert("trust", value);
+                self.ask_trust(cx);
             }
             Update::Read(key @ ("runs" | "ports"), value) => {
                 self.reads.insert(key, value);
@@ -1271,6 +1308,266 @@ impl Workbench {
         self.parts.redraw(&self.parts.stage, cx);
     }
 
+    /// Asks the person whether something goes ahead; `then` hears yes or no.
+    pub fn confirm(
+        &mut self,
+        title: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        yes: impl Into<SharedString>,
+        destructive: bool,
+        then: impl Fn(&mut Workbench, bool, &mut Window, &mut Context<Workbench>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.asking = Some(Asking::Confirm {
+            title: title.into(),
+            body: body.into(),
+            yes: yes.into(),
+            destructive,
+            then: Rc::new(then),
+        });
+        cx.notify();
+    }
+
+    /// Asks the person for a line of text, starting from `initial`; `then` hears what they
+    /// typed, and nothing is done when they give up.
+    pub fn prompt(
+        &mut self,
+        title: impl Into<SharedString>,
+        initial: impl Into<String>,
+        then: impl Fn(&mut Workbench, String, &mut Window, &mut Context<Workbench>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.asking = Some(Asking::Prompt {
+            title: title.into(),
+            initial: initial.into(),
+            field: None,
+            then: Rc::new(then),
+        });
+        cx.notify();
+    }
+
+    /// The question being asked, as a dialog, making a prompt's field the first time.
+    fn asked(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let bench = cx.entity();
+        let answered = move |yes: bool| {
+            let bench = bench.clone();
+            move |window: &mut Window, cx: &mut App| {
+                bench.update(cx, |bench, cx| {
+                    if let Some(Asking::Confirm { then, .. }) = bench.asking.take() {
+                        then(bench, yes, window, cx);
+                    }
+                    bench.ask_trust(cx);
+                    cx.notify();
+                })
+            }
+        };
+        Some(match self.asking.as_mut()? {
+            Asking::Confirm {
+                title,
+                body,
+                yes,
+                destructive,
+                ..
+            } => crate::ui::Confirm::new(title.clone(), body.clone(), yes.clone())
+                .destructive(*destructive)
+                .on_yes(answered(true))
+                .on_no(answered(false))
+                .into_any_element(),
+            Asking::Prompt {
+                title,
+                initial,
+                field,
+                ..
+            } => {
+                let field = field
+                    .get_or_insert_with(|| {
+                        let initial = initial.clone();
+                        cx.new(|cx| {
+                            let mut state = InputState::new(window, cx);
+                            state.set_value(initial, window, cx);
+                            state.focus(window, cx);
+                            state.select_all(window, cx);
+                            state
+                        })
+                    })
+                    .clone();
+                let (typing, giving_up) = (cx.entity(), cx.entity());
+                crate::ui::Prompt::new(title.clone(), &field)
+                    .on_yes(move |typed, window, cx| {
+                        typing.update(cx, |bench, cx| {
+                            if let Some(Asking::Prompt { then, .. }) = bench.asking.take() {
+                                then(bench, typed.trim().to_owned(), window, cx);
+                            }
+                            cx.notify();
+                        })
+                    })
+                    .on_no(move |_, cx| {
+                        giving_up.update(cx, |bench, cx| {
+                            bench.asking = None;
+                            cx.notify();
+                        })
+                    })
+                    .into_any_element()
+            }
+        })
+    }
+
+    /// Puts the core's next trust question to the person, each once, while nothing else is asked.
+    fn ask_trust(&mut self, cx: &mut Context<Self>) {
+        let asks: Vec<Value> = self
+            .read("trust")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        self.trust_asked
+            .retain(|id| asks.iter().any(|ask| ask["id"] == id.as_str()));
+        if self.asking.is_some() {
+            return;
+        }
+        let Some(ask) = asks.into_iter().find(|ask| {
+            ask["id"]
+                .as_str()
+                .is_some_and(|id| !self.trust_asked.contains(id))
+        }) else {
+            return;
+        };
+        let text = |value: &Value| value.as_str().unwrap_or_default().to_owned();
+        let id = text(&ask["id"]);
+        self.trust_asked.insert(id.clone());
+        let commands: Vec<String> = ask["commands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|command| format!("{}: {}", text(&command["label"]), text(&command["command"])))
+            .collect();
+        let body: Vec<String> = [text(&ask["body"]), commands.join("\n")]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect();
+        self.confirm(
+            text(&ask["title"]),
+            body.join("\n\n"),
+            text(&ask["confirmLabel"]),
+            false,
+            move |bench, trust, _, _| {
+                bench.call("answerTrust", json!({ "id": id, "trust": trust }));
+            },
+            cx,
+        );
+    }
+
+    /// Removes an agent's worktree once the person knows what that loses: uncommitted
+    /// changes, and commits only its branch has.
+    pub fn remove_worktree(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let (asks, agent) = (self.asks.clone(), agent.to_owned());
+        cx.spawn_in(window, async move |bench, cx| {
+            let cost =
+                crate::core::request(&asks, "worktreeRemoval", json!({ "agentId": agent })).await;
+            let _ = bench.update_in(cx, |bench, window, cx| match cost {
+                Ok(cost) => bench.confirm_removal(agent, &cost, window, cx),
+                Err(error) => window.push_notification(
+                    Notification::error(format!("Could not remove the worktree: {error}")),
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    fn confirm_removal(
+        &mut self,
+        agent: String,
+        cost: &Value,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if cost["sharedWith"]
+            .as_array()
+            .is_some_and(|shared| !shared.is_empty())
+        {
+            return window.push_notification(
+                "Another agent or project still uses this worktree. Close it before removing the worktree.",
+                cx,
+            );
+        }
+        if cost["busy"] == true {
+            return window
+                .push_notification("Stop the agent's turn before removing its worktree", cx);
+        }
+        let branch = cost["branch"].as_str().unwrap_or_default().to_owned();
+        let path = cost["path"].as_str().unwrap_or_default().to_owned();
+        let dirty = cost["dirtyFiles"].as_u64().unwrap_or(0);
+        let unmerged = cost["unmergedCommits"].as_u64().unwrap_or(0) > 0;
+        let named = branch.clone();
+        let then_branch = move |bench: &mut Workbench,
+                                discard: bool,
+                                window: &mut Window,
+                                cx: &mut Context<Workbench>| {
+            let (agent, named) = (agent.clone(), named.clone());
+            if !unmerged {
+                return bench.finish_removal(agent, named, discard, false, window, cx);
+            }
+            bench.confirm(
+                format!("Delete branch {named} too?"),
+                "It has commits that are not in the branch it started from. Deleting it loses any that were not pushed.",
+                "Delete branch",
+                true,
+                move |bench, delete, window, cx| {
+                    bench.finish_removal(agent.clone(), named.clone(), discard, delete, window, cx)
+                },
+                cx,
+            );
+        };
+        if dirty == 0 {
+            return then_branch(self, false, window, cx);
+        }
+        let changes = if dirty == 1 { "change" } else { "changes" };
+        self.confirm(
+            format!("Remove worktree {branch}?"),
+            format!("{dirty} uncommitted {changes} in {path} will be lost."),
+            "Remove",
+            true,
+            move |bench, remove, window, cx| {
+                if remove {
+                    then_branch(bench, true, window, cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn finish_removal(
+        &self,
+        agent: String,
+        branch: String,
+        discard: bool,
+        delete_branch: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let params =
+            json!({ "agentId": agent, "discardChanges": discard, "deleteBranch": delete_branch });
+        let removing = crate::core::request(&self.asks, "removeAgentWorktree", params);
+        cx.spawn_in(window, async move |_, cx| {
+            let removed = removing.await;
+            let _ = cx.update(|window, cx| {
+                window.push_notification(
+                    match removed {
+                        Ok(answer) if answer["branchDeleted"] == true => {
+                            Notification::success(format!("Removed worktree and branch {branch}"))
+                        }
+                        Ok(_) => Notification::success(format!("Removed worktree {branch}")),
+                        Err(error) => Notification::error(format!(
+                            "Could not remove worktree {branch}: {error}"
+                        )),
+                    },
+                    cx,
+                )
+            });
+        })
+        .detach();
+    }
+
     pub fn rail_width(&self, edge: Edge) -> f32 {
         match edge {
             Edge::Start => self.side_rail_width,
@@ -1911,6 +2208,7 @@ impl Workbench {
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         use crate::keymap::*;
+        let asked = self.asked(window, cx);
         if window.focused(cx).is_none() {
             self.focus.focus(window, cx);
         }
@@ -2034,6 +2332,7 @@ impl Render for Workbench {
             .when(!self.tab_rail_open, |shell| {
                 shell.child(self.rail_edge(Edge::End, cx))
             })
+            .children(asked)
             .when(self.finder.is_some(), |shell| {
                 shell.child(
                     parts

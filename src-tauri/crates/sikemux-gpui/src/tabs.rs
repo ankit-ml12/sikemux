@@ -5,7 +5,9 @@ use std::rc::Rc;
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::notification::Notification;
 use gpui_kit::component::Side;
+use gpui_kit::component::WindowExt;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -807,6 +809,7 @@ struct TabMenu {
     /// The file a Files tab shows, and that path inside its project.
     file: Option<(String, String)>,
     named: bool,
+    label: SharedString,
     /// The other tabs Close Others closes, which leaves agents' tabs open.
     others: Vec<String>,
 }
@@ -841,6 +844,7 @@ impl TabMenu {
             kind: view.map(|(kind, _)| kind),
             file,
             named: tab.title.is_some(),
+            label: label(bench, tab),
             others: bench
                 .tabs(strip)
                 .iter()
@@ -853,17 +857,36 @@ impl TabMenu {
 
     fn build(&self, mut popup: PopupMenu) -> PopupMenu {
         let (strip, tab) = (self.strip.clone(), self.tab.clone());
+        if self.kind == Some(PaneKind::Terminal) {
+            let (strip, tab, label) = (strip.clone(), tab.clone(), self.label.to_string());
+            popup = popup.item(PopupMenuItem::new("Rename…").icon(Icon::Pencil).on_click(
+                on_bench(&self.bench, move |bench, cx| {
+                    let (strip, tab) = (strip.clone(), tab.clone());
+                    bench.prompt(
+                        "Rename tab",
+                        label.clone(),
+                        move |bench, name, _, _| {
+                            if !name.is_empty() {
+                                bench.rename_tab(&strip, &tab, &name);
+                            }
+                        },
+                        cx,
+                    );
+                }),
+            ));
+        }
         if self.kind == Some(PaneKind::Terminal) && self.named {
             let (strip, tab) = (strip.clone(), tab.clone());
-            popup = popup
-                .item(
-                    PopupMenuItem::new("Use Automatic Name")
-                        .icon(Icon::Rotate)
-                        .on_click(on_bench(&self.bench, move |bench, _| {
-                            bench.rename_tab(&strip, &tab, "")
-                        })),
-                )
-                .separator();
+            popup = popup.item(
+                PopupMenuItem::new("Use Automatic Name")
+                    .icon(Icon::Rotate)
+                    .on_click(on_bench(&self.bench, move |bench, _| {
+                        bench.rename_tab(&strip, &tab, "")
+                    })),
+            );
+        }
+        if self.kind == Some(PaneKind::Terminal) {
+            popup = popup.separator();
         }
         if self.kind != Some(PaneKind::Agent) {
             let (strip, tab) = (strip.clone(), tab.clone());
@@ -897,27 +920,31 @@ impl TabMenu {
             );
         if let Some((path, relative)) = &self.file {
             let (copied, relative, revealed) = (path.clone(), relative.clone(), path.clone());
-            popup =
-                popup
-                    .separator()
-                    .item(PopupMenuItem::new("Copy Path").icon(Icon::Copy).on_click(
-                        move |_, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-                        },
-                    ))
-                    .item(
-                        PopupMenuItem::new("Copy Relative Path")
-                            .icon(Icon::Copy)
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(relative.clone()))
-                            }),
-                    )
-                    .separator()
-                    .item(
-                        PopupMenuItem::new("Reveal in Finder")
-                            .icon(Icon::Folder)
-                            .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
-                    );
+            popup = popup
+                .separator()
+                .item(PopupMenuItem::new("Copy Path").icon(Icon::Copy).on_click(
+                    move |_, window, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                        window.push_notification(Notification::success("Copied path"), cx);
+                    },
+                ))
+                .item(
+                    PopupMenuItem::new("Copy Relative Path")
+                        .icon(Icon::Copy)
+                        .on_click(move |_, window, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(relative.clone()));
+                            window.push_notification(
+                                Notification::success("Copied relative path"),
+                                cx,
+                            );
+                        }),
+                )
+                .separator()
+                .item(
+                    PopupMenuItem::new("Reveal in Finder")
+                        .icon(Icon::Folder)
+                        .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
+                );
         }
         popup
     }

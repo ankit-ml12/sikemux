@@ -6,6 +6,8 @@ use std::rc::Rc;
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, ClipboardItem, Context, InteractiveElement, IntoElement,
@@ -240,9 +242,13 @@ impl PortRow {
                     )
                 })
                 .child(action("copy-port", Icon::Copy, "Copy URL".into()).on_click(
-                    move |_, _, cx| {
+                    move |_, window, cx| {
                         cx.stop_propagation();
                         cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                        window.push_notification(
+                            Notification::success(format!("Copied {copied}")),
+                            cx,
+                        );
                     },
                 ))
                 .children(reveal.clone().map(|reveal| {
