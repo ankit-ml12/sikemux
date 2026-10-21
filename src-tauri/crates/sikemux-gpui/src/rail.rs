@@ -8,9 +8,10 @@ use gpui_kit::{
     ParentElement, SharedString, Styled,
 };
 use serde_json::Value;
-use sikemux_wire::protocol::ProjectInfo;
+use sikemux_wire::protocol::{PaneKind, ProjectInfo};
 
 use crate::icons::Icon;
+use crate::tabs;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, Group, IconButton, Menu, MenuItem, Row, Tone, Variant};
 use crate::workbench::{AgentRow, Workbench};
@@ -130,7 +131,7 @@ fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
 /// The mark of a plugin that has a place of its own in the rail; code hosts show
 /// under their projects instead.
 fn plugin_mark(id: &str) -> Option<Icon> {
-    Some(match id {
+    Some(match id.strip_prefix("sikemux.")? {
         "aws" => Icon::Aws,
         "bruno" => Icon::Bruno,
         "database" => Icon::Database,
@@ -234,7 +235,7 @@ fn project_tree(bench: &Workbench, project: &ProjectInfo, cx: &mut Context<Workb
                 .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
                 .child(faces(&agents)),
         )
-        .when(active, |tree| tree.pb(px(4.)).child(surfaces(project, cx)))
+        .when(active, |tree| tree.pb(px(4.)).child(surfaces(project, bench.tab().and_then(|tab| tabs::first_view(&tab.pane)).map(|(kind, _)| kind), cx)))
 }
 
 /// Up to five agent marks, each overlapping the one before by 6px.
@@ -254,30 +255,33 @@ fn faces(agents: &[AgentRow]) -> impl IntoElement {
 
 /// What a project opens, in the order the rail lists them: its own surfaces,
 /// with its code host's sections after Git.
-fn surface_rows(project: &ProjectInfo) -> Vec<(Icon, SharedString, &'static str)> {
+fn surface_rows(project: &ProjectInfo) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>)> {
     let mut rows = vec![
-        (Icon::Editor, "Files".into(), "⌘E"),
-        (Icon::Terminal, "Terminal".into(), "⌘⌥2"),
-        (Icon::Agent, "Agents".into(), "⌘⌥4"),
-        (Icon::Git, "Git".into(), "⌘⌥3"),
+        (Icon::Editor, "Files".into(), "⌘E", Some(PaneKind::Files)),
+        (Icon::Terminal, "Terminal".into(), "⌘⌥2", Some(PaneKind::Terminal)),
+        (Icon::Agent, "Agents".into(), "⌘⌥4", Some(PaneKind::Agent)),
+        (Icon::Git, "Git".into(), "⌘⌥3", Some(PaneKind::Git)),
     ];
     if let Some(host) = &project.code_host {
         rows.extend(host.sections.iter().filter_map(|section| {
             Some(match section.as_str() {
-                "pulls" => (Icon::PullRequest, "Pull requests".into(), ""),
-                "actions" => (Icon::Actions, host.ci_name.clone().into(), ""),
-                "issues" => (Icon::Issues, "Issues".into(), ""),
-                "releases" => (Icon::Releases, "Releases".into(), ""),
+                "pulls" => (Icon::PullRequest, "Pull requests".into(), "", None),
+                "actions" => (Icon::Actions, host.ci_name.clone().into(), "", None),
+                "issues" => (Icon::Issues, "Issues".into(), "", None),
+                "releases" => (Icon::Releases, "Releases".into(), "", None),
                 _ => return None,
             })
         }));
     }
-    rows.extend([(Icon::Search, "Search".into(), "⌘⇧F"), (Icon::Board, "Agent board".into(), "⌘⌥6")]);
+    rows.extend([
+        (Icon::Search, "Search".into(), "⌘⇧F", Some(PaneKind::Search)),
+        (Icon::Board, "Agent board".into(), "⌘⌥6", Some(PaneKind::Board)),
+    ]);
     rows
 }
 
-/// The project's surfaces, hung off a spine with a tick to each.
-fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
+/// The project's surfaces, hung off a spine with a tick to each, the one in front lit.
+fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let rows = surface_rows(project);
     let last = rows.len() - 1;
@@ -287,8 +291,9 @@ fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
         .ml(px(20.))
         .py(px(2.))
         .pr(px(6.))
-        .children(rows.into_iter().enumerate().map(move |(index, (glyph, label, keys))| {
+        .children(rows.into_iter().enumerate().map(move |(index, (glyph, label, keys, kind))| {
             let tail = index == last;
+            let lit = kind.is_some() && kind == front;
             let spine = div().absolute().left_0().top_0();
             div()
                 .relative()
@@ -298,7 +303,8 @@ fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
                 .items_center()
                 .gap(px(8.))
                 .rounded(RADIUS_2)
-                .text_color(t.text_tertiary)
+                .text_color(if lit { t.accent } else { t.text_tertiary })
+                .when(!lit, |row| row.hover(move |style| style.text_color(t.text_primary)))
                 .child(if tail {
                     spine.w(px(9.)).h(px(13.)).border_l_1().border_b_1().border_color(t.tree_spine).rounded_bl(px(4.))
                 } else {
@@ -306,9 +312,12 @@ fn surfaces(project: &ProjectInfo, cx: &App) -> impl IntoElement {
                 })
                 .when(!tail, |row| row.child(div().absolute().left_0().top(px(12.)).w(px(9.)).h(px(1.)).bg(t.tree_tick)))
                 .child(div().w(px(9.)).flex_none())
-                .child(ui::mark_box(16., ui::icon(glyph, 13.).text_color(t.text_tertiary)))
-                .child(ui::text(label, 12.5, FontWeight::MEDIUM))
-                .when(!keys.is_empty(), |row| row.child(div().ml_auto().opacity(0.5).child(ui::kbd(keys, cx))))
+                .child(ui::mark_box(16., ui::icon(glyph, 13.).text_color(if lit { t.live } else { t.text_tertiary })))
+                .child(ui::text(label, 12.5, FontWeight::MEDIUM).letter_spacing(0.01))
+                .when(!keys.is_empty(), |row| {
+                    let keys = ui::kbd(keys, cx).when(lit, |keys| keys.text_color(t.accent));
+                    row.child(div().ml_auto().when(!lit, |keys| keys.opacity(0.5)).child(keys))
+                })
         }))
 }
 
