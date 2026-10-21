@@ -17,6 +17,7 @@ static TABLE: &str = include_str!("../../sikemux-core/src/assets/keybindings.jso
 actions!(
     app,
     [
+        About,
         Hide,
         HideOthers,
         ShowAll,
@@ -128,6 +129,7 @@ pub fn install(cx: &mut App) {
     cx.set_global(Keymap {
         bound: BTreeMap::new(),
     });
+    cx.on_action(|_: &About, _| show_about());
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
@@ -398,11 +400,25 @@ const SHIFTED: &[(&str, &str)] = &[
 ];
 
 /// The menu bar, as today's app has it.
+/// macOS's own About panel, with the name and version the bundle carries.
+fn show_about() {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::NSApplication;
+        if let Some(main) = MainThreadMarker::new() {
+            NSApplication::sharedApplication(main).orderFrontStandardAboutPanel(None);
+        }
+    }
+}
+
 fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "Sikemux".into(),
             items: vec![
+                MenuItem::action("About Sikemux", About),
+                MenuItem::separator(),
                 MenuItem::os_submenu("Services", SystemMenuType::Services),
                 MenuItem::separator(),
                 MenuItem::action("Hide Sikemux", Hide),
