@@ -12,13 +12,15 @@
 //! `sikemux-fake-claude` in its place also answers `question` with three
 //! questions for the person, one of them secret, and `delegate` with a
 //! subagent that reads a file. `FAKE_MODE=workspace-write`
-//! has the agent ask before it acts.
+//! has the agent ask before it acts, and `FAKE_MENTION=<agent id>` names that
+//! agent with `@` in every prompt, for the core to describe.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::json;
 use sikemux_client::client::CoreClient;
+use sikemux_wire::protocol::ChatContext;
 
 fn main() -> anyhow::Result<()> {
     tokio::runtime::Runtime::new()?.block_on(run())
@@ -56,9 +58,17 @@ async fn run() -> anyhow::Result<()> {
         std::thread::sleep(Duration::from_secs(2));
         client.acp_set_permission_mode(chat.clone(), mode).await?;
     }
+    let mentions: Vec<ChatContext> = std::env::var("FAKE_MENTION")
+        .into_iter()
+        .map(|agent| ChatContext {
+            uri: format!("sikemux://agent/{agent}"),
+            title: "@mate".into(),
+            text: String::new(),
+        })
+        .collect();
     for prompt in args {
         client
-            .acp_prompt(chat.clone(), None, prompt, Vec::new(), Vec::new())
+            .acp_prompt(chat.clone(), None, prompt, Vec::new(), mentions.clone())
             .await?;
         std::thread::sleep(Duration::from_secs(2));
     }
