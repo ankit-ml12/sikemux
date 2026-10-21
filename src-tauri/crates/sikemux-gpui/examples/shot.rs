@@ -5,7 +5,7 @@
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
 //!     [--then step…]              then does each step in turn: "click x,y" in points,
-//!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png",
+//!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, or "copy-image file.png"
 
@@ -173,6 +173,21 @@ fn main() -> anyhow::Result<()> {
                 }
                 "key" => {
                     window.dispatch_keystroke(Keystroke::parse(rest)?, cx);
+                }
+                "scroll" => {
+                    let (at, pixels) = rest
+                        .split_once(' ')
+                        .ok_or_else(|| anyhow::anyhow!("scroll x,y pixels"))?;
+                    let (x, y) = at
+                        .split_once(',')
+                        .ok_or_else(|| anyhow::anyhow!("scroll x,y pixels"))?;
+                    let wheel = ScrollWheelEvent {
+                        position: point(px(x.trim().parse()?), px(y.trim().parse()?)),
+                        delta: ScrollDelta::Pixels(point(px(0.), px(pixels.trim().parse()?))),
+                        modifiers: Modifiers::default(),
+                        touch_phase: TouchPhase::Moved,
+                    };
+                    window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx);
                 }
                 "drag" | "drop" => {
                     let (at, paths) = rest
