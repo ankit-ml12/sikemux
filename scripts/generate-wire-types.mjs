@@ -44,7 +44,35 @@ const SOURCES = [
     "diff",
   ].map((file) => `${CORE}/git/${file}.rs`),
   `${WIRE}/codehost.rs`,
+  `${WIRE}/jira.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
+];
+
+/** Jira's types share names with the code hosts', so each is known as Jira's. */
+const JIRA_TYPES = [
+  "Person",
+  "IssueSummary",
+  "Parent",
+  "Comment",
+  "Change",
+  "FieldChange",
+  "Transition",
+  "Board",
+  "Sprint",
+  "Column",
+  "BoardView",
+  "Filter",
+  "Project",
+  "IssueListKind",
+  "IssueList",
+  "StatusCount",
+  "Spaces",
+  "Space",
+  "BoardPage",
+  "BoardPerson",
+  "Swimlane",
+  "IssueView",
+  "Activity",
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -87,6 +115,9 @@ const RENAMES = {
   },
   [`${CORE}/server/hosts/mod.rs`]: { LinkView: "LinkedHost" },
   [`${PLUGIN_API}/ratelimit.rs`]: { Budget: "RateLimit" },
+  [`${WIRE}/jira.rs`]: Object.fromEntries(
+    JIRA_TYPES.map((name) => [name, `Jira${name}`]),
+  ),
 };
 
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
@@ -162,6 +193,15 @@ const CODEHOST_ROOTS = [
   "Notification",
 ];
 
+/** What the Jira plugin's views hand its pane. */
+const JIRA_ROOTS = [
+  "JiraIssueList",
+  "JiraIssueListKind",
+  "JiraSpaces",
+  "JiraBoardPage",
+  "JiraIssueView",
+];
+
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
   DeviceView: "workspace chats sessions attentions inbox faceStyle",
@@ -215,6 +255,7 @@ const LIMITS = [
 const OUTPUTS = {
   mac: "src/api/generated/wire.ts",
   codehost: "src/codehost/types.generated.ts",
+  jira: "src/plugins/jira/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -904,5 +945,6 @@ await emit(
   `${typescript(false, TS_ROOTS, `${limits}\n\n`)}\n${defaults}\n`,
 );
 await emit(OUTPUTS.codehost, typescript(false, CODEHOST_ROOTS, ""));
+await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());

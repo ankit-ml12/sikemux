@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod chat;
 pub mod codehost;
 pub mod grid;
+pub mod jira;
 pub mod notch;
 pub mod protocol;
 pub mod pty;

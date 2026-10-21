@@ -4,6 +4,7 @@
 
 pub mod account;
 pub use sikemux_wire::codehost;
+pub use sikemux_wire::jira;
 mod error;
 pub mod http;
 pub mod images;
