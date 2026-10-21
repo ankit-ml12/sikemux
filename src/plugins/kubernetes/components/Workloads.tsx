@@ -7,6 +7,11 @@ import { WorkloadActions } from "./WorkloadActions";
 
 type KindFilter = "all" | "trouble" | "Deployment" | "StatefulSet" | "DaemonSet" | "CronJob" | "Job";
 
+/** The kinds whose revisions Kubernetes keeps, so an earlier one can be gone back to. */
+export function keepsHistory(kind: string): boolean {
+    return kind === "Deployment" || kind === "StatefulSet" || kind === "DaemonSet";
+}
+
 export function matches(workload: Workload, find: string, filter: KindFilter): boolean {
     if (filter === "trouble" && workload.health === "ok") return false;
     if (filter !== "all" && filter !== "trouble" && workload.kind !== filter) return false;
@@ -20,12 +25,15 @@ export function Workloads({
     scope,
     showNamespace,
     onOpen,
+    onHistory,
 }: {
     workloads: Workload[];
     find: string;
     scope: Scope;
     showNamespace: boolean;
     onOpen: (workload: Workload) => void;
+    /** Opens a workload's own page, for the kinds that keep a rollout history. */
+    onHistory: (workload: Workload) => void;
 }) {
     const [filter, setFilter] = useState<KindFilter>("all");
     const found = workloads.filter((each) => matches(each, find, "all"));
@@ -90,7 +98,22 @@ export function Workloads({
                                 </td>
                                 <td className="k8s-muted">{age(workload.created)}</td>
                                 <td className="k8s-cell-actions">
-                                    <WorkloadActions workload={workload} scope={{ context: scope.context, namespace: workload.namespace }} />
+                                    <span className="k8s-row-actions">
+                                        {keepsHistory(workload.kind) ? (
+                                            <button
+                                                type="button"
+                                                className="k8s-button small"
+                                                aria-label={`History of ${workload.name}`}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onHistory(workload);
+                                                }}
+                                                onKeyDown={(event) => event.stopPropagation()}>
+                                                History
+                                            </button>
+                                        ) : null}
+                                        <WorkloadActions workload={workload} scope={{ context: scope.context, namespace: workload.namespace }} />
+                                    </span>
                                 </td>
                             </tr>
                         ))}

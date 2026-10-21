@@ -22,6 +22,7 @@ import { Network } from "./Network";
 import { Nodes } from "./Nodes";
 import { Pods } from "./Pods";
 import { PodView } from "./PodView";
+import { WorkloadView } from "./WorkloadView";
 import { Workloads } from "./Workloads";
 import "../kubernetes.css";
 
@@ -138,7 +139,9 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                             type="button"
                             className={`k8s-nav-item${view.section === section.value ? " active" : ""}`}
                             aria-current={view.section === section.value ? "page" : undefined}
-                            onClick={() => updateKubeView(paneId, { section: section.value, pod: null, selector: null })}>
+                            onClick={() =>
+                                updateKubeView(paneId, { section: section.value, pod: null, workload: null, release: null, selector: null })
+                            }>
                             <span>{section.label}</span>
                             <span className={`k8s-count${counts[section.value]?.endsWith("!") ? " trouble" : ""}`}>
                                 {counts[section.value]?.replace(" !", "")}
@@ -174,7 +177,16 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     </button>
                 </header>
                 <div className="k8s-page">
-                    {view.pod ? (
+                    {view.workload ? (
+                        <WorkloadView
+                            key={`${view.workload.namespace}/${view.workload.kind}/${view.workload.name}`}
+                            scope={{ context, namespace: view.workload.namespace }}
+                            kind={view.workload.kind}
+                            name={view.workload.name}
+                            active={active}
+                            onBack={() => updateKubeView(paneId, { workload: null })}
+                        />
+                    ) : view.pod ? (
                         <PodView
                             key={`${view.pod.namespace}/${view.pod.name}`}
                             scope={{ context, namespace: view.pod.namespace }}
@@ -241,6 +253,11 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                             {(data) => (
                                 <Workloads
                                     workloads={data}
+                                    onHistory={(workload) =>
+                                        updateKubeView(paneId, {
+                                            workload: { kind: workload.kind, namespace: workload.namespace, name: workload.name },
+                                        })
+                                    }
                                     find={view.find}
                                     scope={scope}
                                     showNamespace={all}

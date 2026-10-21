@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD, CONTROL, SICK } from "../testing";
+import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD, CONTROL, SICK, WEB_HISTORY } from "../testing";
 
 const api = vi.hoisted(() => ({
     status: vi.fn(),
@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
     config: vi.fn(),
     pod: vi.fn(),
     nodes: vi.fn(),
+    history: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
@@ -38,6 +39,7 @@ beforeEach(() => {
     api.network.mockResolvedValue({ services: [], ingresses: [] });
     api.config.mockResolvedValue({ configMaps: [], secrets: [] });
     api.nodes.mockResolvedValue([CONTROL]);
+    api.history.mockResolvedValue(WEB_HISTORY);
 });
 
 const openSection = async (name: RegExp) =>
@@ -184,5 +186,16 @@ describe("the Kubernetes pane", () => {
         const table = await screen.findByRole("table", { name: "Nodes" });
         expect(within(table).getAllByRole("row")).toHaveLength(3);
         expect(api.nodes).toHaveBeenCalledWith("kind-dev");
+    });
+
+    it("opens a workload's history from its row, and goes back to the list", async () => {
+        renderPane();
+        const table = await screen.findByRole("table", { name: "Workloads" });
+        fireEvent.click(within(table).getByRole("button", { name: "History of web" }));
+        expect(await screen.findByRole("list", { name: "Revisions" })).toBeInTheDocument();
+        expect(api.history).toHaveBeenCalledWith({ context: "kind-dev", namespace: "shop" }, "Deployment", "web");
+        fireEvent.click(screen.getByRole("button", { name: "Back to workloads" }));
+        expect(await screen.findByRole("table", { name: "Workloads" })).toBeInTheDocument();
+        expect(within(screen.getByRole("table", { name: "Workloads" })).queryByRole("button", { name: "History of nightly-report" })).toBeNull();
     });
 });

@@ -10,10 +10,11 @@ import { usePoll } from "../hooks";
 import { kubePodR, kubernetes } from "../resources";
 import { Dot } from "./parts";
 import { PodLogs } from "./PodLogs";
+import { YamlView } from "./YamlView";
 
 const DETAIL_POLL_MS = 5_000;
 
-type PodTab = "overview" | "logs";
+type PodTab = "overview" | "logs" | "yaml";
 
 export function kubectlScope(scope: Scope): string[] {
     return [...(scope.context ? ["--context", scope.context] : []), ...(scope.namespace ? ["--namespace", scope.namespace] : [])];
@@ -112,6 +113,7 @@ export function PodView({ scope, name, active, onBack }: { scope: Scope; name: s
                 options={[
                     { value: "overview", label: "Overview" },
                     { value: "logs", label: "Logs" },
+                    { value: "yaml", label: "YAML" },
                 ]}
             />
             {pod.status === "error" && !detail ? (
@@ -120,6 +122,8 @@ export function PodView({ scope, name, active, onBack }: { scope: Scope; name: s
                 <p className="k8s-note">This pod is gone. Its workload may have replaced it.</p>
             ) : !detail ? (
                 <SkeletonRows rows={6} label="Reading the pod" />
+            ) : tab === "yaml" ? (
+                <YamlView scope={scope} kind="Pod" name={name} active={active} />
             ) : tab === "logs" ? (
                 <PodLogs
                     scope={scope}
