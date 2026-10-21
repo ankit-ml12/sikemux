@@ -2,10 +2,15 @@
 // Writes the agent faces from the app's own art in src/buddies: the catalogue
 // the core resolves each agent's face from, and every drawing of each shape for
 // the GPUI app. `--check` fails when either is out of date instead of writing.
+// Each shape's crop is measured in Chrome, as the app measures it in its page,
+// and kept beside a digest of the drawing it was measured on, so the check needs
+// no browser and only a changed drawing is measured again.
 
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { chromium } from "playwright-core";
 import { createServer } from "vite";
 
 const root = resolve(import.meta.dirname, "..");
@@ -29,14 +34,61 @@ try {
   const { BUDDY_PACKS } = await server.ssrLoadModule(
     "/src/buddies/catalogue.ts",
   );
-  const { buddyMarkup, FULL_BOX } = await server.ssrLoadModule(
-    "/src/buddies/render.ts",
+  const { buddyMarkup, boxAround, measuredDrawing, FULL_BOX } =
+    await server.ssrLoadModule("/src/buddies/render.ts");
+  const kept = JSON.parse(
+    await readFile(manifestPath, "utf8").catch(() => "{}"),
   );
+  const keptBoxes = new Map(
+    (kept.packs ?? []).flatMap((pack) =>
+      pack.shapes.map((shape) => [`${pack.id}/${shape.id}`, shape]),
+    ),
+  );
+  const digest = (drawing) =>
+    createHash("sha256").update(drawing).digest("hex").slice(0, 16);
+  const toMeasure = [];
   const packs = BUDDY_PACKS.map((pack) => ({
     id: pack.id,
-    shapes: pack.shapes.map((shape) => shape.id),
+    shapes: pack.shapes.map((shape) => {
+      const drawing = measuredDrawing(pack, shape);
+      const measured = digest(drawing);
+      const known = keptBoxes.get(`${pack.id}/${shape.id}`);
+      if (known?.measured === measured)
+        return { id: shape.id, box: known.box, measured };
+      const entry = { id: shape.id, box: null, measured };
+      toMeasure.push({ entry, drawing });
+      return entry;
+    }),
     colors: pack.colors.length,
   }));
+  if (toMeasure.length && !check) {
+    const browser = await chromium.launch({ channel: "chrome" });
+    try {
+      const page = await browser.newPage();
+      const bounds = await page.evaluate(
+        (drawings) =>
+          drawings.map((drawing) => {
+            const svg = document.createElementNS(
+              "http://www.w3.org/2000/svg",
+              "svg",
+            );
+            svg.setAttribute("style", "width:24px;height:24px");
+            svg.innerHTML = drawing;
+            document.body.appendChild(svg);
+            const { x, y, width, height } = svg.firstElementChild.getBBox();
+            svg.remove();
+            return { x, y, width, height };
+          }),
+        toMeasure.map(({ drawing }) => drawing),
+      );
+      toMeasure.forEach(({ entry }, index) => {
+        const b = bounds[index];
+        entry.box = b.width > 0 && b.height > 0 ? boxAround(b) : FULL_BOX;
+      });
+    } finally {
+      await browser.close();
+    }
+  }
   wanted.set(
     manifestPath,
     Buffer.from(`${JSON.stringify({ packs }, null, 2)}\n`),
