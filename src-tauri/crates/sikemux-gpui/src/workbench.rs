@@ -460,6 +460,7 @@ impl Workbench {
             hint: SharedString::default(),
             attachments: Vec::new(),
             menu: None,
+            earlier: Vec::new(),
             _heard: [sending, keeping],
         });
     }

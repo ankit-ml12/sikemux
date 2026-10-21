@@ -4,7 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::base::input::{InlineToken, InlineTokenContext};
-use gpui_kit::component::attachment::{Attachment, AttachmentMedia};
+use gpui_kit::component::attachment::{
+    Attachment, AttachmentContent, AttachmentMedia, AttachmentTitle,
+};
 use gpui_kit::component::Sizable;
 use gpui_kit::{
     div, px, App, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths, FontWeight,
@@ -48,7 +50,7 @@ fn mark(id: &str, tint: Hsla, cx: &App) -> gpui_kit::AnyElement {
             .text_color(tint)
             .into_any_element();
     }
-    if id.starts_with("agent:") {
+    if id.starts_with("agent:") || id.starts_with("earlier:") {
         return ui::icon(Icon::Agent, 12.)
             .text_color(tint)
             .into_any_element();
@@ -254,6 +256,20 @@ impl Workbench {
         .detach();
     }
 
+    /// Takes earlier chat `index` off the message.
+    pub fn forget(&mut self, agent: &str, index: usize, cx: &mut Context<Self>) {
+        if let Some(composing) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.composer.as_mut())
+        {
+            if index < composing.earlier.len() {
+                composing.earlier.remove(index);
+                cx.notify();
+            }
+        }
+    }
+
     pub fn detach(
         &mut self,
         agent: &str,
@@ -430,10 +446,12 @@ pub fn chip(token: &InlineTokenContext, _: &mut Window, cx: &mut App) -> impl In
 /// number, and a way to take it off.
 pub fn tiles(
     attachments: &[PathBuf],
+    earlier: &[(String, String)],
     remove: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
+    forget: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     cx: &App,
 ) -> Option<impl IntoElement> {
-    if attachments.is_empty() {
+    if attachments.is_empty() && earlier.is_empty() {
         return None;
     }
     let t = Tokens::get(cx).clone();
@@ -484,13 +502,27 @@ pub fn tiles(
             )
             .on_remove(move |_, window, cx| remove(index, window, cx))
     });
+    let chats = earlier.iter().enumerate().map(|(index, (_, title))| {
+        let forget = forget.clone();
+        Attachment::new()
+            .id(SharedString::from(format!("earlier-{index}")))
+            .with_size(gpui_kit::component::Size::Small)
+            .media(
+                AttachmentMedia::new()
+                    .child(ui::icon(Icon::Message, 14.).text_color(t.text_tertiary)),
+            )
+            .content(AttachmentContent::new().title(AttachmentTitle::new(title.clone())))
+            .on_remove(move |_, window, cx| forget(index, window, cx))
+    });
     Some(
         div()
             .flex()
             .flex_wrap()
+            .items_end()
             .gap(px(7.))
             .px(px(6.))
             .pt(px(6.))
-            .children(tiles),
+            .children(tiles)
+            .children(chats),
     )
 }

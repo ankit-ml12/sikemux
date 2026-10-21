@@ -15,6 +15,8 @@
 //! has the agent ask before it acts, and `FAKE_MENTION=<agent id>` names that
 //! agent with `@` in every prompt, for the core to describe. `FAKE_PROJECT=<folder>`
 //! opens the chat in that folder's project rather than the temporary folder's.
+//! `FAKE_NAME=<name>` names the agent as the person would, and `FAKE_CLOSE=1` closes
+//! its tab once the prompts are sent, so it is listed among the closed agents.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -52,12 +54,17 @@ async fn run() -> anyhow::Result<()> {
     let (chat, _) = client
         .start_chat(format!("{provider}:fake"), name.clone(), None)
         .await?;
-    client
+    let tab = client
         .call(
             "openTab",
             json!({ "project": name, "kind": "agent", "target": chat }),
         )
         .await?;
+    if let Ok(named) = std::env::var("FAKE_NAME") {
+        client
+            .call("renameAgent", json!({ "agentId": chat, "name": named }))
+            .await?;
+    }
     println!("chat {chat}");
     if let Ok(mode) = std::env::var("FAKE_MODE") {
         std::thread::sleep(Duration::from_secs(2));
@@ -76,6 +83,11 @@ async fn run() -> anyhow::Result<()> {
             .acp_prompt(chat.clone(), None, prompt, Vec::new(), mentions.clone())
             .await?;
         std::thread::sleep(Duration::from_secs(2));
+    }
+    if std::env::var_os("FAKE_CLOSE").is_some() {
+        client
+            .call("closeTab", json!({ "project": name, "tab": tab }))
+            .await?;
     }
     Ok(())
 }

@@ -353,6 +353,8 @@ pub struct Composing {
     pub attachments: Vec<PathBuf>,
     /// The agents, files or commands offered for the word at the caret.
     pub menu: Option<mention::Menu>,
+    /// Earlier chats with no name the message names, by their uri, with their title.
+    pub earlier: Vec<(String, String)>,
     pub _heard: [Subscription; 2],
 }
 
@@ -1034,6 +1036,7 @@ impl Chat {
         }
         if let Some(composing) = self.composer.as_mut() {
             composing.attachments.clear();
+            composing.earlier.clear();
         }
         if self.steers() && !queue {
             let message = json!({ "text": text, "paths": paths, "context": context });
@@ -2032,8 +2035,21 @@ fn composer(
                 .ok();
         }
     };
-    let tiles =
-        attach::tiles(&composing.attachments, remove, cx).map(IntoElement::into_any_element);
+    let forget = {
+        let (this, agent) = (this.clone(), agent.id.clone());
+        move |index: usize, _: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.forget(&agent, index, cx))
+                .ok();
+        }
+    };
+    let tiles = attach::tiles(
+        &composing.attachments,
+        &composing.earlier,
+        remove,
+        forget,
+        cx,
+    )
+    .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
         .attachments(
             tiles,

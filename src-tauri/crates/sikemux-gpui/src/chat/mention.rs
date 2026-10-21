@@ -1,15 +1,19 @@
 //! The menu the draft opens over itself while a word starts with `@`, `+` or `/`: the
 //! agents to name, the project's files and folders to hand over, or the session's
-//! commands. A named agent or file goes into the draft as a token, which is what the
-//! message sends: the agent for the core to describe, the file as a path.
+//! commands. A named agent, earlier chat or file goes into the draft as a token, which
+//! is what the message sends: the agent or chat for the core to describe (an earlier
+//! chat the core opens again first), the file as a path.
 
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui_kit::base::input::InlineToken;
 use gpui_kit::component::input::TextareaState;
 use gpui_kit::{px, App, AppContext, Context, IntoElement, SharedString, Styled, Task, Window};
+use serde::Deserialize;
+use serde_json::{json, Value};
 use sikemux_wire::protocol::ChatContext;
 
 use super::Composing;
@@ -21,6 +25,12 @@ const SHOWN: usize = 8;
 const AGENT: &str = "agent:";
 const FILE: &str = "file:";
 const FOLDER: &str = "folder:";
+const EARLIER: &str = "earlier:";
+/// Earlier chats the core is asked for, and how long it may read transcripts for them.
+const EARLIER_SHOWN: usize = 4;
+const EARLIER_BUDGET_MS: u64 = 600;
+/// How long the person's typing must settle before the core searches earlier chats.
+const SETTLE: Duration = Duration::from_millis(150);
 
 /// A word the caret is at the end of that starts with one of the menu's triggers.
 #[derive(Clone, PartialEq)]
@@ -64,6 +74,33 @@ enum Choice {
         description: String,
         hint: Option<String>,
     },
+    /// A saved chat no agent holds, which the core opens again for the message: one
+    /// the person named and closed, or one found by what was said in it.
+    Earlier {
+        cli: String,
+        session: String,
+        name: Option<String>,
+        title: String,
+    },
+}
+
+/// A closed agent the person named, as the core's `closedAgents` lists it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Closed {
+    name: String,
+    provider: String,
+    session_id: String,
+    title: Option<String>,
+}
+
+/// A saved chat the core's `agentSessions` search found.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Found {
+    cli: String,
+    session_id: String,
+    title: String,
 }
 
 /// The menu on show: the word it answers, what it offers for it, and the one picked.
@@ -101,8 +138,15 @@ impl Composing {
                 if !paths.iter().any(|held| held == path) {
                     paths.push(path.to_owned());
                 }
-            } else if let Some(agent) = token.id().strip_prefix(AGENT) {
-                let uri = format!("sikemux://agent/{agent}");
+            } else if let Some(uri) = token
+                .id()
+                .strip_prefix(AGENT)
+                .map(|agent| format!("sikemux://agent/{agent}"))
+                .or_else(|| {
+                    let chat = token.id().strip_prefix(EARLIER)?;
+                    Some(format!("sikemux://earlier/{chat}"))
+                })
+            {
                 if !context.iter().any(|item: &ChatContext| item.uri == uri) {
                     context.push(ChatContext {
                         uri,
@@ -110,6 +154,15 @@ impl Composing {
                         text: String::new(),
                     });
                 }
+            }
+        }
+        for (uri, title) in &self.earlier {
+            if !context.iter().any(|item: &ChatContext| &item.uri == uri) {
+                context.push(ChatContext {
+                    uri: uri.clone(),
+                    title: title.clone(),
+                    text: String::new(),
+                });
             }
         }
         paths.truncate(sikemux_core::acp::MAX_ATTACHMENTS);
@@ -167,8 +220,11 @@ impl Workbench {
                 .into(),
             _ => Rc::from(Vec::new()),
         };
-        let ranking =
-            (typed.trigger == '+').then(|| self.rank_entries(agent, typed.needle.clone(), cx));
+        let ranking = match typed.trigger {
+            '+' => Some(self.rank_entries(agent, typed.needle.clone(), cx)),
+            '@' => self.look_back(agent, typed.needle.clone(), cx),
+            _ => None,
+        };
         Menu {
             typed,
             choices,
@@ -213,6 +269,109 @@ impl Workbench {
             })
             .take(SHOWN)
             .collect()
+    }
+
+    /// Asks the core for the closed agents the person named and the earlier chats that
+    /// match `needle`, in the chat's own project, and offers them after the agents open now.
+    fn look_back(
+        &mut self,
+        agent: &str,
+        needle: String,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<()>> {
+        let view = self.view.as_ref()?;
+        let own = view
+            .workspace
+            .agents
+            .iter()
+            .find(|saved| saved.id == agent)?;
+        let cwd = self
+            .projects()
+            .iter()
+            .find(|project| project.id == own.project)?
+            .path
+            .clone();
+        let open: Vec<(String, String)> = view
+            .workspace
+            .agents
+            .iter()
+            .filter_map(|saved| Some((saved.provider.clone(), saved.resume_id.clone()?)))
+            .collect();
+        let offered: Vec<String> = self
+            .read("catalog")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|kind| kind["available"] != false)
+            .filter_map(|kind| Some(kind["type"].as_str()?.to_owned()))
+            .collect();
+        let asks = self.asks.clone();
+        let ask = move |method, params| {
+            let answer = crate::core::request(&asks, method, params);
+            async move { answer.await.unwrap_or_default() }
+        };
+        let closed = ask("closedAgents", json!({ "cwd": cwd }));
+        let wanted = needle.trim().to_lowercase();
+        let search = (!wanted.is_empty()).then(|| {
+            let params = json!({ "query": wanted, "projects": [cwd], "limit": EARLIER_SHOWN, "budgetMs": EARLIER_BUDGET_MS });
+            (ask.clone(), params)
+        });
+        let agent = agent.to_owned();
+        Some(cx.spawn(async move |this, cx| {
+            let offer = |choices: Vec<Choice>, cx: &mut gpui_kit::AsyncApp| {
+                this.update(cx, |bench: &mut Workbench, cx| {
+                    let menu = bench
+                        .chats
+                        .get_mut(&agent)
+                        .and_then(|chat| chat.composer.as_mut())
+                        .and_then(|composing| composing.menu.as_mut());
+                    if let Some(menu) = menu.filter(|_| !choices.is_empty()) {
+                        menu.choices = menu.choices.iter().cloned().chain(choices).collect();
+                        cx.notify();
+                    }
+                })
+                .ok();
+            };
+            let closed: Vec<Closed> = serde_json::from_value(closed.await).unwrap_or_default();
+            let named: Vec<Choice> = closed
+                .into_iter()
+                .filter(|closed| closed.name.to_lowercase().starts_with(&wanted))
+                .take(SHOWN)
+                .map(|closed| Choice::Earlier {
+                    cli: closed.provider,
+                    session: closed.session_id,
+                    title: closed.title.unwrap_or_default(),
+                    name: Some(closed.name),
+                })
+                .collect();
+            let sessions: Vec<String> = named
+                .iter()
+                .filter_map(|choice| match choice {
+                    Choice::Earlier { session, .. } => Some(session.clone()),
+                    _ => None,
+                })
+                .collect();
+            offer(named, cx);
+            let Some((ask, params)) = search else {
+                return;
+            };
+            cx.background_executor().timer(SETTLE).await;
+            let found: Vec<Found> =
+                serde_json::from_value(ask("agentSessions", params).await).unwrap_or_default();
+            let found = found
+                .into_iter()
+                .filter(|found| offered.contains(&found.cli))
+                .filter(|found| !open.contains(&(found.cli.clone(), found.session_id.clone())))
+                .filter(|found| !sessions.contains(&found.session_id))
+                .map(|found| Choice::Earlier {
+                    cli: found.cli,
+                    session: found.session_id,
+                    name: None,
+                    title: found.title,
+                })
+                .collect();
+            offer(found, cx);
+        }))
     }
 
     /// Ranks the project's files and their folders for `needle` off the main thread, and
@@ -317,6 +476,18 @@ impl Workbench {
         let Some(choice) = menu.choices.get(index.unwrap_or(menu.selected)).cloned() else {
             return;
         };
+        if let Choice::Earlier {
+            cli,
+            session,
+            name: None,
+            title,
+        } = &choice
+        {
+            let uri = format!("sikemux://earlier/{cli}/{session}");
+            if !composing.earlier.iter().any(|(held, _)| held == &uri) {
+                composing.earlier.push((uri, title.clone()));
+            }
+        }
         composing.draft.update(cx, |draft, cx| {
             let end = draft.cursor();
             draft.set_selected_range(menu.typed.start..end, cx);
@@ -346,6 +517,19 @@ impl Workbench {
                 }
                 Choice::Command { name, .. } => {
                     draft.replace(format!("/{name}"), window, cx);
+                    None
+                }
+                Choice::Earlier {
+                    cli,
+                    session,
+                    name: Some(name),
+                    ..
+                } => Some(InlineToken::new(
+                    format!("{EARLIER}{cli}/{session}"),
+                    format!("@{name}"),
+                )),
+                Choice::Earlier { .. } => {
+                    draft.replace("", window, cx);
                     None
                 }
             };
@@ -394,6 +578,7 @@ pub fn dock(agent: &str, menu: &Menu, cx: &mut Context<Workbench>) -> Option<Doc
     let this = cx.weak_entity();
     let tint = crate::theme::Tokens::get(cx).text_tertiary;
     let mut shown_project: Option<&str> = None;
+    let mut shown_kind = None;
     let rows = menu.choices.iter().enumerate().map(|(index, choice)| {
         let (this, agent) = (this.clone(), agent.to_owned());
         let choose = Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -446,6 +631,22 @@ pub fn dock(agent: &str, menu: &Menu, cx: &mut Context<Workbench>) -> Option<Doc
             } => DockRow::new(format!("/{name}"), choose)
                 .detail(description.clone())
                 .aside(hint.clone().map(SharedString::from)),
+            Choice::Earlier {
+                cli, name, title, ..
+            } => {
+                let kind = if name.is_some() {
+                    "Closed"
+                } else {
+                    "Earlier chats"
+                };
+                let group = (shown_kind != Some(kind)).then_some(SharedString::from(kind));
+                shown_kind = Some(kind);
+                let row = match name {
+                    Some(name) => DockRow::new(format!("@{name}"), choose).detail(title.clone()),
+                    None => DockRow::new(title.clone(), choose),
+                };
+                row.mark(ui::mark(cli, 13.)).group(group)
+            }
         }
     });
     Some(DockMenu::new(rows.collect(), menu.selected))
