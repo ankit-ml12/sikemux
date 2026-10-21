@@ -32,6 +32,7 @@ sikemux-host = { path = "../sikemux-host", default-features = false }
 sikemux-process = { path = "../sikemux-process" }
 sikemux-client = { path = "../sikemux-client" }
 sikemux-wire = { path = "../sikemux-wire" }
+textmate-highlight = { path = "crates/textmate-highlight" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -86,3 +87,5 @@ gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "e6daf0831278f0
 gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc" }
 gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc" }
 gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc" }
+# irosashi with C Oniguruma and Shiki's injection rules, until frostybee/irosashi takes them.
+irosashi = { git = "https://github.com/sikemux/irosashi", rev = "8ddf7a2ddbae78ec13c1db43e4c6bdaf09e7269a" }

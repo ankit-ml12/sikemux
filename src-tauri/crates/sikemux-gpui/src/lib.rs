@@ -13,6 +13,7 @@ pub mod core;
 mod home;
 pub mod icons;
 mod rail;
+pub mod syntax;
 mod tabs;
 pub mod terminal;
 pub mod theme;

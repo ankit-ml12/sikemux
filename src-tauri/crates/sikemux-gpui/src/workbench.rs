@@ -103,6 +103,7 @@ impl Workbench {
         let Link { mut updates, asks } = link;
         crate::faces::install(cx);
         crate::file_icons::install(cx);
+        crate::syntax::install(cx);
         crate::finder::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
@@ -249,6 +250,7 @@ impl Workbench {
             Update::Read("theme", value) => {
                 if let Ok(palette) = serde_json::from_value(value) {
                     theme::apply(&palette, cx);
+                    crate::syntax::restyle(cx);
                     cx.refresh_windows();
                 }
             }
