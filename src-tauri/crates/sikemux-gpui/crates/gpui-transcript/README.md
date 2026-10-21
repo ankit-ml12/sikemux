@@ -11,8 +11,12 @@ only the rows in view, anchored to the bottom.
   it does not reach keep their laid-out text.
 - `markdown(id, &doc, &style, window, cx)` draws paragraphs, headings, lists,
   task boxes, code fences, tables, quotes, links, inline code, emphasis,
-  details folds and footnotes. `Style` sets the colours and fonts, and takes
-  callbacks for links, fences and images.
+  details folds and footnotes. `Style`, shared as an `Rc`, sets the colours
+  and fonts, and takes callbacks for links, fences and images. A message of
+  many blocks remembers each block's size and lays out only the blocks that
+  changed, placing only those in view, so a long answer costs the same each
+  frame however long it grows. Folds the reader opens stay open while the
+  message is held.
 - `Transcript<R>` is a view: the rows in a windowed, bottom-anchored list.
   Changes pushed to it are applied together when it next draws, at most
   once a frame. Rows added above never move what the reader sees. While the

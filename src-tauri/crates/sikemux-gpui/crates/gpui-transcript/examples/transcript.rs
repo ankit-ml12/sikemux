@@ -29,7 +29,6 @@ use serde_json::{json, Value};
 
 const ROWS: usize = 2_000;
 const PAGE: usize = 200;
-const ANSWER_CHARS: usize = 16_000;
 const CHARS_PER_FLUSH: usize = 32;
 const FLUSH: Duration = Duration::from_millis(16);
 const SCROLL_STEP: f32 = 60.;
@@ -153,10 +152,14 @@ impl Words {
             .collect()
     }
 
-    fn answer(&mut self) -> Vec<Value> {
+    /// About `tokens` tokens of answer, at four characters a token.
+    fn answer(&mut self, tokens: usize) -> Vec<Value> {
         let mut blocks = Vec::new();
-        while visible(&Value::Array(blocks.clone())) < ANSWER_CHARS {
-            blocks.push(self.block());
+        let mut chars = 0;
+        while chars < tokens * 4 {
+            let block = self.block();
+            chars += visible(&block);
+            blocks.push(block);
         }
         blocks
     }
@@ -314,7 +317,7 @@ fn peak_resident_mb() -> f64 {
 fn draw_row(
     rows: &Rows<Message>,
     ix: usize,
-    style: &Style,
+    style: &Rc<Style>,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
@@ -628,8 +631,23 @@ fn main() {
     bench.report("Scroll up from the last 200 as pages of 200 arrive");
     bench.shot("paged");
 
-    let answer = Words(11).answer();
-    let total = visible(&Value::Array(answer.clone()));
+    for tokens in std::env::args()
+        .skip_while(|arg| arg != "--tokens")
+        .nth(1)
+        .unwrap_or_else(|| "4000".into())
+        .split(',')
+        .filter_map(|tokens| tokens.parse().ok())
+    {
+        stream(&mut bench, &specs, tokens);
+    }
+}
+
+/// Streams an answer of `tokens` tokens at 500 a second, as the core sends it:
+/// a flush every 16 ms re-reads the last two blocks and sends what changed.
+fn stream(bench: &mut Bench, specs: &[Spec], tokens: usize) {
+    let answer = Words(11).answer(tokens);
+    let lengths: Vec<usize> = answer.iter().map(visible).collect();
+    let total: usize = lengths.iter().sum();
     bench.push(vec![
         Change::Reset(specs[ROWS - 40..].iter().map(Spec::message).collect()),
         Change::Put(Message {
@@ -647,6 +665,8 @@ fn main() {
     ]);
     bench.frame();
     bench.frames.clear();
+    bench.walls.clear();
+    bench.rows_drawn.set(0);
     bench.cpu = cpu_seconds();
     bench.simulated = Duration::ZERO;
     let mut held: Vec<Value> = Vec::new();
@@ -657,26 +677,27 @@ fn main() {
         if since_flush >= FLUSH {
             since_flush -= FLUSH;
             written = (written + CHARS_PER_FLUSH).min(total);
-            let next = reveal(&answer, written);
             let settled = held.len().saturating_sub(2);
+            let before: usize = lengths[..settled].iter().sum();
+            let tail = reveal(&answer[settled..], written - before);
             let mut ops = Vec::new();
-            diff(&[], &held[settled..], &next[settled..], settled, &mut ops);
-            held = next;
+            diff(&[], &held[settled..], &tail, settled, &mut ops);
+            held.truncate(settled);
+            held.extend(tail);
             let patch = json!({ "n": written, "o": ops });
-            let units = written;
             bench.push(vec![Change::Update(
                 "answer".into(),
                 Box::new(move |message: &mut Message| {
-                    message.units = units;
-                    message.md.write(&patch, units);
+                    message.units = written;
+                    message.md.write(&patch, written);
                 }),
             )]);
             if written * 2 >= total && written * 2 < total + 2 * CHARS_PER_FLUSH {
-                bench.shot("streaming");
+                bench.shot(&format!("streaming-{tokens}"));
             }
         }
         bench.frame();
     }
-    bench.report("Stream a 4,000-token answer at 500 tokens/s");
-    bench.shot("streamed");
+    bench.report(&format!("Stream a {tokens}-token answer at 500 tokens/s"));
+    bench.shot(&format!("streamed-{tokens}"));
 }

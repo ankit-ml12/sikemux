@@ -1,10 +1,12 @@
 //! A message's markdown as a tree of blocks, kept up to date by patches.
 //! The README describes the tree's JSON and the patches.
 
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::HashSet;
 use std::ops::Range;
+use std::rc::Rc;
 
-use gpui::SharedString;
+use gpui::{Pixels, SharedString, Size};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,6 +74,8 @@ pub struct Node {
     pub text: String,
     pub children: Vec<Node>,
     flow: OnceCell<Vec<Piece>>,
+    /// A top-level block's size when last laid out, at the width it had then.
+    pub(crate) size: Cell<Option<Size<Pixels>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,6 +163,7 @@ impl Node {
 
     fn touched(&mut self) {
         self.flow = OnceCell::new();
+        self.size.set(None);
     }
 }
 
@@ -344,7 +349,7 @@ fn read_element(value: &Value) -> Node {
             .unwrap_or_default()
             .to_owned(),
         children,
-        flow: OnceCell::new(),
+        ..Node::default()
     }
 }
 
@@ -360,41 +365,39 @@ fn byte_at_units(text: &str, units: usize) -> usize {
     text.len()
 }
 
-/// One message's blocks, as the last patch left them.
-#[derive(Clone, Debug, Default)]
+/// One message's blocks, as the last patch left them, and what drawing them
+/// last left: the width they had and the folds the reader opened or closed.
+#[derive(Default)]
 pub struct Markdown {
-    root: Node,
+    blocks: Vec<Rc<Node>>,
     /// The text's length the tree matches, or `None` once a patch did not fit
     /// and the tree waits for a whole one.
     units: Option<usize>,
+    pub(crate) width: Rc<Cell<Option<Pixels>>>,
+    /// Each fold the reader turned from how it was written, by block and its place in the block.
+    pub(crate) turned: Rc<RefCell<HashSet<(usize, u64)>>>,
 }
 
 impl Markdown {
     /// A tree read from its JSON blocks, matching a text `units` UTF-16 units long.
     pub fn new(blocks: &Value, units: usize) -> Self {
         Markdown {
-            root: Node {
-                kind: Kind::Unknown,
-                children: read_list(as_list(blocks), Holds::Nodes),
-                ..Node::default()
-            },
+            blocks: read_list(as_list(blocks), Holds::Nodes)
+                .into_iter()
+                .map(Rc::new)
+                .collect(),
             units: Some(units),
+            ..Markdown::default()
         }
     }
 
     /// A message with no tree yet; one arrives as a patch that starts from nothing.
     pub fn empty() -> Self {
-        Markdown {
-            root: Node {
-                kind: Kind::Unknown,
-                ..Node::default()
-            },
-            units: None,
-        }
+        Markdown::default()
     }
 
-    pub fn blocks(&self) -> &[Node] {
-        &self.root.children
+    pub fn blocks(&self) -> &[Rc<Node>] {
+        &self.blocks
     }
 
     /// Whether the tree matches the text; when it does not, draw the text as it is.
@@ -414,37 +417,48 @@ impl Markdown {
             return;
         }
         for op in ops {
-            apply(&mut self.root, op);
+            self.apply(op);
         }
         let n = number(patch, "n").and_then(|n| usize::try_from(n).ok());
         self.units = (n == Some(units)).then_some(units);
     }
-}
 
-fn apply(root: &mut Node, op: &Value) {
-    let path: Vec<usize> = as_list(op.get("p").unwrap_or(&Value::Null))
-        .iter()
-        .filter_map(|ix| ix.as_u64().and_then(|ix| usize::try_from(ix).ok()))
-        .collect();
-    let at = number(op, "at")
-        .and_then(|at| usize::try_from(at).ok())
-        .unwrap_or(0);
-    let mut node = root;
-    node.touched();
-    for &ix in &path {
-        let Some(child) = node.children.get_mut(ix) else {
+    fn apply(&mut self, op: &Value) {
+        let path: Vec<usize> = as_list(op.get("p").unwrap_or(&Value::Null))
+            .iter()
+            .filter_map(|ix| ix.as_u64().and_then(|ix| usize::try_from(ix).ok()))
+            .collect();
+        let at = number(op, "at")
+            .and_then(|at| usize::try_from(at).ok())
+            .unwrap_or(0);
+        let Some((first, rest)) = path.split_first() else {
+            if let Some(added) = op.get("c") {
+                self.blocks.truncate(at);
+                let added = read_list(as_list(added), Holds::Nodes);
+                self.blocks.extend(added.into_iter().map(Rc::new));
+            }
             return;
         };
-        node = child;
+        let Some(block) = self.blocks.get_mut(*first) else {
+            return;
+        };
+        let mut node = Rc::make_mut(block);
         node.touched();
-    }
-    if let Some(added) = op.get("c") {
-        let holds = Holds::inside(&node.kind);
-        node.children.truncate(at);
-        node.children.extend(read_list(as_list(added), holds));
-    } else if let Some(added) = op.get("s").and_then(Value::as_str) {
-        let keep = byte_at_units(&node.text, at);
-        node.text.truncate(keep);
-        node.text.push_str(added);
+        for &ix in rest {
+            let Some(child) = node.children.get_mut(ix) else {
+                return;
+            };
+            node = child;
+            node.touched();
+        }
+        if let Some(added) = op.get("c") {
+            let holds = Holds::inside(&node.kind);
+            node.children.truncate(at);
+            node.children.extend(read_list(as_list(added), holds));
+        } else if let Some(added) = op.get("s").and_then(Value::as_str) {
+            let keep = byte_at_units(&node.text, at);
+            node.text.truncate(keep);
+            node.text.push_str(added);
+        }
     }
 }
