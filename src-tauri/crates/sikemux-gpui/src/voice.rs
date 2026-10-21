@@ -26,13 +26,6 @@ const PULSE: Duration = Duration::from_millis(1400);
 /// Right ⌥ also begins shortcuts, so the mic waits to see it held on its own.
 const START_DELAY: Duration = Duration::from_millis(150);
 
-/// The Mac app's own folder, so the speech model is downloaded once for both apps.
-const SHARED_WITH: &str = if cfg!(debug_assertions) {
-    "com.nodelike.sikemux.dev"
-} else {
-    "com.nodelike.sikemux"
-};
-
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Phase {
     #[default]
@@ -342,7 +335,7 @@ fn models_dir() -> Option<PathBuf> {
     let home = sikemux_process::paths::home()?;
     Some(
         home.join("Library/Application Support")
-            .join(SHARED_WITH)
+            .join(crate::core::IDENTIFIER)
             .join("voice"),
     )
 }
