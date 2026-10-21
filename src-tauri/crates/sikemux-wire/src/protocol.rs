@@ -1587,6 +1587,19 @@ pub struct DeviceView {
     /// Which project is in front, and each project's tabs.
     #[serde(default)]
     pub layout: Box<Layout>,
+    /// Who this host is signed in to Sikemux as; none while nobody is.
+    #[serde(default)]
+    pub account: Option<Box<AccountInfo>>,
+}
+
+/// The Sikemux account this host is signed in to, as clients show it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountInfo {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    /// Names the picture `accountPicture` answers, which changes with it.
+    pub picture_hash: Option<String>,
 }
 
 /// The tabs every desktop client draws, kept by the core.
@@ -1936,6 +1949,7 @@ mod tests {
             recent: Vec::new(),
             inbox: Value::Null,
             layout: Box::default(),
+            account: None,
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");

@@ -17,6 +17,8 @@ export interface DeviceView {
     inbox: Inbox;
     /** Which project is in front, and each project's tabs. */
     layout: Layout;
+    /** Who this host is signed in to Sikemux as; none while nobody is. */
+    account: AccountInfo | null;
 }
 
 export interface Workspace {
@@ -619,6 +621,14 @@ export type Pane =
 export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin";
 
 export type SplitDir = "row" | "column";
+
+/** The Sikemux account this host is signed in to, as clients show it. */
+export interface AccountInfo {
+    name: string | null;
+    email: string | null;
+    /** Names the picture `accountPicture` answers, which changes with it. */
+    pictureHash: string | null;
+}
 
 /**
  * A chat as a client opening it is sent: how it stands, its latest rows, and

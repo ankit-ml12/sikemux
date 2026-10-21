@@ -185,6 +185,11 @@ calls! { core, client, params;
     "activateTab": Full => answer(super::layout::activate_tab(&core, parse(params)?)?),
     "moveTab": Full => answer(super::layout::move_tab(&core, parse(params)?)?),
     "activateProject": Full => answer(super::layout::activate_project(&core, parse(params)?)?),
+    "accountPicture": Watch => {
+        let params: AccountPictureParams = parse(params)?;
+        let core = core.clone();
+        answer(blocking(move || Ok(super::account::picture(&core, &params.hash))).await?)
+    },
     "sshHosts": Watch, any_program => {
         let core = core.clone();
         answer(blocking(move || Ok(super::ssh::hosts(&core))).await?)
@@ -545,6 +550,11 @@ async fn activity_summary(
         ))
     })
     .await
+}
+
+#[derive(Deserialize)]
+struct AccountPictureParams {
+    hash: String,
 }
 
 /// Messages waiting behind an agent's turn, by id.
