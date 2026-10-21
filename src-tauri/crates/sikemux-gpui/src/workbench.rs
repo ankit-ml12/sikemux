@@ -471,6 +471,7 @@ impl Workbench {
                     );
                 }
                 if topic == "git" {
+                    crate::editor::git_changed(self, paths.as_deref(), cx);
                     cx.emit(crate::git::Changed { project, paths });
                 }
                 return;

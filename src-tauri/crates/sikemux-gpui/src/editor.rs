@@ -24,6 +24,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
+mod gutter;
 mod insights;
 mod lsp;
 mod preview;
@@ -125,6 +126,8 @@ struct Document {
     /// Whether it shows its text or, for markdown, how it reads, and that rendering.
     mode: preview::Mode,
     rendered: Option<Rc<gpui_transcript::Markdown>>,
+    /// What changed since the last commit, marked beside the lines.
+    gutter: gutter::Gutter,
     _changes: Subscription,
 }
 
@@ -276,12 +279,20 @@ pub fn pane(
             }
             _ => pane.child(
                 div()
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .font_family(theme::MONO)
                     .text_size(size)
                     .text_color(t.text_primary)
-                    .child(Editor::new(&document.state).bordered(false).h_full()),
+                    .child(Editor::new(&document.state).bordered(false).h_full())
+                    .child(gutter::overlay(
+                        &this,
+                        &path,
+                        &document.state,
+                        &document.gutter,
+                        document.state.read(cx).text().len_lines(),
+                    )),
             ),
         })
         .when_some(document.peek.as_ref(), |pane, peek| {
@@ -744,6 +755,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             document.dirty = dirty;
             cx.notify();
         }
+        gutter::changed(&watched, bench, cx);
     });
     bench.editors.open.insert(
         path.clone(),
@@ -759,6 +771,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             peek: None,
             mode: preview::first_mode(&path),
             rendered: None,
+            gutter: gutter::Gutter::default(),
             _changes: changes,
         },
     );
@@ -848,6 +861,9 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             }
             if first && document.loaded {
                 lsp::attach(bench, path.clone(), window, cx);
+                gutter::read_base(bench, &path, cx);
+            } else {
+                gutter::changed(&path, bench, cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -972,6 +988,27 @@ fn files_in(pane: &Pane, found: &mut Vec<PathBuf>) {
         } => found.push(PathBuf::from(target)),
         Pane::View { .. } => {}
         Pane::Split { panes, .. } => panes.iter().for_each(|pane| files_in(pane, found)),
+    }
+}
+
+/// Reads again what open files were at their last commit, when the
+/// repository moved: `paths` from its root, `.git` for its head, or none for anything.
+pub fn git_changed(bench: &mut Workbench, paths: Option<&[String]>, cx: &mut Context<Workbench>) {
+    let open: Vec<PathBuf> = bench
+        .editors
+        .open
+        .keys()
+        .filter(|path| {
+            paths.is_none_or(|paths| {
+                paths
+                    .iter()
+                    .any(|changed| changed == ".git" || path.ends_with(changed))
+            })
+        })
+        .cloned()
+        .collect();
+    for path in open {
+        gutter::read_base(bench, &path, cx);
     }
 }
 
