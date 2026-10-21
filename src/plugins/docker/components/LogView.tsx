@@ -1,7 +1,8 @@
+import { errorText } from "../../../plugin-api/format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { copyWithNotice } from "../../../plugin-api/host";
 import { SendToAgentMenu, VirtualLogList } from "../../../plugin-api/ui";
-import { dockerApi, failureMessage, type ContainerDetail, type LogLine } from "../api";
+import { dockerApi, type ContainerDetail, type LogLine } from "../api";
 import { containerForAgent } from "../forAgent";
 import { appendLines, clockOf, filterLines, linesAsText } from "../logs";
 
@@ -34,7 +35,7 @@ export function LogView({ container }: { container: ContainerDetail }) {
                 if (batch.ended) setEnded(true);
             },
             onEnd: () => setEnded(true),
-            onError: (failure) => setError(failureMessage(failure)),
+            onError: (failure) => setError(errorText(failure)),
         });
         return () => stream.stop();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- the run stands in for the container's id and when it last started

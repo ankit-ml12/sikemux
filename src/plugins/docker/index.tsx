@@ -1,13 +1,13 @@
 import { lazy } from "react";
 import { registerFrontendPlugin } from "../../plugin-api";
 import { DockerMark } from "./components/DockerMark";
-import { DOCKER_ENGINE, DOCKER_PLUGIN_ID } from "./kinds";
+import { DOCKER_ENGINE, DOCKER_PLUGIN } from "./kinds";
 import { openDocker } from "./state";
 
 const DockerPane = lazy(() => import("./components/DockerPane").then((module) => ({ default: module.DockerPane })));
 
 registerFrontendPlugin({
-    id: DOCKER_PLUGIN_ID,
+    id: DOCKER_PLUGIN.id,
     surfaces: [
         {
             kind: DOCKER_ENGINE,

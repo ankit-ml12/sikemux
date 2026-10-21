@@ -1,7 +1,8 @@
+import { docker } from "../resources";
 import type { ReactNode } from "react";
 import { formatBytes } from "../../../plugin-api/format";
 import { runInTerminal, swallow } from "../../../plugin-api/host";
-import { refreshDocker, type Disk as DiskUsage, type Usage } from "../api";
+import { type Disk as DiskUsage, type Usage } from "../api";
 import { percent } from "../format";
 import type { DockerSection } from "../state";
 import { pruneImages, pruneVolumes } from "../storage";
@@ -44,7 +45,7 @@ export function Disk({ disk, onSection }: { disk: DiskUsage; onSection: (section
                         disabled={disk.buildCache.reclaimable === 0}
                         onClick={() =>
                             void runInTerminal("Clear the build cache", ["docker", "builder", "prune"])
-                                .then(() => refreshDocker())
+                                .then(() => docker.refresh())
                                 .catch(swallow("clear the build cache"))
                         }>
                         Clear in a terminal

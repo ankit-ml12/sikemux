@@ -15,7 +15,7 @@ vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>(
 const openUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), openUrl }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { docker } from "../resources";
 import { DockerPane } from "./DockerPane";
 
 let pane = 0;
@@ -23,7 +23,7 @@ const renderPane = () => render(<DockerPane paneId={`docker-${++pane}`} active /
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("docker."));
+    docker.refresh();
 });
 
 beforeEach(() => {

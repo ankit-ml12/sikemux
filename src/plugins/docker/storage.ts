@@ -1,6 +1,7 @@
+import { docker } from "./resources";
 import { confirmDialog, notify, runInTerminal, swallow } from "../../plugin-api/host";
-import { formatBytes } from "../../plugin-api/format";
-import { dockerApi, failureMessage, isPluginFailure, refreshDocker, type Image, type Volume } from "./api";
+import { errorText, formatBytes } from "../../plugin-api/format";
+import { dockerApi, isPluginFailure, type Image, type Volume } from "./api";
 
 export function imageName(image: Pick<Image, "tags" | "id">): string {
     return image.tags[0] ?? image.id;
@@ -22,9 +23,9 @@ export async function removeImage(image: Image): Promise<void> {
         await dockerApi.removeImage(name, image.containers > 0);
         notify("success", `Removed ${name}`);
     } catch (error) {
-        notify("error", `Remove ${name}: ${failureMessage(error)}`);
+        notify("error", `Remove ${name}: ${errorText(error)}`);
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
 
@@ -48,9 +49,9 @@ export async function pruneImages(): Promise<void> {
             pruned.deleted === 0 ? "Nothing to remove" : `Removed ${pruned.deleted} images, freeing ${formatBytes(pruned.spaceReclaimed)}`,
         );
     } catch (error) {
-        notify("error", `Remove untagged images: ${failureMessage(error)}`);
+        notify("error", `Remove untagged images: ${errorText(error)}`);
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
 
@@ -66,9 +67,9 @@ export async function removeVolume(volume: Volume): Promise<void> {
         await dockerApi.removeVolume(volume.name);
         notify("success", `Removed ${volume.name}`);
     } catch (error) {
-        notify("error", isPluginFailure(error, "conflict") ? failureMessage(error) : `Remove ${volume.name}: ${failureMessage(error)}`);
+        notify("error", isPluginFailure(error, "conflict") ? errorText(error) : `Remove ${volume.name}: ${errorText(error)}`);
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
 
@@ -89,8 +90,8 @@ export async function pruneVolumes(): Promise<void> {
                 : `Removed ${pruned.deleted.length} volumes, freeing ${formatBytes(pruned.spaceReclaimed)}`,
         );
     } catch (error) {
-        notify("error", `Remove unused volumes: ${failureMessage(error)}`);
+        notify("error", `Remove unused volumes: ${errorText(error)}`);
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }

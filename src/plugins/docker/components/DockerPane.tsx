@@ -2,9 +2,9 @@ import { useRef } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { formatBytes } from "../../../plugin-api/format";
-import { refreshDocker, type DockerStatus } from "../api";
+import { type DockerStatus } from "../api";
 import { usePoll } from "../hooks";
-import { dockerContainersR, dockerDiskR, dockerImagesR, dockerStacksR, dockerStatsR, dockerStatusR, dockerVolumesR } from "../resources";
+import { docker, dockerContainersR, dockerDiskR, dockerImagesR, dockerStacksR, dockerStatsR, dockerStatusR, dockerVolumesR } from "../resources";
 import { updateDockerView, useDockerView, type DockerSection } from "../state";
 import { ContainerDetail } from "./ContainerDetail";
 import { Containers } from "./Containers";
@@ -142,7 +142,7 @@ function Engine({ paneId, active, status }: { paneId: string; active: boolean; s
             <main className="docker-main">
                 <header className="docker-topbar">
                     <span className="docker-topbar-title">{SECTIONS.find((each) => each.value === view.section)?.label}</span>
-                    <button type="button" className="docker-button" onClick={() => refreshDocker()}>
+                    <button type="button" className="docker-button" onClick={() => docker.refresh()}>
                         Refresh
                     </button>
                 </header>

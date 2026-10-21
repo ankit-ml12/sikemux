@@ -1,6 +1,8 @@
+import { errorText } from "../../plugin-api/format";
+import { docker } from "./resources";
 import { confirmDialog, copyWithNotice, notify, runInTerminal, swallow } from "../../plugin-api/host";
 import type { ContextMenuItem } from "../../plugin-api/ui";
-import { dockerApi, failureMessage, refreshDocker, type Container, type ContainerAction } from "./api";
+import { dockerApi, type Container, type ContainerAction } from "./api";
 import { isRunning } from "./format";
 
 const DONE: Record<ContainerAction, string> = {
@@ -36,10 +38,10 @@ export async function act(name: string, action: ContainerAction): Promise<boolea
         notify("success", `${DONE[action]} ${name}`);
         return true;
     } catch (error) {
-        notify("error", `${DOING[action]} ${name}: ${failureMessage(error)}`);
+        notify("error", `${DOING[action]} ${name}: ${errorText(error)}`);
         return false;
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
 
@@ -57,10 +59,10 @@ export async function remove(name: string, running: boolean): Promise<boolean> {
         notify("success", `Removed ${name}`);
         return true;
     } catch (error) {
-        notify("error", `Remove ${name}: ${failureMessage(error)}`);
+        notify("error", `Remove ${name}: ${errorText(error)}`);
         return false;
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
 

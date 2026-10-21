@@ -5,14 +5,14 @@ import type { ContainerDetail } from "../api";
 const api = vi.hoisted(() => ({ stats: vi.fn() }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { docker } from "../resources";
 import { Sparkline, StatsView } from "./StatsView";
 
 const web = { id: "bbbbbbbbbbbb", name: "shop-web-1", state: { running: true } } as ContainerDetail;
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("docker."));
+    docker.refresh();
 });
 beforeEach(() => {
     api.stats.mockReset().mockResolvedValue([

@@ -1,10 +1,9 @@
 import { createPluginBackend, type PluginStream, type PluginStreamHandlers } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { DOCKER_PLUGIN_ID } from "./kinds";
+import { DOCKER_PLUGIN } from "./kinds";
 
-export { failureMessage, isPluginFailure } from "../../plugin-api/backend";
+export { isPluginFailure } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(DOCKER_PLUGIN_ID);
+const backend = createPluginBackend(DOCKER_PLUGIN.id);
 
 export interface EngineInfo {
     name: string;
@@ -181,8 +180,6 @@ export interface Pruned {
 }
 
 export const LOG_TAIL = 1000;
-
-export const refreshDocker = () => invalidate((kind) => kind.startsWith("docker."));
 
 export const dockerApi = {
     status: () => backend.call<DockerStatus>("status"),

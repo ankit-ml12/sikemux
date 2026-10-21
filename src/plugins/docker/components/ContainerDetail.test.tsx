@@ -5,7 +5,7 @@ import type { ContainerDetail as Detail } from "../api";
 const api = vi.hoisted(() => ({ container: vi.fn() }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), dockerApi: api }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { docker } from "../resources";
 import { ContainerDetail, summary } from "./ContainerDetail";
 
 const crashed: Detail = {
@@ -47,7 +47,7 @@ const crashed: Detail = {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("docker."));
+    docker.refresh();
 });
 
 beforeEach(() => {

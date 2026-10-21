@@ -1,5 +1,7 @@
+import { errorText } from "../../plugin-api/format";
+import { docker } from "./resources";
 import { confirmDialog, notify, runInTerminal, swallow } from "../../plugin-api/host";
-import { dockerApi, failureMessage, refreshDocker, type Stack, type StackAction } from "./api";
+import { dockerApi, type Stack, type StackAction } from "./api";
 
 /** `docker compose` pointed at the stack's own folder and files, as it was brought up. */
 export function composeArgv(stack: Pick<Stack, "project" | "workingDir" | "configFiles">, ...command: string[]): string[] {
@@ -12,7 +14,7 @@ export function composeArgv(stack: Pick<Stack, "project" | "workingDir" | "confi
 /** Runs Compose in a terminal, so its build output and errors show as they happen. */
 export function runCompose(stack: Stack, title: string, ...command: string[]): void {
     void runInTerminal(`${title} ${stack.project}`, composeArgv(stack, ...command))
-        .then(() => refreshDocker())
+        .then(() => docker.refresh())
         .catch(swallow("run docker compose"));
 }
 
@@ -37,8 +39,8 @@ export async function actOnStack(stack: Stack, action: StackAction): Promise<voi
             notify("error", `${stack.project}: ${result.failed.length} refused. ${first.name}: ${first.message}`);
         }
     } catch (error) {
-        notify("error", `${stack.project}: ${failureMessage(error)}`);
+        notify("error", `${stack.project}: ${errorText(error)}`);
     } finally {
-        refreshDocker();
+        docker.refresh();
     }
 }
