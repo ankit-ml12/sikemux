@@ -25,6 +25,9 @@ pub(super) struct HostKey {
     /// The key this host kept in `<socket>.remote.json` while on an account,
     /// until the account has let that host go.
     pub retired: Option<SecretKey>,
+    /// The digest of the file as last written, while `trusted` is ahead of
+    /// it: a write that failed, or the core stopping between the two.
+    pub written: Option<String>,
 }
 
 pub(super) enum Keeper {
@@ -66,14 +69,15 @@ impl Keeper {
 
     pub(super) fn save(&self, key: &HostKey) -> CoreResult<()> {
         let text = format!(
-            "{}.{}.{}.{}",
+            "{}.{}.{}.{}.{}",
             hex::encode(key.secret.to_bytes()),
             key.trusted,
             key.account.as_deref().unwrap_or_default(),
             key.retired
                 .as_ref()
                 .map(|retired| hex::encode(retired.to_bytes()))
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            key.written.as_deref().unwrap_or_default()
         );
         match self {
             Self::Store { account } => sikemux_keychain::write(SERVICE, account, &text)
@@ -92,7 +96,7 @@ pub(super) fn secret_from_hex(text: &str) -> Option<SecretKey> {
 }
 
 fn decode(text: &str) -> Option<HostKey> {
-    let mut parts = text.trim().splitn(4, '.');
+    let mut parts = text.trim().splitn(5, '.');
     let secret = secret_from_hex(parts.next()?)?;
     let trusted = parts.next()?.to_owned();
     let account = parts.next()?;
@@ -101,5 +105,9 @@ fn decode(text: &str) -> Option<HostKey> {
         trusted,
         account: (!account.is_empty()).then(|| account.to_owned()),
         retired: parts.next().and_then(secret_from_hex),
+        written: parts
+            .next()
+            .filter(|written| !written.is_empty())
+            .map(str::to_owned),
     })
 }

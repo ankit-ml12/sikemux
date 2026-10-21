@@ -11,7 +11,7 @@ use serde_json::json;
 use sikemux_core::client::{
     probe, wait_for_core, ClientError, ClientEvent, CoreClient, ProbeError,
 };
-use sikemux_core::protocol::{AccountLinkState, Event, RemoteStatus};
+use sikemux_core::protocol::{AccountLinkState, Event, RemoteStatus, Request, Response};
 use sikemux_core::waiting;
 
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
@@ -166,7 +166,7 @@ fn enable() -> Result<(), String> {
     style::done("The core starts at boot", &path.display().to_string());
     match running_pid(&launch.socket) {
         None => {
-            login_item::start(IDENTIFIER);
+            login_item::start(IDENTIFIER)?;
             wait_for_core(&launch.socket, SETTLE_TIMEOUT).map_err(|error| error.to_string())?;
         }
         Some(pid) if starts_by_service(pid) => {}
@@ -266,6 +266,10 @@ struct Status {
     /// Whether the app's window is open, when the app runs at all.
     window: Option<bool>,
     account: Option<String>,
+    /// The host's public key, which the account and its devices know it by.
+    core_id: Option<String>,
+    /// The host's own name, which it signs in to the account under.
+    name: Option<String>,
     account_connection: Option<&'static str>,
     remote_access: Option<bool>,
     devices: usize,
@@ -279,9 +283,10 @@ fn status(json: bool) -> i32 {
         return 1;
     };
     let hello = probe(&launch.socket, PROBE_TIMEOUT).ok();
-    let remote = hello
+    let about = hello
         .as_ref()
-        .and_then(|_| runtime().ok()?.block_on(remote_status(&launch.socket)).ok());
+        .and_then(|_| runtime().ok()?.block_on(about(&launch.socket)).ok());
+    let (remote, name) = about.map_or((None, None), |(remote, name)| (Some(remote), Some(name)));
     let status = Status {
         running: hello.is_some(),
         pid: hello.as_ref().map(|hello| hello.pid),
@@ -292,6 +297,11 @@ fn status(json: bool) -> i32 {
             .as_ref()
             .and_then(|_| crate::cli_client::window_open()),
         account: remote.as_ref().and_then(|remote| remote.owner.clone()),
+        core_id: remote
+            .as_ref()
+            .map(|remote| remote.core_id.clone())
+            .filter(|id| !id.is_empty()),
+        name,
         account_connection: remote
             .as_ref()
             .and_then(|remote| remote.account.as_ref())
@@ -441,11 +451,21 @@ async fn plugin_login(socket: &Path, plugin: &str) -> Result<(), String> {
     }
 }
 
-async fn remote_status(socket: &Path) -> Result<RemoteStatus, String> {
+/// What the core says of remote access, and the host's own name.
+async fn about(socket: &Path) -> Result<(RemoteStatus, String), String> {
     let (core, _events) = CoreClient::connect(socket)
         .await
         .map_err(|error| error.to_string())?;
-    core.remote_status()
+    let remote = core
+        .remote_status()
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    match core
+        .request(Request::Host)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        Response::Host { host } => Ok((remote, host.name)),
+        _ => Err("the core answered with something else".into()),
+    }
 }

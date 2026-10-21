@@ -1,7 +1,9 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { errorText } from "../lib/format";
 import { dialogsApi } from "../api/dialogs";
-import { ComposerPickers } from "./ComposerPickers";
+import { AccountPicker, ComposerPickers } from "./ComposerPickers";
+import { ChatHeaderSlot } from "./headerSlot";
 import type { ConfigPicker } from "../api/generated/wire";
 import { basename, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
@@ -132,6 +134,12 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
 
 const TrackedSource = lazy(() => import("./TrackedSource"));
 const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
+
+/** Shows what holds for the whole chat in the pane's header, or in place where the chat has none. */
+function InChatHeader({ children }: { children: ReactNode }) {
+    const slot = useContext(ChatHeaderSlot);
+    return slot ? createPortal(children, slot) : <>{children}</>;
+}
 
 function Chip({
     title,
@@ -773,19 +781,27 @@ export function ChatComposer({
                         }
                     />
                 )}
-                {(worktree?.state.kind === "preparing" || worktree?.state.kind === "in") && (
-                    <Suspense fallback={null}>
-                        <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
-                    </Suspense>
-                )}
+                <InChatHeader>
+                    {(worktree?.state.kind === "preparing" || worktree?.state.kind === "in") && (
+                        <Suspense fallback={null}>
+                            <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
+                        </Suspense>
+                    )}
+                    {agentLocked && profile && (
+                        <AccountPicker
+                            agent={agent}
+                            profile={profile}
+                            running={running}
+                            disabled={connection !== "ready" || changingPermissions || changingConfig}
+                        />
+                    )}
+                </InChatHeader>
                 <ComposerPickers
                     agent={agent}
                     profile={profile}
                     model={model}
                     effort={effort}
                     agentLocked={agentLocked}
-                    running={running}
-                    moveDisabled={connection !== "ready" || changingPermissions || changingConfig}
                     disabled={connection !== "ready" || running || changingPermissions || changingConfig || awaitingPermission}
                     onAgent={(type, profileId, model, modelProvider) => {
                         if (agentLocked || running || awaitingPermission) return;

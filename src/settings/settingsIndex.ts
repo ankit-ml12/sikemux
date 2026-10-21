@@ -125,6 +125,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("agents", "Sessions", "Test notification", "notification sound permission send try"),
     row("agents", "Sessions", "Rail density", "compact comfortable sidebar"),
     row("agents", "Sessions", "Sending while an agent works", "steer queue interrupt enter"),
+    row("agents", "Sessions", "Agent names", "name theme anime nature naruto one piece characters words"),
     row("agents", "Sessions", "Idle chats", "sleep memory process agents"),
     ...(IS_MACOS
         ? [

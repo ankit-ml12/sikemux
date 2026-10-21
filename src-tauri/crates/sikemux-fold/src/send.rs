@@ -72,7 +72,7 @@ fn units(text: &str) -> usize {
 }
 
 /// The whole tree of `text`, read from scratch.
-fn read(text: &str) -> PartTree {
+pub(super) fn read(text: &str) -> PartTree {
     tree_of(Doc::read(text, ANSWER), units(text))
 }
 

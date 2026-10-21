@@ -1,9 +1,10 @@
-//! "Install Sikemux here" on an SSH host: the installer runs over the person's
-//! own SSH in a terminal the app shows, so a password sudo asks for is typed
-//! there and never passes through the app. The installer then signs the host
-//! in, and the sign-in code it prints in that terminal is approved by this
-//! host for the account (ADR 0018). Only a code read from that session's own
-//! screen, on the line login prints it on, is approved.
+//! "Install Sikemux here" and "Sign in" on an SSH host: the installer, or
+//! `sikemux login` on a host that has Sikemux but is off the account, runs
+//! over the person's own SSH in a terminal the app shows, so a password ssh or
+//! sudo asks for is typed there and never passes through the app. The sign-in
+//! code it prints in that terminal is approved by this host for the account
+//! (ADR 0018). Only a code read from that session's own screen, on the line
+//! login prints it on, is approved.
 
 use std::time::Duration;
 
@@ -24,7 +25,7 @@ const CODE_LINE: &str = "enter the code";
 const DONE_EVENT: &str = "host_installed";
 
 /// An alias from ~/.ssh/config, never something ssh would read as an option.
-fn checked_alias(alias: &str) -> AppResult<&str> {
+pub(super) fn checked_alias(alias: &str) -> AppResult<&str> {
     let plain = !alias.is_empty()
         && !alias.starts_with('-')
         && alias
@@ -66,6 +67,12 @@ struct Installed {
     problem: Option<String>,
 }
 
+/// `sikemux` with `args`, run on an SSH host through its login shell's PATH
+/// and where the installer puts it when that PATH does not reach it.
+pub(super) fn sikemux_over_ssh(args: &str) -> String {
+    format!(r#"exec "$SHELL" -lc 'PATH="$PATH:$HOME/.local/bin" sikemux {args}'"#)
+}
+
 /// Opens a terminal on this host that runs the installer on the SSH host
 /// `alias` and signs it in to the account, and answers with its session for
 /// the page to show. `host_installed` says when it is on the account.
@@ -77,7 +84,6 @@ pub async fn host_install(
     cols: u16,
     rows: u16,
 ) -> AppResult<SessionId> {
-    let alias = checked_alias(&alias)?.to_owned();
     let channel = match BuildChannel::of_release(env!("CARGO_PKG_VERSION")) {
         BuildChannel::Stable => "stable",
         _ => "nightly",
@@ -85,6 +91,34 @@ pub async fn host_install(
     let remote = format!(
         "curl -fsSL https://sikemux.com/install | NO_COLOR=1 SIKEMUX_CHANNEL={channel} sh -s -- --host --yes"
     );
+    sign_in_over_ssh(app, manager, alias, remote, cols, rows).await
+}
+
+/// Opens a terminal on this host that runs `sikemux login` on the SSH host
+/// `alias`, which already runs Sikemux, and answers with its session for the
+/// page to show. `host_installed` says when it is on the account.
+#[tauri::command]
+pub async fn host_sign_in(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+    alias: String,
+    cols: u16,
+    rows: u16,
+) -> AppResult<SessionId> {
+    sign_in_over_ssh(app, manager, alias, sikemux_over_ssh("login"), cols, rows).await
+}
+
+/// Runs `remote` on the SSH host `alias` in a terminal the page shows, and
+/// approves for the account the sign-in code it prints there.
+async fn sign_in_over_ssh(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+    alias: String,
+    remote: String,
+    cols: u16,
+    rows: u16,
+) -> AppResult<SessionId> {
+    let alias = checked_alias(&alias)?.to_owned();
     let core = manager.client().await?;
     let id = core
         .spawn(
@@ -121,7 +155,7 @@ pub async fn host_install(
                 .as_deref()
                 .and_then(sign_in_code)
                 .ok_or_else(|| {
-                    AppError::Other("the installer ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
+                    AppError::Other("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
                 })?;
             let host = crate::account::approve_host_code(&core_for_approval, &code).await?;
             core_for_approval

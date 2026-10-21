@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountInfo } from "../api/generated/wire";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { initials } from "../lib/initials";
+import { getState, setState } from "../state/store";
 import { useAccount } from "./account";
 import { RailAccount } from "./RailAccount";
 
@@ -13,7 +14,7 @@ let transport: MemoryIpcTransport;
 let account: AccountInfo | null;
 
 /** The core's account calls, answering with `account` as it is when asked. */
-function serve(shown: AccountInfo) {
+function serve(shown: AccountInfo | null) {
     account = shown;
     transport.register("core_call", (args) => {
         const { method } = args as { method: string };
@@ -27,6 +28,7 @@ beforeEach(() => {
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
     useAccount.setState({ account: null });
+    setState({ settingsOpen: false });
 });
 
 afterEach(() => {
@@ -74,5 +76,23 @@ describe("RailAccount", () => {
         account = null;
         transport.emit("core_changed", { topic: "account", project: null, paths: null });
         expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    });
+
+    it("keeps Settings in reach while signed out", async () => {
+        serve(null);
+        render(<RailAccount />);
+
+        expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+        expect(getState().settingsOpen).toBe(true);
+    });
+
+    it("keeps Settings in reach before the account has been read", () => {
+        transport.register("core_call", () => new Promise<never>(() => {}));
+        render(<RailAccount />);
+
+        expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+        expect(getState().settingsOpen).toBe(true);
     });
 });

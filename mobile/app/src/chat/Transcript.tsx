@@ -462,7 +462,13 @@ export function Message({
                 </Text>
                 <View style={styles.letterRule} />
               </View>
-              <LongText id={`${message.id}/letter/${index}`} text={letter.text} live={false} style={styles.prose} />
+              <LongText
+                id={`${message.id}/letter/${index}`}
+                text={letter.text}
+                md={letter.tree}
+                live={false}
+                style={styles.prose}
+              />
             </View>
           ),
         )}
