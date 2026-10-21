@@ -166,56 +166,45 @@ export function projectCopyOn(
 /** A host the side rail chooses: this one or one on the account, by its core's key (none for this one), or an SSH host by its alias. */
 export type HostChoice = { readonly kind: "core"; readonly host?: string } | { readonly kind: "ssh"; readonly alias: string };
 
-/** A chosen host, with the session that was in front when it was chosen or that it brought forward since. */
-export type ChosenHost = HostChoice & { readonly over: string };
+export const THIS_HOST: HostChoice = { kind: "core" };
 
-/** The host chosen in the side rail, while the session it was chosen over is still in front. */
-export function chosenHostOf(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
-    return state.chosenHost?.over === state.activeSessionId ? state.chosenHost : undefined;
-}
-
-export function sameHost(a: HostChoice | undefined, b: HostChoice): boolean {
-    if (!a) return false;
+export function sameHost(a: HostChoice, b: HostChoice): boolean {
     return a.kind === "core" ? b.kind === "core" && a.host === b.host : b.kind === "ssh" && a.alias === b.alias;
 }
 
-/** Chooses a host's row in the side rail as a project's row is chosen; what is in front stays. */
+/** Chooses a host's row under Hosts; the chosen project stays chosen beside it (ADR 0018). */
 export function chooseHost(choice: HostChoice): void {
     mutate((d) => {
-        d.chosenHost = { ...choice, over: d.activeSessionId };
+        d.chosenHost = choice;
         d.settingsOpen = false;
         d.pickerOpen = false;
     });
 }
 
-/** Brings `sessionId` forward for something opened from a host, keeping that host chosen. */
+/** Brings `sessionId` forward. */
 export function bringForward(d: Draft<StoreState>, sessionId: string): void {
-    if (d.chosenHost?.over === d.activeSessionId) d.chosenHost.over = sessionId;
     d.activeSessionId = sessionId;
     d.zoomedPaneId = null;
 }
 
-const THIS_HOST: HostChoice = { kind: "core" };
+/** Where new chats and terminals start, which its row under Hosts shows chosen. */
+export function newWorkHost(state: Pick<StoreState, "chosenHost">): HostChoice {
+    return state.chosenHost;
+}
 
-/**
- * Where new chats and terminals start: the chosen host, else the host of the chat or terminal in front, else this one.
- */
-export function newWorkHost(state: Pick<StoreState, "chosenHost" | "sessions" | "activeSessionId" | "windows" | "agents">): HostChoice {
-    const chosen = chosenHostOf(state);
-    if (chosen) return chosen;
-    const session = state.sessions[state.activeSessionId];
-    const window = session && state.windows[session.activeWindowId];
-    const pane = window && collectPanes(window.root).find((candidate) => candidate.id === window.activePaneId);
-    if (session?.kind === "ssh") return pane?.kind === "terminal" ? { kind: "ssh", alias: session.name } : THIS_HOST;
-    const host = pane?.host ?? (pane && state.agents[pane.id]?.host) ?? session?.host;
+/** The host a chat or terminal tab runs on, as the Hosts group chooses it. */
+export function hostOf(host: string | undefined): HostChoice {
     return host ? { kind: "core", host } : THIS_HOST;
 }
 
-/** Runs `open`, keeping a host chosen before it chosen over whatever it brings forward. */
-export function keepHostChosen(open: () => void): void {
-    const chosen = chosenHostOf(getState());
-    open();
-    if (chosen) setState({ chosenHost: { ...chosen, over: getState().activeSessionId } });
+/** The chosen host while its row is there, else this host: an account host taken off it, or an SSH host closed. */
+function settleChosenHost(): void {
+    const { chosenHost, hosts, sessions } = getState();
+    const there =
+        chosenHost.kind === "core"
+            ? !chosenHost.host || hosts.some((host) => host.id === chosenHost.host)
+            : Object.values(sessions).some((session) => session.kind === "ssh" && session.name === chosenHost.alias);
+    if (!there) setState({ chosenHost: THIS_HOST });
 }
 
 /** Another login on the SSH host `alias`, as a tab of its session, which its row under Hosts means is open. */
@@ -532,6 +521,7 @@ export function startHosts(): () => void {
     void hostsApi.list().then(setHosts).catch(swallow("list other hosts"));
     const stopFollowing = useStore.subscribe((state, previous) => {
         if (state.projectIdentities !== previous.projectIdentities) placeRemoteProjects();
+        if (state.hosts !== previous.hosts || state.sessions !== previous.sessions) settleChosenHost();
     });
     return () => {
         controller.abort();

@@ -242,8 +242,8 @@ export interface ViewState {
     projectIdentities: Readonly<Record<string, string>>;
     /** What asking each SSH host found, by its alias, for those that run Sikemux. */
     sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
-    /** The host chosen in the side rail, chosen only while the session it was chosen over is still in front. */
-    chosenHost: import("../hosts/hosts").ChosenHost | null;
+    /** The host chosen under Hosts, beside the chosen project: where the tab rail looks and new work starts. */
+    chosenHost: import("../hosts/hosts").HostChoice;
 
     pendingUpdate: PendingUpdate | null;
     /** The chats a waiting update waits on before it installs. */
@@ -389,7 +389,7 @@ export const useStore = create<StoreState>(() => {
         hosts: [],
         hostViews: {},
         projectIdentities: {},
-        chosenHost: null,
+        chosenHost: { kind: "core" },
         sshProbes: {},
         pendingUpdate: null,
         updateBlockers: [],

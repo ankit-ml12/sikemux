@@ -52,7 +52,6 @@ import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
 import { HostLabel } from "./RemoteRows";
 import { HostRows } from "./HostsGroup";
-import { chosenHostOf } from "../hosts/hosts";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -560,9 +559,8 @@ export const SideRail = memo(function SideRail() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
-    const hostChosen = useStore((s) => !!chosenHostOf(s));
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
-    const activeSessionId = settingsOpen || hostChosen ? "" : rawActiveSessionId;
+    const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);

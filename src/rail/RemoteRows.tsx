@@ -45,7 +45,7 @@ export function NewOnHost() {
 }
 
 /** A chat running on another host that this app does not show yet, with its project when the list spans projects. */
-export function RemoteChatRow({ chat, project, host, onOpen }: { chat: ChatInfo; project?: string; host?: string; onOpen: () => void }) {
+export function RemoteChatRow({ chat, project, onOpen }: { chat: ChatInfo; project?: string; onOpen: () => void }) {
     return (
         <div className="agent-row-wrap">
             <button type="button" className={`agent-row${project ? " two-line" : ""}`} onClick={onOpen}>
@@ -56,7 +56,6 @@ export function RemoteChatRow({ chat, project, host, onOpen }: { chat: ChatInfo;
                     <span className="agent-title">{chat.title ?? agentLabel(chat.provider)}</span>
                     {project && <AgentRowProject name={project} />}
                 </span>
-                {host && <span className="agent-row-host">on {host}</span>}
                 {chat.name && <span className="agent-row-name">{agentHandle(chat.name)}</span>}
             </button>
         </div>
@@ -68,24 +67,12 @@ export function remoteChatRows({ sessionId, copies, open }: { sessionId: string;
     return copies.flatMap((copy) =>
         chatsIn(copy)
             .filter((chat) => !open.has(chat.agentId))
-            .map((chat) => (
-                <RemoteChatRow key={chat.agentId} chat={chat} host={copy.host.name} onOpen={() => openRemoteChat(sessionId, copy.host.id, chat)} />
-            )),
+            .map((chat) => <RemoteChatRow key={chat.agentId} chat={chat} onOpen={() => openRemoteChat(sessionId, copy.host.id, chat)} />),
     );
 }
 
 /** A terminal running on another host that this app does not show yet. */
-export function RemoteTerminalRow({
-    terminal,
-    project,
-    host,
-    onOpen,
-}: {
-    terminal: SessionInfo;
-    project?: string;
-    host?: string;
-    onOpen: () => void;
-}) {
+export function RemoteTerminalRow({ terminal, project, onOpen }: { terminal: SessionInfo; project?: string; onOpen: () => void }) {
     const title = terminal.windowTitle || terminal.title || "Terminal";
     return (
         <div className="agent-row-wrap">
@@ -101,7 +88,6 @@ export function RemoteTerminalRow({
                 ) : (
                     <span className="agent-title">{title}</span>
                 )}
-                {host && <span className="agent-row-host">on {host}</span>}
             </button>
         </div>
     );
@@ -116,7 +102,7 @@ export function remoteTerminalRows({ sessionId, copies, open }: { sessionId: str
                 <RemoteTerminalRow
                     key={terminal.id}
                     terminal={terminal}
-                    host={copy.host.name}
+
                     onOpen={() => openRemoteTerminal(sessionId, copy.host.id, terminal, copy.project.path)}
                 />
             )),

@@ -1,6 +1,5 @@
 import { useMemo, useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { agentHandle } from "../agents/AgentLabel";
-import { HostLabel } from "./RemoteRows";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
@@ -21,6 +20,8 @@ import { AgentReview } from "./AgentReview";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
 import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { inCoreOrder, useInbox } from "./useInbox";
+import { runningChats, usePlace } from "./HostLists";
+import { hostName } from "../hosts/hosts";
 
 interface OpenAgentRow {
     id: string;
@@ -32,8 +33,11 @@ interface OpenAgentRow {
     sessionCwd: string;
 }
 
-/** Every agent open in any project, in the order the core lists them. */
-export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
+/**
+ * Every agent open in any project on `host` (none for this one), in the order the core lists them, then the chats
+ * running there that this app does not show yet.
+ */
+export function AllProjectsAgents({ showEmpty, host }: { showEmpty: boolean; host: string | undefined }) {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
     const windows = useStore((s) => s.windows);
@@ -41,13 +45,16 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
     const agents = useStore((s) => s.agents);
     const agentStatus = useStore((s) => s.agentStatus);
     const { inbox } = useInbox();
+    const place = usePlace();
+    const where = useStore((s) => hostName(s, host));
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ agentId: string; sessionId: string; x: number; y: number } | null>(null);
 
     const open = useMemo(() => {
         const rows: OpenAgentRow[] = [];
-        for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents }))
+        for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents })) {
+            if (agent.host !== host) continue;
             rows.push({
                 id: agentId,
                 lead: agent.lead,
@@ -57,20 +64,32 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                 sessionId: session.id,
                 sessionCwd: session.cwd,
             });
+        }
         return rows;
-    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus]);
+    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus, host]);
 
     const { folded, toggle } = useTeamFolds();
+    const workers = useMemo(() => inbox.remoteAgents.filter((worker) => worker.hostId === host), [inbox.remoteAgents, host]);
     const teams = useMemo(
-        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), inbox.remoteAgents)), folded, toggle),
-        [open, inbox.agents, inbox.remoteAgents, folded, toggle],
+        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), workers)), folded, toggle),
+        [open, inbox.agents, workers, folded, toggle],
     );
+    const running = host ? runningChats(place, agents, host, new Set(workers.map((worker) => worker.agentId))) : [];
 
     const menuAgent = menu && agents[menu.agentId];
     const menuSession = menu && sessions[menu.sessionId];
 
-    if (open.length === 0)
-        return showEmpty && <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
+    if (open.length + workers.length + running.length === 0)
+        return (
+            showEmpty && (
+                <RailEmpty
+                    icon={<IconAgent size={20} />}
+                    title={where ? `No chats on ${where}` : "No agents open"}
+                    shortcut="agent.new"
+                    doing="start one"
+                />
+            )
+        );
 
     return (
         <div className="agent-all-projects">
@@ -106,6 +125,7 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                         />
                     ),
                 )}
+                {running}
             </Panel>
             {menuAgent && menuSession && (
                 <AgentContextMenu
@@ -130,7 +150,6 @@ export function OpenAgentRow({
     active,
     project,
     sessionCwd,
-    hostShown = true,
     title,
     wrap,
     onOpen = () => cmd.revealAgent(agent.id),
@@ -145,8 +164,6 @@ export function OpenAgentRow({
     active: boolean;
     project?: { name: string; sessionId: string };
     sessionCwd: string;
-    /** Whether the row says which other host the agent runs on; a host's own list leaves it out. */
-    hostShown?: boolean;
     title?: ReactNode;
     wrap?: { ref: Ref<HTMLDivElement>; "data-agent-id": string; "data-session": string };
     onOpen?: () => void;
@@ -184,7 +201,6 @@ export function OpenAgentRow({
                         <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
-                    {hostShown && <HostLabel host={agent.host} />}
                     {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
                     {fold && !fold.open && <span className="team-count">+{fold.count}</span>}
                     <BackgroundCounts display={display} />

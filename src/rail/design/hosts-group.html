@@ -171,42 +171,34 @@
   </div>
 </div>
 
-<h3>4 · A host is chosen as a project is</h3>
-<p class="why">Clicking a host's row chooses it with the same lift a project gets, and only one row in the side rail is chosen at a time. The tab rail then lists every chat and terminal running on that host, from every project, each with its project under it; its scope tabs read <b>test-ec2 | All projects</b>. Choosing a project still lists its chats from every host (ADR 0017). On an SSH-only host the list is its open SSH terminals. Opening a row keeps the host chosen.</p>
+<h3>4 · You are always on one host, and in one project</h3>
+<p class="why">The Hosts group keeps its own chosen row beside the chosen project, <b>This host</b> until you choose another; both show the lift at once, and choosing one never unchooses the other. The tab rail keeps <b>&lt;project&gt; | All projects</b> and lists only what runs on the chosen host: the project's chats and terminals there, or every project's. New chats and terminals start on the chosen host. The app starts on This host.</p>
 <div class="pair">
   <div>
-    <div class="cap new">Side rail · test-ec2 chosen</div>
+    <div class="cap new">Side rail · sikemux and test-ec2 chosen</div>
     <div class="rail">
       <div class="glabel">PROJECTS<span class="rule"></span></div>
-      <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
+      <div class="row chosen"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
       <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">infra</span></div>
       <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
       <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>nginx<span class="end"><span class="dot"></span></span></div>
     </div>
-    <div class="cap new" style="margin-top:14px">Side rail · sikemux chosen, a chat on this host in front</div>
-    <div class="rail">
-      <div class="glabel">PROJECTS<span class="rule"></span></div>
-      <div class="row chosen"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
-      <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
-      <div class="row"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
-    </div>
-    <div class="note">No row marks where ⌘N and ⌘T start; the new-item menu names that host when it is not this one.</div>
+    <div class="note">On an SSH-only host the tab rail lists its open SSH terminals, in either scope.</div>
   </div>
   <div>
-    <div class="cap new">Tab rail · agents page</div>
+    <div class="cap new">Tab rail · agents page, sikemux on test-ec2</div>
     <div class="rail">
       <div class="mhead">on <b>test-ec2</b></div>
       <div class="mrow"><svg class="i"><use href="#plus"/></svg>New chat<span class="k">⌘N</span></div>
       <div class="mrow"><svg class="i"><use href="#term"/></svg>New terminal<span class="k">⌘T</span></div>
       <div class="mrow"><svg class="i"><use href="#globe"/></svg>New browser<span class="k">⌘⇧T</span></div>
-      <div class="scope"><span class="on"><svg class="i"><use href="#server"/></svg>test-ec2</span><span>All projects</span></div>
-      <div class="trow chosen"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Wire the host chip</b><small><svg class="i"><use href="#folder"/></svg>sikemux</small></span><span class="end">@Kite</span></div>
-      <div class="trow"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Rotate the deploy keys</b><small><svg class="i"><use href="#folder"/></svg>infra</small></span><span class="end">@Wren</span></div>
+      <div class="scope"><span class="on"><svg class="i"><use href="#folder"/></svg>sikemux</span><span>All projects</span></div>
+      <div class="trow chosen"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Wire the host chip</b></span><span class="end">@Kite</span></div>
+      <div class="trow"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Bump dependencies</b></span><span class="end">@Wren</span></div>
     </div>
-    <div class="note">The terminals page lists the host's terminals the same way. With nothing running there: <b>No chats on test-ec2</b>, ⌘N to start one.</div>
+    <div class="note">All projects lists every project's chats on test-ec2, each with its project under it. A project with nothing there: <b>No chats in infra on test-ec2</b>, ⌘N to start one.</div>
   </div>
 </div>
 

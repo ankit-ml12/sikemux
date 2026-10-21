@@ -6,7 +6,6 @@ import { IconClose } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentRowProject } from "./AgentRowTree";
 import { type CtxItem, TreeContextMenu } from "./FileTree";
-import { HostLabel } from "./RemoteRows";
 
 type Menu = { x: number; y: number; items: CtxItem[] };
 
@@ -17,7 +16,6 @@ export function TabRow({
     glyph,
     label,
     detail,
-    host,
     title,
     project,
     active,
@@ -30,8 +28,6 @@ export function TabRow({
     glyph?: string;
     label: string;
     detail?: string | null;
-    /** Another host the tab's terminal runs on. */
-    host?: string;
     title?: string;
     /** The project the tab lives in, shown under its label when the list spans projects. */
     project?: { name: string; sessionId: string };
@@ -66,7 +62,6 @@ export function TabRow({
                 ) : (
                     <span className="agent-title">{label}</span>
                 )}
-                <HostLabel host={host} />
                 {detail && <span className="rail-file-folder">{detail}</span>}
             </button>
             <Tooltip label={`Close ${label}`}>

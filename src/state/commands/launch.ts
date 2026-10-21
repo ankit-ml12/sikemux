@@ -12,13 +12,14 @@ import { makeWindow, withActiveSession } from "./shared";
 import { takeSpareShell, type SpareShell } from "../../terminal/spareShell";
 import type { PaneNode } from "../types";
 import { openAgentPalette, openPicker } from "./ui";
-import { chosenHostOf, copyOn, keepHostChosen, newRemoteTerminal, newSshTerminalOn, newWorkHost } from "../../hosts/hosts";
+import { copyOn, newRemoteTerminal, newSshTerminalOn, newWorkHost } from "../../hosts/hosts";
 
 /** Starts the agent launched last, or the first one installed, in the project in front. */
 export async function startAgent(): Promise<void> {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (session?.kind !== "project" && !chosenHostOf(st)) {
+    const here = newWorkHost(st);
+    if (session?.kind !== "project" && !(here.kind === "core" && here.host)) {
         continueInPickedProject(() => void startAgent());
         return;
     }
@@ -76,7 +77,7 @@ export function newTerminal(): void {
         const spare = takeSpareShell(session);
         if (spare) openSpareShell(spare);
         else newWindow();
-    } else keepHostChosen(createCommandSession);
+    } else createCommandSession();
 }
 
 function openSpareShell(spare: SpareShell): void {

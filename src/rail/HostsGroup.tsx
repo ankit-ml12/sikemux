@@ -4,11 +4,11 @@ import { coreCall } from "../api/core";
 import {
     approvalItem,
     chooseHost,
-    chosenHostOf,
     installHere,
     openHostTerminal,
     projectCopyOn,
     sameHost,
+    THIS_HOST,
     signInHere,
     startRemoteChat,
     type HostChoice,
@@ -114,7 +114,7 @@ function HostRow({
     menu: () => Promise<CtxItem[]>;
     onMenu: OpenMenu;
 }) {
-    const chosen = useStore((s) => !s.settingsOpen && sameHost(chosenHostOf(s), choice));
+    const chosen = useStore((s) => !s.settingsOpen && sameHost(s.chosenHost, choice));
     const show = (event: MouseEvent) => {
         event.preventDefault();
         void menu().then((items) => onMenu(event, items));
@@ -137,8 +137,6 @@ function HostRow({
         </div>
     );
 }
-
-const THIS_HOST: HostChoice = { kind: "core" };
 
 function ThisHostRow({ onMenu }: { onMenu: OpenMenu }) {
     const agents = useStore((s) => Object.values(s.agents).filter((agent) => !agent.host).length);
