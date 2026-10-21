@@ -32,6 +32,9 @@ pub const METRICS: [(&str, &str); 5] = [
 /// The stage: the chosen agent's pane, on what a new chat opens on: the project, and
 /// what its agents did in it.
 pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> AnyElement {
+    if bench.settings.is_some() {
+        return crate::settings::view(bench, window, cx);
+    }
     if let Some((PaneKind::Terminal, session)) =
         bench.tab().and_then(|tab| tabs::first_view(&tab.pane))
     {

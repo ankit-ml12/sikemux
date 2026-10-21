@@ -18,6 +18,7 @@ pub mod icons;
 mod keymap;
 mod picture;
 mod rail;
+pub mod settings;
 mod share;
 pub mod syntax;
 mod tabs;

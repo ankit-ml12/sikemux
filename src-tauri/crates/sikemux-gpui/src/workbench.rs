@@ -85,6 +85,8 @@ pub struct Workbench {
     pub editors: crate::editor::Editors,
     /// The Git pane of the project whose Git tab was last in front.
     pub git: Option<Entity<GitPane>>,
+    /// Settings, while they take the stage's place.
+    pub settings: Option<crate::settings::Settings>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     pub parts: Parts,
@@ -158,6 +160,7 @@ impl Workbench {
         crate::chat::install(cx);
         crate::terminal::install(cx);
         crate::editor::install(cx);
+        crate::settings::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -269,6 +272,7 @@ impl Workbench {
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
             git: None,
+            settings: None,
             focus: cx.focus_handle(),
             parts: Parts::new(cx),
             _filtering: None,
@@ -1041,6 +1045,16 @@ impl Workbench {
         }
     }
 
+    /// Opens settings on `page`, as a link to one of them does.
+    pub fn open_settings(
+        &mut self,
+        page: crate::settings::Page,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::settings::open(self, page, window, cx);
+    }
+
     /// A terminal tab in the project in front, on the shell the core keeps ready there.
     /// Starts a chat with the agent the rail is set to, in the project in front.
     pub fn new_chat(&self) {
@@ -1611,6 +1625,11 @@ impl Render for Workbench {
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
             .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
+            .on_action(
+                cx.listener(|bench, _: &crate::settings::ToggleSettings, window, cx| {
+                    crate::settings::toggle(bench, window, cx)
+                }),
+            )
             .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))

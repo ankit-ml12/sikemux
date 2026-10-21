@@ -163,6 +163,7 @@ pub struct Button {
     variant: Variant,
     keys: Option<SharedString>,
     on_click: Option<OnClick>,
+    disabled: bool,
 }
 
 impl Button {
@@ -174,11 +175,18 @@ impl Button {
             variant,
             keys: None,
             on_click: None,
+            disabled: false,
         }
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// Dimmed, and does nothing when clicked.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
@@ -200,8 +208,9 @@ impl Button {
 impl RenderOnce for Button {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let on_click = self.on_click;
+        let on_click = self.on_click.filter(|_| !self.disabled);
         let base = BaseButton::new(self.id)
+            .when(self.disabled, |button| button.opacity(0.5))
             .group(GROUP)
             .accessibility_label(self.label.clone())
             .flex()
