@@ -4,6 +4,7 @@
 mod controls;
 pub(crate) mod dialog;
 mod dock;
+pub mod find_bar;
 mod floats;
 mod lists;
 mod pane;
@@ -11,6 +12,7 @@ mod pane;
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow};
+pub use find_bar::FindBar;
 pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};

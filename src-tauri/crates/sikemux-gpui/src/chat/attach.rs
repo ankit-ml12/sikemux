@@ -15,10 +15,12 @@ use gpui_kit::{
     Window,
 };
 use sikemux_core::acp::MAX_ATTACHMENTS;
+use sikemux_wire::chat::{ChatMessage, SentContext};
 use tokio::sync::oneshot;
 
 use super::Composing;
 use crate::core::{Ask, ChatAsk};
+use crate::drag::DraggedPath;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -218,6 +220,7 @@ impl Workbench {
             return;
         };
         composing.attach(paths, window, cx);
+        self.typed_draft(agent, cx);
         cx.notify();
     }
 
@@ -266,6 +269,7 @@ impl Workbench {
         {
             if index < composing.earlier.len() {
                 composing.earlier.remove(index);
+                self.typed_draft(agent, cx);
                 cx.notify();
             }
         }
@@ -284,6 +288,7 @@ impl Workbench {
             .and_then(|chat| chat.composer.as_mut())
         {
             composing.detach(index, window, cx);
+            self.typed_draft(agent, cx);
             cx.notify();
         }
     }
@@ -355,17 +360,23 @@ pub fn on_paste(
     }
 }
 
-pub fn on_drop(
-    agent: &str,
-    cx: &mut Context<Workbench>,
-) -> impl Fn(&ExternalPaths, &mut Window, &mut App) + use<> {
+/// Files dropped on a chat, from Finder or from the file tree, go with the next message.
+pub fn takes_drops(pane: Div, agent: &str, cx: &mut Context<Workbench>) -> Div {
     let (agent, this) = (agent.to_owned(), cx.weak_entity());
-    move |dropped: &ExternalPaths, window: &mut Window, cx: &mut App| {
+    let (from_tree, from_tree_agent) = (this.clone(), agent.clone());
+    pane.on_drop(move |dropped: &ExternalPaths, window, cx| {
         this.update(cx, |bench, cx| {
             bench.attach(&agent, dropped.paths().to_vec(), window, cx)
         })
         .ok();
-    }
+    })
+    .on_drop(move |dropped: &DraggedPath, window, cx| {
+        from_tree
+            .update(cx, |bench, cx| {
+                bench.attach(&from_tree_agent, vec![dropped.path.clone()], window, cx)
+            })
+            .ok();
+    })
 }
 
 /// What shows over a chat while files are dragged over it.
@@ -387,6 +398,7 @@ pub fn drop_hint(cx: &App) -> Div {
         })
         .invisible()
         .drag_over::<ExternalPaths>(|style, _, _, _| style.visible())
+        .drag_over::<DraggedPath>(|style, _, _, _| style.visible())
         .child(
             ui::text(
                 "Drop files or folders into this session",
@@ -458,36 +470,7 @@ pub fn tiles(
     }
     let t = Tokens::get(cx).clone();
     let tiles = attachments.iter().enumerate().map(|(index, path)| {
-        let name: SharedString = path
-            .file_name()
-            .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
-            .into_owned()
-            .into();
-        let media = if is_image(path) {
-            AttachmentMedia::new().src(path.clone())
-        } else {
-            let icon = crate::file_icons::icon(&name, cx)
-                .map(|icon| gpui_kit::img(icon).size(px(28.)).into_any_element());
-            AttachmentMedia::new().child(icon.unwrap_or_else(|| {
-                ui::icon(Icon::File, 26.)
-                    .text_color(t.text_tertiary)
-                    .into_any_element()
-            }))
-        };
-        let number = div().size_full().relative().child(
-            div()
-                .absolute()
-                .left(px(3.))
-                .bottom(px(3.))
-                .px(px(4.))
-                .py(px(2.))
-                .rounded(theme::RADIUS_1)
-                .bg(Hsla {
-                    a: 0.72,
-                    ..t.surface_sunken
-                })
-                .child(ui::mono(format!("#{}", index + 1), 9.5, cx).text_color(t.text_primary)),
-        );
+        let number = badge(index + 1, &t, cx);
         let remove = remove.clone();
         let opens = is_image(path).then(|| {
             let (open, path) = (open.clone(), path.clone());
@@ -501,14 +484,7 @@ pub fn tiles(
             .axis(Axis::Vertical)
             .with_size(gpui_kit::component::Size::Size(px(16.6)))
             .tooltip(path.to_string_lossy().into_owned())
-            .media(
-                media
-                    .bg(Hsla {
-                        a: 0.48,
-                        ..t.surface_sunken
-                    })
-                    .overlay(number),
-            )
+            .media(media(path, &t, cx).overlay(number))
             .on_remove(move |_, window, cx| remove(index, window, cx))
     });
     let chats = earlier.iter().enumerate().map(|(index, (_, title))| {
@@ -533,5 +509,147 @@ pub fn tiles(
             .pt(px(6.))
             .children(tiles)
             .children(chats),
+    )
+}
+
+fn file_name(path: &Path) -> SharedString {
+    path.file_name()
+        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
+        .into_owned()
+        .into()
+}
+
+/// A picture's preview, or the icon of a file's kind.
+fn media(path: &Path, t: &Tokens, cx: &App) -> AttachmentMedia {
+    let media = if is_image(path) {
+        AttachmentMedia::new().src(path.to_path_buf())
+    } else {
+        let icon = crate::file_icons::icon(&file_name(path), cx)
+            .map(|icon| gpui_kit::img(icon).size(px(28.)).into_any_element());
+        AttachmentMedia::new().child(icon.unwrap_or_else(|| {
+            ui::icon(Icon::File, 26.)
+                .text_color(t.text_tertiary)
+                .into_any_element()
+        }))
+    };
+    media.bg(Hsla {
+        a: 0.48,
+        ..t.surface_sunken
+    })
+}
+
+/// The number a picture goes by in the text, `#n`, over the corner of its tile.
+fn badge(number: usize, t: &Tokens, cx: &App) -> Div {
+    div().size_full().relative().child(
+        div()
+            .absolute()
+            .left(px(3.))
+            .bottom(px(3.))
+            .px(px(4.))
+            .py(px(2.))
+            .rounded(theme::RADIUS_1)
+            .bg(Hsla {
+                a: 0.72,
+                ..t.surface_sunken
+            })
+            .child(ui::mono(format!("#{number}"), 9.5, cx).text_color(t.text_primary)),
+    )
+}
+
+/// An issue's or pull request's number in its link, when the link is to one.
+fn tracked(uri: &str) -> Option<(Icon, &str)> {
+    let kinds = [
+        ("/issues/", Icon::Issue),
+        ("/pull/", Icon::PullRequest),
+        ("/pulls/", Icon::PullRequest),
+        ("/pull-requests/", Icon::PullRequest),
+        ("/merge_requests/", Icon::PullRequest),
+    ];
+    kinds.into_iter().find_map(|(kind, icon)| {
+        let (_, after) = uri.split_once(kind)?;
+        let end = after.find(['/', '?', '#']).unwrap_or(after.len());
+        let number = &after[..end];
+        (!number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+            .then_some((icon, number))
+    })
+}
+
+/// A context item's chip: `#12 Title` for an issue or pull request, its title for the rest.
+fn context_chip(index: usize, item: &SentContext, t: &Tokens) -> Attachment {
+    let (icon, title) = match tracked(&item.uri) {
+        Some((icon, number)) => {
+            let title = item.title.trim_start_matches("Issue ");
+            let title = title.trim_start_matches("Pull request ");
+            let title = title
+                .strip_prefix(&format!("#{number}"))
+                .map_or(item.title.as_str(), |rest| {
+                    rest.trim_start_matches(':').trim_start()
+                });
+            (icon, format!("#{number} {title}").trim_end().to_owned())
+        }
+        None if item.title.is_empty() => (Icon::File, item.uri.clone()),
+        None => (Icon::File, item.title.clone()),
+    };
+    Attachment::new()
+        .id(SharedString::from(format!("sent-context-{index}")))
+        .with_size(gpui_kit::component::Size::Small)
+        .tooltip(item.uri.clone())
+        .media(AttachmentMedia::new().child(ui::icon(icon, 13.).text_color(t.text_tertiary)))
+        .content(AttachmentContent::new().title(AttachmentTitle::new(title)))
+}
+
+/// What a sent message carried, inside its bubble over the text: its pictures, which open
+/// over the window, its files by name, and the issues and pages sent with it.
+pub fn sent(
+    message: &ChatMessage,
+    open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
+    cx: &App,
+) -> Option<Div> {
+    if message.attachments.is_empty() && message.context.is_empty() {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    let written = super::edit::written(message);
+    let files = message.attachments.iter().enumerate().map(|(index, path)| {
+        let path = PathBuf::from(path);
+        let id = SharedString::from(format!("sent-{}-{index}", message.id));
+        if !is_image(&path) {
+            return Attachment::new()
+                .id(id)
+                .with_size(gpui_kit::component::Size::Small)
+                .tooltip(path.to_string_lossy().into_owned())
+                .media(media(&path, &t, cx))
+                .content(AttachmentContent::new().title(AttachmentTitle::new(file_name(&path))));
+        }
+        let number = index + 1;
+        let tagged = written.contains(&format!("[Image #{number}]"));
+        let open = open.clone();
+        let mut tile = media(&path, &t, cx);
+        if tagged {
+            tile = tile.overlay(badge(number, &t, cx));
+        }
+        Attachment::new()
+            .id(id)
+            .axis(Axis::Vertical)
+            .with_size(gpui_kit::component::Size::Size(px(16.6)))
+            .tooltip(path.to_string_lossy().into_owned())
+            .media(tile)
+            .on_click(move |_, window, cx| open(path.clone(), window, cx))
+    });
+    let context = message
+        .context
+        .iter()
+        .enumerate()
+        .map(|(index, item)| context_chip(index, item, &t));
+    Some(
+        div()
+            .flex()
+            .flex_wrap()
+            .justify_end()
+            .items_end()
+            .gap(px(6.))
+            .pb(px(6.))
+            .children(files)
+            .children(context),
     )
 }

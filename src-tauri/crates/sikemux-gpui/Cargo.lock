@@ -8920,6 +8920,7 @@ dependencies = [
  "tempfile",
  "textmate-highlight",
  "tokio",
+ "url",
 ]
 
 [[package]]

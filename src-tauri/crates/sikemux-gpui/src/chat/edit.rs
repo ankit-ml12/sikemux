@@ -3,17 +3,16 @@
 
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::{
-    div, px, relative, AppContext, ClipboardItem, Context, Entity, Focusable, InteractiveElement,
-    IntoElement, ParentElement, SharedString, Styled, Subscription, Window,
+    div, px, relative, AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement,
+    ParentElement, Styled, Subscription, Window,
 };
 use gpui_transcript::Change;
 use sikemux_wire::chat::ChatMessage;
 
 use super::{text_of, CancelEdit, Drawn};
 use crate::core::ChatAsk;
-use crate::icons::Icon;
 use crate::theme;
-use crate::ui::{Button, IconButton, Variant};
+use crate::ui::{Button, Variant};
 use crate::workbench::Workbench;
 
 /// The sent message being written again, by its row.
@@ -180,55 +179,5 @@ pub fn editor(agent: &str, editing: &Editing, looks: &Drawn) -> gpui_kit::AnyEle
                 .text_size(px(13.5)),
         )
         .child(buttons)
-        .into_any_element()
-}
-
-/// Under a sent message, shown while the pointer is on its row: copy it, and write it
-/// again while the chat takes that.
-pub fn sent_actions(
-    group: &SharedString,
-    message: &ChatMessage,
-    looks: &Drawn,
-) -> gpui_kit::AnyElement {
-    let text = written(message);
-    let editable =
-        looks.reading.editable && message.prompt_id.is_some() && message.context.is_empty();
-    let copy = {
-        let text = text.clone();
-        IconButton::new(
-            SharedString::from(format!("copy:{}", message.id)),
-            Icon::Copy,
-            "Copy message",
-        )
-        .glyph(13.)
-        .width(24.)
-        .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.clone())))
-    };
-    let edit = editable.then(|| {
-        let (bench, agent, row) = (looks.bench.clone(), looks.agent.clone(), message.id.clone());
-        IconButton::new(
-            SharedString::from(format!("edit:{}", message.id)),
-            Icon::Pencil,
-            "Edit message",
-        )
-        .glyph(13.)
-        .width(24.)
-        .on_click(move |_, window, cx| {
-            bench
-                .update(cx, |bench, cx| {
-                    bench.edit_message(&agent, &row, text.clone(), window, cx)
-                })
-                .ok();
-        })
-    });
-    div()
-        .flex()
-        .justify_end()
-        .gap(px(2.))
-        .pt(px(3.))
-        .invisible()
-        .group_hover(group.clone(), |actions| actions.visible())
-        .children(edit)
-        .child(copy)
         .into_any_element()
 }

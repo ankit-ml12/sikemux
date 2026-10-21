@@ -20,6 +20,7 @@ use super::{duration, Drawn};
 use crate::core::ChatAsk;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
+use crate::picture::{self, Picture};
 use crate::theme;
 use crate::ui;
 
@@ -42,10 +43,12 @@ pub struct Opened {
     details: HashMap<String, Asked>,
 }
 
-/// A call's detail as asked for: when the call had ended as of asking, and what came back.
+/// A call's detail as asked for: when the call had ended as of asking, what came back, and
+/// the picture it printed, read once.
 struct Asked {
     ended: Option<u64>,
     detail: Option<ToolDetail>,
+    picture: Option<Picture>,
 }
 
 impl Opened {
@@ -61,6 +64,11 @@ impl Opened {
 
     pub fn held(&mut self, tool: String, detail: ToolDetail) {
         if let Some(asked) = self.details.get_mut(&tool) {
+            let printed = detail
+                .output
+                .as_ref()
+                .and_then(|output| output.image.as_ref());
+            asked.picture = printed.and_then(|image| Picture::sent(&image.mime_type, &image.data));
             asked.detail = Some(detail);
         }
     }
@@ -436,6 +444,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
                     Asked {
                         ended,
                         detail: None,
+                        picture: None,
                     },
                 );
             }
@@ -511,18 +520,15 @@ fn spine(last: bool, looks: &Drawn) -> Div {
 /// What an opened call did: its change, the command and what it printed, or why it failed.
 fn detail(call: &Call, looks: &Drawn) -> AnyElement {
     let id = &call.tool.tool_call_id;
-    let held = looks
-        .reading
-        .tools
-        .details
-        .get(id)
-        .and_then(|asked| asked.detail.clone());
+    let asked = looks.reading.tools.details.get(id);
+    let held = asked.and_then(|asked| asked.detail.as_ref());
     let body = if call.diff.is_some() {
-        held.and_then(|held| held.diff).map(|diff| {
+        held.and_then(|held| held.diff.as_ref()).map(|diff| {
             diff_body(id, &diff.path, diff.adds, diff.dels, &diff.lines, looks).into_any_element()
         })
     } else if call.command().is_some() || call.output.is_some() {
-        Some(terminal(call, held.as_ref(), looks).into_any_element())
+        let picture = asked.and_then(|asked| asked.picture.clone());
+        Some(terminal(call, held, picture, looks).into_any_element())
     } else {
         call.failure.map(|failure| {
             div()
@@ -555,7 +561,12 @@ fn boxed(looks: &Drawn) -> Div {
 }
 
 /// A command and what it printed, the way a terminal would have shown them.
-fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Drawn) -> Div {
+fn terminal(
+    call: &Call,
+    held: Option<&ToolDetail>,
+    picture: Option<Picture>,
+    looks: &Drawn,
+) -> Div {
     let id = call.tool.tool_call_id.clone();
     let output = held.and_then(|held| held.output.as_ref());
     let whole = looks.reading.tools.whole.contains(&id);
@@ -588,23 +599,35 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Drawn) -> Div {
                     .child(command.to_owned()),
             )
     });
-    let printed = output.map(|_| {
-        if shown.is_empty() {
-            return div()
-                .px(px(9.))
-                .py(px(5.))
-                .text_size(px(10.))
-                .text_color(looks.faint)
-                .child("No output");
-        }
-        div()
-            .pl(px(9.))
-            .pr(px(30.))
-            .pt(px(6.))
-            .pb(px(7.))
-            .text_color(looks.quiet)
-            .child(shown)
+    let shot = picture.map(|picture| {
+        div().p(px(4.)).child(picture::thumb(
+            SharedString::from(format!("shot:{id}")),
+            picture,
+            px(300.),
+            px(440.),
+            looks.bench.clone(),
+            looks.quiet,
+        ))
     });
+    let printed = output
+        .filter(|_| !shown.is_empty() || shot.is_none())
+        .map(|_| {
+            if shown.is_empty() {
+                return div()
+                    .px(px(9.))
+                    .py(px(5.))
+                    .text_size(px(10.))
+                    .text_color(looks.faint)
+                    .child("No output");
+            }
+            div()
+                .pl(px(9.))
+                .pr(px(30.))
+                .pt(px(6.))
+                .pb(px(7.))
+                .text_color(looks.quiet)
+                .child(shown)
+        });
     let more = folds.then(|| {
         let (reader, hover) = (looks.reader.clone(), looks.hover);
         let label = if whole {
@@ -642,6 +665,7 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Drawn) -> Div {
         .into_iter()
         .map(IntoElement::into_any_element)
         .collect();
+    parts.extend(shot.map(IntoElement::into_any_element));
     parts.extend(printed.map(IntoElement::into_any_element));
     parts.extend(more.map(IntoElement::into_any_element));
     if cut {

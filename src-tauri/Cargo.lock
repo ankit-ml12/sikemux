@@ -5704,6 +5704,7 @@ dependencies = [
  "sikemux-process",
  "sikemux-pty",
  "sikemux-simulator",
+ "sikemux-voice",
  "tauri",
  "tauri-build",
  "tauri-plugin-process",
@@ -6194,6 +6195,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sikemux-core",
+ "sikemux-process",
+ "tempfile",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-voice"
+version = "0.5.4-nightly.5"
+dependencies = [
+ "hex",
+ "objc2-foundation",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sikemux-core",
+ "sikemux-plugin-api",
  "sikemux-process",
  "tempfile",
  "tokio",

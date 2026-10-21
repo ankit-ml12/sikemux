@@ -221,6 +221,10 @@ pub enum ChatAsk {
         agent: String,
         since: Option<ChatMark>,
     },
+    /// Starts the session of a chat that dropped, and attaches to it again.
+    Restart {
+        agent: String,
+    },
     Detach {
         agent: String,
     },
@@ -636,6 +640,18 @@ async fn run(
 
 async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender<Update>) {
     let (agent, news) = match ask {
+        ChatAsk::Restart { agent } => {
+            let started = client.call("startChat", json!({ "agentId": agent })).await;
+            if let Err(error) = started {
+                return eprintln!("sikemux: the core did not start chat {agent} again: {error}");
+            }
+            match attach(client, &agent, None).await {
+                Ok(attachment) => (agent, ChatNews::Attached(attachment)),
+                Err(error) => {
+                    return eprintln!("sikemux: the core refused to attach chat {agent}: {error}")
+                }
+            }
+        }
         ChatAsk::Attach { agent, since } => match attach(client, &agent, since).await {
             Ok(attachment) => (agent, ChatNews::Attached(attachment)),
             Err(error) => {

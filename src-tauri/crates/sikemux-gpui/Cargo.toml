@@ -43,6 +43,7 @@ sikemux-client = { path = "../sikemux-client" }
 sikemux-wire = { path = "../sikemux-wire" }
 textmate-highlight = { path = "crates/textmate-highlight" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

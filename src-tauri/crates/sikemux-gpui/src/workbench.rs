@@ -13,9 +13,9 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, DragMoveEvent, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
-    Subscription, Task, WeakEntity, Window,
+    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
+    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
+    WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -599,6 +599,7 @@ impl Workbench {
                 if let Some(pane) = &self.git {
                     pane.update(cx, |pane, cx| pane.drafts(&value, cx));
                 }
+                self.drafts(&value, cx);
                 self.reads.insert("drafts", value);
             }
             Update::Read("catalog", value) => {
@@ -698,7 +699,13 @@ impl Workbench {
         if self.chats.contains_key(&agent) {
             return;
         }
-        let chat = Chat::new(agent.clone(), &provider, cx.weak_entity(), cx);
+        let chat = Chat::new(
+            agent.clone(),
+            &provider,
+            cx.weak_entity(),
+            self.asks.clone(),
+            cx,
+        );
         self.chats.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
     }
@@ -742,6 +749,7 @@ impl Workbench {
                             cx.notify();
                         }
                         bench.offer(&agent, cx);
+                        bench.typed_draft(&agent, cx);
                     }
                     _ => {}
                 },
@@ -769,8 +777,16 @@ impl Workbench {
             refusal: None,
             sent: None,
             returned: None,
+            synced: json!({ "text": "" }),
+            arrived: None,
+            _keeping: Task::ready(()),
             _heard: [sending, keeping],
         });
+        if let (Some(composing), Some(drafts)) = (chat.composer.as_mut(), self.reads.get("drafts"))
+        {
+            composing.start_from(drafts, &agent, window, cx);
+        }
+        self.watch_drafts();
         if let Some(text) = self.deliveries.remove(&agent) {
             self.deliver(&agent, text, window, cx);
         }
@@ -811,18 +827,24 @@ impl Workbench {
                 .or_insert(text);
             return;
         };
-        draft.update(cx, |draft, cx| {
-            let held = draft.value();
-            let value = if held.trim().is_empty() {
-                text
-            } else {
-                format!("{}\n\n{text}", held.trim_end())
-            };
-            let end = value.len();
-            draft.set_value(value, window, cx);
-            draft.set_selected_range(end..end, cx);
-        });
+        append(&draft, &text, window, cx);
         draft.read(cx).focus_handle(cx).focus(window, cx);
+        cx.notify();
+    }
+
+    /// Stops the turn running in `agent`'s chat. The messages waiting behind it come back
+    /// to the draft rather than going out after it.
+    pub fn stop(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(chat) = self.chats.get(agent) else {
+            return;
+        };
+        let waiting = chat.waiting().join("\n\n");
+        if let Some(composing) = chat.composer.as_ref().filter(|_| !waiting.is_empty()) {
+            append(&composing.draft, &waiting, window, cx);
+        }
+        self.ask_chat(ChatAsk::Cancel {
+            agent: agent.to_owned(),
+        });
         cx.notify();
     }
 
@@ -849,6 +871,7 @@ impl Workbench {
                 composing.attachments = returned.attachments;
                 composing.earlier = returned.earlier;
             }
+            composing.take_arrived(window, cx);
         }
         let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
         let Some(composing) = chat
@@ -977,9 +1000,13 @@ impl Workbench {
             .filter(|agent| !shown.contains(agent))
             .cloned()
             .collect();
+        let closed = !gone.is_empty();
         for agent in gone {
             self.chats.remove(&agent);
             self.ask_chat(ChatAsk::Detach { agent });
+        }
+        if closed {
+            self.watch_drafts();
         }
     }
 
@@ -1019,13 +1046,28 @@ impl Workbench {
             "git-overview",
             Watch::new("git.overview", json!({ "repo": path }), &["git"]),
         ));
-        let drafts: Vec<String> = path.iter().map(|path| format!("git:{path}")).collect();
-        let _ = self.asks.send(Ask::Watch(
-            "drafts",
-            Watch::new("drafts", json!({ "keys": drafts }), &["drafts"]),
-        ));
         self.files.show(path.clone().map(PathBuf::from), &self.asks);
         self.watched_project = path;
+        self.watch_drafts();
+    }
+
+    /// Keeps the core answering the drafts on show: the commit message of the project in
+    /// front, and every open chat's.
+    fn watch_drafts(&self) {
+        let git = self
+            .watched_project
+            .iter()
+            .map(|path| format!("git:{path}"));
+        let chats = self
+            .chats
+            .iter()
+            .filter(|(_, chat)| chat.composer.is_some())
+            .map(|(agent, _)| crate::chat::draft_key(agent));
+        let keys: Vec<String> = git.chain(chats).collect();
+        let _ = self.asks.send(Ask::Watch(
+            "drafts",
+            Watch::new("drafts", json!({ "keys": keys }), &["drafts"]),
+        ));
     }
 
     /// Keeps the core checking the CI of the repository in front while its host is signed in.
@@ -2202,12 +2244,7 @@ impl EventEmitter<crate::git::Changed> for Workbench {}
 
 /// The picture `accountPicture` answers with: its type, and its bytes in base64.
 fn decode_picture(value: &Value) -> Option<Arc<Image>> {
-    use base64::Engine;
-    let format = ImageFormat::from_mime_type(value["mime"].as_str()?)?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(value["data"].as_str()?)
-        .ok()?;
-    Some(Arc::new(Image::from_bytes(format, bytes)))
+    crate::picture::decode(value["mime"].as_str()?, value["data"].as_str()?)
 }
 
 /// Whether two tabs show the same kind of pane, as ⌃Tab steps between them.
@@ -2546,4 +2583,20 @@ impl Render for Workbench {
                 },
             )
     }
+}
+
+/// Puts `text` at the end of the draft after a blank line, keeping what it holds, chips
+/// and all, with the caret after it.
+fn append(draft: &Entity<TextareaState>, text: &str, window: &mut Window, cx: &mut App) {
+    draft.update(cx, |draft, cx| {
+        let held = draft.value();
+        let kept = held.trim_end().len();
+        let joined = if kept == 0 {
+            text.to_owned()
+        } else {
+            format!("\n\n{text}")
+        };
+        draft.set_selected_range(kept..held.len(), cx);
+        draft.replace(joined, window, cx);
+    });
 }

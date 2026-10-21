@@ -13,11 +13,12 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable,
     FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement, KeyBinding, ParentElement,
-    Radians, SharedString, StatefulInteractiveElement, Styled, StyledText, Subscription,
-    Transformation, WeakEntity, Window,
+    Radians, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledText,
+    Subscription, Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
-    Change, CodeColours, CodeRuns, EmptyChanged, Markdown, Pen, Row, Style, Transcript,
+    Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row, Style,
+    Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -30,17 +31,27 @@ use sikemux_wire::protocol::{ChatAttachment, ChatContext, ChatMark, MidTurnSend}
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
 use crate::icons::Icon;
+use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
+use tokio::sync::mpsc::UnboundedSender;
 
 mod attach;
+mod content;
+mod draft;
 mod edit;
+mod find;
+mod link;
 mod live;
 mod mention;
+mod meta;
 mod page;
+mod status;
 mod tools;
+
+pub use draft::key as draft_key;
 
 /// Turns asked for each time the reader nears the top of what is held.
 const PAGE_TURNS: u32 = 20;
@@ -129,9 +140,12 @@ impl ChatRow {
             .iter()
             .enumerate()
             .filter(|(_, letter)| letter.kind == LetterKind::Message);
-        self.docs = parts
-            .chain(letters.map(|(ix, letter)| Doc::new(&letter_doc(ix), &letter.text, None)))
-            .collect();
+        self.docs =
+            parts
+                .chain(letters.map(|(ix, letter)| {
+                    Doc::new(&letter_doc(ix), &letter.text, letter.tree.as_ref())
+                }))
+                .collect();
     }
 
     fn doc(&self, part: &str) -> Option<&Doc> {
@@ -234,6 +248,7 @@ actions!(
         Confirm
     ]
 );
+actions!(chat, [FindInChat]);
 actions!(
     composer,
     [
@@ -258,6 +273,13 @@ pub struct Choose(pub usize);
 /// question's come last, so they win over the composer's while it asks.
 pub fn install(cx: &mut App) {
     gpui_transcript::init(cx);
+    crate::ui::find_bar::install(cx);
+    let find = if cfg!(target_os = "macos") {
+        "cmd-f"
+    } else {
+        "ctrl-f"
+    };
+    cx.bind_keys([KeyBinding::new(find, FindInChat, Some("Chat"))]);
     let mut bindings = vec![
         KeyBinding::new("up", OlderPrompt, Some("ChatComposer > Input")),
         KeyBinding::new("down", NewerPrompt, Some("ChatComposer > Input")),
@@ -328,6 +350,12 @@ pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
     /// The stage draws the welcome in an empty chat's place, so it hears when that changes.
     _emptied: Subscription,
+    /// The stage draws the find bar's count, so it hears when what was found changes.
+    _found: Subscription,
+    /// The find bar over the transcript, while it is open.
+    pub finding: Option<find::Finding>,
+    /// The line under the last row saying what the agent is doing.
+    activity_line: Entity<status::Activity>,
     head: Map<String, Value>,
     /// The head as last changed, read once for each change.
     state: Option<ChatHead>,
@@ -374,6 +402,11 @@ pub struct Composing {
     pub sent: Option<Sent>,
     /// A turned-down message, going back into the draft when it next draws.
     pub returned: Option<Sent>,
+    /// The draft as the core last kept it.
+    pub synced: Value,
+    /// A draft typed in another app, with this draft as it was when that came.
+    pub arrived: Option<(Sent, Value)>,
+    pub _keeping: Task<()>,
     pub _heard: [Subscription; 2],
 }
 
@@ -439,14 +472,20 @@ struct Pick {
 }
 
 impl Chat {
-    pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
+    pub fn new(
+        agent: String,
+        provider: &str,
+        bench: WeakEntity<Workbench>,
+        asks: UnboundedSender<Ask>,
+        cx: &mut App,
+    ) -> Chat {
         let reader = cx.new(|_| Reading::default());
         let stage = bench.clone();
         let looks = Looks::new(
             Tokens::get(cx),
             provider,
             reader.clone(),
-            bench.clone(),
+            (bench.clone(), asks),
             agent.clone(),
         );
         let transcript = cx.new(|cx| {
@@ -475,6 +514,14 @@ impl Chat {
                 bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
             })
         });
+        let found = {
+            let stage = stage.clone();
+            cx.subscribe(&transcript, move |_, _: &FoundChanged, cx| {
+                stage
+                    .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
+                    .ok();
+            })
+        };
         let emptied = cx.subscribe(&transcript, move |_, _: &EmptyChanged, cx| {
             stage
                 .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
@@ -482,6 +529,9 @@ impl Chat {
         });
         Chat {
             transcript,
+            _found: found,
+            finding: None,
+            activity_line: cx.new(|_| status::Activity::new(provider)),
             _emptied: emptied,
             head: Map::new(),
             state: None,
@@ -587,11 +637,25 @@ impl Chat {
                 cx.notify();
             }
         });
+        let doing = self.activity(cx);
+        self.activity_line
+            .update(cx, |activity, cx| activity.set(doing, cx));
     }
 
     /// Whether the head changed since this was last asked.
     pub fn take_head_moved(&mut self) -> bool {
         std::mem::take(&mut self.head_moved)
+    }
+
+    /// What the messages waiting behind the running turn say.
+    pub fn waiting(&self) -> Vec<String> {
+        self.state.as_ref().map_or(Vec::new(), |head| {
+            head.queued
+                .iter()
+                .map(|queued| queued.text.trim().to_owned())
+                .filter(|text| !text.is_empty())
+                .collect()
+        })
     }
 
     pub fn running(&self) -> bool {
@@ -1159,7 +1223,11 @@ pub fn pane(
         .flex_1()
         .min_h_0()
         .relative()
-        .child(chat.transcript.clone())
+        .child(
+            chat.transcript
+                .clone()
+                .cached(StyleRefinement::default().size_full()),
+        )
         .child(
             div()
                 .absolute()
@@ -1167,6 +1235,11 @@ pub fn pane(
                 .right_0()
                 .bottom_0()
                 .child(Scrollbar::vertical(&list)),
+        )
+        .children(
+            chat.finding
+                .as_ref()
+                .map(|finding| find::bar(&agent.id, finding, chat.transcript.read(cx).found(), cx)),
         )
         .children(welcome.map(|welcome| {
             div()
@@ -1211,12 +1284,12 @@ pub fn pane(
         && !chat.is_folded(&open);
     let id = &agent.id;
     let composing = chat.composer.is_some();
-    div()
+    let pane = div()
         .size_full()
         .relative()
         .flex()
         .flex_col()
-        .when(composing, |pane| pane.on_drop(attach::on_drop(id, cx)))
+        .when(composing, |pane| attach::takes_drops(pane, id, cx))
         .when(asking, |pane| {
             pane.key_context("QuestionDock")
                 .on_action(pressed(id, |choose: &Choose| Press::Choose(choose.0), cx))
@@ -1228,6 +1301,8 @@ pub fn pane(
                 .on_action(pressed(id, |_: &Confirm| Press::Pick, cx))
         })
         .child(rows)
+        .child(chat.activity_line.clone())
+        .children(status::trouble(agent, chat, cx))
         .children(permissions)
         .children(assumed)
         .children(stack)
@@ -1269,7 +1344,17 @@ pub fn pane(
                     )
             }),
         )
-        .when(composing, |pane| pane.child(attach::drop_hint(cx)))
+        .when(composing, |pane| pane.child(attach::drop_hint(cx)));
+    let this = cx.weak_entity();
+    let agent = id.to_owned();
+    div()
+        .size_full()
+        .key_context("Chat")
+        .on_action(move |_: &FindInChat, window, cx| {
+            this.update(cx, |bench, cx| bench.open_find(&agent, window, cx))
+                .ok();
+        })
+        .child(pane)
 }
 
 /// Hands a key's action to the question on show; one it does not take goes on to the draft.
@@ -1341,15 +1426,11 @@ fn stop_turn(
     cx: &mut Context<Workbench>,
 ) -> impl Fn(&StopTurn, &mut Window, &mut App) + use<> {
     let (agent, this) = (agent.to_owned(), cx.weak_entity());
-    move |_: &StopTurn, _: &mut Window, cx: &mut App| {
+    move |_: &StopTurn, window: &mut Window, cx: &mut App| {
         let stopped = this.update(cx, |bench, cx| {
             let chat = bench.chats.get(&agent)?;
             let empty = chat.composer.as_ref()?.draft.read(cx).value().is_empty();
-            (chat.running() && empty).then(|| {
-                bench.ask_chat(ChatAsk::Cancel {
-                    agent: agent.clone(),
-                })
-            })
+            (chat.running() && empty).then(|| bench.stop(&agent, window, cx))
         });
         if !matches!(stopped, Ok(Some(()))) {
             cx.propagate();
@@ -2046,11 +2127,10 @@ fn composer(
         })
     };
     let on_stop = {
-        let (asks, agent) = (bench.asks.clone(), agent.id.clone());
-        Rc::new(move |_: &mut Window, _: &mut App| {
-            let _ = asks.send(Ask::Chat(ChatAsk::Cancel {
-                agent: agent.clone(),
-            }));
+        let (this, agent) = (this.clone(), agent.id.clone());
+        Rc::new(move |window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.stop(&agent, window, cx))
+                .ok();
         })
     };
     let saved = bench.view.as_ref().and_then(|view| {
@@ -2188,6 +2268,8 @@ struct Looks {
     tints: Tints,
     bench: WeakEntity<Workbench>,
     agent: String,
+    /// The pictures in the chat's replies, read from their bytes once, by part.
+    pictures: RefCell<HashMap<SharedString, Option<Picture>>>,
 }
 
 /// The colours a run of tool calls is drawn in, mixed once.
@@ -2307,7 +2389,7 @@ impl Looks {
         t: &Tokens,
         provider: &str,
         reader: Entity<Reading>,
-        bench: WeakEntity<Workbench>,
+        (bench, asks): (WeakEntity<Workbench>, UnboundedSender<Ask>),
         agent: String,
     ) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
@@ -2334,6 +2416,15 @@ impl Looks {
                 ..t.surface_sunken
             },
             code: Some(code_colours(reader.clone(), theme::color(&t.editor.fg))),
+            on_link: Some(Rc::new(|href: &str, _: &mut Window, cx: &mut App| {
+                link::open(href, cx)
+            })),
+            image: Some(Rc::new({
+                let (bench, quiet) = (bench.clone(), t.text_tertiary);
+                move |src: &str, _: &str, _: &mut Window, _: &mut App| {
+                    content::image(src, &bench, &asks, quiet)
+                }
+            })),
             ..Style::default()
         };
         let thought = Style {
@@ -2367,6 +2458,7 @@ impl Looks {
             tints: Tints::new(t),
             bench,
             agent,
+            pictures: RefCell::default(),
         }
     }
 }
@@ -2431,7 +2523,8 @@ fn row(
         })
         .collect();
     let summary = opens.map(|fold| work(fold, !folded, looks));
-    if parts.is_empty() && message.letters.is_empty() && summary.is_none() {
+    let carried = !message.attachments.is_empty() || !message.context.is_empty();
+    if parts.is_empty() && message.letters.is_empty() && summary.is_none() && !carried {
         return div().into_any_element();
     }
     let lettered = !message.letters.is_empty();
@@ -2451,6 +2544,12 @@ fn row(
             )),
             None => {
                 let group = SharedString::from(format!("sent:{}", message.id));
+                let bench = looks.bench.clone();
+                let open = move |path: PathBuf, window: &mut Window, cx: &mut App| {
+                    bench
+                        .update(cx, |bench, cx| bench.show_picture(path, window, cx))
+                        .ok();
+                };
                 div()
                     .group(group.clone())
                     .max_w(relative(0.8))
@@ -2465,19 +2564,29 @@ fn row(
                             .border_color(looks.line)
                             .rounded(theme::RADIUS_3)
                             .bg(looks.bubble)
+                            .children(attach::sent(message, open, cx))
                             .children(parts),
                     )
-                    .child(edit::sent_actions(&group, message, looks))
+                    .children(meta::line(rows, ix, &group, looks, cx))
             }
         }
     } else {
+        let group = SharedString::from(format!("answer:{}", message.id));
         div()
+            .group(group.clone())
             .flex()
             .flex_col()
-            .gap(px(10.))
             .min_w_0()
-            .children(summary)
-            .children(parts)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .min_w_0()
+                    .children(summary)
+                    .children(parts),
+            )
+            .children(meta::line(rows, ix, &group, looks, cx))
     };
     let user = user && !lettered;
     div()
@@ -2951,6 +3060,6 @@ fn part(
             format!("Moved to {}", moved.label),
             looks.faint,
         ),
-        ChatPart::Content { .. } => line(Icon::File, "Attachment".into(), looks.quiet),
+        ChatPart::Content { content, .. } => content::content(id, content, looks, cx),
     }
 }
