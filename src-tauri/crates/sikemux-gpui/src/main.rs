@@ -18,6 +18,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             theme::install(cx);
+            cx.set_reduce_motion(system_reduces_motion());
             let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -38,4 +39,20 @@ fn main() {
             .expect("window opens");
             cx.activate(true);
         });
+}
+
+#[cfg(target_os = "macos")]
+fn system_reduces_motion() -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    // SAFETY: NSWorkspace's shared workspace always exists, and the setting is a plain BOOL.
+    unsafe {
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        msg_send![workspace, accessibilityDisplayShouldReduceMotion]
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_reduces_motion() -> bool {
+    false
 }

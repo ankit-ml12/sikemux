@@ -6,6 +6,7 @@ pub(crate) mod dialog;
 mod dock;
 pub mod find_bar;
 mod floats;
+pub mod grain;
 mod lists;
 mod pane;
 

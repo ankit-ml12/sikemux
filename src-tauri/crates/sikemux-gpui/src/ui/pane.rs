@@ -19,6 +19,7 @@ pub fn pane(cx: &App) -> Div {
         .border_1()
         .border_color(Tokens::get(cx).border)
         .rounded(RADIUS_3)
+        .children(super::grain::field(cx))
 }
 
 /// The blurred pill a pane's header is made of.

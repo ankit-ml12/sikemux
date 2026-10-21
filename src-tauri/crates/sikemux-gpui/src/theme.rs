@@ -67,6 +67,8 @@ pub struct Tokens {
     pub ssh: Hsla,
     pub tree_spine: Hsla,
     pub tree_tick: Hsla,
+    /// The dots of the grain behind panes.
+    pub shader_dot: Hsla,
     /// What named and indexed colours look like in a terminal; the core answers programs' colour queries with it.
     pub terminal: TerminalColors,
     pub terminal_cursor_text: Hsla,
@@ -139,6 +141,7 @@ impl Tokens {
             ssh: color(&k.ssh),
             tree_spine: color(&k.tree_spine),
             tree_tick: color(&k.tree_tick),
+            shader_dot: color(&k.shader_dot),
             terminal: TerminalColors {
                 foreground: bytes(parse(&t.foreground)),
                 background: bytes(parse(&t.background)),

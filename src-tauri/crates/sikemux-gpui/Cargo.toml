@@ -56,6 +56,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
 mac-notification-sys = "0.6"
 
+[build-dependencies]
+# The same naga as GPUI's wgpu, only to translate the shaders while building.
+naga = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", features = ["wgsl-in", "msl-out"] }
+
 [dev-dependencies]
 sikemux-fold = { path = "../sikemux-fold" }
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }

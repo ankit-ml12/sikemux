@@ -275,6 +275,7 @@ impl Workbench {
         crate::settings::install(cx);
         crate::project_switcher::install(cx);
         crate::model_picker::install(cx);
+        crate::ui::grain::animate(window, cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -616,6 +617,7 @@ impl Workbench {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
+                    crate::ui::grain::set(&preferences, cx);
                 }
                 self.reads.insert("preferences", value);
                 crate::notifications::introduce(self, cx);

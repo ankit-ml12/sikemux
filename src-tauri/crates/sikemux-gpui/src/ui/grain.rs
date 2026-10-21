@@ -1,0 +1,245 @@
+//! What the window's renderer paints behind panes with the shaders in `assets/shaders`:
+//! the moving grain, or the person's own picture dithered in its place. The grain moves
+//! by showing the last frame again with the renderer's clock moved on, so no view draws
+//! again for it.
+
+use std::cell::RefCell;
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
+
+use gpui::{
+    canvas, relative, App, AppContext, Context, Global, IntoElement, RenderImage, ShaderProgram,
+    Styled, Task, Window,
+};
+use sikemux_wire::protocol::Preferences;
+
+use crate::theme::{Tokens, RADIUS_3};
+use crate::workbench::Workbench;
+
+macro_rules! program {
+    ($name:literal) => {
+        ShaderProgram {
+            name: $name,
+            wgsl: include_str!(concat!(env!("OUT_DIR"), "/shaders/", $name, ".wgsl")),
+            msl: include_str!(concat!(env!("OUT_DIR"), "/shaders/", $name, ".metal")),
+        }
+    };
+}
+
+static FIELD: ShaderProgram = program!("field");
+static PICTURE: ShaderProgram = program!("picture");
+
+const FRAMES_PER_SECOND: u64 = 30;
+/// Slower on battery, where every frame is paid for out of the charge.
+const BATTERY_FRAMES_PER_SECOND: u64 = 20;
+const FIELD_SPEED: f32 = 0.5;
+/// Where the clock stands for a person who asked for less motion, so everything holds still.
+const STILL: f32 = 2.5;
+/// High, because the grain's dots are the only paint and nothing is drawn between them.
+const FIELD_OPACITY: f32 = 0.85;
+const PICTURE_OPACITY: f32 = 0.38;
+/// How much of a pane, from its top, the picture covers.
+const PICTURE_BAND: f32 = 0.6;
+/// The picture is drawn in two-pixel dots, so no more of it than one texel per dot is kept.
+const PICTURE_LONGEST: u32 = 2560;
+
+/// What panes show behind them, as the person's preferences say.
+#[derive(Clone)]
+pub struct Grain {
+    shown: bool,
+    /// From 0 to 2.
+    strength: f32,
+    picture_path: Option<String>,
+    picture: Picture,
+}
+
+#[derive(Clone)]
+enum Picture {
+    None,
+    Loading,
+    Loaded(Arc<RenderImage>),
+}
+
+impl Global for Grain {}
+
+impl Grain {
+    fn moving(&self) -> bool {
+        self.shown && !matches!(self.picture, Picture::Loaded(_))
+    }
+}
+
+/// Takes the preferences for what panes show, loading a newly chosen picture.
+pub fn set(preferences: &Preferences, cx: &mut App) {
+    let path = preferences.pane_image.clone();
+    let kept = cx
+        .try_global::<Grain>()
+        .filter(|grain| grain.picture_path == path)
+        .map(|grain| grain.picture.clone());
+    let picture = match kept {
+        Some(kept) => kept,
+        None => {
+            if let Some(path) = &path {
+                load(path.clone(), cx);
+            }
+            path.as_ref().map_or(Picture::None, |_| Picture::Loading)
+        }
+    };
+    let changed = cx.try_global::<Grain>().is_none_or(|grain| {
+        grain.shown != preferences.pane_shader
+            || grain.strength != preferences.pane_strength as f32
+            || grain.picture_path != path
+    });
+    if !changed {
+        return;
+    }
+    cx.set_global(Grain {
+        shown: preferences.pane_shader,
+        strength: preferences.pane_strength as f32,
+        picture_path: path,
+        picture,
+    });
+    cx.refresh_windows();
+}
+
+fn load(path: String, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let read = path.clone();
+        let picture = cx
+            .background_spawn(async move { read_picture(Path::new(&read)) })
+            .await;
+        cx.update(|cx| {
+            if let Some(grain) = cx.try_global::<Grain>() {
+                if grain.picture_path.as_deref() == Some(path.as_str()) {
+                    let mut grain = grain.clone();
+                    grain.picture = match picture {
+                        Some(picture) => Picture::Loaded(picture),
+                        None => Picture::None,
+                    };
+                    cx.set_global(grain);
+                    cx.refresh_windows();
+                }
+            }
+        })
+    })
+    .detach();
+}
+
+/// The picture at `path` as the atlas takes it, no larger than its dots can show.
+fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
+    let decoded = image::open(path)
+        .inspect_err(|error| eprintln!("sikemux: the pane picture does not open: {error}"))
+        .ok()?;
+    let fitted = match decoded.width().max(decoded.height()) > PICTURE_LONGEST {
+        true => decoded.thumbnail(PICTURE_LONGEST, PICTURE_LONGEST),
+        false => decoded,
+    };
+    let mut pixels = fitted.into_rgba8();
+    for pixel in pixels.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    Some(Arc::new(RenderImage::new([image::Frame::new(pixels)])))
+}
+
+/// What fills a pane's frame behind everything the pane shows.
+pub fn field(cx: &App) -> Option<impl IntoElement> {
+    let grain = cx.try_global::<Grain>().filter(|grain| grain.shown)?;
+    let inner_radius = f32::from(RADIUS_3) - 1.;
+    if let Picture::Loaded(picture) = &grain.picture {
+        let picture = picture.clone();
+        let strength = (PICTURE_OPACITY * grain.strength).min(1.);
+        return Some(
+            canvas(
+                |_, _, _| {},
+                move |bounds, (), window, _| {
+                    let mut params = [0.; gpui::SHADER_PARAMS];
+                    params[..3].copy_from_slice(&[window.scale_factor(), inner_radius, strength]);
+                    if let Err(error) =
+                        window.paint_shader(bounds, &PICTURE, params, Some(&picture))
+                    {
+                        eprintln!("sikemux: the pane picture does not draw: {error}");
+                    }
+                },
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .w_full()
+            .h(relative(PICTURE_BAND))
+            .into_any_element(),
+        );
+    }
+    if matches!(grain.picture, Picture::Loading) {
+        return None;
+    }
+    let dot = Tokens::get(cx).shader_dot.to_rgb();
+    let (start, speed) = clock(FIELD_SPEED, cx);
+    let alpha = (dot.a * FIELD_OPACITY * grain.strength).min(1.);
+    Some(
+        canvas(
+            |_, _, _| {},
+            move |bounds, (), window, _| {
+                let mut params = [0.; gpui::SHADER_PARAMS];
+                params[..8].copy_from_slice(&[
+                    start,
+                    speed,
+                    window.scale_factor(),
+                    inner_radius,
+                    dot.r,
+                    dot.g,
+                    dot.b,
+                    alpha,
+                ]);
+                let _ = window.paint_shader(bounds, &FIELD, params, None);
+            },
+        )
+        .absolute()
+        .inset_0()
+        .into_any_element(),
+    )
+}
+
+/// Where a shader's clock starts and how fast it runs, holding still for less motion.
+fn clock(speed: f32, cx: &App) -> (f32, f32) {
+    match cx.reduce_motion() {
+        true => (STILL, 0.),
+        false => (0., speed),
+    }
+}
+
+/// Moves what the shaders show on while the window is in front, at the rate the power allows.
+pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
+    let ticking = Rc::new(RefCell::new(None));
+    let restart = |ticking: Rc<RefCell<Option<Task<()>>>>| {
+        move |_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>| {
+            *ticking.borrow_mut() = tick(window, cx);
+        }
+    };
+    cx.observe_window_activation(window, restart(ticking.clone()))
+        .detach();
+    cx.observe_global_in::<Grain>(window, restart(ticking))
+        .detach();
+}
+
+fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
+    let moving = window.is_window_active()
+        && !cx.reduce_motion()
+        && cx.try_global::<Grain>().is_some_and(Grain::moving);
+    moving.then(|| {
+        cx.spawn_in(window, async move |bench, cx| loop {
+            let Ok(wait) = bench.update_in(cx, |bench, window, _| {
+                window.present_shaders();
+                let on_battery = bench.battery.is_some_and(|battery| !battery.charging);
+                let rate = match on_battery {
+                    true => BATTERY_FRAMES_PER_SECOND,
+                    false => FRAMES_PER_SECOND,
+                };
+                Duration::from_millis(1000 / rate)
+            }) else {
+                break;
+            };
+            cx.background_executor().timer(wait).await;
+        })
+    })
+}
