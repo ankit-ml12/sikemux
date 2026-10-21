@@ -24,12 +24,15 @@ function AskedBy({ cli, ticket, children }: { cli: string; ticket?: string; chil
 
 /** A question as it reads once answered: its words, and the answer in one line, or only that it was answered when the answer is a secret. */
 export function AnsweredQuestion({
+  own,
   asker,
   cli,
   question,
   answer,
   secret,
 }: {
+  /** This chat's own agent asked, so who asked goes without saying. */
+  own: boolean;
   asker: string;
   cli: string;
   question: string;
@@ -40,9 +43,11 @@ export function AnsweredQuestion({
   const styles = useStyles(makeStyles);
   return (
     <View>
-      <AskedBy cli={cli}>
-        <Text style={styles.name}>{asker}</Text> asked you
-      </AskedBy>
+      {own ? null : (
+        <AskedBy cli={cli}>
+          <Text style={styles.name}>{asker}</Text> asked you
+        </AskedBy>
+      )}
       <Text style={styles.prose} selectable>
         {question}
       </Text>

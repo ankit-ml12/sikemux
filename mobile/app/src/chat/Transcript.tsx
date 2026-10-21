@@ -54,6 +54,8 @@ import { AnsweredQuestion } from './Question';
 
 /** The chat's agent, whose mark its subagents carry. */
 export const ProviderContext = createContext('agent');
+/** The chat's own agent, which an answer to its own question needs no name for. */
+export const AgentContext = createContext('');
 
 /** The chat's subagents: each one's card by its session, for a notice that names one, and the rows it wrote. */
 export type Subagents = { card: (sessionId: string) => SubagentCard | undefined; rows: Readonly<Record<string, ChatMessage[]>> };
@@ -428,6 +430,7 @@ export function Message({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
+  const chatAgent = useContext(AgentContext);
   const tap = onTap
     ? () => {
         haptics.select();
@@ -442,6 +445,7 @@ export function Message({
           letter.kind === 'answer' ? (
             <AnsweredQuestion
               key={index}
+              own={letter.agentId === chatAgent}
               asker={letter.name}
               cli={letter.cli}
               question={letter.question ?? ''}

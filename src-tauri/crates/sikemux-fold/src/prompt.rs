@@ -175,7 +175,7 @@ pub(super) fn agent_letters(text: &str) -> Option<Vec<AgentLetter>> {
             AgentLetter {
                 kind: LetterKind::Answer,
                 name: attribute("asker"),
-                agent_id: String::new(),
+                agent_id: attribute("asker-id"),
                 cli: attribute("cli"),
                 question: attribute("question"),
                 text: body,

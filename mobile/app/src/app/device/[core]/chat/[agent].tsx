@@ -27,6 +27,7 @@ import {
   Earlier,
   EarlierLost,
   Message,
+  AgentContext,
   ProviderContext,
   Queued,
   SubagentsContext,
@@ -258,122 +259,125 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
         ) : (
           <HostContext value={core}>
             <ProviderContext value={provider}>
-              <FoldsContext value={session.folds}>
-                <SubagentsContext value={subagents}>
-                  <ToolDetailContext value={session.toolDetail}>
-                    <View style={styles.transcript}>
-                      <MaskedView style={styles.transcript} maskElement={<EdgeFades />}>
-                        <FlashList
-                          ref={list}
-                          showsVerticalScrollIndicator={false}
-                          data={state.messages}
-                          keyExtractor={(message) => message.id}
-                          // Folded work draws nothing, so it is never recycled into a whole answer.
-                          getItemType={(message) => (rowFold(message, workOpen).hidden ? 'folded' : message.role)}
-                          extraData={marks}
-                          renderItem={({ item }) => {
-                            const { summary: fold, hidden, from } = rowFold(item, workOpen);
-                            const summary = fold ? (
-                              <WorkSummary
-                                took={fold.took}
-                                calls={fold.calls}
-                                thought={fold.thought}
-                                open={workOpen(fold.id)}
-                                onToggle={() => toggleWork(fold.id)}
-                              />
-                            ) : null;
-                            if (hidden) return summary ?? <View />;
-                            return (
+              <AgentContext value={agentId}>
+                <FoldsContext value={session.folds}>
+                  <SubagentsContext value={subagents}>
+                    <ToolDetailContext value={session.toolDetail}>
+                      <View style={styles.transcript}>
+                        <MaskedView style={styles.transcript} maskElement={<EdgeFades />}>
+                          <FlashList
+                            ref={list}
+                            showsVerticalScrollIndicator={false}
+                            data={state.messages}
+                            keyExtractor={(message) => message.id}
+                            // Folded work draws nothing, so it is never recycled into a whole answer.
+                            getItemType={(message) => (rowFold(message, workOpen).hidden ? 'folded' : message.role)}
+                            extraData={marks}
+                            renderItem={({ item }) => {
+                              const { summary: fold, hidden, from } = rowFold(item, workOpen);
+                              const summary = fold ? (
+                                <WorkSummary
+                                  took={fold.took}
+                                  calls={fold.calls}
+                                  thought={fold.thought}
+                                  open={workOpen(fold.id)}
+                                  onToggle={() => toggleWork(fold.id)}
+                                />
+                              ) : null;
+                              if (hidden) return summary ?? <View />;
+                              return (
+                                <>
+                                  {summary}
+                                  <Message
+                                    message={item}
+                                    live={item.id === liveId}
+                                    unsent={chat.unsent.get(item.id)}
+                                    onRetry={session.retrySend}
+                                    onTap={onTap}
+                                    strip={item.id === open ? openStrip : undefined}
+                                    sentFiles={chat.sentFiles}
+                                    from={from}
+                                  />
+                                </>
+                              );
+                            }}
+                            ListHeaderComponent={
+                              chat.hasEarlier ? (
+                                <Earlier
+                                  failed={chat.earlier === 'failed'}
+                                  loading={chat.earlier === 'loading'}
+                                  onRetry={session.loadEarlier}
+                                />
+                              ) : state.earlierLost ? (
+                                <EarlierLost />
+                              ) : null
+                            }
+                            ListFooterComponent={
                               <>
-                                {summary}
-                                <Message
-                                  message={item}
-                                  live={item.id === liveId}
-                                  unsent={chat.unsent.get(item.id)}
-                                  onRetry={session.retrySend}
-                                  onTap={onTap}
-                                  strip={item.id === open ? openStrip : undefined}
-                                  sentFiles={chat.sentFiles}
-                                  from={from}
-                                />
+                                {queued.length ? <Queued held={queued} sentFiles={chat.sentFiles} /> : null}
+                                {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
+                                {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
+                                {questions.answered.map((question) => (
+                                  <AnsweredQuestion
+                                    key={question.id}
+                                    own={question.agentId === agentId}
+                                    asker={question.name}
+                                    cli={question.cli}
+                                    question={question.asked}
+                                    answer={question.answer ?? ''}
+                                    secret={question.secret}
+                                  />
+                                ))}
+                                {questions.open.map((question) => (
+                                  <OpenQuestion
+                                    key={question.id}
+                                    question={question}
+                                    canAnswer={!watchOnly}
+                                    busy={questions.busy === question.id}
+                                    writing={questions.writing && composing?.id === question.id}
+                                    onChoose={(choice) => void questions.answer(question, { choice })}
+                                    onWrite={() => {
+                                      questions.write(question);
+                                      input.current?.focus();
+                                    }}
+                                    onSecret={(text) => questions.answer(question, { answer: text })}
+                                  />
+                                ))}
+                                {questions.assumed.map((question) => (
+                                  <AssumedQuestion
+                                    key={question.id}
+                                    question={question}
+                                    canAnswer={!watchOnly}
+                                    busy={questions.busy === question.id}
+                                    onFine={() => void questions.answer(question, { fine: true })}
+                                    onChange={() => {
+                                      questions.write(question);
+                                      input.current?.focus();
+                                    }}
+                                  />
+                                ))}
                               </>
-                            );
-                          }}
-                          ListHeaderComponent={
-                            chat.hasEarlier ? (
-                              <Earlier
-                                failed={chat.earlier === 'failed'}
-                                loading={chat.earlier === 'loading'}
-                                onRetry={session.loadEarlier}
-                              />
-                            ) : state.earlierLost ? (
-                              <EarlierLost />
-                            ) : null
-                          }
-                          ListFooterComponent={
-                            <>
-                              {queued.length ? <Queued held={queued} sentFiles={chat.sentFiles} /> : null}
-                              {activity ? <Activity provider={provider} label={activity} since={chat.turnSince} /> : null}
-                              {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
-                              {questions.answered.map((question) => (
-                                <AnsweredQuestion
-                                  key={question.id}
-                                  asker={question.name}
-                                  cli={question.cli}
-                                  question={question.asked}
-                                  answer={question.answer ?? ''}
-                                  secret={question.secret}
-                                />
-                              ))}
-                              {questions.open.map((question) => (
-                                <OpenQuestion
-                                  key={question.id}
-                                  question={question}
-                                  canAnswer={!watchOnly}
-                                  busy={questions.busy === question.id}
-                                  writing={questions.writing && composing?.id === question.id}
-                                  onChoose={(choice) => void questions.answer(question, { choice })}
-                                  onWrite={() => {
-                                    questions.write(question);
-                                    input.current?.focus();
-                                  }}
-                                  onSecret={(text) => questions.answer(question, { answer: text })}
-                                />
-                              ))}
-                              {questions.assumed.map((question) => (
-                                <AssumedQuestion
-                                  key={question.id}
-                                  question={question}
-                                  canAnswer={!watchOnly}
-                                  busy={questions.busy === question.id}
-                                  onFine={() => void questions.answer(question, { fine: true })}
-                                  onChange={() => {
-                                    questions.write(question);
-                                    input.current?.focus();
-                                  }}
-                                />
-                              ))}
-                            </>
-                          }
-                          contentContainerStyle={styles.content}
-                          {...scroll.listProps}
-                          keyboardDismissMode="interactive"
-                        />
-                      </MaskedView>
-                      {scroll.away ? (
-                        <Pressable
-                          onPress={scroll.toEnd}
-                          style={styles.jump}
-                          hitSlop={8}
-                          accessibilityRole="button"
-                          accessibilityLabel="Jump to latest message">
-                          <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  </ToolDetailContext>
-                </SubagentsContext>
-              </FoldsContext>
+                            }
+                            contentContainerStyle={styles.content}
+                            {...scroll.listProps}
+                            keyboardDismissMode="interactive"
+                          />
+                        </MaskedView>
+                        {scroll.away ? (
+                          <Pressable
+                            onPress={scroll.toEnd}
+                            style={styles.jump}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Jump to latest message">
+                            <Icon name="IconArrowDown" size={16} color={colors.inkDim} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </ToolDetailContext>
+                  </SubagentsContext>
+                </FoldsContext>
+              </AgentContext>
             </ProviderContext>
           </HostContext>
         )}

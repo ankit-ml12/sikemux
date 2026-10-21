@@ -1,6 +1,5 @@
 import { useContext, type ReactNode } from "react";
 import { AgentMark } from "../agents/AgentMark";
-import { useStore } from "../state/store";
 import { IconLock } from "../ui/Icons";
 import { SECRET_ANSWERED } from "./agentLetters";
 import type { AgentLetter } from "./types";
@@ -23,8 +22,8 @@ export function AskedBy({ agentId, cli, ticket, children }: { agentId?: string; 
  */
 export function AnsweredQuestion({ letter }: { letter: AgentLetter }) {
     const chatId = useContext(ChatAgentContext).id;
-    const own = useStore((s) => s.agents[chatId]?.name === letter.name);
-    const askerId = useStore((s) => Object.values(s.agents).find((agent) => agent.name === letter.name)?.id);
+    const own = letter.agentId === chatId;
+    const askerId = letter.agentId || undefined;
     return (
         <>
             {!own && (

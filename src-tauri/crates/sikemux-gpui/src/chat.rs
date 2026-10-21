@@ -283,8 +283,8 @@ struct Pick {
 }
 
 impl Chat {
-    pub fn new(agent: String, provider: &str, name: Option<String>, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
-        let looks = Looks::new(Tokens::get(cx), provider, name, bench.clone(), agent.clone());
+    pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
+        let looks = Looks::new(Tokens::get(cx), provider, bench.clone(), agent.clone());
         let (tools, running, subagents) = (looks.tools.clone(), looks.running.clone(), looks.subagents.clone());
         let transcript = cx.new(|cx| {
             Transcript::new(Vec::new(), looks.text.clone(), move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx), cx)
@@ -1200,8 +1200,6 @@ struct Looks {
     tints: Tints,
     bench: WeakEntity<Workbench>,
     agent: String,
-    /// The agent's name, which an answer to its own question names it by.
-    name: Option<String>,
 }
 
 /// The colours a run of tool calls is drawn in, mixed once.
@@ -1249,7 +1247,7 @@ impl Tints {
 }
 
 impl Looks {
-    fn new(t: &Tokens, provider: &str, name: Option<String>, bench: WeakEntity<Workbench>, agent: String) -> Looks {
+    fn new(t: &Tokens, provider: &str, bench: WeakEntity<Workbench>, agent: String) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
         let text = Style {
@@ -1288,7 +1286,6 @@ impl Looks {
             tints: Tints::new(t),
             bench,
             agent,
-            name,
         }
     }
 }
@@ -1370,7 +1367,7 @@ fn letters(row: &ChatRow, pen: &Pen, looks: &Looks, window: &mut Window, cx: &mu
     let drawn = row.message.letters.iter().enumerate().map(|(ix, letter)| match letter.kind {
         LetterKind::Answer => {
             let asked = format!("{} asked you", letter.name);
-            let asker = (looks.name.as_deref() != Some(letter.name.as_str())).then(|| {
+            let asker = (letter.agent_id != looks.agent).then(|| {
                 div()
                     .h(px(22.))
                     .flex()

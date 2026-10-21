@@ -1171,6 +1171,7 @@ fn answered(question: &Question, question_text: &str) -> messages::Answered {
     messages::Answered {
         question: question_text.to_owned(),
         asker: question.name.clone(),
+        asker_id: question.agent_id.clone(),
         cli: question.cli.clone(),
         secret: question.secret,
     }

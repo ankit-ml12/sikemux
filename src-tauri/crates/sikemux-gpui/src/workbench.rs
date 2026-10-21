@@ -303,13 +303,13 @@ impl Workbench {
 
     /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
     fn open_chat(&mut self, cx: &mut Context<Self>) {
-        let Some(AgentRow { id: agent, provider, name, .. }) = self.agent() else {
+        let Some(AgentRow { id: agent, provider, .. }) = self.agent() else {
             return;
         };
         if self.chats.contains_key(&agent) {
             return;
         }
-        let chat = Chat::new(agent.clone(), &provider, name, cx.weak_entity(), cx);
+        let chat = Chat::new(agent.clone(), &provider, cx.weak_entity(), cx);
         self.chats.insert(agent.clone(), chat);
         self.ask_chat(ChatAsk::Attach { agent, since: None });
     }
