@@ -2,9 +2,9 @@
 // ranges, and the diff panes ask for the rows of a unified diff.
 
 use git2::{DiffOptions, Patch};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffKind {
     Add,
@@ -22,14 +22,25 @@ pub struct DiffHunk {
 /// A run of deleted lines followed by the lines that replaced them, both
 /// 0-based. A pure insertion deletes nothing and a pure deletion adds nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Change {
-    old_start: usize,
-    old_len: usize,
-    new_start: usize,
-    new_len: usize,
+pub struct Change {
+    pub old_start: usize,
+    pub old_len: usize,
+    pub new_start: usize,
+    pub new_len: usize,
 }
 
-fn changes(old: &str, new: &str) -> Vec<Change> {
+impl Change {
+    pub fn kind(&self) -> DiffKind {
+        match (self.old_len, self.new_len) {
+            (_, 0) => DiffKind::Del,
+            (0, _) => DiffKind::Add,
+            _ => DiffKind::Mod,
+        }
+    }
+}
+
+/// The runs of lines that differ between `old` and `new`, in order.
+pub fn changes(old: &str, new: &str) -> Vec<Change> {
     if old == new {
         return Vec::new();
     }
@@ -75,13 +86,11 @@ pub fn hunks(baseline: &str, current: &str) -> Vec<DiffHunk> {
         .into_iter()
         .map(|change| {
             let start = change.new_start as u32;
-            let end = start + change.new_len as u32;
-            let kind = match (change.old_len, change.new_len) {
-                (_, 0) => DiffKind::Del,
-                (0, _) => DiffKind::Add,
-                _ => DiffKind::Mod,
-            };
-            DiffHunk { kind, start, end }
+            DiffHunk {
+                kind: change.kind(),
+                start,
+                end: start + change.new_len as u32,
+            }
         })
         .collect()
 }
@@ -94,7 +103,7 @@ pub const ROW_HIDDEN: u8 = 3;
 /// One row of a unified diff: its kind, the line number it shows, and its
 /// text. A hidden row stands for unchanged lines left out, and its number is
 /// how many.
-#[derive(Serialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct DiffRow(pub u8, pub u32, pub String);
 
 /// Unchanged lines kept on each side of a change.

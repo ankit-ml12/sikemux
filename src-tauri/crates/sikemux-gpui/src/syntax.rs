@@ -71,6 +71,8 @@ fn shared() -> &'static Shared {
 struct Palette(Rc<RefCell<PaletteState>>);
 
 struct PaletteState {
+    /// Counts the themes taken since the window opened.
+    version: u64,
     text: String,
     highlight: ThemeHighlight,
     /// Each role's style, then plain text's, made the first time code is drawn.
@@ -83,8 +85,9 @@ struct PaletteState {
 }
 
 impl PaletteState {
-    fn new(tokens: &Tokens) -> Self {
+    fn new(tokens: &Tokens, version: u64) -> Self {
         Self {
+            version,
             text: tokens.editor.fg.clone(),
             highlight: tokens.highlight.clone(),
             styles: Vec::new(),
@@ -130,14 +133,20 @@ impl Palette {
 }
 
 pub fn install(cx: &mut App) {
-    let state = PaletteState::new(Tokens::get(cx));
+    let state = PaletteState::new(Tokens::get(cx), 0);
     cx.set_global(Palette(Rc::new(RefCell::new(state))));
 }
 
 /// Takes the code colours of the current theme.
 pub fn restyle(cx: &mut App) {
-    let state = PaletteState::new(Tokens::get(cx));
-    *cx.global::<Palette>().0.borrow_mut() = state;
+    let palette = cx.global::<Palette>().clone();
+    let version = palette.0.borrow().version + 1;
+    *palette.0.borrow_mut() = PaletteState::new(Tokens::get(cx), version);
+}
+
+/// Changes whenever the theme does, so lines coloured in an older one can be told apart.
+pub fn version(cx: &App) -> u64 {
+    cx.global::<Palette>().0.borrow().version
 }
 
 /// The theme's colour for a role of the scope table, which names the theme's `highlight` keys.
@@ -184,7 +193,7 @@ fn resolve(style: Style, palette: &[HighlightStyle], plain: HighlightStyle) -> H
     resolved
 }
 
-/// Whether there is a grammar for a language id, as `file_icons::language_of` names it.
+/// Whether there is a grammar for a language id, as `file_icons::language` names it.
 pub fn knows(language: &str) -> bool {
     shared().library.language(language).is_some()
 }

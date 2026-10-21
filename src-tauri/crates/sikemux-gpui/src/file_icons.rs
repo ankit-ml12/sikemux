@@ -78,16 +78,27 @@ pub fn install(cx: &mut App) {
     cx.set_global(FileIcons::default());
 }
 
-pub fn icon(name: &str, cx: &App) -> Option<Arc<Image>> {
-    let icons = cx.try_global::<FileIcons>()?;
-    let bundle = icons
+fn bundle(icons: &FileIcons) -> Option<&Bundle> {
+    icons
         .bundle
         .get_or_init(|| {
             let mut json = String::new();
             GzDecoder::new(BUNDLE).read_to_string(&mut json).ok()?;
             serde_json::from_str(&json).ok()
         })
-        .as_ref()?;
+        .as_ref()
+}
+
+/// The language a file is written in, by its name or path.
+pub fn language(name: &str, cx: &App) -> Option<String> {
+    bundle(cx.try_global::<FileIcons>()?)?
+        .language_of(name)
+        .map(str::to_owned)
+}
+
+pub fn icon(name: &str, cx: &App) -> Option<Arc<Image>> {
+    let icons = cx.try_global::<FileIcons>()?;
+    let bundle = bundle(icons)?;
     let icon = bundle.icon_of(name);
     if let Some(image) = icons.images.borrow().get(icon) {
         return Some(image.clone());

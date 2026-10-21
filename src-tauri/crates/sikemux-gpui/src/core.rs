@@ -127,6 +127,13 @@ pub enum Ask {
         method: &'static str,
         params: Value,
     },
+    /// A call whose answer goes back to the one asking, for answers that belong to
+    /// what asked, such as one file's diff.
+    Request {
+        method: &'static str,
+        params: Value,
+        reply: oneshot::Sender<Result<Value, String>>,
+    },
     Terminal(SessionId, TerminalAsk),
     Chat(ChatAsk),
     /// Hands the window the core's changes under `topic`, with what moved.
@@ -244,6 +251,25 @@ impl Default for Home {
     }
 }
 
+/// Asks the core one of its methods and waits for the answer.
+pub fn request(
+    asks: &mpsc::UnboundedSender<Ask>,
+    method: &'static str,
+    params: Value,
+) -> impl std::future::Future<Output = Result<Value, String>> {
+    let (reply, answer) = oneshot::channel();
+    let sent = asks.send(Ask::Request {
+        method,
+        params,
+        reply,
+    });
+    async move {
+        let gone = "the core is not connected";
+        sent.map_err(|_| gone.to_owned())?;
+        answer.await.map_err(|_| gone.to_owned())?
+    }
+}
+
 /// Talks to the core on a thread of its own, so the window's thread only draws.
 pub fn start(home: Home) -> Link {
     let (updates_tx, updates) = mpsc::unbounded_channel();
@@ -342,6 +368,13 @@ async fn run(
                                         Ok(value) => Update::Read(key, value),
                                         Err(error) => Update::Refused(key, error.to_string()),
                                     });
+                                });
+                            }
+                            Some(Ask::Request { method, params, reply }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    let answer = client.call(method, params).await;
+                                    let _ = reply.send(answer.map_err(|error| error.to_string()));
                                 });
                             }
                             Some(Ask::Chat(ask)) => {

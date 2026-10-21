@@ -44,6 +44,9 @@ pub struct Tokens {
     pub text_secondary: Hsla,
     pub text_tertiary: Hsla,
     pub text_disabled: Hsla,
+    /// Line numbers and other text that stays out of the way of what it numbers.
+    pub ink_faint: Hsla,
+    pub dark: bool,
     /// How git sees a file: changed, new to it, added, gone, or moved.
     pub git_modified: Hsla,
     pub git_untracked: Hsla,
@@ -118,6 +121,8 @@ impl Tokens {
             text_secondary: color(&k.secondary),
             text_tertiary: color(&k.tertiary),
             text_disabled: color(&k.disabled),
+            ink_faint: color(&k.ink_faint),
+            dark: palette.theme.dark,
             git_modified: color(&k.git_modified),
             git_untracked: color(&k.git_untracked),
             git_added: color(&k.git_added),

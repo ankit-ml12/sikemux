@@ -9,9 +9,9 @@ use chrono::Timelike;
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Image, ImageFormat,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString, StyleRefinement, Styled,
-    Subscription, WeakEntity, Window,
+    div, px, AnyElement, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Image,
+    ImageFormat, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StyleRefinement, Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -369,6 +369,9 @@ impl Workbench {
                     if self.finder.is_some() {
                         self.project_files.read(root.as_deref(), &self.asks);
                     }
+                }
+                if topic == "git" {
+                    cx.emit(crate::git::Changed { project, paths });
                 }
                 return;
             }
@@ -1092,6 +1095,8 @@ impl Workbench {
         self.filter = Some(filter);
     }
 }
+
+impl EventEmitter<crate::git::Changed> for Workbench {}
 
 /// The picture `accountPicture` answers with: its type, and its bytes in base64.
 fn decode_picture(value: &Value) -> Option<Arc<Image>> {
