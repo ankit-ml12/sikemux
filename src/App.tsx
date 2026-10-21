@@ -4,7 +4,7 @@ import { invokeCommand as invoke } from "./api/invoke";
 import { whenIdle } from "./lib/idle";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
+import { followUpdates, UPDATES_IN_APP } from "./api/updater";
 import { reportActive } from "./api/usage";
 import { TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
@@ -821,15 +821,7 @@ export default function App() {
 
     useEffect(() => onCoreChanged("git", onGitChanged), []);
 
-    useEffect(() => {
-        if (import.meta.env.DEV || !UPDATES_IN_APP) return;
-        const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
-        const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
-        return () => {
-            window.clearTimeout(firstCheck);
-            window.clearInterval(poll);
-        };
-    }, []);
+    useEffect(() => (UPDATES_IN_APP ? followUpdates() : undefined), []);
 
     useEffect(() => {
         if (import.meta.env.DEV) return;

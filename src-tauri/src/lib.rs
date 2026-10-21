@@ -34,7 +34,6 @@ mod simulator;
 mod state;
 mod system;
 mod transparency;
-mod updates;
 mod usage;
 mod voice;
 mod voice_models;
@@ -119,7 +118,6 @@ pub fn run() {
         }))
         .plugin(main_window_navigation_guard())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             // The core sends agents' window calls, such as their browser's, to
             // whichever Sikemux window the person brought forward last.
@@ -291,10 +289,8 @@ pub fn run() {
             system::runtime_diagnostics,
             observability::observability_ui_heartbeat,
             observability::observability_ui_activity,
-            updates::update_check,
-            updates::update_install,
-            pty::commands::update_blockers,
             pty::commands::update_force_core,
+            relaunch::update_restart,
             usage::usage_report_active,
             grammars::grammar_load,
             state::state_save,

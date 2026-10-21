@@ -1224,7 +1224,8 @@ export type CoreChangeTopic =
   | 'drafts'
   | 'codeHost'
   | 'pluginView'
-  | 'files';
+  | 'files'
+  | 'update';
 
 /**
  * How the person wants Sikemux to behave, the same in every app. A field
@@ -2058,4 +2059,72 @@ export type DiffKind = 'add' | 'mod' | 'del';
 export interface Draft {
   text: string;
   extra?: unknown;
+}
+
+export interface UpdateStatus {
+  /** This build updates itself: a release running inside its app. */
+  updates: boolean;
+  current: string;
+  checked?: UpdateCheck;
+  available?: UpdateRelease;
+  state: UpdateState;
+  error?: string;
+  blockers: UpdateBlocker[];
+  downloadedBytes: number;
+  totalBytes?: number;
+  /**
+   * The person chose to stop the chats rather than wait, which the window
+   * that starts again tells the next core.
+   */
+  forced: boolean;
+}
+
+/** The last check, kept because a failed one has nowhere else to show. */
+export interface UpdateCheck {
+  /** Unix milliseconds. */
+  at: number;
+  channel: UpdateChannel;
+  error?: string;
+}
+
+/** The newest release on the person's channel. */
+export interface UpdateRelease {
+  version: string;
+  notes?: string;
+  date?: string;
+  credits?: ReleaseCredits;
+}
+
+/** Credits a release carries in its update manifest, so they show without asking GitHub. */
+export interface ReleaseCredits {
+  commits: number;
+  compare: string;
+  contributors: Contributor[];
+  /** `data:` URLs keyed by each contributor's avatar address. */
+  avatars: Record<string, string>;
+}
+
+export interface Contributor {
+  login: string;
+  name: string;
+  commits: number;
+  avatar: string;
+}
+
+/** Where an update stands, as every client shows it. */
+export type UpdateState = 'idle' | 'waiting' | 'downloading' | 'installing' | 'ready' | 'failed';
+
+/**
+ * A chat whose agent is at work, which an update now would stop and
+ * start again on its session.
+ */
+export interface UpdateBlocker {
+  agentId: string;
+  provider: string;
+  title?: string;
+  /**
+   * `starting` while the agent is still starting, `busy` while the
+   * chat is in the middle of a request.
+   */
+  reason: string;
 }

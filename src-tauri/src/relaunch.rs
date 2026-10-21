@@ -33,8 +33,12 @@ struct Handover {
     simulators: SavedSimulators,
 }
 
-pub fn note_update_installed() {
+/// Starts the app again into the update the core put in place, keeping what
+/// agents had open in the app across the restart.
+#[tauri::command]
+pub fn update_restart(app: AppHandle) {
     UPDATE_INSTALLED.store(true, Ordering::Release);
+    app.restart();
 }
 
 pub fn note_exit_requested(code: Option<i32>) {

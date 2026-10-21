@@ -33,6 +33,9 @@ const SOURCES = [
   `${CORE}/server/workspace.rs`,
   `${CORE}/server/remote.rs`,
   `${CORE}/server/hosts/mod.rs`,
+  `${CORE}/server/updates.rs`,
+  `${CORE}/frozen.rs`,
+  `${CORE}/releases.rs`,
   ...[
     "status",
     "branches",
@@ -115,6 +118,7 @@ const RENAMES = {
     LinkedHost: "StoredLink",
   },
   [`${CORE}/server/hosts/mod.rs`]: { LinkView: "LinkedHost" },
+  [`${CORE}/releases.rs`]: { CommitAuthor: "ReleaseCommitAuthor" },
   [`${PLUGIN_API}/ratelimit.rs`]: { Budget: "RateLimit" },
   [`${WIRE}/jira.rs`]: Object.fromEntries(
     JIRA_TYPES.map((name) => [name, `Jira${name}`]),
@@ -155,6 +159,7 @@ const TS_ROOTS = [
   "GitBlame",
   "DiffHunk",
   "Draft",
+  "UpdateStatus",
 ];
 
 /** What the code-host plugins hand the Git pane. */

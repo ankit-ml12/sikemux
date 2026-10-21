@@ -13,7 +13,7 @@ pub async fn usage_report_active(
     manager: State<'_, PtyManager>,
     channel: BuildChannel,
 ) -> AppResult<()> {
-    if !Install::App.reports() {
+    if !Install::App.published() {
         return Ok(());
     }
     let data_dir = app

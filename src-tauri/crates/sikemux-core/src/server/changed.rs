@@ -60,6 +60,8 @@ pub(crate) enum Topic {
     PluginView,
     /// Files clients have open moved on disk; `paths` names them as the clients did.
     Files,
+    /// Whether an update is out, and how installing it goes.
+    Update,
 }
 
 /// Paths by topic and project; none means anything may have changed.

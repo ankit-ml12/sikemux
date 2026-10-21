@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, CoreClient, Reply};
-use sikemux_core::frozen::UpdateBlocker;
 use sikemux_core::protocol::{Request, SessionInfo, SessionKind};
 use sikemux_host::core_start::{self, StartError, Upgrade};
 use sikemux_process::sync::Locked;
@@ -457,18 +456,6 @@ impl PtyManager {
             .get()
             .ok_or("the terminal core is not configured yet")?;
         std::fs::write(forced_update_marker(settings), b"").map_err(|error| error.to_string())
-    }
-
-    /// The chats at work that an update now would stop and start again
-    /// rather than carry over. A core that cannot say is taken to have none.
-    pub(crate) async fn update_blockers(&self) -> Vec<UpdateBlocker> {
-        let Some(settings) = self.settings.get() else {
-            return Vec::new();
-        };
-        let socket = settings.socket.clone();
-        tauri::async_runtime::spawn_blocking(move || core_start::update_blockers(&socket))
-            .await
-            .unwrap_or_default()
     }
 }
 

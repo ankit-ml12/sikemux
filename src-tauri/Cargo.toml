@@ -44,7 +44,6 @@ hex = "0.4"
 [dependencies]
 tauri = { version = "2", default-features = false, features = ["macos-private-api", "wry", "unstable", "compression"] }
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
-tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
@@ -234,8 +233,6 @@ opt-level = 3
 opt-level = 3
 [profile.release.package.rusqlite]
 opt-level = "s"
-[profile.release.package.tauri-plugin-updater]
-opt-level = "s"
 [profile.release.package.plist]
 opt-level = "s"
 [profile.release.package.muda]
@@ -263,8 +260,6 @@ opt-level = "s"
 [profile.release.package.infer]
 opt-level = "s"
 [profile.release.package.cfb]
-opt-level = "s"
-[profile.release.package.tar]
 opt-level = "s"
 [profile.release.package.quick-xml]
 opt-level = "s"

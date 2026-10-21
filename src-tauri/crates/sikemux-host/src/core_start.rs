@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sikemux_core::client::{await_deferred_upgrade, await_upgrade, frozen_request, ClientError};
-use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
+use sikemux_core::frozen::{FrozenReply, FrozenRequest};
 use sikemux_core::protocol::BuildIdentity;
 
 use crate::login_item::{start_core, CoreLaunch};
@@ -122,15 +122,6 @@ pub async fn upgrade(
         upgraded.build.version, upgraded.build.commit
     );
     Ok(Upgrade::Done)
-}
-
-/// The chats at work that an update now would stop and start again rather
-/// than carry over. A core that cannot say is taken to have none.
-pub fn update_blockers(socket: &Path) -> Vec<UpdateBlocker> {
-    match frozen_request(socket, &FrozenRequest::UpdateBlockers, ANSWER_TIMEOUT) {
-        Ok(FrozenReply::UpdateBlockers { chats }) => chats,
-        _ => Vec::new(),
-    }
 }
 
 /// Ends a core this app cannot talk to, with everything running in it.

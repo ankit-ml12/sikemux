@@ -59,11 +59,10 @@ export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
 
 export const setUpdateChannel = (value: "stable" | "nightly"): void => {
     if (updateChannelOf(getState()) === value) return;
-    // The other channel's result says nothing about this one, and waiting out
-    // the 30-minute poll to learn what the new channel offers reads as broken.
+    // The other channel's result says nothing about this one; the core checks
+    // the new channel as soon as the preference reaches it.
     setPreference("updateChannel", value);
     setState({ pendingUpdate: null, lastUpdateCheck: null });
-    void checkForUpdateNow();
 };
 
 export const setShareUsageData = (value: boolean): void => setPreference("shareUsageData", value);

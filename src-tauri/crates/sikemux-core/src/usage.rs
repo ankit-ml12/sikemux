@@ -35,9 +35,9 @@ impl Install {
         }
     }
 
-    /// The release workflow builds each kind with `SIKEMUX_USAGE_REPORTING`
-    /// set to its name.
-    pub fn reports(self) -> bool {
+    /// Built by the release workflow, which sets `SIKEMUX_USAGE_REPORTING` to
+    /// the kind's name. Only such a build reports usage or updates itself.
+    pub fn published(self) -> bool {
         !cfg!(debug_assertions) && option_env!("SIKEMUX_USAGE_REPORTING") == Some(self.name())
     }
 }
@@ -76,7 +76,7 @@ struct Platform {
 
 /// Sends today's event unless this install already sent it.
 pub async fn report_active(data_dir: &Path, active: Active<'_>) -> Result<(), String> {
-    if !active.install.reports() {
+    if !active.install.published() {
         return Ok(());
     }
     static IN_FLIGHT: Mutex<()> = Mutex::const_new(());

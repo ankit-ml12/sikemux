@@ -79,6 +79,7 @@ mod tasks;
 pub mod themes;
 mod tools;
 mod transcript;
+mod updates;
 mod upgrade;
 mod wake;
 mod wallpaper;
@@ -369,6 +370,7 @@ pub(crate) struct Core {
     pub(crate) changes: changed::Changes,
     pub(crate) ports: ports::Ports,
     pub(crate) spares: spare::Spares,
+    pub(crate) updates: updates::Updates,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
@@ -476,6 +478,7 @@ impl Core {
             changes: changed::Changes::default(),
             ports: ports::Ports::default(),
             spares: spare::Spares::default(),
+            updates: updates::Updates::default(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
@@ -1247,7 +1250,7 @@ pub(crate) async fn run_core(
         tokio::spawn(workspace::refresh_launchers(core.clone()));
         skill_library::watch_global(&core);
         account::start(&core);
-        if crate::usage::Install::Host.reports() {
+        if crate::usage::Install::Host.published() {
             let host = host_info();
             let core = core.clone();
             tokio::spawn(crate::usage::report_host(
@@ -1265,6 +1268,7 @@ pub(crate) async fn run_core(
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
         tokio::spawn(lifecycle::serve(core.clone())),
+        tokio::spawn(updates::serve(core.clone())),
         tokio::spawn(changed::serve(core.clone())),
         tokio::spawn(tasks::publish_runs(core.clone())),
         tokio::spawn(wake::serve(

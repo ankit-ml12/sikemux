@@ -133,6 +133,10 @@ calls! { core, client, params;
     "agentSessions": Local, any_program => answer(saved::call(&core, parse(params)?).await?),
     "workspace": Watch, any_program => answer(core.workspace_view()),
     "runCommand": Local => answer(super::custom_command::run(parse(params)?).await?),
+    "updateStatus": Watch => answer(core.updates.status()),
+    "updateCheck": Person => answer(super::updates::check(&core).await?),
+    "updateInstall": Person => answer(super::updates::install(&core, parse(params)?)?),
+    "updateCancel": Person => answer(super::updates::cancel(&core)),
     "runCustomCommand": Person => answer(super::custom_command::run_custom(&core, parse(params)?).await?),
     "addProject": Person => answer(workspace::add_project(&core, parse(params)?).await?),
     "removeProject": Person => answer(workspace::remove_project(&core, parse(params)?)?),
@@ -328,6 +332,9 @@ calls! { core, client, params;
         super::about::introduced(&core, &params.key)?;
         if params.key == "notch" {
             super::notch::follow(&core);
+        }
+        if params.key == "updateChannel" {
+            core.updates.check_soon();
         }
         let preferences = core.preferences.get();
         core.theme_changed();
