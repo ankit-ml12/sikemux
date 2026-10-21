@@ -22,6 +22,7 @@ mod collisions;
 mod connection;
 mod custom_command;
 mod display;
+mod drafts;
 mod edits;
 mod entry;
 mod faces;
@@ -399,6 +400,8 @@ pub(crate) struct Core {
     pub(crate) faces: faces::Faces,
     /// How the person wants Sikemux to behave.
     pub(crate) preferences: preferences::Prefs,
+    /// What the person has typed and not sent yet, by what it is for.
+    pub(crate) drafts: drafts::Drafts,
     /// Answers in parts on the connections that asked for them.
     pub(crate) streams: streams::Streams,
     /// The view paired devices were last sent, as sent.
@@ -493,6 +496,7 @@ impl Core {
             hosts,
             faces: faces::Faces::new(data_dir),
             preferences: preferences::Prefs::new(data_dir),
+            drafts: drafts::Drafts::new(data_dir),
             streams: streams::Streams::default(),
             device_view: Mutex::new(Vec::new()),
             terminal_colors: Mutex::default(),

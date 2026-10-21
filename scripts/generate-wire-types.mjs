@@ -26,6 +26,7 @@ const SOURCES = [
   `${CORE}/server/inbox.rs`,
   `${CORE}/server/questions.rs`,
   `${CORE}/server/catalog.rs`,
+  `${CORE}/server/drafts.rs`,
   `${CORE}/server/changed.rs`,
   `${CORE}/server/board.rs`,
   `${CORE}/server/board/auto.rs`,
@@ -153,6 +154,7 @@ const TS_ROOTS = [
   "GitWorktree",
   "GitBlame",
   "DiffHunk",
+  "Draft",
 ];
 
 /** What the code-host plugins hand the Git pane. */

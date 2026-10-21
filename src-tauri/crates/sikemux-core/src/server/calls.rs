@@ -302,6 +302,13 @@ calls! { core, client, params;
         answer(style)
     },
     "preferences": Watch => answer(core.preferences.get()),
+    "drafts": Watch => answer(core.drafts.get()),
+    "setDraft": Person => {
+        let params: SetDraftParams = parse(params)?;
+        core.drafts.set(&params.key, params.text, params.extra)?;
+        core.changes.changed(Topic::Drafts, None, Some(vec![params.key]));
+        answer(json!({}))
+    },
     "setPreference": Person => {
         let params: SetPreferenceParams = parse(params)?;
         core.preferences.set(&params.key, params.value)?;
@@ -621,6 +628,14 @@ struct ThemeFromColoursParams {
     name: String,
     colours: Vec<String>,
     accent: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SetDraftParams {
+    key: String,
+    text: String,
+    #[serde(default)]
+    extra: Option<Value>,
 }
 
 #[derive(Deserialize)]

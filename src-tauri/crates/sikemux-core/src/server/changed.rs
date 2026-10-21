@@ -52,6 +52,8 @@ pub(crate) enum Topic {
     Lsp,
     /// How the person wants Sikemux to behave.
     Preferences,
+    /// What the person has typed and not sent yet; `paths` names the drafts' keys.
+    Drafts,
     /// A project's pull requests, runs, issues or releases on its code host.
     CodeHost,
     /// What a plugin's pane shows; `paths` names each view as `plugin/method`.

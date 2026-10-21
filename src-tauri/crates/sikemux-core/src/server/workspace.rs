@@ -29,6 +29,7 @@ use crate::protocol::{
 };
 use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRequest};
 
+use super::changed::Topic;
 use super::chat;
 use super::connection::blocking;
 use super::kept;
@@ -1885,8 +1886,15 @@ pub(crate) fn close_gone(core: &Core, agent_ids: &[String]) {
 /// stop, and their names are free again.
 fn agents_closed(core: &Core, before: HashSet<String>) {
     let kept = core.workspaces.agent_ids();
-    for agent_id in before.difference(&kept) {
+    let gone: Vec<&String> = before.difference(&kept).collect();
+    for agent_id in &gone {
         core.chats.stop(agent_id);
+    }
+    let forgotten = core
+        .drafts
+        .forget(gone.iter().map(|agent_id| format!("chat:{agent_id}")));
+    if !forgotten.is_empty() {
+        core.changes.changed(Topic::Drafts, None, Some(forgotten));
     }
     core.names.settle(core.open_agents());
 }

@@ -1219,6 +1219,7 @@ export type CoreChangeTopic =
   | 'hosts'
   | 'lsp'
   | 'preferences'
+  | 'drafts'
   | 'codeHost'
   | 'pluginView'
   | 'files';
@@ -2050,3 +2051,9 @@ export interface DiffHunk {
 }
 
 export type DiffKind = 'add' | 'mod' | 'del';
+
+/** A draft as the apps read it. */
+export interface Draft {
+  text: string;
+  extra?: unknown;
+}
