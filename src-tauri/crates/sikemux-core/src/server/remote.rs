@@ -360,6 +360,8 @@ struct Inner {
     bound: Option<String>,
     /// The digest and account the secret store holds.
     kept: (String, Option<String>),
+    /// The digest of the file as last written.
+    written: String,
     direct_only: bool,
     secret: Option<SecretKey>,
     /// A key this host moved off while it was on an account, until that
@@ -1052,7 +1054,10 @@ impl Remote {
     }
 
     /// The secret store learns of a change to what the file trusts before the
-    /// file does.
+    /// file does, keeping the file's digest as well until the file is written,
+    /// so neither a failed write nor a stop between the two signs the host out.
+    /// It forgets that digest once the file is written, so the file put back
+    /// as it was is not trusted.
     fn save(&self, inner: &mut Inner) -> CoreResult<()> {
         let Some(path) = inner.path.clone() else {
             return Ok(());
@@ -1062,7 +1067,12 @@ impl Remote {
             keep(inner, &kept)?;
             inner.kept = kept;
         }
-        write_stored(&path, &inner.stored)
+        write_stored(&path, &inner.stored)?;
+        if inner.written != inner.kept.0 {
+            inner.written = inner.kept.0.clone();
+            keep(inner, &inner.kept)?;
+        }
+        Ok(())
     }
 
     fn forget_retired(&self) {
@@ -1114,6 +1124,7 @@ fn keep(inner: &Inner, (trusted, account): &(String, Option<String>)) -> CoreRes
             trusted: trusted.clone(),
             account: account.clone(),
             retired: inner.retired.clone(),
+            written: (inner.written != *trusted).then(|| inner.written.clone()),
         })?;
     }
     Ok(())
@@ -1182,6 +1193,7 @@ pub fn trust_remote_file(socket: &Path, key: &SecretKey) -> Result<(), String> {
             trusted: stored.trusted()?,
             account: stored.owner.clone(),
             retired: None,
+            written: None,
         })
     };
     trust().map_err(|error: CoreError| error.to_string())
@@ -1195,7 +1207,13 @@ fn load(keeper: &Keeper, path: &Path) -> CoreResult<(Stored, HostKey, String)> {
     let file_key = stored.secret_key.take();
     let trusted = stored.trusted()?;
     let key = match keeper.load()? {
-        Some(key) if key.trusted == trusted || key.trusted == trusted_as_written(&file)? => key,
+        Some(key)
+            if key.trusted == trusted
+                || key.written.as_ref() == Some(&trusted)
+                || key.trusted == trusted_as_written(&file)? =>
+        {
+            key
+        }
         Some(key) => {
             eprintln!(
                 "sikemux core: {} was changed by something other than this host, so it trusts none of the devices or hosts it names",
@@ -1216,13 +1234,15 @@ fn load(keeper: &Keeper, path: &Path) -> CoreResult<(Stored, HostKey, String)> {
                     .filter(|_| on_account)
                     .as_deref()
                     .and_then(secret_from_hex),
+                written: None,
             }
         }
     };
     let trusted = stored.trusted()?;
-    if trusted != key.trusted {
+    if trusted != key.trusted || key.written.is_some() {
         keeper.save(&HostKey {
             trusted: trusted.clone(),
+            written: None,
             ..key.clone()
         })?;
     }
@@ -1264,7 +1284,8 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
         inner.path = Some(path);
         inner.keeper = Some(keeper);
         inner.bound = key.account.clone();
-        inner.kept = (trusted, key.account);
+        inner.kept = (trusted.clone(), key.account);
+        inner.written = trusted;
         inner.direct_only = direct_only;
         inner.never_too_old = cfg!(debug_assertions);
         inner.secret = Some(key.secret);
@@ -2103,6 +2124,7 @@ mod tests {
                     trusted: digest.into(),
                     account: Some("user_2nightly".into()),
                     retired: None,
+                    written: None,
                 })
                 .unwrap();
             for _ in 0..2 {
@@ -2121,11 +2143,68 @@ mod tests {
                     trusted: digest.into(),
                     account: Some("user_2nightly".into()),
                     retired: None,
+                    written: None,
                 })
                 .unwrap();
             let (edited, _, _) = load(&keeper, &path).unwrap();
             assert!(edited.owner.is_none() && edited.devices.is_empty());
         }
+    }
+
+    /// The secret store moves ahead of the file before the file is written.
+    /// A host whose write failed, or that stopped in between, comes back with
+    /// its file trusted; once the file is written, its state before is not.
+    #[test]
+    fn a_file_behind_the_secret_store_stays_trusted_until_it_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("core.sock");
+        let path = file_path(&socket);
+        std::fs::write(&path, include_str!("fixtures/remote/nightly4.remote.json")).unwrap();
+        let keeper = Keeper::new(&socket, false).unwrap();
+        keeper
+            .save(&HostKey {
+                secret: SecretKey::generate(),
+                trusted: "42b087817bc6ada3d6e42d4295c06f7aef8c22abcf481f849a7f4609ebf9f7d2".into(),
+                account: Some("user_2nightly".into()),
+                retired: None,
+                written: None,
+            })
+            .unwrap();
+        let (mut stored, key, written) = load(&keeper, &path).unwrap();
+        stored.links.clear();
+        keeper
+            .save(&HostKey {
+                trusted: stored.trusted().unwrap(),
+                written: Some(written.clone()),
+                ..key.clone()
+            })
+            .unwrap();
+        let (stored, key, written) = load(&keeper, &path).unwrap();
+        assert_eq!(stored.links.len(), 1);
+        assert_eq!(stored.owner.as_deref(), Some("user_2nightly"));
+
+        let before = std::fs::read(&path).unwrap();
+        let core = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
+        {
+            let mut inner = core.remote.inner.locked();
+            inner.path = Some(path.clone());
+            inner.keeper = Some(Keeper::new(&socket, false).unwrap());
+            inner.secret = Some(key.secret.clone());
+            inner.bound = key.account.clone();
+            inner.kept = (written.clone(), key.account.clone());
+            inner.written = written;
+            inner.stored = stored;
+        }
+        core.remote
+            .change(|stored| {
+                stored.links.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(keeper.load().unwrap().unwrap().written, None);
+        std::fs::write(&path, before).unwrap();
+        let (put_back, _, _) = load(&keeper, &path).unwrap();
+        assert!(put_back.owner.is_none() && put_back.links.is_empty());
     }
 
     #[test]
