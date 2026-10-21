@@ -14,7 +14,6 @@ pub mod ratelimit;
 pub mod service;
 pub mod signin;
 pub mod store;
-pub mod watch;
 
 use std::collections::BTreeMap;
 use std::future::Future;

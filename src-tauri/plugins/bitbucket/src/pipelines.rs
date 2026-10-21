@@ -680,16 +680,16 @@ mod tests {
     }
 
     #[test]
-    fn a_paused_pipeline_stops_the_watch() {
+    fn a_paused_pipeline_waits_on_a_person() {
         for paused in [
             json!({ "name": "PAUSED" }),
             json!({ "name": "HALTED" }),
             json!({ "name": "IN_PROGRESS", "stage": { "name": "PAUSED" } }),
         ] {
-            assert!(crate::watch::settled(&status_of(Some(&state(paused))).0));
+            assert_eq!(status_of(Some(&state(paused))).0, "waiting");
         }
         let running = json!({ "name": "IN_PROGRESS", "stage": { "name": "RUNNING" } });
-        assert!(!crate::watch::settled(&status_of(Some(&state(running))).0));
+        assert_eq!(status_of(Some(&state(running))).0, "in_progress");
     }
 
     #[test]
