@@ -6,7 +6,8 @@ import { getIpcTransport } from "../api/transport";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
-import { createSshSession } from "../state/commands/sessions";
+import { createProjectSession, createSshSession } from "../state/commands/sessions";
+import { remoteApi } from "../api/remote";
 import { sshStartup } from "../terminal/sshStartup";
 import { offerResumableSessions } from "../terminal/sessionResume";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
@@ -476,21 +477,30 @@ export async function startRemoteChat(sessionId: string, place: HostProject, typ
 /** How long the app waits for a host to show a project it was asked to open, after it answered. */
 const OPENED_WAIT_MS = 30_000;
 
+/** A Sikemux host a project can be opened on: one on the account by its key, or this one. */
+export interface OpenTarget {
+    readonly id: string | undefined;
+    readonly name: string;
+}
+
 /**
- * Opens `session`'s project on the Sikemux host `host` (ADR 0019): that host opens a checkout it has of the same
+ * Opens `session`'s project on the Sikemux host `target` (ADR 0019): that host opens a checkout it has of the same
  * repository, or clones it from its remote with its own sign-in, or takes it from the project's host when it cannot.
  * Only committed work goes; uncommitted changes stay where they are. Then the person is on that host, in that project.
  */
-export async function openOnHost(session: Session, host: HostEntry): Promise<void> {
+export async function openOnHost(session: Session, target: OpenTarget): Promise<void> {
     const confirmed = await confirmDialog({
-        title: `Open ${session.name} on ${host.name}?`,
-        body: `${host.name} clones it from its remote, or takes it from here when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay here.`,
+        title: `Open ${session.name} on ${target.name}?`,
+        body: `${target.name} clones it from its remote, or takes it from where it is when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay there.`,
         confirmLabel: "Open",
     });
     if (!confirmed) return;
-    notify("info", `Opening ${session.name} on ${host.name}…`);
-    const opened = await coreCall<{ project: string }>("openOnHost", { path: session.cwd, host: host.id }, session.host);
-    const id = remoteSessionId(host.id, opened.project);
+    notify("info", `Opening ${session.name} on ${target.name}…`);
+    const key = target.id ?? (await remoteApi.status()).coreId;
+    const opened = await coreCall<{ project: string; path: string }>("openOnHost", { path: session.cwd, host: key }, session.host);
+    if (!target.id) return createProjectSession(opened.path);
+    const host = target.id;
+    const id = remoteSessionId(host, opened.project);
     const shown = await new Promise<boolean>((resolve) => {
         if (getState().sessions[id]) return resolve(true);
         const timer = window.setTimeout(() => {
@@ -504,7 +514,7 @@ export async function openOnHost(session: Session, host: HostEntry): Promise<voi
             resolve(true);
         });
     });
-    if (!shown) throw new Error(`${host.name} opened it but has not shown it here yet`);
+    if (!shown) throw new Error(`${target.name} opened it but has not shown it here yet`);
     mutate((d) => bringForward(d, id));
 }
 

@@ -473,7 +473,10 @@ type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
 function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined, hosts: readonly HostEntry[]): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
-    const elsewhere = hosts.filter((host) => host.id !== session.host);
+    const elsewhere = [
+        ...(session.host ? [{ id: undefined, name: "This host", reach: "connected" }] : []),
+        ...hosts.filter((host) => host.id !== session.host),
+    ];
     return [
         { label: "Project settings", icon: <IconSettings size={13} />, run: () => cmd.openProjectSettings(session.id) },
         ...elsewhere.map((host) => ({
