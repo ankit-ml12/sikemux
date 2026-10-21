@@ -14,6 +14,7 @@ use sikemux_process::sync::Locked;
 use tokio::time::Instant;
 
 use super::changed::Topic;
+use crate::harness::runs::Run;
 use crate::launch::PermissionMode;
 use crate::protocol::{SessionId, SpawnTarget};
 use crate::tasks::check::{self, Check, CheckItem, Checked, Listening};
@@ -315,10 +316,17 @@ struct TaskView {
     source: Source,
     #[serde(skip_serializing_if = "Option::is_none")]
     java: Option<JavaView>,
+    /// A run of it the person started is going.
+    running: bool,
+    /// The terminal that run shows in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<u64>,
 }
 
-fn view(project: &Path, task: &Definition) -> TaskView {
+fn view(project: &Path, task: &Definition, run: Option<&Run>) -> TaskView {
     TaskView {
+        running: run.is_some(),
+        session_id: run.and_then(|run| run.pty_id),
         id: task.id.clone(),
         label: task.label.clone(),
         command: task.command.clone(),
@@ -435,8 +443,22 @@ pub(crate) async fn list(core: &Arc<Core>, project: String) -> CoreResult<Value>
     let core = core.clone();
     blocking(move || {
         let project = PathBuf::from(project);
+        let runs = core.harness.all_runs();
+        let person_run = |task: &Definition| {
+            runs.iter().rev().find(|run| {
+                run.agent_id.is_none()
+                    && Path::new(&run.project) == project
+                    && run.task_id == task.id
+                    && run.status.is_active()
+            })
+        };
         let Offered { config, tasks } = offered(&core, &project);
         let trusted = config_needs(&core, &config).is_none();
+        let shown = tasks
+            .iter()
+            .find(|task| person_run(task).is_some())
+            .or(tasks.first())
+            .map(|task| task.id.clone());
         Ok(json!({
             "project": project,
             "configStatus": match &config {
@@ -449,7 +471,11 @@ pub(crate) async fn list(core: &Arc<Core>, project: String) -> CoreResult<Value>
                 _ => Value::Null,
             },
             "trusted": trusted,
-            "tasks": tasks.iter().map(|task| view(&project, task)).collect::<Vec<_>>(),
+            "tasks": tasks
+                .iter()
+                .map(|task| view(&project, task, person_run(task)))
+                .collect::<Vec<_>>(),
+            "default": shown,
         }))
     })
     .await
