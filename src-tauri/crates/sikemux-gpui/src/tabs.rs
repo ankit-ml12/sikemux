@@ -778,7 +778,11 @@ fn strip_tab(
         tab: tab.id.clone(),
         label: label(bench, tab),
     };
-    crate::drag::tab(drawn, dragged, index, &cx.entity(), cx).into_any_element()
+    let reorder = bench
+        .reorder
+        .as_ref()
+        .filter(|reorder| reorder.strip == *strip && cx.has_active_drag());
+    crate::drag::tab(drawn, dragged, index, reorder, &cx.entity()).into_any_element()
 }
 
 /// What right-clicking a tab offers, wherever it is listed: an agent's menu for an

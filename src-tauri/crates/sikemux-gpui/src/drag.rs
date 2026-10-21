@@ -4,10 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, ExternalPaths, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnimationExt, AnyElement, App, AppContext, Context, Entity, ExternalPaths,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
 
@@ -22,6 +23,43 @@ pub struct DraggedTab {
     pub tab: String,
     pub label: SharedString,
 }
+
+/// A tab on its way along its strip: where it came from, the place it would drop into,
+/// and how wide it is, which is how far the tabs it passes slide aside.
+#[derive(Clone, PartialEq)]
+pub struct Reorder {
+    pub strip: Strip,
+    pub tab: String,
+    pub from: usize,
+    pub to: usize,
+    pub width: Pixels,
+}
+
+impl Reorder {
+    /// How far the tab at `index` slides to open the gap, while the drag goes on.
+    pub fn shift(&self, index: usize) -> f32 {
+        let width = f32::from(self.width);
+        match () {
+            _ if self.from < index && index <= self.to => -width,
+            _ if self.to <= index && index < self.from => width,
+            _ => 0.,
+        }
+    }
+
+    /// How far the tab at `index` would have slid had the gap opened past it, which is where
+    /// it slides back from when the gap moves away.
+    pub fn slid(&self, index: usize) -> f32 {
+        let width = f32::from(self.width);
+        match index.cmp(&self.from) {
+            std::cmp::Ordering::Greater => -width,
+            std::cmp::Ordering::Less => width,
+            std::cmp::Ordering::Equal => 0.,
+        }
+    }
+}
+
+/// How long the tabs take to slide aside.
+const SLIDE: std::time::Duration = std::time::Duration::from_millis(160);
 
 /// A project being dragged up or down the rail.
 #[derive(Clone)]
@@ -70,18 +108,33 @@ fn name_of(path: &Path) -> SharedString {
         .into()
 }
 
-/// A strip's tab that can be dragged to another place in its strip, and
-/// takes a tab of the same strip dropped on it, which goes where it is.
+/// A strip's tab that can be dragged to another place in its strip. While a tab of
+/// its strip passes over, the tabs between slide aside to open the gap it drops into.
 pub fn tab(
     tab: AnyElement,
     dragged: DraggedTab,
     index: usize,
+    reorder: Option<&Reorder>,
     this: &Entity<Workbench>,
-    cx: &App,
 ) -> impl IntoElement {
-    let t = Tokens::get(cx);
     let (strip, this) = (dragged.strip.clone(), this.clone());
-    let hover = t.surface_hover;
+    let lifted = reorder.is_some_and(|reorder| reorder.tab == dragged.tab);
+    let shift = reorder.map_or(0., |reorder| reorder.shift(index));
+    let back = reorder.map_or(0., |reorder| reorder.slid(index));
+    let own = dragged.tab.clone();
+    let slid = div()
+        .flex()
+        .min_w_0()
+        .when(lifted, |tab| tab.opacity(0.))
+        .child(tab)
+        .with_animation(
+            SharedString::from(format!("tab-slide-{own}-{}", shift != 0.)),
+            gpui_kit::Animation::new(SLIDE).with_easing(gpui_kit::ease_out_quint()),
+            move |tab, delta| {
+                let from = if shift != 0. { 0. } else { back };
+                tab.relative().left(px(from + (shift - from) * delta))
+            },
+        );
     div()
         .id(SharedString::from(format!("drag-tab-{}", dragged.tab)))
         .on_drag(dragged, |dragged: &DraggedTab, _: Point<Pixels>, _, cx| {
@@ -95,16 +148,62 @@ pub fn tab(
                     .is_some_and(|dragged| dragged.strip == strip)
             }
         })
-        .drag_over::<DraggedTab>(move |style, _, _, _| {
-            style.bg(hover).rounded(crate::theme::RADIUS_2)
+        .on_drag_move::<DraggedTab>({
+            let this = this.clone();
+            move |event, _, cx| {
+                if !event.bounds.contains(&event.event.position) {
+                    return;
+                }
+                let dragged = event.drag(cx).clone();
+                let width = event.bounds.size.width;
+                this.update(cx, |bench, cx| {
+                    over(bench, &dragged, index, own == dragged.tab, width, cx)
+                });
+            }
         })
         .on_drop(move |dropped: &DraggedTab, _, cx| {
             let dropped = dropped.clone();
-            this.update(cx, |bench, _| {
-                bench.move_tab(&dropped.strip, &dropped.tab, index)
+            this.update(cx, |bench, cx| {
+                bench.reorder = None;
+                bench.move_tab(&dropped.strip, &dropped.tab, index);
+                cx.notify();
             })
         })
-        .child(tab)
+        .child(slid)
+}
+
+/// Notes the place in its strip a dragged tab is over, which the tabs between slide aside for.
+fn over(
+    bench: &mut Workbench,
+    dragged: &DraggedTab,
+    index: usize,
+    itself: bool,
+    width: Pixels,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(from) = bench
+        .tabs(&dragged.strip)
+        .iter()
+        .position(|tab| tab.id == dragged.tab)
+    else {
+        return;
+    };
+    let width = match (&bench.reorder, itself) {
+        (_, true) => width,
+        (Some(reorder), false) if reorder.tab == dragged.tab => reorder.width,
+        _ => width,
+    };
+    let next = Reorder {
+        strip: dragged.strip.clone(),
+        tab: dragged.tab.clone(),
+        from,
+        to: index,
+        width,
+    };
+    if bench.reorder.as_ref() != Some(&next) {
+        bench.reorder = Some(next);
+        cx.notify();
+    }
 }
 
 /// A project's row in the rail that can be dragged to another place in the

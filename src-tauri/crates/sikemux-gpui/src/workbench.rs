@@ -66,6 +66,8 @@ pub struct Workbench {
     pub accounts: crate::accounts::Accounts,
     /// The number the Dock icon's badge shows.
     pub badge: usize,
+    /// A tab being dragged along its strip, and where it would land.
+    pub reorder: Option<crate::drag::Reorder>,
     pub all_projects: bool,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
@@ -356,6 +358,7 @@ impl Workbench {
             remote: None,
             accounts: Default::default(),
             badge: 0,
+            reorder: None,
             all_projects: false,
             picked_tasks: HashMap::new(),
             space: None,
