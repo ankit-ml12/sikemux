@@ -2,6 +2,8 @@ import { IS_MACOS } from "../lib/platform";
 import { enabledFrontendPlugins } from "../plugins/enabled";
 import { getState } from "../state/store";
 import { frontendPlugin, frontendPlugins, type FrontendPlugin, type PluginShortcut } from "../plugins/registry";
+import { preferencesOf } from "../state/preferences";
+import type { StoreState } from "../state/store";
 
 type CoreKeybindingCategory = "Workspace" | "Agents" | "Panes" | "Navigation" | "Browser";
 /** A plugin's own shortcuts are grouped under its name. */
@@ -639,6 +641,19 @@ export const QUIT_AND_STOP_SHORTCUT = IS_MACOS ? shortcutText("Alt+Meta+KeyQ") :
 
 export function keybindingLabelForAction(overrides: KeybindingOverrides, id: KeybindingActionId): string {
     return keybindingLabel(resolvedKeybinding(overrides, id));
+}
+
+let readOverrides: unknown;
+let usableOverrides: KeybindingOverrides = {};
+
+/** The person's rebound keys that name an action and a key with a modifier, kept until they change. */
+export function keybindingOverridesOf(state: StoreState): KeybindingOverrides {
+    const overrides = preferencesOf(state).keybindingOverrides;
+    if (overrides !== readOverrides) {
+        readOverrides = overrides;
+        usableOverrides = normaliseKeybindingOverrides(overrides);
+    }
+    return usableOverrides;
 }
 
 export function normaliseKeybindingOverrides(value: unknown): KeybindingOverrides {

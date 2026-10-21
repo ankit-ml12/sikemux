@@ -14,7 +14,7 @@ import {
     type RefObject,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { keybindingLabelForAction, type KeybindingActionId } from "../commands/keybindings";
+import { keybindingLabelForAction, type KeybindingActionId, keybindingOverridesOf } from "../commands/keybindings";
 import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
 import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
@@ -562,7 +562,7 @@ export const SideRail = memo(function SideRail() {
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const hostChosen = useStore((s) => !!chosenHostOf(s));
-    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const keybindingOverrides = useStore(keybindingOverridesOf);
     const activeSessionId = settingsOpen || hostChosen ? "" : rawActiveSessionId;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);

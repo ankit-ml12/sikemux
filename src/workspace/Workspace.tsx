@@ -43,6 +43,7 @@ import { PAN_MS, panTransform, useWindowPan } from "./useWindowPan";
 import { useWheelPan } from "./useWheelPan";
 import { useDocumentSlide } from "./useDocumentSlide";
 import { fileTabMenu, renameTerminalTab, windowTabMenu } from "./tabMenus";
+import { preferencesOf } from "../state/preferences";
 
 const FULL: Rect = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -621,7 +622,7 @@ const WindowLayer = memo(function WindowLayer({
     const layerRef = useRef<HTMLDivElement>(null);
     useDocumentSlide(layerRef, live ? editorPaneId : null, documents?.activeId ?? null, documents?.ids ?? EMPTY_IDS);
     const zoomedPaneId = useStore((s) => s.zoomedPaneId);
-    const paneShader = useStore((s) => s.paneShader);
+    const paneShader = useStore((s) => preferencesOf(s).paneShader);
     const { panes, dividers, stacked, stacks, inStack } = useMemo(() => computeLayout(win.root, win.activePaneId), [win.root, win.activePaneId]);
     /*
      * Only the panes stacked behind a strip show a shell's own title, so only

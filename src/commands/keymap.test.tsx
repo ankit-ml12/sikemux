@@ -79,7 +79,7 @@ beforeEach(() => {
         activeSessionId: "one",
         sessionSwitcher: null,
         zoomedPaneId: "zoomed",
-        keybindingOverrides: {},
+        preferences: testPreferences(),
     });
 });
 
@@ -207,7 +207,7 @@ describe("Option in text", () => {
     afterEach(cleanup);
 
     it("reaches the shell even when someone bound an Option chord", () => {
-        setState({ keybindingOverrides: { "pane.zoom": "Alt+KeyZ" } });
+        setState({ preferences: testPreferences({ keybindingOverrides: { "pane.zoom": "Alt+KeyZ" } }) });
         render(<TerminalHarness />);
 
         fireEvent.keyDown(screen.getByRole("textbox", { name: "Terminal input" }), { code: "KeyZ", key: "Ω", altKey: true });
@@ -218,7 +218,7 @@ describe("Option in text", () => {
     });
 
     it("reaches the simulator's screen, which types into the device", () => {
-        setState({ keybindingOverrides: { "pane.zoom": "Alt+KeyZ" } });
+        setState({ preferences: testPreferences({ keybindingOverrides: { "pane.zoom": "Alt+KeyZ" } }) });
         function SimulatorHarness() {
             useKeymap();
             return <canvas aria-label="Device screen" tabIndex={0} data-takes-keys />;

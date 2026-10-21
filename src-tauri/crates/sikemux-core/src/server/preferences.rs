@@ -130,6 +130,17 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
         root.depth = root.depth.min(MAX_PROJECT_DEPTH);
     }
     preferences.custom_commands = commands_within_limits(preferences.custom_commands);
+    preferences.pane_strength = ((preferences.pane_strength * 20.0).round() / 20.0).clamp(0.0, 2.0);
+    preferences.window_opacity = preferences.window_opacity.clamp(0.0, 1.0);
+    preferences.window_blur = preferences.window_blur.round();
+    preferences.keybinding_overrides = preferences
+        .keybinding_overrides
+        .into_iter()
+        .filter(|(action, keys)| {
+            action.len() <= 200 && keys.as_ref().is_none_or(|keys| keys.len() <= 100)
+        })
+        .take(MAX_KEYBINDING_OVERRIDES)
+        .collect();
     preferences.cloud_browser = preferences.cloud_browser.trim().to_owned();
     preferences.cloud_browser_shortcut = preferences.cloud_browser_shortcut.trim().to_owned();
     preferences.last_agent_type = preferences
@@ -139,6 +150,7 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
 }
 
 const MAX_CUSTOM_COMMANDS: usize = 100;
+const MAX_KEYBINDING_OVERRIDES: usize = 1_000;
 
 /// Keeps commands with an id, a title and a command, once each by id, each
 /// field cut to what the palette shows.

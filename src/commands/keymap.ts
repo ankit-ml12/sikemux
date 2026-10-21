@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { browserApi } from "../api/browser";
-import { actionForEvent, pluginOpenedBy, pluginShortcutFor, type KeybindingActionId } from "./keybindings";
+import { actionForEvent, pluginOpenedBy, pluginShortcutFor, type KeybindingActionId, keybindingOverridesOf } from "./keybindings";
 import * as cmd from "../state/commands";
 import { activeAgentId } from "../state/selectors";
 import { getState, type StoreState } from "../state/store";
@@ -334,7 +334,7 @@ export function useKeymap(): void {
             if (target?.closest("[data-keybinding-recorder]")) return;
 
             const st = getState();
-            const action = actionForEvent(event, st.keybindingOverrides);
+            const action = actionForEvent(event, keybindingOverridesOf(st));
 
             if (st.sessionSwitcher) {
                 if (event.key === "Escape") {

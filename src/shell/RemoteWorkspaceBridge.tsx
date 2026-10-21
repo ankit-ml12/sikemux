@@ -8,6 +8,7 @@ import { activeAgentId } from "../state/selectors";
 import { currentTheme, subscribeTheme } from "../themes/bus";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
+import { preferencesOf } from "../state/preferences";
 
 /** Long enough that changing several settings publishes once. */
 export const PUBLISH_DELAY_MS = 400;
@@ -35,7 +36,7 @@ export function RemoteWorkspaceBridge() {
         return () => controller.abort();
     }, []);
 
-    const texture = useStore((s) => s.paneShader);
+    const texture = useStore((s) => preferencesOf(s).paneShader);
     const paneImage = usePaneImage();
     useEffect(() => {
         if (!enabled) return;

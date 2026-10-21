@@ -360,6 +360,14 @@ export class ShowcaseBackend implements IpcTransport {
         lastSeenVersion: "0.5.3",
         notificationsIntroduced: true,
         keptRunningNoticeShown: true,
+        paneShader: true,
+        paneImage: PANE_IMAGE,
+        paneStrength: 1.8,
+        windowOpacity: 0.81,
+        windowBlur: 0,
+        railDensity: "comfortable",
+        simulatorFrame: true,
+        keybindingOverrides: {},
       }),
     );
     this.onCore(

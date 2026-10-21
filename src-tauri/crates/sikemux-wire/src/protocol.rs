@@ -1194,6 +1194,30 @@ pub struct Preferences {
     pub notifications_introduced: bool,
     /// The person was told once that terminals keep running after Sikemux quits.
     pub kept_running_notice_shown: bool,
+    /// Panes show a dithered texture behind them.
+    pub pane_shader: bool,
+    /// A picture every pane dithers in place of the texture.
+    pub pane_image: Option<String>,
+    /// How strongly the texture or picture shows, from 0 to 2.
+    pub pane_strength: f64,
+    /// How opaque the window is, from 0 to 1.
+    pub window_opacity: f64,
+    /// How much what is behind the window blurs, in points.
+    pub window_blur: f64,
+    pub rail_density: RailDensity,
+    /// The iOS Simulator is drawn inside a device's frame.
+    pub simulator_frame: bool,
+    /// The keys the person bound to actions in place of their defaults, by
+    /// the action's id; none unbinds an action.
+    pub keybinding_overrides: BTreeMap<String, Option<String>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RailDensity {
+    #[default]
+    Comfortable,
+    Compact,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1234,6 +1258,14 @@ impl Default for Preferences {
             last_seen_version: String::new(),
             notifications_introduced: false,
             kept_running_notice_shown: false,
+            pane_shader: true,
+            pane_image: None,
+            pane_strength: 1.0,
+            window_opacity: 1.0,
+            window_blur: 0.0,
+            rail_density: RailDensity::default(),
+            simulator_frame: true,
+            keybinding_overrides: BTreeMap::new(),
         }
     }
 }

@@ -41,6 +41,7 @@ import { NewOnHost, remoteChatRows, useRemoteCopies } from "./RemoteRows";
 import { chosenHostOf } from "../hosts/hosts";
 import { HostChats } from "./HostLists";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
+import { preferencesOf } from "../state/preferences";
 
 const USAGE_REFRESH_MS = 5 * 60_000;
 const ALL_AGENTS = "all";
@@ -89,7 +90,7 @@ function arriveRow(wrap: HTMLElement): void {
 }
 
 export const TabRail = memo(function TabRail() {
-    const density = useStore((s) => s.railDensity);
+    const density = useStore((s) => preferencesOf(s).railDensity);
     return (
         <aside ref={leavingRail} className="workspace-rail tab-rail" aria-label="Agents" data-density={density} {...LEAVES_SETTINGS}>
             <RailPages pages={{ agents: <TabRailBody />, terminals: <TerminalsPage />, files: <FilesPage /> }} />

@@ -2,7 +2,6 @@ import type { CodeHostChoice, Preferences } from "../api/generated/wire";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
-import type { KeybindingOverrides } from "../commands/keybindings";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
 import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
@@ -28,7 +27,6 @@ import type {
     ProviderProfile,
     ProviderProfileSelection,
     RecentEntry,
-    RailDensity,
     TabRailScope,
     TabRailPage,
     PinnedChat,
@@ -49,20 +47,11 @@ export interface DomainState {
     activeSessionId: string;
 
     recent: RecentEntry[];
-    paneShader: boolean;
     /** Agents show a character in place of their harness logo. */
     /** How agents' faces look, as the core keeps it. */
     faceStyle: import("../api/generated/wire").FaceStyle;
     /** The face each agent the core lists wears, or null while it shows its CLI's logo, by agent id. */
     faces: Readonly<Record<string, import("../api/generated/wire").AgentFace | null>>;
-    /** The default character style: a pack id or "all", and a shape id or "mixed". */
-    /** A picture on disk that panes show, dithered, in place of the grain. */
-    paneImage: string | null;
-    /** How strongly the pane texture or picture shows, 1 being as designed. */
-    paneStrength: number;
-    windowOpacity: number;
-    windowBlur: number;
-    keybindingOverrides: KeybindingOverrides;
     sideRailOpen: boolean;
     tabRailOpen: boolean;
     sideRailWidth: number;
@@ -77,9 +66,6 @@ export interface DomainState {
     projectSpaces: Readonly<Record<string, string>>;
     /** The space the rail shows, or null for every project. */
     activeSpaceId: string | null;
-    /** The simulator tab draws the device's frame and side buttons around its screen. */
-    simulatorFrame: boolean;
-    railDensity: RailDensity;
     /** How the person wants Sikemux to behave, as the core keeps it; null until read. */
     preferences: Preferences | null;
     /** The tab rail shows every CLI's chats instead of one provider's. */
@@ -246,14 +232,8 @@ export const useStore = create<StoreState>(() => {
         windowsBySession: { [session.id]: [window.id] },
         activeSessionId: session.id,
         recent: [],
-        paneShader: true,
         faceStyle: { on: false, pack: DEFAULT_BUDDY_STYLE.pack, shape: DEFAULT_BUDDY_STYLE.shape, motion: true },
         faces: {},
-        paneImage: null,
-        paneStrength: 1,
-        windowOpacity: 1,
-        windowBlur: 0,
-        keybindingOverrides: {},
         sideRailOpen: true,
         tabRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
@@ -264,8 +244,6 @@ export const useStore = create<StoreState>(() => {
         spaces: [],
         projectSpaces: {},
         activeSpaceId: null,
-        simulatorFrame: true,
-        railDensity: "comfortable",
         preferences: null,
         tabRailAllAgents: false,
         accountAutoSwitch: {},

@@ -6,7 +6,7 @@ import { adoptAgentAccounts } from "../persist";
 import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
-import { projectRootsOf, setPreference, updateChannelOf } from "../preferences";
+import { preferencesOf, projectRootsOf, setPreference, updateChannelOf } from "../preferences";
 import { MAX_PROJECT_DEPTH, type NotchSettings, type ProjectRoot } from "../../api/generated/wire";
 import { getState, setState } from "../store";
 import type { AgentType } from "../../agents/catalog";
@@ -22,8 +22,8 @@ export function setNotch(patch: Partial<NotchSettings>): void {
     if (notch) setPreference("notch", { ...notch, ...patch });
 }
 export const setIosSimulator = (value: boolean): void => setPreference("iosSimulator", value);
-export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
-export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
+export const setSimulatorFrame = (value: boolean): void => setPreference("simulatorFrame", value);
+export const setPaneShader = (value: boolean): void => setPreference("paneShader", value);
 /** Changes how agents' faces look for every client, showing the change here at once. */
 function changeFaceStyle(change: Partial<FaceStyle>): void {
     setState({ faceStyle: { ...getState().faceStyle, ...change } });
@@ -34,12 +34,12 @@ function changeFaceStyle(change: Partial<FaceStyle>): void {
 export const setBuddies = (on: boolean): void => changeFaceStyle({ on });
 export const setBuddyStyle = (pack: string, shape: string): void => changeFaceStyle({ pack, shape });
 export const setBuddyMotion = (motion: boolean): void => changeFaceStyle({ motion });
-export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
+export const setPaneImage = (path: string | null): void => setPreference("paneImage", path);
 export const clampPaneStrength = (value: number): number => Math.min(2, Math.max(0, Math.round(value * 20) / 20));
-export const setPaneStrength = (value: number): void => setState({ paneStrength: clampPaneStrength(value) });
+export const setPaneStrength = (value: number): void => setPreference("paneStrength", clampPaneStrength(value));
 export const setUiTextScale = (value: number): void => setPreference("uiTextScale", value);
 
-export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
+export const setRailDensity = (value: import("../types").RailDensity): void => setPreference("railDensity", value);
 export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });
 export const setTabRailScope = (value: import("../types").TabRailScope): void => setState({ tabRailScope: value });
 export const setTabRailPage = (value: import("../types").TabRailPage): void => setState({ tabRailPage: value });
@@ -81,18 +81,15 @@ export function setDefaultGitRepo(project: string, repo: string | null): void {
 }
 
 export function setKeybinding(id: import("../../commands/keybindings").KeybindingActionId, binding: string | null): void {
-    setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
+    setPreference("keybindingOverrides", { ...preferencesOf(getState()).keybindingOverrides, [id]: binding });
 }
 
 export function resetKeybinding(id: import("../../commands/keybindings").KeybindingActionId): void {
-    setState((s) => {
-        const keybindingOverrides = { ...s.keybindingOverrides };
-        delete keybindingOverrides[id];
-        return { keybindingOverrides };
-    });
+    const { [id]: _reset, ...keybindingOverrides } = preferencesOf(getState()).keybindingOverrides;
+    setPreference("keybindingOverrides", keybindingOverrides);
 }
 
-export const resetAllKeybindings = (): void => setState({ keybindingOverrides: {} });
+export const resetAllKeybindings = (): void => setPreference("keybindingOverrides", {});
 
 const boundedDepth = (depth: number): number => Math.max(0, Math.min(MAX_PROJECT_DEPTH, Math.round(Number.isFinite(depth) ? depth : 1)));
 

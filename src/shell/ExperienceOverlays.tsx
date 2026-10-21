@@ -7,7 +7,7 @@ import { useStore } from "../state/store";
 import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
-import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
+import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId, keybindingOverridesOf } from "../commands/keybindings";
 import { AgentIcon, IconAgent, IconFolder, IconSearch, IconServer, Logo } from "../ui/Icons";
 import { agentStatusLabel } from "../agents/agentStatus";
 import { installAgent, signInAgent } from "../agents/AgentInstall";
@@ -93,7 +93,7 @@ function Frame({ label, onClose, children }: { label: string; onClose: () => voi
 
 export function Onboarding() {
     const open = useStore((s) => s.onboardingOpen);
-    const overrides = useStore((s) => s.keybindingOverrides);
+    const overrides = useStore(keybindingOverridesOf);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);

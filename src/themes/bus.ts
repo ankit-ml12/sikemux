@@ -223,6 +223,7 @@ export function previewTheme(theme: Theme): void {
 
 export function applyWindowOpacity(opacity: number): void {
     const v = Math.max(0, Math.min(1, opacity));
+    if (v === currentOpacity) return;
     currentOpacity = v;
     document.documentElement.style.setProperty("--window-opacity", String(v));
     applyTransparentState();

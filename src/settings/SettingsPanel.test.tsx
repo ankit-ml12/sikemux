@@ -25,7 +25,7 @@ const initial = getState();
 
 beforeEach(() => {
     setState(initial, true);
-    setState({ keybindingOverrides: {}, settingsOpen: true });
+    setState({ preferences: testPreferences(), settingsOpen: true });
 });
 
 afterEach(cleanup);
@@ -45,7 +45,7 @@ describe("SettingsPanel keybindings", () => {
 
         await user.click(project);
         fireEvent.keyDown(project, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
-        expect(getState().keybindingOverrides["project.open"]).toBe("Ctrl+Shift+KeyO");
+        expect(getState().preferences?.keybindingOverrides["project.open"]).toBe("Ctrl+Shift+KeyO");
         const replacementLabel = keybindingLabel("Ctrl+Shift+KeyO");
         expect(screen.getByRole("button", { name: `Open project: ${replacementLabel}. Activate to change.` })).toBeInTheDocument();
 
@@ -53,15 +53,15 @@ describe("SettingsPanel keybindings", () => {
         const ssh = screen.getByRole("button", { name: `Connect to SSH host: ${sshDefault}. Activate to change.` });
         await user.click(ssh);
         fireEvent.keyDown(ssh, { key: "o", code: "KeyO", ctrlKey: true, shiftKey: true });
-        expect(getState().keybindingOverrides["ssh.open"]).toBeUndefined();
+        expect(getState().preferences?.keybindingOverrides["ssh.open"]).toBeUndefined();
         expect(screen.getByText(`${replacementLabel} is already assigned to “Open project”.`)).toBeInTheDocument();
 
         fireEvent.keyDown(ssh, { key: "Backspace", code: "Backspace" });
-        expect(getState().keybindingOverrides["ssh.open"]).toBeNull();
+        expect(getState().preferences?.keybindingOverrides["ssh.open"]).toBeNull();
         expect(screen.getByRole("button", { name: "Connect to SSH host: Unassigned. Activate to change." })).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "Reset all" }));
-        expect(getState().keybindingOverrides).toEqual({});
+        expect(getState().preferences?.keybindingOverrides).toEqual({});
     });
 
     it("persists an explicit launch boundary and sends the core a non-secret provider path", async () => {

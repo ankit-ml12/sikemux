@@ -1265,6 +1265,24 @@ export interface Preferences {
   notificationsIntroduced: boolean;
   /** The person was told once that terminals keep running after Sikemux quits. */
   keptRunningNoticeShown: boolean;
+  /** Panes show a dithered texture behind them. */
+  paneShader: boolean;
+  /** A picture every pane dithers in place of the texture. */
+  paneImage?: string;
+  /** How strongly the texture or picture shows, from 0 to 2. */
+  paneStrength: number;
+  /** How opaque the window is, from 0 to 1. */
+  windowOpacity: number;
+  /** How much what is behind the window blurs, in points. */
+  windowBlur: number;
+  railDensity: RailDensity;
+  /** The iOS Simulator is drawn inside a device's frame. */
+  simulatorFrame: boolean;
+  /**
+   * The keys the person bound to actions in place of their defaults, by
+   * the action's id; none unbinds an action.
+   */
+  keybindingOverrides: Record<string, string>;
 }
 
 export type MidTurnSend = 'steer' | 'queue';
@@ -1393,6 +1411,8 @@ export type NotchFullScreen = 'needsYou' | 'always' | 'never';
 export type NotchPeeks = 'all' | 'needsYou' | 'never';
 
 export type UpdateChannel = 'stable' | 'nightly';
+
+export type RailDensity = 'comfortable' | 'compact';
 
 /**
  * The picked theme with the colours every app works out from it, nudged

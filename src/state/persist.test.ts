@@ -85,13 +85,13 @@ describe("frontend persistence", () => {
         const unsubscribe = subscribePersist();
         await vi.advanceTimersByTimeAsync(0);
         invoke.mockClear();
-        setState({ railDensity: "compact" });
+        setState({ tabRailPage: "files" });
         for (let index = 0; index < 6; index++) {
             await vi.advanceTimersByTimeAsync(100);
             setState({ terminalTitles: { pane: `output-${index}` } });
         }
         expect(invoke).toHaveBeenCalledTimes(1);
-        expect(JSON.parse(invoke.mock.calls[0][1].data).prefs.railDensity).toBe("compact");
+        expect(JSON.parse(invoke.mock.calls[0][1].data).prefs.tabRailPage).toBe("files");
         await vi.advanceTimersByTimeAsync(600);
         expect(invoke).toHaveBeenCalledTimes(1);
         unsubscribe();
@@ -171,38 +171,6 @@ describe("frontend persistence", () => {
         expect(await flushPersist()).toBe(true);
         const raw = invoke.mock.calls[0][1].data as string;
         expect(raw).not.toContain("do-not-persist");
-    });
-
-    it("persists and safely hydrates keybinding overrides", async () => {
-        setState({
-            keybindingOverrides: {
-                "project.open": "Ctrl+KeyP",
-                "pane.zoom": null,
-            },
-        });
-        invoke.mockResolvedValue(undefined);
-
-        expect(await flushPersist()).toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs.keybindingOverrides).toEqual({
-            "project.open": "Ctrl+KeyP",
-            "pane.zoom": null,
-        });
-
-        applyHydrate(
-            JSON.stringify({
-                ...saved,
-                prefs: {
-                    ...saved.prefs,
-                    keybindingOverrides: {
-                        "project.open": "Meta+Shift+KeyO",
-                        "pane.zoom": "KeyZ",
-                        unknown: "Meta+KeyU",
-                    },
-                },
-            }),
-        );
-        expect(getState().keybindingOverrides).toEqual({ "project.open": "Meta+Shift+KeyO" });
     });
 
     it("persists rail visibility by role", async () => {
@@ -971,7 +939,7 @@ describe("frontend persistence", () => {
             selectedEnvs: { "/ws/api-docs": "staging" },
             workspaces: ["/ws/api-docs", "/ws/billing"],
         });
-        expect(st.keybindingOverrides).toEqual({
+        expect(getState().preferences?.keybindingOverrides).toEqual({
             "plugin.run:sikemux.bruno/send": "Alt+Enter",
             "plugin.open:sikemux.bruno": null,
             "pane.zoom": "Alt+KeyZ",
@@ -1000,7 +968,7 @@ describe("frontend persistence", () => {
         expect(st.sessions[aws.id]).toMatchObject({ kind: AWS_CONSOLE, name: "AWS" });
         expect(st.windows[awsWindow.id]).toMatchObject({ role: AWS_CONSOLE, root: { type: "pane", kind: AWS_CONSOLE } });
         expect((await savedPrefs()).pluginSettings).toMatchObject({ "sikemux.aws": { profile: "prod-admin", service: "billing" } });
-        expect(st.keybindingOverrides).toEqual({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA" });
+        expect((await savedPrefs()).keybindingOverrides).toEqual({ "plugin.open:sikemux.aws": "Alt+Shift+KeyA" });
     });
 
     it("upgrades saved SSH terminals to the reconnecting startup command", () => {

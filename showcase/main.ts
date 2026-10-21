@@ -1,6 +1,5 @@
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import "./showcase.css";
-import { PANE_IMAGE } from "./world/projects";
 
 mockWindows("main");
 Object.assign(
@@ -33,8 +32,6 @@ const [commands, store, gitWorkbench, git] = await Promise.all([
   import("./world/git"),
 ]);
 store.useStore.setState((state) => ({
-  paneImage: PANE_IMAGE,
-  paneStrength: 1.8,
   faceStyle: { ...state.faceStyle, on: true },
 }));
 for (const [repo, draft] of Object.entries(git.COMMIT_DRAFT)) {

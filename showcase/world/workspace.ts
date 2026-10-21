@@ -591,11 +591,8 @@ function baseSnapshot(): PersistedSnapshot {
     activeSessionId: "s-sikemux",
     recent: [],
     prefs: {
-      windowOpacity: 0.81,
-      paneShader: true,
       sideRailWidth: 258,
       tabRailWidth: 256,
-      windowBlur: 0,
       sideRailOpen: true,
       tabRailOpen: true,
       lastReleaseNotes: null,

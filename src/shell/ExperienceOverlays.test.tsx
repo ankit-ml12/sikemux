@@ -34,7 +34,7 @@ const initial = getState();
 const health = { git: true };
 
 function openOnboarding(overrides = {}) {
-    setState({ onboardingOpen: true, preferences: testPreferences({ onboardingComplete: false }), keybindingOverrides: overrides });
+    setState({ onboardingOpen: true, preferences: testPreferences({ onboardingComplete: false, keybindingOverrides: overrides }) });
     return render(<Onboarding />);
 }
 
@@ -47,7 +47,7 @@ beforeEach(() => {
     invoke.mockImplementation(async (command: string) => (command === "integration_health" ? health : undefined));
     resetPersistenceForTests();
     setState(initial, true);
-    setState({ onboardingOpen: false, preferences: testPreferences({ onboardingComplete: false }), keybindingOverrides: {} });
+    setState({ onboardingOpen: false, preferences: testPreferences({ onboardingComplete: false }) });
 });
 
 afterEach(() => {

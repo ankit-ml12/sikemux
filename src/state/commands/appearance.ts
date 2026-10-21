@@ -5,7 +5,7 @@ import { applyTerminalFontSize, clampTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZ
 import { applyChatTextScale, clampChatTextScale, DEFAULT_CHAT_TEXT_SCALE } from "../../chat/textScale";
 import { applyEditorTextScale, clampEditorTextScale, DEFAULT_EDITOR_TEXT_SCALE } from "../../editor/textScale";
 import { setPreference } from "../preferences";
-import { getState, setState } from "../store";
+import { getState } from "../store";
 import { swallow } from "../toast";
 
 export const themeIdNow = (): string => getState().preferences?.themeId ?? DEFAULT_THEME_ID;
@@ -91,11 +91,19 @@ export function resetEditorTextScale(): void {
 export function setWindowOpacity(v: number): void {
     const value = Number.isFinite(v) ? v : 1;
     applyWindowOpacity(value);
-    setState({ windowOpacity: value });
+    setPreference("windowOpacity", value);
+}
+
+let blurred: number | null = null;
+
+export function applyWindowBlur(radius: number): void {
+    if (radius === blurred) return;
+    blurred = radius;
+    void invoke("set_window_blur", { radius }).catch(swallow("set_window_blur"));
 }
 
 export function setWindowBlur(v: number): void {
     const value = Number.isFinite(v) ? Math.round(v) : 0;
-    void invoke("set_window_blur", { radius: value }).catch(swallow("set_window_blur"));
-    setState({ windowBlur: value });
+    applyWindowBlur(value);
+    setPreference("windowBlur", value);
 }

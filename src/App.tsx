@@ -15,7 +15,7 @@ import { watchSshLinks } from "./terminal/sshLinks";
 import { watchTerminalTitles } from "./terminal/terminalTitles";
 import { watchRailNames } from "./terminal/railNames";
 import { watchFaceStyle } from "./buddies/faceStyle";
-import { customCommandsOf, showPreferences, usePreference, watchPreferences } from "./state/preferences";
+import { customCommandsOf, showPreferences, usePreference, watchPreferences, preferencesOf } from "./state/preferences";
 import { watchLspClaims } from "./api/lsp";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
@@ -52,7 +52,7 @@ import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./commands/keymap";
-import { getKeybindingAction, QUIT_AND_STOP_SHORTCUT } from "./commands/keybindings";
+import { getKeybindingAction, QUIT_AND_STOP_SHORTCUT, keybindingOverridesOf } from "./commands/keybindings";
 import { usePinchZoom } from "./shell/pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agents/agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
@@ -301,7 +301,7 @@ async function quitAndStopEverything(): Promise<void> {
 }
 
 function ApplicationCommandPalette() {
-    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const keybindingOverrides = useStore(keybindingOverridesOf);
     const customCommands = useStore(customCommandsOf);
     const recentCommandKeys = useStore((s) => s.recentCommandKeys);
     const activeKind = useStore((s) => s.sessions[s.activeSessionId]?.kind ?? null);
@@ -616,6 +616,14 @@ export default function App() {
     useEffect(() => {
         if (uiTextScale !== undefined) document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
     }, [uiTextScale]);
+    const windowOpacity = usePreference("windowOpacity");
+    useEffect(() => {
+        if (windowOpacity !== undefined) applyWindowOpacity(windowOpacity);
+    }, [windowOpacity]);
+    const windowBlur = usePreference("windowBlur");
+    useEffect(() => {
+        if (windowBlur !== undefined) cmd.applyWindowBlur(windowBlur);
+    }, [windowBlur]);
     const themeId = usePreference("themeId");
     const customThemes = usePreference("customThemes");
     useEffect(() => {
@@ -635,7 +643,7 @@ export default function App() {
     useEffect(() => {
         if (editorTextScale !== undefined) applyEditorTextScale(editorTextScale);
     }, [editorTextScale]);
-    const paneStrength = useStore((s) => s.paneStrength);
+    const paneStrength = useStore((s) => preferencesOf(s).paneStrength);
     useEffect(() => {
         document.documentElement.style.setProperty("--pane-strength", String(paneStrength));
     }, [paneStrength]);
@@ -704,14 +712,14 @@ export default function App() {
                     registerCustomThemes(preferences?.customThemes ?? []);
                     applyTheme(preferences?.themeId ?? DEFAULT_THEME_ID);
                     startPageTheme();
-                    applyWindowOpacity(st.windowOpacity);
+                    applyWindowOpacity(preferencesOf(st).windowOpacity);
                     if (preferences) {
                         document.documentElement.style.setProperty("--ui-text-scale", String(preferences.uiTextScale));
                         applyTerminalFontSize(preferences.terminalFontSize);
                         applyChatTextScale(preferences.chatTextScale);
                         applyEditorTextScale(preferences.editorTextScale);
                     }
-                    cmd.setWindowBlur(st.windowBlur);
+                    cmd.applyWindowBlur(preferencesOf(st).windowBlur);
                     if (hydrationAllowsPersistence(hydrationResult)) {
                         offerSavedSessions();
                         if (preferences && !preferences.onboardingComplete) cmd.openOnboarding();

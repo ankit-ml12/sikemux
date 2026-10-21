@@ -16,6 +16,7 @@ import {
     resolvedKeybinding,
     type KeybindingActionId,
     type KeybindingOverrides,
+    keybindingOverridesOf,
 } from "../commands/keybindings";
 import { settingsApi } from "../api/settings";
 import { openUrl } from "../api/system";
@@ -25,7 +26,7 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { customCommandsOf, setPreference, updateChannelOf, usePreference, projectRootsOf } from "../state/preferences";
+import { customCommandsOf, setPreference, updateChannelOf, usePreference, projectRootsOf, preferencesOf } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
 import {
     cloneTheme,
@@ -124,13 +125,13 @@ function isFindShortcut(event: KeyboardEvent): boolean {
 export function SettingsPanel() {
     const projectRoots = useStore(projectRootsOf);
     const themeId = usePreference("themeId") ?? DEFAULT_THEME_ID;
-    const windowOpacity = useStore((s) => s.windowOpacity);
-    const windowBlur = useStore((s) => s.windowBlur);
+    const windowOpacity = useStore((s) => preferencesOf(s).windowOpacity);
+    const windowBlur = useStore((s) => preferencesOf(s).windowBlur);
     const cloudBrowser = usePreference("cloudBrowser") ?? "";
     const cloudBrowserShortcut = usePreference("cloudBrowserShortcut") ?? "";
-    const keybindingOverrides = useStore((s) => s.keybindingOverrides);
+    const keybindingOverrides = useStore(keybindingOverridesOf);
     const home = useStore((s) => s.home);
-    const paneShader = useStore((s) => s.paneShader);
+    const paneShader = useStore((s) => preferencesOf(s).paneShader);
     const page = useStore((s) => s.settingsPage);
     const target = useStore((s) => s.settingsTarget);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
@@ -522,7 +523,7 @@ function ActionsPage() {
 function AgentsPage() {
     const restore = usePreference("restoreAgentTabs") === true;
     const notifications = usePreference("agentNotifications") === true;
-    const density = useStore((s) => s.railDensity);
+    const density = useStore((s) => preferencesOf(s).railDensity);
     const midTurnSend = usePreference("midTurnSend");
     const profiles = useStore((s) => s.providerProfiles);
     const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
@@ -1244,9 +1245,9 @@ interface ThemeEdit {
 
 function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePageProps) {
     const uiTextScale = usePreference("uiTextScale");
-    const paneShader = useStore((state) => state.paneShader);
-    const paneImage = useStore((state) => state.paneImage);
-    const paneStrength = useStore((state) => state.paneStrength);
+    const paneShader = useStore((state) => preferencesOf(state).paneShader);
+    const paneImage = useStore((state) => preferencesOf(state).paneImage);
+    const paneStrength = useStore((state) => preferencesOf(state).paneStrength);
     const home = useStore((state) => state.home);
     const customThemes = usePreference("customThemes") ?? NO_THEMES;
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
@@ -1848,7 +1849,7 @@ function xcodeDescription(path: string | null): string {
 
 function SimulatorSection() {
     const enabled = usePreference("iosSimulator") === true;
-    const frame = useStore((s) => s.simulatorFrame);
+    const frame = useStore((s) => preferencesOf(s).simulatorFrame);
     const status = useSimStatus();
     const [setup, setSetup] = useState<SimSetup | "unread" | null>(null);
     const usable = simUsable(status);

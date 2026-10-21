@@ -4,11 +4,9 @@ import { sshStartup } from "../terminal/sshStartup";
 import { parseReleaseCredits } from "../api/releases";
 import type { AgentAccountBook } from "../api/agents";
 import type { ProjectInfo, Workspace } from "../api/generated/wire";
-import { normaliseKeybindingOverrides } from "../commands/keybindings";
 import { accountAgentTypes, agentTypes, hasAccounts, isAgentType } from "../agents/catalog";
 import { clampRailWidth } from "../lib/railWidths";
 import { mergePinnedIntoRoots, normaliseProjectRoots, pruneOnDemandWindows } from "./commands";
-import { clampPaneStrength } from "./commands/settings";
 import { agentFromCore, sharedFromCore } from "./coreWorkspace";
 import { agentInWindow, agentPaneId, chatKey } from "./selectors";
 import { collectPanes, newId, removePane } from "./layout";
@@ -87,19 +85,11 @@ function readReleaseNotes(saved: unknown): StoreState["lastReleaseNotes"] {
 
 /** Each setting this window saves, and how a saved value reads back: one it cannot read keeps the store's default. */
 const PREFS = {
-    paneShader: flag,
-    paneImage: (saved, current) => (typeof saved === "string" || saved === null ? saved : current),
-    paneStrength: finite(clampPaneStrength),
-    windowOpacity: finite(),
-    windowBlur: finite(),
-    keybindingOverrides: (saved) => normaliseKeybindingOverrides(saved),
     sideRailOpen: flag,
     tabRailOpen: flag,
     sideRailWidth: finite((width) => clampRailWidth("start", width)),
     tabRailWidth: finite((width) => clampRailWidth("end", width)),
     activeSpaceId: (saved, current) => (typeof saved === "string" ? saved : current),
-    simulatorFrame: flag,
-    railDensity: oneOf("comfortable", "compact"),
     tabRailAllAgents: flag,
     tabRailScope: oneOf("project", "all"),
     tabRailPage: oneOf("agents", "terminals", "files"),
