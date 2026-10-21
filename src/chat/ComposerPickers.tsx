@@ -247,8 +247,8 @@ function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movabl
 }
 
 /** Moves a chat that has started to another of the person's accounts, even in
-    the middle of a turn. */
-function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; profile: ProviderProfile; running: boolean; disabled: boolean }) {
+    the middle of a turn. Its menu is the rail's, without signing in or out. */
+export function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; profile: ProviderProfile; running: boolean; disabled: boolean }) {
     const [movable, load] = useMovable(agent, profile);
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const trigger = useRef<HTMLButtonElement>(null);
@@ -301,8 +301,6 @@ export function ComposerPickers({
     profile,
     setup,
     disabled,
-    running = false,
-    moveDisabled = true,
     agentLocked = false,
     onConfig,
     onAgent,
@@ -311,9 +309,6 @@ export function ComposerPickers({
     profile?: ProviderProfile;
     setup: Record<string, unknown>;
     disabled: boolean;
-    running?: boolean;
-    /** Whether the chat cannot move to another account now, which it can while a turn runs. */
-    moveDisabled?: boolean;
     agentLocked?: boolean;
     onAgent: (type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string) => void;
     onConfig: (config: SessionConfig, value: string) => void;
@@ -385,7 +380,6 @@ export function ComposerPickers({
                     />
                 );
             })}
-            {agentLocked && profile && <AccountPicker agent={agent} profile={profile} running={running} disabled={moveDisabled} />}
         </div>
     );
 }

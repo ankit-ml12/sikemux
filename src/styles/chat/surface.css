@@ -62,6 +62,18 @@
     padding: 0 3px;
 }
 
+/* The chat's worktree and account, put here by the chat below; it shrinks away when it holds nothing. */
+.agent-surface-chat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.agent-surface-chat:is([hidden], :empty) {
+    display: none;
+}
+
 .agent-surface-mark {
     display: grid;
     place-items: center;
