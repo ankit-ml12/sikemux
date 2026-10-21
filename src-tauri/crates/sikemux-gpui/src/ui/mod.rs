@@ -99,6 +99,38 @@ pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
     }
 }
 
+/// Someone's initials on a colour of their own, picked by `key` when there is one, else
+/// their name, as today's history and code host draw people without a picture.
+pub fn initials(name: &str, key: &str, size: f32, cx: &App) -> Div {
+    let parts: Vec<&str> = name.split_whitespace().collect();
+    let initials: String = match parts.as_slice() {
+        [] => "?".into(),
+        [only] => only.chars().take(2).collect::<String>().to_uppercase(),
+        [first, .., last] => first
+            .chars()
+            .take(1)
+            .chain(last.chars().take(1))
+            .collect::<String>()
+            .to_uppercase(),
+    };
+    let key = if key.is_empty() { name } else { key };
+    let hue = key.chars().fold(0u32, |hash, character| {
+        hash.wrapping_mul(31).wrapping_add(character as u32)
+    }) % 360;
+    div()
+        .size(px(size))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .bg(gpui_kit::hsla(hue as f32 / 360., 0.62, 0.64, 1.))
+        .text_color(Tokens::get(cx).on_accent)
+        .text_size(px(size * 0.47))
+        .font_weight(FontWeight::SEMIBOLD)
+        .child(initials)
+}
+
 /// A square that centres what it holds, so marks of any drawing line up.
 pub fn mark_box(size: f32, child: impl IntoElement) -> Div {
     div()

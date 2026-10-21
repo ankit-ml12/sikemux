@@ -10,6 +10,7 @@ use gpui_kit::{
 use serde_json::Value;
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
 
+use crate::codehost::{Area, OpenArea};
 use crate::icons::Icon;
 use crate::keymap;
 use crate::tabs;
@@ -336,6 +337,7 @@ fn project_tree(
                     .tab()
                     .and_then(|tab| tabs::first_view(&tab.pane))
                     .map(|(kind, _)| kind),
+                bench.area,
                 cx,
             ))
         })
@@ -361,40 +363,44 @@ fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
 }
 
 /// What a project opens, in the order the rail lists them: its own surfaces,
-/// with its code host's sections after Git.
+/// with its code host's sections after Git, each an area of the Git tab.
 fn surface_rows(
     project: &ProjectInfo,
-) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>)> {
+) -> Vec<(Icon, SharedString, &'static str, Option<PaneKind>, Area)> {
     let mut rows = vec![
         (
             Icon::Editor,
             "Files".into(),
             "window.files",
             Some(PaneKind::Files),
+            Area::Local,
         ),
         (
             Icon::Terminal,
             "Terminal".into(),
             "window.terminal",
             Some(PaneKind::Terminal),
+            Area::Local,
         ),
         (
             Icon::Agent,
             "Agents".into(),
             "window.agents",
             Some(PaneKind::Agent),
+            Area::Local,
         ),
-        (Icon::Git, "Git".into(), "window.git", Some(PaneKind::Git)),
+        (
+            Icon::Git,
+            "Git".into(),
+            "window.git",
+            Some(PaneKind::Git),
+            Area::Local,
+        ),
     ];
     if let Some(host) = &project.code_host {
         rows.extend(host.sections.iter().filter_map(|section| {
-            Some(match section.as_str() {
-                "pulls" => (Icon::PullRequest, "Pull requests".into(), "", None),
-                "actions" => (Icon::Actions, host.ci_name.clone().into(), "", None),
-                "issues" => (Icon::Issues, "Issues".into(), "", None),
-                "releases" => (Icon::Releases, "Releases".into(), "", None),
-                _ => return None,
-            })
+            let area = Area::of(section)?;
+            Some((area.icon(), area.label(host), "", Some(PaneKind::Git), area))
         }));
     }
     rows.extend([
@@ -403,19 +409,26 @@ fn surface_rows(
             "Search".into(),
             "search.global",
             Some(PaneKind::Search),
+            Area::Local,
         ),
         (
             Icon::Board,
             "Agent board".into(),
             "window.board",
             Some(PaneKind::Board),
+            Area::Local,
         ),
     ]);
     rows
 }
 
 /// The project's surfaces, hung off a spine with a tick to each, the one in front lit.
-fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl IntoElement {
+fn surfaces(
+    project: &ProjectInfo,
+    front: Option<PaneKind>,
+    area: Area,
+    cx: &App,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let rows = surface_rows(project);
     let last = rows.len() - 1;
@@ -426,16 +439,21 @@ fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl In
         .py(px(2.))
         .pr(px(6.))
         .children(rows.into_iter().enumerate().map(
-            move |(index, (glyph, label, command, kind))| {
+            move |(index, (glyph, label, command, kind, opens))| {
                 let tail = index == last;
-                let lit = kind.is_some() && kind == front;
+                let in_git = kind == Some(PaneKind::Git);
+                let lit = kind.is_some() && kind == front && (!in_git || opens == area);
                 let spine = div().absolute().left_0().top_0();
                 div()
                     .id(SharedString::from(format!("surface-{index}")))
                     .relative()
                     .h(px(25.))
-                    .when(!command.is_empty(), |row| {
-                        row.on_click(move |_, window, cx| keymap::dispatch(command, window, cx))
+                    .on_click(move |_, window, cx| {
+                        if in_git {
+                            window.dispatch_action(Box::new(OpenArea { area: opens }), cx);
+                        } else {
+                            keymap::dispatch(command, window, cx);
+                        }
                     })
                     .pr(px(8.))
                     .flex()

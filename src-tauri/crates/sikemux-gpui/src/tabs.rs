@@ -223,7 +223,10 @@ fn ci_glyph(bench: &Workbench, cx: &App) -> Option<AnyElement> {
     Some(
         div()
             .id("ci-glyph")
-            .on_click(|_, window, cx| crate::keymap::dispatch("window.git", window, cx))
+            .on_click(|_, window, cx| {
+                let area = crate::codehost::Area::Actions;
+                window.dispatch_action(Box::new(crate::codehost::OpenArea { area }), cx)
+            })
             .h(px(24.))
             .px(px(4.))
             .flex()

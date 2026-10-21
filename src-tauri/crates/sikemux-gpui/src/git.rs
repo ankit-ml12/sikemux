@@ -25,6 +25,7 @@ use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens};
 use crate::ui;
 
+pub use crate::codehost::{Area, OpenArea};
 pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;
 

@@ -9,6 +9,7 @@ mod agents;
 mod battery;
 mod boot;
 mod chat;
+pub mod codehost;
 mod commands;
 pub mod composer;
 pub mod core;

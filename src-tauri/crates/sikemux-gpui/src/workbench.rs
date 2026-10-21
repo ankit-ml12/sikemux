@@ -27,6 +27,7 @@ use tokio::sync::mpsc;
 
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question, Sent};
+use crate::codehost::{Area, HostArea, OpenArea};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::desk::{NewPage, NewSimulator, ToggleDesk};
 use crate::editor::OpenAt;
@@ -117,6 +118,10 @@ pub struct Workbench {
     pub editors: crate::editor::Editors,
     /// The Git pane of the project whose Git tab was last in front.
     pub git: Option<Entity<GitPane>>,
+    /// What the Git tab shows: the local workbench, or one of the code host's areas.
+    pub area: Area,
+    /// The code host's areas of the project whose Git tab last showed one.
+    pub host: Option<Entity<HostArea>>,
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
     /// Settings, while they take the stage's place.
@@ -424,6 +429,8 @@ impl Workbench {
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
             git: None,
+            area: Area::Local,
+            host: None,
             search: None,
             settings: None,
             focus: cx.focus_handle(),
@@ -633,6 +640,11 @@ impl Workbench {
             Update::Read(key @ ("runs" | "ports"), value) => {
                 self.reads.insert(key, value);
                 self.time_run(cx);
+            }
+            Update::Read(key, value) if crate::codehost::watches(key) => {
+                if let Some(host) = &self.host {
+                    host.update(cx, |host, cx| host.read(key, &value, cx));
+                }
             }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
@@ -1990,6 +2002,48 @@ impl Workbench {
         }
     }
 
+    /// Makes the code host's areas when the Git tab in front shows one, and keeps them
+    /// on the project's repository and branch.
+    fn host_area(&mut self, cx: &mut Context<Self>) {
+        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
+        let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
+            return;
+        };
+        let Some(host) = project.code_host.clone() else {
+            self.area = Area::Local;
+            return;
+        };
+        if self.area == Area::Local {
+            return;
+        }
+        let (folder, branch) = (
+            project.path.to_string_lossy().into_owned(),
+            crate::codehost::branch_of(project),
+        );
+        let area = self.area;
+        match &self.host {
+            Some(shown) if shown.read(cx).project == folder => {
+                shown.update(cx, |shown, cx| {
+                    shown.project_moved(&host, branch, cx);
+                    shown.show(area, cx);
+                });
+            }
+            _ => {
+                let asks = self.asks.clone();
+                let shown = cx.new(|_| HostArea::new(asks, folder, host, branch));
+                shown.update(cx, |shown, cx| shown.show(area, cx));
+                self.host = Some(shown);
+            }
+        }
+    }
+
+    /// Brings the project's Git tab to the front showing `area`.
+    fn open_area(&mut self, area: Area, cx: &mut Context<Self>) {
+        self.area = area;
+        self.open_git();
+        cx.notify();
+    }
+
     /// Brings the project's Git tab to the front, opening one when it has none.
     fn open_git(&self) {
         if let Some(project) = self.project() {
@@ -2365,6 +2419,7 @@ impl Parts {
                     bench.compose(window, cx);
                     bench.hint(window, cx);
                     bench.git_pane(window, cx);
+                    bench.host_area(cx);
                     bench.search_pane(cx);
                     crate::desk::prepare(bench, window, cx);
                     home::stage(bench, window, cx)
@@ -2496,6 +2551,7 @@ impl Render for Workbench {
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
             .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
+            .on_action(cx.listener(|bench, open: &OpenArea, _, cx| bench.open_area(open.area, cx)))
             .on_action(
                 cx.listener(|bench, _: &FocusSearch, window, cx| bench.open_search(window, cx)),
             )

@@ -198,6 +198,12 @@ fn view(
         PaneKind::Files => ui::pane(cx)
             .child(crate::editor::pane(bench, &cx.entity(), target, window, cx))
             .into_any_element(),
+        PaneKind::Git if bench.area != crate::codehost::Area::Local && bench.host.is_some() => {
+            match &bench.host {
+                Some(host) => ui::pane(cx).child(host.clone()).into_any_element(),
+                None => ui::pane(cx).into_any_element(),
+            }
+        }
         PaneKind::Git => match &bench.git {
             Some(pane) => pane.clone().into_any_element(),
             None => ui::pane(cx).into_any_element(),

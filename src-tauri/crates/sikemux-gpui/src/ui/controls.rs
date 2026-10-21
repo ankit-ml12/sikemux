@@ -323,7 +323,8 @@ impl RenderOnce for Button {
 #[derive(IntoElement)]
 pub struct Segmented {
     id: ElementId,
-    options: Vec<(Icon, SharedString)>,
+    /// Each choice's icon, its label, and how many it holds when that is known.
+    options: Vec<(Option<Icon>, SharedString, Option<u64>)>,
     selected: usize,
     pill: bool,
     on_select: Option<OnSelect>,
@@ -337,6 +338,30 @@ impl Segmented {
         options: Vec<(Icon, SharedString)>,
         selected: usize,
     ) -> Self {
+        let options = options
+            .into_iter()
+            .map(|(glyph, label)| (Some(glyph), label, None))
+            .collect();
+        Self {
+            id: id.into(),
+            options,
+            selected,
+            pill: false,
+            on_select: None,
+            disabled: None,
+        }
+    }
+
+    /// Choices in words alone, each with how many it holds when that is known.
+    pub fn words(
+        id: impl Into<ElementId>,
+        words: Vec<(SharedString, Option<u64>)>,
+        selected: usize,
+    ) -> Self {
+        let options = words
+            .into_iter()
+            .map(|(label, count)| (None, label, count))
+            .collect();
         Self {
             id: id.into(),
             options,
@@ -391,14 +416,16 @@ impl RenderOnce for Segmented {
                 self.options
                     .into_iter()
                     .enumerate()
-                    .map(|(index, (glyph, label))| {
+                    .map(|(index, (glyph, label, count))| {
                         let chosen = index == self.selected;
                         let on_select = on_select.clone();
                         BaseButton::new(("segment", index))
                             .group(GROUP)
                             .selected(chosen)
                             .accessibility_label(label.clone())
-                            .when(!pill, |segment| segment.flex_1().min_w_0())
+                            .when(!pill && glyph.is_some(), |segment| {
+                                segment.flex_1().min_w_0()
+                            })
                             .h_full()
                             .px(px(8.))
                             .flex()
@@ -422,7 +449,7 @@ impl RenderOnce for Segmented {
                             .when_some(on_select, |segment, handler| {
                                 segment.on_click(move |_, window, cx| handler(&index, window, cx))
                             })
-                            .child(
+                            .children(glyph.map(|glyph| {
                                 icon(glyph, 13.)
                                     .text_color(if chosen {
                                         t.text_primary
@@ -431,13 +458,18 @@ impl RenderOnce for Segmented {
                                     })
                                     .group_hover(GROUP, move |style| {
                                         style.text_color(t.text_primary)
-                                    }),
-                            )
+                                    })
+                            }))
                             .child(
                                 text(label, if pill { 10.5 } else { 11. }, FontWeight::NORMAL)
                                     .overflow_hidden()
                                     .text_ellipsis(),
                             )
+                            .children(count.map(|count| {
+                                text(count.to_string(), 10., FontWeight::NORMAL)
+                                    .font_features(crate::theme::tabular())
+                                    .text_color(t.text_tertiary)
+                            }))
                     }),
             )
     }

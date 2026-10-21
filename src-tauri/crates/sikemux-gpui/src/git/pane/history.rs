@@ -298,37 +298,6 @@ fn without_scope(subject: &str) -> &str {
     }
 }
 
-/// An author's initials on a colour of their own, as today's history draws them.
-pub fn avatar(name: &str, email: &str, size: f32, cx: &App) -> Div {
-    let parts: Vec<&str> = name.split_whitespace().collect();
-    let initials: String = match parts.as_slice() {
-        [] => "?".into(),
-        [only] => only.chars().take(2).collect::<String>().to_uppercase(),
-        [first, .., last] => first
-            .chars()
-            .take(1)
-            .chain(last.chars().take(1))
-            .collect::<String>()
-            .to_uppercase(),
-    };
-    let key = if email.is_empty() { name } else { email };
-    let hue = key.chars().fold(0u32, |hash, character| {
-        hash.wrapping_mul(31).wrapping_add(character as u32)
-    }) % 360;
-    div()
-        .size(px(size))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .bg(hsla(hue as f32 / 360., 0.62, 0.64, 1.))
-        .text_color(Tokens::get(cx).on_accent)
-        .text_size(px(size * 0.47))
-        .font_weight(FontWeight::SEMIBOLD)
-        .child(initials)
-}
-
 /// A ref a commit carries: the branch HEAD is on, another branch, a remote's, or a tag.
 fn ref_badge(label: &str, cx: &App) -> Div {
     let t = Tokens::get(cx);
@@ -442,7 +411,7 @@ pub fn commit_row(
             .w(px(gutter))
             .h(px(ROW_HEIGHT)),
         )
-        .child(avatar(&commit.author, &commit.author_email, 15., cx))
+        .child(ui::initials(&commit.author, &commit.author_email, 15., cx))
         .children(refs.first().map(|name| ref_badge(name, cx)))
         .child(
             div()
@@ -576,7 +545,7 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
                         .flex()
                         .items_center()
                         .gap(px(6.))
-                        .child(avatar(&commit.author, &commit.author_email, 20., cx))
+                        .child(ui::initials(&commit.author, &commit.author_email, 20., cx))
                         .child(commit.author.clone())
                         .into_any_element(),
                 ))
