@@ -569,7 +569,7 @@ impl DiffView {
 }
 
 /// The width of a character of code, which every character of the code font has.
-fn advance(window: &Window) -> Pixels {
+pub(crate) fn advance(window: &Window) -> Pixels {
     let text = window.text_system();
     let id = text.resolve_font(&font(theme::MONO));
     text.advance(id, CODE_SIZE, 'm')

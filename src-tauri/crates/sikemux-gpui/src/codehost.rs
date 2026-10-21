@@ -1,22 +1,29 @@
 //! A project's code host as the Git tab shows it in place of the local workbench: its
 //! pull requests, CI runs, issues and releases, as the core lists them.
 
+mod pull;
 mod pulls;
+mod thread;
 
+use std::future::Future;
+use std::rc::Rc;
+
+use gpui_kit::component::notification::Notification;
 use gpui_kit::{
     div, px, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
-use sikemux_wire::codehost::{CheckTally, Outcome, PullState};
+use sikemux_wire::codehost::{CheckTally, Label, Outcome, PullState};
 use sikemux_wire::protocol::ProjectCodeHost;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{Ask, Watch};
+use crate::core::{request, Ask, Watch};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui;
+use crate::workbench::Workbench;
 
 /// What the Git tab shows: the local workbench, or one of the code host's areas.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,29 +79,76 @@ pub struct OpenArea {
 /// What a code-host list answered: its value, or why the host could not give it.
 type Read<T> = Option<Result<T, SharedString>>;
 
+/// What the person agreeing does.
+type Then = Rc<dyn Fn(&mut HostArea, &mut Context<HostArea>)>;
+
+/// What the person is asked before a change the host cannot take back.
+pub struct Asking {
+    title: SharedString,
+    body: SharedString,
+    yes: SharedString,
+    destructive: bool,
+    then: Then,
+}
+
+impl Asking {
+    pub fn new(
+        title: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        yes: impl Into<SharedString>,
+        destructive: bool,
+        then: impl Fn(&mut HostArea, &mut Context<HostArea>) + 'static,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            body: body.into(),
+            yes: yes.into(),
+            destructive,
+            then: Rc::new(then),
+        }
+    }
+}
+
+/// How something the person did went.
+pub enum Said {
+    Done(SharedString),
+    Failed(SharedString),
+}
+
 /// The code host's areas for one project.
 pub struct HostArea {
     asks: UnboundedSender<Ask>,
+    bench: WeakEntity<Workbench>,
     /// The project's folder, which the core's lists are asked by.
     pub project: String,
     host: ProjectCodeHost,
+    /// The account the project picked on its host, else the host's default.
+    account: Option<String>,
     area: Area,
     pulls: pulls::Pulls,
+    pull: Option<pull::Opened>,
+    asking: Option<Asking>,
 }
 
 impl HostArea {
     pub fn new(
         asks: UnboundedSender<Ask>,
+        bench: WeakEntity<Workbench>,
         project: String,
         host: ProjectCodeHost,
+        account: Option<String>,
         branch: Option<(String, bool)>,
     ) -> Self {
         Self {
             asks,
+            bench,
             project,
             host,
+            account,
             area: Area::Local,
             pulls: pulls::Pulls::new(branch),
+            pull: None,
+            asking: None,
         }
     }
 
@@ -123,20 +177,81 @@ impl HostArea {
 
     /// Takes a watched list's answer, under the key it was watched by.
     pub fn read(&mut self, key: &str, value: &Value, cx: &mut Context<Self>) {
-        if key == pulls::KEY {
-            self.pulls.list = Some(answer(value));
-            cx.notify();
+        match key {
+            pulls::KEY => self.pulls.list = Some(answer(value)),
+            pull::VIEW => {
+                if let Some(opened) = &mut self.pull {
+                    opened.take_view(Some(answer(value)));
+                }
+            }
+            pull::FILES => {
+                if let Some(opened) = &mut self.pull {
+                    opened.take_files(answer(value));
+                }
+            }
+            _ => return,
         }
+        cx.notify();
     }
 
     fn watch(&self) {
-        if self.area == Area::Pulls {
-            self.ask_watch(
+        if self.area != Area::Pulls {
+            return;
+        }
+        match &self.pull {
+            Some(opened) => {
+                let params = json!({ "project": self.project, "number": opened.number });
+                self.ask_watch(pull::VIEW, "codeHostPull", params.clone());
+                self.ask_watch(pull::FILES, "codeHostPullFiles", params);
+            }
+            None => self.ask_watch(
                 pulls::KEY,
                 "codeHostPulls",
                 json!({ "project": self.project, "state": self.pulls.state.word() }),
-            );
+            ),
         }
+    }
+
+    /// Calls `method` of the host's plugin about the project's repository, with `more`.
+    fn plugin(
+        &self,
+        method: &'static str,
+        more: Value,
+    ) -> impl Future<Output = Result<Value, SharedString>> + 'static {
+        let (owner, name) = self.host.repo.split_once('/').unwrap_or_default();
+        let mut params = json!({
+            "provider": self.host.host,
+            "owner": owner,
+            "name": name,
+            "account": self.account,
+        });
+        if let (Some(params), Value::Object(more)) = (params.as_object_mut(), more) {
+            params.extend(more);
+        }
+        let call = json!({ "plugin": format!("sikemux.{}", self.host.host), "method": method, "params": params });
+        let answered = request(&self.asks, "plugin", call);
+        async move {
+            match answered.await {
+                Ok(value) => answer(&value),
+                Err(error) => Err(error.into()),
+            }
+        }
+    }
+
+    /// Tells the person how something went, in a toast.
+    fn say(&self, said: Said, cx: &mut Context<Self>) {
+        let note = match said {
+            Said::Done(text) => Notification::success(text),
+            Said::Failed(text) => Notification::error(text).autohide(false),
+        };
+        self.bench
+            .update(cx, |bench, cx| bench.notify(note, cx))
+            .ok();
+    }
+
+    fn ask(&mut self, asking: Asking, cx: &mut Context<Self>) {
+        self.asking = Some(asking);
+        cx.notify();
     }
 
     fn ask_watch(&self, key: &'static str, method: &'static str, params: Value) {
@@ -147,20 +262,48 @@ impl HostArea {
 }
 
 impl Render for HostArea {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match self.area {
-            Area::Pulls => pulls::list(self, cx),
+            Area::Pulls if self.pull.is_some() => pull::view(self, window, cx),
+            Area::Pulls => div()
+                .id("host-list")
+                .size_full()
+                .overflow_y_scroll()
+                .child(pulls::list(self, cx))
+                .into_any_element(),
             area => notice(
                 format!("{} is not here yet", area.label(&self.host)),
                 None,
                 cx,
             ),
         };
-        div()
-            .id("host-area")
-            .size_full()
-            .overflow_y_scroll()
-            .child(body)
+        let asking = self.asking.as_ref().map(|asking| {
+            let (yes, no) = (cx.entity().downgrade(), cx.entity().downgrade());
+            let then = asking.then.clone();
+            ui::Confirm::new(
+                asking.title.clone(),
+                asking.body.clone(),
+                asking.yes.clone(),
+            )
+            .destructive(asking.destructive)
+            .on_yes(move |_, cx| {
+                let then = then.clone();
+                yes.update(cx, |area, cx| {
+                    area.asking = None;
+                    then(area, cx);
+                    cx.notify();
+                })
+                .ok();
+            })
+            .on_no(move |_, cx| {
+                no.update(cx, |area, cx| {
+                    area.asking = None;
+                    cx.notify();
+                })
+                .ok();
+            })
+        });
+        div().size_full().relative().child(body).children(asking)
     }
 }
 
@@ -265,6 +408,84 @@ fn tally_summary(tally: &CheckTally) -> String {
     .map(|(count, word)| format!("{count} {word}"))
     .collect::<Vec<_>>()
     .join(", ")
+}
+
+fn host_label(host: &str) -> &str {
+    match host {
+        "github" => "GitHub",
+        "gitlab" => "GitLab",
+        "bitbucket" => "Bitbucket",
+        other => other,
+    }
+}
+
+fn outcome_label(outcome: Outcome) -> &'static str {
+    match outcome {
+        Outcome::Running => "Running",
+        Outcome::Queued => "Queued",
+        Outcome::Success => "Passed",
+        Outcome::Failure => "Failed",
+        Outcome::Cancelled => "Cancelled",
+        Outcome::Skipped => "Skipped",
+        Outcome::Blocked => "Waiting for approval",
+        Outcome::Unknown => "Unknown",
+    }
+}
+
+/// What started a run, in words.
+fn event_label(event: &str) -> String {
+    match event {
+        "push" => "Push".into(),
+        "pull_request" | "pull_request_target" => "Pull request".into(),
+        "workflow_dispatch" => "Manual".into(),
+        "schedule" => "Scheduled".into(),
+        "release" => "Release".into(),
+        "workflow_run" => "Workflow run".into(),
+        "merge_group" => "Merge queue".into(),
+        other => {
+            let words = other.replace('_', " ");
+            let mut letters = words.chars();
+            letters
+                .next()
+                .map(|first| first.to_uppercase().chain(letters).collect())
+                .unwrap_or_default()
+        }
+    }
+}
+
+/// How long something took from `started`, to `finished` or until now, in words.
+fn elapsed(started: &str, finished: Option<&str>) -> String {
+    let parse = |at: &str| chrono::DateTime::parse_from_rfc3339(at).ok();
+    let Some(from) = parse(started) else {
+        return "—".into();
+    };
+    let to = finished
+        .and_then(parse)
+        .map_or_else(chrono::Utc::now, |to| to.with_timezone(&chrono::Utc));
+    let seconds = (to.timestamp() - from.timestamp()).max(0);
+    match seconds {
+        0..60 => format!("{seconds}s"),
+        60..3600 if seconds % 60 == 0 => format!("{}m", seconds / 60),
+        60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
+        _ if seconds / 60 % 60 == 0 => format!("{}h", seconds / 3600),
+        _ => format!("{}h {}m", seconds / 3600, seconds / 60 % 60),
+    }
+}
+
+/// A label as the host colours it.
+fn label_chip(label: &Label, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    let ink = u32::from_str_radix(&label.color, 16)
+        .map(|rgb| Hsla::from(gpui_kit::rgb(rgb)))
+        .unwrap_or(t.text_tertiary);
+    div()
+        .px(px(7.))
+        .rounded_full()
+        .border_1()
+        .border_color(ink.opacity(0.5))
+        .bg(ink.opacity(0.14))
+        .text_color(t.text_primary)
+        .child(label.name.clone())
 }
 
 /// When something happened, as how long ago, from the host's RFC 3339 time.

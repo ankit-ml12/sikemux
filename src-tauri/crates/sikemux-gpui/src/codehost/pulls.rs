@@ -3,7 +3,7 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    div, px, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled,
 };
 use sikemux_wire::codehost::{ListedPull, PullList};
@@ -153,7 +153,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
 /// One pull request: who opened it, its state and title, then its number, age,
 /// branches and checks, with its reviewers, the issues it closes and its comments at
 /// the end.
-fn row(listed: &ListedPull, index: usize, cx: &App) -> AnyElement {
+fn row(listed: &ListedPull, index: usize, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let pull = &listed.pull;
     let author = pull.author.as_deref().unwrap_or("someone");
@@ -237,7 +237,12 @@ fn row(listed: &ListedPull, index: usize, cx: &App) -> AnyElement {
         .items_center()
         .gap(px(12.))
         .when(index > 0, |row| row.border_t_1().border_color(t.border))
+        .cursor_pointer()
         .hover(move |row| row.bg(t.surface_hover))
+        .on_click({
+            let number = pull.number;
+            cx.listener(move |area, _, _, cx| area.open_pull(number, cx))
+        })
         .child(ui::initials(author, "", 28., cx))
         .child(
             div()

@@ -2055,8 +2055,12 @@ impl Workbench {
                 });
             }
             _ => {
-                let asks = self.asks.clone();
-                let shown = cx.new(|_| HostArea::new(asks, folder, host, branch));
+                let (asks, bench) = (self.asks.clone(), cx.entity().downgrade());
+                let account = project
+                    .code_hosts
+                    .get(&host.host)
+                    .and_then(|choice| choice.account.clone());
+                let shown = cx.new(|_| HostArea::new(asks, bench, folder, host, account, branch));
                 shown.update(cx, |shown, cx| shown.show(area, cx));
                 self.host = Some(shown);
             }

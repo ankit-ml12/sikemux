@@ -116,37 +116,13 @@ impl RenderOnce for Body {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let mut mono = gpui_kit::font(theme::MONO);
-        mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
-            theme::MONO_ICONS.into()
-        ]));
         let style = Style {
-            font: theme::UI.into(),
-            mono,
-            text_size: px(15.),
-            line_height: 1.72,
-            ink: t.text_primary,
-            ink_dim: t.text_tertiary,
-            ink_faint: t.text_disabled,
-            accent: t.accent,
-            line: Hsla { a: 0.8, ..t.line },
-            line_soft: t.line_soft,
-            selection: Hsla { a: 0.3, ..t.accent },
-            mark_ground: Hsla { a: 0.1, ..t.accent },
-            table_ground: Hsla {
-                a: 0.72,
-                ..t.line_soft
-            },
-            code_ground: Hsla {
-                a: 0.72,
-                ..t.surface_sunken
-            },
             on_link: Some(Rc::new(
                 move |link: &str, window: &mut Window, cx: &mut App| {
                     follow(&folder, link, window, cx)
                 },
             )),
-            ..Style::default()
+            ..reading_style(15., &t)
         };
         let pen = Pen::new(Rc::new(style));
         let id = SharedString::from(format!("markdown-{}", self.path.display()));
@@ -158,6 +134,37 @@ impl RenderOnce for Body {
                 .py(px(24.))
                 .child(pen.markdown(id, &self.markdown, window, cx)),
         )
+    }
+}
+
+/// How the app reads markdown at `text_size`: its type, inks and grounds.
+pub(crate) fn reading_style(text_size: f32, t: &Tokens) -> Style {
+    let mut mono = gpui_kit::font(theme::MONO);
+    mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
+        theme::MONO_ICONS.into()
+    ]));
+    Style {
+        font: theme::UI.into(),
+        mono,
+        text_size: px(text_size),
+        line_height: 1.72,
+        ink: t.text_primary,
+        ink_dim: t.text_tertiary,
+        ink_faint: t.text_disabled,
+        accent: t.accent,
+        line: Hsla { a: 0.8, ..t.line },
+        line_soft: t.line_soft,
+        selection: Hsla { a: 0.3, ..t.accent },
+        mark_ground: Hsla { a: 0.1, ..t.accent },
+        table_ground: Hsla {
+            a: 0.72,
+            ..t.line_soft
+        },
+        code_ground: Hsla {
+            a: 0.72,
+            ..t.surface_sunken
+        },
+        ..Style::default()
     }
 }
 
