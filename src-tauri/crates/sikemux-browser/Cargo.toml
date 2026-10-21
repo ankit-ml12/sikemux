@@ -1,0 +1,22 @@
+[package]
+name = "sikemux-browser"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The browser engine: tabs, their pages and the agents' tools, with no UI toolkit"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sikemux-core = { path = "../sikemux-core" }
+sikemux-process = { path = "../sikemux-process" }
+tokio = { version = "1", features = ["rt", "time", "io-util", "net"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+workspace-hack = { version = "0.1", path = "../workspace-hack" }

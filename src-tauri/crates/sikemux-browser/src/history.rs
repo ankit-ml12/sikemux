@@ -2,17 +2,16 @@
 //! suggest them while someone types.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Url};
+use url::Url;
 
 use super::address::{resolve, Address};
-use super::browser_state_dir;
 
 const FILE_NAME: &str = "history.json";
 const MAX_PAGES: usize = 3000;
@@ -65,8 +64,14 @@ pub struct AddressSuggestions {
     pub search_url: String,
 }
 
+/// The pages remembered in `folder`, which is None when there is nowhere to keep them.
 #[derive(Default)]
-pub(super) struct History {
+pub struct History {
+    shared: Arc<Shared>,
+}
+
+#[derive(Default)]
+struct Shared {
     store: Mutex<Option<Store>>,
     saving: AtomicBool,
 }
@@ -74,55 +79,65 @@ pub(super) struct History {
 impl History {
     /// Remembers a page a tab finished showing, or only freshens the title and
     /// icon of one already remembered when `visited` is false.
-    pub fn note(&self, app: &AppHandle, url: &str, title: &str, icon: Option<&str>, visited: bool) {
+    pub fn note(
+        &self,
+        folder: Option<&Path>,
+        url: &str,
+        title: &str,
+        icon: Option<&str>,
+        visited: bool,
+    ) {
         let Some(url) = remembered(url) else {
             return;
         };
-        let changed = self.with_store(app, |store| store.note(&url, title, icon, visited, now()));
+        let changed =
+            self.with_store(folder, |store| store.note(&url, title, icon, visited, now()));
         if changed {
-            self.save_soon(app);
+            self.save_soon(folder);
         }
     }
 
-    pub fn note_typed(&self, app: &AppHandle, url: &str) {
+    pub fn note_typed(&self, folder: Option<&Path>, url: &str) {
         let Some(url) = remembered(url) else {
             return;
         };
-        self.with_store(app, |store| store.note_typed(&url, now()));
-        self.save_soon(app);
+        self.with_store(folder, |store| store.note_typed(&url, now()));
+        self.save_soon(folder);
     }
 
-    pub fn suggest(&self, app: &AppHandle, query: &str) -> AddressSuggestions {
-        self.with_store(app, |store| store.suggest(query, now()))
+    pub fn suggest(&self, folder: Option<&Path>, query: &str) -> AddressSuggestions {
+        self.with_store(folder, |store| store.suggest(query, now()))
     }
 
-    fn with_store<R>(&self, app: &AppHandle, work: impl FnOnce(&mut Store) -> R) -> R {
-        let mut slot = self.store.locked();
-        let store =
-            slot.get_or_insert_with(|| path(app).map(|path| load(&path)).unwrap_or_default());
+    fn with_store<R>(&self, folder: Option<&Path>, work: impl FnOnce(&mut Store) -> R) -> R {
+        let mut slot = self.shared.store.locked();
+        let store = slot.get_or_insert_with(|| {
+            folder
+                .map(|folder| load(&folder.join(FILE_NAME)))
+                .unwrap_or_default()
+        });
         work(store)
     }
 
-    fn save_soon(&self, app: &AppHandle) {
-        if self.saving.swap(true, Ordering::AcqRel) {
+    fn save_soon(&self, folder: Option<&Path>) {
+        let Some(path) = folder.map(|folder| folder.join(FILE_NAME)) else {
+            return;
+        };
+        if self.shared.saving.swap(true, Ordering::AcqRel) {
             return;
         }
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
+        let shared = self.shared.clone();
+        crate::spawn(async move {
             tokio::time::sleep(SAVE_DELAY).await;
-            let manager = tauri::Manager::state::<super::BrowserManager>(&app);
-            manager.history.saving.store(false, Ordering::Release);
-            let Some(path) = path(&app) else {
-                return;
-            };
+            shared.saving.store(false, Ordering::Release);
             let data = {
-                let slot = manager.history.store.locked();
+                let slot = shared.store.locked();
                 match slot.as_ref().map(serde_json::to_vec) {
                     Some(Ok(data)) => data,
                     _ => return,
                 }
             };
-            let written = tauri::async_runtime::spawn_blocking(move || save(&path, &data)).await;
+            let written = tokio::task::spawn_blocking(move || save(&path, &data)).await;
             if let Ok(Err(error)) = written {
                 eprintln!("could not save browser history: {error}");
             }
@@ -440,10 +455,6 @@ fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs())
-}
-
-fn path(app: &AppHandle) -> Option<PathBuf> {
-    browser_state_dir(app).ok().map(|dir| dir.join(FILE_NAME))
 }
 
 fn load(path: &Path) -> Store {

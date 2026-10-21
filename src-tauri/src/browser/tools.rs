@@ -11,8 +11,7 @@ use super::viewport::Viewport;
 use super::{BrowserManager, DownloadState, BLANK_URL};
 use sikemux_core::cli::protocol::HarnessRequest;
 
-const PAGE_SCRIPT: &str = include_str!("page.js");
-const RECORDS_SCRIPT: &str = include_str!("records.js");
+use sikemux_browser::{PAGE_SCRIPT, RECORDS_SCRIPT};
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(250);

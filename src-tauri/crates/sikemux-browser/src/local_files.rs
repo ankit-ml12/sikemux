@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::Url;
 
-use crate::file_serving::{content_type, parse_range, percent_decode};
+use sikemux_core::http::{content_type, parse_range, percent_decode};
 
 const MAX_SHARES: usize = 16;
 const MAX_REQUEST_HEAD: usize = 16 * 1024;
@@ -113,7 +113,7 @@ impl LocalFiles {
             token: share.token.clone(),
             port: share.port,
         };
-        tauri::async_runtime::spawn(async move {
+        crate::spawn(async move {
             let Ok(listener) = TcpListener::from_std(listener) else {
                 return;
             };
@@ -178,7 +178,7 @@ impl Folder {
     async fn serve(self, listener: TcpListener) {
         while let Ok((stream, _)) = listener.accept().await {
             let folder = self.clone();
-            tauri::async_runtime::spawn(async move {
+            tokio::spawn(async move {
                 let _ = folder.handle(stream).await;
             });
         }

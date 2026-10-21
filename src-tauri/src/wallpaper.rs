@@ -88,7 +88,7 @@ fn aerial_thumbnail(_path: &Path) -> Option<PathBuf> {
 
 #[cfg(not(target_os = "macos"))]
 fn image_bytes(path: &Path) -> AppResult<(Vec<u8>, &'static str)> {
-    let mime = crate::file_serving::content_type(path);
+    let mime = sikemux_core::http::content_type(path);
     if !matches!(
         mime,
         "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/bmp"

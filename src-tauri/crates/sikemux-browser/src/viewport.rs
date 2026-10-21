@@ -2,19 +2,14 @@
 //! lays out at exactly that size, and its view is drawn scaled down to fit the
 //! pane, never up, centred along the top of it with the pane showing around it.
 
-use std::time::{Duration, Instant};
-
 use serde::Serialize;
-use sikemux_process::sync::Locked;
 
-use super::{BrowserBounds, BrowserHole, BrowserManager, MOBILE_USER_AGENT};
+use crate::{BrowserBounds, BrowserHole, MOBILE_USER_AGENT};
 
 const MIN_SIZE: u32 = 200;
 const MAX_SIZE: u32 = 4000;
 /// A pane this narrow or short is collapsed or still being laid out, not showing a page.
 const MIN_SHOWN: f64 = 40.0;
-const SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
-const SETTLE_POLL: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -153,11 +148,11 @@ fn fit(area: &BrowserBounds, viewport: Viewport) -> BrowserBounds {
 
 /// Whether the page's own `innerWidth` and `innerHeight` match `expected`.
 /// They are whole numbers, so a fractional pane rounds either way.
-fn matches(reported: (f64, f64), expected: (f64, f64)) -> bool {
+pub fn matches(reported: (f64, f64), expected: (f64, f64)) -> bool {
     (reported.0 - expected.0).abs() < 1.0 && (reported.1 - expected.1).abs() < 1.0
 }
 
-fn parse_inner_size(raw: &str) -> Option<(f64, f64)> {
+pub fn parse_inner_size(raw: &str) -> Option<(f64, f64)> {
     let text = match serde_json::from_str::<serde_json::Value>(raw).ok()? {
         serde_json::Value::String(text) => text,
         _ => return None,
@@ -165,59 +160,6 @@ fn parse_inner_size(raw: &str) -> Option<(f64, f64)> {
     let (width, height) = text.split_once('x')?;
     Some((width.parse().ok()?, height.parse().ok()?))
 }
-impl BrowserManager {
-    /// The size the tab's page should lay out at now, in CSS pixels.
-    pub fn layout_size(&self, agent_id: &str, tab_id: &str) -> Option<(f64, f64)> {
-        let agents = self.agents.locked();
-        let agent = agents.get(agent_id)?;
-        agent.views.get(tab_id)?;
-        Some(agent.layout_of(tab_id).page_size())
-    }
-
-    /// Waits until the page itself reports the size it should lay out at, and
-    /// returns that size. Call it after `set_viewport` and any reload it caused.
-    pub async fn settle_viewport(
-        &self,
-        agent_id: &str,
-        tab_id: &str,
-    ) -> Result<(u32, u32), String> {
-        let started = Instant::now();
-        let mut last = None;
-        loop {
-            let expected = self
-                .layout_size(agent_id, tab_id)
-                .ok_or("the tab closed while its viewport was changing")?;
-            let view = self
-                .agents
-                .locked()
-                .get(agent_id)
-                .and_then(|agent| agent.views.get(tab_id).cloned())
-                .ok_or("the tab closed while its viewport was changing")?;
-            if let Ok(raw) = super::tools::eval(&view, r#"`${innerWidth}x${innerHeight}`"#).await {
-                if let Some(reported) = parse_inner_size(&raw) {
-                    if matches(reported, expected) {
-                        return Ok((reported.0 as u32, reported.1 as u32));
-                    }
-                    last = Some(reported);
-                }
-            }
-            if started.elapsed() >= SETTLE_TIMEOUT {
-                return Err(match last {
-                    Some((width, height)) => format!(
-                        "the page still lays out at {width}x{height}, not the {}x{} asked for",
-                        expected.0, expected.1
-                    ),
-                    None => format!(
-                        "the page did not report its size, so {}x{} could not be confirmed",
-                        expected.0, expected.1
-                    ),
-                });
-            }
-            tokio::time::sleep(SETTLE_POLL).await;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

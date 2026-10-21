@@ -7,23 +7,23 @@
 //! window": `get_webview_window("main")` returns `None` and commands taking a
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
-pub mod address;
-mod burst;
 mod discard;
-mod documents;
-mod downloads;
 mod favicon;
 mod handover;
-mod history;
 #[cfg(target_os = "macos")]
 mod input;
-mod local_files;
+mod layout;
 #[cfg(target_os = "macos")]
 pub(crate) mod macos;
 #[cfg(target_os = "macos")]
 mod recording;
 pub mod tools;
-mod viewport;
+
+pub use sikemux_browser::{
+    address, burst, documents, downloads, history, local_files, viewport, BrowserBounds,
+    BrowserDownload, BrowserShortcut, BrowserSnapshot, BrowserTab, DownloadState, PageDialog,
+    TabStall, BLANK_URL, RECORDER_SCRIPT, USER_AGENT,
+};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -32,7 +32,6 @@ use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
 use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{
@@ -46,10 +45,6 @@ pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
 pub const BROWSER_DOWNLOAD_EVENT: &str = "browser-download";
 pub const BROWSER_ACTING_EVENT: &str = "browser-agent-acting";
-pub const BLANK_URL: &str = "about:blank";
-/// Injected into every document before its own scripts, so a page's calls are
-/// already recorded by the time an agent asks about them.
-const RECORDER_SCRIPT: &str = include_str!("recorder.js");
 const MAX_URL_LEN: usize = 8192;
 /// A page opening more tabs than this in `POPUP_WINDOW` is in a loop.
 const POPUP_LIMIT: usize = 4;
@@ -73,135 +68,6 @@ const LOAD_SETTLE: Duration = Duration::from_secs(2);
 /// whatever it has so far.
 const REVEAL_LIMIT: Duration = Duration::from_secs(3);
 
-/// WebKit's own agent string names no browser at all, and sites answer that
-/// with an "unsupported browser" page, so tabs — and the fetch that goes after
-/// their icons — introduce themselves as Safari.
-const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15";
-const MOBILE_USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1";
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserTab {
-    pub id: String,
-    pub title: String,
-    pub url: String,
-    pub active: bool,
-    pub loading: bool,
-    pub can_go_back: bool,
-    pub can_go_forward: bool,
-    /// The site's own icon, inline, since the window can only draw `data:`.
-    pub favicon: Option<String>,
-    /// The agent's browser tools are working in this tab right now.
-    pub acting: bool,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserSnapshot {
-    pub tabs: Vec<BrowserTab>,
-    pub active_tab_id: Option<String>,
-}
-
-/// Where the page area sits, in the main window's CSS pixels. The clips are
-/// how much of either side lies outside the stage and must not be drawn. The
-/// holes are app elements, like toasts, that must show through the page. The
-/// dim is how dark a shade to lay over the page while an app panel floats on it.
-/// The opacity follows the pane's own while it fades, which CSS cannot reach.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BrowserBounds {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub clip_left: f64,
-    pub clip_right: f64,
-    pub holes: Vec<BrowserHole>,
-    #[serde(default)]
-    pub dim: f64,
-    #[serde(default = "opaque")]
-    pub opacity: f64,
-}
-
-fn opaque() -> f64 {
-    1.0
-}
-
-/// A rounded rectangle in the page's own coordinates.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BrowserHole {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub radius: f64,
-}
-
-/// A command chord pressed while the page had keyboard focus. The app's own
-/// keymap decides what it means.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserShortcut {
-    pub agent_id: String,
-    pub tab_id: String,
-    pub key: String,
-    pub code: String,
-    pub shift: bool,
-    pub alt: bool,
-}
-
-/// A file a page saved, announced when it starts and again when it ends. macOS never reports the saved path back, so the path
-/// chosen at the start is the one carried through.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserDownload {
-    pub agent_id: String,
-    pub tab_id: String,
-    pub url: String,
-    pub path: String,
-    pub state: DownloadState,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum DownloadState {
-    Started,
-    Finished,
-    Failed,
-}
-
-/// Why a tab's page cannot answer at all, so a call into it would only time out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TabStall {
-    /// WebKit gave up waiting on the page's process, which is hung or blocked
-    /// on something like a system dialog.
-    Unresponsive,
-    /// The page's process ended, leaving the tab blank until it loads again.
-    Crashed,
-}
-
-impl TabStall {
-    pub fn message(self) -> &'static str {
-        match self {
-            TabStall::Unresponsive => {
-                "the tab stopped responding; close it with browser_close_tab and open a new one"
-            }
-            TabStall::Crashed => {
-                "the tab's page crashed; navigate or reload to load it again, or close the tab"
-            }
-        }
-    }
-}
-
-/// An alert, confirm or prompt the page is blocked on until someone answers.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PageDialog {
-    pub kind: &'static str,
-    pub message: String,
-    pub default_text: Option<String>,
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TabPage {
@@ -874,7 +740,7 @@ impl BrowserManager {
         }
         if let Some((page, visited)) = shown {
             self.history.note(
-                app,
+                browser_state_dir(app).ok().as_deref(),
                 &page.url,
                 &page.title,
                 page.favicon.as_deref(),
@@ -1632,7 +1498,9 @@ pub async fn browser_navigate(
     let local = matches!(address::resolve(&url), address::Address::Local(_));
     let opened = manager.navigate(&app, &agent_id, &url)?;
     if !local {
-        manager.history.note_typed(&app, &opened);
+        manager
+            .history
+            .note_typed(browser_state_dir(&app).ok().as_deref(), &opened);
     }
     Ok(())
 }
@@ -1643,7 +1511,9 @@ pub async fn browser_suggest(
     manager: State<'_, BrowserManager>,
     query: String,
 ) -> AppResult<history::AddressSuggestions> {
-    Ok(manager.history.suggest(&app, &query))
+    Ok(manager
+        .history
+        .suggest(browser_state_dir(&app).ok().as_deref(), &query))
 }
 
 #[tauri::command]
@@ -1715,6 +1585,7 @@ pub async fn browser_page_still(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sikemux_browser::BrowserHole;
 
     fn page(url: &str) -> TabPage {
         TabPage {

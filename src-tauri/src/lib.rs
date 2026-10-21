@@ -16,7 +16,6 @@ mod diff;
 mod document_preview;
 mod error;
 mod external;
-mod file_serving;
 mod frame_rate;
 mod fs;
 mod grammars;
@@ -179,6 +178,7 @@ pub fn run() {
             }
         })
         .setup(|_app| {
+            sikemux_browser::set_runtime(tauri::async_runtime::handle().inner().clone());
             _app.manage(UiWatchdogState::start()?);
             let sim = SimManager::default();
             _app.manage(sim.clone());
