@@ -1,14 +1,16 @@
-//! A custom command the person runs in the background, on the host rather
-//! than on whichever device asked for it.
+//! A custom command the person runs, on the host rather than on whichever
+//! device asked for it: in the background, or in a terminal tab of its own.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use super::connection::blocking;
-use super::{CoreError, CoreResult};
+use super::{Core, CoreError, CoreResult};
+use crate::protocol::CustomCommandPlacement;
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 const OUTPUT_LIMIT: usize = 16_000;
@@ -61,4 +63,62 @@ pub(crate) async fn run(params: CommandParams) -> CoreResult<CommandResult> {
         })
     })
     .await
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RunCustomParams {
+    project: String,
+    /// The command, by its id in the person's preferences.
+    id: String,
+}
+
+/// What running a custom command did: the tab it opened, or what it printed
+/// in the background.
+#[derive(Serialize, Default)]
+pub(crate) struct Ran {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tab: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<CommandResult>,
+}
+
+/// Runs one of the person's custom commands in `project`, as its placement
+/// says. Every placement but the background opens a terminal tab.
+pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> CoreResult<Ran> {
+    let command = core
+        .preferences
+        .get()
+        .custom_commands
+        .into_iter()
+        .find(|command| command.id == params.id)
+        .ok_or_else(|| CoreError::from("that custom command is no longer in Settings"))?;
+    let project = core
+        .workspaces
+        .project_info(&params.project)
+        .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+    if command.placement != CustomCommandPlacement::Background {
+        let tab = super::spare::command_terminal(core, project.id, command.title, command.command)
+            .await?;
+        return Ok(Ran {
+            tab: Some(tab),
+            ..Ran::default()
+        });
+    }
+    let path = project.path.to_string_lossy().into_owned();
+    let env = HashMap::from([
+        ("SIKEMUX_SESSION_ID".to_owned(), project.id),
+        ("SIKEMUX_SESSION_NAME".to_owned(), project.name),
+        ("SIKEMUX_SESSION_KIND".to_owned(), "project".to_owned()),
+        ("SIKEMUX_PROJECT".to_owned(), path.clone()),
+    ]);
+    let result = run(CommandParams {
+        command: command.command,
+        cwd: Some(PathBuf::from(path)),
+        env,
+    })
+    .await?;
+    Ok(Ran {
+        result: Some(result),
+        ..Ran::default()
+    })
 }

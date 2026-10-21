@@ -126,6 +126,7 @@ calls! { core, client, params;
     "agentSessions": Local, any_program => answer(saved::call(&core, parse(params)?).await?),
     "workspace": Watch, any_program => answer(core.workspace_view()),
     "runCommand": Local => answer(super::custom_command::run(parse(params)?).await?),
+    "runCustomCommand": Person => answer(super::custom_command::run_custom(&core, parse(params)?).await?),
     "addProject": Person => answer(workspace::add_project(&core, parse(params)?).await?),
     "removeProject": Person => answer(workspace::remove_project(&core, parse(params)?)?),
     "updateProject": Person => answer(workspace::update_project(&core, parse(params)?)?),

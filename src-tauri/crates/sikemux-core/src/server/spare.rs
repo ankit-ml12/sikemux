@@ -177,7 +177,16 @@ async fn start(
     pane_id: String,
 ) {
     let window_id = format!("win-spare-{}", uuid::Uuid::new_v4().simple());
-    let started = shell(&core, &project, path, name, size, &window_id, &pane_id).await;
+    let started = shell(
+        &core,
+        &project,
+        path,
+        name,
+        size,
+        (&window_id, &pane_id),
+        None,
+    )
+    .await;
     let id = match started {
         Ok(id) => id,
         Err(error) => {
@@ -200,15 +209,16 @@ async fn start(
     core.spares.wake.now();
 }
 
-/// Starts a shell in a project's folder, as a terminal of that project.
+/// Starts a shell in a project's folder, as a terminal of that project, and
+/// types `startup` into it.
 async fn shell(
     core: &Arc<Core>,
     project: &str,
     path: String,
     name: String,
     size: (u16, u16),
-    window_id: &str,
-    pane_id: &str,
+    (window_id, pane_id): (&str, &str),
+    startup: Option<String>,
 ) -> CoreResult<SessionId> {
     let context = PtyContext {
         session_id: project.to_owned(),
@@ -222,20 +232,23 @@ async fn shell(
         initial_prompt_submitted: false,
         shell_integration: true,
     };
-    terminal(core, size, Some(path), context).await
+    terminal(core, size, Some(path), context, startup).await
 }
 
-/// Starts a terminal at `size` in `cwd`, as `context` describes it.
+/// Starts a terminal at `size` in `cwd`, as `context` describes it, typing
+/// `startup` into its shell.
 async fn terminal(
     core: &Arc<Core>,
     size: (u16, u16),
     cwd: Option<String>,
     context: PtyContext,
+    startup: Option<String>,
 ) -> CoreResult<SessionId> {
     let spawn = TerminalSpawn {
         cols: size.0,
         rows: size.1,
         cwd,
+        startup,
         context: Some(context),
         ..TerminalSpawn::default()
     };
@@ -274,13 +287,39 @@ pub(crate) async fn new_terminal(core: &Arc<Core>, params: TakeParams) -> CoreRe
                 path,
                 name,
                 size,
-                &window_id,
-                &pane_id,
+                (&window_id, &pane_id),
+                None,
             )
             .await?
         }
     };
-    super::layout::show_terminal(core, params.project, id)
+    super::layout::show_terminal(core, params.project, id, None)
+}
+
+/// Opens a terminal tab titled `title` in `project`, running `startup` in a
+/// new shell. Answers the tab's id.
+pub(crate) async fn command_terminal(
+    core: &Arc<Core>,
+    project: String,
+    title: String,
+    startup: String,
+) -> CoreResult<String> {
+    let (path, name) = project_folder(core, &project)
+        .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+    let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
+    let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
+    let size = opening_size(core);
+    let id = shell(
+        core,
+        &project,
+        path,
+        name,
+        size,
+        (&window_id, &pane_id),
+        Some(startup),
+    )
+    .await?;
+    super::layout::show_terminal(core, project, id, Some(title))
 }
 
 #[derive(Deserialize)]
@@ -303,7 +342,7 @@ pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> Co
         initial_prompt_submitted: false,
         shell_integration: false,
     };
-    let id = terminal(core, opening_size(core), None, context).await?;
+    let id = terminal(core, opening_size(core), None, context, None).await?;
     super::layout::show_ssh_terminal(core, params.host, id)
 }
 

@@ -272,14 +272,19 @@ pub(crate) fn show_ssh_terminal(core: &Core, host: String, id: SessionId) -> Cor
 
 /// Brings the tab showing the terminal `id` to the front in `project`,
 /// opening one when none does. Answers its id.
-pub(crate) fn show_terminal(core: &Core, project: String, id: SessionId) -> CoreResult<String> {
+pub(crate) fn show_terminal(
+    core: &Core,
+    project: String,
+    id: SessionId,
+    title: Option<String>,
+) -> CoreResult<String> {
     open_tab(
         core,
         OpenTab {
             project,
             kind: PaneKind::Terminal,
             target: id.to_string(),
-            title: None,
+            title,
         },
     )
 }
