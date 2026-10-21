@@ -6,6 +6,7 @@
 //!     [--files]                   shows the tab rail's Files page
 //!     [--then step…]              then does each step in turn: "click x,y", "dclick x,y", "rclick x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
+//!                                 "swipe x,y pixels" or "swipe x,y pixels hold" for a sideways trackpad swipe,
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, "copy-image file.png", or "share" to open the
 //!                                 share dialog of the chat in front
@@ -209,6 +210,43 @@ fn main() -> anyhow::Result<()> {
                         touch_phase: TouchPhase::Moved,
                     };
                     window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx);
+                }
+                "swipe" => {
+                    let mut words = rest.split(' ');
+                    let (x, y) = words
+                        .next()
+                        .and_then(|at| at.split_once(','))
+                        .ok_or_else(|| anyhow::anyhow!("swipe x,y pixels"))?;
+                    let pixels: f32 = words
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("swipe x,y pixels"))?
+                        .parse()?;
+                    let hold = words.next() == Some("hold");
+                    let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
+                    let wheel = |dx: f32, touch_phase| ScrollWheelEvent {
+                        position,
+                        delta: ScrollDelta::Pixels(point(px(dx), px(0.))),
+                        modifiers: Modifiers::default(),
+                        touch_phase,
+                    };
+                    window.dispatch_event(
+                        PlatformInput::ScrollWheel(wheel(0., TouchPhase::Started)),
+                        cx,
+                    );
+                    for _ in 0..10 {
+                        window.dispatch_event(
+                            PlatformInput::ScrollWheel(wheel(pixels / 10., TouchPhase::Moved)),
+                            cx,
+                        );
+                        std::thread::sleep(Duration::from_millis(8));
+                    }
+                    if !hold {
+                        window.dispatch_event(
+                            PlatformInput::ScrollWheel(wheel(0., TouchPhase::Ended)),
+                            cx,
+                        );
+                    }
+                    window.draw(cx).clear(cx);
                 }
                 "drag" | "drop" => {
                     let (at, paths) = rest

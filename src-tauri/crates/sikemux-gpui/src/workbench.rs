@@ -122,6 +122,10 @@ pub struct Workbench {
     pub retitling: Option<Retitling>,
     /// The question the shell is putting to the person, over the window.
     asking: Option<Asking>,
+    /// The stage's tabs while they move between one another.
+    pub(crate) track: crate::track::Slide<String>,
+    /// The tab rail's pages while they move between one another.
+    pub(crate) rail_slide: crate::track::Slide<RailPage>,
     /// The task the person is writing in the Add a task dialog, while it is open.
     pub adding_task: Option<crate::add_task::AddTask>,
     /// The core's trust questions already put to the person, by id.
@@ -222,6 +226,11 @@ pub enum RailPage {
     Agents,
     Terminals,
     Files,
+}
+
+impl RailPage {
+    /// The pages in the order they sit, left to right.
+    pub const ALL: [RailPage; 3] = [RailPage::Agents, RailPage::Terminals, RailPage::Files];
 }
 
 /// An agent as the rails and tabs show it.
@@ -372,6 +381,8 @@ impl Workbench {
             resizers: [cx.focus_handle(), cx.focus_handle()],
             retitling: None,
             asking: None,
+            track: crate::track::Slide::default(),
+            rail_slide: crate::track::Slide::default(),
             adding_task: None,
             trust_asked: HashSet::new(),
             peeking: None,
@@ -452,6 +463,7 @@ impl Workbench {
                 self.watch_ci();
                 self.close_chats();
                 self.open_chat(cx);
+                self.front_moved(cx);
             }
             Update::Chat(agent, news) => {
                 let Some(chat) = self.chats.get_mut(&agent) else {

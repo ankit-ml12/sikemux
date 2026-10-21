@@ -43,12 +43,14 @@ mod sim_screen;
 #[cfg(not(target_os = "macos"))]
 #[path = "sim_screen_elsewhere.rs"]
 mod sim_screen;
+mod swipe;
 mod switcher;
 pub mod syntax;
 mod tabs;
 pub mod terminal;
 pub mod theme;
 mod theme_palette;
+mod track;
 mod ui;
 pub mod workbench;
 pub mod worktree_switch;

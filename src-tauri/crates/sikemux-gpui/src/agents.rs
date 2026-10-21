@@ -26,7 +26,13 @@ pub const TAB_RAIL: RailWidth = RailWidth {
 };
 
 pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    match bench.rail_page {
+    let width = bench.rail_width(Edge::End);
+    crate::track::rail(bench, width, |page, cx| page_panel(bench, page, cx), cx)
+}
+
+/// One of the tab rail's pages, whole.
+fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) -> AnyElement {
+    match page {
         RailPage::Files => {
             return ui::panel(cx)
                 .w(px(bench.rail_width(Edge::End)))
@@ -670,8 +676,7 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             .width(32.)
             .pressed(bench.rail_page == shown)
             .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.rail_page = shown;
-                cx.notify();
+                bench.show_rail_page(shown, cx);
             }))
     };
     div()

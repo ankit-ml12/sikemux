@@ -18,7 +18,7 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, PaneHeader, Segmented, Toggle, Variant};
 use crate::workbench::{AgentRow, Workbench};
-use crate::{chat, panes, terminal};
+use crate::{chat, terminal};
 
 const WEEKS: i64 = 53;
 const CELL_GAP: f32 = 3.;
@@ -49,7 +49,7 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
             .into_any_element();
     }
     let shown = match bench.tab() {
-        Some(tab) => panes::tab(bench, tab, window, cx),
+        Some(tab) => crate::track::stage(bench, tab, window, cx),
         None => ui::pane(cx)
             .child(
                 div()
