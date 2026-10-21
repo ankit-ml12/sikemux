@@ -4,12 +4,9 @@ A streaming chat view for [GPUI](https://gpui.rs). Rows keep stable ids, a
 message's markdown grows by patches to its tree of blocks, and the list draws
 only the rows in view, anchored to the bottom.
 
-- `Rows<R: Row>` holds rows in order: `put` (replace by id or append),
-  `update`, `drop_from`, `keep`, `prepend` and `reset`. Each says what it
-  moved, so a list can follow.
 - `Markdown` holds one message's blocks. `write` applies a patch; the blocks
   it does not reach keep their laid-out text.
-- `markdown(id, &doc, &style, window, cx)` draws paragraphs, headings, lists,
+- `Pen::markdown(id, &doc, window, cx)` draws paragraphs, headings, lists,
   task boxes, code fences, tables, quotes, links, inline code, emphasis,
   details folds and footnotes. `Style`, shared as an `Rc`, sets the colours
   and fonts, and takes callbacks for links, fences and images. A message of
@@ -17,14 +14,20 @@ only the rows in view, anchored to the bottom.
   changed, placing only those in view, so a long answer costs the same each
   frame however long it grows. Folds the reader opens stay open while the
   message is held.
-- `Transcript<R>` is a view: the rows in a windowed, bottom-anchored list.
-  Changes pushed to it are applied together when it next draws, at most
-  once a frame. Rows added above never move what the reader sees. While the
-  reader is at the end, the end stays in view. Near the top it calls
-  `on_reach_top` for an earlier page.
+- `Transcript<R: Row>` is a view holding the rows in order, in a windowed,
+  bottom-anchored list. Push it `Change`s: `Put` (replace by id or append),
+  `Update`, `DropFrom`, `Keep`, `Prepend` and `Reset`. They are applied
+  together when it next draws, at most once a frame. Rows added above never
+  move what the reader sees. While the reader is at the end, the end stays
+  in view. Near the top it calls `on_reach_top` for an earlier page.
+- The reader selects text across rows by dragging or shift-clicking, and ⌘C
+  copies it. A copy reads the rows' own markdown, through `Row::docs`, so
+  rows scrolled out of view copy too.
 
 The crate draws no rows itself. You hand `Transcript::new` a function that
-draws the row at an index, and it calls `markdown` for the text it holds.
+draws the row at an index with the `Pen` it is given, calling `markdown` for
+the text the row holds, in the order `Row::docs` lists it. Outside a
+transcript, `Pen::new(style)` draws markdown without selection.
 
 ## The tree and its patches
 
@@ -44,7 +47,7 @@ then cell contents:
 A patch that does not end at the text's length leaves the tree stale until a
 whole one arrives, one that starts with `{ "p": [], "at": 0, "c": … }`.
 `is_current` says which case you are in. When the tree is stale, draw the text
-with `plain`.
+as plain text.
 
 ## Example
 

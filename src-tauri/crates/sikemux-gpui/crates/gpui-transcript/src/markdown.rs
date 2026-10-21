@@ -6,16 +6,9 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::rc::Rc;
 
-use gpui::{Pixels, SharedString, Size};
+use gpui::{Pixels, SharedString, Size, TextAlign};
+use serde::Deserialize;
 use serde_json::Value;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Align {
-    #[default]
-    Start,
-    Center,
-    End,
-}
 
 #[derive(Clone, Debug, Default)]
 pub enum Kind {
@@ -30,8 +23,8 @@ pub enum Kind {
     Code(Option<SharedString>),
     Rule,
     Table(Box<Table>),
-    Row,
-    Cell,
+    /// A list with no tag of its own, as a table's rows and its cells are.
+    Group,
     Footnote(u64),
     Details {
         summary: SharedString,
@@ -67,7 +60,8 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(from = "Wire")]
 pub struct Node {
     pub kind: Kind,
     /// A text node's text, or a code element's.
@@ -80,7 +74,7 @@ pub struct Node {
 
 #[derive(Clone, Debug)]
 pub struct Table {
-    pub align: Vec<Align>,
+    pub align: Vec<TextAlign>,
     pub head: Option<Vec<Node>>,
 }
 
@@ -97,10 +91,6 @@ impl Marks {
 
     pub fn has(self, other: Marks) -> bool {
         self.0 & other.0 != 0
-    }
-
-    fn with(self, other: Marks) -> Marks {
-        Marks(self.0 | other.0)
     }
 }
 
@@ -121,13 +111,6 @@ pub enum Piece {
 }
 
 impl Node {
-    fn text(text: String) -> Node {
-        Node {
-            text,
-            ..Node::default()
-        }
-    }
-
     /// The node's content as it is drawn, worked out once until a patch reaches inside it.
     pub fn flow(&self) -> &[Piece] {
         self.flow.get_or_init(|| {
@@ -138,27 +121,42 @@ impl Node {
                 })];
             }
             let mut pieces = Vec::new();
-            let mut rich = None;
+            let mut rich: Option<Builder> = None;
             for (ix, child) in self.children.iter().enumerate() {
                 if child.kind.is_inline() {
-                    flatten(
-                        child,
-                        Marks::default(),
-                        None,
-                        rich.get_or_insert_with(Builder::default),
-                    );
-                } else {
-                    if let Some(rich) = rich.take() {
-                        pieces.push(Piece::Text(rich.finish()));
-                    }
-                    pieces.push(Piece::Block(ix));
+                    rich.get_or_insert_default()
+                        .flatten(child, Marks::default(), None);
+                    continue;
                 }
+                pieces.extend(rich.take().map(|rich| Piece::Text(rich.finish())));
+                pieces.push(Piece::Block(ix));
             }
-            if let Some(rich) = rich {
-                pieces.push(Piece::Text(rich.finish()));
-            }
+            pieces.extend(rich.map(|rich| Piece::Text(rich.finish())));
             pieces
         })
+    }
+
+    /// The texts a reader can select in this node, in the order they are drawn.
+    /// `open` says whether each fold, met in order, shows what is in it.
+    fn walk(&self, texts: &mut Vec<SharedString>, open: &mut dyn FnMut(bool) -> bool) {
+        match &self.kind {
+            Kind::Table(_) => {
+                for cell in self.children.iter().flat_map(|row| &row.children) {
+                    if let [Piece::Text(rich)] = cell.flow() {
+                        texts.push(rich.text.clone());
+                    }
+                }
+            }
+            Kind::Details { open: written, .. } if !open(*written) => {}
+            _ => {
+                for piece in self.flow() {
+                    match piece {
+                        Piece::Text(rich) => texts.push(rich.text.clone()),
+                        Piece::Block(ix) => self.children[*ix].walk(texts, open),
+                    }
+                }
+            }
+        }
     }
 
     fn touched(&mut self) {
@@ -167,56 +165,54 @@ impl Node {
     }
 }
 
+/// Writes inline nodes into one string, recording the runs marked and the links.
 #[derive(Default)]
-struct Builder {
-    text: String,
-    marks: Vec<(Range<usize>, Marks)>,
-    links: Vec<(Range<usize>, SharedString)>,
-}
+struct Builder(
+    String,
+    Vec<(Range<usize>, Marks)>,
+    Vec<(Range<usize>, SharedString)>,
+);
 
 impl Builder {
     fn push(&mut self, text: &str, marks: Marks) {
-        let start = self.text.len();
-        self.text.push_str(text);
-        let end = self.text.len();
-        if marks == Marks::default() || start == end {
-            return;
-        }
-        match self.marks.last_mut() {
+        let start = self.0.len();
+        self.0.push_str(text);
+        let end = self.0.len();
+        match self.1.last_mut() {
+            _ if marks == Marks::default() || start == end => {}
             Some((range, last)) if range.end == start && *last == marks => range.end = end,
-            _ => self.marks.push((start..end, marks)),
+            _ => self.1.push((start..end, marks)),
+        }
+    }
+
+    fn flatten(&mut self, node: &Node, marks: Marks, link: Option<&SharedString>) {
+        let with = |mark: Marks| Marks(marks.0 | mark.0);
+        let (marks, link) = match &node.kind {
+            Kind::Text => return self.push(&node.text, marks),
+            Kind::InlineCode => return self.push(&node.text, with(Marks::CODE)),
+            Kind::Break => return self.push("\n", marks),
+            Kind::FootnoteRef(n) => return self.push(&superscript(*n), marks),
+            Kind::Image { alt, .. } => return self.push(alt, marks),
+            Kind::Strong => (with(Marks::STRONG), link),
+            Kind::Emphasis => (with(Marks::EMPHASIS), link),
+            Kind::Strike => (with(Marks::STRIKE), link),
+            Kind::Link(href) if link.is_none() => (with(Marks::LINK), Some(href)),
+            _ => (marks, link),
+        };
+        let start = self.0.len();
+        node.children
+            .iter()
+            .for_each(|child| self.flatten(child, marks, link));
+        if let (Some(href), Kind::Link(_), true) = (link, &node.kind, self.0.len() > start) {
+            self.2.push((start..self.0.len(), href.clone()));
         }
     }
 
     fn finish(self) -> Rich {
         Rich {
-            text: self.text.into(),
-            marks: self.marks,
-            links: self.links,
-        }
-    }
-}
-
-fn flatten(node: &Node, marks: Marks, link: Option<&SharedString>, into: &mut Builder) {
-    let (marks, link) = match &node.kind {
-        Kind::Text => return into.push(&node.text, marks),
-        Kind::InlineCode => return into.push(&node.text, marks.with(Marks::CODE)),
-        Kind::Break => return into.push("\n", marks),
-        Kind::FootnoteRef(n) => return into.push(&superscript(*n), marks),
-        Kind::Image { alt, .. } => return into.push(alt, marks),
-        Kind::Strong => (marks.with(Marks::STRONG), link),
-        Kind::Emphasis => (marks.with(Marks::EMPHASIS), link),
-        Kind::Strike => (marks.with(Marks::STRIKE), link),
-        Kind::Link(href) if link.is_none() => (marks.with(Marks::LINK), Some(href)),
-        _ => (marks, link),
-    };
-    let start = into.text.len();
-    for child in &node.children {
-        flatten(child, marks, link, into);
-    }
-    if let (Some(href), Kind::Link(_)) = (link, &node.kind) {
-        if into.text.len() > start {
-            into.links.push((start..into.text.len(), href.clone()));
+            text: self.0.into(),
+            marks: self.1,
+            links: self.2,
         }
     }
 }
@@ -229,128 +225,119 @@ pub fn superscript(n: u64) -> String {
         .collect()
 }
 
-/// What the list at a place in the tree holds, which says how to read its JSON.
-#[derive(Clone, Copy)]
-enum Holds {
-    Nodes,
-    Rows,
-    Cells,
+/// A node as it arrives: a string is text, an array a group, an object an element.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Wire {
+    Text(String),
+    Group(Vec<Node>),
+    Element(Box<Element>),
 }
 
-impl Holds {
-    fn inside(kind: &Kind) -> Holds {
-        match kind {
-            Kind::Table(_) => Holds::Rows,
-            Kind::Row => Holds::Cells,
-            _ => Holds::Nodes,
+/// An element's fields; each element sends the few it has.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Element {
+    t: String,
+    c: Vec<Node>,
+    rows: Vec<Node>,
+    head: Option<Vec<Node>>,
+    v: String,
+    l: u8,
+    n: u64,
+    start: Option<u64>,
+    checked: Option<bool>,
+    lang: Option<SharedString>,
+    align: Vec<Option<String>>,
+    summary: SharedString,
+    open: bool,
+    href: SharedString,
+    src: SharedString,
+    alt: SharedString,
+}
+
+impl From<Wire> for Node {
+    fn from(wire: Wire) -> Node {
+        let element = match wire {
+            Wire::Text(text) => {
+                return Node {
+                    text,
+                    ..Node::default()
+                }
+            }
+            Wire::Group(children) => {
+                return Node {
+                    kind: Kind::Group,
+                    children,
+                    ..Node::default()
+                }
+            }
+            Wire::Element(element) => *element,
+        };
+        let kind = match element.t.as_str() {
+            "p" => Kind::Paragraph,
+            "h" => Kind::Heading(element.l.clamp(1, 6)),
+            "quote" => Kind::Quote,
+            "ul" => Kind::Bullets,
+            "ol" => Kind::Numbers(element.start.unwrap_or(1)),
+            "li" => Kind::Item(element.checked),
+            "pre" => Kind::Code(element.lang),
+            "hr" => Kind::Rule,
+            "table" => Kind::Table(Box::new(Table {
+                align: (element.align.iter())
+                    .map(|align| match align.as_deref() {
+                        Some("center") => TextAlign::Center,
+                        Some("right") => TextAlign::Right,
+                        _ => TextAlign::Left,
+                    })
+                    .collect(),
+                head: element.head,
+            })),
+            "fndef" => Kind::Footnote(element.n),
+            "details" => Kind::Details {
+                summary: element.summary,
+                open: element.open,
+            },
+            "em" => Kind::Emphasis,
+            "strong" => Kind::Strong,
+            "del" => Kind::Strike,
+            "code" => Kind::InlineCode,
+            "a" => Kind::Link(element.href),
+            "img" => Kind::Image {
+                src: element.src,
+                alt: element.alt,
+            },
+            "br" => Kind::Break,
+            "fnref" => Kind::FootnoteRef(element.n),
+            _ => Kind::Unknown,
+        };
+        let children = if element.rows.is_empty() {
+            element.c
+        } else {
+            element.rows
+        };
+        Node {
+            kind,
+            text: element.v,
+            children,
+            ..Node::default()
         }
     }
 }
 
-fn read_list(values: &[Value], holds: Holds) -> Vec<Node> {
-    values.iter().map(|value| read(value, holds)).collect()
+/// A patch to a message's tree, as the README describes it.
+#[derive(Deserialize)]
+struct Patch {
+    n: usize,
+    o: Vec<Op>,
 }
 
-fn read(value: &Value, holds: Holds) -> Node {
-    match holds {
-        Holds::Rows => Node {
-            kind: Kind::Row,
-            children: read_list(as_list(value), Holds::Cells),
-            ..Node::default()
-        },
-        Holds::Cells => Node {
-            kind: Kind::Cell,
-            children: read_list(as_list(value), Holds::Nodes),
-            ..Node::default()
-        },
-        Holds::Nodes => match value {
-            Value::String(text) => Node::text(text.clone()),
-            Value::Object(_) => read_element(value),
-            _ => Node::text(String::new()),
-        },
-    }
-}
-
-fn as_list(value: &Value) -> &[Value] {
-    value.as_array().map(Vec::as_slice).unwrap_or_default()
-}
-
-fn string(value: &Value, key: &str) -> SharedString {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
-        .into()
-}
-
-fn number(value: &Value, key: &str) -> Option<u64> {
-    value.get(key).and_then(Value::as_u64)
-}
-
-fn read_element(value: &Value) -> Node {
-    let tag = value.get("t").and_then(Value::as_str).unwrap_or_default();
-    let kind = match tag {
-        "p" => Kind::Paragraph,
-        "h" => Kind::Heading(number(value, "l").unwrap_or(1).clamp(1, 6) as u8),
-        "quote" => Kind::Quote,
-        "ul" => Kind::Bullets,
-        "ol" => Kind::Numbers(number(value, "start").unwrap_or(1)),
-        "li" => Kind::Item(value.get("checked").and_then(Value::as_bool)),
-        "pre" => Kind::Code(
-            value
-                .get("lang")
-                .and_then(Value::as_str)
-                .map(|lang| lang.to_owned().into()),
-        ),
-        "hr" => Kind::Rule,
-        "table" => Kind::Table(Box::new(Table {
-            align: as_list(value.get("align").unwrap_or(&Value::Null))
-                .iter()
-                .map(|align| match align.as_str() {
-                    Some("center") => Align::Center,
-                    Some("right") => Align::End,
-                    _ => Align::Start,
-                })
-                .collect(),
-            head: value
-                .get("head")
-                .map(|head| read_list(as_list(head), Holds::Cells)),
-        })),
-        "fndef" => Kind::Footnote(number(value, "n").unwrap_or(0)),
-        "details" => Kind::Details {
-            summary: string(value, "summary"),
-            open: value.get("open").and_then(Value::as_bool).unwrap_or(false),
-        },
-        "em" => Kind::Emphasis,
-        "strong" => Kind::Strong,
-        "del" => Kind::Strike,
-        "code" => Kind::InlineCode,
-        "a" => Kind::Link(string(value, "href")),
-        "img" => Kind::Image {
-            src: string(value, "src"),
-            alt: string(value, "alt"),
-        },
-        "br" => Kind::Break,
-        "fnref" => Kind::FootnoteRef(number(value, "n").unwrap_or(0)),
-        _ => Kind::Unknown,
-    };
-    let holds = Holds::inside(&kind);
-    let children = value
-        .get("c")
-        .or_else(|| value.get("rows"))
-        .map(|list| read_list(as_list(list), holds))
-        .unwrap_or_default();
-    Node {
-        kind,
-        text: value
-            .get("v")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        children,
-        ..Node::default()
-    }
+#[derive(Deserialize)]
+struct Op {
+    p: Vec<usize>,
+    at: usize,
+    c: Option<Vec<Node>>,
+    s: Option<String>,
 }
 
 /// The byte in `text` where its first `units` UTF-16 units end.
@@ -375,17 +362,15 @@ pub struct Markdown {
     units: Option<usize>,
     pub(crate) width: Rc<Cell<Option<Pixels>>>,
     /// Each fold the reader turned from how it was written, by block and its place in the block.
-    pub(crate) turned: Rc<RefCell<HashSet<(usize, u64)>>>,
+    pub(crate) turned: Rc<RefCell<HashSet<(usize, u32)>>>,
 }
 
 impl Markdown {
     /// A tree read from its JSON blocks, matching a text `units` UTF-16 units long.
     pub fn new(blocks: &Value, units: usize) -> Self {
+        let blocks = Vec::<Node>::deserialize(blocks).unwrap_or_default();
         Markdown {
-            blocks: read_list(as_list(blocks), Holds::Nodes)
-                .into_iter()
-                .map(Rc::new)
-                .collect(),
+            blocks: blocks.into_iter().map(Rc::new).collect(),
             units: Some(units),
             ..Markdown::default()
         }
@@ -400,6 +385,20 @@ impl Markdown {
         &self.blocks
     }
 
+    /// The texts of block `ix` a reader can select, in the order they are drawn.
+    pub(crate) fn texts(&self, ix: usize) -> Vec<SharedString> {
+        let mut texts = Vec::new();
+        let turned = self.turned.borrow();
+        let mut folds = 0;
+        if let Some(block) = self.blocks.get(ix) {
+            block.walk(&mut texts, &mut |written| {
+                folds += 1;
+                written != turned.contains(&(ix, folds))
+            });
+        }
+        texts
+    }
+
     /// Whether the tree matches the text; when it does not, draw the text as it is.
     pub fn is_current(&self) -> bool {
         self.units.is_some()
@@ -407,36 +406,26 @@ impl Markdown {
 
     /// Applies a patch `{ n, o }`, leaving every block it does not reach as it was.
     pub fn write(&mut self, patch: &Value, units: usize) {
-        let ops = as_list(patch.get("o").unwrap_or(&Value::Null));
-        let whole = ops.first().is_some_and(|op| {
-            as_list(op.get("p").unwrap_or(&Value::Null)).is_empty()
-                && number(op, "at") == Some(0)
-                && op.get("c").is_some()
-        });
+        let Ok(patch) = Patch::deserialize(patch) else {
+            return;
+        };
+        let whole = patch
+            .o
+            .first()
+            .is_some_and(|op| op.p.is_empty() && op.at == 0 && op.c.is_some());
         if !whole && self.units.is_none() {
             return;
         }
-        for op in ops {
+        for op in patch.o {
             self.apply(op);
         }
-        let n = number(patch, "n").and_then(|n| usize::try_from(n).ok());
-        self.units = (n == Some(units)).then_some(units);
+        self.units = (patch.n == units).then_some(units);
     }
 
-    fn apply(&mut self, op: &Value) {
-        let path: Vec<usize> = as_list(op.get("p").unwrap_or(&Value::Null))
-            .iter()
-            .filter_map(|ix| ix.as_u64().and_then(|ix| usize::try_from(ix).ok()))
-            .collect();
-        let at = number(op, "at")
-            .and_then(|at| usize::try_from(at).ok())
-            .unwrap_or(0);
-        let Some((first, rest)) = path.split_first() else {
-            if let Some(added) = op.get("c") {
-                self.blocks.truncate(at);
-                let added = read_list(as_list(added), Holds::Nodes);
-                self.blocks.extend(added.into_iter().map(Rc::new));
-            }
+    fn apply(&mut self, op: Op) {
+        let Some((first, rest)) = op.p.split_first() else {
+            self.blocks.truncate(op.at);
+            self.blocks.extend(op.c.into_iter().flatten().map(Rc::new));
             return;
         };
         let Some(block) = self.blocks.get_mut(*first) else {
@@ -451,14 +440,12 @@ impl Markdown {
             node = child;
             node.touched();
         }
-        if let Some(added) = op.get("c") {
-            let holds = Holds::inside(&node.kind);
-            node.children.truncate(at);
-            node.children.extend(read_list(as_list(added), holds));
-        } else if let Some(added) = op.get("s").and_then(Value::as_str) {
-            let keep = byte_at_units(&node.text, at);
-            node.text.truncate(keep);
-            node.text.push_str(added);
+        if let Some(added) = op.c {
+            node.children.truncate(op.at);
+            node.children.extend(added);
+        } else if let Some(added) = op.s {
+            node.text.truncate(byte_at_units(&node.text, op.at));
+            node.text.push_str(&added);
         }
     }
 }

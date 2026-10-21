@@ -3537,6 +3537,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "libc",
+ "serde",
  "serde_json",
 ]
 

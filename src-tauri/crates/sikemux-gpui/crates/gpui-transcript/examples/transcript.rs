@@ -20,11 +20,12 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, point, px, relative, rgb, rgba, size, AnyElement, AnyWindowHandle, App, AppContext,
-    Bounds, Context, Entity, HeadlessAppContext, IntoElement, ListState, ParentElement, Pixels,
-    PlatformInput, Render, ScrollDelta, ScrollWheelEvent, SharedString, Styled, Window,
+    Bounds, Context, Entity, HeadlessAppContext, IntoElement, KeyDownEvent, Keystroke, ListState,
+    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    PlatformInput, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Styled, Window,
     WindowBounds, WindowOptions,
 };
-use gpui_transcript::{markdown, Change, Markdown, Row, Rows, Style, Transcript};
+use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
 use serde_json::{json, Value};
 
 const ROWS: usize = 2_000;
@@ -44,6 +45,10 @@ struct Message {
 impl Row for Message {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    fn docs(&self) -> Vec<&Markdown> {
+        vec![&self.md]
     }
 }
 
@@ -315,16 +320,16 @@ fn peak_resident_mb() -> f64 {
 }
 
 fn draw_row(
-    rows: &Rows<Message>,
+    rows: &[Message],
     ix: usize,
-    style: &Rc<Style>,
+    pen: &Pen,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
     let Some(message) = rows.get(ix) else {
         return div().into_any_element();
     };
-    let body = markdown(message.id.clone(), &message.md, style, window, cx);
+    let body = pen.markdown(message.id.clone(), &message.md, window, cx);
     div()
         .w_full()
         .flex()
@@ -396,17 +401,75 @@ impl Bench {
         self.walls.push(began.elapsed().as_secs_f64() * 1e3);
     }
 
+    fn input(&mut self, input: PlatformInput) {
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.dispatch_event(input, cx)
+            })
+            .ok();
+    }
+
     fn wheel(&mut self) {
-        let wheel = ScrollWheelEvent {
+        self.input(PlatformInput::ScrollWheel(ScrollWheelEvent {
             position: point(px(450.), px(500.)),
             delta: ScrollDelta::Pixels(point(px(0.), px(SCROLL_STEP))),
             ..Default::default()
+        }));
+    }
+
+    /// Drags from one point to another, shift-clicks a third, copying after each.
+    fn select(&mut self, from: Point<Pixels>, to: Point<Pixels>, then: Point<Pixels>) {
+        let copy = |bench: &mut Bench| {
+            let keystroke = Keystroke::parse("cmd-c").expect("a keystroke");
+            let key = KeyDownEvent {
+                keystroke,
+                is_held: false,
+                prefer_character_input: false,
+            };
+            bench.input(PlatformInput::KeyDown(key));
+            let copied = bench.cx.update(|cx| cx.read_from_clipboard());
+            let copied = copied.and_then(|item| item.text()).unwrap_or_default();
+            let start: String = copied.chars().take(90).collect();
+            println!("Copied {} characters: {start:?}", copied.chars().count());
         };
-        self.cx
-            .update_window(self.window, |_, window, cx| {
-                window.dispatch_event(PlatformInput::ScrollWheel(wheel), cx)
-            })
-            .ok();
+        let left = MouseButton::Left;
+        let down = |position, modifiers| MouseDownEvent {
+            button: left,
+            position,
+            modifiers,
+            click_count: 1,
+            first_mouse: false,
+        };
+        let up = |position, modifiers| MouseUpEvent {
+            button: left,
+            position,
+            modifiers,
+            click_count: 1,
+        };
+        self.input(PlatformInput::MouseDown(down(from, Modifiers::default())));
+        for step in 1..=10 {
+            let position = from + (to - from) * (step as f32 / 10.);
+            let pressed_button = Some(left);
+            self.input(PlatformInput::MouseMove(MouseMoveEvent {
+                position,
+                pressed_button,
+                ..Default::default()
+            }));
+            self.frame();
+        }
+        self.input(PlatformInput::MouseUp(up(to, Modifiers::default())));
+        self.frame();
+        self.shot("selected");
+        copy(self);
+        let shift = Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        self.input(PlatformInput::MouseDown(down(then, shift)));
+        self.input(PlatformInput::MouseUp(up(then, shift)));
+        self.frame();
+        self.shot("extended");
+        copy(self);
     }
 
     fn push(&mut self, changes: Vec<Change<Message>>) {
@@ -548,9 +611,10 @@ fn main() {
             let this = cx.weak_entity();
             Transcript::new(
                 Vec::new(),
-                move |rows, ix, window, cx| {
+                style,
+                move |rows, ix, pen, window, cx| {
                     drawn.set(drawn.get() + 1);
-                    draw_row(rows, ix, &style, window, cx)
+                    draw_row(rows, ix, pen, window, cx)
                 },
                 cx,
             )
@@ -618,6 +682,12 @@ fn main() {
         bench.frame();
     }
     bench.report("Idle at the end, 1 s");
+    bench.select(
+        point(px(120.), px(300.)),
+        point(px(600.), px(560.)),
+        point(px(400.), px(900.)),
+    );
+    bench.frames.clear();
 
     bench.scroll_to_top(ROWS);
     bench.report("Scroll 2,000 rows to the top");

@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::ops::Range;
 use std::panic::Location;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -9,11 +10,12 @@ use gpui::{
     div, img, point, px, relative, rgb, rgba, size, AnyElement, App, AvailableSpace, Bounds,
     ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight, GlobalElementId,
     HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText, IntoElement,
-    LayoutId, ParentElement, Pixels, SharedString, StatefulInteractiveElement, StrikethroughStyle,
-    Styled, StyledText, Window,
+    LayoutId, ParentElement, Pixels, SharedString, Stateful, StatefulInteractiveElement,
+    StrikethroughStyle, Styled, StyledText, Window,
 };
 
-use crate::markdown::{superscript, Align, Kind, Markdown, Marks, Node, Piece, Rich};
+use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Piece, Rich};
+use crate::select::{Selecting, Shown};
 
 /// A fenced code block, for a host that draws its own.
 pub struct Fence {
@@ -44,6 +46,7 @@ pub struct Style {
     pub code_ink: Hsla,
     pub code_ground: Hsla,
     pub mark_ground: Hsla,
+    pub selection: Hsla,
     pub line: Hsla,
     pub line_soft: Hsla,
     pub table_ground: Hsla,
@@ -71,6 +74,7 @@ impl Default for Style {
             code_ink: rgb(0xb494fb).into(),
             code_ground: rgba(0x09090bb8).into(),
             mark_ground: rgba(0xa277ff1a).into(),
+            selection: rgba(0xa277ff4d).into(),
             line: rgba(0x24242bcc).into(),
             line_soft: rgb(0x19191e).into(),
             table_ground: rgba(0x19191eb8).into(),
@@ -87,59 +91,78 @@ impl Default for Style {
 /// once each block's size is known.
 const TALL: usize = 12;
 
-/// Draws a message's markdown. `id` must be unique in the window, such as the row's and part's ids.
-pub fn markdown(
-    id: impl Into<ElementId>,
-    doc: &Markdown,
-    style: &Rc<Style>,
-    window: &mut Window,
-    cx: &mut App,
-) -> AnyElement {
-    let id = id.into();
-    let blocks = Blocks {
-        scope: Arc::new(id.clone()),
-        blocks: doc.blocks().to_vec(),
-        style: style.clone(),
-        width: doc.width.clone(),
-        turned: doc.turned.clone(),
-    };
-    let root = div()
-        .flex()
-        .flex_col()
-        .gap(style.gap)
-        .min_w_0()
-        .font_family(style.font.clone())
-        .text_size(style.text_size)
-        .line_height(relative(style.line_height))
-        .text_color(style.ink);
-    if blocks.blocks.len() >= TALL && blocks.width.get().is_some() {
-        return root.child(Tall(blocks)).id(id).into_any_element();
-    }
-    let children: Vec<AnyElement> = (0..blocks.blocks.len())
-        .map(|ix| blocks.draw(ix, window, cx))
-        .collect();
-    root.children(children)
-        .on_children_prepainted(move |bounds, _, _| {
-            for (block, bounds) in blocks.blocks.iter().zip(&bounds) {
-                block.size.set(Some(bounds.size));
-            }
-            if let Some(first) = bounds.first() {
-                blocks.width.set(Some(first.size.width));
-            }
-        })
-        .id(id)
-        .into_any_element()
+/// What draws a row's markdown: the style, and in a transcript, the row's
+/// selection and where its text is recorded so the pointer can select it.
+pub struct Pen {
+    style: Rc<Style>,
+    selecting: Option<Rc<Selecting>>,
+    docs: Cell<usize>,
 }
 
-/// A message's text drawn as it was written, for when its tree is not there.
-pub fn plain(text: impl Into<SharedString>, style: &Style) -> AnyElement {
-    div()
-        .font_family(style.font.clone())
-        .text_size(style.text_size)
-        .line_height(relative(style.line_height))
-        .text_color(style.ink)
-        .child(StyledText::new(text))
-        .into_any_element()
+impl Pen {
+    pub fn new(style: Rc<Style>) -> Pen {
+        Pen::selecting(style, None)
+    }
+
+    pub(crate) fn selecting(style: Rc<Style>, selecting: Option<Selecting>) -> Pen {
+        Pen {
+            style,
+            selecting: selecting.map(Rc::new),
+            docs: Cell::new(0),
+        }
+    }
+
+    pub fn style(&self) -> &Style {
+        &self.style
+    }
+
+    /// Draws a message's markdown. `id` must be unique in the window. In a
+    /// transcript, a row draws its markdown in the order `Row::docs` lists it.
+    pub fn markdown(
+        &self,
+        id: impl Into<ElementId>,
+        doc: &Markdown,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let id = id.into();
+        let style = &self.style;
+        let blocks = Blocks {
+            scope: Arc::new(id.clone()),
+            blocks: doc.blocks().to_vec(),
+            style: style.clone(),
+            selecting: self.selecting.clone(),
+            doc: self.docs.replace(self.docs.get() + 1),
+            width: doc.width.clone(),
+            turned: doc.turned.clone(),
+        };
+        let root = div()
+            .flex()
+            .flex_col()
+            .gap(style.gap)
+            .min_w_0()
+            .font_family(style.font.clone())
+            .text_size(style.text_size)
+            .line_height(relative(style.line_height))
+            .text_color(style.ink);
+        if blocks.blocks.len() >= TALL && blocks.width.get().is_some() {
+            return root.child(Tall(blocks)).id(id).into_any_element();
+        }
+        let children: Vec<_> = (0..blocks.blocks.len())
+            .map(|ix| blocks.draw(ix, window, cx))
+            .collect();
+        root.children(children)
+            .on_children_prepainted(move |bounds, _, _| {
+                for (block, bounds) in blocks.blocks.iter().zip(&bounds) {
+                    block.size.set(Some(bounds.size));
+                }
+                if let Some(first) = bounds.first() {
+                    blocks.width.set(Some(first.size.width));
+                }
+            })
+            .id(id)
+            .into_any_element()
+    }
 }
 
 /// One message's blocks and what drawing them needs.
@@ -147,8 +170,10 @@ struct Blocks {
     scope: Arc<ElementId>,
     blocks: Vec<Rc<Node>>,
     style: Rc<Style>,
+    selecting: Option<Rc<Selecting>>,
+    doc: usize,
     width: Rc<Cell<Option<Pixels>>>,
-    turned: Rc<RefCell<HashSet<(usize, u64)>>>,
+    turned: Rc<RefCell<HashSet<(usize, u32)>>>,
 }
 
 impl Blocks {
@@ -157,9 +182,19 @@ impl Blocks {
             on: self,
             block: ix,
             next: 0,
+            texts: 0,
+            folds: 0,
             depth: 0,
         };
         draw.block(&self.blocks[ix], ix, window, cx)
+    }
+
+    fn laid_out(&self, ix: usize, width: Pixels, window: &mut Window, cx: &mut App) -> AnyElement {
+        let mut element = self.draw(ix, window, cx);
+        let space = size(AvailableSpace::Definite(width), AvailableSpace::MinContent);
+        let height = element.layout_as_root(space, window, cx).height;
+        self.blocks[ix].size.set(Some(size(width, height)));
+        element
     }
 }
 
@@ -196,27 +231,22 @@ impl Element for Tall {
     ) -> (LayoutId, Self::RequestLayoutState) {
         let blocks = &self.0;
         let width = blocks.width.get().unwrap_or_default();
-        let mut height = blocks.style.gap * blocks.blocks.len().saturating_sub(1) as f32;
-        let laid = (0..blocks.blocks.len())
+        let laid: Vec<_> = (0..blocks.blocks.len())
             .map(|ix| {
-                let block = &blocks.blocks[ix];
-                if let Some(size) = block.size.get().filter(|size| size.width == width) {
-                    height += size.height;
-                    return None;
-                }
-                let mut element = blocks.draw(ix, window, cx);
-                let size = element.layout_as_root(
-                    size(AvailableSpace::Definite(width), AvailableSpace::MinContent),
-                    window,
-                    cx,
-                );
-                block.size.set(Some(gpui::size(width, size.height)));
-                height += size.height;
-                Some(element)
+                let fresh = blocks.blocks[ix]
+                    .size
+                    .get()
+                    .is_some_and(|size| size.width == width);
+                (!fresh).then(|| blocks.laid_out(ix, width, window, cx))
             })
             .collect();
+        let heights = blocks
+            .blocks
+            .iter()
+            .map(|block| block.size.get().map_or(px(0.), |size| size.height));
+        let gaps = blocks.style.gap * blocks.blocks.len().saturating_sub(1) as f32;
         let mut style = gpui::Style::default();
-        style.size.height = height.into();
+        style.size.height = heights.fold(gaps, |sum, height| sum + height).into();
         (window.request_layout(style, None, cx), laid)
     }
 
@@ -240,15 +270,9 @@ impl Element for Tall {
         for (ix, block) in blocks.blocks.iter().enumerate() {
             let height = block.size.get().map_or(px(0.), |size| size.height);
             if top + height >= view.top() && top <= view.bottom() {
-                let mut element = laid[ix].take().unwrap_or_else(|| {
-                    let mut element = blocks.draw(ix, window, cx);
-                    element.layout_as_root(
-                        size(AvailableSpace::Definite(width), AvailableSpace::MinContent),
-                        window,
-                        cx,
-                    );
-                    element
-                });
+                let mut element = laid[ix]
+                    .take()
+                    .unwrap_or_else(|| blocks.laid_out(ix, width, window, cx));
                 element.prepaint_at(point(bounds.left(), top), window, cx);
                 shown.push(element);
             }
@@ -273,10 +297,14 @@ impl Element for Tall {
     }
 }
 
+/// Draws one block. The texts it draws and the folds it meets are counted in
+/// the order `Node::walk` lists them, so a selection's places match the copy.
 struct Draw<'a> {
     on: &'a Blocks,
     block: usize,
     next: u64,
+    texts: u32,
+    folds: u32,
     depth: usize,
 }
 
@@ -335,47 +363,72 @@ impl Draw<'_> {
         if let [Piece::Text(rich)] = pieces {
             return self.rich(rich);
         }
+        let children: Vec<_> = pieces
+            .iter()
+            .map(|piece| match piece {
+                Piece::Text(rich) => self.rich(rich),
+                Piece::Block(ix) => self.block(&node.children[*ix], *ix, window, cx),
+            })
+            .collect();
+        let gap = self.on.style.gap;
         div()
             .flex()
             .flex_col()
-            .gap(self.on.style.gap)
+            .gap(gap)
             .min_w_0()
-            .children(pieces.iter().map(|piece| match piece {
-                Piece::Text(rich) => self.rich(rich),
-                Piece::Block(ix) => self.block(&node.children[*ix], *ix, window, cx),
-            }))
+            .children(children)
             .into_any_element()
     }
 
     fn rich(&mut self, rich: &Rich) -> AnyElement {
-        let style = &*self.on.style;
-        let highlights = rich
-            .marks
-            .iter()
-            .map(|(range, marks)| (range.clone(), highlight(*marks, style)));
+        let on = self.on;
+        let style = &*on.style;
+        self.texts += 1;
+        let place = (on.doc, self.block, self.texts);
+        let selected = on.selecting.as_ref().and_then(|selecting| {
+            let span = selecting.span?;
+            span.range((selecting.ix, place.0, place.1, place.2), rich.text.len())
+        });
         let mono = rich
             .marks
             .iter()
             .filter(|(_, marks)| marks.has(Marks::CODE));
         let text = StyledText::new(rich.text.clone())
-            .with_highlights(highlights)
+            .with_highlights(highlights(rich, selected, style))
             .with_font_family_overrides(
                 mono.map(|(range, _)| (range.clone(), style.mono.family.clone())),
             );
-        if rich.links.is_empty() {
-            return text.into_any_element();
-        }
-        let links: Rc<[SharedString]> = rich.links.iter().map(|(_, href)| href.clone()).collect();
-        let on_link = style.on_link.clone();
-        let ranges = rich.links.iter().map(|(range, _)| range.clone()).collect();
-        InteractiveText::new(self.id("text"), text)
-            .on_click(ranges, move |ix, window, cx| {
-                match (&on_link, links.get(ix)) {
-                    (Some(on_link), Some(href)) => on_link(href, window, cx),
-                    (None, Some(href)) => cx.open_url(href),
-                    _ => {}
-                }
-            })
+        let layout = text.layout().clone();
+        let inner = if rich.links.is_empty() {
+            text.into_any_element()
+        } else {
+            let links: Rc<[SharedString]> =
+                rich.links.iter().map(|(_, href)| href.clone()).collect();
+            let on_link = style.on_link.clone();
+            let ranges = rich.links.iter().map(|(range, _)| range.clone()).collect();
+            InteractiveText::new(self.id("text"), text)
+                .on_click(ranges, move |ix, window, cx| {
+                    match (&on_link, links.get(ix)) {
+                        (Some(on_link), Some(href)) => on_link(href, window, cx),
+                        (None, Some(href)) => cx.open_url(href),
+                        _ => {}
+                    }
+                })
+                .into_any_element()
+        };
+        let Some(selecting) = &on.selecting else {
+            return inner;
+        };
+        let key = (selecting.row.clone(), place.0, place.1, place.2);
+        let shown = Cell::new(Some(Shown {
+            key,
+            layout,
+            len: rich.text.len(),
+        }));
+        let all = selecting.shown.clone();
+        div()
+            .child(inner)
+            .on_children_prepainted(move |_, _, _| all.borrow_mut().extend(shown.take()))
             .into_any_element()
     }
 
@@ -383,7 +436,7 @@ impl Draw<'_> {
         let style = &*self.on.style;
         let bullet = ["•", "◦", "▪"][self.depth % 3];
         self.depth += 1;
-        let items: Vec<Div> = node
+        let items: Vec<_> = node
             .children
             .iter()
             .enumerate()
@@ -419,49 +472,55 @@ impl Draw<'_> {
         cx: &mut App,
     ) -> AnyElement {
         let style = &*self.on.style;
-        let code = match node.flow() {
-            [Piece::Text(rich)] => rich.text.clone(),
-            _ => SharedString::default(),
+        let [Piece::Text(code)] = node.flow() else {
+            return div().into_any_element();
         };
         let id = self.id("code");
         if let Some(fence) = &style.fence {
-            return fence(Fence { id, lang, code }, window, cx);
+            return fence(
+                Fence {
+                    id,
+                    lang,
+                    code: code.text.clone(),
+                },
+                window,
+                cx,
+            );
         }
-        div()
+        let title = div()
+            .h(px(23.))
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .border_b_1()
+            .border_color(style.line_soft)
+            .text_size(px(10.))
+            .text_color(style.ink_faint)
+            .child(div().flex_1().min_w_0().truncate().children(lang))
+            .child(self.copy(code.text.clone()));
+        let body = div()
+            .id(id)
+            .max_h(px(420.))
+            .overflow_y_scroll()
+            .px(px(12.))
+            .py(px(9.))
+            .font(style.mono.clone())
+            .text_size(style.code_size)
+            .line_height(relative(1.55))
+            .text_color(style.ink_dim)
+            .child(self.rich(code));
+        let frame = div()
             .rounded(style.radius)
             .border_1()
-            .border_color(style.line_soft)
+            .border_color(style.line_soft);
+        frame
             .bg(style.code_ground)
-            .child(
-                div()
-                    .h(px(23.))
-                    .px(px(10.))
-                    .flex()
-                    .items_center()
-                    .border_b_1()
-                    .border_color(style.line_soft)
-                    .text_size(px(10.))
-                    .text_color(style.ink_faint)
-                    .child(div().flex_1().min_w_0().truncate().children(lang))
-                    .child(self.copy(code.clone())),
-            )
-            .child(
-                div()
-                    .id(id)
-                    .max_h(px(420.))
-                    .overflow_y_scroll()
-                    .px(px(12.))
-                    .py(px(9.))
-                    .font(style.mono.clone())
-                    .text_size(style.code_size)
-                    .line_height(relative(1.55))
-                    .text_color(style.ink_dim)
-                    .child(StyledText::new(code)),
-            )
+            .child(title)
+            .child(body)
             .into_any_element()
     }
 
-    fn copy(&mut self, text: SharedString) -> impl IntoElement {
+    fn copy(&mut self, text: SharedString) -> Stateful<Div> {
         let ink = self.on.style.ink;
         div()
             .id(self.id("copy"))
@@ -480,71 +539,100 @@ impl Draw<'_> {
         let Kind::Table(table) = &node.kind else {
             return div().into_any_element();
         };
-        let head = table.head.iter().map(|head| (head, true));
-        let rows: Vec<_> = head
+        let cell = |cell: &Node| match cell.flow() {
+            [Piece::Text(rich)] => Some(rich.clone()),
+            _ => None,
+        };
+        let head = table.head.iter().map(|row| (row, true));
+        let rows: Vec<(Vec<Option<Rich>>, bool)> = head
             .chain(node.children.iter().map(|row| (&row.children, false)))
+            .map(|(row, head)| (row.iter().map(cell).collect(), head))
             .collect();
         let columns = rows
             .iter()
             .map(|(row, _)| row.len())
             .chain([table.align.len()])
-            .max()
-            .unwrap_or(0);
-        let text = |cell: Option<&Node>| match cell.map(Node::flow) {
-            Some([Piece::Text(rich)]) => Some(rich.text.clone()),
-            _ => None,
-        };
-        let longest: Vec<f32> = (0..columns)
+            .max();
+        let text =
+            |row: &[Option<Rich>], x: usize| row.get(x).cloned().flatten().map(|rich| rich.text);
+        let longest: Vec<f32> = (0..columns.unwrap_or(0))
             .map(|x| {
                 rows.iter()
-                    .filter_map(|(row, _)| text(row.get(x)))
+                    .filter_map(|(row, _)| text(row, x))
                     .map(|text| text.chars().count())
                     .max()
                     .unwrap_or(0) as f32
             })
             .collect();
-        let rows = rows.iter().enumerate().map(|(y, (row, head))| {
-            let cells = (0..columns).map(|x| {
-                let content = match (row.get(x).map(Node::flow), head) {
-                    (Some([Piece::Text(rich)]), true) => {
-                        rich.text.to_uppercase().into_any_element()
-                    }
-                    (Some([Piece::Text(rich)]), false) => self.rich(rich),
-                    _ => div().into_any_element(),
-                };
-                let align = table.align.get(x).copied().unwrap_or_default();
-                div()
-                    .flex_basis(style.table_size * (longest[x].min(8.) * 0.6) + px(20.))
-                    .flex_grow(longest[x].max(1.))
-                    .min_w_0()
-                    .px(px(10.))
-                    .py(px(5.))
+        let source: Vec<String> = rows
+            .iter()
+            .map(|(row, _)| {
+                (0..longest.len())
+                    .map(|x| text(row, x).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("\t")
+            })
+            .collect();
+        let copy = self
+            .copy(source.join("\n").into())
+            .absolute()
+            .top(px(4.))
+            .right(px(8.));
+        let copy = copy
+            .text_size(px(10.))
+            .text_color(style.ink_faint)
+            .invisible();
+        let rows: Vec<_> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(y, (row, head))| {
+                let cells: Vec<_> = longest
+                    .iter()
+                    .enumerate()
+                    .map(|(x, chars)| {
+                        let content = match row.get(x).cloned().flatten() {
+                            Some(rich) if head => rich.text.to_uppercase().into_any_element(),
+                            Some(rich) => self.rich(&rich),
+                            None => div().into_any_element(),
+                        };
+                        div()
+                            .flex_basis(style.table_size * (chars.min(8.) * 0.6) + px(20.))
+                            .flex_grow(chars.max(1.))
+                            .min_w_0()
+                            .px(px(10.))
+                            .py(px(5.))
+                            .border_color(style.line)
+                            .when(x + 1 < longest.len(), Div::border_r_1)
+                            .text_align(table.align.get(x).copied().unwrap_or_default())
+                            .when(head || x == 0, |cell| cell.font_weight(FontWeight::MEDIUM))
+                            .child(content)
+                    })
+                    .collect();
+                let row = div()
+                    .flex()
                     .border_color(style.line)
-                    .when(x + 1 < columns, Div::border_r_1)
-                    .when(align == Align::Center, Div::text_center)
-                    .when(align == Align::End, Div::text_right)
-                    .when(*head || x == 0, |cell| cell.font_weight(FontWeight::MEDIUM))
-                    .child(content)
-            });
-            div()
-                .flex()
-                .border_color(style.line)
-                .when(y > 0, Div::border_t_1)
-                .when(*head, |row| {
+                    .when(y > 0, Div::border_t_1);
+                row.when(head, |row| {
+                    let size = style.table_size - px(1.5);
                     row.bg(style.table_head)
-                        .text_size(style.table_size - px(1.5))
+                        .text_size(size)
                         .letter_spacing(0.06)
                         .text_color(style.ink_dim)
                 })
                 .children(cells)
-        });
+            })
+            .collect();
         div()
+            .id(self.id("table"))
+            .group("table")
+            .relative()
             .rounded(style.radius)
             .border_1()
             .border_color(style.line)
             .bg(style.table_ground)
             .text_size(style.table_size)
-            .children(rows.collect::<Vec<_>>())
+            .children(rows)
+            .child(copy.group_hover("table", |copy| copy.visible()))
             .into_any_element()
     }
 
@@ -556,8 +644,8 @@ impl Draw<'_> {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        let id = self.id("details");
-        let key = (self.block, self.next);
+        self.folds += 1;
+        let key = (self.block, self.folds);
         let turned = self.on.turned.clone();
         let open = written_open != turned.borrow().contains(&key);
         let block = self.on.blocks[self.block].clone();
@@ -566,33 +654,73 @@ impl Draw<'_> {
         } else {
             summary.clone()
         };
+        let toggle = div()
+            .id(self.id("details"))
+            .flex()
+            .gap(px(6.))
+            .cursor_pointer()
+            .text_color(self.on.style.ink_dim)
+            .child(if open { "▾" } else { "▸" })
+            .child(summary)
+            .on_click(move |_, window, _| {
+                let mut turned = turned.borrow_mut();
+                if !turned.remove(&key) {
+                    turned.insert(key);
+                }
+                block.size.set(None);
+                window.refresh();
+            });
+        let content = open.then(|| div().pl(px(16.)).child(self.flow(node, window, cx)));
         div()
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(
-                div()
-                    .id(id)
-                    .flex()
-                    .gap(px(6.))
-                    .cursor_pointer()
-                    .text_color(self.on.style.ink_dim)
-                    .child(if open { "▾" } else { "▸" })
-                    .child(summary)
-                    .on_click(move |_, window, _| {
-                        let mut turned = turned.borrow_mut();
-                        if !turned.remove(&key) {
-                            turned.insert(key);
-                        }
-                        block.size.set(None);
-                        window.refresh();
-                    }),
-            )
-            .when(open, |details| {
-                details.child(div().pl(px(16.)).child(self.flow(node, window, cx)))
-            })
+            .child(toggle)
+            .children(content)
             .into_any_element()
     }
+}
+
+/// Each run's look: its marks, and the selection's ground over the part selected.
+fn highlights(
+    rich: &Rich,
+    selected: Option<Range<usize>>,
+    style: &Style,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    let ranges = rich
+        .marks
+        .iter()
+        .map(|(range, _)| range.clone())
+        .chain(selected.clone());
+    let mut edges: Vec<usize> = ranges.flat_map(|range| [range.start, range.end]).collect();
+    edges.sort_unstable();
+    edges.dedup();
+    let inside = |outer: &Range<usize>, inner: &Range<usize>| {
+        outer.start <= inner.start && inner.end <= outer.end
+    };
+    edges
+        .windows(2)
+        .filter_map(|edge| {
+            let run = edge[0]..edge[1];
+            let marks = rich
+                .marks
+                .iter()
+                .find(|(range, _)| inside(range, &run))
+                .map(|(_, marks)| *marks);
+            let chosen = selected
+                .as_ref()
+                .is_some_and(|selected| inside(selected, &run));
+            let mut look = match marks {
+                Some(marks) => highlight(marks, style),
+                None if chosen => HighlightStyle::default(),
+                None => return None,
+            };
+            if chosen {
+                look.background_color = Some(style.selection);
+            }
+            Some((run, look))
+        })
+        .collect()
 }
 
 fn highlight(marks: Marks, style: &Style) -> HighlightStyle {
