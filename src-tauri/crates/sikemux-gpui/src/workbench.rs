@@ -16,7 +16,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectInfo, ProjectLayout, RecentInfo, SessionInfo, Tab,
+    Preferences, ProjectInfo, ProjectLayout, RecentInfo, SessionInfo, SpaceInfo, Tab,
 };
 use tokio::sync::mpsc;
 
@@ -53,6 +53,8 @@ pub struct Workbench {
     /// From asking the core to sign in until the browser is done or gives up.
     pub signing_in: bool,
     pub all_projects: bool,
+    /// The space whose projects the rail shows, else every project.
+    pub space: Option<String>,
     /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
     pub side_rail_open: bool,
     pub tab_rail_open: bool,
@@ -233,6 +235,7 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             all_projects: false,
+            space: None,
             side_rail_open: true,
             tab_rail_open: true,
             peeking: None,
@@ -939,6 +942,29 @@ impl Workbench {
                 }
             });
         }));
+    }
+
+    /// The space the rail shows, while it still exists.
+    pub fn space(&self) -> Option<&SpaceInfo> {
+        let spaces = &self.view.as_ref()?.workspace.spaces;
+        spaces
+            .iter()
+            .find(|space| Some(&space.id) == self.space.as_ref())
+    }
+
+    /// Shows one space's projects, or every project, and leaves a project the space hides
+    /// for the first one it shows.
+    pub fn show_space(&mut self, space: Option<String>, cx: &mut Context<Self>) {
+        self.space = space;
+        let shown = |project: &ProjectInfo| {
+            self.space.is_none() || project.space.as_ref() == self.space.as_ref()
+        };
+        if !self.project().is_some_and(shown) {
+            if let Some(first) = self.projects().iter().find(|project| shown(project)) {
+                self.activate_project(&first.id);
+            }
+        }
+        cx.notify();
     }
 
     /// Takes up a recent chat again, in the project it ran in.

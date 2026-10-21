@@ -215,17 +215,19 @@ impl RenderOnce for Row {
 pub struct Group {
     label: &'static str,
     actions: Option<AnyElement>,
-    empty: &'static str,
+    toolbar: Option<AnyElement>,
+    empty: SharedString,
     first: bool,
     rows: SmallVec<[AnyElement; 8]>,
 }
 
 impl Group {
-    pub fn new(label: &'static str, empty: &'static str) -> Self {
+    pub fn new(label: &'static str, empty: impl Into<SharedString>) -> Self {
         Self {
             label,
             actions: None,
-            empty,
+            toolbar: None,
+            empty: empty.into(),
             first: false,
             rows: SmallVec::new(),
         }
@@ -233,6 +235,12 @@ impl Group {
 
     pub fn actions(mut self, actions: impl IntoElement) -> Self {
         self.actions = Some(actions.into_any_element());
+        self
+    }
+
+    /// What sits between the group's heading and its rows, such as a filter over them.
+    pub fn toolbar(mut self, toolbar: Option<impl IntoElement>) -> Self {
+        self.toolbar = toolbar.map(IntoElement::into_any_element);
         self
     }
 
@@ -270,6 +278,7 @@ impl RenderOnce for Group {
                     .child(div().flex_1().h(px(1.)).bg(border))
                     .children(self.actions),
             )
+            .children(self.toolbar)
             .when(empty, |group| {
                 group.child(
                     div().p(px(12.)).child(

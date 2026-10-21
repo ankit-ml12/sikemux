@@ -20,11 +20,17 @@ use crate::workbench::{AgentRow, Edge, Strip, Workbench};
 pub const SIDE_RAIL_WIDTH: f32 = 258.;
 
 pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let space = bench.space();
     let projects: Vec<_> = bench
         .projects()
         .iter()
+        .filter(|project| space.is_none_or(|space| project.space.as_deref() == Some(&space.id)))
         .map(|project| project_tree(bench, project, cx).into_any_element())
         .collect();
+    let empty = match space {
+        Some(space) => format!("no projects in {}", space.name),
+        None => "no projects".to_owned(),
+    };
     ui::panel(cx)
         .w(px(SIDE_RAIL_WIDTH))
         .flex_none()
@@ -39,7 +45,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .pb(px(16.))
                 .overflow_y_scrollbar()
                 .child(
-                    Group::new("Projects", "no projects")
+                    Group::new("Projects", empty)
                         .first()
                         .actions(actions(
                             keymap::hint("project.open", cx),
@@ -51,9 +57,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                             ],
                             cx,
                         ))
-                        .child(div().mb(px(6.)).child(
-                            Button::new("new-space", "New space", Variant::Dashed).icon(Icon::Plus),
-                        ))
+                        .toolbar((!bench.projects().is_empty()).then(|| space_switch(bench, cx)))
                         .children(projects),
                 )
                 .child(
@@ -468,6 +472,74 @@ fn surfaces(project: &ProjectInfo, front: Option<PaneKind>, cx: &App) -> impl In
                     })
             },
         ))
+}
+
+/// The spaces the person sorts projects into, which filter the projects below them.
+fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let spaces = bench
+        .view
+        .as_ref()
+        .map_or(&[][..], |view| view.workspace.spaces.as_slice());
+    if spaces.is_empty() {
+        return div()
+            .mb(px(6.))
+            .child(Button::new("new-space", "New space", Variant::Dashed).icon(Icon::Plus))
+            .into_any_element();
+    }
+    let chosen = bench.space.clone();
+    let chip = |id: Option<String>, glyph: Option<Icon>, name: SharedString| {
+        let on = chosen == id;
+        div()
+            .id(SharedString::from(format!(
+                "space-{}",
+                id.as_deref().unwrap_or("all")
+            )))
+            .flex_grow(1.)
+            .flex_shrink_0()
+            .flex()
+            .justify_center()
+            .items_center()
+            .gap(px(5.))
+            .h(px(22.))
+            .px(px(8.))
+            .rounded(RADIUS_2)
+            .text_size(px(11.))
+            .whitespace_nowrap()
+            .text_color(if on { t.text_primary } else { t.text_tertiary })
+            .when(on, |chip| chip.bg(t.surface_active))
+            .hover(move |style| style.text_color(t.text_primary))
+            .children(glyph.map(|glyph| {
+                ui::icon(glyph, 12.).text_color(if on { t.text_primary } else { t.text_tertiary })
+            }))
+            .child(
+                div()
+                    .max_w(px(140.))
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .child(name),
+            )
+            .on_click(cx.listener(move |bench, _, _, cx| bench.show_space(id.clone(), cx)))
+    };
+    div()
+        .id("space-track")
+        .mb(px(6.))
+        .flex()
+        .gap(px(2.))
+        .p(px(2.))
+        .overflow_x_scroll()
+        .border_1()
+        .border_color(t.border)
+        .rounded(RADIUS_2 + px(3.))
+        .child(chip(None, Some(Icon::Stack), "All".into()))
+        .children(spaces.iter().map(|space| {
+            chip(
+                Some(space.id.clone()),
+                Icon::named(&space.icon),
+                space.name.clone().into(),
+            )
+        }))
+        .into_any_element()
 }
 
 /// Who the host is signed in as, or the card that signs it in.
