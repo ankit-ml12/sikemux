@@ -1012,6 +1012,19 @@ export class ShowcaseBackend implements IpcTransport {
         };
       return answer((params ?? {}) as Args);
     });
+    this.onCore(["pluginView"], ({ params }) => {
+      const { plugin, method, params: asked } = params as Args;
+      const answer = plugins[plugin as string]?.[method as string];
+      return answer
+        ? { value: answer((asked ?? {}) as Args) }
+        : {
+            failed: {
+              plugin,
+              category: "unavailable",
+              message: `showcase has no ${String(plugin)}.${String(method)}`,
+            },
+          };
+    });
     this.onCore(["pluginStream"], ({ params }) => {
       const { stream, plugin, method } = params as Args;
       const emit = (value: unknown) =>
