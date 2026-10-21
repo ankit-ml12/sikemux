@@ -550,12 +550,16 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
     }
     let mut moved: HashMap<Option<String>, HashSet<&'static str>> = HashMap::new();
     while let Some(Ok((key, read))) = reading.join_next().await {
-        let Ok(read) = read else { continue };
         let mut state = core.code_host_lists.state.locked();
         let Some(kept) = state.kept.get_mut(&key) else {
             continue;
         };
         kept.read = Instant::now();
+        let Ok(read) = read else {
+            // A host that turned the read down, or limits how often it is asked, is asked less and less often.
+            kept.fresh = (kept.fresh * 2).min(FRESH.max(kept.fresh));
+            continue;
+        };
         kept.fresh = read.fresh;
         if kept.answer == read.answer {
             continue;
@@ -717,11 +721,7 @@ async fn read(core: &Arc<Core>, repo: &Repo, list: &List) -> Result<Read, Failur
         List::Pull { number } => Read::of(repo, open_pull(repo, *number).await?, FRESH),
         List::Run { id, attempt } => {
             let run = open_run(core, repo, id, *attempt).await?;
-            let fresh = match (attempt, run.unfinished) {
-                (Some(_), _) => SETTLED_RUNS,
-                (None, true) => LIVE_RUN,
-                (None, false) => FRESH,
-            };
+            let fresh = pace(&run.run, attempt.is_some());
             Read::of(repo, run, fresh)
         }
         List::JobLog { run, job } => job_log_of(core, repo, run, job).await,
@@ -1133,6 +1133,19 @@ async fn open_run(
     })
 }
 
+/// How soon a shown run is read again. An earlier attempt is over for good,
+/// and a run waiting on a person moves only when someone answers it here or
+/// its CI moves, so only one that is going is read closely.
+fn pace(run: &Run, earlier_attempt: bool) -> Duration {
+    if earlier_attempt {
+        SETTLED_RUNS
+    } else if unfinished(run) && run.outcome != Outcome::Blocked {
+        LIVE_RUN
+    } else {
+        FRESH
+    }
+}
+
 /// The jobs that may have written a summary. Each is its own request, so a
 /// run still going has none asked for until it ends.
 fn summaries(jobs: &[Job], unfinished: bool) -> Vec<String> {
@@ -1290,6 +1303,21 @@ mod tests {
         assert!(unfinished(&run_as("waiting", Outcome::Blocked)));
         assert!(!unfinished(&run_as("completed", Outcome::Success)));
         assert!(!unfinished(&run_as("completed", Outcome::Blocked)));
+    }
+
+    #[test]
+    fn only_a_run_that_is_going_is_read_closely() {
+        assert_eq!(
+            pace(&run_as("in_progress", Outcome::Running), false),
+            LIVE_RUN
+        );
+        assert_eq!(pace(&run_as("queued", Outcome::Queued), false), LIVE_RUN);
+        assert_eq!(pace(&run_as("waiting", Outcome::Blocked), false), FRESH);
+        assert_eq!(pace(&run_as("completed", Outcome::Success), false), FRESH);
+        assert_eq!(
+            pace(&run_as("in_progress", Outcome::Running), true),
+            SETTLED_RUNS
+        );
     }
 
     fn job(id: u32, conclusion: &str, check_run: Option<&str>) -> Job {
