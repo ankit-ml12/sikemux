@@ -64,6 +64,8 @@ pub struct Workbench {
     pub agent_setup: crate::agent_setup::Setup,
     /// The welcome or the release notes, while one is over the window.
     pub experience: Option<crate::experience::Experience>,
+    /// A custom command running in a terminal over the window.
+    pub command_popup: Option<crate::command_popup::Popup>,
     pub shown: crate::experience::Shown,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
@@ -291,6 +293,7 @@ impl Workbench {
         crate::keymap::install(cx);
         crate::chat::install(cx);
         crate::terminal::install(cx);
+        crate::command_popup::install(cx);
         crate::editor::install(cx);
         crate::search::install(cx);
         crate::settings::install(cx);
@@ -414,6 +417,7 @@ impl Workbench {
             battery: crate::battery::read(),
             agent_setup: Default::default(),
             experience: None,
+            command_popup: None,
             shown: Default::default(),
             picture: None,
             picture_hash: None,
@@ -2580,7 +2584,13 @@ impl Parts {
                 },
                 true,
             ),
-            over: part(crate::experience::draw, true),
+            over: part(
+                |bench, window, cx| {
+                    crate::command_popup::overlay(bench, window, cx)
+                        .unwrap_or_else(|| crate::experience::draw(bench, window, cx))
+                },
+                true,
+            ),
         }
     }
 

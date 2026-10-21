@@ -387,6 +387,7 @@ calls! { core, client, params;
     },
     "newTerminal": Full => answer(super::spare::new_terminal(&core, parse(params)?).await?),
     "showTerminals": Full => answer(super::spare::show_terminals(&core).await?),
+    "stripShell": Full => answer(super::spare::strip_shell(&core, parse(params)?).await?),
     "openSshTerminal": Full => answer(super::spare::open_ssh_terminal(&core, parse(params)?).await?),
     "takeSpareShell": Local => answer(super::spare::take(&core, parse(params)?)),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),

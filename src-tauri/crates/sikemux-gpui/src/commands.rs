@@ -4,7 +4,7 @@
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{Context, SharedString, Window};
 use serde_json::json;
-use sikemux_wire::protocol::PaneKind;
+use sikemux_wire::protocol::{PaneKind, SessionId};
 use tokio::sync::oneshot;
 
 use crate::core;
@@ -216,15 +216,19 @@ impl Workbench {
             .into_iter()
             .find(|command| command.id == id)
             .map_or_else(|| id.to_owned(), |command| command.title);
+        let tab = self.tab().map(|tab| tab.id.clone());
         let ran = core::request(
             &self.asks,
             "runCustomCommand",
-            json!({ "project": project, "id": id }),
+            json!({ "project": project, "id": id, "tab": tab, "pane": self.focused_view() }),
         );
         cx.spawn(async move |this, cx| {
             let ran = ran.await;
             let _ = this.update(cx, |bench, cx| match ran {
                 Ok(ran) => {
+                    if let Ok(popup) = serde_json::from_value::<SessionId>(ran["popup"].clone()) {
+                        return bench.show_command_popup(title, popup, cx);
+                    }
                     let Some(result) = ran.get("result") else {
                         return;
                     };

@@ -495,7 +495,7 @@ impl Workbench {
     }
 
     /// The view in focus in the tab in front, else its first.
-    fn focused_view(&self) -> Option<String> {
+    pub(crate) fn focused_view(&self) -> Option<String> {
         let tab = self.tab()?;
         self.panes
             .focused

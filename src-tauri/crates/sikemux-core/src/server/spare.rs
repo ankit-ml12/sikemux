@@ -349,22 +349,31 @@ pub(crate) async fn command_terminal(
     title: String,
     startup: String,
 ) -> CoreResult<String> {
-    let (path, name) = project_folder(core, &project)
+    let id = command_shell(core, &project, startup).await?;
+    super::layout::show_terminal(core, At::project(&project), id, Some(title))
+}
+
+/// A new shell in `project`'s folder running `startup`.
+pub(crate) async fn command_shell(
+    core: &Arc<Core>,
+    project: &str,
+    startup: String,
+) -> CoreResult<SessionId> {
+    let (path, name) = project_folder(core, project)
         .ok_or_else(|| CoreError::from("that project is not on this host"))?;
     let window_id = format!("win-{}", uuid::Uuid::new_v4().simple());
     let pane_id = format!("pane-{}", uuid::Uuid::new_v4().simple());
     let size = opening_size(core);
-    let id = shell(
+    shell(
         core,
-        &project,
+        project,
         path,
         name,
         size,
         (&window_id, &pane_id),
         Some(startup),
     )
-    .await?;
-    super::layout::show_terminal(core, At::project(&project), id, Some(title))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -375,9 +384,24 @@ pub(crate) struct SshParams {
 /// Opens a terminal tab connected to `host`, by its alias in the person's
 /// SSH config, and brings the host to the front. Answers the tab's id.
 pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> CoreResult<String> {
+    let id = ssh_shell(core, &params.host).await?;
+    super::layout::show_ssh_terminal(core, params.host, id)
+}
+
+/// A new shell for a view beside the others of the strip `at` names: in the project's
+/// folder, on the SSH host, or in the home folder for the terminals of no project.
+pub(crate) async fn strip_shell(core: &Arc<Core>, at: At) -> CoreResult<SessionId> {
+    match (at.host, at.terminals) {
+        (_, true) => home_shell(core).await,
+        (Some(host), false) => ssh_shell(core, &host).await,
+        (None, false) => project_shell(core, &at.project).await,
+    }
+}
+
+async fn ssh_shell(core: &Arc<Core>, host: &str) -> CoreResult<SessionId> {
     let context = PtyContext {
-        session_id: format!("ssh:{}", params.host),
-        session_name: params.host.clone(),
+        session_id: format!("ssh:{host}"),
+        session_name: host.to_owned(),
         session_kind: "ssh".into(),
         project: None,
         window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
@@ -387,8 +411,7 @@ pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> Co
         initial_prompt_submitted: false,
         shell_integration: false,
     };
-    let id = terminal(core, opening_size(core), None, context, None).await?;
-    super::layout::show_ssh_terminal(core, params.host, id)
+    terminal(core, opening_size(core), None, context, None).await
 }
 
 /// Stops the shell started ahead, as before the core hands itself over.

@@ -1,5 +1,6 @@
 //! A custom command the person runs, on the host rather than on whichever
-//! device asked for it: in the background, or in a terminal tab of its own.
+//! device asked for it: in the background, in a terminal tab of its own, beside
+//! or in place of the view in focus, or in a terminal floating over the window.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,8 +10,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::connection::blocking;
+use super::layout::At;
 use super::{Core, CoreError, CoreResult};
-use crate::protocol::CustomCommandPlacement;
+use crate::protocol::{CustomCommandPlacement, SessionId};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 const OUTPUT_LIMIT: usize = 16_000;
@@ -70,20 +72,26 @@ pub(crate) struct RunCustomParams {
     project: String,
     /// The command, by its id in the person's preferences.
     id: String,
+    /// The tab in front and its view in focus, which a split or replacing command goes
+    /// beside or in place of.
+    tab: Option<String>,
+    pane: Option<String>,
 }
 
-/// What running a custom command did: the tab it opened, or what it printed
-/// in the background.
+/// What running a custom command did: the tab it opened or changed, the terminal to float
+/// over the window, or what it printed in the background.
 #[derive(Serialize, Default)]
 pub(crate) struct Ran {
     #[serde(skip_serializing_if = "Option::is_none")]
     tab: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    popup: Option<SessionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<CommandResult>,
 }
 
 /// Runs one of the person's custom commands in `project`, as its placement
-/// says. Every placement but the background opens a terminal tab.
+/// says. A split or replacing command with no view to go beside opens a tab.
 pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> CoreResult<Ran> {
     let command = core
         .preferences
@@ -96,13 +104,44 @@ pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> Cor
         .workspaces
         .project_info(&params.project)
         .ok_or_else(|| CoreError::from("that project is not on this host"))?;
-    if command.placement != CustomCommandPlacement::Background {
-        let tab = super::spare::command_terminal(core, project.id, command.title, command.command)
-            .await?;
-        return Ok(Ran {
-            tab: Some(tab),
-            ..Ran::default()
-        });
+    let beside = params.tab.zip(params.pane);
+    match (command.placement, beside) {
+        (CustomCommandPlacement::Background, _) => {}
+        (CustomCommandPlacement::Popup, _) => {
+            let id = super::spare::command_shell(core, &project.id, command.command).await?;
+            return Ok(Ran {
+                popup: Some(id),
+                ..Ran::default()
+            });
+        }
+        (
+            placement @ (CustomCommandPlacement::Split | CustomCommandPlacement::Replace),
+            Some((tab, pane)),
+        ) => {
+            let id = super::spare::command_shell(core, &project.id, command.command).await?;
+            let replace = placement == CustomCommandPlacement::Replace;
+            let tab = super::layout::place_terminal(
+                core,
+                At::project(&project.id),
+                tab,
+                &pane,
+                id,
+                replace,
+            )?;
+            return Ok(Ran {
+                tab: Some(tab),
+                ..Ran::default()
+            });
+        }
+        _ => {
+            let tab =
+                super::spare::command_terminal(core, project.id, command.title, command.command)
+                    .await?;
+            return Ok(Ran {
+                tab: Some(tab),
+                ..Ran::default()
+            });
+        }
     }
     let path = project.path.to_string_lossy().into_owned();
     let env = HashMap::from([

@@ -13,6 +13,7 @@ mod board_panels;
 mod boot;
 mod chat;
 pub mod codehost;
+mod command_popup;
 mod commands;
 pub mod composer;
 pub mod core;

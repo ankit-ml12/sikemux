@@ -262,6 +262,51 @@ fn insert_beside(
     }
 }
 
+/// Puts `new` in place of the view `view`, answering whether that view is in `pane`.
+fn replace_view(pane: &mut Pane, view: &str, new: &mut Option<Pane>) -> bool {
+    match pane {
+        Pane::View { id, .. } if id == view => {
+            if let Some(new) = new.take() {
+                *pane = new;
+            }
+            true
+        }
+        Pane::View { .. } => false,
+        Pane::Split { panes, .. } => panes.iter_mut().any(|child| replace_view(child, view, new)),
+    }
+}
+
+/// Shows the terminal `id` to the right of the view `pane` of `tab`, or in its place, and
+/// brings the tab to the front. Answers the tab's id.
+pub(crate) fn place_terminal(
+    core: &Core,
+    at: At,
+    tab: String,
+    pane: &str,
+    id: SessionId,
+    replace: bool,
+) -> CoreResult<String> {
+    edit(core, |layout| {
+        let strip = strip_at(layout, &at)?;
+        let held = tab_in(strip, &tab)?;
+        let mut new = Some(Pane::View {
+            id: view_id(),
+            kind: PaneKind::Terminal,
+            target: id.to_string(),
+        });
+        let placed = match replace {
+            true => replace_view(&mut held.pane, pane, &mut new),
+            false => insert_beside(&mut held.pane, pane, SplitDir::Row, true, &mut new),
+        };
+        if !placed {
+            return Err("that view is not in the tab".into());
+        }
+        strip.active = Some(tab.clone());
+        bring_forward(layout, &at);
+        Ok(tab)
+    })
+}
+
 fn find_split<'a>(pane: &'a mut Pane, split: &str) -> Option<&'a mut Pane> {
     match pane {
         Pane::Split { id, .. } if id == split => Some(pane),
@@ -398,10 +443,10 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
 #[derive(Clone, Default, Deserialize)]
 pub(crate) struct At {
     #[serde(default)]
-    project: String,
-    host: Option<String>,
+    pub(crate) project: String,
+    pub(crate) host: Option<String>,
     #[serde(default)]
-    terminals: bool,
+    pub(crate) terminals: bool,
 }
 
 impl At {
