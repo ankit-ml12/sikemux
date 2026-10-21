@@ -16,6 +16,7 @@ import { watchTerminalTitles } from "./terminal/terminalTitles";
 import { watchRailNames } from "./terminal/railNames";
 import { watchFaceStyle } from "./buddies/faceStyle";
 import { customCommandsOf, showPreferences, usePreference, watchPreferences, preferencesOf } from "./state/preferences";
+import { watchDrafts } from "./state/gitWorkbench";
 import { watchLspClaims } from "./api/lsp";
 import { watchFocusForAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
@@ -780,6 +781,7 @@ export default function App() {
     useEffect(() => watchRailNames(), []);
     useEffect(() => watchFaceStyle(), []);
     useEffect(() => watchPreferences(), []);
+    useEffect(() => watchDrafts(), []);
     useEffect(() => watchLspClaims(), []);
     useEffect(() => watchFocusForAgentStatus(), []);
     /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
