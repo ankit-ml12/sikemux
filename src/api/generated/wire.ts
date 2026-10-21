@@ -1150,6 +1150,7 @@ export type CoreChangeTopic =
     | "usage"
     | "ssh"
     | "plugins"
+    | "questions"
     | "account"
     | "hosts"
     | "lsp";

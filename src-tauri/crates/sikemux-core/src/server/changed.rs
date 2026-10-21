@@ -41,6 +41,8 @@ pub(crate) enum Topic {
     Ssh,
     /// Which plugins are on, and whether each is signed in.
     Plugins,
+    /// The questions agents put to the person, and the assumptions they went on.
+    Questions,
     /// Who this host is signed in to Sikemux as.
     Account,
     /// The hosts linked with this one, the SSH hosts a terminal is open to,

@@ -19,6 +19,7 @@ use crate::protocol::WindowCall;
 use crate::text::clipped;
 
 use super::activity::Activity;
+use super::changed::Topic;
 use super::connection::ClientId;
 use super::kept::Kept;
 use super::messages;
@@ -1556,6 +1557,7 @@ fn tell_window(core: &Arc<Core>) {
         }
         if state.dirty {
             core.view_changed();
+            core.changes.changed(Topic::Questions, None, None);
         }
         state.dirty = false;
         state.told_window = window;
