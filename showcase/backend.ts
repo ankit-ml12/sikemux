@@ -905,6 +905,7 @@ export class ShowcaseBackend implements IpcTransport {
             : [];
           return {
             pull,
+            ownBranch: true,
             state: pull.mergedAt
               ? "merged"
               : pull.state === "open" && pull.draft
@@ -937,6 +938,51 @@ export class ShowcaseBackend implements IpcTransport {
         counts: GITHUB.issueCounts({}),
       }),
     );
+    this.onCore(["codeHostPull"], ({ params }) => {
+      const pull = GITHUB.pull(params as Args) as {
+        number: number;
+        state: string;
+        draft: boolean;
+        mergedAt: string | null;
+        headSha: string | null;
+        mergeState: string | null;
+      };
+      const reviews = GITHUB.pullReviews({}) as { state: string }[];
+      const runs = pull.headSha
+        ? (GITHUB.runs({ headSha: pull.headSha }) as { runs: Listed[] }).runs
+        : [];
+      const said = reviews.map((review) => review.state);
+      const readiness: Record<string, string> = {
+        dirty: "conflicts",
+        blocked: "blocked",
+        behind: "behind",
+        clean: "ready",
+        unstable: "ready",
+        has_hooks: "ready",
+      };
+      return listed({
+        pull,
+        state: pull.mergedAt
+          ? "merged"
+          : pull.state === "open" && pull.draft
+            ? "draft"
+            : pull.state,
+        closes: [],
+        ownBranch: true,
+        verdict: said.includes("CHANGES_REQUESTED")
+          ? "changesRequested"
+          : said.includes("APPROVED")
+            ? "approved"
+            : null,
+        reviewed: reviews.length > 0,
+        merge: readiness[pull.mergeState ?? ""] ?? "checking",
+        checks: runs.length ? tally(runs) : null,
+        runs: runs.map((run) => ({
+          run,
+          unfinished: run.status !== "completed",
+        })),
+      });
+    });
     this.onCore(["codeHostReleases"], () => {
       const releases = GITHUB.releases({}) as {
         id: number;

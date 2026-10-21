@@ -1,15 +1,12 @@
-import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Run } from "../api";
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CheckTally, Run } from "../api";
 
-const api = vi.hoisted(() => ({ runs: vi.fn() }));
-
-import { invalidate } from "../../plugin-api/resources";
 import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { PullChecks } from "./PullChecks";
 
-const host = registerTestHost(api);
-const core = ciCore(api);
+const host = registerTestHost({});
+ciCore();
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeRun = (overrides: Partial<Run> = {}): Run => ({
@@ -37,24 +34,19 @@ const makeRun = (overrides: Partial<Run> = {}): Run => ({
     ...overrides,
 });
 
-async function renderChecks(runs: Run[], onOpenRun = vi.fn()) {
-    api.runs.mockResolvedValue({ runs, total: runs.length, nextPage: null });
-    const view = render(
+function renderChecks(checks: Partial<CheckTally> & Pick<CheckTally, "outcome">, onOpenRun = vi.fn()) {
+    const tally: CheckTally = { total: 0, passed: 0, failing: 0, running: 0, queued: 0, waiting: 0, cancelled: 0, unknown: 0, ...checks };
+    tally.total = tally.passed + tally.failing + tally.running + tally.queued + tally.waiting + tally.cancelled + tally.unknown;
+    render(
         <InHost host={host}>
-            <PullChecks repo={repo} project="/repo" sha="abc" active onOpenRun={onOpenRun} />
+            <PullChecks repo={repo} checks={tally} runs={[{ run: makeRun(), unfinished: false }]} active onOpenRun={onOpenRun} />
         </InHost>,
     );
-    await act(async () => {});
-    return { view, onOpenRun };
+    return { onOpenRun };
 }
 
 const headline = () => document.querySelector(".gha-merge-title")?.textContent;
 const overall = () => document.querySelector(".gha-merge-row [role=img]")?.getAttribute("aria-label");
-
-beforeEach(() => {
-    invalidate(() => true);
-    api.runs.mockReset();
-});
 
 afterEach(() => {
     cleanup();
@@ -62,44 +54,21 @@ afterEach(() => {
 });
 
 describe("PullChecks", () => {
-    it("says all passed when every run passed or was skipped", async () => {
-        await renderChecks([makeRun({ id: "1" }), makeRun({ id: "2", conclusion: "skipped", outcome: "skipped" })]);
+    it("says all passed when every run passed or was skipped", () => {
+        renderChecks({ outcome: "success", passed: 2 });
         expect(headline()).toBe("All checks passed");
         expect(overall()).toBe("Passed");
     });
 
-    it("leads with a failure over anything still going", async () => {
-        await renderChecks([
-            makeRun({ id: "1", conclusion: "failure", outcome: "failure" }),
-            makeRun({ id: "2", status: "in_progress", conclusion: null, outcome: "running" }),
-            makeRun({ id: "3" }),
-        ]);
+    it("leads with a failure over anything still going", () => {
+        renderChecks({ outcome: "failure", failing: 1, running: 1, passed: 1 });
         expect(headline()).toBe("Checks: 1 failing, 1 running, 1 passed");
         expect(overall()).toBe("Failed");
     });
 
-    it("reads as running while a run is queued, before one waiting for approval", async () => {
-        await renderChecks([
-            makeRun({ id: "1", status: "queued", conclusion: null, outcome: "queued" }),
-            makeRun({ id: "2", status: "waiting", conclusion: null, outcome: "blocked" }),
-        ]);
-        expect(overall()).toBe("Running");
-    });
-
-    it("reads as waiting when a run is held for approval and nothing else is going", async () => {
-        await renderChecks([makeRun({ id: "1", status: "waiting", conclusion: null, outcome: "blocked" }), makeRun({ id: "2" })]);
+    it("reads as waiting when a run is held for approval and nothing else is going", () => {
+        renderChecks({ outcome: "blocked", waiting: 1, passed: 1 });
         expect(headline()).toBe("Checks: 1 waiting, 1 passed");
         expect(overall()).toBe("Waiting for approval");
-    });
-
-    it("reads the checks again when the core says the runs moved", async () => {
-        await renderChecks([makeRun({ status: "in_progress", conclusion: null, outcome: "running" })]);
-        expect(api.runs).toHaveBeenCalledTimes(1);
-        api.runs.mockResolvedValue({ runs: [makeRun()], total: 1, nextPage: null });
-        await act(async () => {
-            core.listsMoved();
-        });
-        expect(api.runs).toHaveBeenCalledTimes(2);
-        expect(headline()).toBe("All checks passed");
     });
 });

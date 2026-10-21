@@ -131,6 +131,7 @@ const CODEHOST_ROOTS = [
   "IssueList",
   "ReleaseList",
   "TrackedItem",
+  "OpenPull",
   "RateLimit",
   "Resolved",
   "RepoListing",

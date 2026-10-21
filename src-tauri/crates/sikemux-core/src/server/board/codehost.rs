@@ -229,6 +229,24 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
 }
 
 impl Repo {
+    /// The repository `owner/name` on the code host whose plugin is `plugin`,
+    /// reached as `account`.
+    pub(crate) fn named(
+        plugin: &str,
+        owner: &str,
+        name: &str,
+        account: Option<String>,
+    ) -> Result<Self, Failure> {
+        let id = plugin.strip_prefix("sikemux.").unwrap_or(plugin);
+        let host = host(id).map_err(|message| Failure::new(plugin, "unsupported", message))?;
+        Ok(Self {
+            host,
+            owner: owner.to_owned(),
+            name: name.to_owned(),
+            account,
+        })
+    }
+
     pub(crate) fn owner(&self) -> &str {
         &self.owner
     }

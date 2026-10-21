@@ -16,25 +16,6 @@ export function isUnfinished(thing: Pick<Run, "status" | "outcome">): boolean {
 }
 
 /** Skipped and neutral checks count as passing, the way GitHub counts them. */
-export function checksSummary(runs: readonly Pick<Run, "outcome">[]): string {
-    const tally: Record<Outcome, number> = { running: 0, queued: 0, success: 0, failure: 0, cancelled: 0, skipped: 0, blocked: 0, unknown: 0 };
-    for (const run of runs) tally[outcomeOf(run)] += 1;
-    const passed = tally.success + tally.skipped;
-    if (passed === runs.length) return "all passed";
-    const parts: [number, string][] = [
-        [tally.failure, "failing"],
-        [tally.running + tally.queued, "running"],
-        [tally.blocked, "waiting"],
-        [tally.cancelled, "cancelled"],
-        [tally.unknown, "unknown"],
-        [passed, "passed"],
-    ];
-    return parts
-        .filter(([count]) => count > 0)
-        .map(([count, word]) => `${count} ${word}`)
-        .join(", ");
-}
-
 /** A commit's runs, counted by the core, in words. */
 export function tallySummary(tally: CheckTally): string {
     if (tally.passed === tally.total) return "all passed";
@@ -53,14 +34,6 @@ export function tallySummary(tally: CheckTally): string {
 }
 
 /** One outcome for a commit's runs: any failure fails it, then anything still going keeps it running. */
-export function overallOutcome(runs: readonly Pick<Run, "outcome">[]): Outcome {
-    const outcomes = runs.map(outcomeOf);
-    if (outcomes.includes("failure")) return "failure";
-    if (outcomes.some((outcome) => outcome === "running" || outcome === "queued")) return "running";
-    if (outcomes.includes("blocked")) return "blocked";
-    return "success";
-}
-
 export const OUTCOME_LABEL: Record<Outcome, string> = {
     running: "Running",
     queued: "Queued",

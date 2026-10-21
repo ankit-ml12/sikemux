@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    CheckTally, Issue, IssueList, IssuePage, ListedPull, ListedRun, Outcome, Pull, PullCounts,
-    PullList, PullState, Release, ReleaseList, Run, RunList, RunPage, TrackedItem, TrackedKind,
+    CheckTally, Issue, IssueList, IssuePage, ListedPull, ListedRun, MergeReadiness, OpenPull,
+    Outcome, Pull, PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict,
+    Run, RunList, RunPage, TrackedItem, TrackedKind,
 };
 use tokio::task::JoinSet;
 
@@ -69,6 +70,7 @@ enum List {
     Issues { state: String, page: u32 },
     Releases,
     Tracked,
+    Pull { number: u64 },
 }
 
 impl List {
@@ -80,13 +82,31 @@ impl List {
             Self::Issues { .. } => 2,
             Self::Releases => 3,
             Self::Tracked => 4,
+            Self::Pull { .. } => 5,
         }
     }
 }
 
+/// A repository a client names outright, rather than through a project.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+pub(crate) struct Named {
+    provider: String,
+    owner: String,
+    name: String,
+    #[serde(default)]
+    account: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Place {
+    /// A project's folder, whose code host the core works out.
+    Project(String),
+    Repo(Named),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
-    project: String,
+    place: Place,
     list: List,
 }
 
@@ -109,7 +129,7 @@ struct State {
     kept: HashMap<Key, Kept>,
     /// The list of each kind each connection last asked for, which it shows
     /// until it asks for another or leaves.
-    shown: HashMap<(ClientId, String, u8), Key>,
+    shown: HashMap<(ClientId, Place, u8), Key>,
     /// By repository and commit.
     commits: HashMap<(String, String), CommitRuns>,
 }
@@ -182,18 +202,46 @@ pub(crate) async fn tracked(core: &Arc<Core>, client: ClientId, params: Releases
     answered(core, client, params.project, List::Tracked).await
 }
 
+/// A pull request of a project's code host, or of a repository named outright
+/// as the inbox does.
+#[derive(Deserialize)]
+pub(crate) struct PullParams {
+    project: Option<String>,
+    repo: Option<Named>,
+    number: u64,
+}
+
+pub(crate) async fn pull(core: &Arc<Core>, client: ClientId, params: PullParams) -> Answer {
+    let list = List::Pull {
+        number: params.number,
+    };
+    match (params.project, params.repo) {
+        (Some(project), _) => answered(core, client, project, list).await,
+        (None, Some(repo)) => answered_at(core, client, Place::Repo(repo), list).await,
+        (None, None) => Answer::Failed(Failure::new(
+            "codehost",
+            "invalid",
+            "a pull request needs its project or its repository",
+        )),
+    }
+}
+
 pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
     answered(core, client, params.project, List::Releases).await
 }
 
 async fn answered(core: &Arc<Core>, client: ClientId, project: String, list: List) -> Answer {
     let project = project_of(Path::new(&project), &core.workspaces.project_paths());
-    let key = Key { project, list };
+    answered_at(core, client, Place::Project(project), list).await
+}
+
+async fn answered_at(core: &Arc<Core>, client: ClientId, place: Place, list: List) -> Answer {
+    let key = Key { place, list };
     let kept = {
         let mut state = core.code_host_lists.state.locked();
         state
             .shown
-            .insert((client, key.project.clone(), key.list.kind()), key.clone());
+            .insert((client, key.place.clone(), key.list.kind()), key.clone());
         state.kept.get_mut(&key).and_then(|kept| {
             kept.asked = Instant::now();
             (kept.read.elapsed() < FRESH).then(|| kept.answer.clone())
@@ -290,14 +338,18 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
             continue;
         };
         if kept.answer != answer {
-            moved.insert(key.project.clone());
+            moved.insert(match &key.place {
+                Place::Project(project) => Some(project.clone()),
+                Place::Repo(_) => None,
+            });
         }
         kept.answer = answer;
         kept.repo = repo;
         kept.read = Instant::now();
     }
     for project in moved {
-        core.changes.changed(Topic::CodeHost, Some(&project), None);
+        core.changes
+            .changed(Topic::CodeHost, project.as_deref(), None);
     }
 }
 
@@ -307,12 +359,65 @@ pub(crate) fn picked(core: &Core, project: &str) {
     let forgot = {
         let mut state = core.code_host_lists.state.locked();
         let before = state.kept.len();
-        state.kept.retain(|key, _| key.project != project);
+        state
+            .kept
+            .retain(|key, _| key.place != Place::Project(project.to_owned()));
         state.kept.len() != before
     };
     if forgot {
         core.changes.changed(Topic::CodeHost, Some(project), None);
     }
+}
+
+/// What a window asks of a code host's plugin that changes the repository.
+const WRITES: &[&str] = &[
+    "addComment",
+    "cancel",
+    "createIssue",
+    "createPull",
+    "deleteRun",
+    "deleteRunLogs",
+    "dispatch",
+    "editPull",
+    "mergePull",
+    "rerun",
+    "rerunJob",
+    "reviewDeployment",
+    "reviewPull",
+    "setIssueState",
+    "setPullState",
+];
+/// A host lists a change a moment after it took it.
+const SETTLING: Duration = Duration::from_millis(1500);
+
+/// A window changed the repository `owner/name` through the plugin `plugin`,
+/// so its lists are read again at once, and again once the host has settled.
+pub(crate) fn wrote(core: &Arc<Core>, plugin: &str, method: &str, params: &Value) {
+    if !WRITES.contains(&method) {
+        return;
+    }
+    let (Some(owner), Some(name)) = (params["owner"].as_str(), params["name"].as_str()) else {
+        return;
+    };
+    let repo = format!("{plugin}:{owner}/{name}");
+    let keys: Vec<Key> = core
+        .code_host_lists
+        .state
+        .locked()
+        .kept
+        .iter()
+        .filter(|(_, kept)| kept.repo == repo)
+        .map(|(key, _)| key.clone())
+        .collect();
+    if keys.is_empty() {
+        return;
+    }
+    let core = core.clone();
+    tokio::spawn(async move {
+        refresh(&core, keys.clone()).await;
+        tokio::time::sleep(SETTLING).await;
+        refresh(&core, keys).await;
+    });
 }
 
 /// The refs of `projects` moved, as a push, pull or commit moves them, so
@@ -325,8 +430,11 @@ pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
         .kept
         .keys()
         .filter(|key| {
-            projects.contains(&key.project)
-                && matches!(key.list, List::Pulls { .. } | List::Runs(_) | List::Tracked)
+            matches!(&key.place, Place::Project(project) if projects.contains(project))
+                && matches!(
+                    key.list,
+                    List::Pulls { .. } | List::Runs(_) | List::Tracked | List::Pull { .. }
+                )
         })
         .cloned()
         .collect();
@@ -347,7 +455,11 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
         .kept
         .iter()
         .filter(|(key, kept)| {
-            kept.repo == repo && matches!(key.list, List::Pulls { .. } | List::Runs(_))
+            kept.repo == repo
+                && matches!(
+                    key.list,
+                    List::Pulls { .. } | List::Runs(_) | List::Pull { .. }
+                )
         })
         .map(|(key, _)| key.clone())
         .collect();
@@ -359,13 +471,22 @@ pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
 }
 
 async fn read(core: &Arc<Core>, key: &Key) -> Result<(Value, String), Failure> {
-    let repo = of_project(core, &key.project).await?;
+    let repo = match &key.place {
+        Place::Project(project) => of_project(core, project).await?,
+        Place::Repo(named) => Repo::named(
+            &named.provider,
+            &named.owner,
+            &named.name,
+            named.account.clone(),
+        )?,
+    };
     let answer = match &key.list {
         List::Pulls { state } => shaped(&repo, pull_list(core, &repo, state).await?),
         List::Runs(query) => shaped(&repo, run_list(&repo, query).await?),
         List::Issues { state, page } => shaped(&repo, issue_list(&repo, state, *page).await?),
         List::Releases => shaped(&repo, release_list(&repo).await?),
         List::Tracked => shaped(&repo, tracked_list(&repo).await?),
+        List::Pull { number } => shaped(&repo, open_pull(&repo, *number).await?),
     }?;
     Ok((answer, repo.key()))
 }
@@ -645,6 +766,73 @@ fn tracked_items(pulls: Vec<Pull>, issues: Vec<Issue>) -> Vec<TrackedItem> {
     items
 }
 
+async fn open_pull(repo: &Repo, number: u64) -> Result<OpenPull, Failure> {
+    let (pull, reviews) = tokio::join!(
+        repo.call("pull", json!({ "number": number })),
+        repo.call("pullReviews", json!({ "number": number })),
+    );
+    let pull: Pull = typed(repo, pull?)?;
+    let reviews: Vec<Review> = reviews
+        .ok()
+        .and_then(|found| serde_json::from_value(found).ok())
+        .unwrap_or_default();
+    let runs: Vec<Run> = match &pull.head_sha {
+        Some(sha) => repo
+            .call("runs", json!({ "headSha": sha, "perPage": 30 }))
+            .await
+            .ok()
+            .and_then(|found| serde_json::from_value::<RunPage>(found).ok())
+            .map(|page| page.runs)
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    Ok(OpenPull {
+        state: state_of(&pull),
+        closes: closes(&pull.body),
+        own_branch: own_branch(&pull, repo.owner()),
+        verdict: verdict(&reviews),
+        reviewed: !reviews.is_empty(),
+        merge: readiness(pull.merge_state.as_deref()),
+        checks: (!runs.is_empty()).then(|| tally(&runs)),
+        runs: runs
+            .into_iter()
+            .map(|run| ListedRun {
+                unfinished: unfinished(&run),
+                run,
+            })
+            .collect(),
+        pull,
+    })
+}
+
+/// Only a person's latest review counts, which is how GitHub scores it too.
+fn verdict(reviews: &[Review]) -> Option<ReviewVerdict> {
+    let mut latest: HashMap<&str, &str> = HashMap::new();
+    for review in reviews {
+        if review.state == "COMMENTED" || review.state == "DISMISSED" {
+            continue;
+        }
+        latest.insert(review.author.as_deref().unwrap_or_default(), &review.state);
+    }
+    if latest.values().any(|state| *state == "CHANGES_REQUESTED") {
+        Some(ReviewVerdict::ChangesRequested)
+    } else if latest.values().any(|state| *state == "APPROVED") {
+        Some(ReviewVerdict::Approved)
+    } else {
+        None
+    }
+}
+
+fn readiness(merge_state: Option<&str>) -> MergeReadiness {
+    match merge_state {
+        Some("dirty") => MergeReadiness::Conflicts,
+        Some("blocked") => MergeReadiness::Blocked,
+        Some("behind") => MergeReadiness::Behind,
+        Some("clean" | "unstable" | "has_hooks") => MergeReadiness::Ready,
+        _ => MergeReadiness::Checking,
+    }
+}
+
 async fn release_list(repo: &Repo) -> Result<ReleaseList, Failure> {
     let releases: Vec<Release> = typed(repo, repo.call("releases", json!({})).await?)?;
     let latest = releases
@@ -720,6 +908,35 @@ mod tests {
         );
     }
 
+    fn review(author: &str, state: &str) -> Review {
+        serde_json::from_value(json!({
+            "author": author, "avatarUrl": null, "state": state, "body": "", "submittedAt": null
+        }))
+        .expect("a review")
+    }
+
+    #[test]
+    fn only_each_persons_latest_review_counts_and_changes_outweigh_an_approval() {
+        assert_eq!(verdict(&[]), None);
+        assert_eq!(verdict(&[review("a", "COMMENTED")]), None);
+        assert_eq!(
+            verdict(&[review("a", "APPROVED")]),
+            Some(ReviewVerdict::Approved)
+        );
+        assert_eq!(
+            verdict(&[review("a", "APPROVED"), review("b", "CHANGES_REQUESTED")]),
+            Some(ReviewVerdict::ChangesRequested)
+        );
+        assert_eq!(
+            verdict(&[review("a", "CHANGES_REQUESTED"), review("a", "APPROVED")]),
+            Some(ReviewVerdict::Approved)
+        );
+        assert_eq!(
+            verdict(&[review("a", "APPROVED"), review("b", "DISMISSED")]),
+            Some(ReviewVerdict::Approved)
+        );
+    }
+
     #[test]
     fn a_commit_fails_on_any_failure_and_runs_while_anything_goes() {
         let failing = tally(&[
@@ -738,6 +955,14 @@ mod tests {
         assert_eq!(
             tally(&[run(Outcome::Success), run(Outcome::Queued)]).outcome,
             Outcome::Queued
+        );
+        assert_eq!(
+            tally(&[run(Outcome::Queued), run(Outcome::Blocked)]).outcome,
+            Outcome::Queued
+        );
+        assert_eq!(
+            tally(&[run(Outcome::Blocked), run(Outcome::Success)]).outcome,
+            Outcome::Blocked
         );
         let passed = tally(&[run(Outcome::Success), run(Outcome::Skipped)]);
         assert_eq!((passed.outcome, passed.passed), (Outcome::Success, 2));

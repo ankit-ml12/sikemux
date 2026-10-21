@@ -7,11 +7,9 @@ import {
     type ChangedFile,
     type Issue,
     type Notification,
-    type Pull,
     type PullCommit,
     type CommitAuthor,
     type TimelineItem,
-    type Review,
     type Artifact,
     type PendingApproval,
     type JobLog,
@@ -147,12 +145,6 @@ export const runAttemptR = resource({
     staleAfterMs: 5 * 60_000,
 });
 
-export const pullR = resource({
-    kind: "host.pull",
-    fetch: (repo: RepoRef, number: number): Promise<Pull> => hostApi(repo.provider).pull(repo, number),
-    staleAfterMs: 30_000,
-});
-
 export const pullFilesR = resource({
     kind: "host.pullFiles",
     fetch: (repo: RepoRef, number: number): Promise<ChangedFile[]> => hostApi(repo.provider).pullFiles(repo, number),
@@ -176,12 +168,6 @@ export const commitAuthorsR = resource({
     fetch: (repo: RepoRef, gitRef: string | null): Promise<CommitAuthor[]> =>
         hostApi(repo.provider).commitAuthors?.(repo, gitRef) ?? Promise.resolve([]),
     staleAfterMs: 10 * 60_000,
-});
-
-export const pullReviewsR = resource({
-    kind: "host.pullReviews",
-    fetch: (repo: RepoRef, number: number): Promise<Review[]> => hostApi(repo.provider).pullReviews(repo, number),
-    staleAfterMs: 60_000,
 });
 
 export const issueR = resource({

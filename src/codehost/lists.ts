@@ -4,7 +4,7 @@ import type { PluginFailure } from "../api/plugins";
 import { isSignedOutFailure } from "../plugin-api/backend";
 import { resourceKind } from "../plugin-api/identity";
 import { invalidate, resource } from "../state/resources";
-import type { IssueList, PullList, ReleaseList, RunList, TrackedItem } from "./types";
+import type { IssueList, OpenPull, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
 
 type Answer<T> = { value: T } | { failed: PluginFailure & { plugin: string } };
 
@@ -18,7 +18,7 @@ async function list<T>(method: string, params: Record<string, unknown>): Promise
     throw failed;
 }
 
-const LISTS = new Set(["host.pullList", "host.runList", "host.issueList", "host.releaseList", "host.trackedList"]);
+const LISTS = new Set(["host.pullList", "host.runList", "host.issueList", "host.releaseList", "host.trackedList", "host.pullView"]);
 let following = false;
 
 /** The core says when lists moved, so they are read again then and at no other time; it answers the unchanged ones from what it keeps. */
@@ -61,4 +61,11 @@ export const releaseListR = resource({
 export const trackedListR = resource({
     kind: "host.trackedList",
     fetch: (project: string): Promise<TrackedItem[]> => list("codeHostTracked", { project }),
+});
+
+/** One pull request, with its reviews' verdict, whether it can merge, and the runs on its head commit: of the project's code host, or of `repo` when no project holds it. */
+export const pullViewR = resource({
+    kind: "host.pullView",
+    fetch: (project: string | null, repo: RepoRef, number: number): Promise<OpenPull> =>
+        list("codeHostPull", project ? { project, number } : { repo, number }),
 });

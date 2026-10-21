@@ -616,6 +616,49 @@ pub struct IssueList {
     pub counts: Option<PullCounts>,
 }
 
+/// One pull request as its page shows it, with what the core works out from
+/// it and its reviews.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenPull {
+    pub pull: Pull,
+    pub state: PullState,
+    pub closes: Vec<u64>,
+    pub own_branch: bool,
+    /// What its reviewers' latest reviews come to, once one approved or asked
+    /// for changes.
+    pub verdict: Option<ReviewVerdict>,
+    /// Somebody reviewed it at all.
+    pub reviewed: bool,
+    /// Whether it can merge, from what the host said of its merge state.
+    pub merge: MergeReadiness,
+    /// How the runs on its head commit stand, once any have run.
+    pub checks: Option<CheckTally>,
+    /// The runs on its head commit.
+    pub runs: Vec<ListedRun>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ReviewVerdict {
+    Approved,
+    ChangesRequested,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeReadiness {
+    Ready,
+    /// It conflicts with its base.
+    Conflicts,
+    /// Waiting on required reviews or checks.
+    Blocked,
+    /// Its branch is behind its base.
+    Behind,
+    /// The host has not worked it out yet.
+    Checking,
+}
+
 /// An open issue or pull request a message can be about.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

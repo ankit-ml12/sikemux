@@ -208,6 +208,34 @@ export interface TrackedItem {
 
 export type TrackedKind = "issue" | "pull";
 
+/**
+ * One pull request as its page shows it, with what the core works out from
+ * it and its reviews.
+ */
+export interface OpenPull {
+    pull: Pull;
+    state: PullState;
+    closes: number[];
+    ownBranch: boolean;
+    /**
+     * What its reviewers' latest reviews come to, once one approved or asked
+     * for changes.
+     */
+    verdict: ReviewVerdict | null;
+    /** Somebody reviewed it at all. */
+    reviewed: boolean;
+    /** Whether it can merge, from what the host said of its merge state. */
+    merge: MergeReadiness;
+    /** How the runs on its head commit stand, once any have run. */
+    checks: CheckTally | null;
+    /** The runs on its head commit. */
+    runs: ListedRun[];
+}
+
+export type ReviewVerdict = "approved" | "changesRequested";
+
+export type MergeReadiness = "ready" | "conflicts" | "blocked" | "behind" | "checking";
+
 export interface RateLimit {
     /** Whether requests are being held back until `resets_at`. */
     limited: boolean;

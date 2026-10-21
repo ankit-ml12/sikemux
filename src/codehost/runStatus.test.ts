@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elapsedMs, checksSummary, isUnfinished, watchIsNewer, type Outcome } from "./runStatus";
+import { elapsedMs, isUnfinished, watchIsNewer } from "./runStatus";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 
@@ -10,19 +10,6 @@ describe("isUnfinished", () => {
         expect(isUnfinished({ status: "waiting", outcome: "blocked" })).toBe(true);
         expect(isUnfinished({ status: "completed", outcome: "success" })).toBe(false);
         expect(isUnfinished({ status: "completed", outcome: "blocked" })).toBe(false);
-    });
-});
-
-describe("checksSummary", () => {
-    const done = (outcome: Outcome) => ({ outcome });
-
-    it("only says all passed when every check succeeded, counting skipped as passing", () => {
-        expect(checksSummary([done("success"), done("skipped"), done("skipped")])).toBe("all passed");
-    });
-
-    it("names what did not pass instead of calling it a pass", () => {
-        expect(checksSummary([done("success"), done("cancelled")])).toBe("1 cancelled, 1 passed");
-        expect(checksSummary([done("failure"), done("running"), done("blocked")])).toBe("1 failing, 1 running, 1 waiting");
     });
 });
 

@@ -47,7 +47,16 @@ export function InHost({ host, children }: { host: CodeHost; children: ReactNode
 }
 
 /* The test host's reads the stand-in core lists from, each the plugin method the core asks. */
-type Reads = Partial<Record<"pulls" | "runs" | "issues" | "releases", (...args: never[]) => Promise<unknown>>>;
+type Reads = Partial<Record<"pulls" | "pull" | "runs" | "issues" | "releases", (...args: never[]) => Promise<unknown>>>;
+
+const READINESS: Record<string, string> = {
+    dirty: "conflicts",
+    blocked: "blocked",
+    behind: "behind",
+    clean: "ready",
+    unstable: "ready",
+    has_hooks: "ready",
+};
 
 /** A pull request as the core lists it, with checks a test gives it by number. */
 function listed(pull: Pull, checks: (pull: Pull) => CheckTally | null) {
@@ -70,6 +79,18 @@ async function listFrom(reads: Reads, method: string, params: Record<string, unk
         };
     }
     if (method === "codeHostIssues") return { ...((await read("issues", repo, query.state, query.page)) as object), counts: null };
+    if (method === "codeHostPull") {
+        const pull = (await read("pull", repo, query.number)) as Pull;
+        const runs = pull.headSha && reads.runs ? ((await read("runs", { ...repo, headSha: pull.headSha })) as { runs: Run[] }).runs : [];
+        return {
+            ...listed(pull, checks),
+            ownBranch: true,
+            verdict: null,
+            reviewed: false,
+            merge: READINESS[pull.mergeState ?? ""] ?? "checking",
+            runs: runs.map((run) => ({ run, unfinished: run.status !== "completed" })),
+        };
+    }
     if (method === "codeHostReleases") {
         const releases = (await read("releases", repo)) as Release[];
         return { releases, latest: releases.find((release) => !release.draft && !release.prerelease)?.id ?? null };

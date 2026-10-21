@@ -134,9 +134,12 @@ pub(crate) struct WindowCall {
 /// plugin offers agents, so they are told to list their tools again.
 pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
     let outcome = match plugins(&call.plugin) {
-        Ok(plugins) => plugins.call(&call.plugin, &call.method, call.params).await,
+        Ok(plugins) => plugins.call(&call.plugin, &call.method, call.params.clone()).await,
         Err(failure) => Err(failure),
     };
+    if let (true, Some(core)) = (outcome.is_ok(), core.arc()) {
+        super::codehost::wrote(&core, &call.plugin, &call.method, &call.params);
+    }
     tell_agents_if_theirs(core, &call.plugin);
     sign_in_moved(core, &call.method);
     match outcome {
