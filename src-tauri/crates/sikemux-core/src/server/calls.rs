@@ -406,6 +406,11 @@ calls! { core, client, params;
     },
     "plugin": Person => answer(plugins::window_call(&core, parse(params)?).await),
     "pluginManifests": Person => answer(plugins::manifests()),
+    "pluginView": Watch => answer(super::plugin_views::view(&core, client.id, parse(params)?).await),
+    "pluginViewsRead": Watch => {
+        super::plugin_views::read_again(&core, parse(params)?);
+        answer(())
+    },
     "plugins": Watch => answer(plugins::listed().await),
     "pluginSetDisabled": Person => {
         plugins::set_disabled(&core, parse(params)?);

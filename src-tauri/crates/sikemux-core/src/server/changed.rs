@@ -54,6 +54,8 @@ pub(crate) enum Topic {
     Preferences,
     /// A project's pull requests, runs, issues or releases on its code host.
     CodeHost,
+    /// What a plugin's pane shows; `paths` names each view as `plugin/method`.
+    PluginView,
 }
 
 /// Paths by topic and project; none means anything may have changed.

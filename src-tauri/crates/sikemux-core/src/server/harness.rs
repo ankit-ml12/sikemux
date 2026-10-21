@@ -600,7 +600,15 @@ async fn dispatch(
         }
         PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
         "plugins.tools" => super::plugins::agent_tools(&request.project).await,
-        "plugins.call" => super::plugins::call_agent_tool(&request.params).await,
+        "plugins.call" => {
+            let answer = super::plugins::call_agent_tool(&request.params).await;
+            if let (Ok(_), Some(core), Some(tool)) =
+                (&answer, core.arc(), request.params["tool"].as_str())
+            {
+                super::plugin_views::tool_ran(&core, tool);
+            }
+            answer
+        }
         "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,

@@ -143,9 +143,10 @@ pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
     };
     if let (true, Some(core)) = (outcome.is_ok(), core.arc()) {
         super::codehost::wrote(&core, &call.plugin, &call.method, &call.params);
+        super::plugin_views::wrote(&core, &call.plugin, &call.method);
     }
     tell_agents_if_theirs(core, &call.plugin);
-    sign_in_moved(core, &call.method);
+    sign_in_moved(core, &call.plugin, &call.method);
     match outcome {
         Ok(value) => Outcome::Value(value),
         Err(failure) => Outcome::Failed(failure),
@@ -273,12 +274,13 @@ pub(crate) async fn listed() -> Vec<Listed> {
 
 /// A plugin's call may have signed it in or out, or picked another account,
 /// so clients read the plugins again.
-pub(crate) fn sign_in_moved(core: &Core, method: &str) {
+pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
     if method.starts_with("signIn")
         || method.starts_with("signOut")
         || method == "setDefaultAccount"
     {
         core.changes.changed(Topic::Plugins, None, None);
+        super::plugin_views::signed(core, plugin);
     }
 }
 
@@ -328,7 +330,7 @@ pub(crate) fn stream(
             Err(failure) => stream.fail(serde_json::to_value(failure).unwrap_or_default()),
         }
         tell_agents_if_theirs(&core, &plugin);
-        sign_in_moved(&core, &method);
+        sign_in_moved(&core, &plugin, &method);
     });
     Ok(json!({ "stream": id }))
 }

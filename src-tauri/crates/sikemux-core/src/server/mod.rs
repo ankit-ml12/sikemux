@@ -45,6 +45,7 @@ mod model_providers;
 mod names;
 mod network_watch;
 mod notify;
+mod plugin_views;
 pub mod plugins;
 mod ports;
 mod preferences;
@@ -367,6 +368,8 @@ pub(crate) struct Core {
     pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
     /// The code-host lists clients look at, kept and read again while they do.
     pub(crate) code_host_lists: codehost::Lists,
+    /// The plugin views panes look at, kept and read again while they do.
+    pub(crate) plugin_views: plugin_views::Views,
     pub(crate) usage: agent_accounts::UsageWatch,
     pub(crate) layouts: layout::Layouts,
     /// Who this host is signed in to Sikemux as.
@@ -465,6 +468,7 @@ impl Core {
             git_chips: Default::default(),
             code_hosts: Default::default(),
             code_host_lists: Default::default(),
+            plugin_views: Default::default(),
             usage: Default::default(),
             layouts: layout::Layouts::new(data_dir),
             account: Default::default(),
