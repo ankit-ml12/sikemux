@@ -36,7 +36,7 @@ import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
-import { NewOnHost, remoteChatRows, useRemoteCopies } from "./RemoteRows";
+import { NewOnHost, remoteChatRows, useHostProject } from "./RemoteRows";
 import { hostName } from "../hosts/hosts";
 import { HostTerminals } from "./HostLists";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
@@ -107,7 +107,7 @@ export function TabRailBody() {
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
-    const copies = useRemoteCopies(session?.kind === "project" ? session : undefined);
+    const place = useHostProject(session?.kind === "project" ? session : undefined);
     const pinnedChats = useStore((s) => s.pinnedChats);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
@@ -389,7 +389,7 @@ export function TabRailBody() {
 
     const remoteChats = remoteChatRows({
         sessionId: session.id,
-        copies: copies.filter((copy) => copy.host.id === remoteHost),
+        place: place?.host.id === remoteHost ? place : undefined,
         open: new Set([...Object.keys(agentsById), ...workers.map((worker) => worker.agentId)]),
     });
     const noRecents = recent.chats.length === 0 && recent.status !== "loading";

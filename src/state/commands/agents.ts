@@ -23,7 +23,7 @@ import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
-import { bringForward, chooseHost, hostOf, hostTitle, newWorkHost, projectCopyOn, startRemoteChat, type HostChoice } from "../../hosts/hosts";
+import { bringForward, hostTitle, newWorkHost, projectOnHost, startRemoteChat, type HostChoice } from "../../hosts/hosts";
 
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
@@ -123,12 +123,12 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
         return false;
     }
     if (here.host) {
-        const place = projectCopyOn(st, here.host, target);
+        const place = projectOnHost(st, here.host, target);
         if (!place) {
             notify("info", `${hostTitle(st, here)} has no project open in this app yet`);
             return false;
         }
-        void startRemoteChat(place.session.id, place.copy, type).catch(swallow(`start a chat on ${place.copy.host.name}`));
+        void startRemoteChat(place.session.id, place.project, type).catch(swallow(`start a chat on ${place.project.host.name}`));
         return true;
     }
     const home =
@@ -439,7 +439,6 @@ export function revealAgent(id: string): void {
     const sessionId = windowId ? ownerSessionId(state, windowId) : null;
     if (!sessionId) return;
     if (sessionId !== state.activeSessionId) selectSession(sessionId);
-    chooseHost(hostOf(state.agents[id]?.host));
     selectAgent(id);
 }
 

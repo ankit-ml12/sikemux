@@ -11,18 +11,17 @@ import { TabRow, useTabMenu } from "./TabRow";
 import { RailEmpty } from "./RailEmpty";
 import { RemoteChatRow, RemoteTerminalRow } from "./RemoteRows";
 
-export type Place = Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "projectIdentities" | "windowsBySession" | "windows">;
+export type Place = Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "windowsBySession" | "windows">;
 
 export function usePlace(): Place {
     const hostViews = useStore((s) => s.hostViews);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
-    const projectIdentities = useStore((s) => s.projectIdentities);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windows = useStore((s) => s.windows);
     return useMemo(
-        () => ({ hostViews, sessionOrder, sessions, projectIdentities, windowsBySession, windows }),
-        [hostViews, sessionOrder, sessions, projectIdentities, windowsBySession, windows],
+        () => ({ hostViews, sessionOrder, sessions, windowsBySession, windows }),
+        [hostViews, sessionOrder, sessions, windowsBySession, windows],
     );
 }
 

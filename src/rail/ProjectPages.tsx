@@ -14,7 +14,7 @@ import { FileTree } from "./FileTree";
 import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
-import { NewOnHost, remoteTerminalRows, useRemoteCopies } from "./RemoteRows";
+import { NewOnHost, remoteTerminalRows, useHostProject } from "./RemoteRows";
 import { ScopeTabs } from "./ScopeTabs";
 import { HostTerminals } from "./HostLists";
 import { TabRow, useTabMenu } from "./TabRow";
@@ -62,7 +62,7 @@ export function TerminalsPage() {
     const titles = useStore((s) => s.terminalTitles);
     const closeShortcut = useShortcutLabel("pane.close");
     const menu = useTabMenu();
-    const copies = useRemoteCopies(session);
+    const place = useHostProject(session);
 
     if (!session) {
         return (
@@ -80,7 +80,7 @@ export function TerminalsPage() {
     });
     const remoteTerminals = remoteTerminalRows({
         sessionId: session.id,
-        copies: copies.filter((copy) => copy.host.id === remoteHost),
+        place: place?.host.id === remoteHost ? place : undefined,
         open: new Set(tabs.flatMap(({ home }) => home.ptyId ?? [])),
     });
 

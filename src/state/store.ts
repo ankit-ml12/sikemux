@@ -238,12 +238,12 @@ export interface ViewState {
     hosts: readonly import("../hosts/hosts").HostEntry[];
     /** What each of those hosts last showed this app, by its id. */
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
-    /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
-    projectIdentities: Readonly<Record<string, string>>;
     /** What asking each SSH host found, by its alias, for those that run Sikemux. */
     sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
     /** The host chosen under Hosts, beside the chosen project: where the tab rail looks and new work starts. */
     chosenHost: import("../hosts/hosts").HostChoice;
+    /** The session last in front on each host, which choosing that host again puts back. */
+    lastOnHost: Readonly<Record<string, string>>;
 
     pendingUpdate: PendingUpdate | null;
     /** The chats a waiting update waits on before it installs. */
@@ -388,8 +388,8 @@ export const useStore = create<StoreState>(() => {
         lastSessionId: null,
         hosts: [],
         hostViews: {},
-        projectIdentities: {},
         chosenHost: { kind: "core" },
+        lastOnHost: {},
         sshProbes: {},
         pendingUpdate: null,
         updateBlockers: [],

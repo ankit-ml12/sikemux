@@ -35,12 +35,16 @@ export function TopBarPlace() {
     const chosen = useStore((s) => s.chosenHost);
     const hosts = useStore((s) => s.hosts);
     const sshAliases = useStore(
-        useShallow((s) => [
-            ...new Set(s.sessionOrder.flatMap((id) => (s.sessions[id]?.kind === "ssh" ? [s.sessions[id].name] : []))),
-        ]),
+        useShallow((s) => [...new Set(s.sessionOrder.flatMap((id) => (s.sessions[id]?.kind === "ssh" ? [s.sessions[id].name] : [])))]),
     );
     const projects = useStore(
-        useShallow((s) => s.sessionOrder.flatMap((id) => (s.sessions[id]?.kind === "project" ? [`${id}\n${s.sessions[id].name}`] : []))),
+        useShallow((s) =>
+            s.sessionOrder.flatMap((id) => {
+                const session = s.sessions[id];
+                const onHost = session?.kind === "project" && s.chosenHost.kind === "core" && session.host === s.chosenHost.host;
+                return onHost ? [`${id}\n${session.name}`] : [];
+            }),
+        ),
     );
     const activeId = useStore((s) => s.activeSessionId);
 
@@ -48,7 +52,11 @@ export function TopBarPlace() {
         const installed = new Set(hosts.flatMap((host) => host.ssh ?? []));
         return [
             { value: keyOf(THIS_HOST), label: "This host", icon: hostMark(THIS_HOST) },
-            ...hosts.map((host) => ({ value: keyOf({ kind: "core", host: host.id }), label: host.name, icon: hostMark({ kind: "core", host: host.id }) })),
+            ...hosts.map((host) => ({
+                value: keyOf({ kind: "core", host: host.id }),
+                label: host.name,
+                icon: hostMark({ kind: "core", host: host.id }),
+            })),
             ...sshAliases
                 .filter((alias) => !installed.has(alias))
                 .map((alias) => ({ value: keyOf({ kind: "ssh", alias }), label: alias, icon: hostMark({ kind: "ssh", alias }) })),

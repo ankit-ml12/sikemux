@@ -109,15 +109,6 @@
     font-size: var(--text-2xs);
     font-weight: var(--weight-normal);
 }
-/* Where a chat, terminal or project runs when that is another host: as quiet as an agent's name. */
-.agent-row-host {
-    flex: none;
-    margin-left: var(--space-2);
-    color: var(--text-tertiary);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-normal);
-    white-space: nowrap;
-}
 /* Which host the new rows start on, above them, only when it is not this one. */
 .agent-actions-host {
     padding: var(--space-1) var(--space-2) var(--space-0);

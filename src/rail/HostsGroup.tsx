@@ -6,7 +6,7 @@ import {
     chooseHost,
     installHere,
     openHostTerminal,
-    projectCopyOn,
+    projectOnHost,
     sameHost,
     THIS_HOST,
     signInHere,
@@ -164,13 +164,13 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
     const load = useHostLoad(host.id, connected);
     const chat = () => {
         const state = getState();
-        const place = projectCopyOn(state, host.id, state.sessions[state.activeSessionId]);
+        const place = projectOnHost(state, host.id, state.sessions[state.activeSessionId]);
         if (!place) return;
-        void startRemoteChat(place.session.id, place.copy, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
+        void startRemoteChat(place.session.id, place.project, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
     };
     const files = () => {
         const state = getState();
-        const place = projectCopyOn(state, host.id, state.sessions[state.activeSessionId]);
+        const place = projectOnHost(state, host.id, state.sessions[state.activeSessionId]);
         if (!place) return;
         cmd.selectSession(place.session.id);
         cmd.setTabRailPage("files");
@@ -188,7 +188,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         });
         if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
     };
-    const hasProject = useStore((s) => !!projectCopyOn(s, host.id, undefined));
+    const hasProject = useStore((s) => !!projectOnHost(s, host.id, undefined));
     const account = useStore((s) => (host.ssh ? s.sshProbes[host.ssh]?.account : undefined));
     const off = account === "signedOut" || account === "other" ? OFF_ACCOUNT[account] : null;
     const { busy, signIn } = useOverSsh(host.ssh);

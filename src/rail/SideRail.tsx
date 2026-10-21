@@ -50,7 +50,6 @@ import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
-import { HostLabel } from "./RemoteRows";
 import { HostRows } from "./HostsGroup";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
@@ -294,7 +293,6 @@ const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
                                 <IconFolder size={LINE_ICON_SIZE} />
                             </span>
                             <span className="proj-name">{s.name}</span>
-                            <HostLabel host={s.host} />
                             {agentBadge}
                         </button>
                     </Tooltip>
@@ -380,7 +378,6 @@ const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
-                        <HostLabel host={s.host} />
                         {agentBadge}
                     </button>
                 </Tooltip>
@@ -585,11 +582,13 @@ export const SideRail = memo(function SideRail() {
         event.preventDefault();
         setMenu({ x: event.clientX, y: event.clientY, items });
     };
-    const allProjects = inGroup("project");
+    const chosenHost = useStore((s) => s.chosenHost);
+    // Each host has its own projects (ADR 0019); an SSH host without Sikemux has none.
+    const allProjects = inGroup("project").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
     const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
-    const commands = inGroup("command").filter((session) => !session.host);
+    const commands = inGroup("command").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const plugins = inGroup("plugins");
     const enabledPlugins = useInstalledPlugins();
     // Every enabled plugin always has a row; its session is only made on the first click.
