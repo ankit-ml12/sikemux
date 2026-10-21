@@ -7,6 +7,7 @@ description = "The desktop UI on GPUI, a client of the core"
 
 # Its own workspace, so GPUI stays out of the app's lockfile and workspace-hack.
 [workspace]
+members = ["crates/*"]
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -43,6 +44,8 @@ opt-level = 3
 [profile.release.package.gpui-pre-macos]
 opt-level = 3
 [profile.release.package.taffy]
+opt-level = 3
+[profile.release.package.gpui-transcript]
 opt-level = 3
 
 # GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.

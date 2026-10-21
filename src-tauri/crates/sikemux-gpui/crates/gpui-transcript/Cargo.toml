@@ -1,0 +1,19 @@
+[package]
+name = "gpui-transcript"
+version = "0.1.0"
+edition = "2021"
+description = "A streaming chat view for GPUI: rows by stable id, markdown patched block by block, a windowed list anchored to the bottom"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["gpui", "chat", "markdown", "streaming"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+serde_json = "1"
+
+[dev-dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["font-kit", "test-support", "bench-support"] }
+libc = "0.2"
