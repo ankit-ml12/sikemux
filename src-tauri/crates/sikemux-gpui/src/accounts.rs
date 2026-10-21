@@ -127,11 +127,39 @@ fn fetch(bench: &Workbench, cx: &mut Context<Workbench>) {
 
 /// Keeps the accounts as the core answered them after a change.
 fn adopt(bench: &mut Workbench, book: Value, cx: &mut Context<Workbench>) {
-    if let Ok(book) = serde_json::from_value::<Book>(book) {
-        bench.accounts.book = Some(book);
-    }
+    let mut book = serde_json::from_value::<Book>(book).unwrap_or_default();
+    with_built_ins(bench, &mut book);
+    bench.accounts.book = Some(book);
     ask_statuses(bench, cx);
     redraw(bench, cx);
+}
+
+/// Puts first the account each agent starts with, where the core has none for it yet:
+/// it keeps only what the person changed.
+fn with_built_ins(bench: &Workbench, book: &mut Book) {
+    let kinds = bench
+        .read("catalog")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let built_ins: Vec<Profile> = kinds
+        .iter()
+        .filter(|kind| kind["accounts"] == true)
+        .filter_map(|kind| {
+            let provider = kind["type"].as_str()?;
+            let id = format!("builtin-{provider}");
+            (!book.profiles.iter().any(|profile| profile.id == id)).then(|| Profile {
+                id,
+                name: kind["label"].as_str().unwrap_or(provider).to_owned(),
+                provider: provider.to_owned(),
+                accent: kind["brand"].as_str().unwrap_or_default().to_owned(),
+                executable_path: None,
+                config_path: None,
+                environment_keys: Vec::new(),
+            })
+        })
+        .collect();
+    book.profiles.splice(0..0, built_ins);
 }
 
 /// Changes the accounts in the core with `method`, then keeps what it answers.

@@ -112,5 +112,6 @@ pub fn render(
     sections.push(sessions::render(bench, &fields.sessions, lit, this, cx));
     sections.extend(device::render(bench, &fields.device, lit, this, cx));
     sections.extend(accounts::dialog(bench, this, cx));
+    sections.extend(setup::sheet(bench, &fields.setup, this, window, cx));
     sections
 }

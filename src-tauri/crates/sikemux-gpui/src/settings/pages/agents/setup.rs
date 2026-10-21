@@ -1,14 +1,20 @@
-//! Every agent Sikemux can run, with what it needs next: nothing, an install, or a sign-in.
+//! Every agent Sikemux can run, with what it needs next: nothing, an install, or a
+//! sign-in. Installs and sign-ins run the agent's own command in a sheet where the
+//! person can watch it.
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
+    anchored, deferred, div, point, px, AnchoredPositionMode, AnyElement, Context, Entity, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::agent_accounts::status::AgentStatus;
+use sikemux_wire::protocol::{SessionId, TerminalSpawn};
+use tokio::sync::oneshot;
 
-use crate::core;
+use crate::core::{self, Ask, TerminalAsk};
 use crate::settings::rows;
+use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -18,13 +24,59 @@ pub struct Found {
     label: String,
     about: String,
     install: Option<String>,
+    login: Option<Vec<String>>,
+    /// Where its program is, once found.
+    program: Option<String>,
     featured: bool,
     status: AgentStatus,
+}
+
+/// How far the sheet's command got.
+#[derive(Clone)]
+enum Phase {
+    Running,
+    Checking,
+    Done(Option<AgentStatus>),
+    Failed(Option<u32>),
+    /// The terminal would not start.
+    Refused(String),
+}
+
+/// An install or sign-in running where the person can watch it.
+#[derive(Clone)]
+pub struct Sheet {
+    install: bool,
+    kind: String,
+    label: String,
+    shown: String,
+    /// What the shell runs; it exits with the command's code.
+    command: String,
+    session: Option<SessionId>,
+    phase: Phase,
 }
 
 #[derive(Default)]
 pub struct Setup {
     found: Option<Vec<Found>>,
+    sheet: Option<Sheet>,
+}
+
+fn setup_of(bench: &mut Workbench) -> Option<&mut Setup> {
+    Some(&mut super::fields_of(bench)?.setup)
+}
+
+/// What the agent `kind` finds itself to be, on the account it runs on now.
+async fn availability(
+    asks: &tokio::sync::mpsc::UnboundedSender<Ask>,
+    kind: &str,
+    config: Option<String>,
+) -> (AgentStatus, Option<String>) {
+    let asked = json!({ "provider": kind, "configPath": config });
+    let answer = core::request(asks, "agentAvailability", asked)
+        .await
+        .unwrap_or_default();
+    let status = serde_json::from_value(answer["status"].clone()).unwrap_or(AgentStatus::Missing);
+    (status, answer["program"].as_str().map(str::to_owned))
 }
 
 /// Asks the core, for every agent it knows, whether it is installed and signed in.
@@ -49,36 +101,37 @@ pub fn read(bench: &Workbench, cx: &mut Context<Workbench>) {
         let mut found = Vec::new();
         for (kind, config) in kinds.iter().zip(accounts) {
             let provider = kind["type"].as_str().unwrap_or_default().to_owned();
-            let asked = json!({ "provider": provider, "configPath": config });
-            let status = core::request(&asks, "agentAvailability", asked)
-                .await
-                .ok()
-                .and_then(|answer| serde_json::from_value(answer["status"].clone()).ok())
-                .unwrap_or(AgentStatus::Missing);
-            let installable = kind["install"].as_str().is_some();
-            if matches!(status, AgentStatus::Missing) && !installable {
+            let (status, program) = availability(&asks, &provider, config).await;
+            let install = kind["install"].as_str().map(str::to_owned);
+            if matches!(status, AgentStatus::Missing) && install.is_none() {
                 continue;
             }
             found.push(Found {
                 kind: provider,
                 label: kind["label"].as_str().unwrap_or_default().to_owned(),
                 about: kind["about"].as_str().unwrap_or_default().to_owned(),
-                install: kind["install"].as_str().map(str::to_owned),
+                install,
+                login: kind["login"].as_array().map(|args| {
+                    args.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }),
+                program,
                 featured: kind["featured"].as_bool() == Some(true),
                 status,
             });
         }
-        let order = |found: &Found| {
+        found.sort_by_key(|found| {
             let ready = !matches!(
                 found.status,
                 AgentStatus::Missing | AgentStatus::Broken { .. } | AgentStatus::SignedOut
             );
             (!ready, !found.featured)
-        };
-        found.sort_by_key(order);
+        });
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(fields) = super::fields_of(bench) {
-                fields.setup.found = Some(found);
+            if let Some(setup) = setup_of(bench) {
+                setup.found = Some(found);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -100,39 +153,338 @@ fn status_label(status: &AgentStatus) -> &'static str {
     }
 }
 
-/// Runs the agent's own installer in a terminal of the project in front, where the
-/// person can watch it, then shows that terminal.
-fn install(
-    bench: &mut Workbench,
-    command: String,
-    window: &mut gpui_kit::Window,
-    cx: &mut Context<Workbench>,
-) {
-    let Some(project) = bench.project().map(|project| project.id.clone()) else {
-        return;
+/// The folder an account keeps its sign-in in: the path itself, or the folder of the
+/// config file it names.
+fn account_folder(path: &str) -> String {
+    let home = sikemux_process::paths::home()
+        .map(|home| home.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let path = match path.trim().strip_prefix("~/") {
+        Some(rest) => format!("{home}/{rest}"),
+        None => path.trim().to_owned(),
     };
-    let asks = bench.asks.clone();
-    cx.spawn(async move |_, _| {
-        let Ok(id) = core::request(&asks, "newTerminal", json!({ "project": project })).await
-        else {
-            return;
-        };
-        let typed = json!({ "id": id, "draft": format!("{command}\r") });
-        let _ = core::request(&asks, "typeWhenReady", typed).await;
-    })
-    .detach();
-    crate::settings::close(bench, window, cx);
+    let config = [
+        "config.toml",
+        "config.yml",
+        "settings.json",
+        "settings.local.json",
+    ];
+    let named = std::path::Path::new(&path);
+    match named.file_name().and_then(|name| name.to_str()) {
+        Some(name) if config.contains(&name) => named
+            .parent()
+            .map(|folder| folder.to_string_lossy().into_owned())
+            .unwrap_or(path.clone()),
+        _ => path.clone(),
+    }
 }
 
-/// Signs the agent in on the account it runs on now.
-fn sign_in(bench: &mut Workbench, provider: &str, cx: &mut Context<Workbench>) {
-    if let Some(id) = bench
-        .accounts
-        .current(provider)
-        .map(|profile| profile.id.clone())
-    {
-        crate::accounts::sign_in(bench, &id, cx);
+/// `word` as the shell reads it back whole.
+fn quoted(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "'\\''"))
+}
+
+/// The installer as the shell runs it.
+fn installing(agent: &Found) -> Option<Sheet> {
+    let command = agent.install.clone()?;
+    Some(Sheet {
+        install: true,
+        kind: agent.kind.clone(),
+        label: agent.label.clone(),
+        shown: command.clone(),
+        command: format!("{command}\nexit $?"),
+        session: None,
+        phase: Phase::Running,
+    })
+}
+
+/// The agent's own sign-in, on the account folder it runs on now.
+fn signing_in(agent: &Found, folder: Option<&str>) -> Option<Sheet> {
+    let args = agent.login.clone()?;
+    let program = agent.program.clone().unwrap_or_else(|| agent.kind.clone());
+    let shown = std::iter::once(agent.kind.clone())
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let variable = match agent.kind.as_str() {
+        "claude" => Some("CLAUDE_CONFIG_DIR"),
+        "codex" => Some("CODEX_HOME"),
+        _ => None,
+    };
+    let words: Vec<String> = std::iter::once(program)
+        .chain(args)
+        .map(|word| quoted(&word))
+        .collect();
+    let account = match (variable, folder) {
+        (Some(variable), Some(folder)) => {
+            format!("{variable}={} ", quoted(&account_folder(folder)))
+        }
+        _ => String::new(),
+    };
+    let command = format!("{account}{}\nexit $?", words.join(" "));
+    Some(Sheet {
+        install: false,
+        kind: agent.kind.clone(),
+        label: agent.label.clone(),
+        shown,
+        command,
+        session: None,
+        phase: Phase::Running,
+    })
+}
+
+/// Starts the sheet's command in a terminal of its own.
+fn run(bench: &mut Workbench, sheet: Sheet, cx: &mut Context<Workbench>) {
+    let spawn = TerminalSpawn {
+        cols: 100,
+        rows: 26,
+        cwd: sikemux_process::paths::home().map(|home| home.to_string_lossy().into_owned()),
+        startup: Some(sheet.command.clone()),
+        ..TerminalSpawn::default()
+    };
+    if let Some(setup) = setup_of(bench) {
+        setup.sheet = Some(sheet);
     }
+    let (started, session) = oneshot::channel();
+    let _ = bench.asks.send(Ask::Spawn {
+        spawn: Box::new(spawn),
+        started,
+    });
+    cx.spawn(async move |bench, cx| {
+        let session = session.await;
+        let _ = bench.update(cx, |bench, cx| {
+            if let Some(sheet) = setup_of(bench).and_then(|setup| setup.sheet.as_mut()) {
+                match session {
+                    Ok(Ok(session)) => sheet.session = Some(session),
+                    Ok(Err(error)) => sheet.phase = Phase::Refused(error),
+                    Err(_) => sheet.phase = Phase::Refused("the core is not connected".into()),
+                }
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
+        });
+    })
+    .detach();
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Moves the sheet on once its command ended: looks for the agent again after it worked.
+fn ended(bench: &mut Workbench, code: Option<u32>, cx: &mut Context<Workbench>) {
+    let Some(sheet) = setup_of(bench).and_then(|setup| setup.sheet.as_mut()) else {
+        return;
+    };
+    if !matches!(sheet.phase, Phase::Running) {
+        return;
+    }
+    if code != Some(0) {
+        sheet.phase = Phase::Failed(code);
+        return bench.parts.redraw(&bench.parts.stage, cx);
+    }
+    sheet.phase = Phase::Checking;
+    let kind = sheet.kind.clone();
+    let config = bench
+        .accounts
+        .current(&kind)
+        .and_then(|profile| profile.config_path.clone());
+    let asks = bench.asks.clone();
+    cx.spawn(async move |bench, cx| {
+        let _ = core::request(&asks, "forgetAgentStatus", json!({})).await;
+        let (status, _) = availability(&asks, &kind, config).await;
+        let _ = bench.update(cx, |bench, cx| {
+            if let Some(sheet) = setup_of(bench).and_then(|setup| setup.sheet.as_mut()) {
+                let found = !matches!(status, AgentStatus::Missing);
+                sheet.phase = Phase::Done(found.then_some(status));
+            }
+            read(bench, cx);
+        });
+    })
+    .detach();
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Closes the sheet, ending its command when it still runs.
+fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let Some(sheet) = setup_of(bench).and_then(|setup| setup.sheet.take()) else {
+        return;
+    };
+    if let (Some(session), Phase::Running) = (sheet.session, &sheet.phase) {
+        let _ = bench.asks.send(Ask::Terminal(session, TerminalAsk::Kill));
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+/// Runs the sheet's command again after it failed.
+fn again(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let Some(mut sheet) = setup_of(bench).and_then(|setup| setup.sheet.take()) else {
+        return;
+    };
+    sheet.session = None;
+    sheet.phase = Phase::Running;
+    run(bench, sheet, cx);
+}
+
+fn state(sheet: &Sheet) -> String {
+    let label = &sheet.label;
+    match (&sheet.phase, sheet.install) {
+        (Phase::Running, true) => format!("Running {label}'s own installer…"),
+        (Phase::Running, false) => format!("Running {label}'s own sign-in. Finish it in the browser if one opened."),
+        (Phase::Checking, true) => format!("Installed. Looking for {label}…"),
+        (Phase::Checking, false) => format!("Checking {label}'s sign-in…"),
+        (Phase::Refused(error), _) => format!("Sikemux could not start it: {error}"),
+        (Phase::Failed(code), install) => format!(
+            "The {} stopped{}. Its output above says why.",
+            if install { "installer" } else { "sign-in" },
+            code.map(|code| format!(" with exit code {code}")).unwrap_or_default()
+        ),
+        (Phase::Done(None), true) => format!(
+            "The installer finished, but Sikemux can't find {label} yet. Open a new terminal or restart Sikemux."
+        ),
+        (Phase::Done(Some(status)), true) => {
+            format!("{label} is installed: {}.", status_label(status).to_lowercase())
+        }
+        (Phase::Done(Some(status @ AgentStatus::Ready { .. })), false) => {
+            format!("{label} is signed in: {}.", status_label(status).to_lowercase())
+        }
+        (Phase::Done(Some(AgentStatus::SignedOut)), false) => {
+            format!("{label} still reads as signed out. Try again, or check the output above.")
+        }
+        (Phase::Done(_), false) => format!("The sign-in finished. Start a {label} chat to use it."),
+    }
+}
+
+/// The sheet over the window while a command runs in it.
+pub fn sheet(
+    bench: &Workbench,
+    setup: &Setup,
+    this: &Entity<Workbench>,
+    window: &Window,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    let sheet = setup.sheet.as_ref()?;
+    let t = Tokens::get(cx).clone();
+    if let (Phase::Running, Some(session)) = (&sheet.phase, sheet.session) {
+        let exit = bench
+            .view
+            .as_ref()
+            .and_then(|view| view.sessions.iter().find(|each| each.id == session))
+            .and_then(|each| each.exit.clone());
+        if let Some(exit) = exit {
+            cx.defer_in(window, move |bench, _, cx| ended(bench, exit.code, cx));
+        }
+    }
+    let title = match sheet.install {
+        true => format!("Install {}", sheet.label),
+        false => format!("Sign in to {}", sheet.label),
+    };
+    let terminal: AnyElement = match sheet.session {
+        Some(session) => crate::terminal::pane(bench, this, &session.to_string(), window),
+        None => div().into_any_element(),
+    };
+    let button = |id: &'static str,
+                  label: &'static str,
+                  run: fn(&mut Workbench, &mut Context<Workbench>)| {
+        let this = this.clone();
+        ui::Button::new(id, label, ui::Variant::Outline)
+            .on_click(move |_, _, cx| this.update(cx, run))
+    };
+    let failed = matches!(sheet.phase, Phase::Failed(_) | Phase::Refused(_));
+    let running = matches!(sheet.phase, Phase::Running);
+    let card = div()
+        .id("agent-sheet")
+        .w(px(760.))
+        .h(px(520.))
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .bg(t.surface_overlay)
+        .border_1()
+        .border_color(t.border)
+        .rounded(theme::RADIUS_4)
+        .shadow(t.shadow_float())
+        .occlude()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .px(px(16.))
+                .py(px(10.))
+                .border_b_1()
+                .border_color(t.border)
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .text_color(t.text_primary)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(theme::MONO)
+                        .text_size(px(11.5))
+                        .text_color(t.text_tertiary)
+                        .child(sheet.shown.clone()),
+                ),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .bg(t.surface_sunken)
+                .child(terminal),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(16.))
+                .py(px(10.))
+                .border_t_1()
+                .border_color(t.border)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(12.))
+                        .text_color(t.text_secondary)
+                        .child(state(sheet)),
+                )
+                .when(failed, |foot| {
+                    foot.child(button("agent-sheet-again", "Try again", again))
+                })
+                .child(button(
+                    "agent-sheet-close",
+                    if running { "Cancel" } else { "Close" },
+                    close,
+                )),
+        );
+    let size = window.viewport_size();
+    Some(
+        deferred(
+            anchored()
+                .position_mode(AnchoredPositionMode::Window)
+                .position(point(px(0.), px(0.)))
+                .child(
+                    div()
+                        .w(size.width)
+                        .h(size.height)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(Hsla {
+                            h: 0.,
+                            s: 0.,
+                            l: 0.,
+                            a: 0.55,
+                        })
+                        .child(card),
+                ),
+        )
+        .with_priority(1)
+        .into_any_element(),
+    )
 }
 
 pub fn render(
@@ -155,40 +507,38 @@ pub fn render(
                     Some(detail) => format!("{} · {detail}", status_label(&agent.status)).into(),
                     None => status_label(&agent.status).into(),
                 };
-                let signed_out = matches!(agent.status, AgentStatus::SignedOut)
-                    && bench.accounts.current(&agent.kind).is_some();
+                let folder = bench
+                    .accounts
+                    .current(&agent.kind)
+                    .and_then(|profile| profile.config_path.clone());
+                let sign_in = matches!(agent.status, AgentStatus::SignedOut)
+                    .then(|| signing_in(agent, folder.as_deref()))
+                    .flatten();
                 let broken = matches!(agent.status, AgentStatus::Broken { .. });
                 let missing = matches!(agent.status, AgentStatus::Missing);
-                let actions =
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .children(signed_out.then(|| {
-                            let (this, provider) = (this.clone(), agent.kind.clone());
-                            ui::Button::new(
-                                SharedString::from(format!("agent-sign-in-{}", agent.kind)),
-                                "Sign in",
-                                ui::Variant::Outline,
-                            )
-                            .on_click(move |_, _, cx| {
-                                let provider = provider.clone();
-                                this.update(cx, |bench, cx| sign_in(bench, &provider, cx))
-                            })
-                        }))
-                        .children(agent.install.clone().filter(|_| missing || broken).map(
-                            |command| {
-                                let this = this.clone();
-                                ui::Button::new(
-                                    SharedString::from(format!("agent-install-{}", agent.kind)),
-                                    if broken { "Reinstall" } else { "Install" },
-                                    ui::Variant::Outline,
-                                )
-                                .on_click(move |_, window, cx| {
-                                    let command = command.clone();
-                                    this.update(cx, |bench, cx| install(bench, command, window, cx))
-                                })
-                            },
-                        ));
+                let install = (missing || broken).then(|| installing(agent)).flatten();
+                let sheet_button = |id: String, label: &'static str, sheet: Sheet| {
+                    let this = this.clone();
+                    ui::Button::new(SharedString::from(id), label, ui::Variant::Outline).on_click(
+                        move |_, _, cx| {
+                            let sheet = sheet.clone();
+                            this.update(cx, |bench, cx| run(bench, sheet, cx))
+                        },
+                    )
+                };
+                let actions = div()
+                    .flex()
+                    .gap(px(8.))
+                    .children(sign_in.map(|sheet| {
+                        sheet_button(format!("agent-sign-in-{}", agent.kind), "Sign in", sheet)
+                    }))
+                    .children(install.map(|sheet| {
+                        sheet_button(
+                            format!("agent-install-{}", agent.kind),
+                            if broken { "Reinstall" } else { "Install" },
+                            sheet,
+                        )
+                    }));
                 rows::row_with(
                     Some(ui::mark(&agent.kind, 18.)),
                     agent.label.clone(),

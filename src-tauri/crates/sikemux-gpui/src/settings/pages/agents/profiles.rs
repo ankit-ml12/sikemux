@@ -170,7 +170,7 @@ pub fn render(
     let built_in = fields.id.starts_with("builtin-");
 
     let list = div()
-        .w(px(220.))
+        .w(px(180.))
         .flex_none()
         .flex()
         .flex_col()
@@ -267,38 +267,57 @@ pub fn render(
         })
     };
     let has_accounts = offered.iter().any(|(kind, _)| *kind == fields.provider);
-    let field = |input: &Entity<InputState>| div().w(px(260.)).child(ui::Field::new(input));
+    let stacked = |label: &'static str, about: Option<String>, control: AnyElement| {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .px(px(14.))
+            .py(px(10.))
+            .border_b_1()
+            .border_color(t.line_soft)
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .text_color(t.text_primary)
+                    .child(label),
+            )
+            .children(about.map(|about| {
+                div()
+                    .text_size(px(11.))
+                    .text_color(t.text_tertiary)
+                    .child(about)
+            }))
+            .child(control)
+    };
+    let field = |input: &Entity<InputState>| ui::Field::new(input).into_any_element();
     let (keep, remove) = (this.clone(), this.clone());
     let id = fields.id.clone();
     let editor = div()
         .flex_1()
         .min_w_0()
-        .child(rows::row("Name", None, field(&fields.name), cx))
-        .child(rows::row(
+        .child(stacked("Name", None, field(&fields.name)))
+        .child(stacked(
             "Provider",
             None,
-            div().when(built_in, |row| row.opacity(0.5)).child(provider),
-            cx,
+            div()
+                .when(built_in, |row| row.opacity(0.5))
+                .child(provider)
+                .into_any_element(),
         ))
-        .child(rows::row(
+        .child(stacked(
             "Executable path",
-            Some("Empty uses PATH."),
+            Some("Empty uses PATH.".into()),
             field(&fields.program),
-            cx,
         ))
         .when(has_accounts, |editor| {
-            editor.child(rows::row_with(
-                None,
+            editor.child(stacked(
                 "Profile directory",
-                Some(
-                    format!(
-                        "Set this only when keeping several {} accounts side by side.",
-                        fields.provider
-                    )
-                    .into(),
-                ),
+                Some(format!(
+                    "Set this only when keeping several {} accounts side by side.",
+                    fields.provider
+                )),
                 field(&fields.folder),
-                cx,
             ))
         })
         .child(

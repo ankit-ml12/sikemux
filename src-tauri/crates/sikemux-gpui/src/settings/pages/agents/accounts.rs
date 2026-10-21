@@ -76,24 +76,24 @@ fn plan(plan: &str) -> String {
         .join(" ")
 }
 
+/// Something a sign-in's button does.
+type Run = Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>;
+
 /// The buttons of a sign-in while it runs or after it failed, or None when there is none.
 fn signing(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
-    let button =
-        |key: &str,
-         label: &'static str,
-         run: Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>| {
-            let this = this.clone();
-            ui::Button::new(
-                SharedString::from(format!("{key}-{id}")),
-                label,
-                ui::Variant::Outline,
-            )
-            .on_click(move |_, window, cx| {
-                let run = run.clone();
-                this.update(cx, |bench, cx| run(bench, window, cx))
-            })
-        };
+    let button = |key: &str, label: &'static str, run: Run| {
+        let this = this.clone();
+        ui::Button::new(
+            SharedString::from(format!("{key}-{id}")),
+            label,
+            ui::Variant::Outline,
+        )
+        .on_click(move |_, window, cx| {
+            let run = run.clone();
+            this.update(cx, |bench, cx| run(bench, window, cx))
+        })
+    };
     let owned = id.to_owned();
     Some(match bench.accounts.signing.get(id)? {
         SignIn::Waiting { url, code } => div()

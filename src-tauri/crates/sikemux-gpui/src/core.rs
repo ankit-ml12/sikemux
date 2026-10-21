@@ -12,8 +12,8 @@ use sikemux_wire::grid::{
     decode_frame, decode_lines, FindOptions, FindResult, Frame, GridPoint, Lines, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    CallId, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, RemoteStatus,
-    Request, SessionId, StreamId, WindowAnswer, WindowCall,
+    CallId, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, LaunchIdentity,
+    RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn, WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -105,6 +105,8 @@ pub enum TerminalAsk {
     /// Turns off the modes a program left on, such as mouse reporting, after
     /// it exits without doing so.
     ResetModes,
+    /// Ends the program the terminal runs.
+    Kill,
 }
 
 /// One of the core's `Watch` calls, read again whenever the core says one of
@@ -174,6 +176,11 @@ pub enum Ask {
     /// Stops every agent and terminal the core runs.
     Shutdown,
     Remote(RemoteAsk),
+    /// Starts a terminal running `spawn` outside any tab, answering its id.
+    Spawn {
+        spawn: Box<TerminalSpawn>,
+        started: oneshot::Sender<Result<SessionId, String>>,
+    },
 }
 
 /// What the window asks of remote access, each answered with where it stands now.
@@ -485,6 +492,18 @@ async fn run(
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;
                                 let _ = updates.send(Update::ShutDown);
+                            }
+                            Some(Ask::Spawn { spawn, started }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    let launch = LaunchIdentity {
+                                        version: client.hello().build.version.clone(),
+                                        cli_executable: cli_paths::cli_executable_path(),
+                                        cli_endpoint: cli_paths::cli_endpoint_path(),
+                                    };
+                                    let spawned = client.spawn(launch, SpawnTarget::Terminal(*spawn)).await;
+                                    let _ = started.send(spawned.map_err(|error| error.to_string()));
+                                });
                             }
                             Some(Ask::Remote(ask)) => {
                                 let (client, updates) = (client.clone(), updates.clone());
@@ -808,6 +827,7 @@ impl Streams {
                     async move { client.reset_modes(session).await },
                 ))
             }
+            TerminalAsk::Kill => drop(tokio::spawn(async move { client.kill(session).await })),
         }
     }
 }

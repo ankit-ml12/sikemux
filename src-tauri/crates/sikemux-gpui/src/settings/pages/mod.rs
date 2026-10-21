@@ -76,7 +76,6 @@ pub fn render(
         Page::Plugins => plugins::render(bench, &lit, this, cx),
         Page::General => general::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Keybindings => keybindings::render(bench, &settings.pages, &lit, this, window, cx),
-        _ => Vec::new(),
     }
 }
 

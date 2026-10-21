@@ -198,7 +198,7 @@ fn submit(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     );
 }
 
-fn choose_folder(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+fn choose_folder(_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
     let picked = cx.prompt_for_paths(PathPromptOptions {
         files: false,
         directories: true,

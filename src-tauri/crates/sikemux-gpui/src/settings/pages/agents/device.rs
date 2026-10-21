@@ -3,7 +3,7 @@
 
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::Disableable;
-use gpui_kit::{div, AnyElement, App, Context, Entity, IntoElement, ParentElement, Window};
+use gpui_kit::{div, AnyElement, App, Context, Entity, ParentElement, Window};
 use serde_json::Value;
 use sikemux_wire::notch::{NotchDisplays, NotchFullScreen, NotchOpenWith, NotchPeeks};
 

@@ -2,8 +2,8 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Entity, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, AnyElement, Context, Entity, InteractiveElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
 use sikemux_wire::protocol::{MidTurnSend, RailDensity};
@@ -89,6 +89,7 @@ pub fn boundary(
             div()
                 .id(SharedString::from(format!("launch-mode-{mode}")))
                 .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap(px(4.))
