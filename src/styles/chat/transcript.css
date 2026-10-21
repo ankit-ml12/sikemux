@@ -112,6 +112,16 @@
     flex: none;
 }
 
+.chat-letter-who {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.chat-letter-who > .agent-glyph {
+    flex: none;
+}
+
 .chat-letter-rule {
     flex: 1;
     height: 1px;

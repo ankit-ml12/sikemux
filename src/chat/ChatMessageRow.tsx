@@ -290,9 +290,10 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                         <Fragment key={index}>
                             <div className="chat-letter-from" title={letter.agentId}>
                                 <span className="chat-letter-rule" />
-                                <AgentMark agentId={letter.agentId} cli={letter.cli} />
-                                <span>
-                                    Message from <b>{letter.name}</b>
+                                <span>Message from</span>
+                                <span className="chat-letter-who">
+                                    <AgentMark agentId={letter.agentId} cli={letter.cli} />
+                                    <b>{letter.name}</b>
                                 </span>
                                 <span className="chat-letter-rule" />
                             </div>
