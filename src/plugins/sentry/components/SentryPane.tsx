@@ -2,8 +2,9 @@ import { useRef, useState, type ReactNode } from "react";
 import { confirmDialog, notify, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshSentry, sentryApi, type IssueQuery, type SentryStatus } from "../api";
-import { sentryEnvironmentsR, sentryIssuesR, sentryOrganizationsR, sentryProjectsR, sentryReleasesR, sentryStatusR } from "../resources";
+import { errorText } from "../../../plugin-api/format";
+import { sentryApi, type IssueQuery, type SentryStatus } from "../api";
+import { sentry, sentryEnvironmentsR, sentryIssuesR, sentryOrganizationsR, sentryProjectsR, sentryReleasesR } from "../resources";
 import { updateSentryView, useSentryView, type SentrySection } from "../state";
 import { IssueView } from "./IssueView";
 import { Issues } from "./Issues";
@@ -18,9 +19,9 @@ const ALL_PROJECTS = "";
 const ALL_ENVIRONMENTS = "";
 
 export function SentryPane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, sentryStatusR);
+    const status = useResourceEnabled(active, sentry.statusR);
     if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Connecting to Sentry" />;
-    if (!status.data?.configured || status.data.authFailed) return <SentrySignIn status={status.data} onSignedIn={() => refreshSentry()} />;
+    if (!status.data?.configured || status.data.authFailed) return <SentrySignIn status={status.data} onSignedIn={() => sentry.refresh()} />;
     return <Organization paneId={paneId} active={active} status={status.data} />;
 }
 
@@ -64,9 +65,9 @@ function Organization({ paneId, active, status }: { paneId: string; active: bool
         try {
             await sentryApi.choose({ org: next });
             updateSentryView(paneId, { project: null, issue: null, environment: null });
-            refreshSentry();
+            sentry.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         }
     };
     const signOut = async () => {
@@ -77,7 +78,7 @@ function Organization({ paneId, active, status }: { paneId: string; active: bool
         });
         if (!yes) return;
         await sentryApi.signOut().catch(swallow("sign out of Sentry"));
-        refreshSentry();
+        sentry.refresh();
     };
 
     return (
@@ -175,7 +176,7 @@ function Organization({ paneId, active, status }: { paneId: string; active: bool
                         {view.environment ? ` · ${view.environment}` : ""}
                         {view.query ? ` · “${view.query}”` : ""}
                     </span>
-                    <button type="button" className="sentry-button" onClick={() => refreshSentry()}>
+                    <button type="button" className="sentry-button" onClick={() => sentry.refresh()}>
                         Refresh
                     </button>
                 </header>

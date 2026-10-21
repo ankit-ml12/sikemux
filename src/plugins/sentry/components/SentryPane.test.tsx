@@ -31,7 +31,7 @@ vi.mock("../../../plugin-api/host", async (importOriginal) => {
     };
 });
 
-import { invalidate } from "../../../plugin-api/resources";
+import { sentry } from "../resources";
 import { SentryPane } from "./SentryPane";
 
 let pane = 0;
@@ -39,7 +39,7 @@ const renderPane = () => render(<SentryPane paneId={`sentry-${++pane}`} active /
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("sentry."));
+    sentry.refresh();
 });
 beforeEach(() => {
     Object.values({ ...api, ...host }).forEach((mock) => mock.mockReset());

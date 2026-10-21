@@ -1,10 +1,7 @@
 import { createPluginBackend } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { SENTRY_PLUGIN_ID } from "./kinds";
+import { SENTRY_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(SENTRY_PLUGIN_ID, { signInStatus: (kind) => kind === "sentry.status" });
+const backend = createPluginBackend(SENTRY_PLUGIN.id);
 
 export interface SentryStatus {
     configured: boolean;
@@ -142,8 +139,6 @@ export interface IssueQuery {
     environment: string | null;
     period: IssuePeriod;
 }
-
-export const refreshSentry = () => invalidate((kind) => kind.startsWith("sentry."));
 
 export const sentryApi = {
     status: () => backend.call<SentryStatus>("status"),

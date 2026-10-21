@@ -1,53 +1,24 @@
-import { resource } from "../../plugin-api/resources";
-import { sentryApi, type IssueDetail, type IssueQuery, type Member, type Organization, type Project, type Release, type SentryStatus } from "./api";
+import { defineService } from "../../plugin-api/service";
+import { sentryApi, type IssueQuery, type Project } from "./api";
+import { SENTRY_PLUGIN } from "./kinds";
 
-export const sentryStatusR = resource({
-    kind: "sentry.status",
-    fetch: (): Promise<SentryStatus> => sentryApi.status(),
-    staleAfterMs: 60_000,
-});
+export const sentry = defineService(SENTRY_PLUGIN, sentryApi.status);
 
-export const sentryOrganizationsR = resource({
-    kind: "sentry.organizations",
-    fetch: (): Promise<Organization[]> => sentryApi.organizations(),
-    staleAfterMs: 300_000,
-});
+export const sentryOrganizationsR = sentry.resource("organizations", () => sentryApi.organizations(), 300_000);
 
-/** Keyed by organisation, so switching back shows what was read there. */
-export const sentryProjectsR = resource({
-    kind: "sentry.projects",
-    fetch: (_org: string): Promise<Project[]> => sentryApi.projects(),
-    staleAfterMs: 300_000,
-});
+/** Each read below names the organisation, so switching back shows what was read there. */
+export const sentryProjectsR = sentry.resource("projects", (_org: string) => sentryApi.projects(), 300_000);
 
-export const sentryMembersR = resource({
-    kind: "sentry.members",
-    fetch: (_org: string): Promise<Member[]> => sentryApi.members(),
-    staleAfterMs: 300_000,
-});
+export const sentryMembersR = sentry.resource("members", (_org: string) => sentryApi.members(), 300_000);
 
-export const sentryEnvironmentsR = resource({
-    kind: "sentry.environments",
-    fetch: (_org: string, project: string | null): Promise<string[]> => sentryApi.environments(project),
-    staleAfterMs: 300_000,
-});
+export const sentryEnvironmentsR = sentry.resource(
+    "environments",
+    (_org: string, project: string | null) => sentryApi.environments(project),
+    300_000,
+);
 
-export const sentryIssuesR = resource({
-    kind: "sentry.issues",
-    fetch: (_org: string, query: IssueQuery) => sentryApi.issues(query),
-    staleAfterMs: 30_000,
-    keyFn: ([org, query]) => `${org as string}|${JSON.stringify(query)}`,
-});
+export const sentryIssuesR = sentry.resource("issues", (_org: string, query: IssueQuery) => sentryApi.issues(query), 30_000);
 
-export const sentryIssueR = resource({
-    kind: "sentry.issue",
-    fetch: (_org: string, id: string): Promise<IssueDetail> => sentryApi.issue(id),
-    staleAfterMs: 30_000,
-});
+export const sentryIssueR = sentry.resource("issue", (_org: string, id: string) => sentryApi.issue(id), 30_000);
 
-export const sentryReleasesR = resource({
-    kind: "sentry.releases",
-    fetch: (_org: string, project: Project): Promise<Release[]> => sentryApi.releases(project),
-    staleAfterMs: 60_000,
-    keyFn: ([org, project]) => `${org as string}|${(project as Project).id}`,
-});
+export const sentryReleasesR = sentry.resource("releases", (_org: string, project: Project) => sentryApi.releases(project), 60_000);

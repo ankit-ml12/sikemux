@@ -2,9 +2,10 @@ import { useState } from "react";
 import { copyWithNotice, notify, openUrl, promptDialog, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Dropdown, SendToAgentMenu, Seg, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { failureMessage, refreshSentry, sentryApi, type Breadcrumb, type IssueAction, type IssueDetail, type Member } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { sentryApi, type Breadcrumb, type IssueAction, type IssueDetail, type Member } from "../api";
 import { ago, count, levelTone } from "../format";
-import { sentryIssueR, sentryMembersR } from "../resources";
+import { sentry, sentryIssueR, sentryMembersR } from "../resources";
 import { LevelMark, Substatus } from "./parts";
 import { StackTrace } from "./StackTrace";
 
@@ -25,9 +26,9 @@ export function IssueView({ org, id, active, onBack }: { org: string; id: string
         try {
             await work();
             notify("success", done);
-            refreshSentry();
+            sentry.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         } finally {
             setBusy(false);
         }
@@ -44,7 +45,7 @@ export function IssueView({ org, id, active, onBack }: { org: string; id: string
             const text = await sentryApi.brief(id);
             setMenu({ x: anchor.right, y: anchor.bottom + 4, text });
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         }
     };
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Seg } from "../../../plugin-api/ui";
-import { failureMessage, sentryApi, type Issue, type IssuePeriod, type IssueQuery, type IssueSort, type IssueStatusFilter } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { sentryApi, type Issue, type IssuePeriod, type IssueQuery, type IssueSort, type IssueStatusFilter } from "../api";
 import { ago, count, levelTone } from "../format";
 import { Avatar, LevelMark, Sparkline, Substatus } from "./parts";
 
@@ -55,7 +56,7 @@ export function Issues({
             const page = await sentryApi.issues(query, cursor);
             setMore({ issues: [...(extra?.issues ?? []), ...page.issues], next: page.next, for: key });
         } catch (failure) {
-            setError(failureMessage(failure));
+            setError(errorText(failure));
         } finally {
             setLoading(false);
         }
