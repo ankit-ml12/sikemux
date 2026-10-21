@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
+use crate::manager::BrowserManager;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
@@ -33,9 +34,6 @@ use objc2_foundation::{NSDictionary, NSError, NSNumber, NSString, NSURL};
 use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Manager};
-
-use super::BrowserManager;
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_LENGTH: Duration = Duration::from_secs(10 * 60);
@@ -73,8 +71,11 @@ struct Encoder {
     finished: mpsc::Receiver<Result<Summary, String>>,
 }
 
-pub async fn start(app: &AppHandle, agent_id: &str, path: Option<String>) -> Result<Value, String> {
-    let manager = app.state::<BrowserManager>();
+pub async fn start(
+    manager: &BrowserManager,
+    agent_id: &str,
+    path: Option<String>,
+) -> Result<Value, String> {
     if manager.recordings.locked().contains_key(agent_id) {
         return Err("this agent is already recording; stop it first".into());
     }
@@ -93,10 +94,10 @@ pub async fn start(app: &AppHandle, agent_id: &str, path: Option<String>) -> Res
             path
         }
         None => {
-            let folder = app
-                .path()
-                .video_dir()
-                .map_err(|error| error.to_string())?
+            let folder = manager
+                .host()
+                .videos_dir()
+                .ok_or("there is no folder for videos")?
                 .join("Sikemux");
             let title = manager.page(agent_id, &tab_id).unwrap_or_default().title;
             default_path(&folder, &title)
@@ -112,8 +113,9 @@ pub async fn start(app: &AppHandle, agent_id: &str, path: Option<String>) -> Res
     let (width, height) = (even(size.width), even(size.height));
     let encoder = open(&path, width, height)?;
     let stop = Arc::new(AtomicBool::new(false));
-    tauri::async_runtime::spawn(film(
-        app.clone(),
+    let filming = manager.this().ok_or("the browser is closing")?;
+    crate::spawn(film(
+        filming,
         agent_id.to_owned(),
         encoder.frames,
         stop.clone(),
@@ -132,16 +134,15 @@ pub async fn start(app: &AppHandle, agent_id: &str, path: Option<String>) -> Res
     Ok(json!({ "recording": true, "path": path, "width": width, "height": height }))
 }
 
-pub async fn stop(app: &AppHandle, agent_id: &str) -> Result<Value, String> {
-    let session = app
-        .state::<BrowserManager>()
+pub async fn stop(manager: &BrowserManager, agent_id: &str) -> Result<Value, String> {
+    let session = manager
         .recordings
         .locked()
         .remove(agent_id)
         .ok_or("nothing is recording")?;
     session.stop.store(true, Ordering::Release);
     let (path, width, height) = (session.path.clone(), session.width, session.height);
-    let summary = tauri::async_runtime::spawn_blocking(move || {
+    let summary = tokio::task::spawn_blocking(move || {
         session
             .finished
             .recv_timeout(FINISH_TIMEOUT)
@@ -161,7 +162,7 @@ pub async fn stop(app: &AppHandle, agent_id: &str) -> Result<Value, String> {
 /// Photographs the agent's current tab until told to stop, the agent has no
 /// tab left, or the recording reaches its length limit.
 async fn film(
-    app: AppHandle,
+    manager: Arc<BrowserManager>,
     agent_id: String,
     frames: mpsc::Sender<Frame>,
     stop: Arc<AtomicBool>,
@@ -171,7 +172,7 @@ async fn film(
     let mut tick = tokio::time::interval(FRAME_INTERVAL);
     while !stop.load(Ordering::Acquire) && started.elapsed() < MAX_LENGTH {
         tick.tick().await;
-        let Ok((_, view)) = app.state::<BrowserManager>().active_view(&agent_id) else {
+        let Ok((_, view)) = manager.active_view(&agent_id) else {
             break;
         };
         let frames = frames.clone();
@@ -517,7 +518,7 @@ fn default_path(folder: &Path, title: &str) -> PathBuf {
         .collect();
     let name = cleaned.trim();
     let name = if name.is_empty() { "Recording" } else { name };
-    super::unique_download_path(folder, &format!("{name}.mp4"))
+    crate::manager::unique_download_path(folder, &format!("{name}.mp4"))
 }
 
 #[cfg(test)]

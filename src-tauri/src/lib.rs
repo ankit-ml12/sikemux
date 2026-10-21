@@ -179,6 +179,7 @@ pub fn run() {
         })
         .setup(|_app| {
             sikemux_browser::set_runtime(tauri::async_runtime::handle().inner().clone());
+            _app.manage(browser::engine(_app.handle()));
             _app.manage(UiWatchdogState::start()?);
             let sim = SimManager::default();
             _app.manage(sim.clone());
@@ -231,7 +232,6 @@ pub fn run() {
         .manage(AcpManager::default())
         .manage(remote::Published::default())
         .manage(agent_notification::WaitingFocus::default())
-        .manage(BrowserManager::default())
         .manage(VoiceManager::default())
         .manage(preview::Previews::default())
         .register_asynchronous_uri_scheme_protocol(preview::SCHEME, preview::handle)

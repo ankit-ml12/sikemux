@@ -6,9 +6,9 @@
 use std::time::{Duration, Instant};
 
 use sikemux_process::sync::Locked;
-use tauri::{AppHandle, Manager};
+use std::sync::Weak;
 
-use super::{BrowserManager, TabStrip};
+use crate::manager::{BrowserManager, TabStrip};
 
 /// How long a tab must have been out of sight before it may be unloaded.
 const WARNING_HIDDEN: Duration = Duration::from_secs(30 * 60);
@@ -79,7 +79,7 @@ impl TabStrip {
 }
 
 impl BrowserManager {
-    pub async fn relieve(&self, app: &AppHandle, pressure: Pressure) {
+    pub async fn relieve(&self, pressure: Pressure) {
         if self
             .relieving
             .swap(true, std::sync::atomic::Ordering::AcqRel)
@@ -89,14 +89,14 @@ impl BrowserManager {
         let now = Instant::now();
         for (agent_id, tab_id, view) in self.unload_candidates(now, pressure) {
             let busy =
-                tokio::time::timeout(PROBE_TIMEOUT, super::tools::run_helper(&view, BUSY_SCRIPT))
+                tokio::time::timeout(PROBE_TIMEOUT, crate::tools::run_helper(&view, BUSY_SCRIPT))
                     .await;
             let keep = match busy {
                 Ok(Ok(answer)) => answer != "false",
                 _ => pressure == Pressure::Warning,
             };
             if !keep {
-                self.unload(app, &agent_id, &tab_id, now, pressure);
+                self.unload(&agent_id, &tab_id, now, pressure);
             }
         }
         self.relieving
@@ -107,7 +107,7 @@ impl BrowserManager {
         &self,
         now: Instant,
         pressure: Pressure,
-    ) -> Vec<(String, String, sikemux_browser::Tab)> {
+    ) -> Vec<(String, String, crate::Tab)> {
         let agents = self.agents.locked();
         agents
             .iter()
@@ -147,14 +147,7 @@ impl BrowserManager {
         }
     }
 
-    fn unload(
-        &self,
-        app: &AppHandle,
-        agent_id: &str,
-        tab_id: &str,
-        now: Instant,
-        pressure: Pressure,
-    ) {
+    fn unload(&self, agent_id: &str, tab_id: &str, now: Instant, pressure: Pressure) {
         let view = {
             let mut agents = self.agents.locked();
             let Some(agent) = agents.get_mut(agent_id) else {
@@ -176,13 +169,13 @@ impl BrowserManager {
         };
         self.stalls.locked().remove(tab_id);
         view.close();
-        self.announce(app);
+        self.announce();
     }
 }
 
 /// Listens for the system running short of memory, for as long as the app runs.
 #[cfg(target_os = "macos")]
-pub fn watch_pressure(app: AppHandle) {
+pub fn watch_pressure(manager: Weak<BrowserManager>) {
     use block2::{Block, RcBlock};
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -227,10 +220,11 @@ pub fn watch_pressure(app: AppHandle) {
         let Some(pressure) = Pressure::from_flags(flags) else {
             return;
         };
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let manager = app.state::<BrowserManager>();
-            manager.relieve(&app, pressure).await;
+        let Some(manager) = manager.upgrade() else {
+            return;
+        };
+        crate::spawn(async move {
+            manager.relieve(pressure).await;
         });
     });
     // SAFETY: `source` is live and suspended until resumed; dispatch copies the block.
@@ -241,13 +235,14 @@ pub fn watch_pressure(app: AppHandle) {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn watch_pressure(_: AppHandle) {}
+pub fn watch_pressure(_: Weak<BrowserManager>) {}
 
 #[cfg(test)]
 mod tests {
-    use super::super::viewport::Layout;
-    use super::super::{AgentBrowser, BrowserBounds, TabPage};
     use super::*;
+    use crate::manager::{AgentBrowser, TabPage};
+    use crate::viewport::Layout;
+    use crate::BrowserBounds;
 
     const MINUTE: Duration = Duration::from_secs(60);
 

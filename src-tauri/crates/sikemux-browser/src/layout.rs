@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use sikemux_process::sync::Locked;
 
-use super::viewport::{matches, parse_inner_size};
-use super::BrowserManager;
+use crate::manager::BrowserManager;
+use crate::viewport::{matches, parse_inner_size};
 
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
 const SETTLE_POLL: Duration = Duration::from_millis(50);
@@ -38,7 +38,7 @@ impl BrowserManager {
                 .get(agent_id)
                 .and_then(|agent| agent.views.get(tab_id).cloned())
                 .ok_or("the tab closed while its viewport was changing")?;
-            if let Ok(raw) = super::tools::eval(&view, r#"`${innerWidth}x${innerHeight}`"#).await {
+            if let Ok(raw) = crate::tools::eval(&view, r#"`${innerWidth}x${innerHeight}`"#).await {
                 if let Some(reported) = parse_inner_size(&raw) {
                     if matches(reported, expected) {
                         return Ok((reported.0 as u32, reported.1 as u32));

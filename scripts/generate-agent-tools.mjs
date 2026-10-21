@@ -12,7 +12,10 @@ const rustOutputPath = resolve(
   root,
   "src-tauri/crates/sikemux-core/src/cli/methods.rs",
 );
-const browserHandlersPath = resolve(root, "src-tauri/src/browser/tools.rs");
+const browserHandlersPath = resolve(
+  root,
+  "src-tauri/crates/sikemux-browser/src/tools.rs",
+);
 const simulatorHandlersPath = resolve(root, "src-tauri/src/simulator/tools.rs");
 const windowHandlersPath = resolve(root, "src/harness/service.ts");
 const pluginsPath = resolve(root, "src-tauri/plugins");
@@ -83,7 +86,7 @@ compare(
     /((?:"[a-z.]+"\s*\|\s*)*"[a-z.]+")\s*=>/gu,
     "browser.",
   ),
-  "src-tauri/src/browser/tools.rs",
+  "src-tauri/crates/sikemux-browser/src/tools.rs",
 );
 compare(
   simulatorMethods,

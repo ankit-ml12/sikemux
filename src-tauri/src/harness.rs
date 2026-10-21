@@ -124,7 +124,10 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
         return crate::agent_questions::changed(app, &request.params);
     }
     if is_browser_method(&request.method) {
-        return crate::browser::tools::execute(app, &request);
+        return crate::browser::tools::execute(
+            &app.state::<crate::browser::BrowserManager>(),
+            &request,
+        );
     }
     if is_sim_method(&request.method) {
         return crate::simulator::tools::execute(app, &request);

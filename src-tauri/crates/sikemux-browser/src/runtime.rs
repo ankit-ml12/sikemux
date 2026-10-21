@@ -26,3 +26,15 @@ where
         }
     }
 }
+
+/// Waits on `work` from a thread that is not one of the runtime's own.
+pub(crate) fn block_on<F: Future>(work: F) -> F::Output {
+    match RUNTIME.get() {
+        Some(runtime) => runtime.block_on(work),
+        None => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime for one call")
+            .block_on(work),
+    }
+}

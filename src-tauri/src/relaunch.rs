@@ -104,7 +104,7 @@ pub fn restore(app: &AppHandle) {
     };
     let tabs = app
         .try_state::<BrowserManager>()
-        .map(|browser| browser.reopen(app, handover.browser))
+        .map(|browser| browser.reopen(handover.browser))
         .unwrap_or_default();
     let devices = app
         .try_state::<SimulatorManager>()
@@ -144,7 +144,7 @@ async fn forget_departed(app: &AppHandle, tabs: Vec<String>, devices: Vec<String
     };
     if let Some(browser) = app.try_state::<BrowserManager>() {
         for agent_id in tabs.iter().filter(|id| !known.contains(*id)) {
-            let _ = browser.close_agent(app, agent_id);
+            let _ = browser.close_agent(agent_id);
         }
     }
     if let Some(simulators) = app.try_state::<SimulatorManager>() {

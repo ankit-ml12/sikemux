@@ -93,7 +93,7 @@ fn close_preview(app: &AppHandle, agent_id: &str) {
         return;
     };
     for tab in snapshot.tabs.into_iter().filter(|tab| tab.url == url) {
-        let _ = manager.close_tab(app, agent_id, &tab.id);
+        let _ = manager.close_tab(agent_id, &tab.id);
     }
 }
 
@@ -178,9 +178,10 @@ async fn page_open(app: AppHandle, agent_id: String, id: String) -> AppResult<St
     let page = std::fs::read_to_string(pages_dir(&app)?.join(format!("{id}.html")))
         .map_err(|_| AppError::Other("that page is gone".into()))?;
     let url = tab_url(&app, &id, &page).map_err(AppError::Other)?;
-    app.state::<BrowserManager>()
-        .open_tab(&app, &agent_id, Some(&url))
-        .await
+    Ok(app
+        .state::<BrowserManager>()
+        .open_tab(&agent_id, Some(&url))
+        .await?)
 }
 
 #[cfg(test)]

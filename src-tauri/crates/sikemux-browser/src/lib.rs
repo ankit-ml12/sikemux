@@ -3,16 +3,25 @@
 
 pub mod address;
 pub mod burst;
+mod discard;
 pub mod documents;
 pub mod downloads;
+mod favicon;
+mod handover;
 pub mod history;
+mod host;
 #[cfg(target_os = "macos")]
 pub mod input;
+mod layout;
 pub mod local_files;
 #[cfg(target_os = "macos")]
 pub mod macos;
+mod manager;
+#[cfg(target_os = "macos")]
+mod recording;
 mod runtime;
 mod tab;
+pub mod tools;
 pub mod viewport;
 
 use std::path::{Path, PathBuf};
@@ -20,6 +29,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use documents::DocumentEvent;
+pub use handover::SavedStrip;
+pub use host::{BrowserResult, Error, Host};
+pub use manager::{BrowserManager, TabPage};
 pub use tab::{ParentView, Tab, TabSpec};
 
 pub use runtime::set_runtime;

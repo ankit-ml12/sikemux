@@ -7,9 +7,9 @@ use std::sync::atomic::Ordering;
 
 use serde::{Deserialize, Serialize};
 use sikemux_process::sync::Locked;
-use tauri::AppHandle;
 
-use super::{validate_agent_id, viewport::Viewport, AgentBrowser, BrowserManager, TabPage};
+use crate::manager::{validate_agent_id, AgentBrowser, BrowserManager, TabPage};
+use crate::viewport::Viewport;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,8 +94,7 @@ impl BrowserManager {
     }
 
     /// Puts the saved strips back with every tab unloaded, and names the agents they went to.
-    pub fn reopen(&self, app: &AppHandle, strips: Vec<SavedStrip>) -> Vec<String> {
-        self.adopt_app(app);
+    pub fn reopen(&self, strips: Vec<SavedStrip>) -> Vec<String> {
         let mut reopened = Vec::new();
         let mut agents = self.agents.locked();
         for saved in strips {

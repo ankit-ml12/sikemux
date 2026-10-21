@@ -6,14 +6,15 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use crate::Tab;
 use reqwest::redirect::Policy;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use sikemux_browser::Tab;
-use tauri::{AppHandle, Manager, Url};
+use url::Url;
 
-use super::{BrowserManager, BLANK_URL, USER_AGENT};
+use crate::manager::BrowserManager;
+use crate::{BLANK_URL, USER_AGENT};
 use sikemux_core::http::{
     builder, data_url, fetch_image, follow_if, names_private_address, public_client, shared,
 };
@@ -28,7 +29,7 @@ const CACHE_LIMIT: usize = 64;
 const WANTED: u32 = 32;
 
 /// Icons already fetched, kept by address so a site is asked once.
-pub(super) type IconCache = HashMap<String, Option<String>>;
+pub(crate) type IconCache = HashMap<String, Option<String>>;
 
 /// Reads the page's own icon declarations. `rel` is matched as a word so
 /// `rel="shortcut icon"` counts and `rel="mask-icon"` does not.
@@ -49,9 +50,8 @@ struct IconLink {
 /// Asks the tab which icon it declares, fetches it, and tells the strip.
 /// Nothing is reported when the page has no usable icon — the pane draws a
 /// globe until one arrives.
-pub(super) async fn refresh(app: AppHandle, agent_id: String, tab_id: String, view: Tab) {
-    let Some(page) = app
-        .state::<BrowserManager>()
+pub(crate) async fn refresh(manager: &BrowserManager, agent_id: String, tab_id: String, view: Tab) {
+    let Some(page) = manager
         .page(&agent_id, &tab_id)
         .filter(|page| page.url != BLANK_URL)
     else {
@@ -69,7 +69,6 @@ pub(super) async fn refresh(app: AppHandle, agent_id: String, tab_id: String, vi
     } else {
         icon.to_string()
     };
-    let manager = app.state::<BrowserManager>();
     let data = match manager.cached_icon(&key) {
         Some(known) => known,
         None => {
@@ -81,14 +80,14 @@ pub(super) async fn refresh(app: AppHandle, agent_id: String, tab_id: String, vi
     let Some(data) = data else {
         return;
     };
-    manager.note_page(&app, &agent_id, &tab_id, move |page| {
+    manager.note_page(&agent_id, &tab_id, move |page| {
         page.favicon = Some(data);
     });
 }
 
 /// Whether two addresses belong to the same site, which is what decides if a
 /// tab keeps showing its icon while the next page loads.
-pub(super) fn same_site(a: &str, b: &str) -> bool {
+pub(crate) fn same_site(a: &str, b: &str) -> bool {
     let host = |url: &str| {
         Url::parse(url)
             .ok()
@@ -101,7 +100,7 @@ pub(super) fn same_site(a: &str, b: &str) -> bool {
 }
 
 async fn declared(view: &Tab) -> Vec<IconLink> {
-    let Ok(raw) = super::tools::eval(view, LINKS).await else {
+    let Ok(raw) = crate::tools::eval(view, LINKS).await else {
         return Vec::new();
     };
     parse_links(&raw)
@@ -339,7 +338,7 @@ mod tests {
     async fn answer_once(head: String, body: Vec<u8>) -> Url {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        crate::install_tls_crypto();
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = Url::parse(&format!("http://{}/icon", listener.local_addr().unwrap())).unwrap();
         tokio::spawn(async move {
