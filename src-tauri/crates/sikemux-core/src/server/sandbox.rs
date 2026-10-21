@@ -380,6 +380,8 @@ const INTEGRATION: &str = ".integration";
 
 /// Links each `node_modules` beside a `package.json` at the top of `main`, or
 /// one folder down, into `tree`, so what runs there finds what is installed.
+/// A folder whose lockfile differs from `main`'s gets no link: a checkout of a
+/// branch with other packages would otherwise run against `main`'s.
 fn link_installed(main: &Path, tree: &Path) {
     let mut folders = vec![PathBuf::new()];
     if let Ok(entries) = std::fs::read_dir(main) {
@@ -396,10 +398,36 @@ fn link_installed(main: &Path, tree: &Path) {
         if installed.is_dir()
             && link.symlink_metadata().is_err()
             && link.parent().is_some_and(Path::is_dir)
+            && same_lockfile(main, tree, &folder)
         {
             let _ = std::os::unix::fs::symlink(&installed, &link);
         }
     }
+}
+
+const LOCKFILES: [&str; 5] = [
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+];
+
+/// Whether `folder` resolves its packages from the same lockfile in `main` and
+/// `tree`: its own, or the top folder's for a workspace member without one.
+fn same_lockfile(main: &Path, tree: &Path, folder: &Path) -> bool {
+    let lockfile = [folder, Path::new("")].into_iter().find_map(|dir| {
+        LOCKFILES
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|path| main.join(path).is_file())
+    });
+    lockfile.is_none_or(|path| {
+        matches!(
+            (std::fs::read(main.join(&path)), std::fs::read(tree.join(&path))),
+            (Ok(ours), Ok(theirs)) if ours == theirs
+        )
+    })
 }
 
 /// Runs `project`'s `worktree.onCreate` commands in the new checkout at `cwd`
@@ -492,5 +520,27 @@ mod tests {
             parent.path().join("app.worktrees/fix-the-flaky-pty-test-2")
         );
         assert!(path.join(".git").exists());
+    }
+
+    #[test]
+    fn a_checkout_whose_lockfile_differs_from_main_gets_no_linked_packages() {
+        let main = tempfile::tempdir().unwrap();
+        let same = tempfile::tempdir().unwrap();
+        let moved = tempfile::tempdir().unwrap();
+        for dir in [main.path(), same.path(), moved.path()] {
+            std::fs::write(dir.join("package.json"), "{}").unwrap();
+        }
+        std::fs::create_dir(main.path().join("node_modules")).unwrap();
+        std::fs::write(main.path().join("pnpm-lock.yaml"), "a: 1\n").unwrap();
+        std::fs::write(same.path().join("pnpm-lock.yaml"), "a: 1\n").unwrap();
+        std::fs::write(moved.path().join("pnpm-lock.yaml"), "a: 2\n").unwrap();
+        link_installed(main.path(), same.path());
+        link_installed(main.path(), moved.path());
+        assert!(same.path().join("node_modules").is_dir());
+        assert!(moved
+            .path()
+            .join("node_modules")
+            .symlink_metadata()
+            .is_err());
     }
 }

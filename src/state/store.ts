@@ -187,6 +187,8 @@ export interface ViewState {
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
     /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
     projectIdentities: Readonly<Record<string, string>>;
+    /** What asking each SSH host found, by its alias, for those that run Sikemux. */
+    sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
     /** The host chosen in the side rail, chosen only while the session it was chosen over is still in front. */
     chosenHost: import("../hosts/hosts").ChosenHost | null;
 
@@ -301,6 +303,7 @@ export const useStore = create<StoreState>(() => {
         hostViews: {},
         projectIdentities: {},
         chosenHost: null,
+        sshProbes: {},
         pendingUpdate: null,
         updateBlockers: [],
         lastUpdateCheck: null,

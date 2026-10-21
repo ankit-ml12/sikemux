@@ -115,6 +115,17 @@ jobs:
         working-directory: mobile
         run: pnpm install --frozen-lockfile
 
+      # Gradle would otherwise download React Native's NDK mid-build, and that download fails often.
+      - name: Install the NDK React Native builds with
+        working-directory: mobile/app
+        run: |
+          ndk="$(sed -n 's/^ndkVersion = "\(.*\)"$/\1/p' node_modules/react-native/gradle/libs.versions.toml)"
+          for _ in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null && break
+            sleep 20
+          done
+          test -d "$ANDROID_HOME/ndk/$ndk"
+
       - name: Build the Rust client
         working-directory: mobile
         run: pnpm native:android:release
@@ -157,6 +168,7 @@ jobs:
     timeout-minutes: 15
     environment: release
     needs: [plan, android-build]
+    if: ${{ !cancelled() && needs.android-build.result == 'success' }}
     env:
       # The Play upload key's certificate; a release signed with anything else is refused.
       UPLOAD_CERT_SHA256: 4b29a5636b54e630aee1a7037c2cf4f182b7a140ffed36c6a38cafdd2529b32b
@@ -240,6 +252,7 @@ jobs:
     timeout-minutes: 30
     environment: release
     needs: [plan, android-sign]
+    if: ${{ !cancelled() && needs.android-sign.result == 'success' }}
     permissions:
       contents: write
       actions: write
@@ -410,6 +423,7 @@ jobs:
     timeout-minutes: 90
     environment: release
     needs: [plan, ios-build]
+    if: ${{ !cancelled() && needs.ios-build.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

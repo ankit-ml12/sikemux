@@ -36,6 +36,8 @@
     "allow-pty-kill",
     "allow-pty-sessions",
     "allow-host-install",
+    "allow-host-sign-in",
+    "allow-host-probe",
     "allow-share-access",
     "allow-share-viewer-hello",
     "allow-core-call",

@@ -10,6 +10,7 @@ import {
     openHostTerminal,
     projectCopyOn,
     sameHost,
+    signInHere,
     startRemoteChat,
     type HostChoice,
     type HostEntry,
@@ -19,7 +20,19 @@ import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
 import { reportError, swallow } from "../state/toast";
-import { IconDownload, IconFolder, IconLock, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
+import {
+    IconDownload,
+    IconFolder,
+    IconLock,
+    IconLaptop,
+    IconLogIn,
+    IconMore,
+    IconPencil,
+    IconPlus,
+    IconServer,
+    IconTerminal,
+    IconTrash,
+} from "../ui/Icons";
 import { StatusDot } from "../ui/StatusDot";
 import type { CtxItem } from "./FileTree";
 
@@ -57,6 +70,26 @@ function useHostLoad(host: string, connected: boolean): string | null {
     }, [host, connected]);
     return connected ? load : null;
 }
+
+/** Installing Sikemux on an SSH host, or signing in one that has it, while either runs. */
+function useOverSsh(alias: string | null) {
+    const [busy, setBusy] = useState<"installing" | "signing in" | null>(null);
+    const run = (doing: "installing" | "signing in", action: (alias: string) => Promise<void>, failed: string) => {
+        if (!alias) return;
+        setBusy(doing);
+        action(alias)
+            .catch(reportError(failed))
+            .finally(() => setBusy(null));
+    };
+    return {
+        busy,
+        install: () => run("installing", installHere, `Install Sikemux on ${alias}`),
+        signIn: () => run("signing in", signInHere, `Sign in ${alias}`),
+    };
+}
+
+/** What a row says of a host that runs Sikemux but is not on this host's account. */
+const OFF_ACCOUNT = { signedOut: "not signed in", other: "on another account" } as const;
 
 function agentsLabel(count: number): string | null {
     return count === 0 ? null : `${count} ${count === 1 ? "agent" : "agents"}`;
@@ -160,20 +193,32 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
     };
     const hasProject = useStore((s) => !!projectCopyOn(s, host.id, undefined));
+    const account = useStore((s) => (host.ssh ? s.sshProbes[host.ssh]?.account : undefined));
+    const off = account === "signedOut" || account === "other" ? OFF_ACCOUNT[account] : null;
+    const { busy, signIn } = useOverSsh(host.ssh);
     return (
         <HostRow
             kind="sikemux"
             name={host.name}
             load={load}
-            detail={connected ? agentsLabel(agents) : host.reach === "away" ? "out of reach" : "connecting"}
+            detail={busy ?? off ?? (connected ? agentsLabel(agents) : host.reach === "away" ? "out of reach" : "connecting")}
             status={
-                <StatusDot
-                    tone={connected ? "ok" : host.reach === "away" ? "idle" : "pending"}
-                    label={connected ? "Connected" : host.reach === "away" ? "Out of reach" : "Connecting"}
-                />
+                busy ? (
+                    <StatusDot tone="pending" label="Signing in" />
+                ) : off ? (
+                    <StatusDot tone="idle" label={off} />
+                ) : (
+                    <StatusDot
+                        tone={connected ? "ok" : host.reach === "away" ? "idle" : "pending"}
+                        label={connected ? "Connected" : host.reach === "away" ? "Out of reach" : "Connecting"}
+                    />
+                )
             }
             choice={choice}
             menu={async () => [
+                ...(account === "signedOut"
+                    ? [{ label: "Sign in", icon: <IconLogIn size={13} />, run: signIn, disabled: !!busy }, { sep: true as const }]
+                    : []),
                 { label: "New chat here", icon: <IconPlus size={13} />, run: chat, disabled: !hasProject },
                 { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id) },
                 { label: "Files", icon: <IconFolder size={13} />, run: files, disabled: !hasProject },
@@ -193,19 +238,20 @@ const SSH_LABEL = { connected: "Connected", connecting: "Connecting", failed: "F
 function SshHostRow({ row, onMenu }: { row: CoreHostRow; onMenu: OpenMenu }) {
     const alias = row.name;
     const choice = useMemo<HostChoice>(() => ({ kind: "ssh", alias }), [alias]);
-    const [installing, setInstalling] = useState(false);
-    const install = () => {
-        setInstalling(true);
-        installHere(alias)
-            .catch(reportError(`Install Sikemux on ${alias}`))
-            .finally(() => setInstalling(false));
-    };
+    const account = useStore((s) => s.sshProbes[alias]?.account);
+    const off = account === "signedOut" || account === "other" ? OFF_ACCOUNT[account] : null;
+    const { busy, install, signIn } = useOverSsh(alias);
+    const setUp = account
+        ? account === "signedOut"
+            ? [{ label: "Sign in", icon: <IconLogIn size={13} />, run: signIn, disabled: !!busy }]
+            : []
+        : [{ label: "Install Sikemux here", icon: <IconDownload size={13} />, run: install, disabled: !!busy }];
     return (
         <HostRow
             kind="ssh"
             name={alias}
-            detail={installing ? "installing" : null}
-            status={<StatusDot tone={installing ? "pending" : SSH_TONE[row.reach]} label={installing ? "Installing" : SSH_LABEL[row.reach]} />}
+            detail={busy ?? off}
+            status={<StatusDot tone={busy ? "pending" : SSH_TONE[row.reach]} label={busy ?? SSH_LABEL[row.reach]} />}
             choice={choice}
             menu={async () => [
                 {
@@ -216,7 +262,7 @@ function SshHostRow({ row, onMenu }: { row: CoreHostRow; onMenu: OpenMenu }) {
                         cmd.newSshTerminal(alias);
                     },
                 },
-                { label: "Install Sikemux here", icon: <IconDownload size={13} />, run: install, disabled: installing },
+                ...setUp,
                 { sep: true },
                 { label: "Edit in ~/.ssh/config", icon: <IconPencil size={13} />, run: () => void cmd.openSshConfigEditor() },
             ]}

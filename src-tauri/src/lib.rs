@@ -263,6 +263,8 @@ pub fn run() {
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
             hosts::install::host_install,
+            hosts::install::host_sign_in,
+            hosts::probe::host_probe,
             share::share_access,
             share::share_viewer_hello,
             core_call::core_call,

@@ -23,6 +23,7 @@ import * as cmd from "../state/commands";
 import { useShortcutLabel, withShortcut } from "../commands/useShortcutLabel";
 import { AgentChatPane } from "./AgentChatPane";
 import { YoloToggle } from "./YoloToggle";
+import { ChatHeaderSlot } from "./headerSlot";
 import { ShareButton } from "../share/ShareControls";
 import { agentCwd, agentPtyContext } from "../agents/agentPtyContext";
 import "../styles/chat.css";
@@ -85,6 +86,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
     const working = useStore((state) => state.agentStatus[agent.id]?.group === "working");
     const busy = chatBusy || working;
     const [renaming, setRenaming] = useState(false);
+    const [chatHeader, setChatHeader] = useState<HTMLDivElement | null>(null);
     const buddies = useStore((state) => state.faceStyle.on);
     /* The core starts a terminal agent again after a crash, in a terminal of its own that the pane takes up. */
     const [terminal, setTerminal] = useState({ ptyId: agent.ptyId, generation: 0 });
@@ -167,6 +169,7 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
                 </div>
                 <div className="agent-surface-end">
                     <div className="agent-surface-controls">
+                        <div className="agent-surface-chat" ref={setChatHeader} hidden={view !== "gui"} />
                         {agent.worktree && (
                             <Suspense fallback={null}>
                                 <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
@@ -201,14 +204,16 @@ export function AgentSurface({ agent, session, profile, visible }: { agent: Agen
             <div className="agent-surface-body">
                 {supportsGui && (
                     <div className={`agent-gui-layer${view === "gui" ? " visible" : ""}`}>
-                        <AgentChatPane
-                            agent={agent}
-                            profile={profile}
-                            cwd={agent.cwd || session.cwd}
-                            active={guiActive}
-                            visible={visible && guiActive}
-                            onBusyChange={setChatBusy}
-                        />
+                        <ChatHeaderSlot.Provider value={chatHeader}>
+                            <AgentChatPane
+                                agent={agent}
+                                profile={profile}
+                                cwd={agent.cwd || session.cwd}
+                                active={guiActive}
+                                visible={visible && guiActive}
+                                onBusyChange={setChatBusy}
+                            />
+                        </ChatHeaderSlot.Provider>
                     </div>
                 )}
                 {view === "tui" && !switching && (

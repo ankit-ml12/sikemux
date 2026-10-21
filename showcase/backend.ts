@@ -813,6 +813,8 @@ export class ShowcaseBackend implements IpcTransport {
       ["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"],
       constant([]),
     );
+    this.onCore(["agentNameTheme"], constant({ theme: "nature" }));
+    this.onCore(["setAgentNameTheme"], ({ params }) => params);
     this.onCore(["tasks"], ({ params }) => ({
       project: (params as { project: string }).project,
       configStatus: "absent",

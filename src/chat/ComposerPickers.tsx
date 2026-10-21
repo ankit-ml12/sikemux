@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AgentIcon, IconChevron } from "../ui/Icons";
 import { agentLabel, hasAccounts, type AgentType } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
-import { accountsOf, moveChat } from "../agents/accounts";
+import { accountName, accountsOf, moveChat } from "../agents/accounts";
+import type { AgentUsage } from "../api/agents";
+import { accountItem } from "../rail/AgentAccounts";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
 import { fetchResource, peekResource } from "../state/resources";
-import { agentAccountR } from "../state/resources.defs";
+import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
 import type { Agent, ProviderProfile } from "../state/types";
@@ -204,7 +207,7 @@ export function PayerChoices({
 
 interface Movable {
     account: ProviderProfile;
-    email?: string;
+    usage?: AgentUsage;
 }
 
 /** The person's other accounts with this chat's provider that can take the
@@ -217,20 +220,22 @@ function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movabl
     const load = useCallback(
         (fresh: boolean) => {
             if (!provider || !profile) return;
-            const read = (account: ProviderProfile) =>
-                (!fresh && peekResource(agentAccountR, provider, account.configPath)) || fetchResource(agentAccountR, provider, account.configPath);
-            void Promise.all(
-                accounts.map((account) =>
-                    Promise.resolve(read(account))
-                        .then((status) => ({ account, status }))
-                        .catch(() => undefined),
-                ),
-            ).then((rows) => {
+            const read = async (account: ProviderProfile) => {
+                const status =
+                    (!fresh && peekResource(agentAccountR, provider, account.configPath)) ||
+                    (await fetchResource(agentAccountR, provider, account.configPath));
+                const usage = status.signedIn
+                    ? (!fresh && peekResource(agentUsageR, provider, account.configPath)) ||
+                      (await fetchResource(agentUsageR, provider, account.configPath).catch(() => undefined))
+                    : undefined;
+                return { account, status, usage };
+            };
+            void Promise.all(accounts.map((account) => read(account).catch(() => undefined))).then((rows) => {
                 const sessions = rows.find((row) => row?.account.id === profile.id)?.status.sessions;
                 setMovable(
                     rows.flatMap((row) =>
                         row && row.status.signedIn && sessions && row.status.sessions === sessions
-                            ? [{ account: row.account, email: row.status.email ?? undefined }]
+                            ? [{ account: row.account, usage: row.usage }]
                             : [],
                     ),
                 );
@@ -243,27 +248,62 @@ function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movabl
 }
 
 /** Moves a chat that has started to another of the person's accounts, even in
-    the middle of a turn. */
-function AccountPicker({ agent, profile, running, disabled }: { agent: Agent; profile: ProviderProfile; running: boolean; disabled: boolean }) {
+    the middle of a turn. Its menu is the rail's, without signing in or out. */
+export function AccountPicker({
+    agent,
+    profile,
+    running,
+    disabled,
+}: {
+    agent: Agent;
+    profile: ProviderProfile;
+    running: boolean;
+    disabled: boolean;
+}) {
     const [movable, load] = useMovable(agent, profile);
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const provider = agent.type as AgentType;
     if (!movable.some((row) => row.account.id !== profile.id)) return null;
+    const name = accountName(profile, peekResource(agentAccountR, provider, profile.configPath));
+    const items: CtxItem[] = movable.map(({ account, usage }) => ({
+        ...accountItem(provider, account, account.id === profile.id, usage),
+        run: account.id === profile.id ? undefined : () => moveChat(agent, account),
+    }));
     return (
-        <Picker
-            name="Account"
-            label={profile.name}
-            value={profile.id}
-            options={movable.map(({ account, email }) => ({
-                value: account.id,
-                label: account.name,
-                description: account.id !== profile.id && running ? "Stops this turn and carries it on here" : email,
-            }))}
-            disabled={disabled}
-            onOpen={() => load(true)}
-            onSelect={(id) => {
-                const next = movable.find((row) => row.account.id === id)?.account;
-                if (next && next.id !== profile.id) moveChat(agent, next);
-            }}
-        />
+        <div className="chat-picker">
+            <button
+                ref={trigger}
+                type="button"
+                className="chat-picker-trigger"
+                aria-label="Account"
+                aria-haspopup="menu"
+                aria-expanded={menu !== null}
+                disabled={disabled}
+                title={running ? "Moving stops this turn and carries it on in the other account" : name}
+                onClick={() => {
+                    if (menu) return setMenu(null);
+                    load(true);
+                    const box = trigger.current!.getBoundingClientRect();
+                    setMenu({ x: box.right, y: box.top - 6 });
+                }}>
+                <span>{name}</span>
+                <IconChevron size={10} />
+            </button>
+            {menu && (
+                <TreeContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    width={280}
+                    above
+                    alignRight
+                    className="agent-account-menu"
+                    tickBesideLabel
+                    items={items}
+                    onClose={() => setMenu(null)}
+                />
+            )}
+        </div>
     );
 }
 
@@ -273,8 +313,6 @@ export function ComposerPickers({
     model: modelPicker,
     effort: effortPicker,
     disabled,
-    running = false,
-    moveDisabled = true,
     agentLocked = false,
     onConfig,
     onAgent,
@@ -285,9 +323,6 @@ export function ComposerPickers({
     model?: ConfigPicker | null;
     effort?: ConfigPicker | null;
     disabled: boolean;
-    running?: boolean;
-    /** Whether the chat cannot move to another account now, which it can while a turn runs. */
-    moveDisabled?: boolean;
     agentLocked?: boolean;
     onAgent: (type: AgentType, profileId?: string, model?: string, modelProvider?: string) => void;
     onConfig: (picker: ConfigPicker, value: string) => void;
@@ -358,7 +393,6 @@ export function ComposerPickers({
                     />
                 );
             })}
-            {agentLocked && profile && <AccountPicker agent={agent} profile={profile} running={running} disabled={moveDisabled} />}
         </div>
     );
 }

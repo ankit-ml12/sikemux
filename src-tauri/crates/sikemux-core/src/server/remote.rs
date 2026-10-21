@@ -100,6 +100,94 @@ struct Stored {
     require_approval: bool,
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(<sha2::Sha256 as sha2::Digest>::digest(bytes))
+}
+
+/// `value` with every null, false, zero, empty text, list and map left out
+/// and every map's keys in order, or `None` when nothing is left.
+fn without_defaults(value: serde_json::Value) -> Option<serde_json::Value> {
+    use serde_json::Value;
+    match value {
+        Value::Null | Value::Bool(false) => None,
+        Value::Number(number) if number.as_f64() == Some(0.0) => None,
+        Value::String(text) if text.is_empty() => None,
+        Value::Array(items) if items.is_empty() => None,
+        Value::Array(items) => Some(Value::Array(
+            items
+                .into_iter()
+                .map(|item| without_defaults(item).unwrap_or(Value::Null))
+                .collect(),
+        )),
+        Value::Object(map) => {
+            let mut entries: Vec<_> = map
+                .into_iter()
+                .filter_map(|(key, value)| Some((key, without_defaults(value)?)))
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            (!entries.is_empty()).then(|| Value::Object(entries.into_iter().collect()))
+        }
+        value => Some(value),
+    }
+}
+
+/// The digest hosts kept before it was taken over a canonical form: the
+/// trusted fields serialized whole, as `file` holds them. A host keeping one
+/// is trusted once more when it first starts on this build, which then keeps
+/// the canonical digest instead.
+fn trusted_as_written(file: &serde_json::Value) -> CoreResult<String> {
+    use serde_json::Value;
+    let field = |name: &str, missing: Value| file.get(name).cloned().unwrap_or(missing);
+    let unseen = |list: Value, cleared: &[(&str, Value)]| match list {
+        Value::Array(items) => Value::Array(
+            items
+                .into_iter()
+                .map(|mut item| {
+                    if let Value::Object(fields) = &mut item {
+                        for (name, value) in cleared {
+                            fields.insert((*name).to_owned(), value.clone());
+                        }
+                    }
+                    item
+                })
+                .collect(),
+        ),
+        other => other,
+    };
+    let mut trusted = serde_json::Map::new();
+    trusted.insert("owner".into(), field("owner", Value::Null));
+    trusted.insert(
+        "devices".into(),
+        unseen(
+            field("devices", Value::Array(Vec::new())),
+            &[("lastSeen", Value::Null)],
+        ),
+    );
+    trusted.insert(
+        "joined_through".into(),
+        field("joinedThrough", Value::Object(Default::default())),
+    );
+    trusted.insert(
+        "links".into(),
+        unseen(
+            field("links", Value::Array(Vec::new())),
+            &[
+                ("lastSeen", Value::Null),
+                ("addresses", Value::Array(Vec::new())),
+            ],
+        ),
+    );
+    trusted.insert("shares".into(), field("shares", Value::Array(Vec::new())));
+    trusted.insert(
+        "revoked".into(),
+        field("revoked", Value::Object(Default::default())),
+    );
+    if let Some(require_approval) = file.get("requireApproval") {
+        trusted.insert("require_approval".into(), require_approval.clone());
+    }
+    Ok(sha256_hex(&serde_json::to_vec(&Value::Object(trusted))?))
+}
+
 fn readable_or_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -167,8 +255,14 @@ struct Removal {
 
 impl Stored {
     /// What decides who may reach this host, leaving out what changes each
-    /// time a device or host is seen.
+    /// time a device or host is seen, as the digest the secret store keeps.
     fn trusted(&self) -> CoreResult<String> {
+        /// What the digest covers, taken over its canonical form, which
+        /// leaves out every value at its default. A field added here, or to
+        /// a device or link, therefore changes no host's digest until it is
+        /// set. Removing a field changes the digest of every file holding it
+        /// at another value, and the core then trusts nothing that file
+        /// names: keep a field until no host can hold it set.
         #[derive(Serialize)]
         struct Trusted<'a> {
             owner: &'a Option<String>,
@@ -203,8 +297,8 @@ impl Stored {
             revoked: &self.revoked,
             require_approval: self.require_approval,
         };
-        let digest = <sha2::Sha256 as sha2::Digest>::digest(serde_json::to_vec(&trusted)?);
-        Ok(hex::encode(digest))
+        let canonical = without_defaults(serde_json::to_value(&trusted)?).unwrap_or_default();
+        Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
     }
 
     /// Forgets every device, host, share and account a file it did not write
@@ -267,6 +361,8 @@ struct Inner {
     bound: Option<String>,
     /// The digest and account the secret store holds.
     kept: (String, Option<String>),
+    /// The digest of the file as last written.
+    written: String,
     direct_only: bool,
     secret: Option<SecretKey>,
     /// A key this host moved off while it was on an account, until that
@@ -308,9 +404,20 @@ pub(crate) fn file_path(socket: &Path) -> PathBuf {
 }
 
 fn read_stored(path: &Path) -> CoreResult<Stored> {
+    Ok(read_file(path)?.1)
+}
+
+/// The remote file as written, beside what it says.
+fn read_file(path: &Path) -> CoreResult<(serde_json::Value, Stored)> {
     match std::fs::read(path) {
-        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Stored::default()),
+        Ok(bytes) => {
+            let file: serde_json::Value = serde_json::from_slice(&bytes)?;
+            let stored = serde_json::from_value(file.clone())?;
+            Ok((file, stored))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok((serde_json::Value::Null, Stored::default()))
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -948,7 +1055,10 @@ impl Remote {
     }
 
     /// The secret store learns of a change to what the file trusts before the
-    /// file does.
+    /// file does, keeping the file's digest as well until the file is written,
+    /// so neither a failed write nor a stop between the two signs the host out.
+    /// It forgets that digest once the file is written, so the file put back
+    /// as it was is not trusted.
     fn save(&self, inner: &mut Inner) -> CoreResult<()> {
         let Some(path) = inner.path.clone() else {
             return Ok(());
@@ -958,7 +1068,12 @@ impl Remote {
             keep(inner, &kept)?;
             inner.kept = kept;
         }
-        write_stored(&path, &inner.stored)
+        write_stored(&path, &inner.stored)?;
+        if inner.written != inner.kept.0 {
+            inner.written = inner.kept.0.clone();
+            keep(inner, &inner.kept)?;
+        }
+        Ok(())
     }
 
     fn forget_retired(&self) {
@@ -1010,6 +1125,7 @@ fn keep(inner: &Inner, (trusted, account): &(String, Option<String>)) -> CoreRes
             trusted: trusted.clone(),
             account: account.clone(),
             retired: inner.retired.clone(),
+            written: (inner.written != *trusted).then(|| inner.written.clone()),
         })?;
     }
     Ok(())
@@ -1078,9 +1194,61 @@ pub fn trust_remote_file(socket: &Path, key: &SecretKey) -> Result<(), String> {
             trusted: stored.trusted()?,
             account: stored.owner.clone(),
             retired: None,
+            written: None,
         })
     };
     trust().map_err(|error: CoreError| error.to_string())
+}
+
+/// Reads the remote file and the key that vouches for it, trusting none of
+/// the devices, hosts or account the file names unless the key's digest is
+/// the file's.
+fn load(keeper: &Keeper, path: &Path) -> CoreResult<(Stored, HostKey, String)> {
+    let (file, mut stored) = read_file(path)?;
+    let file_key = stored.secret_key.take();
+    let trusted = stored.trusted()?;
+    let key = match keeper.load()? {
+        Some(key)
+            if key.trusted == trusted
+                || key.written.as_ref() == Some(&trusted)
+                || key.trusted == trusted_as_written(&file)? =>
+        {
+            key
+        }
+        Some(key) => {
+            eprintln!(
+                "sikemux core: {} was changed by something other than this host, so it trusts none of the devices or hosts it names",
+                path.display()
+            );
+            stored.distrust();
+            key
+        }
+        None => {
+            let on_account = stored.owner.is_some() || stored.pending_leave.is_some();
+            let account = stored.owner.clone();
+            stored.distrust();
+            HostKey {
+                secret: SecretKey::generate(),
+                trusted: String::new(),
+                account,
+                retired: file_key
+                    .filter(|_| on_account)
+                    .as_deref()
+                    .and_then(secret_from_hex),
+                written: None,
+            }
+        }
+    };
+    let trusted = stored.trusted()?;
+    if trusted != key.trusted || key.written.is_some() {
+        keeper.save(&HostKey {
+            trusted: trusted.clone(),
+            written: None,
+            ..key.clone()
+        })?;
+    }
+    write_stored(path, &stored)?;
+    Ok((stored, key, trusted))
 }
 
 /// Loads the core's key and devices, listens if remote access was left on,
@@ -1092,41 +1260,7 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
     let (socket, secret_store) = (config.socket.clone(), config.secret_store);
     let loaded = blocking(move || {
         let keeper = Keeper::new(&socket, secret_store)?;
-        let mut stored = read_stored(&loading)?;
-        let file_key = stored.secret_key.take();
-        let key = match keeper.load()? {
-            Some(key) if key.trusted == stored.trusted()? => key,
-            Some(key) => {
-                eprintln!(
-                    "sikemux core: {} was changed by something other than this host, so it trusts none of the devices or hosts it names",
-                    loading.display()
-                );
-                stored.distrust();
-                key
-            }
-            None => {
-                let on_account = stored.owner.is_some() || stored.pending_leave.is_some();
-                let account = stored.owner.clone();
-                stored.distrust();
-                HostKey {
-                    secret: SecretKey::generate(),
-                    trusted: String::new(),
-                    account,
-                    retired: file_key
-                        .filter(|_| on_account)
-                        .as_deref()
-                        .and_then(secret_from_hex),
-                }
-            }
-        };
-        let trusted = stored.trusted()?;
-        if trusted != key.trusted {
-            keeper.save(&HostKey {
-                trusted: trusted.clone(),
-                ..key.clone()
-            })?;
-        }
-        write_stored(&loading, &stored)?;
+        let (stored, key, trusted) = load(&keeper, &loading)?;
         Ok((stored, key, trusted, keeper))
     })
     .await;
@@ -1151,7 +1285,8 @@ pub(crate) async fn start(core: &Arc<Core>, config: &ServerConfig) {
         inner.path = Some(path);
         inner.keeper = Some(keeper);
         inner.bound = key.account.clone();
-        inner.kept = (trusted, key.account);
+        inner.kept = (trusted.clone(), key.account);
+        inner.written = trusted;
         inner.direct_only = direct_only;
         inner.never_too_old = cfg!(debug_assertions);
         inner.secret = Some(key.secret);
@@ -1967,6 +2102,115 @@ async fn serve_device(core: Arc<Core>, incoming: Incoming) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hosts that update keep the digest their last build took, over that
+    /// build's shape of the file; they come back with their account, devices
+    /// and links, and keep the canonical digest from then on.
+    #[test]
+    fn a_remote_file_from_an_earlier_build_stays_trusted() {
+        for (file, digest) in [
+            (
+                include_str!("fixtures/remote/nightly3.remote.json"),
+                "5c7327e3e80c6089ca305449ee08a79bb12f01bed332c26cdd637d7b1f52e862",
+            ),
+            (
+                include_str!("fixtures/remote/nightly4.remote.json"),
+                "42b087817bc6ada3d6e42d4295c06f7aef8c22abcf481f849a7f4609ebf9f7d2",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let socket = dir.path().join("core.sock");
+            let path = file_path(&socket);
+            std::fs::write(&path, file).unwrap();
+            let keeper = Keeper::new(&socket, false).unwrap();
+            keeper
+                .save(&HostKey {
+                    secret: SecretKey::generate(),
+                    trusted: digest.into(),
+                    account: Some("user_2nightly".into()),
+                    retired: None,
+                    written: None,
+                })
+                .unwrap();
+            for _ in 0..2 {
+                let (stored, _, trusted) = load(&keeper, &path).unwrap();
+                assert!(stored.enabled);
+                assert_eq!(stored.owner.as_deref(), Some("user_2nightly"));
+                assert_eq!(stored.devices.len(), 1);
+                assert_eq!(stored.links.len(), 1);
+                assert_eq!(stored.joined_through.len(), 1);
+                assert_eq!(keeper.load().unwrap().unwrap().trusted, trusted);
+            }
+            std::fs::write(&path, file.replace("\"full\"", "\"watch\"")).unwrap();
+            keeper
+                .save(&HostKey {
+                    secret: SecretKey::generate(),
+                    trusted: digest.into(),
+                    account: Some("user_2nightly".into()),
+                    retired: None,
+                    written: None,
+                })
+                .unwrap();
+            let (edited, _, _) = load(&keeper, &path).unwrap();
+            assert!(edited.owner.is_none() && edited.devices.is_empty());
+        }
+    }
+
+    /// The secret store moves ahead of the file before the file is written.
+    /// A host whose write failed, or that stopped in between, comes back with
+    /// its file trusted; once the file is written, its state before is not.
+    #[test]
+    fn a_file_behind_the_secret_store_stays_trusted_until_it_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("core.sock");
+        let path = file_path(&socket);
+        std::fs::write(&path, include_str!("fixtures/remote/nightly4.remote.json")).unwrap();
+        let keeper = Keeper::new(&socket, false).unwrap();
+        keeper
+            .save(&HostKey {
+                secret: SecretKey::generate(),
+                trusted: "42b087817bc6ada3d6e42d4295c06f7aef8c22abcf481f849a7f4609ebf9f7d2".into(),
+                account: Some("user_2nightly".into()),
+                retired: None,
+                written: None,
+            })
+            .unwrap();
+        let (mut stored, key, written) = load(&keeper, &path).unwrap();
+        stored.links.clear();
+        keeper
+            .save(&HostKey {
+                trusted: stored.trusted().unwrap(),
+                written: Some(written.clone()),
+                ..key.clone()
+            })
+            .unwrap();
+        let (stored, key, written) = load(&keeper, &path).unwrap();
+        assert_eq!(stored.links.len(), 1);
+        assert_eq!(stored.owner.as_deref(), Some("user_2nightly"));
+
+        let before = std::fs::read(&path).unwrap();
+        let core = Core::new(crate::protocol::BuildIdentity::default(), None).unwrap();
+        {
+            let mut inner = core.remote.inner.locked();
+            inner.path = Some(path.clone());
+            inner.keeper = Some(Keeper::new(&socket, false).unwrap());
+            inner.secret = Some(key.secret.clone());
+            inner.bound = key.account.clone();
+            inner.kept = (written.clone(), key.account.clone());
+            inner.written = written;
+            inner.stored = stored;
+        }
+        core.remote
+            .change(|stored| {
+                stored.links.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(keeper.load().unwrap().unwrap().written, None);
+        std::fs::write(&path, before).unwrap();
+        let (put_back, _, _) = load(&keeper, &path).unwrap();
+        assert!(put_back.owner.is_none() && put_back.links.is_empty());
+    }
 
     #[test]
     fn the_file_sits_beside_the_socket() {

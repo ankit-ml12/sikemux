@@ -73,6 +73,7 @@
   <symbol id="dots" viewBox="0 0 16 16"><path d="M4 8h.01M8 8h.01M12 8h.01" stroke-width="2"/></symbol>
   <symbol id="down" viewBox="0 0 16 16"><path d="M8 2.8v7.4M5 7.4 8 10.4l3-3M3 13.2h10"/></symbol>
   <symbol id="pen" viewBox="0 0 16 16"><path d="M10.6 3.2l2.2 2.2-7 7H3.6v-2.2z"/></symbol>
+  <symbol id="login" viewBox="0 0 16 16"><path d="M9.6 2.8h2.6a1 1 0 0 1 1 1v8.4a1 1 0 0 1-1 1H9.6M2.8 8h7M7.4 5.4 10 8l-2.6 2.6"/></symbol>
   <symbol id="trash" viewBox="0 0 16 16"><path d="M3 4.6h10M6.4 4.6V3h3.2v1.6M4.4 4.6l.6 8.4h6l.6-8.4"/></symbol>
 </svg>
 
@@ -206,6 +207,37 @@
       <div class="trow"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Rotate the deploy keys</b><small><svg class="i"><use href="#folder"/></svg>infra</small></span><span class="end">@Wren</span></div>
     </div>
     <div class="note">The terminals page lists the host's terminals the same way. With nothing running there: <b>No chats on test-ec2</b>, ⌘N to start one.</div>
+  </div>
+</div>
+
+<h3>5 · An SSH host that already runs Sikemux is one row</h3>
+<p class="why">When a terminal on an SSH host connects, the app asks that host once, over your own SSH and never prompting, whether it runs Sikemux and which host it is. A host on the account then shows once, under the SSH alias when the account still had only its machine name. A host with Sikemux that is off the account says so; one that is signed out offers <b>Sign in</b>, which runs <code>sikemux login</code> in a tab of its SSH session and approves the code from this host.</p>
+<div class="pair">
+  <div>
+    <div class="cap">Before · test-ec2 counted twice</div>
+    <div class="rail">
+      <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
+      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i core"><use href="#server"/></svg>ip-10-0-16-158<span class="end">out of reach<span class="dot off"></span></span></div>
+      <div class="row"><svg class="i ssh"><use href="#server"/></svg>test-ec2<span class="end"><span class="dot"></span></span></div>
+    </div>
+  </div>
+  <div>
+    <div class="cap new">After · one row, signed out, ⋯ open</div>
+    <div class="rail" style="height: 250px;">
+      <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
+      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="end">not signed in<span class="dot off"></span></span></div>
+      <div class="row"><svg class="i ssh"><use href="#server"/></svg>build-box<span class="end">on another account<span class="dot off"></span></span></div>
+      <div class="menu float" style="left: 118px; top: 74px;">
+        <div class="mrow hot"><svg class="i"><use href="#login"/></svg>Sign in</div>
+        <hr>
+        <div class="mrow"><svg class="i"><use href="#plus"/></svg>New chat here</div>
+        <div class="mrow"><svg class="i"><use href="#term"/></svg>New terminal here</div>
+        <div class="mrow"><svg class="i"><use href="#folder"/></svg>Files</div>
+      </div>
+    </div>
+    <div class="note">With no key the SSH config offers, or no Sikemux there, nothing changes: the SSH row stays and offers <b>Install Sikemux here</b>. A host on another account offers nothing.</div>
   </div>
 </div>
 
