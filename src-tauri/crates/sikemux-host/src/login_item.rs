@@ -19,6 +19,7 @@ const SERVICE_PROBE: Duration = Duration::from_secs(1);
 const SERVICE_START: Duration = Duration::from_secs(5);
 
 /// How the app starts the core, which the login item repeats.
+#[derive(Clone)]
 pub struct CoreLaunch {
     pub binary: PathBuf,
     pub socket: PathBuf,

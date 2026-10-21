@@ -13,11 +13,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use sikemux_core::client::{
-    await_deferred_upgrade, await_upgrade, frozen_request, Attached, ClientError, CoreClient, Reply,
-};
-use sikemux_core::frozen::{FrozenReply, FrozenRequest, UpdateBlocker};
-use sikemux_core::protocol::{BuildIdentity, Request, SessionInfo, SessionKind};
+use sikemux_core::client::{Attached, ClientError, CoreClient, Reply};
+use sikemux_core::frozen::UpdateBlocker;
+use sikemux_core::protocol::{Request, SessionInfo, SessionKind};
+use sikemux_host::core_start::{self, StartError, Upgrade};
 use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -32,13 +31,6 @@ const MAIN_WEBVIEW: &str = "main";
 /// Long enough for the core's shared kill grace plus reaping a few hundred
 /// sessions.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
-/// The core first checks that the sidecar starts, which can take a while the
-/// first time macOS sees a new binary.
-const UPGRADE_ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
-const UPGRADE_RETURN_TIMEOUT: Duration = Duration::from_secs(20);
-/// A core with chat turns running updates once they end, which it gives two
-/// minutes.
-const DEFERRED_RETURN_TIMEOUT: Duration = Duration::from_secs(150);
 
 struct CoreSettings {
     app: AppHandle,
@@ -180,38 +172,18 @@ impl PtyManager {
         let launch = self.core_launch().ok_or_else(|| {
             AppError::Pty("the sikemux-host sidecar that runs terminals is missing".into())
         })?;
-        let binary = launch.binary.clone();
         if let Some(directory) = launch.log.parent() {
             let _ = std::fs::create_dir_all(directory);
         }
         let identifier = settings.app.config().identifier.clone();
-        let found = tauri::async_runtime::spawn_blocking(move || {
-            crate::login_item::start_core(&identifier, &launch)
-        })
-        .await
-        .map_err(|error| AppError::Pty(format!("core start join: {error}")))?;
-        match found {
-            Ok(hello) if hello.build.same_build(&crate::build_identity()) => {}
-            Ok(hello) => {
-                match upgrade_core(settings, binary, hello.pid, Some(hello.build), false).await {
-                    Ok(Upgrade::Done) => {}
-                    Ok(Upgrade::Deferred) => eprintln!(
-                        "Sikemux's terminal core updates once its chats can be carried over; using it as it is until then"
-                    ),
-                    Err(message) => {
-                        eprintln!("Sikemux keeps its terminal core as it is: {message}")
-                    }
-                }
+        let force = take_forced_update(settings);
+        match core_start::start(&identifier, &launch, &crate::build_identity(), force).await {
+            Ok(()) => {}
+            Err(StartError::Incompatible { pid, reason }) => {
+                self.notice_incompatible(settings, pid);
+                return Err(AppError::Pty(reason));
             }
-            Err(ClientError::VersionMismatch { pid, message, .. }) => {
-                if let Err(reason) = upgrade_core(settings, binary, pid, None, true).await {
-                    self.notice_incompatible(settings, pid);
-                    return Err(AppError::Pty(format!(
-                        "{message}, and it could not be updated: {reason}"
-                    )));
-                }
-            }
-            Err(error) => return Err(core_error(error)),
+            Err(StartError::Unreachable(error)) => return Err(core_error(error)),
         }
         let sink = Arc::new(AppSink::new(settings.app.clone(), self.streams.clone()));
         let client = Arc::new(
@@ -294,7 +266,17 @@ impl PtyManager {
             ) else {
                 return;
             };
-            match upgrade_core(settings, binary, client.core_pid(), Some(build), false).await {
+            let force = take_forced_update(settings);
+            match core_start::upgrade(
+                &settings.socket,
+                binary,
+                client.core_pid(),
+                Some(build),
+                force,
+                false,
+            )
+            .await
+            {
                 Ok(Upgrade::Done) => {}
                 Ok(Upgrade::Deferred) => {
                     eprintln!("Sikemux's terminal core updates once its chats can be carried over")
@@ -321,7 +303,7 @@ impl PtyManager {
             "Not Now",
             move || {
                 std::thread::spawn(move || {
-                    stop_core_process(&socket, pid);
+                    core_start::stop(&socket, pid);
                     app.exit(0);
                 });
             },
@@ -440,59 +422,6 @@ pub(crate) async fn reattach(client: &Arc<CoreClient>, streams: &Arc<StreamTable
     }
 }
 
-enum Upgrade {
-    Done,
-    /// The core goes on as it is until its chats can be carried over, then
-    /// updates and drops its connections, which come back to the updated core.
-    Deferred,
-}
-
-/// Asks the core at `socket` to replace itself with `binary`, and waits for
-/// it to answer from the same process again. Without `old`, the core speaks
-/// another protocol and could not say which build it runs. A core that
-/// defers is waited for only when `wait_if_deferred`.
-async fn upgrade_core(
-    settings: &CoreSettings,
-    binary: PathBuf,
-    pid: u32,
-    old: Option<BuildIdentity>,
-    wait_if_deferred: bool,
-) -> Result<Upgrade, String> {
-    let socket = settings.socket.clone();
-    let force = take_forced_update(settings);
-    let upgraded = tauri::async_runtime::spawn_blocking(move || {
-        let request = FrozenRequest::Upgrade { binary, force };
-        match frozen_request(&socket, &request, UPGRADE_ANSWER_TIMEOUT) {
-            Ok(FrozenReply::Accepted) => {
-                await_upgrade(&socket, pid, old.as_ref(), UPGRADE_RETURN_TIMEOUT)
-                    .map(Some)
-                    .map_err(|error| error.to_string())
-            }
-            Ok(FrozenReply::Deferred { .. }) if wait_if_deferred => {
-                await_deferred_upgrade(&socket, pid, old.as_ref(), DEFERRED_RETURN_TIMEOUT)
-                    .map(Some)
-                    .map_err(|error| error.to_string())
-            }
-            Ok(FrozenReply::Deferred { .. }) => Ok(None),
-            Ok(FrozenReply::Refused { message }) => Err(message),
-            Ok(FrozenReply::UpdateBlockers { .. }) => {
-                Err("the core answered another request".to_owned())
-            }
-            Err(error) => Err(error.to_string()),
-        }
-    })
-    .await
-    .map_err(|error| error.to_string())??;
-    let Some(upgraded) = upgraded else {
-        return Ok(Upgrade::Deferred);
-    };
-    eprintln!(
-        "Sikemux updated its terminal core (pid {pid}) to {} {}",
-        upgraded.build.version, upgraded.build.commit
-    );
-    Ok(Upgrade::Done)
-}
-
 /// Where the person's choice to force the next core update is kept, so the
 /// relaunched app can tell the core.
 fn forced_update_marker(settings: &CoreSettings) -> PathBuf {
@@ -523,30 +452,9 @@ impl PtyManager {
             return Vec::new();
         };
         let socket = settings.socket.clone();
-        let asked = tauri::async_runtime::spawn_blocking(move || {
-            frozen_request(
-                &socket,
-                &FrozenRequest::UpdateBlockers,
-                UPGRADE_ANSWER_TIMEOUT,
-            )
-        })
-        .await;
-        match asked {
-            Ok(Ok(FrozenReply::UpdateBlockers { chats })) => chats,
-            _ => Vec::new(),
-        }
-    }
-}
-
-/// Ends a core this app cannot talk to, with everything running in it.
-fn stop_core_process(socket: &std::path::Path, pid: u32) {
-    let stopped = frozen_request(socket, &FrozenRequest::StopEverything, STOP_TIMEOUT);
-    if !matches!(stopped, Ok(FrozenReply::Accepted)) && pid > 1 {
-        // SAFETY: kill only takes integers; the pid is a single process above
-        // init, so this never signals a group or every process.
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
-        }
+        tauri::async_runtime::spawn_blocking(move || core_start::update_blockers(&socket))
+            .await
+            .unwrap_or_default()
     }
 }
 
