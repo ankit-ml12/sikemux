@@ -24,6 +24,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
+mod blame;
 mod gutter;
 mod insights;
 mod lsp;
@@ -128,6 +129,8 @@ struct Document {
     rendered: Option<Rc<gpui_transcript::Markdown>>,
     /// What changed since the last commit, marked beside the lines.
     gutter: gutter::Gutter,
+    /// Who last changed each line.
+    blame: blame::Blame,
     _changes: Subscription,
 }
 
@@ -292,6 +295,12 @@ pub fn pane(
                         &document.state,
                         &document.gutter,
                         document.state.read(cx).text().len_lines(),
+                    ))
+                    .child(blame::overlay(
+                        &document.state,
+                        &document.blame,
+                        size,
+                        t.text_disabled,
                     )),
             ),
         })
@@ -756,6 +765,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             cx.notify();
         }
         gutter::changed(&watched, bench, cx);
+        blame::typed(bench, &watched, cx);
     });
     bench.editors.open.insert(
         path.clone(),
@@ -772,6 +782,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             mode: preview::first_mode(&path),
             rendered: None,
             gutter: gutter::Gutter::default(),
+            blame: blame::Blame::default(),
             _changes: changes,
         },
     );
@@ -862,6 +873,7 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             if first && document.loaded {
                 lsp::attach(bench, path.clone(), window, cx);
                 gutter::read_base(bench, &path, cx);
+                blame::read(bench, &path, cx);
             } else {
                 gutter::changed(&path, bench, cx);
             }
@@ -893,6 +905,7 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
             let Some(document) = bench.editors.open.get_mut(&path) else {
                 return;
             };
+            let landed = saved.is_ok();
             match saved {
                 Ok(version) => {
                     lsp::saved(document, &text, &bench.asks);
@@ -906,6 +919,9 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
                     document.notice = Some(Notice::Conflict(error));
                 }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
+            }
+            if landed {
+                blame::read(bench, &path, cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -1009,6 +1025,7 @@ pub fn git_changed(bench: &mut Workbench, paths: Option<&[String]>, cx: &mut Con
         .collect();
     for path in open {
         gutter::read_base(bench, &path, cx);
+        blame::read(bench, &path, cx);
     }
 }
 
