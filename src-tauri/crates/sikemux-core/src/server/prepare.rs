@@ -42,6 +42,9 @@ pub(crate) struct Owner {
     /// in the rail, numbered from 1.
     #[serde(default)]
     pub rail_number: Option<u32>,
+    /// A shell started with no command, startup or name of its own.
+    #[serde(skip)]
+    pub plain: bool,
 }
 
 impl Owner {
@@ -62,12 +65,15 @@ impl Owner {
             ssh_host: (context.session_kind == "ssh" && !context.session_name.is_empty())
                 .then(|| context.session_name.clone()),
             rail_number: None,
+            plain: false,
         }
     }
 
-    /// A plain terminal outside every project, agent, task and SSH host.
-    pub(crate) fn is_loose(&self, kind: SessionKind) -> bool {
+    /// A plain shell outside every project, agent, task and SSH host, which
+    /// the rail can only tell apart by number.
+    pub(crate) fn wants_rail_number(&self, kind: SessionKind) -> bool {
         kind == SessionKind::Terminal
+            && self.plain
             && self.project.is_none()
             && self.agent_id.is_none()
             && self.task.is_none()
@@ -136,6 +142,11 @@ pub(crate) fn prepare_terminal(
         &HashMap::new(),
     );
     let mut owner = Owner::from_context(context.as_ref());
+    owner.plain = startup.is_none()
+        && direct_command.is_none()
+        && context
+            .as_ref()
+            .is_none_or(|context| context.session_name.is_empty());
     let variable = owner
         .agent_type
         .as_deref()

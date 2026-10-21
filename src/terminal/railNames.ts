@@ -53,7 +53,7 @@ function firstPtyId(state: Pick<StoreState, "windowsBySession" | "windows">, ses
     return undefined;
 }
 
-/** A session's name as the person reads it: a loose terminal's is the one the core gave its first terminal. */
+/** A session's name as the person reads it: an unnamed terminal session's is the one the core gave its first terminal. */
 export function sessionName(
     state: Pick<StoreState, "windowsBySession" | "windows">,
     session: Session,
@@ -61,14 +61,14 @@ export function sessionName(
 ): string {
     if (session.kind !== "command") return session.name;
     const ptyId = firstPtyId(state, session.id);
-    return (ptyId !== undefined && railNames.get(ptyId)) || "Terminal";
+    return (ptyId !== undefined && railNames.get(ptyId)) || session.name || "Terminal";
 }
 
 export function useSessionName(session: Session | undefined): string {
     const ptyId = useStore((state) => (session?.kind === "command" ? firstPtyId(state, session.id) : undefined));
     const railName = useExternalValue(names, (live) => (ptyId === undefined ? undefined : live.get(ptyId)));
     if (session?.kind !== "command") return session?.name ?? "";
-    return railName ?? "Terminal";
+    return railName ?? (session.name || "Terminal");
 }
 
 /** Every name the core gave, for lists that name many sessions at once. */

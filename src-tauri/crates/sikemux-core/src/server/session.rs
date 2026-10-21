@@ -443,7 +443,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     let io = AsyncFd::new(io_file)?;
 
     let id = core.next_session_id.fetch_add(1, Ordering::Relaxed);
-    if owner.is_loose(kind) {
+    if owner.wants_rail_number(kind) {
         owner.rail_number = Some(core.take_rail_number());
     }
     let agent = AgentActivity::new(

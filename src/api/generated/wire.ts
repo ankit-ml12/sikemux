@@ -275,8 +275,9 @@ export interface SessionInfo {
     /** The SSH config host an SSH terminal connects to. */
     sshAlias: string | null;
     /**
-     * What the rail calls a terminal outside every project, agent and SSH
-     * host: the lowest number no other running one has when it started.
+     * What the rail calls a plain shell outside every project, agent and
+     * SSH host, started with no command or name of its own: the lowest
+     * number no other running one has when it started.
      */
     railName: string | null;
 }
