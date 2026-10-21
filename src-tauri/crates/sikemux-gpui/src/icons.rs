@@ -211,3 +211,9 @@ pub fn agent(provider: &str) -> Icon {
         _ => Icon::Agent,
     }
 }
+
+impl From<Icon> for gpui_kit::component::Icon {
+    fn from(icon: Icon) -> Self {
+        gpui_kit::component::Icon::default().path(icon.path())
+    }
+}

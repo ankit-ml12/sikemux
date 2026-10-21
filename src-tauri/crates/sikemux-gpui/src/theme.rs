@@ -250,6 +250,9 @@ pub fn apply(palette: &Palette, cx: &mut App) {
     };
     kit.accent = tokens.surface_hover;
     kit.accent_foreground = tokens.text_primary;
+    kit.secondary_hover = tokens.surface_hover;
+    kit.secondary_active = tokens.surface_chosen;
+    kit.secondary_foreground = tokens.text_primary;
     kit.list_hover = tokens.surface_hover;
     kit.list_active = tokens.surface_chosen;
     kit.primary = tokens.accent;

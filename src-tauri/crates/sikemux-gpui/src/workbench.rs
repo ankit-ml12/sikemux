@@ -58,6 +58,8 @@ pub struct Workbench {
     pub remote: Option<RemoteStatus>,
     pub accounts: crate::accounts::Accounts,
     pub all_projects: bool,
+    /// The task each project's Run button starts, when the person chose one, by project path.
+    pub picked_tasks: HashMap<String, String>,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
     /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
@@ -65,6 +67,7 @@ pub struct Workbench {
     pub tab_rail_open: bool,
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
+    run_clock: Option<Task<()>>,
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
@@ -264,11 +267,13 @@ impl Workbench {
             remote: None,
             accounts: Default::default(),
             all_projects: false,
+            picked_tasks: HashMap::new(),
             space: None,
             side_rail_open: true,
             tab_rail_open: true,
             peeking: None,
             unpeek: None,
+            run_clock: None,
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             finder: None,
@@ -465,6 +470,10 @@ impl Workbench {
                     pane.update(cx, |pane, cx| pane.catalog(&value, cx));
                 }
                 self.reads.insert("catalog", value);
+            }
+            Update::Read(key @ ("runs" | "ports"), value) => {
+                self.reads.insert(key, value);
+                self.time_run(cx);
             }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
@@ -984,10 +993,57 @@ impl Workbench {
         )
     }
 
+    /// Counts the seconds on the Run chip while the person's task runs with no port to show.
+    fn time_run(&mut self, cx: &mut Context<Self>) {
+        let listening = |run: &Value| {
+            self.read("ports")
+                .and_then(Value::as_array)
+                .is_some_and(|ports| {
+                    ports
+                        .iter()
+                        .any(|port| port["owner"]["executionId"] == run["executionId"])
+                })
+        };
+        let counting = self.person_runs().0.is_some_and(|run| !listening(run));
+        if !counting {
+            self.run_clock = None;
+        } else if self.run_clock.is_none() {
+            self.run_clock = Some(cx.spawn(async move |this, cx| loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let tick = this.update(cx, |bench, cx| bench.parts.redraw(&bench.parts.top, cx));
+                if tick.is_err() {
+                    break;
+                }
+            }));
+        }
+    }
+
     pub fn start_task(&self, task: &str) {
         if let Some(project) = &self.watched_project {
             self.call("taskStart", json!({ "project": project, "taskId": task }));
         }
+    }
+
+    /// Makes `task` the one the project's Run button starts.
+    pub fn pick_task(&mut self, task: &str, cx: &mut Context<Self>) {
+        if let Some(project) = self.watched_project.clone() {
+            self.picked_tasks.insert(project, task.to_owned());
+            cx.notify();
+        }
+    }
+
+    /// Brings forward the project's tab showing `target`, opening one when none does.
+    pub fn show(&self, kind: &str, target: &str, title: Option<&str>) {
+        if let Some(project) = self.project() {
+            let tab =
+                json!({ "project": project.id, "kind": kind, "target": target, "title": title });
+            self.call("openTab", tab);
+        }
+    }
+
+    /// The path of the project whose tasks, runs and ports the store watches.
+    pub fn watched_project(&self) -> Option<&str> {
+        self.watched_project.as_deref()
     }
 
     pub fn stop_run(&self, execution: &str) {

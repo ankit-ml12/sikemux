@@ -1,9 +1,16 @@
 use std::f32::consts::FRAC_PI_2;
+use std::path::Path;
+use std::rc::Rc;
+
+use gpui::Anchor;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::Side;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation, WeakEntity,
     WindowControlArea,
 };
 use serde_json::Value;
@@ -383,9 +390,18 @@ fn host_label(host: &str) -> &str {
 fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
     let tasks = bench.read("tasks")?["tasks"].as_array()?;
+    let project = bench.watched_project()?;
+    let ports = bench
+        .read("ports")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
     let (running, last) = bench.person_runs();
     let task_of = |run: &Value| tasks.iter().find(|task| task["id"] == run["taskId"]);
-    let selected = running.and_then(task_of).or(tasks.first())?;
+    let picked = bench
+        .picked_tasks
+        .get(project)
+        .and_then(|id| tasks.iter().find(|task| task["id"] == id.as_str()));
+    let selected = running.and_then(task_of).or(picked).or(tasks.first())?;
     let id = selected["id"].as_str()?.to_owned();
     let label = selected["label"].as_str()?.to_owned();
     let last = last.filter(|run| running.is_none() && run["taskId"] == id.as_str());
@@ -395,17 +411,30 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 Some(code) => format!("exited {code}"),
                 None => "failed".into(),
             });
-    let status = match (running, &failed) {
-        (Some(run), _) => {
-            let since = run["startedAt"].as_i64().map_or(0, |at| {
-                (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
-            });
-            Some((format!("{since}s"), t.text_tertiary))
-        }
-        (None, Some(failed)) => Some((failed.clone(), t.danger)),
-        _ => None,
+    let port = running.and_then(|run| {
+        ports
+            .iter()
+            .find(|port| port["owner"]["executionId"] == run["executionId"])
+    });
+    let port_number = port.and_then(|port| port["port"].as_u64());
+    let since = running.map(|run| {
+        run["startedAt"].as_i64().map_or(0, |at| {
+            (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
+        })
+    });
+    let needs_java = selected["java"]["runsOn"]
+        .is_null()
+        .then(|| &selected["java"]["required"])
+        .filter(|required| !required.is_null())
+        .map(|required| format!("needs Java {}", plain(required)));
+    let status = match (port_number, since, &failed) {
+        (Some(port), _, _) => Some((format!(":{port}"), t.text_tertiary)),
+        (None, Some(since), _) => Some((format!("{since}s"), t.text_tertiary)),
+        (None, None, Some(failed)) => Some((failed.clone(), t.danger)),
+        _ => needs_java.map(|text| (text, t.warn)),
     };
     let dot = match (running, &failed) {
+        (Some(_), _) if port.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
         (Some(_), _) => Some(
             div()
                 .size(px(7.))
@@ -419,6 +448,29 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let execution = running
         .and_then(|run| run["executionId"].as_str())
         .map(str::to_owned);
+    let menu = Rc::new(RunMenu {
+        bench: cx.entity().downgrade(),
+        running: running.map(|_| RunningTask {
+            id: id.clone(),
+            label: label.clone(),
+            meta: match (port_number, since) {
+                (Some(port), _) => format!("up · :{port}"),
+                (None, since) => format!("running · {}s", since.unwrap_or(0)),
+            },
+            port: port_number,
+        }),
+        output: running
+            .or(last.filter(|_| failed.is_some()))
+            .and_then(|run| run["ptyId"].as_u64())
+            .map(|session| (session, label.clone())),
+        groups: task_groups(tasks, project),
+        selected: id.clone(),
+        others: ports
+            .iter()
+            .filter(|other| other["owner"]["kind"] != "terminal" && Some(*other) != port)
+            .filter_map(OtherPort::from_port)
+            .collect(),
+    });
     let primary = if running.is_some() {
         format!("Stop {label}")
     } else {
@@ -463,13 +515,14 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .child(word),
             )
             .child(
-                div()
-                    .id("choose-task")
+                Button::new("choose-task")
+                    .ghost()
+                    .compact()
+                    .rounded(px(0.))
+                    .h_full()
                     .max_w(px(320.))
                     .pl(px(8.))
                     .pr(px(6.))
-                    .flex()
-                    .items_center()
                     .gap(px(5.))
                     .border_l_1()
                     .border_color(Hsla {
@@ -479,7 +532,6 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .font_family(crate::theme::MONO)
                     .text_size(px(11.))
                     .text_color(t.text_tertiary)
-                    .hover(move |style| style.text_color(t.text_primary))
                     .children(dot)
                     .child(
                         div()
@@ -498,10 +550,265 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         ui::icon(Icon::Chevron, 10.)
                             .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
                             .text_color(t.text_tertiary),
-                    ),
+                    )
+                    .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, _, _| {
+                        menu.build(popup)
+                    }),
             )
             .into_any_element(),
     )
+}
+
+/// What the Run chip's menu lists, as it was when the chip was drawn.
+struct RunMenu {
+    bench: WeakEntity<Workbench>,
+    running: Option<RunningTask>,
+    /// The terminal the task runs in, or ran in when it failed, and the task's name.
+    output: Option<(u64, String)>,
+    groups: Vec<TaskGroup>,
+    selected: String,
+    /// Other things listening in the project, that tasks or agents started.
+    others: Vec<OtherPort>,
+}
+
+struct RunningTask {
+    id: String,
+    label: String,
+    meta: String,
+    port: Option<u64>,
+}
+
+struct TaskGroup {
+    title: String,
+    meta: Option<String>,
+    /// Each task's id, and its label without the folder the group's heading names.
+    tasks: Vec<(String, String)>,
+}
+
+struct OtherPort {
+    port: u64,
+    process: String,
+    owner: String,
+    session: Option<u64>,
+    agent: Option<String>,
+    execution: Option<String>,
+}
+
+impl OtherPort {
+    fn from_port(port: &Value) -> Option<Self> {
+        let owner = &port["owner"];
+        let text = |value: &Value| value.as_str().map(str::to_owned);
+        Some(Self {
+            port: port["port"].as_u64()?,
+            process: text(&port["process"])
+                .filter(|process| !process.is_empty())
+                .unwrap_or_else(|| "process".into()),
+            owner: match owner["kind"].as_str() {
+                Some("agent") => text(&owner["label"]).unwrap_or_default(),
+                _ => "You".into(),
+            },
+            session: owner["sessionId"].as_u64(),
+            agent: text(&owner["agentId"]),
+            execution: text(&owner["executionId"]),
+        })
+    }
+}
+
+impl RunMenu {
+    fn build(&self, popup: PopupMenu) -> PopupMenu {
+        let mut popup = popup
+            .check_side(Side::Right)
+            .scrollable(true)
+            .min_w(px(220.))
+            .max_w(px(360.))
+            .max_h(px(480.));
+        if let Some(running) = &self.running {
+            popup = popup.label(format!("{} · {}", running.label, running.meta));
+            if let Some(port) = running.port {
+                let url = format!("http://localhost:{port}");
+                popup = popup.item(
+                    PopupMenuItem::new(format!("Open localhost:{port}"))
+                        .icon(Icon::Globe)
+                        .on_click(move |_, _, cx| cx.open_url(&url)),
+                );
+            }
+            let (bench, task) = (self.bench.clone(), running.id.clone());
+            popup = popup.item(PopupMenuItem::new("Restart").icon(Icon::Refresh).on_click(
+                move |_, _, cx| {
+                    let _ = bench.update(cx, |bench, _| bench.start_task(&task));
+                },
+            ));
+        }
+        if let Some((session, label)) = &self.output {
+            let (bench, session, label) = (self.bench.clone(), *session, label.clone());
+            popup = popup.item(
+                PopupMenuItem::new("Show output")
+                    .icon(Icon::Terminal)
+                    .on_click(move |_, _, cx| {
+                        let _ = bench.update(cx, |bench, _| {
+                            bench.show("terminal", &session.to_string(), Some(&label))
+                        });
+                    }),
+            );
+        }
+        for group in &self.groups {
+            popup = popup.separator().label(match &group.meta {
+                Some(meta) => format!("{} · {meta}", group.title),
+                None => group.title.clone(),
+            });
+            for (task, label) in &group.tasks {
+                let (bench, task) = (self.bench.clone(), task.clone());
+                popup = popup.item(
+                    PopupMenuItem::new(label.clone())
+                        .icon(Icon::Run)
+                        .checked(task == self.selected)
+                        .on_click(move |_, _, cx| {
+                            let _ = bench.update(cx, |bench, cx| bench.pick_task(&task, cx));
+                        }),
+                );
+            }
+        }
+        if !self.others.is_empty() {
+            popup = popup.separator().label("Running now");
+        }
+        for other in &self.others {
+            popup = popup.item(other.item(&self.bench));
+        }
+        popup
+    }
+}
+
+impl OtherPort {
+    fn item(&self, bench: &WeakEntity<Workbench>) -> PopupMenuItem {
+        let (port, process, owner) = (self.port, self.process.clone(), self.owner.clone());
+        let stop = self
+            .execution
+            .clone()
+            .map(|execution| (bench.clone(), execution));
+        let reveal = match (self.session, &self.agent) {
+            (Some(session), _) => Some(("terminal", session.to_string())),
+            (None, Some(agent)) => Some(("agent", agent.clone())),
+            _ => None,
+        };
+        let shown = bench.clone();
+        PopupMenuItem::element(move |_, cx| {
+            let t = Tokens::get(cx).clone();
+            let stop = stop.clone().map(|(bench, execution)| {
+                div()
+                    .id(("stop-port", port as usize))
+                    .p(px(3.))
+                    .rounded(crate::theme::RADIUS_2)
+                    .hover(move |style| style.bg(t.surface_hover))
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        let _ = bench.update(cx, |bench, _| bench.stop_run(&execution));
+                    })
+                    .child(ui::icon(Icon::Stop, 9.).text_color(t.danger))
+            });
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(div().size(px(7.)).rounded_full().bg(t.live))
+                .child(div().flex_1().min_w_0().truncate().child(process.clone()))
+                .child(
+                    div()
+                        .font_family(crate::theme::MONO)
+                        .text_color(t.text_tertiary)
+                        .child(format!(":{port}")),
+                )
+                .child(div().text_color(t.text_tertiary).child(owner.clone()))
+                .children(stop)
+        })
+        .on_click(move |_, _, cx| {
+            if let Some((kind, target)) = &reveal {
+                let _ = shown.update(cx, |bench, _| bench.show(kind, target, None));
+            }
+        })
+    }
+}
+
+/// sikemux.json's tasks, then one group for each folder the build files' tasks came from.
+fn task_groups(tasks: &[Value], project: &str) -> Vec<TaskGroup> {
+    let text = |task: &Value, key: &str| task[key].as_str().unwrap_or_default().to_owned();
+    let mut groups = Vec::new();
+    let configured: Vec<_> = tasks
+        .iter()
+        .filter(|task| matches!(task["source"].as_str(), Some("project" | "personal")))
+        .map(|task| (text(task, "id"), text(task, "label")))
+        .collect();
+    if !configured.is_empty() {
+        groups.push(TaskGroup {
+            title: "sikemux.json".into(),
+            meta: None,
+            tasks: configured,
+        });
+    }
+    let mut folders: Vec<(&str, Vec<&Value>)> = Vec::new();
+    for task in tasks
+        .iter()
+        .filter(|task| matches!(task["source"].as_str(), Some("detected" | "rerun")))
+    {
+        let cwd = task["cwd"].as_str().unwrap_or(".");
+        match folders.iter_mut().find(|(folder, _)| *folder == cwd) {
+            Some((_, folder)) => folder.push(task),
+            None => folders.push((cwd, vec![task])),
+        }
+    }
+    for (cwd, folder_tasks) in folders {
+        let folder = if cwd == "." {
+            Path::new(project).file_name().map_or_else(
+                || project.to_owned(),
+                |name| name.to_string_lossy().into_owned(),
+            )
+        } else {
+            cwd.to_owned()
+        };
+        let first = folder_tasks[0];
+        let tool = first["command"]
+            .as_str()
+            .and_then(|command| command.split(' ').next())
+            .and_then(|program| match program {
+                "./mvnw" => Some("Maven wrapper"),
+                "mvn" => Some("Maven"),
+                "./gradlew" => Some("Gradle wrapper"),
+                "gradle" => Some("Gradle"),
+                "go" => Some("Go"),
+                _ => None,
+            })
+            .map(str::to_owned);
+        let java = &first["java"];
+        let java = java.is_object().then(|| match &java["runsOn"] {
+            Value::Null => format!("needs Java {}", plain(&java["required"])),
+            runs_on => format!("Java {}", plain(runs_on)),
+        });
+        let meta: Vec<String> = tool.into_iter().chain(java).collect();
+        let suffix = format!(" ({folder})");
+        groups.push(TaskGroup {
+            tasks: folder_tasks
+                .iter()
+                .map(|task| {
+                    let label = text(task, "label");
+                    let short = match cwd {
+                        "." => label.as_str(),
+                        _ => label.strip_suffix(&suffix).unwrap_or(&label),
+                    };
+                    (text(task, "id"), short.to_owned())
+                })
+                .collect(),
+            title: folder,
+            meta: (!meta.is_empty()).then(|| meta.join(" · ")),
+        });
+    }
+    groups
+}
+
+/// A number or a string as plain text.
+fn plain(value: &Value) -> String {
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
 }
 
 fn strip_tab(
