@@ -302,7 +302,12 @@ jobs:
 
       - name: Wait for the simulator to finish booting
         timeout-minutes: 10
-        run: xcrun simctl bootstatus "$SIKEMUX_SIM_DEVICE" -b
+        # "Booted" comes before the home screen takes input, and the tests no longer compile after it.
+        run: |
+          xcrun simctl bootstatus "$SIKEMUX_SIM_DEVICE" -b
+          xcrun simctl launch "$SIKEMUX_SIM_DEVICE" com.apple.Preferences
+          sleep 20
+          xcrun simctl terminate "$SIKEMUX_SIM_DEVICE" com.apple.Preferences
 
       - name: Drive a real simulator and the fixture app as an agent would
         working-directory: src-tauri
