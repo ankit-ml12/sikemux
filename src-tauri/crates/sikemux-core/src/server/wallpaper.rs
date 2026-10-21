@@ -126,7 +126,9 @@ fn clusters(rgba: &[u8]) -> Result<Vec<Cluster>, String> {
     let total = rgba.len() / 4;
     let stride = (total / SAMPLES).max(1);
     let pixels: Vec<[u8; 3]> = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .step_by(stride)
         .filter(|pixel| pixel[3] >= 128)
         .map(|pixel| [pixel[0], pixel[1], pixel[2]])
