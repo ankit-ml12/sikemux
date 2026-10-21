@@ -544,7 +544,7 @@ impl Render for DiffView {
 }
 
 /// Tells `list` only the run of `old` that `new` replaced, so what is in view stays put.
-fn relist<T: PartialEq>(list: &ListState, old: &[T], new: &[T]) {
+pub(crate) fn relist<T: PartialEq>(list: &ListState, old: &[T], new: &[T]) {
     if list.item_count() != old.len() {
         list.reset(new.len());
         return;

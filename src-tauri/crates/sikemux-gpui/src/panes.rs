@@ -111,6 +111,10 @@ fn view(
             Some(pane) => pane.clone().into_any_element(),
             None => ui::pane(cx).into_any_element(),
         },
+        PaneKind::Search => match &bench.search {
+            Some(pane) => ui::pane(cx).child(pane.clone()).into_any_element(),
+            None => ui::pane(cx).into_any_element(),
+        },
         PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
         PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
         _ => home::agent_view(bench, tab, id, "", cx),

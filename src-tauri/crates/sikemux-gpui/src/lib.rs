@@ -27,6 +27,7 @@ mod picture;
 mod ports;
 pub mod project_switcher;
 mod rail;
+pub mod search;
 pub mod settings;
 mod share;
 mod sim_pane;

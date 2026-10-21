@@ -32,6 +32,7 @@ use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::git::{FocusGit, GitPane};
+use crate::search::{FocusSearch, SearchPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -104,6 +105,8 @@ pub struct Workbench {
     pub editors: crate::editor::Editors,
     /// The Git pane of the project whose Git tab was last in front.
     pub git: Option<Entity<GitPane>>,
+    /// The Search pane of the project whose Search tab was last in front.
+    pub search: Option<Entity<SearchPane>>,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
     /// The agent whose title is being edited in place in its header.
@@ -237,6 +240,7 @@ impl Workbench {
         crate::chat::install(cx);
         crate::terminal::install(cx);
         crate::editor::install(cx);
+        crate::search::install(cx);
         crate::settings::install(cx);
         crate::project_switcher::install(cx);
         crate::model_picker::install(cx);
@@ -369,6 +373,7 @@ impl Workbench {
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
             git: None,
+            search: None,
             settings: None,
             focus: cx.focus_handle(),
             parts: Parts::new(cx),
@@ -595,6 +600,9 @@ impl Workbench {
                 }
                 if topic == "files" {
                     crate::editor::changed(self, paths.as_deref().unwrap_or_default(), cx);
+                    if let Some(search) = &self.search {
+                        search.update(cx, |search, cx| search.changed(cx));
+                    }
                 }
                 if topic == "lsp" {
                     crate::editor::diagnostics_changed(
@@ -1781,6 +1789,44 @@ impl Workbench {
         self.git = Some(pane);
     }
 
+    /// Makes the Search pane when the project's Search tab comes to the front.
+    fn search_pane(&mut self, cx: &mut Context<Self>) {
+        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
+        let (Some((PaneKind::Search, _)), Some(project)) = (front, self.project()) else {
+            return;
+        };
+        let project = project.path.to_string_lossy().into_owned();
+        if self
+            .search
+            .as_ref()
+            .is_some_and(|pane| pane.read(cx).project == project)
+        {
+            return;
+        }
+        let asks = self.asks.clone();
+        self.search = Some(cx.new(|cx| SearchPane::new(asks, project, cx)));
+    }
+
+    /// Brings the project's Search tab to the front with the keyboard in its find field,
+    /// opening one when it has none.
+    fn open_search(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(project) = self.project() else {
+            return;
+        };
+        self.call(
+            "openTab",
+            json!({ "project": project.id, "kind": "search", "target": project.path.to_string_lossy() }),
+        );
+        let path = project.path.to_string_lossy();
+        if let Some(search) = self
+            .search
+            .as_ref()
+            .filter(|search| search.read(cx).project == path)
+        {
+            search.update(cx, |search, cx| search.focus_find(window, cx));
+        }
+    }
+
     /// Brings the project's Git tab to the front, opening one when it has none.
     fn open_git(&self) {
         if let Some(project) = self.project() {
@@ -2161,6 +2207,7 @@ impl Parts {
                     bench.compose(window, cx);
                     bench.hint(window, cx);
                     bench.git_pane(window, cx);
+                    bench.search_pane(cx);
                     crate::desk::prepare(bench, window, cx);
                     home::stage(bench, window, cx)
                 },
@@ -2234,6 +2281,9 @@ impl Render for Workbench {
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
             .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
+            .on_action(
+                cx.listener(|bench, _: &FocusSearch, window, cx| bench.open_search(window, cx)),
+            )
             .on_action(
                 cx.listener(|bench, _: &crate::settings::ToggleSettings, window, cx| {
                     crate::settings::toggle(bench, window, cx)
