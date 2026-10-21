@@ -4,7 +4,6 @@ use chrono::{Datelike, NaiveDate};
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::DropdownMenu;
-use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement,
@@ -322,22 +321,15 @@ fn pane_header(
                 .child(
                     Segmented::new("agent-view", views, usize::from(in_terminal))
                         .pill()
-                        .disabled_because(Some(
-                            "Switching between GUI and TUI isn't in this build yet",
-                        ))
-                        .on_select(cx.listener(move |bench, picked: &usize, window, cx| {
+                        .disabled_because(working.then(|| {
+                            let other = if in_terminal { "GUI" } else { "TUI" };
+                            format!("Wait for the agent to finish before opening {other}")
+                        }))
+                        .on_select(cx.listener(move |bench, picked: &usize, _, _| {
                             let terminal = *picked == 1;
-                            if terminal == in_terminal {
-                                return;
+                            if terminal != in_terminal {
+                                bench.switch_view(&switched, terminal);
                             }
-                            if working {
-                                let view = if terminal { "TUI" } else { "GUI" };
-                                return window.push_notification(
-                                    format!("Wait for the agent to finish before opening {view}"),
-                                    cx,
-                                );
-                            }
-                            bench.switch_view(&switched, terminal);
                         })),
                 ),
         )
