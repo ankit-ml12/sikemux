@@ -4,13 +4,18 @@
 //!     [--account "Name <email>"]  draws the rail as if the host were signed in as them
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
+//!     [--then step…]              then does each step in turn: "click x,y" in points,
+//!                                 "type text", "key cmd-enter", "wait seconds" or "shot out.png"
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{point, px, size, AppContext, HeadlessAppContext, Modifiers, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase};
+use gpui::{
+    point, px, size, AppContext, HeadlessAppContext, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
+};
 use sikemux_wire::protocol::AccountInfo;
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 
@@ -24,6 +29,7 @@ fn main() -> anyhow::Result<()> {
     let account = option("--account");
     let files = std::env::args().any(|arg| arg == "--files");
     let scroll: Option<f32> = option("--scroll").and_then(|pixels| pixels.parse().ok());
+    let steps: Vec<String> = std::env::args().skip_while(|arg| arg != "--then").skip(1).collect();
     let bench = Rc::new(RefCell::new(None));
     let kept = bench.clone();
     let mut cx = HeadlessAppContext::with_platform(
@@ -91,5 +97,43 @@ fn main() -> anyhow::Result<()> {
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
     }
     cx.capture_screenshot(window.into())?.save(&out)?;
+    for step in steps {
+        let (verb, rest) = step.split_once(' ').unwrap_or((step.as_str(), ""));
+        cx.update_window(window.into(), |_, window, cx| -> anyhow::Result<()> {
+            match verb {
+                "click" => {
+                    let (x, y) = rest.split_once(',').ok_or_else(|| anyhow::anyhow!("click x,y"))?;
+                    let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
+                    let modifiers = Modifiers::default();
+                    window.dispatch_event(PlatformInput::MouseMove(MouseMoveEvent { position, pressed_button: None, modifiers }), cx);
+                    window.draw(cx).clear(cx);
+                    let (button, click_count) = (MouseButton::Left, 1);
+                    window.dispatch_event(PlatformInput::MouseDown(MouseDownEvent { button, position, modifiers, click_count, first_mouse: false }), cx);
+                    window.dispatch_event(PlatformInput::MouseUp(MouseUpEvent { button, position, modifiers, click_count }), cx);
+                }
+                "type" => {
+                    for letter in rest.chars() {
+                        let key = if letter == ' ' { "space".to_owned() } else { letter.to_string() };
+                        window.dispatch_keystroke(Keystroke::parse(&key)?, cx);
+                    }
+                }
+                "key" => {
+                    window.dispatch_keystroke(Keystroke::parse(rest)?, cx);
+                }
+                _ => {}
+            }
+            Ok(())
+        })??;
+        let pause = if verb == "wait" { rest.parse().unwrap_or(1.) } else { 0.3 };
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs_f64(pause) {
+            cx.run_until_parked();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
+        if verb == "shot" {
+            cx.capture_screenshot(window.into())?.save(rest)?;
+        }
+    }
     Ok(())
 }

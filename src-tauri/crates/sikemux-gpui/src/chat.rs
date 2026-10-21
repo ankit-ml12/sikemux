@@ -514,8 +514,28 @@ impl Chat {
         if let Some(id) = answering.map(|question| question.id.clone()) {
             return self.pick(&id, Pick { answer: Answer::Text(text.clone()), shown: text }, open);
         }
-        let agent = agent.to_owned();
-        Some(Ask::Chat(if self.running() && !queue { ChatAsk::Steer { agent, text } } else { ChatAsk::Prompt { agent, text } }))
+        if self.steers() && !queue {
+            return Some(self.steer_queued(agent, Some(text)));
+        }
+        Some(Ask::Chat(ChatAsk::Prompt { agent: agent.to_owned(), text }))
+    }
+
+    /// A turn is running that takes words mid-turn.
+    fn steers(&self) -> bool {
+        self.state.as_ref().is_some_and(|head| head.running && head.capabilities["steering"] == true)
+    }
+
+    /// With ⌘ and nothing written, the messages waiting behind the turn go into it now.
+    pub fn steer_waiting(&self, agent: &str) -> Option<Ask> {
+        let waiting = self.state.as_ref().is_some_and(|head| !head.queued.is_empty());
+        (self.steers() && waiting).then(|| self.steer_queued(agent, None))
+    }
+
+    /// Puts the messages waiting behind the running turn into it, and `text` after them.
+    fn steer_queued(&self, agent: &str, text: Option<String>) -> Ask {
+        let ids: Vec<&str> = self.state.as_ref().map_or(Vec::new(), |head| head.queued.iter().map(|queued| queued.id.as_str()).collect());
+        let message = text.map(|text| json!({ "text": text }));
+        Ask::Call { method: "steerQueued", params: json!({ "agentId": agent, "ids": ids, "message": message }) }
     }
 }
 
@@ -907,7 +927,7 @@ fn kept(t: &Tokens) -> impl IntoElement {
         .gap(px(6.))
         .text_size(px(11.))
         .text_color(t.text_tertiary)
-        .child(ui::icon(Icon::Shield, 12.))
+        .child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary))
         .child("Answer kept, sent with the rest")
 }
 
@@ -946,7 +966,7 @@ fn secret(agent: &str, question: &Question, chat: &Chat, t: &Tokens, cx: &mut Co
                     .child(done),
             )
             .children(question.secret_note.clone().map(|note| {
-                div().flex().items_center().gap(px(6.)).text_size(px(11.)).text_color(t.text_tertiary).child(ui::icon(Icon::Shield, 12.)).child(note)
+                div().flex().items_center().gap(px(6.)).text_size(px(11.)).text_color(t.text_tertiary).child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary)).child(note)
             })),
     )
 }

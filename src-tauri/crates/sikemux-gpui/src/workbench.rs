@@ -289,13 +289,18 @@ impl Workbench {
     }
 
     /// Sends what the person wrote: the answer to a question it answers, else words for
-    /// the agent, which steer a running turn, or with ⌘ wait behind it.
+    /// the agent, which steer a running turn, or with ⌘ wait behind it. ⌘ with nothing
+    /// written sends the questions' answers, else steers in the messages waiting.
     pub fn send(&mut self, agent: &str, queue: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(draft) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.draft.clone())) else {
             return;
         };
         let text = draft.read(cx).value().trim().to_owned();
         if text.is_empty() {
+            if queue {
+                self.answer(agent, |chat, open| chat.send_answers(open).or_else(|| chat.steer_waiting(agent)));
+                cx.notify();
+            }
             return;
         }
         self.answer(agent, |chat, open| chat.sent(agent, text, queue, open));

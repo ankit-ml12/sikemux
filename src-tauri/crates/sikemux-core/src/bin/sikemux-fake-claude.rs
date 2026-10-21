@@ -265,7 +265,8 @@ impl Claude {
                     ] },
                     { "question": "Which checks should run before landing?", "header": "Checks", "multiSelect": true, "options": [
                         { "label": "Unit tests" }, { "label": "Clippy" }, { "label": "Format" }
-                    ] }
+                    ] },
+                    { "question": "What is the database password?", "header": "Password", "isSecret": true }
                 ] });
                 self.ask(json!({ "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": input, "tool_use_id": format!("toolu-{uuid}"), "permission_suggestions": [] }));
                 self.say(&message_id, "asked");

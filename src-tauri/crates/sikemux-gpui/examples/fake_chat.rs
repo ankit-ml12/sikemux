@@ -4,13 +4,14 @@
 //!   <core's folder>/examples/remote /tmp/sx/core.sock <sikemux-fake-acp-agent> work "stream 400"
 //! A debug core lets only the app, and programs it knows by where they live,
 //! act as the person, so copy this example to `examples/remote` beside the core.
-//! `SIKEMUX_CORE_SOCKET=/tmp/sx/core.sock cargo run --example shot` then shows the chat.
+//! `SIKEMUX_CORE_SOCKET=/tmp/sx/core.sock cargo run --example shot` then shows the chat;
+//! copied to `sikemux` beside the core, the shot can also answer it with `--then` clicks.
 //! The fake agent answers `work` with a thought and three tool calls, `ask`
 //! with a permission request, `stream N` with N words, and anything else by
 //! echoing it, markdown and all. `FAKE_PROVIDER=claude` with
-//! `sikemux-fake-claude` in its place also answers `question` with two
-//! questions for the person, and `FAKE_MODE=workspace-write` has the agent
-//! ask before it acts.
+//! `sikemux-fake-claude` in its place also answers `question` with three
+//! questions for the person, one of them secret. `FAKE_MODE=workspace-write`
+//! has the agent ask before it acts.
 
 use std::path::PathBuf;
 use std::time::Duration;
