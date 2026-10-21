@@ -8350,6 +8350,7 @@ dependencies = [
  "serde_json",
  "sikemux-client",
  "sikemux-core",
+ "sikemux-fold",
  "sikemux-host",
  "sikemux-process",
  "sikemux-wire",
