@@ -22,6 +22,7 @@ mod keymap;
 mod panes;
 mod picture;
 mod ports;
+pub mod project_switcher;
 mod rail;
 pub mod settings;
 mod share;

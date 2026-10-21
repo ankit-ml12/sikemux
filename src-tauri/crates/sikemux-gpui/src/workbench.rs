@@ -208,6 +208,7 @@ impl Workbench {
         crate::terminal::install(cx);
         crate::editor::install(cx);
         crate::settings::install(cx);
+        crate::project_switcher::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
