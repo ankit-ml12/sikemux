@@ -34,7 +34,7 @@ on:
       - "src/agents/teams.ts"
       - "src/buddies/catalogue.ts"
       - "src/buddies/packs/**"
-      - "src/buddies/published.ts"
+      - "src/buddies/faces.ts"
       - "src/buddies/render.ts"
       - "src/buddies/shared.ts"
       - "src/buddies/style.ts"
