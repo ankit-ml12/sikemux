@@ -1,3 +1,4 @@
+import type { MdElement } from "../markdown/types";
 import type { ChatMessage } from "./types";
 
 /** A message another agent sent with agent_send, as the core labels it for the agent that gets it. */
@@ -7,6 +8,8 @@ export interface AgentMessageLetter {
     agentId: string;
     cli: string;
     text: string;
+    /** The core's tree of `text`, for a client that cannot read markdown itself. */
+    tree?: MdElement[];
 }
 
 /** The person's answer to a question an agent asked, as the core hands it to the agent. */
@@ -68,5 +71,9 @@ export function agentLetters(text: string): AgentLetter[] | null {
 /** What a sent message holds from other agents, when that is all it holds. */
 export function messageLetters(message: ChatMessage): AgentLetter[] | null {
     if (message.role !== "user" || message.parts.some((part) => part.kind !== "text")) return null;
-    return agentLetters(message.parts.map((part) => (part.kind === "text" ? part.text : "")).join(""));
+    const letters = agentLetters(message.parts.map((part) => (part.kind === "text" ? part.text : "")).join(""));
+    const [only] = message.parts;
+    const trees = message.parts.length === 1 && only.kind === "text" ? only.letters : undefined;
+    if (!letters || trees?.length !== letters.length) return letters;
+    return letters.map((letter, index) => (letter.kind === "message" ? { ...letter, tree: trees[index] } : letter));
 }

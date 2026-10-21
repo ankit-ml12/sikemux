@@ -4,9 +4,11 @@
 //! length in UTF-16 units once the chunk is added, and `o`, the patch.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
+use regex::Regex;
 use serde_json::{json, Value};
-use sikemux_markdown::{Doc, Options};
+use sikemux_markdown::{parse, Doc, Options};
 
 use crate::protocol::{ChatEvent, ChatEventKind};
 
@@ -35,6 +37,37 @@ const LEAVES_OPEN: [&str; 10] = [
 /// The most tree one batch of replayed events carries. Past it the rest of the
 /// answers go without one, and their clients draw them as plain text.
 const MAX_TREE_BYTES: usize = 4 * 1024 * 1024;
+
+static LETTER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?s)<(agent-message|question-answer) [^>]*>\n(.*?)\n</(?:agent-message|question-answer)>")
+        .expect("letter pattern")
+});
+
+/// The tree of each message from another agent a prompt is made of, in order,
+/// for a client that shows them apart from the prompt around them.
+pub(crate) fn letter_trees(text: &str) -> Option<Value> {
+    let start = text.trim_start();
+    if !start.starts_with("<agent-message ") && !start.starts_with("<question-answer ") {
+        return None;
+    }
+    let trees: Vec<Value> = LETTER
+        .captures_iter(text)
+        .map(|letter| {
+            let tag = &letter[1];
+            let body = letter[2].replace(&format!("&lt;/{tag}"), &format!("</{tag}"));
+            json!(parse(&body, ANSWER, 0))
+        })
+        .collect();
+    (!trees.is_empty()).then_some(Value::Array(trees))
+}
+
+fn asked_text(notification: &Value) -> Option<&str> {
+    let update = notification.get("update")?;
+    if update.get("sessionUpdate")?.as_str()? != "user_message_chunk" {
+        return None;
+    }
+    update.pointer("/content/text")?.as_str()
+}
 
 /// An answer's place in a session: which kind of text, and which message.
 #[derive(PartialEq, Eq)]
@@ -72,7 +105,7 @@ fn leaves_open(notification: &Value) -> bool {
         .is_some_and(|kind| LEAVES_OPEN.contains(&kind))
 }
 
-fn mark(notification: &mut Value, tree: Value) {
+fn mark(notification: &mut Value, key: &str, tree: Value) {
     let Some(update) = notification
         .get_mut("update")
         .and_then(Value::as_object_mut)
@@ -83,7 +116,7 @@ fn mark(notification: &mut Value, tree: Value) {
     if let Some(meta) = meta.as_object_mut() {
         let ours = meta.entry("sikemux").or_insert_with(|| json!({}));
         if let Some(ours) = ours.as_object_mut() {
-            ours.insert("md".to_owned(), tree);
+            ours.insert(key.to_owned(), tree);
         }
     }
 }
@@ -109,6 +142,14 @@ impl Answers {
                 break;
             };
             let Some((session, key, text)) = piece(notification) else {
+                if let Some(trees) = asked_text(notification).and_then(letter_trees) {
+                    if let Some(notification) = notifications.get_mut(at) {
+                        mark(notification, "letters", trees);
+                    }
+                }
+                let Some(notification) = notifications.get(at) else {
+                    break;
+                };
                 if !leaves_open(notification) {
                     if let Some(session) = notification.get("sessionId").and_then(Value::as_str) {
                         let session = session.to_owned();
@@ -156,7 +197,7 @@ impl Answers {
         let units = answer.doc.units();
         let patch = answer.doc.patch();
         if let (false, Some(notification)) = (patch.is_empty(), notifications.get_mut(at)) {
-            mark(notification, json!({ "n": units, "o": patch }));
+            mark(notification, "md", json!({ "n": units, "o": patch }));
         }
     }
 
@@ -213,8 +254,8 @@ pub(crate) fn annotate_replay(events: &mut [ChatEvent]) {
             }
             answers.annotate(std::slice::from_mut(notification));
             bytes += notification
-                .pointer("/update/_meta/sikemux/md")
-                .map_or(0, |tree| tree.to_string().len());
+                .pointer("/update/_meta/sikemux")
+                .map_or(0, |trees| trees.to_string().len());
         }
     }
 }

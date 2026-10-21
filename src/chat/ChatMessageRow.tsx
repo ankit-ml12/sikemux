@@ -297,7 +297,7 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                                 <span className="chat-letter-rule" />
                             </div>
                             <div className="chat-markdown">
-                                <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} />
+                                <FoldedMarkdown id={`${id}-letter-${index}`} text={letter.text} live={false} tree={letter.tree} />
                             </div>
                         </Fragment>
                     ),

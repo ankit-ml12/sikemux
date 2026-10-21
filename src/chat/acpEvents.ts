@@ -1,5 +1,6 @@
 import { recordOf } from "../lib/guards";
 import type { AcpEvent } from "../api/acp";
+import type { MdElement } from "../markdown/types";
 import type { AcpPermissionRequest, ChatAction, ChatFailure } from "./types";
 
 type ChatEvent = Pick<AcpEvent, "payload"> & { kind: string };
@@ -40,6 +41,7 @@ export function promptAction(payload: Record<string, unknown>): ChatAction | nul
         paths,
         ...(typeof payload.messageId === "string" ? { messageId: payload.messageId } : {}),
         ...(typeof payload.at === "number" ? { at: payload.at } : {}),
+        ...(Array.isArray(payload.letters) ? { letters: payload.letters as MdElement[][] } : {}),
     };
 }
 

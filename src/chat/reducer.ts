@@ -1,6 +1,6 @@
 import { recordOf } from "../lib/guards";
 import { applyPatch } from "../markdown/patch";
-import type { MdChange } from "../markdown/types";
+import type { MdChange, MdElement } from "../markdown/types";
 import type { QueuedMessage } from "./queuedMessages";
 import { isAgentLetter } from "./agentLetters";
 import { toolDiff, toolFailure } from "./diff";
@@ -151,6 +151,7 @@ function appendChunk(
     timed: boolean,
     fresh: boolean,
     md?: MdChange,
+    letters?: MdElement[][],
 ): Transcript {
     const contentText = textOf(chunk.content.text);
     const lastMessage = transcript.messages.at(-1);
@@ -165,7 +166,13 @@ function appendChunk(
     if (existingIndex < 0) {
         const part: ChatPart =
             contentText !== undefined
-                ? { id: `${messageId}-${partKind}-0`, kind: partKind, text: contentText, md: nextTree(undefined, md, contentText) }
+                ? {
+                      id: `${messageId}-${partKind}-0`,
+                      kind: partKind,
+                      text: contentText,
+                      md: nextTree(undefined, md, contentText),
+                      ...(letters && partKind === "text" ? { letters } : {}),
+                  }
                 : { id: `${messageId}-content-0`, kind: "content", content: boundContent(chunk.content) };
         const opened: ChatMessage = {
             id: messageId,
@@ -185,7 +192,7 @@ function appendChunk(
         const last = parts[open];
         if (contentText !== undefined && last?.kind === partKind) {
             const text = last.text + contentText;
-            parts[open] = { ...last, text, md: nextTree(last.md, md, text) };
+            parts[open] = { ...last, text, md: nextTree(last.md, md, text), ...(last.kind === "text" ? { letters: undefined } : {}) };
         } else if (contentText !== undefined) {
             parts.push({
                 id: `${messageId}-${partKind}-${parts.length}`,
@@ -296,8 +303,9 @@ function transcriptUpdate(transcript: Transcript, update: Record<string, unknown
             )
                 return null;
             const partKind = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "text";
-            const md = recordOf(recordOf(update._meta)?.sikemux)?.md as MdChange | undefined;
-            return appendChunk(transcript, role, partKind, chunk, timed, fresh && role === "assistant", md);
+            const ours = recordOf(recordOf(update._meta)?.sikemux);
+            const letters = Array.isArray(ours?.letters) ? (ours.letters as MdElement[][]) : undefined;
+            return appendChunk(transcript, role, partKind, chunk, timed, fresh && role === "assistant", ours?.md as MdChange | undefined, letters);
         }
         case "tool_call": {
             const toolCallId = textOf(update.toolCallId);
@@ -822,7 +830,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
                         role: "user",
                         ...(action.messageId ? { promptId: action.messageId } : {}),
                         sentAt: action.at ?? Date.now(),
-                        parts: action.text.trim() ? [{ id: `${id}-text`, kind: "text", text: action.text }] : [],
+                        parts: action.text.trim()
+                            ? [{ id: `${id}-text`, kind: "text", text: action.text, ...(action.letters ? { letters: action.letters } : {}) }]
+                            : [],
                         ...(action.paths.length ? { attachments: action.paths } : {}),
                         ...(action.context?.length ? { context: action.context.map(({ uri, title }) => ({ uri, title })) } : {}),
                     },

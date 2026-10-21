@@ -19,7 +19,7 @@ use crate::protocol::{
 use super::super::access::Peer;
 use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
-use super::markdown::{annotate_replay, Answers};
+use super::markdown::{annotate_replay, letter_trees, Answers};
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 
@@ -1450,6 +1450,9 @@ impl Feed {
         let mut payload = json!({ "text": text, "paths": paths });
         if let Some(message_id) = message_id {
             payload["messageId"] = json!(message_id);
+        }
+        if let Some(trees) = letter_trees(text) {
+            payload["letters"] = trees;
         }
         stamp(&mut payload);
         inner.replay.push(ChatEventKind::Prompt, &payload);

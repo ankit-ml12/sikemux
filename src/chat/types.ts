@@ -134,7 +134,8 @@ export interface ChatFailure {
 export type PartTree = { blocks: MdElement[]; n: number } | null;
 
 export type ChatPart =
-    | { id: string; kind: "text"; text: string; md?: PartTree }
+    /* `letters` holds the core's tree of each message from another agent the text is made of. */
+    | { id: string; kind: "text"; text: string; md?: PartTree; letters?: MdElement[][] }
     | { id: string; kind: "thought"; text: string; md?: PartTree }
     | { id: string; kind: "content"; content: AcpContentBlock }
     /* A finished call is read once and kept as what the transcript shows: the
@@ -219,7 +220,15 @@ export type ChatAction =
           /** Whether the core says a turn is running, for a chat taken up whose replay may start partway through it. */
           running?: boolean;
       }
-    | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[]; messageId?: string; at?: number }
+    | {
+          type: "local_prompt";
+          text: string;
+          paths: string[];
+          context?: SentContext[];
+          messageId?: string;
+          at?: number;
+          letters?: MdElement[][];
+      }
     | { type: "rewind"; messageId: string }
     | { type: "earlier"; messages: ChatMessage[] }
     | { type: "session_update"; sessionId: string; update: Record<string, unknown>; main?: boolean }
