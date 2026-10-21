@@ -98,16 +98,22 @@ async function listFrom(reads: Reads, method: string, params: Record<string, unk
     return undefined;
 }
 
+/** What the stand-in core answers a call with outright, by the call's method. */
+type Answers = Record<string, (params: Record<string, unknown>) => unknown>;
+
 /**
  * A stand-in core, once per test file. It keeps the repositories the page asks it to check CI for and can say a
- * repository's CI moved, and lists a project's pull requests, runs, issues and releases from the test host's reads.
+ * repository's CI moved, and lists a project's pull requests, runs, issues and releases from the test host's reads,
+ * or answers a call from `answers`.
  */
-export function ciCore(reads: Reads = {}, checks: (pull: Pull) => CheckTally | null = () => null) {
+export function ciCore(reads: Reads = {}, checks: (pull: Pull) => CheckTally | null = () => null, answers: Answers = {}) {
     const transport = new MemoryIpcTransport();
     const shown: unknown[] = [];
     transport.register("core_call", async (args) => {
         const call = args as { method?: string; params?: Record<string, unknown> } | undefined;
         if (call?.method === "showCi") shown.push(call.params);
+        const answer = call?.method ? answers[call.method] : undefined;
+        if (answer) return { value: await answer(call?.params ?? {}) };
         const list = call?.method ? await listFrom(reads, call.method, call.params ?? {}, checks) : undefined;
         return list === undefined ? null : { value: list };
     });
@@ -116,7 +122,8 @@ export function ciCore(reads: Reads = {}, checks: (pull: Pull) => CheckTally | n
         shown,
         moved: (repo: RepoRef) =>
             transport.emit("core_changed", { topic: "ci", project: null, paths: [`${repo.provider}:${repo.owner}/${repo.name}`] }),
-        listsMoved: () => transport.emit("core_changed", { topic: "codeHost", project: null, paths: null }),
+        /** The core read lists again and found them changed: those named, or every one. */
+        listsMoved: (names: string[] | null = null) => transport.emit("core_changed", { topic: "codeHost", project: null, paths: names }),
     };
 }
 

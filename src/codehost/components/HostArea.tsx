@@ -131,7 +131,15 @@ export function HostArea({ paneId, section, repo, branch, project, cwd, active }
                             onDispatch={(workflowId) => updateView(paneId, { dispatching: workflowId })}
                         />
                     ) : (
-                        <RunView paneId={paneId} repo={repo} runId={view.run} openJob={view.job} active={active} canWrite={canWrite} />
+                        <RunView
+                            paneId={paneId}
+                            project={project}
+                            repo={repo}
+                            runId={view.run}
+                            openJob={view.job}
+                            active={active}
+                            canWrite={canWrite}
+                        />
                     )}
                 </div>
                 {dispatching && (

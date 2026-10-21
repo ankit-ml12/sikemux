@@ -108,7 +108,7 @@ const RunRow = memo(function RunRow({
                 </span>
             </button>
             <span className="gha-run-more">
-                <RunMenu run={run} repo={repo} canWrite={canWrite} onDeleted={() => {}} />
+                <RunMenu run={run} unfinished={unfinished} repo={repo} canWrite={canWrite} onDeleted={() => {}} />
             </span>
         </div>
     );

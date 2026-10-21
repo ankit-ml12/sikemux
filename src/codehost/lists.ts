@@ -4,7 +4,7 @@ import type { PluginFailure } from "../api/plugins";
 import { isSignedOutFailure } from "../plugin-api/backend";
 import { resourceKind } from "../plugin-api/identity";
 import { invalidate, resource } from "../state/resources";
-import type { IssueList, OpenPull, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
+import type { IssueList, OpenJobLog, OpenPull, OpenRun, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
 
 type Answer<T> = { value: T } | { failed: PluginFailure & { plugin: string } };
 
@@ -18,15 +18,32 @@ async function list<T>(method: string, params: Record<string, unknown>): Promise
     throw failed;
 }
 
-const LISTS = new Set(["host.pullList", "host.runList", "host.issueList", "host.releaseList", "host.trackedList", "host.pullView"]);
+/** Each list by the name a `codeHost` change gives it. */
+const LISTS: Readonly<Record<string, string>> = {
+    pulls: "host.pullList",
+    runs: "host.runList",
+    issues: "host.issueList",
+    releases: "host.releaseList",
+    tracked: "host.trackedList",
+    pull: "host.pullView",
+    run: "host.runView",
+    jobLog: "host.jobLogView",
+};
+const EVERY_LIST = new Set(Object.values(LISTS));
 let following = false;
 
 /** The core says when lists moved, so they are read again then and at no other time; it answers the unchanged ones from what it keeps. */
 function follow(): void {
     if (following) return;
     following = true;
-    onCoreChanged("codeHost", () => invalidate((kind) => LISTS.has(kind)));
+    onCoreChanged("codeHost", ({ paths }) => {
+        const moved = paths ? new Set(paths.map((name) => LISTS[name])) : EVERY_LIST;
+        invalidate((kind) => moved.has(kind));
+    });
 }
+
+/** Of the project's code host, or of `repo` when no project holds it. */
+const placeOf = (project: string | null, repo: RepoRef) => (project ? { project } : { repo });
 
 export interface RunFilter {
     workflowId?: string;
@@ -66,6 +83,19 @@ export const trackedListR = resource({
 /** One pull request, with its reviews' verdict, whether it can merge, and the runs on its head commit: of the project's code host, or of `repo` when no project holds it. */
 export const pullViewR = resource({
     kind: "host.pullView",
-    fetch: (project: string | null, repo: RepoRef, number: number): Promise<OpenPull> =>
-        list("codeHostPull", project ? { project, number } : { repo, number }),
+    fetch: (project: string | null, repo: RepoRef, number: number): Promise<OpenPull> => list("codeHostPull", { ...placeOf(project, repo), number }),
+});
+
+/** One attempt of a run, or the latest when `attempt` is null, with its jobs laid out; the core reads it again while it is going. */
+export const runViewR = resource({
+    kind: "host.runView",
+    fetch: (project: string | null, repo: RepoRef, runId: string, attempt: number | null): Promise<OpenRun> =>
+        list("codeHostRun", { ...placeOf(project, repo), runId, attempt }),
+});
+
+/** A job's log split into its steps; the core reads it again while the job is going. */
+export const jobLogViewR = resource({
+    kind: "host.jobLogView",
+    fetch: (project: string | null, repo: RepoRef, runId: string, jobId: string): Promise<OpenJobLog> =>
+        list("codeHostJobLog", { ...placeOf(project, repo), runId, jobId }),
 });

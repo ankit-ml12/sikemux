@@ -47,7 +47,7 @@ export function Approvals({ repo, runId, status, conclusion, active }: Props) {
                 state,
             );
             notify("success", state === "approved" ? `Approved ${names}` : `Rejected ${names}`);
-            invalidate((kind) => kind === "host.approvals" || kind === "host.run" || kind === "host.runs");
+            invalidate((kind) => kind === "host.approvals");
         } catch (error) {
             reportError("Could not answer the deployment")(error);
         } finally {

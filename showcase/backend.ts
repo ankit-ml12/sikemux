@@ -16,7 +16,7 @@ import {
 } from "./world/agents";
 import { BRANCHES, FILE_DIFFS, GIT_STATUS } from "./world/git";
 import { RUNDECK, rundeckStream } from "./world/rundeck";
-import { GITHUB } from "./world/github";
+import { GITHUB, openJobLog, openRun } from "./world/github";
 import { JIRA } from "./world/jira";
 import { VERCEL } from "./world/vercel";
 import { SIGNOZ, signozTail } from "./world/signoz";
@@ -984,6 +984,12 @@ export class ShowcaseBackend implements IpcTransport {
         })),
       });
     });
+    this.onCore(["codeHostRun"], ({ params }) =>
+      listed(openRun((params as Args).runId as number)),
+    );
+    this.onCore(["codeHostJobLog"], ({ params }) =>
+      listed(openJobLog(String((params as Args).jobId))),
+    );
     this.onCore(["codeHostReleases"], () => {
       const releases = GITHUB.releases({}) as {
         id: number;
