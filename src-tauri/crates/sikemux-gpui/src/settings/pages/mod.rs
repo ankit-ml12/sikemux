@@ -7,6 +7,7 @@ use super::{Page, Settings};
 use crate::workbench::Workbench;
 
 mod about;
+mod activity;
 mod appearance;
 mod cli;
 mod cloud;
@@ -18,6 +19,7 @@ mod plugins;
 /// for them, and the fields being typed in.
 #[derive(Default)]
 pub struct State {
+    pub activity: Option<activity::Fields>,
     pub appearance: Option<appearance::Fields>,
     pub cloud: Option<cloud::Fields>,
     pub general: Option<general::Fields>,
@@ -35,7 +37,7 @@ pub fn sections(page: Page) -> &'static [&'static str] {
         Page::General => general::SECTIONS,
         Page::Appearance => appearance::SECTIONS,
         Page::Keybindings => keybindings::SECTIONS,
-        Page::Activity => &["Overview", "Calendar", "By model", "By agent", "By project"],
+        Page::Activity => activity::SECTIONS,
         Page::About => about::SECTIONS,
         Page::Agents => &[
             "Agents on this machine",
@@ -73,6 +75,7 @@ pub fn render(
     let lit = |section: &str| flash == Some(section);
     match settings.page {
         Page::About => about::render(bench, &lit, this, cx),
+        Page::Activity => activity::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Appearance => appearance::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cli => cli::render(bench, &settings.pages, &lit, this, window, cx),
         Page::Cloud => cloud::render(bench, &settings.pages, &lit, this, window, cx),

@@ -72,6 +72,8 @@ pub struct Workbench {
     pub all_harnesses: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
     pub metric: usize,
+    /// The calendar day the pointer is over, counted from the Unix epoch.
+    pub metric_day: Option<i64>,
     pub filter: Option<Entity<InputState>>,
     pub filter_text: String,
     pub asks: mpsc::UnboundedSender<Ask>,
@@ -263,6 +265,7 @@ impl Workbench {
             launcher_choice: None,
             all_harnesses: false,
             metric: 0,
+            metric_day: None,
             filter: None,
             filter_text: String::new(),
             asks,
@@ -405,6 +408,10 @@ impl Workbench {
                 }
                 if key == "files.list" {
                     self.files.relist_shown(&self.asks);
+                }
+                if key == crate::settings::ACTIVITY {
+                    self.reads.insert(key, Value::Null);
+                    self.parts.redraw(&self.parts.stage, cx);
                 }
             }
             Update::Read("files.list", value) => {

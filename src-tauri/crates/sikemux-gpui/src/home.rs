@@ -185,7 +185,7 @@ pub fn welcome(
                 .when(!is_empty(&summary["totals"]), |activity| {
                     activity.child(overview(&summary["totals"], cx))
                 })
-                .child(calendar(summary, bench.metric, cx))
+                .child(calendar(summary, bench, cx))
         }))
 }
 
@@ -233,17 +233,17 @@ fn pane_header(bench: &Workbench, agent: &AgentRow, project: &str) -> impl IntoE
         .side(IconButton::new("agent-desk", Icon::PanelRight, "Open the desk").glyph(13.))
 }
 
-fn number(value: &Value) -> f64 {
+pub(crate) fn number(value: &Value) -> f64 {
     value.as_f64().unwrap_or(0.)
 }
 
-fn is_empty(totals: &Value) -> bool {
+pub(crate) fn is_empty(totals: &Value) -> bool {
     number(&totals["sessions"]) == 0.
         && number(&totals["turns"]) == 0.
         && number(&totals["commits"]) == 0.
 }
 
-fn overview(totals: &Value, cx: &App) -> impl IntoElement {
+pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let tokens =
         number(&totals["input"]) + number(&totals["cacheWrite"]) + number(&totals["output"]);
@@ -317,22 +317,28 @@ fn overview(totals: &Value, cx: &App) -> impl IntoElement {
     ))
 }
 
-fn calendar(summary: &Value, metric: usize, cx: &mut Context<Workbench>) -> impl IntoElement {
+pub(crate) fn calendar(
+    summary: &Value,
+    bench: &Workbench,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let metric = bench.metric;
     let key = METRICS[metric].0;
     let today = (chrono::Local::now().date_naive() - epoch()).num_days();
     let start = today - (today + 3).rem_euclid(7) - (WEEKS - 1) * 7;
-    let levels: HashMap<i64, u64> = summary["days"]
+    let days: HashMap<i64, &Value> = summary["days"]
         .as_array()
         .into_iter()
         .flatten()
-        .map(|day| {
-            (
-                day["day"].as_i64().unwrap_or(0),
-                day["levels"][key].as_u64().unwrap_or(0),
-            )
-        })
+        .map(|day| (day["day"].as_i64().unwrap_or(0), day))
         .collect();
+    let level = |day: i64| {
+        days.get(&day)
+            .and_then(|day| day["levels"][key].as_u64())
+            .unwrap_or(0)
+    };
+    let hovered = bench.metric_day.filter(|day| *day <= today);
     let colour = |level: u64| match level {
         0 => Hsla {
             a: 0.07,
@@ -361,11 +367,23 @@ fn calendar(summary: &Value, metric: usize, cx: &mut Context<Workbench>) -> impl
             .children((0..7).map(|weekday| {
                 let day = start + week * 7 + weekday;
                 div()
+                    .id(("activity-day", day as usize))
                     .w_full()
                     .aspect_ratio(1.)
                     .rounded(px(2.))
                     .when(day <= today, |cell| {
-                        cell.bg(colour(levels.get(&day).copied().unwrap_or(0)))
+                        cell.bg(colour(level(day)))
+                            .when(hovered == Some(day), |cell| {
+                                cell.border_1().border_color(t.text_primary)
+                            })
+                            .on_hover(cx.listener(move |bench, over: &bool, _, cx| {
+                                match (*over, bench.metric_day == Some(day)) {
+                                    (true, _) => bench.metric_day = Some(day),
+                                    (false, true) => bench.metric_day = None,
+                                    (false, false) => return,
+                                }
+                                bench.parts.redraw(&bench.parts.stage, cx);
+                            }))
                     })
             }))
     });
@@ -407,8 +425,22 @@ fn calendar(summary: &Value, metric: usize, cx: &mut Context<Workbench>) -> impl
                 .justify_between()
                 .gap(px(12.))
                 .child(
-                    ui::text(readout(streaks), 12., FontWeight::NORMAL)
-                        .text_color(t.text_secondary),
+                    ui::text(
+                        match hovered {
+                            Some(day) => format!(
+                                "{} · {}",
+                                (epoch() + chrono::Duration::days(day)).format("%a, %b %-d, %Y"),
+                                metric_text(
+                                    key,
+                                    days.get(&day).map_or(0., |day| number(&day[key]))
+                                )
+                            ),
+                            None => readout(streaks),
+                        },
+                        12.,
+                        FontWeight::NORMAL,
+                    )
+                    .text_color(t.text_secondary),
                 )
                 .child(div().flex().gap(px(4.)).children(toggles)),
         )
@@ -480,7 +512,23 @@ fn readout(streaks: &Value) -> String {
     readout
 }
 
-fn whole(value: f64) -> String {
+/// A day's measure as the calendar reads it out.
+fn metric_text(key: &str, value: f64) -> String {
+    match (key, value > 0.) {
+        ("agentMs", true) => format!("{} of agent time", duration(value)),
+        ("agentMs", false) => "No agent time".into(),
+        ("tokens", true) => format!("{} tokens", compact(value)),
+        ("tokens", false) => "No tokens".into(),
+        ("sessions", true) => plural(value, "session"),
+        ("sessions", false) => "No sessions".into(),
+        ("costUsd", true) => format!("{} at API prices", money(value)),
+        ("costUsd", false) => "No cost".into(),
+        (_, true) => plural(value, "commit"),
+        (_, false) => "No commits".into(),
+    }
+}
+
+pub(crate) fn whole(value: f64) -> String {
     let digits = format!("{}", value.round() as i64);
     let mut grouped = String::new();
     for (index, digit) in digits.chars().enumerate() {
@@ -492,7 +540,7 @@ fn whole(value: f64) -> String {
     grouped
 }
 
-fn plural(count: f64, word: &str) -> String {
+pub(crate) fn plural(count: f64, word: &str) -> String {
     format!(
         "{} {word}{}",
         whole(count),
@@ -523,7 +571,7 @@ pub fn money(usd: f64) -> String {
     }
 }
 
-fn duration(ms: f64) -> String {
+pub(crate) fn duration(ms: f64) -> String {
     let minutes = (ms / 60_000.).round() as i64;
     if minutes < 60 {
         return format!("{minutes}m");
