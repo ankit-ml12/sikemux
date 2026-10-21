@@ -276,6 +276,13 @@ calls! { core, client, params;
     },
     "shares": Full, any_program => answer(share::list(&core)),
     "pairing": Person, any_program => answer(remote::pairing(&core)),
+    "deviceChallenge": Person => answer(super::hosts::account::device_challenge(&core).await?),
+    "approveHostSignIn": Person => {
+        answer(super::hosts::account::approve_host_sign_in(&core, parse(params)?).await?)
+    },
+    "deviceJoinTicket": Person => {
+        answer(super::hosts::account::device_join_ticket(&core, parse(params)?).await?)
+    },
     "signHostRequest": Local => {
         let request: crate::accounts::HostRequest = parse(params)?;
         answer(signed(core.remote.sign_host_request(&request)?))
