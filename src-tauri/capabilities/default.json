@@ -69,7 +69,6 @@
     "allow-usage-report-active",
     "allow-grammar-load",
     "allow-state-save",
-    "allow-available-agents",
     "allow-keep-dropped-paths",
     "allow-open-in-default-app",
     "allow-preview-file",

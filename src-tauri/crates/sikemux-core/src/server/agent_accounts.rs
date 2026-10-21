@@ -13,7 +13,9 @@ use super::changed::Topic;
 use super::connection::blocking;
 use super::workspace::refresh_launchers;
 use super::{Core, CoreResult};
-use crate::agent_accounts::{chat_account, folders, status, usage, Book, Profile};
+use crate::agent_accounts::{chat_account, defaults, folders, status, usage, Book, Profile};
+use crate::agent_catalog::{AgentEntry, AGENTS};
+use crate::launch::discovery;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -352,3 +354,174 @@ pub(crate) fn read_usage_later(core: &Arc<Core>) {
 
 /// The longest a reading after a turn waits for the kept one to go stale.
 const MAX_USAGE_WAIT: Duration = Duration::from_secs(120);
+
+/// An agent Sikemux can run, as this host has it on the account the person chose for it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Installed {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    label: &'static str,
+    command: String,
+    available: bool,
+    error: Option<String>,
+    /// The programs passed over on the way to the one found.
+    warning: Option<String>,
+    profile_id: Option<String>,
+    config_path: Option<String>,
+    default_model: Option<String>,
+    default_effort: Option<String>,
+    status: status::AgentStatus,
+}
+
+/// The agents found on this host, each on the account chosen for it. An agent that
+/// keeps accounts is listed even when it is not found, so its account can be set up.
+pub(super) async fn installed(core: &Arc<Core>) -> CoreResult<Vec<Installed>> {
+    let book = core.workspaces.accounts().unwrap_or_default();
+    let listed = AGENTS.iter().filter_map(|def| {
+        let chosen = book.chosen(def.kind);
+        let accounts = || {
+            book.profiles
+                .iter()
+                .filter(|profile| profile.provider == def.kind)
+        };
+        let profile = accounts()
+            .find(|profile| profile.id == chosen)
+            .or_else(|| accounts().next());
+        let explicit = profile.and_then(|profile| profile.executable_path.as_deref());
+        (def.accounts || !discovery::candidates(def, explicit).is_empty())
+            .then_some((def, profile, explicit))
+    });
+    futures_util::future::try_join_all(listed.map(|(def, profile, explicit)| async move {
+        let config_path = profile.and_then(|profile| profile.config_path.clone());
+        let account = Account {
+            provider: def.kind.to_owned(),
+            config_path: config_path.clone(),
+        };
+        let Availability {
+            program,
+            failures,
+            status,
+        } = availability(core, account).await?;
+        let warning = program.as_ref().and_then(|path| {
+            (!failures.is_empty())
+                .then(|| format!("Skipped {}; using {}", failures.join("; "), path.display()))
+        });
+        let error = program.is_none().then(|| match failures.is_empty() {
+            true => format!("{} executable was not found", def.label),
+            false => failures.join("; "),
+        });
+        Ok(Installed {
+            kind: def.kind,
+            label: def.label,
+            command: program
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned())
+                .or_else(|| explicit.map(str::to_owned))
+                .unwrap_or_else(|| def.command.to_owned()),
+            available: program.is_some(),
+            error,
+            warning,
+            profile_id: profile.map(|profile| profile.id.clone()),
+            default_model: defaults::configured_default_model(def.kind, config_path.as_deref()),
+            default_effort: defaults::configured_default_effort(def.kind, config_path.as_deref()),
+            config_path,
+            status,
+        })
+    }))
+    .await
+}
+
+/// Every agent the person can set up here: those found, and those Sikemux can install
+/// that it did not find.
+pub(super) async fn setup(core: &Arc<Core>) -> CoreResult<Vec<Installed>> {
+    Ok(setup_list(installed(core).await?))
+}
+
+/// `found` with the installable agents it lacks, ready ones first, then the featured,
+/// each in the catalog's order.
+fn setup_list(mut agents: Vec<Installed>) -> Vec<Installed> {
+    let missing: Vec<&AgentEntry> = AGENTS
+        .iter()
+        .filter(|def| def.install.is_some() && !agents.iter().any(|agent| agent.kind == def.kind))
+        .collect();
+    agents.extend(missing.into_iter().map(|def| Installed {
+        kind: def.kind,
+        label: def.label,
+        command: def.command.to_owned(),
+        available: false,
+        error: None,
+        warning: None,
+        profile_id: None,
+        config_path: None,
+        default_model: None,
+        default_effort: None,
+        status: status::AgentStatus::Missing,
+    }));
+    agents.sort_by_key(|agent| {
+        let ready = agent.available && agent.status != status::AgentStatus::SignedOut;
+        let at = AGENTS.iter().position(|def| def.kind == agent.kind);
+        let featured = at.is_some_and(|at| AGENTS[at].featured);
+        (!ready, !featured, at)
+    });
+    agents
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn agent(kind: &'static str, status: status::AgentStatus, available: bool) -> Installed {
+        Installed {
+            kind,
+            label: kind,
+            command: kind.to_owned(),
+            available,
+            error: None,
+            warning: None,
+            profile_id: None,
+            config_path: None,
+            default_model: None,
+            default_effort: None,
+            status,
+        }
+    }
+
+    #[test]
+    fn setup_adds_every_agent_it_can_install_but_did_not_find() {
+        let ready = status::AgentStatus::Ready { account: None };
+        let all = setup_list(vec![agent("claude", ready, true)]);
+        let kinds: Vec<&str> = all.iter().map(|agent| agent.kind).collect();
+        assert_eq!(
+            kinds,
+            ["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]
+        );
+        assert!(!all[1].available);
+        assert_eq!(all[1].status, status::AgentStatus::Missing);
+    }
+
+    #[test]
+    fn setup_puts_ready_agents_first_then_claude_and_codex_then_the_rest() {
+        use status::AgentStatus::{Missing, Ready, SignedOut};
+        let ordered = setup_list(vec![
+            agent("grok", Missing, false),
+            agent("codex", SignedOut, true),
+            agent(
+                "opencode",
+                Ready {
+                    account: Some("apiKey".into()),
+                },
+                true,
+            ),
+            agent("hermes", Missing, false),
+            agent("claude", Missing, false),
+        ]);
+        let given = ["grok", "codex", "opencode", "hermes", "claude"];
+        let kinds: Vec<&str> = ordered
+            .iter()
+            .map(|agent| agent.kind)
+            .filter(|kind| given.contains(kind))
+            .collect();
+        assert_eq!(kinds, ["opencode", "claude", "codex", "hermes", "grok"]);
+    }
+}

@@ -52,7 +52,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "usage_report_active",
     "grammar_load",
     "state_save",
-    "available_agents",
     "keep_dropped_paths",
     "open_in_default_app",
     "preview_file",

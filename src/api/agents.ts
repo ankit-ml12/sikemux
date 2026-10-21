@@ -1,8 +1,6 @@
 import { coreCall } from "./core";
 import { onCoreChanged } from "./coreChanged";
-import { invokeCommand as invoke } from "./invoke";
 import type { IpcUnsubscribe } from "./transport";
-import type { AgentRuntimeProfile } from "../agents/agentProfiles";
 import type { CatalogAgent } from "../agents/catalog";
 import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
 
@@ -100,10 +98,6 @@ function key(agent: string, cwd: string, configPath?: string) {
     return `${agent}\0${cwd}\0${configPath ?? ""}`;
 }
 
-async function fetchAvailable(profiles: AgentRuntimeProfile[] = []): Promise<AgentInfo[]> {
-    return invoke<AgentInfo[]>("available_agents", { profiles });
-}
-
 async function fetchSessions(agent: string, cwd: string, configPath?: string): Promise<AgentSession[]> {
     const k = key(agent, cwd, configPath);
     const existing = inflight.get(k);
@@ -137,7 +131,10 @@ export interface AgentSignInPage {
 }
 
 export const agentApi = {
-    available: fetchAvailable,
+    /** The agents found here, each on the account chosen for it. */
+    available: (): Promise<AgentInfo[]> => coreCall("installedAgents"),
+    /** Those, with the agents Sikemux can install that it did not find, in the order to set them up. */
+    setup: (): Promise<AgentInfo[]> => coreCall("agentSetup"),
     /** The agents the core can run, which every view names and offers them from. */
     catalog: (): Promise<CatalogAgent[]> => coreCall("agentCatalog"),
     /** The accounts the core keeps; `null` until the app first gives it some. */

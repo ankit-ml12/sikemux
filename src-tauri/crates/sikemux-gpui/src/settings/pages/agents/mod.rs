@@ -33,7 +33,6 @@ pub const SECTIONS: &[&str] = &[
 
 /// What the page keeps between frames, made the first time it shows.
 pub struct Fields {
-    setup: setup::Setup,
     sessions: sessions::Fields,
     device: device::Fields,
     profiles: profiles::Fields,
@@ -44,7 +43,6 @@ pub struct Fields {
 fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
     crate::accounts::read(bench, cx);
     let fields = Fields {
-        setup: setup::Setup::default(),
         sessions: sessions::Fields::new(bench, window, cx),
         device: device::Fields::new(bench, window, cx),
         profiles: profiles::Fields::new(window, cx),
@@ -54,7 +52,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
     if let Some(settings) = bench.settings.as_mut() {
         settings.pages.agents = Some(fields);
     }
-    setup::read(bench, cx);
+    crate::agent_setup::read(bench, cx);
     sessions::read_names(bench, window, cx);
     device::read_simulator(bench, cx);
     providers::read(bench, cx);
@@ -95,7 +93,7 @@ pub fn render(
         return Vec::new();
     };
     let mut sections = vec![
-        setup::render(bench, &fields.setup, lit, this, cx),
+        setup::render(bench, &bench.agent_setup, lit, this, cx),
         sessions::boundary(bench, lit, this, cx),
     ];
     sections.extend(
@@ -114,6 +112,6 @@ pub fn render(
     sections.push(sessions::render(bench, &fields.sessions, lit, this, cx));
     sections.extend(device::render(bench, &fields.device, lit, this, cx));
     sections.extend(accounts::dialog(bench, this, cx));
-    sections.extend(setup::sheet(bench, &fields.setup, this, window, cx));
+    sections.extend(crate::agent_setup::sheet(bench, this, window, cx));
     sections
 }

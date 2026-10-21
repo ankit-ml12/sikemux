@@ -86,7 +86,7 @@ type Phase = { kind: "running" } | { kind: "checking" } | { kind: "done"; agent:
 /** Forgets what was known about every agent and reads the list again, so a new install is found at once. */
 export async function checkAgentsAgain(type: AgentType): Promise<AgentInfo | undefined> {
     await agentApi.refreshStatuses();
-    invalidate((kind) => kind === "agents.catalog" || kind === "agents.account");
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.setup" || kind === "agents.account");
     const { providerProfiles, selectedProviderProfileIds } = getState();
     const agents = await fetchResource(agentCatalogR, selectedAgentRuntimeProfiles(providerProfiles, selectedProviderProfileIds));
     return agents.find((agent) => agent.type === type && agent.available !== false);

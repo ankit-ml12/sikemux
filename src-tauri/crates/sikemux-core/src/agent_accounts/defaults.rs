@@ -1,17 +1,19 @@
+//! The model and effort an account's agent starts with when Sikemux names none, read
+//! from the agent's own configuration.
+
 use std::fs;
 use std::path::Path;
 
 use serde_json::Value;
-use sikemux_core::agent_catalog::AgentKind;
-pub(crate) use sikemux_core::sessions::roots::{
-    agent_config_root, environment_path, omp_agent_root,
-};
 use sikemux_process::paths::home;
 use sikemux_process::user_environment::shell_var;
 
+use crate::agent_catalog::AgentKind;
+use crate::sessions::roots::{agent_config_root, environment_path, omp_agent_root};
+
 const MAX_MODEL_LENGTH: usize = 256;
 
-pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
+pub fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
     let home = home()?;
     match kind {
         "claude" => shell_var("ANTHROPIC_MODEL")
@@ -75,7 +77,7 @@ pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) ->
     }
 }
 
-pub(super) fn configured_default_effort(kind: &str, config_path: Option<&str>) -> Option<String> {
+pub fn configured_default_effort(kind: &str, config_path: Option<&str>) -> Option<String> {
     match kind {
         "claude" => json_effort(
             &agent_config_root(kind, config_path)?.join("settings.local.json"),
@@ -121,7 +123,7 @@ pub(super) fn configured_default_effort(kind: &str, config_path: Option<&str>) -
     }
 }
 
-pub(super) fn clean_model(value: &str) -> Option<String> {
+fn clean_model(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty() && value.chars().count() <= MAX_MODEL_LENGTH).then(|| value.to_string())
 }
@@ -206,7 +208,7 @@ fn yaml_top_level_scalar(text: &str, key: &str) -> Option<String> {
 
 /// Extract only `provider` and `default` from Hermes' top-level `model` map.
 /// This deliberately avoids deserializing or exposing the rest of config.yaml.
-pub(super) fn yaml_model_section(text: &str) -> (Option<String>, Option<String>) {
+fn yaml_model_section(text: &str) -> (Option<String>, Option<String>) {
     let mut model_indent = None;
     let mut provider = None;
     let mut model = None;

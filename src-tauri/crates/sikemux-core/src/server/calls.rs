@@ -193,6 +193,8 @@ calls! { core, client, params;
     "setModelHelper": Person => answer(model_providers::set_helper(&core, parse(params)?).await?),
     "agentAccounts": Full, any_program => answer(core.workspaces.accounts()),
     "agentStatus": Full, any_program => answer(agent_accounts::status(&core, parse(params)?).await?),
+    "installedAgents": Full, any_program => answer(agent_accounts::installed(&core).await?),
+    "agentSetup": Full, any_program => answer(agent_accounts::setup(&core).await?),
     "agentAvailability": Full, any_program => {
         answer(agent_accounts::availability(&core, parse(params)?).await?)
     },

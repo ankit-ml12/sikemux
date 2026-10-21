@@ -59,6 +59,7 @@ pub struct Workbench {
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     pub battery: Option<Battery>,
+    pub agent_setup: crate::agent_setup::Setup,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
     /// The account's picture, and the hash the core named the one asked for by.
@@ -386,6 +387,7 @@ impl Workbench {
             watched_project: None,
             watched_ci: None,
             battery: crate::battery::read(),
+            agent_setup: Default::default(),
             picture: None,
             picture_hash: None,
             signing_in: false,

@@ -5,6 +5,7 @@ mod accounts;
 mod add_task;
 mod agent_menu;
 mod agent_palette;
+mod agent_setup;
 mod agents;
 mod battery;
 mod boot;

@@ -73,9 +73,16 @@ export const gitStashesR = resource({
     staleAfterMs: 30_000,
 });
 
+// Both are keyed by the chosen accounts, so they are asked again when those change.
 export const agentCatalogR = resource({
     kind: "agents.catalog",
-    fetch: (profiles: AgentRuntimeProfile[]): Promise<AgentInfo[]> => agentApi.available(profiles),
+    fetch: (_accounts: AgentRuntimeProfile[]): Promise<AgentInfo[]> => agentApi.available(),
+    staleAfterMs: 60_000,
+});
+
+export const agentSetupR = resource({
+    kind: "agents.setup",
+    fetch: (_accounts: AgentRuntimeProfile[]): Promise<AgentInfo[]> => agentApi.setup(),
     staleAfterMs: 60_000,
 });
 

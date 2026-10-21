@@ -10,8 +10,9 @@ vi.mock("../state/resources", () => ({
     useResourceEnabled: (enabled: boolean) => ({
         data: enabled
             ? [
-                  { type: "codex", label: "Codex", available: false, status: { state: "missing" } },
                   { type: "claude", label: "Claude", status: { state: "signedOut" } },
+                  { type: "codex", label: "Codex", available: false, status: { state: "missing" } },
+                  { type: "hermes", label: "Hermes", available: false, status: { state: "missing" } },
                   { type: "grok", label: "Grok", available: false, status: { state: "broken", reason: "grok --version exited 1" } },
               ]
             : undefined,
@@ -20,7 +21,7 @@ vi.mock("../state/resources", () => ({
         refresh: async () => {},
     }),
 }));
-vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
+vi.mock("../state/resources.defs", () => ({ agentSetupR: { kind: "agents.setup" } }));
 const { installAgent, signInAgent } = vi.hoisted(() => ({ installAgent: vi.fn(), signInAgent: vi.fn() }));
 vi.mock("../agents/AgentInstall", () => ({ installAgent, signInAgent }));
 

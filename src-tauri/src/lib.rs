@@ -2,7 +2,6 @@ mod account;
 mod acp;
 mod agent_notification;
 mod agent_questions;
-mod agents;
 #[cfg(target_os = "macos")]
 mod app_menu;
 mod autopsy;
@@ -293,7 +292,6 @@ pub fn run() {
             usage::usage_report_active,
             grammars::grammar_load,
             state::state_save,
-            agents::executable::available_agents,
             fs::keep_dropped_paths,
             fs::open_in_default_app,
             preview::preview_file,
