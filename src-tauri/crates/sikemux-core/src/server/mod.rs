@@ -44,6 +44,7 @@ mod local_peer;
 mod lsp;
 mod messages;
 mod model_providers;
+mod move_agent;
 mod names;
 mod network_watch;
 mod notify;
