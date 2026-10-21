@@ -55,6 +55,8 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
         settings.pages.agents = Some(fields);
     }
     setup::read(bench, cx);
+    sessions::read_names(bench, window, cx);
+    device::read_simulator(bench, cx);
     providers::read(bench, cx);
     skills::read(bench, cx);
     bench.parts.redraw(&bench.parts.stage, cx);

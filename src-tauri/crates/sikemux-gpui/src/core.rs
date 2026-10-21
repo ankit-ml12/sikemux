@@ -13,7 +13,8 @@ use sikemux_wire::grid::{
 };
 use sikemux_wire::protocol::{
     CallId, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event, LaunchIdentity,
-    RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn, WindowAnswer, WindowCall,
+    RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn, WindowAnswer,
+    WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 

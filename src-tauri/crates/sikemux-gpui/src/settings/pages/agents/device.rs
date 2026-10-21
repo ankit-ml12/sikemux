@@ -3,7 +3,7 @@
 
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::Disableable;
-use gpui_kit::{div, AnyElement, App, Context, Entity, ParentElement, Window};
+use gpui_kit::{div, AnyElement, App, Context, Div, Entity, ParentElement, SharedString, Window};
 use serde_json::Value;
 use sikemux_wire::notch::{NotchDisplays, NotchFullScreen, NotchOpenWith, NotchPeeks};
 
@@ -15,6 +15,51 @@ pub struct Fields {
     open_with: Choice,
     full_screen: Choice,
     peeks: Choice,
+    /// Whether the simulator can run here, once asked.
+    sim_status: Option<Value>,
+    /// Xcode, its iOS runtimes and the helper, once read; none when they could not be.
+    sim_setup: Option<Option<Value>>,
+}
+
+/// Asks whether the simulator can run here and, when it can, what it would run with;
+/// tells the simulator whether new agents get its tools, as the person chose.
+pub fn read_simulator(bench: &Workbench, cx: &mut Context<Workbench>) {
+    bench
+        .sims
+        .offer_to_agents(bench.preferences().ios_simulator);
+    let status = bench.sims.status();
+    cx.spawn(async move |bench, cx| {
+        let status = status
+            .await
+            .and_then(|status| serde_json::to_value(status).ok());
+        let usable = status
+            .as_ref()
+            .is_some_and(|status| status["supported"] == true && status["reason"].is_null());
+        let setup = match usable {
+            true => bench.update(cx, |bench, _| bench.sims.setup()).ok(),
+            false => None,
+        };
+        let setup = match setup {
+            Some(setup) => Some(setup.await),
+            None => None,
+        };
+        let _ = bench.update(cx, |bench, cx| {
+            if let Some(fields) = super::fields_of(bench) {
+                fields.device.sim_status = status;
+                fields.device.sim_setup = setup;
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
+        });
+    })
+    .detach();
+}
+
+fn xcode(path: Option<&str>) -> String {
+    match path {
+        None => "No Xcode is selected. Install Xcode, or choose one with xcode-select.".into(),
+        Some(path) if path.contains("CommandLineTools") => "Only the Command Line Tools are selected, and simulators need Xcode. Install Xcode, or choose it with xcode-select.".into(),
+        Some(path) => path.to_owned(),
+    }
 }
 
 /// Changes one of the island's settings, keeping the rest.
@@ -42,6 +87,8 @@ impl Fields {
             )
         };
         Self {
+            sim_status: None,
+            sim_setup: None,
             displays: choice(
                 vec![
                     "Every display",
@@ -120,6 +167,69 @@ fn notch_switch(
             this.update(cx, |bench, _| set_notch(bench, key, on))
         },
     )
+}
+
+/// What the simulator would run with, or why it cannot run here.
+fn simulator_rows(fields: &Fields, cx: &App) -> Vec<Div> {
+    let unavailable = fields.sim_status.as_ref().and_then(|status| {
+        let usable = status["supported"] == true && status["reason"].is_null();
+        (!usable).then(|| {
+            status["reason"]
+                .as_str()
+                .unwrap_or("The iOS Simulator is not available here.")
+                .to_owned()
+        })
+    });
+    let read = |describe: &dyn Fn(&Value) -> String| match &fields.sim_setup {
+        None => "Checking…".to_owned(),
+        Some(None) => "Could not read the developer tools.".to_owned(),
+        Some(Some(setup)) => describe(setup),
+    };
+    let about = |text: String| -> Option<SharedString> { Some(text.into()) };
+    let mut found = vec![rows::row_with(
+        None,
+        "Xcode",
+        about(
+            unavailable
+                .clone()
+                .unwrap_or_else(|| read(&|setup| xcode(setup["xcode"].as_str()))),
+        ),
+        div(),
+        cx,
+    )];
+    if unavailable.is_none() {
+        found.push(rows::row_with(
+            None,
+            "iOS runtimes",
+            about(read(&|setup| {
+                let runtimes: Vec<&str> = setup["runtimes"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                match runtimes.is_empty() {
+                    true => "None installed. Add one in Xcode's Components settings.".into(),
+                    false => runtimes.join(", "),
+                }
+            })),
+            div(),
+            cx,
+        ));
+        found.push(rows::row_with(
+            None,
+            "Simulator helper",
+            about(read(&|setup| {
+                format!(
+                    "The helper that drives simulators is {}.",
+                    setup["helper"].as_str().unwrap_or_default()
+                )
+            })),
+            div(),
+            cx,
+        ));
+    }
+    found
 }
 
 pub fn render(
@@ -206,7 +316,18 @@ pub fn render(
         .child(rows::row(
             "Let agents drive the iOS Simulator",
             Some("Agents tap, type and read simulators without asking, as they do browser tabs, and their screenshots go to the agent's provider. Applies to agents started after a change."),
-            rows::switch("ios-simulator", "iosSimulator", preferences.ios_simulator, this),
+            {
+                let this = this.clone();
+                Switch::new("ios-simulator")
+                    .checked(preferences.ios_simulator)
+                    .on_change(move |on: &bool, _: &mut Window, cx: &mut App| {
+                        let on = *on;
+                        this.update(cx, |bench, _| {
+                            bench.sims.offer_to_agents(on);
+                            crate::settings::set(bench, "iosSimulator", on);
+                        })
+                    })
+            },
             cx,
         ))
         .child(rows::row(
@@ -214,7 +335,8 @@ pub fn render(
             Some("Draws the phone's bezel and side buttons around its screen, as Simulator does. Without it the screen gets a little more room."),
             rows::switch("simulator-frame", "simulatorFrame", preferences.simulator_frame, this),
             cx,
-        ));
+        ))
+        .children(simulator_rows(fields, cx));
 
     vec![
         rows::section("Voice", None, None, lit("Voice"), voice, cx),

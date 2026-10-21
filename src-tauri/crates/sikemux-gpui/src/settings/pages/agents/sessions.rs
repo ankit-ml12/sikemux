@@ -17,6 +17,47 @@ use crate::workbench::Workbench;
 pub struct Fields {
     mid_turn: Choice,
     density: Choice,
+    /// What new agents are called, once the core has said.
+    names: Option<Choice>,
+}
+
+/// The themes new agents' names come from: the core's word, and how the menu shows it.
+const NAMES: [(&str, &str); 2] = [
+    ("nature", "Nature: Otter, Maple, Flint"),
+    ("anime", "Anime: Luffy, Gojo, Frieren"),
+];
+
+/// Asks the core what new agents are called, and offers the themes once it says.
+pub fn read_names(bench: &Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+    let asks = bench.asks.clone();
+    cx.spawn_in(window, async move |bench, cx| {
+        let Ok(answer) = crate::core::request(&asks, "agentNameTheme", json!({})).await else {
+            return;
+        };
+        let chosen = NAMES
+            .iter()
+            .position(|(theme, _)| answer["theme"] == *theme)
+            .unwrap_or(0);
+        let _ = bench.update_in(cx, |bench, window, cx| {
+            let names = Choice::new(
+                NAMES.iter().map(|(_, label)| *label).collect(),
+                chosen,
+                |bench, at, _| {
+                    let _ = bench.asks.send(Ask::Call {
+                        method: "setAgentNameTheme",
+                        params: json!({ "theme": NAMES[at].0 }),
+                    });
+                },
+                window,
+                cx,
+            );
+            if let Some(fields) = super::fields_of(bench) {
+                fields.sessions.names = Some(names);
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
+        });
+    })
+    .detach();
 }
 
 impl Fields {
@@ -47,7 +88,11 @@ impl Fields {
             window,
             cx,
         );
-        Self { mid_turn, density }
+        Self {
+            mid_turn,
+            density,
+            names: None,
+        }
     }
 }
 
@@ -202,6 +247,14 @@ pub fn render(
             fields.density.view(),
             cx,
         ))
+        .children(fields.names.as_ref().map(|names| {
+            rows::row(
+                "Agent names",
+                Some("What new agents are called. Open agents keep their names."),
+                names.view(),
+                cx,
+            )
+        }))
         .child(rows::row(
             "Idle chats",
             Some("Put every idle chat to sleep now, freeing its process."),
