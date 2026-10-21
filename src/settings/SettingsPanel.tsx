@@ -1695,8 +1695,8 @@ function AgentNamesRow() {
                     label="agent names"
                     value={theme}
                     options={[
-                        { value: "nature", label: "Nature", detail: "Otter, Maple, Flint" },
                         { value: "anime", label: "Anime", detail: "Luffy, Gojo, Frieren" },
+                        { value: "nature", label: "Nature", detail: "Otter, Maple, Flint" },
                     ]}
                     onChange={(value) => choose(value as AgentNameTheme)}
                 />
