@@ -10,13 +10,13 @@ use gpui_kit::{
     ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,
     StatefulInteractiveElement, Styled, Transformation, Window,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use sikemux_core::git::diff::DiffRow;
 use sikemux_core::git::status::GitFile;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::pane::{has_unstaged, is_staged, status_mark, GitPane, Side};
-use super::{row, Colours, Compared, Diff, RowLook};
+use super::{row, Colours, Compared, Diff, Notes, RowLook};
 use crate::core::{request, Ask};
 use crate::editor::OpenAt;
 use crate::icons::Icon;
@@ -37,6 +37,8 @@ struct Section {
     diff: Option<Result<Diff, String>>,
     asked: bool,
     colours: Colours,
+    /// Each row's note, such as the agent that wrote it.
+    notes: Vec<Option<SharedString>>,
     scrolled: Pixels,
 }
 
@@ -197,6 +199,7 @@ impl Review {
                             diff: None,
                             asked: false,
                             colours: Colours::default(),
+                            notes: Vec::new(),
                             scrolled: px(0.),
                         })
                         .collect(),
@@ -311,7 +314,9 @@ impl Review {
                             .map_err(|error| error.to_string())
                     });
                     pane.update(cx, |pane, cx| {
-                        pane.review.read_as(&path, side, diff.map(Diff::new));
+                        let notes = Notes::of(pane.owners_of(side), &path);
+                        pane.review
+                            .read_as(&path, side, diff.map(Diff::new), &notes);
                         cx.notify();
                     })
                     .ok();
@@ -321,7 +326,13 @@ impl Review {
         }
     }
 
-    fn read_as(&mut self, path: &str, side: Option<Side>, diff: Result<Diff, String>) {
+    fn read_as(
+        &mut self,
+        path: &str,
+        side: Option<Side>,
+        diff: Result<Diff, String>,
+        notes: &Notes,
+    ) {
         let Some(section) = self
             .cards
             .iter_mut()
@@ -334,9 +345,32 @@ impl Review {
         else {
             return;
         };
+        section.notes = diff
+            .as_ref()
+            .map_or_else(|_| Vec::new(), |diff| diff.notes(notes));
         section.diff = Some(diff);
         section.colours = Colours::default();
         self.lay_out();
+    }
+
+    /// Notes beside each working change's lines who wrote them, as `owners` says, or
+    /// `staged` for the staged half of a file with unstaged changes too.
+    pub fn annotate(&mut self, owners: &Value, staged: &Value) {
+        if self.commit.is_some() {
+            return;
+        }
+        for card in &mut self.cards {
+            for section in &mut card.sections {
+                let owners = if section.side == Some(Side::Staged) {
+                    staged
+                } else {
+                    owners
+                };
+                if let Some(Ok(diff)) = &section.diff {
+                    section.notes = diff.notes(&Notes::of(owners, &card.path));
+                }
+            }
+        }
     }
 
     fn expand(&mut self, card: usize, at: usize) {
@@ -509,7 +543,10 @@ fn draw(
             let Some(Ok(diff)) = &section.diff else {
                 return div().into_any_element();
             };
-            let look = RowLook::new(&t, advance, section.scrolled);
+            let look = RowLook {
+                note: section.notes.get(index).cloned().flatten(),
+                ..RowLook::new(&t, advance, section.scrolled)
+            };
             let file = Path::new(&review.repo).join(&review.cards[card].path);
             let width = diff.width(advance);
             let (expanding, wheeling) = (view.clone(), view.clone());

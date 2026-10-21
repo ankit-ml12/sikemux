@@ -348,6 +348,8 @@ pub struct GitPane {
     bench: WeakEntity<Workbench>,
     /// Who wrote the uncommitted lines, as the core's `changeOwners` answers.
     owners: Value,
+    /// Who wrote the staged lines, read while a file has both staged and unstaged changes.
+    staged_owners: Value,
     /// The commit message as the core last kept it.
     synced: String,
     _keeping: Task<()>,
@@ -413,6 +415,7 @@ impl GitPane {
             written: None,
             bench,
             owners: Value::Null,
+            staged_owners: Value::Null,
             commands: VecDeque::new(),
             commands_open: false,
             synced: String::new(),
@@ -1353,17 +1356,40 @@ impl GitPane {
     }
 
     fn read_owners(&mut self, cx: &mut Context<Self>) {
-        let params = json!({ "dir": self.repo, "staged": false });
-        let answer = request(&self.asks, "changeOwners", params);
+        let read = |staged: bool| {
+            let params = json!({ "dir": self.repo, "staged": staged });
+            request(&self.asks, "changeOwners", params)
+        };
+        let owners = read(false);
+        let halves = self
+            .files()
+            .iter()
+            .any(|file| is_staged(file) && has_unstaged(file));
+        let staged = halves.then(|| read(true));
         cx.spawn(async move |pane, cx| {
-            let owners = answer.await.unwrap_or(Value::Null);
+            let owners = owners.await.unwrap_or(Value::Null);
+            let staged = match staged {
+                Some(staged) => staged.await.unwrap_or(Value::Null),
+                None => Value::Null,
+            };
             pane.update(cx, |pane, cx| {
                 pane.owners = owners;
+                pane.staged_owners = staged;
+                pane.review.annotate(&pane.owners, &pane.staged_owners);
                 cx.notify();
             })
             .ok();
         })
         .detach();
+    }
+
+    /// Who wrote the lines a diff of `side` shows, as the core last said.
+    pub(super) fn owners_of(&self, side: Option<Side>) -> &Value {
+        if side == Some(Side::Staged) {
+            &self.staged_owners
+        } else {
+            &self.owners
+        }
     }
 
     /// The agents that wrote some of `path`'s uncommitted lines, by agent id, with the

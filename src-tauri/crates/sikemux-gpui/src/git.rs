@@ -2,6 +2,7 @@
 //! a revision.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Range;
 use std::path::Path;
@@ -183,6 +184,34 @@ impl Diff {
         self.targets[row]
     }
 
+    /// Each row's note: an added row's by its line, and where lines were taken out with
+    /// nothing put in their place, the first of them by the line below.
+    pub fn notes(&self, notes: &Notes) -> Vec<Option<SharedString>> {
+        if notes.is_empty() {
+            return Vec::new();
+        }
+        let mut shown = vec![None; self.rows.len()];
+        let mut block: Option<(usize, bool)> = None;
+        for (index, DiffRow(kind, number, _)) in self.rows.iter().enumerate() {
+            match *kind {
+                ROW_ADDED => {
+                    shown[index] = notes.lines.get(number).cloned();
+                    block = Some((block.map_or(index, |(start, _)| start), true));
+                }
+                ROW_DELETED => block = Some(block.unwrap_or((index, false))),
+                _ => {
+                    if let Some((start, false)) = block.take() {
+                        shown[start] = notes.gaps.get(&(self.targets[start] + 1)).cloned();
+                    }
+                }
+            }
+        }
+        if let Some((start, false)) = block {
+            shown[start] = notes.gaps.get(&(self.targets[start] + 1)).cloned();
+        }
+        shown
+    }
+
     /// The widest the diff is drawn, so it scrolls sideways only as far as its longest line.
     pub fn width(&self, advance: Pixels) -> Pixels {
         advance * (self.digits + self.widest + 5) as f32
@@ -266,6 +295,8 @@ impl Colours {
 
 /// How a diff's rows are drawn: the theme's colours, and how far it is scrolled sideways.
 pub struct RowLook {
+    /// Said after the row's code, such as the agent that wrote it.
+    pub note: Option<SharedString>,
     pub tinted: bool,
     pub added: Hsla,
     pub deleted: Hsla,
@@ -280,6 +311,7 @@ pub struct RowLook {
 impl RowLook {
     pub fn new(t: &Tokens, advance: Pixels, scrolled: Pixels) -> Self {
         Self {
+            note: None,
             tinted: t.dark,
             added: t.live,
             deleted: t.danger,
@@ -364,14 +396,88 @@ pub fn row(
                     div()
                         .ml(-look.scrolled)
                         .px(look.advance)
+                        .flex()
                         .whitespace_nowrap()
                         .text_color(look.ink)
                         .child(
                             StyledText::new(SharedString::from(text.clone()))
                                 .with_highlights(colours.of(diff, index).iter().cloned()),
-                        ),
+                        )
+                        .when_some(look.note.clone(), |code, note| {
+                            code.child(
+                                div()
+                                    .ml(look.advance * 4.)
+                                    .font_family(theme::UI)
+                                    .text_size(px(11.))
+                                    .text_color(look.number)
+                                    .child(note),
+                            )
+                        }),
                 ),
         )
+}
+
+/// What the core says to note beside a file's changed lines, in the app's words: who
+/// wrote each line, and who took out the lines just above a line.
+#[derive(Default)]
+pub struct Notes {
+    lines: HashMap<u32, SharedString>,
+    gaps: HashMap<u32, SharedString>,
+}
+
+impl Notes {
+    /// The notes for `path` in what `changeOwners` answered.
+    pub fn of(owners: &Value, path: &str) -> Self {
+        let names: Vec<&str> = owners["authors"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|author| author["name"].as_str().unwrap_or_default())
+            .collect();
+        let name = |author: &Value| {
+            author
+                .as_u64()
+                .and_then(|author| names.get(author as usize))
+                .copied()
+        };
+        let Some(file) = owners["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|file| file["path"] == path)
+        else {
+            return Self::default();
+        };
+        let lines = file["notes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|note| {
+                let mut said = Vec::new();
+                if note["named"] == true {
+                    said.push(name(&note["author"]).unwrap_or("unattributed").to_owned());
+                }
+                if let Some(over) = name(&note["over"]) {
+                    said.push(format!("changed {over}'s edit"));
+                }
+                Some((note["line"].as_u64()? as u32, said.join(" · ").into()))
+            })
+            .collect();
+        let gaps = file["removed"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|removal| {
+                let name = name(&removal["author"])?;
+                Some((removal["at"].as_u64()? as u32, name.to_owned().into()))
+            })
+            .collect();
+        Self { lines, gaps }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.lines.is_empty() && self.gaps.is_empty()
+    }
 }
 
 /// One file's diff in a pane of its own, read from the core and coloured as the file's
