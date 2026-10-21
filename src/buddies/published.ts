@@ -14,9 +14,6 @@ export interface DrawnBuddy {
 
 const boxKey = (pack: BuddyPack, shape: BuddyShape) => `${pack.id}/${shape.id}`;
 
-/** Whether an agent shows its buddy rather than its agent's logo: always once the person named it, otherwise while buddies are on. */
-export const wearsBuddy = (on: boolean, named: boolean): boolean => on || named;
-
 /** Every agent's buddy, with the boxes of the shapes they wear and of every shape in the chosen pack, for buddies a phone resolves itself. */
 export function publishBuddies(agents: Iterable<Pick<Agent, "id" | "buddy">>, style: BuddyStyle, motion: boolean, on: boolean): PublishedBuddies {
     const looks: Record<string, BuddyLook> = {};

@@ -31,15 +31,15 @@ final class BuddyArt {
     private var images: [String: NSImage] = [:]
 
     /// The agent's buddy, or nil when it shows its agent's mark instead.
-    func image(_ buddies: PublishedBuddies, agentId: String, named: Bool, state: BuddyState) -> NSImage? {
+    func image(_ buddies: PublishedBuddies, agentId: String, state: BuddyState) -> NSImage? {
         if buddies != drawn {
             drawn = buddies
             images = [:]
             published = (try? JSONEncoder().encode(buddies)).flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull()
         }
-        let key = "\(agentId) \(named) \(state.rawValue)"
+        let key = "\(agentId) \(state.rawValue)"
         if let image = images[key] { return image }
-        guard let drawn = draw?.call(withArguments: [published, agentId, named, state.rawValue]), !drawn.isNull,
+        guard let drawn = draw?.call(withArguments: [published, agentId, state.rawValue]), !drawn.isNull,
               let svg = drawn.toString(),
               let image = NSImage(data: Data(svg.utf8))
         else { return nil }
@@ -48,18 +48,17 @@ final class BuddyArt {
     }
 }
 
-/// An agent's buddy while the app draws buddies or the person named it, otherwise its agent's mark.
+/// An agent's buddy while the app draws buddies, otherwise its agent's mark.
 struct AgentFace: View {
     let agentId: String?
     let provider: String
-    var named = false
     var mark: Mark = .idle
     var size: CGFloat = 16
     @Environment(\.buddies) private var buddies
 
     var body: some View {
         if let buddies, let agentId,
-           let image = BuddyArt.shared.image(buddies, agentId: agentId, named: named, state: BuddyState(mark)) {
+           let image = BuddyArt.shared.image(buddies, agentId: agentId, state: BuddyState(mark)) {
             BuddyImage(image: image, state: BuddyState(mark), moves: buddies.motion, size: size)
         } else {
             AgentMark(provider: provider, size: size)
@@ -69,7 +68,7 @@ struct AgentFace: View {
 
 extension AgentFace {
     init(entry: Entry, size: CGFloat) {
-        self.init(agentId: entry.item.agentId, provider: entry.provider, named: entry.item.name != nil, mark: entry.mark, size: size)
+        self.init(agentId: entry.item.agentId, provider: entry.provider, mark: entry.mark, size: size)
     }
 }
 
