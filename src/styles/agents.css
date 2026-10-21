@@ -928,25 +928,37 @@
     display: contents;
 }
 
-/* A lead and the agents it started read as one group, as the git pane's file groups do:
-   a chevron folds the group, and the workers hang off a spine running down from it. */
-.agent-row-wrap.team-head,
+/* A lead and the agents it started read as one tree: the spine leaves from under the lead's mark, each worker hangs
+   off it on a tick, and the last one turns the corner as the side rail's tree does. Pointing at the lead swaps its
+   mark for the chevron that folds the team. */
 .agent-row-wrap.team-member {
-    padding-left: 16px;
+    padding-left: 18px;
 }
 .team-fold {
     position: absolute;
-    top: 0;
-    left: 0;
+    top: 3px;
+    left: 3px;
     z-index: 2;
     display: grid;
     place-items: center;
-    width: 16px;
-    height: 28px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     border: 0;
+    border-radius: var(--radius-2);
     background: none;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
+    opacity: 0;
+    pointer-events: none;
+}
+.agent-row-wrap.team-head:hover > .team-fold,
+.team-fold:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.agent-row-wrap.team-head:hover > .agent-row .agent-glyph,
+.agent-row-wrap.team-head:has(> .team-fold:focus-visible) > .agent-row .agent-glyph {
+    opacity: 0;
 }
 .team-fold:hover {
     color: var(--text-primary);
@@ -959,7 +971,7 @@
 }
 .agent-row-wrap.team-head.open::after,
 .agent-row-wrap.team-member::before,
-.agent-row-wrap.team-member::after {
+.agent-row-wrap.team-member:not(.team-last)::after {
     content: "";
     position: absolute;
     z-index: 1;
@@ -967,27 +979,33 @@
     pointer-events: none;
 }
 .agent-row-wrap.team-head.open::after {
-    top: 22px;
+    top: 27px;
     bottom: -2px;
-    left: 8px;
+    left: 14px;
     width: 1px;
 }
 .agent-row-wrap.team-member::before {
     top: -2px;
     bottom: -2px;
-    left: 8px;
+    left: 14px;
     width: 1px;
 }
-.agent-row-wrap.team-member.team-last::before {
-    bottom: auto;
-    height: 16px;
-}
-.agent-row-wrap.team-member::after {
+.agent-row-wrap.team-member:not(.team-last)::after {
     top: 14px;
-    left: 8px;
+    left: 14px;
     width: 7px;
     height: 1px;
     background: var(--tree-tick);
+}
+.agent-row-wrap.team-member.team-last::before {
+    bottom: auto;
+    box-sizing: border-box;
+    width: 8px;
+    height: 17px;
+    border-left: 1px solid var(--tree-spine);
+    border-bottom: 1px solid var(--tree-tick);
+    border-bottom-left-radius: 4px;
+    background: none;
 }
 .team-count {
     flex: none;
