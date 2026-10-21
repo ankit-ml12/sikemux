@@ -230,6 +230,10 @@ impl Workbench {
             "preferences",
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
+        let _ = asks.send(Ask::Watch(
+            "drafts",
+            Watch::new("drafts", json!({}), &["drafts"]),
+        ));
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
         let _ = asks.send(Ask::Follow("lsp"));
@@ -442,6 +446,12 @@ impl Workbench {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
                 }
                 self.reads.insert("preferences", value);
+            }
+            Update::Read("drafts", value) => {
+                if let Some(pane) = &self.git {
+                    pane.update(cx, |pane, cx| pane.drafts(&value, cx));
+                }
+                self.reads.insert("drafts", value);
             }
             Update::Read("catalog", value) => {
                 if let Some(pane) = &self.git {
@@ -1225,6 +1235,9 @@ impl Workbench {
         }
         if let Some(catalog) = self.reads.get("catalog") {
             pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
+        }
+        if let Some(drafts) = self.reads.get("drafts") {
+            pane.update(cx, |pane, cx| pane.drafts(drafts, cx));
         }
         self.git = Some(pane);
     }

@@ -40,6 +40,8 @@ use crate::ui::{self, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
 pub struct FocusGit;
 
 const ROW_HEIGHT: f32 = 26.;
+/// How long typing rests before the commit message is kept as the draft.
+const DRAFT_PAUSE: Duration = Duration::from_millis(300);
 /// How long a failed operation's message stays in the head.
 const FAILED_FOR: Duration = Duration::from_millis(3500);
 
@@ -264,6 +266,9 @@ pub struct GitPane {
     draft: Entity<TextareaState>,
     /// A message written into the draft from outside the window's turn, set when it next draws.
     written: Option<String>,
+    /// The commit message as the core last kept it.
+    synced: String,
+    _keeping: Task<()>,
     generating: bool,
     asking: Option<Asking>,
     /// The row or card header the pointer is on, whose actions show.
@@ -285,8 +290,9 @@ impl GitPane {
                 .auto_grow(3, 9)
                 .placeholder("Message (⌘⏎ to commit)")
         });
-        let drafting = cx.subscribe(&draft, |_, _, event: &InputEvent, cx| {
+        let drafting = cx.subscribe(&draft, |pane, _, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
+                pane.typed(cx);
                 cx.notify();
             }
         });
@@ -322,6 +328,8 @@ impl GitPane {
             branch_rows: ListState::new(0, ListAlignment::Top, px(400.)),
             draft,
             written: None,
+            synced: String::new(),
+            _keeping: Task::ready(()),
             generating: false,
             asking: None,
             hovered: None,
@@ -1520,8 +1528,60 @@ impl GitPane {
     }
 
     fn clear_draft(&mut self, cx: &mut Context<Self>) {
-        self.written = Some(String::new());
+        self.write(String::new(), cx);
+    }
+
+    /// The key the core keeps the repository's commit message under.
+    fn draft_key(&self) -> String {
+        format!("git:{}", self.repo)
+    }
+
+    /// Takes the drafts the core keeps. The commit message follows the core's only while
+    /// the person has typed nothing since they last agreed, so their own words are never
+    /// overwritten and their cursor never jumps.
+    pub fn drafts(&mut self, value: &Value, cx: &mut Context<Self>) {
+        let kept = value[self.draft_key().as_str()]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        if kept == self.synced {
+            return;
+        }
+        if self.draft.read(cx).value().as_ref() == self.synced {
+            self.written = Some(kept.clone());
+            cx.notify();
+        }
+        self.synced = kept;
+    }
+
+    /// Keeps what was typed once the person pauses.
+    fn typed(&mut self, cx: &mut Context<Self>) {
+        self._keeping = cx.spawn(async move |pane, cx| {
+            cx.background_executor().timer(DRAFT_PAUSE).await;
+            pane.update(cx, |pane, cx| {
+                let text = pane.draft.read(cx).value().to_string();
+                pane.keep_draft(text);
+            })
+            .ok();
+        });
+    }
+
+    /// Puts `text` in the commit box and keeps it as the draft.
+    fn write(&mut self, text: String, cx: &mut Context<Self>) {
+        self.keep_draft(text.clone());
+        self.written = Some(text);
         cx.notify();
+    }
+
+    fn keep_draft(&mut self, text: String) {
+        if text == self.synced {
+            return;
+        }
+        self.synced = text.clone();
+        let _ = self.asks.send(Ask::Call {
+            method: "setDraft",
+            params: json!({ "key": self.draft_key(), "text": text }),
+        });
     }
 
     fn generate(&mut self, cx: &mut Context<Self>) {
@@ -1542,7 +1602,7 @@ impl GitPane {
             } else if pane.draft.read(cx).value() != before {
                 pane.fail("Your draft changed during generation. It was kept; generate again when ready.", cx);
             } else {
-                pane.written = Some(message);
+                pane.write(message, cx);
             }
         });
     }
