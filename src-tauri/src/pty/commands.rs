@@ -328,6 +328,24 @@ pub async fn pty_write(
     finish(outcome, operation)
 }
 
+/// Pastes, then a draft left unsent, typed once the program is ready to read them.
+#[tauri::command]
+pub async fn pty_type_when_ready(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    pastes: Vec<String>,
+    draft: Option<String>,
+) -> AppResult<()> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    let params = serde_json::json!({ "id": id, "pastes": pastes, "draft": draft });
+    client
+        .call("typeWhenReady", params)
+        .await
+        .map(drop)
+        .map_err(core_error)
+}
+
 #[tauri::command]
 pub async fn pty_resize(
     manager: State<'_, PtyManager>,

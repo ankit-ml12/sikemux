@@ -107,6 +107,8 @@ pub(crate) struct Session {
     title_pending: AtomicBool,
     /// Callers waiting for a line containing some text to show on the screen.
     line_waiters: Mutex<Vec<LineWaiter>>,
+    /// Input to type once the shell shows its prompt.
+    typed_at_prompt: Mutex<Option<Vec<u8>>>,
     _capacity_permit: CapacityPermit,
 }
 
@@ -174,6 +176,7 @@ impl Session {
             shell_integration: parts.shell_integration,
             title_pending: AtomicBool::new(false),
             line_waiters: Mutex::new(Vec::new()),
+            typed_at_prompt: Mutex::new(None),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
@@ -833,6 +836,9 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     screen.title_from_cwd();
     let retitled = screen.take_title_change().is_some();
     answer_line_waiters(session, &screen);
+    if at_prompt(&screen) {
+        type_waiting(session);
+    }
     drop(screen);
     session.frames.notify.notify_one();
     reply_to_program(session, replies);
@@ -916,6 +922,53 @@ fn answer_line_waiters(session: &Session, screen: &Screen) {
             None => waiters.push(waiter),
         }
     }
+}
+
+/// How long the core waits for a shell's prompt before typing anyway, for a
+/// prompt it never recognises.
+const PROMPT_WAIT: Duration = Duration::from_secs(5);
+/// How long a program whose prompt the core cannot see, such as an agent's
+/// own interface, gets to start before it is typed to.
+const START_WAIT: Duration = Duration::from_millis(800);
+
+/// The shell is reading a command: showing its prompt, or past it with
+/// nothing typed yet, as an older bash marks it.
+fn at_prompt(screen: &Screen) -> bool {
+    use sikemux_wire::pty::shell_protocol::ShellPhase;
+    screen
+        .shell
+        .as_ref()
+        .is_some_and(|shell| matches!(shell.phase(), ShellPhase::Prompt | ShellPhase::Input))
+}
+
+fn type_waiting(session: &Session) {
+    if let Some(bytes) = session.typed_at_prompt.locked().take() {
+        queue_input(session, bytes, Box::new(|_| {}));
+    }
+}
+
+/// Types `bytes` into the session once it is ready for them: at its shell's
+/// prompt, or a moment after it starts when the core cannot see a prompt.
+pub(crate) fn type_when_ready(session: &Arc<Session>, bytes: Vec<u8>) {
+    let screen = session.screen.locked();
+    if session.shell_protocol && at_prompt(&screen) {
+        drop(screen);
+        return queue_input(session, bytes, Box::new(|_| {}));
+    }
+    *session.typed_at_prompt.locked() = Some(bytes);
+    drop(screen);
+    let wait = if session.shell_protocol {
+        PROMPT_WAIT
+    } else {
+        START_WAIT
+    };
+    let session = Arc::downgrade(session);
+    tokio::spawn(async move {
+        tokio::time::sleep(wait).await;
+        if let Some(session) = session.upgrade() {
+            type_waiting(&session);
+        }
+    });
 }
 
 /// The first line on the screen containing `containing`, once one shows,

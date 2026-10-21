@@ -303,6 +303,12 @@ calls! { core, client, params;
             None => answer(core.palette()),
         }
     },
+    "typeWhenReady": Full => {
+        let params: TypeWhenReadyParams = parse(params)?;
+        let session = core.session(params.id).ok_or("that terminal is not on this host")?;
+        super::session::type_when_ready(&session, params.input());
+        answer(json!({}))
+    },
     "takeSpareShell": Local => answer(super::spare::take(&core, parse(params)?)),
     "themes": Watch => answer(super::themes::summaries(&core.preferences.get())),
     "themePalette": Watch => {
@@ -511,6 +517,40 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
+}
+
+/// What to type into a terminal once it is ready: text pasted and submitted,
+/// then a draft pasted and left at the prompt for the person to send.
+#[derive(Deserialize)]
+struct TypeWhenReadyParams {
+    id: crate::protocol::SessionId,
+    #[serde(default)]
+    pastes: Vec<String>,
+    draft: Option<String>,
+}
+
+impl TypeWhenReadyParams {
+    fn input(&self) -> Vec<u8> {
+        let pasted = |text: &str| format!("\x1b[200~{text}\x1b[201~");
+        let mut input: String = self
+            .pastes
+            .iter()
+            .filter(|paste| !paste.is_empty())
+            .map(|paste| pasted(paste))
+            .collect();
+        if !input.is_empty() {
+            input.push('\r');
+        }
+        if let Some(draft) = self
+            .draft
+            .as_deref()
+            .map(|draft| draft.replace('\0', ""))
+            .filter(|draft| !draft.trim().is_empty())
+        {
+            input.push_str(&pasted(draft.trim()));
+        }
+        input.into_bytes()
+    }
 }
 
 /// Which theme to answer for; the person's pick when none is named.

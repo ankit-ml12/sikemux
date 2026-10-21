@@ -13,7 +13,6 @@ import {
     type PtyControllerErrorEvent,
     type PtyOutputChunk,
     type PtySpawnRequest,
-    type PtyTimerAdapter,
 } from "./ptyController";
 
 type TestContext = { readonly paneId: string };
@@ -47,27 +46,10 @@ class FakeChannels implements PtyChannelAdapter<FakeChannel> {
     }
 }
 
-class FakeTimer implements PtyTimerAdapter {
-    readonly jobs = new Map<number, () => void>();
-    readonly schedule = vi.fn((callback: () => void, _delayMs: number): number => {
-        const id = this.jobs.size + 1;
-        this.jobs.set(id, callback);
-        return id;
-    });
-    readonly cancel = vi.fn((handle: unknown) => {
-        this.jobs.delete(handle as number);
-    });
-
-    runAll(): void {
-        const callbacks = Array.from(this.jobs.values());
-        this.jobs.clear();
-        callbacks.forEach((callback) => callback());
-    }
-}
-
 function fakeApi() {
     const spawn = vi.fn(async (_request: PtySpawnRequest<TestContext>) => 42);
     const write = vi.fn(async (_id: number, _data: string) => {});
+    const typeWhenReady = vi.fn(async (_id: number, _pastes: readonly string[], _draft: string | null) => {});
     const input = vi.fn(async (_id: number, _input: TerminalInput) => {});
     const resize = vi.fn(async (_id: number, _cols: number, _rows: number) => {});
     const kill = vi.fn(async (_id: number) => {});
@@ -76,8 +58,8 @@ function fakeApi() {
     });
     const detach = vi.fn(async (_id: number, _subId: number) => {});
     const ack = vi.fn(async (_id: number, _subId: number, _frame: number) => {});
-    const api = { spawn, write, input, resize, kill, attach, detach, ack } satisfies PtyApi<FakeChannel, TestContext>;
-    return { api, spawn, write, input, resize, kill, attach, detach, ack };
+    const api = { spawn, write, typeWhenReady, input, resize, kill, attach, detach, ack } satisfies PtyApi<FakeChannel, TestContext>;
+    return { api, spawn, write, typeWhenReady, input, resize, kill, attach, detach, ack };
 }
 
 function controllerOptions(overrides: Partial<ConstructorParameters<typeof PtyLifecycleController<FakeChannel, TestContext>>[0]> = {}) {
@@ -327,8 +309,7 @@ describe("PtyLifecycleController process ownership", () => {
 
     it("kills exactly once when disposed during a coalesced start", async () => {
         const spawned = deferred<number>();
-        const timer = new FakeTimer();
-        const { fakes, options } = controllerOptions({ initialInput: "private first task", timer });
+        const { fakes, options } = controllerOptions({ initialPastes: ["private first task"] });
         fakes.spawn.mockReturnValue(spawned.promise);
         const controller = new PtyLifecycleController(options);
         const starting = controller.start();
@@ -341,23 +322,20 @@ describe("PtyLifecycleController process ownership", () => {
         await disposing;
         expect(fakes.kill).toHaveBeenCalledTimes(1);
         expect(fakes.kill).toHaveBeenCalledWith(91);
-        expect(fakes.write).not.toHaveBeenCalled();
-        expect(timer.schedule).not.toHaveBeenCalled();
+        expect(fakes.typeWhenReady).not.toHaveBeenCalled();
         expect(controller.getSnapshot()).toMatchObject({ status: "disposed", attachmentCount: 0, initialInput: "cancelled" });
     });
 
     it("takes back a process that is still there instead of spawning, without sending its first input again", async () => {
-        const timer = new FakeTimer();
         const onProcess = vi.fn();
         const resume = vi.fn(async (_id: number) => true);
-        const { fakes, options } = controllerOptions({ resumePtyId: 1_759_300_000_005, initialInput: "Build it.", timer, onProcess });
+        const { fakes, options } = controllerOptions({ resumePtyId: 1_759_300_000_005, initialPastes: ["Build it."], onProcess });
         const controller = new PtyLifecycleController({ ...options, api: { ...fakes.api, resume } });
 
         await expect(controller.start()).resolves.toBe(1_759_300_000_005);
-        timer.runAll();
         expect(resume).toHaveBeenCalledWith(1_759_300_000_005);
         expect(fakes.spawn).not.toHaveBeenCalled();
-        expect(fakes.write).not.toHaveBeenCalled();
+        expect(fakes.typeWhenReady).not.toHaveBeenCalled();
         expect(onProcess).toHaveBeenCalledWith(1_759_300_000_005);
         expect(controller.getSnapshot()).toMatchObject({ status: "running", processOwnership: "controller", initialInput: "none" });
 
@@ -384,88 +362,36 @@ describe("PtyLifecycleController process ownership", () => {
         expect(resume).not.toHaveBeenCalled();
     });
 
-    it("delivers initial input at most once and reports successful delivery", async () => {
-        const timer = new FakeTimer();
-        const delivered = vi.fn();
-        const { fakes, options } = controllerOptions({ initialInput: "  Build it safely.  ", timer, onInitialInputDelivered: delivered });
-        const controller = new PtyLifecycleController(options);
-
-        await controller.start();
-        expect(controller.getSnapshot().initialInput).toBe("scheduled");
-        expect(fakes.write).not.toHaveBeenCalled();
-        timer.runAll();
-        await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("delivered"));
-        timer.runAll();
-
-        expect(fakes.write).toHaveBeenCalledTimes(1);
-        expect(fakes.write).toHaveBeenCalledWith(42, "\x1b[200~Build it safely.\x1b[201~\r");
-        expect(delivered).toHaveBeenCalledOnce();
-    });
-
-    it("replays dropped paths as distinct paste events before submitting the first task", async () => {
-        const timer = new FakeTimer();
+    it("hands initial input to the core at most once and reports it", async () => {
         const delivered = vi.fn();
         const { fakes, options } = controllerOptions({
             initialPastes: ["'/tmp/first image.png'", "'/tmp/second image.jpg'"],
-            initialInput: "Compare these screenshots.",
-            timer,
+            initialDraft: "and then this",
             onInitialInputDelivered: delivered,
         });
         const controller = new PtyLifecycleController(options);
 
         await controller.start();
-        timer.runAll();
         await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("delivered"));
+        await controller.start();
 
-        expect(fakes.write).toHaveBeenCalledOnce();
-        expect(fakes.write).toHaveBeenCalledWith(
-            42,
-            "\x1b[200~'/tmp/first image.png'\x1b[201~\x1b[200~'/tmp/second image.jpg'\x1b[201~\x1b[200~Compare these screenshots.\x1b[201~\r",
-        );
+        expect(fakes.typeWhenReady).toHaveBeenCalledOnce();
+        expect(fakes.typeWhenReady).toHaveBeenCalledWith(42, ["'/tmp/first image.png'", "'/tmp/second image.jpg'"], "and then this");
+        expect(fakes.write).not.toHaveBeenCalled();
         expect(delivered).toHaveBeenCalledOnce();
     });
 
-    it("pastes a draft once without submitting it, so it waits at the prompt", async () => {
-        const timer = new FakeTimer();
-        const { fakes, options } = controllerOptions({ initialDraft: "line one\nline two\n", timer });
-        const controller = new PtyLifecycleController(options);
-
-        await controller.start();
-        expect(controller.getSnapshot().initialInput).toBe("scheduled");
-        timer.runAll();
-        await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("delivered"));
-        timer.runAll();
-
-        expect(fakes.write).toHaveBeenCalledOnce();
-        expect(fakes.write).toHaveBeenCalledWith(42, "\x1b[200~line one\nline two\x1b[201~");
-    });
-
-    it("submits the first task before pasting a draft after it", async () => {
-        const timer = new FakeTimer();
-        const { fakes, options } = controllerOptions({ initialInput: "Build it.", initialDraft: "and then this", timer });
-        const controller = new PtyLifecycleController(options);
-
-        await controller.start();
-        timer.runAll();
-        await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("delivered"));
-
-        expect(fakes.write).toHaveBeenCalledWith(42, "\x1b[200~Build it.\x1b[201~\r\x1b[200~and then this\x1b[201~");
-    });
-
     it("does not retry an ambiguous failed initial-input write", async () => {
-        const timer = new FakeTimer();
         const writeError = new Error("bridge response lost");
-        const { fakes, errors, options } = controllerOptions({ initialInput: "run once", timer });
-        fakes.write.mockRejectedValue(writeError);
+        const { fakes, errors, options } = controllerOptions({ initialPastes: ["run once"] });
+        fakes.typeWhenReady.mockRejectedValue(writeError);
         const controller = new PtyLifecycleController(options);
 
         await controller.start();
-        timer.runAll();
         await vi.waitFor(() => expect(controller.getSnapshot().initialInput).toBe("failed"));
         await controller.start();
-        timer.runAll();
 
-        expect(fakes.write).toHaveBeenCalledTimes(1);
+        expect(fakes.typeWhenReady).toHaveBeenCalledTimes(1);
         expect(errors).toContainEqual({ operation: "initial-input", error: writeError });
     });
 });
@@ -734,8 +660,7 @@ describe("PtyLifecycleController safety boundaries", () => {
     });
 
     it("exposes content-free runtime snapshots and rejects persistence", async () => {
-        const timer = new FakeTimer();
-        const { options } = controllerOptions({ initialInput: "secret first task", timer });
+        const { options } = controllerOptions({ initialPastes: ["secret first task"] });
         const controller = new PtyLifecycleController(options);
         await controller.start();
 

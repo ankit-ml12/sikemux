@@ -145,6 +145,10 @@ impl ShellProtocolParser {
         self.metadata.clone()
     }
 
+    pub fn phase(&self) -> ShellPhase {
+        self.metadata.phase
+    }
+
     pub fn ssh(&self) -> Option<SshLink> {
         self.ssh
     }

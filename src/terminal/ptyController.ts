@@ -35,6 +35,8 @@ export interface PtyApi<ChannelTransport, Context = unknown> {
     write(id: number, data: string): Promise<void>;
     /** A key, text, paste, mouse or focus change, which the core encodes for the program. */
     input(id: number, input: TerminalInput): Promise<void>;
+    /** Pastes submitted, then a draft left unsent, which the core types once the program is ready for them. */
+    typeWhenReady(id: number, pastes: readonly string[], draft: string | null): Promise<void>;
     resize(id: number, cols: number, rows: number): Promise<void>;
     kill(id: number): Promise<void>;
     attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
@@ -54,13 +56,8 @@ export interface PtyChannelAdapter<ChannelTransport> {
     create(onMessage: (chunk: PtyOutputChunk) => void): PtyChannelBinding<ChannelTransport>;
 }
 
-export interface PtyTimerAdapter {
-    schedule(callback: () => void, delayMs: number): unknown;
-    cancel(handle: unknown): void;
-}
-
 export type PtyControllerStatus = "idle" | "starting" | "running" | "failed" | "exited" | "disposing" | "disposed";
-export type PtyInitialInputStatus = "none" | "pending" | "scheduled" | "delivering" | "delivered" | "failed" | "cancelled";
+export type PtyInitialInputStatus = "none" | "pending" | "delivering" | "delivered" | "failed" | "cancelled";
 export type PtyProcessOwnership = "controller" | "external";
 export type PtyOperation =
     | "spawn"
@@ -128,15 +125,12 @@ export interface PtyLifecycleControllerOptions<ChannelTransport, Context = unkno
     readonly context?: Context;
     readonly cols?: number;
     readonly rows?: number;
-    /** Paste payloads delivered independently before `initialInput`. */
+    /** Pasted one by one and submitted once the program starts. */
     readonly initialPastes?: readonly string[];
-    readonly initialInput?: string;
-    /** Pasted after any initial input and never submitted, so it waits at the prompt to be edited or sent. */
+    /** Pasted after the pastes and never submitted, so it waits at the prompt to be edited or sent. */
     readonly initialDraft?: string;
-    readonly initialInputDelayMs?: number;
     readonly onInitialInputDelivered?: () => void;
     readonly onError?: (event: PtyControllerErrorEvent) => void;
-    readonly timer?: PtyTimerAdapter;
     readonly maxPendingChunks?: number;
     readonly maxPendingBytes?: number;
     readonly maxSnapshotBytes?: number;
@@ -204,7 +198,6 @@ type PendingResize = {
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-const DEFAULT_INITIAL_INPUT_DELAY_MS = 800;
 const DEFAULT_MAX_PENDING_CHUNKS = 256;
 const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
@@ -214,20 +207,10 @@ const DEFAULT_MAX_ATTACHMENTS = 16;
 const MAX_SUBSCRIPTION_ID = 0xffff_ffff;
 const SHELL_PHASES = new Set<PtyShellPhase>(["unknown", "prompt", "input", "running", "finished"]);
 
-const defaultTimer: PtyTimerAdapter = {
-    schedule: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
-    cancel: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
-
 function requirePositiveInteger(name: string, value: number, max = Number.MAX_SAFE_INTEGER): number {
     if (!Number.isSafeInteger(value) || value <= 0 || value > max) {
         throw new RangeError(`${name} must be a positive integer no greater than ${max}`);
     }
-    return value;
-}
-
-function requireNonNegativeNumber(name: string, value: number): number {
-    if (!Number.isFinite(value) || value < 0) throw new RangeError(`${name} must be a non-negative finite number`);
     return value;
 }
 
@@ -311,8 +294,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private readonly channels: PtyChannelAdapter<ChannelTransport>;
     private readonly spawnRequest: PtySpawnRequest<Context>;
     private readonly processOwnership: PtyProcessOwnership;
-    private readonly timer: PtyTimerAdapter;
-    private readonly initialInputDelayMs: number;
     private readonly onInitialInputDelivered?: () => void;
     private readonly onError?: (event: PtyControllerErrorEvent) => void;
     private readonly maxPendingChunks: number;
@@ -329,7 +310,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private initialDraft: string | null;
     private initialPasteChunks: string[] | null;
     private initialInputAttempted = false;
-    private initialInputTimer: unknown | null = null;
     private externalPtyId: number | null;
     private resumePtyId: number | null;
     private readonly onProcess?: (id: number) => void;
@@ -366,8 +346,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             directCommand: options.directCommand ?? null,
             context: options.context ?? null,
         });
-        this.timer = options.timer ?? defaultTimer;
-        this.initialInputDelayMs = requireNonNegativeNumber("initialInputDelayMs", options.initialInputDelayMs ?? DEFAULT_INITIAL_INPUT_DELAY_MS);
         this.maxPendingChunks = requirePositiveInteger("maxPendingChunks", options.maxPendingChunks ?? DEFAULT_MAX_PENDING_CHUNKS);
         this.maxPendingBytes = requirePositiveInteger("maxPendingBytes", options.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES);
         this.maxSnapshotBytes = requirePositiveInteger("maxSnapshotBytes", options.maxSnapshotBytes ?? DEFAULT_MAX_SNAPSHOT_BYTES);
@@ -376,11 +354,9 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.maxAttachments = requirePositiveInteger("maxAttachments", options.maxAttachments ?? DEFAULT_MAX_ATTACHMENTS);
         this.onInitialInputDelivered = options.onInitialInputDelivered;
         this.onError = options.onError;
-        const initialInput = options.initialInput?.trim() ?? "";
         const initialPastes = (options.initialPastes ?? []).filter((value) => value.length > 0);
-        this.initialPasteChunks = [...initialPastes, ...(initialInput ? [initialInput] : [])];
-        if (this.initialPasteChunks.length === 0) this.initialPasteChunks = null;
-        this.initialDraft = options.initialDraft?.replaceAll("\0", "").trim() || null;
+        this.initialPasteChunks = initialPastes.length > 0 ? initialPastes : null;
+        this.initialDraft = options.initialDraft?.trim() ? options.initialDraft : null;
         this.initialInputStatus = this.initialPasteChunks || this.initialDraft ? "pending" : "none";
     }
 
@@ -441,7 +417,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
                 if (resumed) this.skipInitialInput();
                 this.emitState();
                 this.notifyProcess(id);
-                this.scheduleInitialInput(id);
+                void this.deliverInitialInput(id);
                 return id;
             })
             .catch((error: unknown) => {
@@ -503,7 +479,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
             this.status = "running";
             this.failureOperation = null;
             this.emitState();
-            this.scheduleInitialInput(id);
+            void this.deliverInitialInput(id);
             return id;
         });
         const tracked: Promise<number> = containRejection(
@@ -548,7 +524,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.rejectPendingResizes(new PtyControllerReplacedError());
         if (
             lifecycleStarted &&
-            (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering")
+            (this.initialInputStatus === "pending" || this.initialInputStatus === "delivering")
         ) {
             this.initialInputStatus = "cancelled";
             this.cancelInitialInput();
@@ -723,7 +699,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     dispose(): Promise<void> {
         if (this.disposePromise) return this.disposePromise;
         this.disposeRequested = true;
-        if (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering") {
+        if (this.initialInputStatus === "pending" || this.initialInputStatus === "delivering") {
             this.initialInputStatus = "cancelled";
         }
         this.cancelInitialInput();
@@ -853,24 +829,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         pending?.reject(error);
     }
 
-    private scheduleInitialInput(id: number): void {
-        if ((!this.initialPasteChunks && !this.initialDraft) || this.initialInputAttempted || this.disposeRequested) return;
-        this.initialInputStatus = "scheduled";
-        this.emitState();
-        try {
-            this.initialInputTimer = this.timer.schedule(() => {
-                this.initialInputTimer = null;
-                void this.deliverInitialInput(id);
-            }, this.initialInputDelayMs);
-        } catch (error) {
-            this.initialPasteChunks = null;
-            this.initialInputStatus = "failed";
-            this.failureOperation = "initial-input";
-            this.reportError("initial-input", error);
-            this.emitState();
-        }
-    }
-
     private async deliverInitialInput(id: number): Promise<void> {
         if (this.initialInputAttempted || (!this.initialPasteChunks && !this.initialDraft)) return;
         if (this.disposeRequested || this.status !== "running" || this.ptyId !== id) {
@@ -886,9 +844,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.initialDraft = null;
         this.emitState();
         try {
-            const submitted = pasteChunks ? `${pasteChunks.map((chunk) => `\x1b[200~${chunk}\x1b[201~`).join("")}\r` : "";
-            const input = `${submitted}${draft ? `\x1b[200~${draft}\x1b[201~` : ""}`;
-            await this.api.write(id, input);
+            await this.api.typeWhenReady(id, pasteChunks ?? [], draft);
             if (this.disposeRequested || this.ptyId !== id) {
                 this.initialInputStatus = "cancelled";
                 this.emitState();
@@ -924,14 +880,6 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     private cancelInitialInput(): void {
-        if (this.initialInputTimer !== null) {
-            try {
-                this.timer.cancel(this.initialInputTimer);
-            } catch (error) {
-                this.reportError("initial-input", error);
-            }
-            this.initialInputTimer = null;
-        }
         this.initialPasteChunks = null;
         this.initialDraft = null;
     }
@@ -1069,7 +1017,7 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     private markExited(operation: "attach" | "exit"): void {
         if (this.status !== "running") return;
         this.cancelInitialInput();
-        if (this.initialInputStatus === "pending" || this.initialInputStatus === "scheduled" || this.initialInputStatus === "delivering") {
+        if (this.initialInputStatus === "pending" || this.initialInputStatus === "delivering") {
             this.initialInputStatus = "failed";
         }
         this.status = "exited";

@@ -439,6 +439,7 @@ export class ShowcaseBackend implements IpcTransport {
       "path_kinds",
       "write_file",
       "pty_write",
+      "pty_type_when_ready",
       "pty_input",
       "pty_unsubscribe",
       "pty_clear",

@@ -75,7 +75,7 @@ function run(ptyId: number, executionId: string) {
 function Harness({
     context,
     initialDropPaths,
-    initialInput,
+    initialDraft,
     onInitialInputDelivered,
     durable = false,
     cwd = "/repo",
@@ -86,7 +86,7 @@ function Harness({
 }: {
     context: PtyContext;
     initialDropPaths?: readonly string[];
-    initialInput?: string;
+    initialDraft?: string;
     onInitialInputDelivered?: () => void;
     durable?: boolean;
     cwd?: string;
@@ -100,7 +100,7 @@ function Harness({
         cwd,
         startup,
         initialDropPaths,
-        initialInput,
+        initialDraft,
         onInitialInputDelivered,
         hostRef,
         context,
@@ -420,7 +420,7 @@ describe("usePty", () => {
             agentId: "agent-1",
             agentType: "hermes",
         };
-        const view = render(<Harness context={context} initialInput="one shot" />);
+        const view = render(<Harness context={context} initialDraft="one shot" />);
         await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === "pty_spawn")).toHaveLength(1));
 
         view.rerender(<Harness context={{ ...context, initialPromptSubmitted: true }} />);

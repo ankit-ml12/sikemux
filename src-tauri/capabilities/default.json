@@ -30,6 +30,7 @@
     "allow-pty-find",
     "allow-pty-clear",
     "allow-pty-write",
+    "allow-pty-type-when-ready",
     "allow-pty-resize",
     "allow-pty-reset-modes",
     "allow-pty-kill",

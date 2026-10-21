@@ -244,6 +244,7 @@ pub fn run() {
             pty::commands::pty_find,
             pty::commands::pty_clear,
             pty::commands::pty_write,
+            pty::commands::pty_type_when_ready,
             pty::commands::pty_resize,
             pty::commands::pty_reset_modes,
             pty::commands::pty_kill,

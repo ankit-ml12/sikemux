@@ -13,6 +13,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "pty_find",
     "pty_clear",
     "pty_write",
+    "pty_type_when_ready",
     "pty_resize",
     "pty_reset_modes",
     "pty_kill",

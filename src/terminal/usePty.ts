@@ -28,7 +28,6 @@ interface PtyResourceConfiguration {
     readonly startup?: string;
     readonly directCommand?: PtyDirectCommand;
     readonly initialDropPaths?: readonly string[];
-    readonly initialInput?: string;
     readonly initialDraft?: string;
     readonly context?: PtyContext;
     readonly taskTerminalKey?: string;
@@ -99,6 +98,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
+    typeWhenReady: (id, pastes, draft) => invoke<void>("pty_type_when_ready", { id, pastes, draft }),
     input: (id, input) => invoke<void>("pty_input", { id, input }),
     resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
     kill: coreSessionsApi.kill,
@@ -187,7 +187,6 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         configuration.directCommand?.profile?.configPath ?? null,
         configuration.directCommand?.profile?.environmentKeys ?? null,
         configuration.initialDropPaths ?? null,
-        configuration.initialInput ?? null,
         configuration.initialDraft ?? null,
         context?.sessionId ?? null,
         context?.sessionName ?? null,
@@ -212,7 +211,6 @@ export function usePty(opts: {
     directCommand?: PtyDirectCommand;
     /** Native file drops replayed as independent paste events before the first task. */
     initialDropPaths?: readonly string[];
-    initialInput?: string;
     /** Pasted once the program starts and never submitted. */
     initialDraft?: string;
     onInitialInputDelivered?: () => void;
@@ -281,7 +279,6 @@ export function usePty(opts: {
                 initialPastes: externallyOwned
                     ? undefined
                     : initial.initialDropPaths?.map((path) => encodeDroppedPaths([path], DEFAULT_SHELL_SEMANTICS)),
-                initialInput: externallyOwned ? undefined : initial.initialInput,
                 initialDraft: externallyOwned ? undefined : initial.initialDraft,
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,
