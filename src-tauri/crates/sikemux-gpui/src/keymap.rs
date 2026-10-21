@@ -59,6 +59,10 @@ commands! {
     NewChat = "agent.new",
     /// Brings the project's terminal forward, opening one when it has none.
     FocusTerminal = "window.terminal",
+    /// Bigger text in the chat, editor or terminal that has the focus.
+    TextSizeIncrease = "text.sizeIncrease",
+    TextSizeDecrease = "text.sizeDecrease",
+    TextSizeReset = "text.sizeReset",
 }
 
 /// Stops every agent and terminal the core runs, then quits.

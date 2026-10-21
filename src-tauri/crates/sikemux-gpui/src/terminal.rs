@@ -22,11 +22,14 @@ use sikemux_wire::grid::{
     self as wire, Color, FindOptions, FindResult, GridPoint, Mods, MouseAction, MouseButton, Row,
     Screen, TerminalInput,
 };
-use sikemux_wire::protocol::SessionId;
+use sikemux_wire::protocol::{
+    SessionId, DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE,
+};
 use tokio::sync::mpsc;
 
 use crate::core::{Ask, Screenful, TerminalAsk};
 use crate::icons::Icon;
+use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, IconButton, Menu, MenuItem, Toggle};
 use crate::workbench::Workbench;
@@ -34,7 +37,6 @@ use crate::workbench::Workbench;
 const PAGE: u64 = 256;
 /// History lines kept around the ones in view.
 const HISTORY_KEPT: usize = 4_000;
-const FONT_SIZE: f32 = 13.;
 const LINE_HEIGHT: f32 = 1.32;
 /// Named by today's command id, so a shortcut the person set for it still finds it.
 #[derive(Clone, Default, PartialEq, gpui::Action)]
@@ -457,6 +459,21 @@ pub fn pane(
             }),
         )
         .on_action(
+            window.listener_for(&this, |bench, _: &TextSizeIncrease, _, _| {
+                resize_text(bench, Some(1))
+            }),
+        )
+        .on_action(
+            window.listener_for(&this, |bench, _: &TextSizeDecrease, _, _| {
+                resize_text(bench, Some(-1))
+            }),
+        )
+        .on_action(
+            window.listener_for(&this, |bench, _: &TextSizeReset, _, _| {
+                resize_text(bench, None)
+            }),
+        )
+        .on_action(
             window.listener_for(&this, move |bench, _: &ResetModes, _, _| {
                 let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::ResetModes));
             }),
@@ -581,13 +598,22 @@ fn layout(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> (Layout, FocusHandle) {
+    let size = px(font_size(bench) as f32);
+    if bench
+        .terminals
+        .metrics
+        .as_ref()
+        .is_some_and(|metrics| metrics.font_size != size)
+    {
+        bench.terminals.metrics = None;
+    }
     let metrics = bench
         .terminals
         .metrics
         .get_or_insert_with(|| {
             let mut mono = font(theme::MONO);
             mono.fallbacks = Some(FontFallbacks::from_fonts(vec![theme::MONO_ICONS.into()]));
-            Metrics::new(mono, px(FONT_SIZE), LINE_HEIGHT, window)
+            Metrics::new(mono, size, LINE_HEIGHT, window)
         })
         .clone();
     let asks = bench.asks.clone();
@@ -1399,6 +1425,29 @@ fn page(bench: &mut Workbench, id: SessionId, up: bool) {
     scroll(terminal, if up { -rows } else { rows });
 }
 
+/// The terminals' font size the person chose, read off the preferences as
+/// they came, since every frame asks.
+fn font_size(bench: &Workbench) -> u32 {
+    bench
+        .read("preferences")
+        .and_then(|preferences| preferences["terminalFontSize"].as_u64())
+        .map_or(DEFAULT_TERMINAL_FONT_SIZE, |size| size as u32)
+}
+
+/// Makes the terminals' text bigger or smaller by `step`, or back to the
+/// default size without one.
+fn resize_text(bench: &Workbench, step: Option<i32>) {
+    let size = step.map_or(DEFAULT_TERMINAL_FONT_SIZE, |step| {
+        font_size(bench)
+            .saturating_add_signed(step)
+            .clamp(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE)
+    });
+    let _ = bench.asks.send(Ask::Call {
+        method: "setPreference",
+        params: serde_json::json!({ "key": "terminalFontSize", "value": size }),
+    });
+}
+
 fn paste(bench: &mut Workbench, id: SessionId, cx: &mut App) {
     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
         send(bench, id, TerminalInput::Paste { text });
@@ -1624,6 +1673,15 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
             id,
             TerminalAsk::Input(TerminalInput::Focus { focused }),
         ));
+    }
+    let ssh = bench
+        .session(&id.to_string())
+        .is_some_and(|session| session.ssh_alias.is_some());
+    if focused && ssh {
+        let _ = bench.asks.send(Ask::Call {
+            method: "reconnectSsh",
+            params: serde_json::json!({ "id": id }),
+        });
     }
     if focused {
         bench.terminals.focused = Some(id);
