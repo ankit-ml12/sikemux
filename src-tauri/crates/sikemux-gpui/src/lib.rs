@@ -19,6 +19,7 @@ pub mod git;
 mod home;
 pub mod icons;
 mod keymap;
+pub mod model_picker;
 mod panes;
 mod picture;
 mod ports;
