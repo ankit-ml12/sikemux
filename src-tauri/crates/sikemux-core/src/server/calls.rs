@@ -115,7 +115,7 @@ calls! { core, client, params;
         answer(super::chat::queue::remove(&core, &params.agent_id, &params.ids)?)
     },
     "agentSessions": Local, any_program => answer(saved::call(&core, parse(params)?).await?),
-    "workspace": Watch, any_program => answer(core.workspaces.view()),
+    "workspace": Watch, any_program => answer(core.workspace_view()),
     "runCommand": Local => answer(super::custom_command::run(parse(params)?).await?),
     "addProject": Person => answer(workspace::add_project(&core, parse(params)?).await?),
     "removeProject": Person => answer(workspace::remove_project(&core, parse(params)?)?),

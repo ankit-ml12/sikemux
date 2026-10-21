@@ -951,6 +951,10 @@ pub struct WorkspaceAgent {
     pub id: String,
     /// The CLI it runs, such as `claude`.
     pub provider: String,
+    /// What the core calls it, such as Otter, open or asleep. The core fills
+    /// it in; clients only read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Its project, by id.
     pub project: String,
     pub cwd: PathBuf,

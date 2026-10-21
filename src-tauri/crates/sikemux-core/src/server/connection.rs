@@ -1004,7 +1004,7 @@ async fn run_requests(
                 client.respond(
                     request_id,
                     Ok(Response::Workspace {
-                        workspace: core.workspaces.view(),
+                        workspace: core.workspace_view(),
                     }),
                 );
             }

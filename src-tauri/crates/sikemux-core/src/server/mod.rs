@@ -737,6 +737,13 @@ impl Core {
         (chats, sessions)
     }
 
+    /// The workspace as clients are sent it, each agent under its name.
+    pub(crate) fn workspace_view(&self) -> crate::protocol::Workspace {
+        let mut workspace = self.workspaces.view();
+        self.names.fill(&mut workspace.agents);
+        workspace
+    }
+
     /// The view devices are sent, and whether anything in it moves by itself.
     fn device_view_frame(&self) -> Option<(Vec<u8>, bool)> {
         let (chats, sessions) = self.ranked_infos();
@@ -753,7 +760,7 @@ impl Core {
         let recent = self.workspaces.recent(&chats);
         let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
         let view = DeviceView {
-            workspace: self.workspaces.view(),
+            workspace: self.workspace_view(),
             sessions,
             chats,
             attentions,

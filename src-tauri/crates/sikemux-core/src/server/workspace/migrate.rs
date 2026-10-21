@@ -208,6 +208,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
             .unwrap_or(is_chat_provider(&provider) && pty_id.is_none());
         let stopped = earlier.asleep.iter().find(|asleep| asleep.agent_id == id);
         let mut record = WorkspaceAgent {
+            name: None,
             cwd: text(agent, "cwd")
                 .map(Into::into)
                 .unwrap_or_else(|| project.path.clone()),

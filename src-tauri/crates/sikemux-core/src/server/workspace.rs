@@ -827,6 +827,7 @@ impl Workspaces {
         });
         let agent = WorkspaceAgent {
             id: chat.agent_id().to_owned(),
+            name: None,
             provider: launch.provider.clone(),
             project,
             cwd: launch.cwd.clone(),
