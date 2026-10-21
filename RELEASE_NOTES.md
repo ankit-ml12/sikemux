@@ -9,6 +9,7 @@ The fourth nightly on the 0.5.4 line. Nightlies are signed and delivered exactly
 - **Hosts in Settings.** Each host is one row in Settings → Devices, renamed in place, and its name is the same everywhere. A host row says when it's connecting or out of reach, and the lock is reachable for every host.
 - **Smoother under load.** Animations pause in panes and rail pages nobody can see, a chat nobody is looking at takes in its stream once a second, an agent changing state re-renders only its own project, and a hidden terminal flooding with output waits until it's shown. Buddies animate on the compositor.
 - **Pictures in messages** sit where you put them and open from the composer.
+- A chat opens on its last screen or two rather than its last 50 turns, so long chats open faster.
 - A sleeping agent wakes as soon as its pane is shown, without a Sleeping card asking to resume it.
 - Scrollbars show only while the pointer is over their list, floating over the rows.
 - An image on a desk hides with its screen.
