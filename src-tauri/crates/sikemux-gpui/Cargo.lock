@@ -3049,6 +3049,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-native-view"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gpui-pre",
+ "gpui-pre-platform",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "raw-window-handle",
+]
+
+[[package]]
 name = "gpui-pre"
 version = "0.3.9"
 source = "git+https://github.com/sikemux/gpui?rev=e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc#e6daf0831278f021afdbe0e8b3d9f4831b0bc9cc"
