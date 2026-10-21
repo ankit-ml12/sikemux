@@ -56,6 +56,7 @@ pub struct Workbench {
     pub signing_in: bool,
     /// Where remote access stands, once the core has said.
     pub remote: Option<RemoteStatus>,
+    pub accounts: crate::accounts::Accounts,
     pub all_projects: bool,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
@@ -237,6 +238,8 @@ impl Workbench {
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
         let _ = asks.send(Ask::Follow("lsp"));
+        let _ = asks.send(Ask::Follow("agentSignIn"));
+        let _ = asks.send(Ask::Follow("agentAccounts"));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
                 break;
@@ -259,6 +262,7 @@ impl Workbench {
             picture_hash: None,
             signing_in: false,
             remote: None,
+            accounts: Default::default(),
             all_projects: false,
             space: None,
             side_rail_open: true,
@@ -502,6 +506,12 @@ impl Workbench {
                         paths.as_deref().unwrap_or_default(),
                         cx,
                     );
+                }
+                if topic == "agentSignIn" {
+                    crate::accounts::pages_moved(self, cx);
+                }
+                if topic == "agentAccounts" {
+                    crate::accounts::book_moved(self, cx);
                 }
                 if topic == "git" {
                     crate::editor::git_changed(self, paths.as_deref(), cx);
