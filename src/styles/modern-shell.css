@@ -1355,12 +1355,11 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
 }
 
 /* ---- Top bar -------------------------------------------------------------
- * The bar shares the shell's ground with the gutter around the frame, so
- * there is no bar — just window chrome sitting above the surfaces. The gutter
- * underneath is the separation; a rule there would be a second one.
+ * The bar shares the shell's ground, and a hairline sets it apart from the tab
+ * row under it.
  */
 .top-bar {
-    border-bottom: 0;
+    border-bottom: 1px solid var(--border);
     background: transparent;
 }
 

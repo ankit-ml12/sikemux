@@ -110,12 +110,14 @@
 }
 
 /* The tabs, on a row of their own under the bar, from the window's left edge to its right. */
+/* Spaced from the hairline above and the panels below by the same gutter that parts the panels from each other. */
 .tab-row {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
     min-width: 0;
-    padding: 0 var(--shell-gap);
+    padding: var(--shell-gap) var(--shell-gap) 0;
+    margin-bottom: calc(var(--shell-gap) - var(--space-1));
 }
 
 .tab-row:empty {
