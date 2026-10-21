@@ -266,6 +266,8 @@ struct Status {
     /// Whether the app's window is open, when the app runs at all.
     window: Option<bool>,
     account: Option<String>,
+    /// The host's public key, which the account and its devices know it by.
+    core_id: Option<String>,
     account_connection: Option<&'static str>,
     remote_access: Option<bool>,
     devices: usize,
@@ -292,6 +294,10 @@ fn status(json: bool) -> i32 {
             .as_ref()
             .and_then(|_| crate::cli_client::window_open()),
         account: remote.as_ref().and_then(|remote| remote.owner.clone()),
+        core_id: remote
+            .as_ref()
+            .map(|remote| remote.core_id.clone())
+            .filter(|id| !id.is_empty()),
         account_connection: remote
             .as_ref()
             .and_then(|remote| remote.account.as_ref())
