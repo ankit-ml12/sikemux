@@ -15,6 +15,7 @@ mod catalog;
 mod changed;
 mod chat;
 mod ci;
+mod cli_install;
 mod codehost;
 mod collisions;
 mod connection;

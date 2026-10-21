@@ -7,7 +7,6 @@ mod agents;
 mod app_menu;
 mod autopsy;
 mod browser;
-mod cli_install;
 mod cli_open;
 mod core_call;
 mod deep_link;
@@ -324,8 +323,6 @@ pub fn run() {
             cli_open::cli_open_result,
             cli_open::cli_editor_tabs_closed,
             deep_link::take_deep_links,
-            cli_install::cli_install_status,
-            cli_install::cli_install,
             voice::voice_status,
             voice::voice_prepare,
             voice::voice_start,

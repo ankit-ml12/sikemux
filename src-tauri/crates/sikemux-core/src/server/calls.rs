@@ -418,6 +418,8 @@ calls! { core, client, params;
     "releaseNotes": Watch => answer(super::about::release_notes(parse(params)?).await?),
     "releaseAvatars": Watch => answer(super::about::release_avatars(parse(params)?).await),
     "hostTools": Watch => answer(super::about::tools().await?),
+    "cliInstall": Watch => answer(super::cli_install::status().await?),
+    "installCli": Person => answer(super::cli_install::install().await?),
     "showFiles": Watch => {
         super::open_files::show(&core, client.id, parse(params)?)?;
         answer(())

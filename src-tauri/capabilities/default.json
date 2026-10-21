@@ -104,8 +104,6 @@
     "allow-cli-open-result",
     "allow-cli-editor-tabs-closed",
     "allow-take-deep-links",
-    "allow-cli-install-status",
-    "allow-cli-install",
     "allow-voice-status",
     "allow-voice-prepare",
     "allow-voice-start",

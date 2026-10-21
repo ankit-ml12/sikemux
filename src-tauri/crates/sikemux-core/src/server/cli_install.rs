@@ -1,3 +1,6 @@
+//! The `sikemux` command for the person's shell: a link in their own bin
+//! folder to the core's executable, which Settings offers to put there.
+
 use std::env;
 use std::fs;
 #[cfg(unix)]
@@ -6,13 +9,14 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use tauri::async_runtime::spawn_blocking;
+use super::connection::blocking;
+use super::{CoreError, CoreResult};
 
-use crate::error::{AppError, AppResult};
+type Installed<T> = Result<T, String>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum CliInstallState {
+pub(crate) enum CliInstallState {
     Unavailable,
     NotInstalled,
     Installed,
@@ -23,7 +27,7 @@ pub enum CliInstallState {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CliInstallStatus {
+pub(crate) struct CliInstallStatus {
     state: CliInstallState,
     install_dir: String,
     cli_path: String,
@@ -41,26 +45,34 @@ enum DestinationState {
     Conflict,
 }
 
-#[tauri::command]
-pub async fn cli_install_status() -> CliInstallStatus {
-    spawn_blocking(|| status_for(crate::cli_paths::cli_executable_path()))
-        .await
-        .unwrap_or_else(|_| status_for(None))
+/// The executable the command links to: this core's own, which is the CLI.
+/// Tests point it elsewhere with `SIKEMUX_SIDECAR_PATH`.
+fn cli_executable() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("SIKEMUX_SIDECAR_PATH").map(PathBuf::from) {
+        return path.is_file().then_some(path);
+    }
+    let name = if cfg!(windows) {
+        "sikemux-host.exe"
+    } else {
+        "sikemux-host"
+    };
+    env::current_exe()
+        .ok()
+        .filter(|path| path.file_name().is_some_and(|file| file == name))
 }
 
-#[tauri::command]
-pub async fn cli_install() -> AppResult<CliInstallStatus> {
-    spawn_blocking(install_cli)
-        .await
-        .map_err(|error| AppError::State(format!("cli_install join: {error}")))?
+pub(crate) async fn status() -> CoreResult<CliInstallStatus> {
+    blocking(|| Ok(status_for(cli_executable()))).await
 }
 
-fn install_cli() -> AppResult<CliInstallStatus> {
-    let executable = crate::cli_paths::cli_executable_path().ok_or_else(|| {
-        AppError::State("the packaged Sikemux CLI is unavailable in this build".into())
-    })?;
-    install_for(&executable)?;
-    Ok(status_for(Some(executable)))
+pub(crate) async fn install() -> CoreResult<CliInstallStatus> {
+    blocking(|| {
+        let executable =
+            cli_executable().ok_or("this build of Sikemux has no packaged command to install")?;
+        install_for(&executable).map_err(CoreError::from)?;
+        Ok(status_for(Some(executable)))
+    })
+    .await
 }
 
 fn status_for(executable: Option<PathBuf>) -> CliInstallStatus {
@@ -193,28 +205,28 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 }
 
 #[cfg(unix)]
-fn install_for(executable: &Path) -> AppResult<()> {
-    let directory = install_dir().ok_or_else(|| AppError::State("no home directory".into()))?;
+fn install_for(executable: &Path) -> Installed<()> {
+    let directory = install_dir().ok_or("no home directory")?;
     install_unix_into(executable, &directory)
 }
 
 #[cfg(unix)]
-fn install_unix_into(executable: &Path, directory: &Path) -> AppResult<()> {
+fn install_unix_into(executable: &Path, directory: &Path) -> Installed<()> {
     use std::os::unix::fs::symlink;
 
     let cli_path = destination_path(directory);
     match destination_state(&cli_path, executable) {
         DestinationState::Installed => return Ok(()),
         DestinationState::Conflict => {
-            return Err(AppError::State(format!(
+            return Err(format!(
                 "refusing to replace unrelated path: {}",
                 cli_path.display()
-            )))
+            ))
         }
         DestinationState::Missing => {}
     }
-    fs::create_dir_all(directory)?;
-    symlink(executable, &cli_path)?;
+    fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+    symlink(executable, &cli_path).map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -253,9 +265,8 @@ fn destination_state(destination: &Path, executable: &Path) -> DestinationState 
 }
 
 #[cfg(windows)]
-fn install_for(executable: &Path) -> AppResult<()> {
-    let directory =
-        install_dir().ok_or_else(|| AppError::State("LOCALAPPDATA is unavailable".into()))?;
+fn install_for(executable: &Path) -> Installed<()> {
+    let directory = install_dir().ok_or("LOCALAPPDATA is unavailable")?;
     let cli_path = destination_path(&directory);
     let marker = windows_marker(&directory);
     let app_pointer = directory.join(WINDOWS_APP_POINTER);
@@ -263,31 +274,30 @@ fn install_for(executable: &Path) -> AppResult<()> {
         .parent()
         .map(|parent| parent.join("sikemux.exe"))
         .filter(|path| path.is_file())
-        .ok_or_else(|| {
-            AppError::State("the packaged Sikemux application executable is unavailable".into())
-        })?;
+        .ok_or("the packaged Sikemux application executable is unavailable")?;
     let managed = windows_directory_managed(&directory);
     if !managed
         && ([&cli_path, &marker, &app_pointer]
             .iter()
             .any(|path| path.exists()))
     {
-        return Err(AppError::State(format!(
+        return Err(format!(
             "refusing to replace files in unmanaged directory: {}",
             directory.display()
-        )));
+        ));
     }
-    fs::create_dir_all(&directory)?;
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     if !managed {
-        fs::write(&marker, WINDOWS_MARKER)?;
+        fs::write(&marker, WINDOWS_MARKER).map_err(|error| error.to_string())?;
     }
-    fs::write(&app_pointer, app_executable.to_string_lossy().as_bytes())?;
+    fs::write(&app_pointer, app_executable.to_string_lossy().as_bytes())
+        .map_err(|error| error.to_string())?;
     let temporary = cli_path.with_extension("exe.sikemux-new");
-    fs::copy(executable, &temporary)?;
+    fs::copy(executable, &temporary).map_err(|error| error.to_string())?;
     if cli_path.exists() {
-        fs::remove_file(&cli_path)?;
+        fs::remove_file(&cli_path).map_err(|error| error.to_string())?;
     }
-    fs::rename(temporary, &cli_path)?;
+    fs::rename(temporary, &cli_path).map_err(|error| error.to_string())?;
     Ok(())
 }
 

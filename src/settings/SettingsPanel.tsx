@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { invokeCommand as invoke } from "../api/invoke";
+import { coreCall } from "../api/core";
 import { simApi, type SimSetup } from "../api/sim";
 import { simUsable, useSimStatus } from "../sim/simStatus";
 import {
@@ -735,7 +735,7 @@ interface CliInstallStatus {
 function CliPage() {
     const [status, setStatus] = useState<CliInstallStatus | null>(null);
     const [busy, setBusy] = useState(false);
-    const refresh = useCallback(() => invoke<CliInstallStatus>("cli_install_status").then(setStatus).catch(reportError("CLI status")), []);
+    const refresh = useCallback(() => coreCall<CliInstallStatus>("cliInstall").then(setStatus).catch(reportError("CLI status")), []);
 
     useEffect(() => {
         refresh();
@@ -744,12 +744,12 @@ function CliPage() {
     const install = async () => {
         setBusy(true);
         try {
-            const next = await invoke<CliInstallStatus>("cli_install");
+            const next = await coreCall<CliInstallStatus>("installCli");
             setStatus(next);
             notify("success", next.pathConfigured ? "Sikemux CLI is ready" : "Sikemux CLI installed; add its directory to PATH");
         } catch (error) {
             reportError("CLI install")(error);
-            await invoke<CliInstallStatus>("cli_install_status").then(setStatus).catch(swallow("read the CLI install status"));
+            await coreCall<CliInstallStatus>("cliInstall").then(setStatus).catch(swallow("read the CLI install status"));
         } finally {
             setBusy(false);
         }
