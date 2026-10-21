@@ -50,6 +50,7 @@ const KEYS: [ui::Section; 4] = [
             ("1 2 3", "Changes, History, Branches"),
             ("h", "switch between Changes and History"),
             ("?", "open this cheatsheet"),
+            ("@", "toggle command log"),
             ("/", "filter the list"),
             ("r", "refresh repo state"),
             ("F", "fetch all remotes"),
@@ -209,6 +210,19 @@ enum Entry {
     File { side: Side, file: GitFile },
 }
 
+/// The most operations the command log keeps.
+const LOG_KEPT: usize = 200;
+
+/// A git operation the pane ran, as the command log lists it: when it started, what it
+/// was, whether it went through, and the first line of what it said.
+struct Logged {
+    id: u64,
+    time: SharedString,
+    label: SharedString,
+    done: Option<bool>,
+    detail: Option<SharedString>,
+}
+
 /// Files moved between the groups by one click, which run one after another.
 struct Move {
     paths: Vec<String>,
@@ -327,6 +341,9 @@ pub struct GitPane {
     draft: Entity<TextareaState>,
     /// A message written into the draft from outside the window's turn, set when it next draws.
     written: Option<String>,
+    /// The git operations run from the pane, oldest first.
+    commands: VecDeque<Logged>,
+    commands_open: bool,
     /// The store, for the agents whose faces the changed files show.
     bench: WeakEntity<Workbench>,
     /// Who wrote the uncommitted lines, as the core's `changeOwners` answers.
@@ -396,6 +413,8 @@ impl GitPane {
             written: None,
             bench,
             owners: Value::Null,
+            commands: VecDeque::new(),
+            commands_open: false,
             synced: String::new(),
             _keeping: Task::ready(()),
             generating: false,
@@ -781,13 +800,16 @@ impl GitPane {
         if self.busy.is_some() {
             return;
         }
-        self.busy = Some(label.into());
+        let label = label.into();
+        self.busy = Some(label.clone());
         self.failed = None;
+        let logged = self.logged(label);
         let answer = request(&self.asks, method, params);
         cx.spawn(async move |pane, cx| {
             let answer = answer.await;
             pane.update(cx, |pane, cx| {
                 pane.busy = None;
+                pane.settle(logged, &answer);
                 if let Err(error) = &answer {
                     pane.fail(error, cx);
                 }
@@ -798,6 +820,37 @@ impl GitPane {
         })
         .detach();
         cx.notify();
+    }
+
+    /// Notes an operation in the command log as running, answering its place there.
+    fn logged(&mut self, label: SharedString) -> u64 {
+        let at = self.commands.back().map_or(0, |last| last.id + 1);
+        self.commands.push_back(Logged {
+            id: at,
+            time: chrono::Local::now().format("%H:%M:%S").to_string().into(),
+            label,
+            done: None,
+            detail: None,
+        });
+        while self.commands.len() > LOG_KEPT {
+            self.commands.pop_front();
+        }
+        at
+    }
+
+    /// Notes how a logged operation ended, with the first line of what it said.
+    fn settle(&mut self, id: u64, answer: &Result<Value, String>) {
+        let Some(entry) = self.commands.iter_mut().find(|entry| entry.id == id) else {
+            return;
+        };
+        entry.done = Some(answer.is_ok());
+        let said = match answer {
+            Ok(Value::String(text)) => text.as_str(),
+            Ok(_) => "",
+            Err(error) => error.as_str(),
+        };
+        let first = said.trim().lines().next().unwrap_or_default();
+        entry.detail = (!first.is_empty()).then(|| first.to_owned().into());
     }
 
     fn fail(&mut self, error: &str, cx: &mut Context<Self>) {
@@ -857,11 +910,13 @@ impl GitPane {
             return;
         };
         self.running = true;
+        let logged = self.logged(format!("{} {}", next.method, next.paths.join(" ")).into());
         let answer = request(&self.asks, next.method, next.params);
         cx.spawn(async move |pane, cx| {
             let answer = answer.await;
             pane.update(cx, |pane, cx| {
                 pane.running = false;
+                pane.settle(logged, &answer);
                 if let Err(error) = &answer {
                     pane.fail(error, cx);
                 }
@@ -1809,6 +1864,10 @@ impl GitPane {
                 self.asking = Some(Asking::Keys);
                 cx.notify();
             }
+            "@" => {
+                self.commands_open = !self.commands_open;
+                cx.notify();
+            }
             "escape" if self.range.is_some() => {
                 self.range = None;
                 cx.notify();
@@ -1917,19 +1976,162 @@ fn side(
 ) -> impl IntoElement {
     let count = (pane.page == Page::History).then(|| pane.log().len());
     let filter = filter.map(|field| filter_row(&field, count, cx));
-    ui::panel(cx)
+    let commands = pane.commands_open.then(|| command_log(pane, cx));
+    div()
         .w(relative(0.3))
         .min_w(px(320.))
         .max_w(px(400.))
         .h_full()
         .flex_none()
-        .child(head(pane, cx))
-        .map(|side| match pane.page {
-            Page::Changes => side.child(changes(pane, filter, cx)),
-            Page::History => side.children(filter).child(history_list(pane, cx)),
-            Page::Branches => side.children(filter).child(branches_page(pane, cx)),
-        })
-        .child(pages(pane, cx))
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(
+            ui::panel(cx)
+                .flex_1()
+                .min_h_0()
+                .child(head(pane, cx))
+                .map(|side| match pane.page {
+                    Page::Changes => side.child(changes(pane, filter, cx)),
+                    Page::History => side.children(filter).child(history_list(pane, cx)),
+                    Page::Branches => side.children(filter).child(branches_page(pane, cx)),
+                })
+                .child(pages(pane, cx)),
+        )
+        .children(commands)
+}
+
+/// The git operations the pane ran, newest first.
+fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let button = |id: &'static str, label: &'static str, tip: &'static str, disabled: bool| {
+        BaseButton::new(id)
+            .accessibility_label(tip)
+            .tooltip(ui::tooltip(tip))
+            .disabled(disabled)
+            .px(px(8.))
+            .py(px(2.))
+            .border_1()
+            .border_color(t.border)
+            .text_size(px(10.5))
+            .text_color(t.text_secondary)
+            .when(disabled, |button| button.opacity(0.5))
+            .hover(move |style| {
+                style
+                    .text_color(t.text_primary)
+                    .border_color(t.border_strong)
+            })
+            .child(label)
+    };
+    let rows = pane.commands.iter().rev().map(|entry| {
+        let (glyph, ink) = match entry.done {
+            None => ("…", t.warn),
+            Some(true) => ("✓", t.live),
+            Some(false) => ("✗", t.danger),
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .px(px(12.))
+            .py(px(3.))
+            .text_size(px(11.5))
+            .child(
+                div()
+                    .w(px(60.))
+                    .flex_none()
+                    .text_size(px(10.))
+                    .text_color(t.text_tertiary)
+                    .child(entry.time.clone()),
+            )
+            .child(div().w(px(12.)).flex_none().text_color(ink).child(glyph))
+            .child(
+                div()
+                    .flex_none()
+                    .text_color(t.text_primary)
+                    .child(entry.label.clone()),
+            )
+            .children(entry.detail.clone().map(|detail| {
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(t.text_tertiary)
+                    .child(detail)
+            }))
+    });
+    let empty = pane.commands.is_empty();
+    div()
+        .flex_none()
+        .max_h(px(220.))
+        .flex()
+        .flex_col()
+        .bg(t.surface)
+        .border_t_1()
+        .border_color(t.border)
+        .font_family(theme::MONO)
+        .text_color(t.text_secondary)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .px(px(12.))
+                .py(px(6.))
+                .border_b_1()
+                .border_color(t.border)
+                .text_size(px(11.))
+                .child(ui::kbd("@", cx))
+                .child(
+                    div()
+                        .text_color(t.text_primary)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("command log"),
+                )
+                .child(
+                    div()
+                        .text_size(px(10.5))
+                        .text_color(t.text_tertiary)
+                        .child(pane.commands.len().to_string()),
+                )
+                .child(div().flex_1())
+                .child(
+                    button("git-log-clear", "clear", "Clear log", empty).on_click(cx.listener(
+                        |pane, _, _, cx| {
+                            pane.commands.clear();
+                            cx.notify();
+                        },
+                    )),
+                )
+                .child(
+                    button("git-log-close", "close", "Hide log (@)", false).on_click(cx.listener(
+                        |pane, _, _, cx| {
+                            pane.commands_open = false;
+                            cx.notify();
+                        },
+                    )),
+                ),
+        )
+        .child(
+            div()
+                .id("git-log-rows")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .py(px(4.))
+                .when(empty, |rows| {
+                    rows.child(
+                        div()
+                            .px(px(16.))
+                            .py(px(14.))
+                            .text_size(px(11.5))
+                            .italic()
+                            .text_color(t.text_tertiary)
+                            .child("log empty — every git command will appear here"),
+                    )
+                })
+                .children(rows),
+        )
 }
 
 /// The icons at the side column's foot that turn its pages.
