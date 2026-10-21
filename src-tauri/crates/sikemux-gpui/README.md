@@ -7,6 +7,7 @@ the core sends.
 
 ```sh
 node icons.mjs     # after an icon in src/ui/Icons.tsx changes
+python3 fonts.py   # after the mono font in public/fonts changes (needs fontTools, brotli)
 cargo run --release
 ```
 

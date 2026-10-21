@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use gpui_kit::{px, rgb, rgba, App, FontFeatures, Pixels, Rgba};
 
 pub const UI: &str = "Figtree";
-pub const MONO: &str = "JetBrainsMonoNL Nerd Font";
+pub const MONO: &str = "JetBrainsMono NFM";
 pub const KBD: &str = ".SystemUIFont";
 
 pub fn sunken() -> Rgba {
@@ -87,6 +87,11 @@ pub fn load_fonts(cx: &App) {
         include_bytes!("../../../notch/Fonts/Figtree_400Regular.ttf").as_slice(),
         include_bytes!("../../../notch/Fonts/Figtree_500Medium.ttf").as_slice(),
         include_bytes!("../../../notch/Fonts/Figtree_600SemiBold.ttf").as_slice(),
+        include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular-Base.ttf").as_slice(),
+        include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Bold-Base.ttf").as_slice(),
+        include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Italic-Base.ttf").as_slice(),
+        include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-BoldItalic-Base.ttf").as_slice(),
+        include_bytes!("../assets/fonts/JetBrainsMonoNerdFontMono-Regular-Icons.ttf").as_slice(),
     ];
     cx.text_system()
         .add_fonts(fonts.into_iter().map(Cow::Borrowed).collect())
