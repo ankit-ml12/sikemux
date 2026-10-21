@@ -4,9 +4,9 @@
 use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, radians, Anchor, AnyElement, App, ClipboardItem, Context, Div, Entity,
-    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Transformation,
+    div, list, px, radians, Anchor, AnyElement, App, Context, Div, Entity, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, Transformation,
 };
 use serde_json::{json, Value};
 use sikemux_core::git::branches::GitBranch;
@@ -933,9 +933,7 @@ fn branch_more(view: &Entity<GitPane>, branch: &GitBranch, into: &str) -> impl I
         Icon::Copy,
         None,
         false,
-        std::rc::Rc::new(move |_, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-        }),
+        std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), copied.clone(), cx)),
     ));
     if !branch.current {
         items.push((
@@ -955,6 +953,7 @@ fn branch_more(view: &Entity<GitPane>, branch: &GitBranch, into: &str) -> impl I
 
 fn remote_more(view: &Entity<GitPane>, remote: &GitRemote) -> impl IntoElement {
     let (fetched, copied) = (remote.name.clone(), remote.url.clone());
+    let what = format!("{} URL", remote.name);
     let items: Vec<MoreItem> = vec![
         (
             "Fetch".into(),
@@ -968,9 +967,7 @@ fn remote_more(view: &Entity<GitPane>, remote: &GitRemote) -> impl IntoElement {
             Icon::Copy,
             None,
             false,
-            std::rc::Rc::new(move |_, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-            }),
+            std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), what.clone(), cx)),
         ),
     ];
     more(
@@ -1013,9 +1010,7 @@ fn remote_branch_more(
             Icon::Copy,
             None,
             false,
-            std::rc::Rc::new(move |_, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-            }),
+            std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), copied.clone(), cx)),
         ),
         (
             format!("Delete on {remote}…").into(),
@@ -1383,6 +1378,7 @@ fn card_foot(pane: &GitPane, entry: &BranchEntry, cx: &mut Context<GitPane>) -> 
         }
         BranchEntry::Remote { remote, .. } => {
             let (fetched, copied) = (remote.name.clone(), remote.url.clone());
+            let what = format!("{} URL", remote.name);
             foot.child(
                 group()
                     .child(button(
@@ -1402,8 +1398,8 @@ fn card_foot(pane: &GitPane, entry: &BranchEntry, cx: &mut Context<GitPane>) -> 
                         "Copy URL".into(),
                         None,
                         false,
-                        std::rc::Rc::new(move |_, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
+                        std::rc::Rc::new(move |pane, cx| {
+                            pane.copy(copied.clone(), what.clone(), cx)
                         }),
                         cx,
                     )),

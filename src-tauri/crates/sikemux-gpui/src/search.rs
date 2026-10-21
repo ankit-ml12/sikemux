@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, img, list, px, relative, AnyElement, App, AppContext, Context, Div, Entity,
@@ -103,8 +105,6 @@ pub struct SearchPane {
     replacing: bool,
     /// What a replace would change, shown before it does.
     previewed: Option<ReplaceResults>,
-    /// What the last replace did, or why it failed.
-    replaced: Option<(bool, SharedString)>,
     rows: Vec<Row>,
     list: ListState,
     collapsed: HashSet<String>,
@@ -135,7 +135,6 @@ impl SearchPane {
             stale: false,
             replacing: false,
             previewed: None,
-            replaced: None,
             rows: Vec::new(),
             list: ListState::new(0, ListAlignment::Top, px(400.)),
             collapsed: HashSet::new(),
@@ -167,7 +166,7 @@ impl SearchPane {
                             InputEvent::Change => pane.typed(cx),
                             InputEvent::PressEnter {
                                 secondary: true, ..
-                            } if pane.replace_open => pane.replace_all(cx),
+                            } if pane.replace_open => pane.replace_all(window, cx),
                             InputEvent::PressEnter { .. } => pane.open(window, cx),
                             _ => {}
                         }
@@ -244,7 +243,6 @@ impl SearchPane {
         self.summary = None;
         self.error = None;
         self.stale = false;
-        self.replaced = None;
         self.status = Status::Searching;
         self.relist();
         cx.notify();
@@ -423,27 +421,31 @@ impl SearchPane {
 
     /// Replaces in two steps: the first says how many matches in how many files would
     /// change, the second changes them.
-    fn replace_all(&mut self, cx: &mut Context<Self>) {
+    fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.query.trim().is_empty() || self.replacing {
             return;
         }
         let dry_run = self.previewed.is_none();
         self.replacing = true;
-        self.replaced = None;
         let params = json!({ "project": self.project, "query": self.query, "replace": self.replace, "options": self.options, "dryRun": dry_run });
         let answer = request(&self.asks, "searchReplace", params);
-        cx.spawn(async move |pane, cx| {
+        cx.spawn_in(window, async move |pane, cx| {
             let results = answer.await.and_then(|results| {
                 serde_json::from_value::<ReplaceResults>(results).map_err(|error| error.to_string())
             });
-            pane.update(cx, |pane, cx| {
+            pane.update_in(cx, |pane, window, cx| {
                 pane.replacing = false;
                 match results {
                     Ok(results) if dry_run => pane.previewed = Some(results),
-                    Ok(results) => pane.replaced_with(results),
+                    Ok(results) => {
+                        let note = replaced(&results);
+                        window.push_notification(note, cx);
+                        pane.replaced_with(results);
+                    }
                     Err(error) => {
                         pane.previewed = None;
-                        pane.replaced = Some((false, format!("replace failed: {error}").into()));
+                        let note = Notification::error(format!("replace failed: {error}"));
+                        window.push_notification(note.autohide(false), cx);
                     }
                 }
                 cx.notify();
@@ -455,28 +457,6 @@ impl SearchPane {
     }
 
     fn replaced_with(&mut self, results: ReplaceResults) {
-        let matches = if results.match_count == 1 {
-            "match"
-        } else {
-            "matches"
-        };
-        let files = if results.file_count == 1 {
-            "file"
-        } else {
-            "files"
-        };
-        let skipped = match results.errors.len() {
-            0 => String::new(),
-            skipped => format!(" · {skipped} skipped"),
-        };
-        self.replaced = Some((
-            results.errors.is_empty(),
-            format!(
-                "replaced {} {matches} in {} {files}{skipped}",
-                results.match_count, results.file_count
-            )
-            .into(),
-        ));
         let changed: HashSet<&str> = results
             .files
             .iter()
@@ -531,6 +511,29 @@ impl SearchPane {
             replace.update(cx, |replace, cx| replace.focus(window, cx));
         }
         cx.notify();
+    }
+}
+
+/// What a replace did, as a note: how many matches in how many files, and how many
+/// files it skipped.
+fn replaced(results: &ReplaceResults) -> Notification {
+    let matches = if results.match_count == 1 {
+        "match"
+    } else {
+        "matches"
+    };
+    let files = if results.file_count == 1 {
+        "file"
+    } else {
+        "files"
+    };
+    let said = format!(
+        "replaced {} {matches} in {} {files}",
+        results.match_count, results.file_count
+    );
+    match results.errors.len() {
+        0 => Notification::success(said),
+        skipped => Notification::info(format!("{said} · {skipped} skipped")),
     }
 }
 
@@ -896,19 +899,13 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                             } else {
                                 t.text_primary
                             })
-                            .on_click(cx.listener(|pane, _, _, cx| pane.replace_all(cx)))
+                            .on_click(
+                                cx.listener(|pane, _, window, cx| pane.replace_all(window, cx)),
+                            )
                             .child(replace_label),
                     )
                 }),
         )
-        .children(pane.replaced.clone().map(|(fine, said)| {
-            div()
-                .px(px(10.))
-                .py(px(4.))
-                .text_size(px(11.))
-                .text_color(if fine { t.live } else { t.danger })
-                .child(said)
-        }))
 }
 
 fn results(pane: &SearchPane, cx: &mut Context<SearchPane>) -> AnyElement {

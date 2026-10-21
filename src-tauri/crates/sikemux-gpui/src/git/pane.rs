@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use gpui_kit::base::{Button as BaseButton, Popover, PopoverState};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, img, list, px, radians, relative, Action, Anchor, AnyElement, App, AppContext,
@@ -102,8 +103,6 @@ const KEYS: [ui::Section; 4] = [
 
 /// How long typing rests before the commit message is kept as the draft.
 const DRAFT_PAUSE: Duration = Duration::from_millis(300);
-/// How long a failed operation's message stays in the head.
-const FAILED_FOR: Duration = Duration::from_millis(3500);
 
 /// The side column's pages.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -309,7 +308,6 @@ pub struct GitPane {
     queue: VecDeque<Move>,
     running: bool,
     busy: Option<SharedString>,
-    failed: Option<SharedString>,
     folded: HashSet<Side>,
     selected: usize,
     entries: Vec<Entry>,
@@ -358,7 +356,6 @@ pub struct GitPane {
     /// The row or card header the pointer is on, whose actions show.
     pub(super) hovered: Option<SharedString>,
     focus: FocusHandle,
-    _clearing: Task<()>,
     _drafting: Subscription,
 }
 
@@ -390,7 +387,6 @@ impl GitPane {
             queue: VecDeque::new(),
             running: false,
             busy: None,
-            failed: None,
             folded: HashSet::new(),
             selected: 0,
             entries: Vec::new(),
@@ -424,7 +420,6 @@ impl GitPane {
             asking: None,
             hovered: None,
             focus: cx.focus_handle(),
-            _clearing: Task::ready(()),
             _drafting: drafting,
         }
     }
@@ -805,7 +800,6 @@ impl GitPane {
         }
         let label = label.into();
         self.busy = Some(label.clone());
-        self.failed = None;
         let logged = self.logged(label);
         let answer = request(&self.asks, method, params);
         cx.spawn(async move |pane, cx| {
@@ -813,8 +807,10 @@ impl GitPane {
             pane.update(cx, |pane, cx| {
                 pane.busy = None;
                 pane.settle(logged, &answer);
-                if let Err(error) = &answer {
-                    pane.fail(error, cx);
+                match &answer {
+                    Err(error) => pane.fail(error, cx),
+                    Ok(Value::String(said)) if method != "git.aiMessage" => pane.done(said, cx),
+                    Ok(_) => {}
                 }
                 then(pane, answer, cx);
                 cx.notify();
@@ -852,23 +848,32 @@ impl GitPane {
             Ok(_) => "",
             Err(error) => error.as_str(),
         };
-        let first = said.trim().lines().next().unwrap_or_default();
-        entry.detail = (!first.is_empty()).then(|| first.to_owned().into());
+        let first = first_line(said);
+        entry.detail = (!first.is_empty()).then(|| first.into());
     }
 
-    fn fail(&mut self, error: &str, cx: &mut Context<Self>) {
-        let first = error.trim().lines().next().unwrap_or_default();
-        let shown: String = first.chars().take(80).collect();
-        let cut = if shown.len() < first.len() { "…" } else { "" };
-        self.failed = Some(format!("✗ {shown}{cut}").into());
-        self._clearing = cx.spawn(async move |pane, cx| {
-            cx.background_executor().timer(FAILED_FOR).await;
-            pane.update(cx, |pane, cx| {
-                pane.failed = None;
-                cx.notify();
-            })
+    /// Says what went wrong, by the first line of it, until it is dismissed.
+    fn fail(&self, error: &str, cx: &mut Context<Self>) {
+        self.say(Notification::error(first_line(error)).autohide(false), cx);
+    }
+
+    /// Says what an operation answered, by its first line, when it said anything.
+    fn done(&self, said: &str, cx: &mut Context<Self>) {
+        if !said.trim().is_empty() {
+            self.say(Notification::success(first_line(said)), cx);
+        }
+    }
+
+    fn say(&self, note: Notification, cx: &mut Context<Self>) {
+        self.bench
+            .update(cx, |bench, cx| bench.notify(note, cx))
             .ok();
-        });
+    }
+
+    /// Copies `text`, saying it copied `what`.
+    fn copy(&self, text: String, what: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        self.say(Notification::success(format!("Copied {what}")), cx);
     }
 
     fn repo_call(&self, extra: Value) -> Value {
@@ -1607,6 +1612,7 @@ impl GitPane {
         } else {
             commit.full_hash.clone()
         };
+        let short = commit.hash.clone();
         self.menu(
             format!("{} · {}", commit.hash, commit.subject),
             vec![
@@ -1619,8 +1625,8 @@ impl GitPane {
                     .hint("choose soft / mixed / hard"),
                 Pick::new('v', "revert this commit", GitPane::revert_commit)
                     .hint("new inverse commit"),
-                Pick::new('y', "copy hash", move |_, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(full.clone()))
+                Pick::new('y', "copy hash", move |pane, cx| {
+                    pane.copy(full.clone(), short.clone(), cx)
                 }),
             ],
             cx,
@@ -1820,6 +1826,7 @@ impl GitPane {
                 pane.fail("Your draft changed during generation. It was kept; generate again when ready.", cx);
             } else {
                 pane.write(message, cx);
+                pane.done("Commit message generated. Review it before committing.", cx);
             }
         });
     }
@@ -2245,7 +2252,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     let (ahead, behind) = status.map_or((0, 0), |status| (status.ahead, status.behind));
     let upstream = status.is_some_and(|status| status.upstream.is_some());
     let failed = matches!(pane.overview, Some(Err(_)));
-    let busy = pane.failed.clone().or_else(|| pane.busy.clone());
+    let busy = pane.busy.clone();
     let count = |value: i32, colour: Hsla, arrow: &str| {
         (value > 0).then(|| {
             div()
@@ -3345,4 +3352,8 @@ pub fn hover(
             cx.notify();
         })
     }
+}
+
+fn first_line(text: &str) -> String {
+    text.trim().lines().next().unwrap_or_default().to_owned()
 }

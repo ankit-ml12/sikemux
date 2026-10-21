@@ -3,6 +3,8 @@
 
 use std::rc::Rc;
 
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, hsla, point, px, AnyElement, App, Bounds, ClipboardItem, Corners, Div, Entity,
@@ -514,7 +516,7 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
             .text_color(colour)
             .child(text)
     };
-    let full = commit.full_hash.clone();
+    let (full, short) = (commit.full_hash.clone(), commit.hash.clone());
     let mut hash = div()
         .flex()
         .items_center()
@@ -528,8 +530,9 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
         .child(
             ui::IconButton::new("copy-hash", crate::icons::Icon::Copy, "Copy hash")
                 .glyph(12.)
-                .on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(full.clone()))
+                .on_click(move |_, window, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(full.clone()));
+                    window.push_notification(Notification::success(format!("Copied {short}")), cx);
                 }),
         );
     if commit.unpushed {
