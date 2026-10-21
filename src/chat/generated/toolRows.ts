@@ -275,6 +275,9 @@ export const TOOL_ROWS = {
     k8s_events: { verb: "list", kind: "read", icon: "activity", target: ["{namespace} events", "Kubernetes events"], plugin: "sikemux.kubernetes" },
     k8s_network: { verb: "list", kind: "read", icon: "globe", target: ["{namespace} services"], plugin: "sikemux.kubernetes" },
     k8s_config: { verb: "list", kind: "read", icon: "code", target: ["{namespace} config"], plugin: "sikemux.kubernetes" },
+    k8s_nodes: { verb: "list", kind: "read", icon: "dashboard", target: ["Kubernetes nodes"], plugin: "sikemux.kubernetes" },
+    k8s_history: { verb: "read", kind: "read", icon: "clock", target: ["{kind} {name} history", "{name} history"], plugin: "sikemux.kubernetes" },
+    k8s_helm: { verb: "read", kind: "read", icon: "steps", target: ["Helm release {release}", "Helm releases"], plugin: "sikemux.kubernetes" },
     k8s_act: {
         verb: "change",
         kind: "execute",

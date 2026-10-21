@@ -35,18 +35,95 @@ mod yaml;
 
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_plugin_api::{
     params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, StreamSink,
 };
 
 use crate::error::KubeResult;
+use crate::kubectl::Scope;
 
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
     Ok(Arc::new(Kubernetes {
         manifest: Manifest::from_json(include_str!("../manifest.json"))?,
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Named {
+    #[serde(flatten)]
+    scope: Scope,
+    name: String,
+    #[serde(default)]
+    revision: Option<u64>,
+}
+
+/// The agents' one action tool reaches three modules; each action goes to the one that knows it.
+async fn act(input: Value) -> Result<Value, PluginError> {
+    let action = input
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    match action.as_str() {
+        "cordon" | "uncordon" => {
+            let named: Named = params(input)?;
+            answer(nodes::cordon(nodes::Cordon {
+                scope: named.scope,
+                name: named.name,
+                cordon: action == "cordon",
+            }))
+            .await
+        }
+        "helmRollback" => {
+            let named: Named = params(input)?;
+            answer(helm::rollback(helm::Rollback {
+                release: helm::ReleaseRef {
+                    scope: named.scope,
+                    name: named.name,
+                },
+                revision: named.revision.unwrap_or(0),
+            }))
+            .await
+        }
+        _ => answer(actions::act(params(input)?)).await,
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct HelmAsk {
+    #[serde(flatten)]
+    scope: Scope,
+    release: Option<String>,
+}
+
+/// The agents' Helm tool: every release, or one release's history and objects.
+async fn helm_for_agent(input: Value) -> Result<Value, PluginError> {
+    let ask: HelmAsk = params(input)?;
+    match ask.release.filter(|release| !release.trim().is_empty()) {
+        Some(name) => {
+            answer(helm::release(helm::ReleaseRef {
+                scope: ask.scope,
+                name,
+            }))
+            .await
+        }
+        None => {
+            let all_namespaces = ask
+                .scope
+                .namespace
+                .as_deref()
+                .is_none_or(|namespace| namespace.trim().is_empty());
+            answer(helm::releases(helm::ListReleases {
+                scope: ask.scope,
+                all_namespaces,
+            }))
+            .await
+        }
+    }
 }
 
 struct Kubernetes {
@@ -82,13 +159,14 @@ impl Plugin for Kubernetes {
                 "events" => answer(events::list(params(input)?)).await,
                 "network" => answer(network::list(params(input)?)).await,
                 "config" => answer(config::list(params(input)?)).await,
-                "act" => answer(actions::act(params(input)?)).await,
+                "act" => act(input).await,
                 "nodes" => answer(nodes::list(params(input)?)).await,
                 "cordon" => answer(nodes::cordon(params(input)?)).await,
                 "history" => answer(rollouts::history(params(input)?)).await,
                 "helmReleases" => answer(helm::releases(params(input)?)).await,
                 "helmRelease" => answer(helm::release(params(input)?)).await,
                 "helmRollback" => answer(helm::rollback(params(input)?)).await,
+                "helmForAgent" => helm_for_agent(input).await,
                 "yaml" => answer(yaml::yaml(params(input)?)).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
@@ -167,6 +245,38 @@ mod tests {
             .await
             .expect("config");
         println!("config {config}");
+        let nodes = plugin
+            .call(&ctx, "nodes", serde_json::json!({}))
+            .await
+            .expect("nodes");
+        assert!(nodes.as_array().is_some_and(|nodes| !nodes.is_empty()));
+        let history = plugin
+            .call(
+                &ctx,
+                "history",
+                serde_json::json!({ "namespace": "shop", "kind": "Deployment", "name": "web" }),
+            )
+            .await
+            .expect("history");
+        assert!(history["revisions"]
+            .as_array()
+            .is_some_and(|all| all.len() > 1));
+        let releases = plugin
+            .call(&ctx, "helmForAgent", serde_json::json!({}))
+            .await
+            .expect("releases");
+        println!("releases {releases}");
+        let release = plugin
+            .call(
+                &ctx,
+                "helmForAgent",
+                serde_json::json!({ "namespace": "helm-demo", "release": "storefront" }),
+            )
+            .await
+            .expect("release");
+        assert!(release["made"]
+            .as_array()
+            .is_some_and(|made| !made.is_empty()));
         for each in events.as_array().into_iter().flatten() {
             println!(
                 "event {} {} x{} {}",
@@ -247,6 +357,9 @@ mod tests {
             "events",
             "network",
             "config",
+            "nodes",
+            "history",
+            "helmForAgent",
             "act",
         ];
         let names: Vec<&str> = plugin
@@ -266,6 +379,9 @@ mod tests {
                 "k8s_events",
                 "k8s_network",
                 "k8s_config",
+                "k8s_nodes",
+                "k8s_history",
+                "k8s_helm",
                 "k8s_act"
             ]
         );
@@ -276,6 +392,37 @@ mod tests {
                 tool.name,
                 tool.method
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_agents_action_tool_sends_each_action_where_it_belongs() {
+        let plugin = plugin().expect("plugin loads");
+        let ctx = PluginContext::new(std::env::temp_dir());
+        for (input, says) in [
+            (
+                serde_json::json!({ "action": "cordon", "name": "--all" }),
+                "node",
+            ),
+            (
+                serde_json::json!({ "action": "helmRollback", "name": "storefront" }),
+                "revision",
+            ),
+            (
+                serde_json::json!({ "action": "undo", "kind": "Deployment", "name": "web" }),
+                "revision",
+            ),
+            (
+                serde_json::json!({ "action": "pauseRollout", "kind": "StatefulSet", "name": "cache" }),
+                "statefulset",
+            ),
+        ] {
+            let error = plugin
+                .call(&ctx, "act", input)
+                .await
+                .expect_err("checked before kubectl runs");
+            assert_eq!(error.category, "bad-params", "{}", error.message);
+            assert!(error.message.contains(says), "{}", error.message);
         }
     }
 }
