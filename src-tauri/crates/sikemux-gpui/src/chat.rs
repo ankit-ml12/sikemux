@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Scrollbar};
 use gpui_kit::component::input::{Input, InputState, TextareaState};
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable,
@@ -394,6 +395,7 @@ pub struct Composing {
     pub attachments: Vec<PathBuf>,
     /// The agents, files or commands offered for the word at the caret.
     pub menu: Option<mention::Menu>,
+    pub mic: Entity<crate::voice::MicButton>,
     /// Earlier chats with no name the message names, by their uri, with their title.
     pub earlier: Vec<(String, String)>,
     /// Why the core turned down the last message, until the next is sent.
@@ -1357,6 +1359,25 @@ pub fn pane(
         .child(pane)
 }
 
+/// The composer's mic: it listens and then types what was said, and the first click turns
+/// dictation on.
+pub fn dictate(agent: &str, this: WeakEntity<Workbench>) -> crate::voice::Act {
+    let agent = agent.to_owned();
+    Rc::new(move |window, cx| {
+        this.update(cx, |bench, cx| {
+            let off = bench.voice.update(cx, |voice, cx| voice.toggle(&agent, cx));
+            if off {
+                crate::settings::set(bench, "voiceDictation", true);
+                window.push_notification(
+                    "Dictation is on. The speech model downloads once, about 600 MB, then click the microphone again.",
+                    cx,
+                );
+            }
+        })
+        .ok();
+    })
+}
+
 /// Hands a key's action to the question on show; one it does not take goes on to the draft.
 fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
     agent: &str,
@@ -2202,6 +2223,10 @@ fn composer(
             attach::chip,
         )
         .strip(strip)
+        .dictation(
+            composing.mic.clone(),
+            bench.voice.read(cx).heard_for(&agent.id),
+        )
         .ready(head.is_some_and(|head| head.connection == ChatConnection::Ready))
         .running(chat.running())
         .steers(bench.preferences().mid_turn_send == MidTurnSend::Steer)

@@ -7,9 +7,9 @@ use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, radians, Anchor, AnyElement, App, ClipboardItem, Entity, Focusable, FontWeight,
-    Hsla, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
+    div, img, px, radians, Anchor, AnyElement, AnyView, App, ClipboardItem, Entity, Focusable,
+    FontWeight, Hsla, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
@@ -51,6 +51,9 @@ pub struct Composer {
     menu: Option<DockMenu>,
     /// Why the core turned down the last message.
     refusal: Option<SharedString>,
+    /// The mic, and what it has heard so far.
+    dictation: Option<AnyView>,
+    heard: Option<SharedString>,
     on_send: Act,
     on_stop: Act,
 }
@@ -77,6 +80,8 @@ impl Composer {
             attachments: None,
             menu: None,
             refusal: None,
+            dictation: None,
+            heard: None,
             on_send,
             on_stop,
         }
@@ -130,6 +135,11 @@ impl Composer {
         let chip: Chip =
             Rc::new(move |token, window, cx| chip(token, window, cx).into_any_element());
         self.attachments = Some((tiles, on_add, on_paste, chip));
+        self
+    }
+
+    pub fn dictation(mut self, mic: impl Into<AnyView>, heard: Option<SharedString>) -> Self {
+        (self.dictation, self.heard) = (Some(mic.into()), heard);
         self
     }
 
@@ -202,15 +212,7 @@ impl RenderOnce for Composer {
                     .map(|usage| context_meter(usage, &self.provider, cx)),
             )
             .child(div().flex_1())
-            .child(
-                IconButton::new(
-                    "composer-dictate",
-                    Icon::Mic,
-                    "Dictate — or hold right ⌥ anywhere",
-                )
-                .glyph(16.)
-                .width(31.),
-            )
+            .children(self.dictation)
             .child(send(
                 self.running && !drafted,
                 drafted,
@@ -255,6 +257,14 @@ impl RenderOnce for Composer {
                                 }),
                         ),
                     )
+                    .children(self.heard.map(|heard| {
+                        div()
+                            .px(px(4.))
+                            .pb(px(4.))
+                            .text_size(px(14.5))
+                            .text_color(t.text_disabled)
+                            .child(heard)
+                    }))
                     .child(bar)
                     .children(self.menu),
             )

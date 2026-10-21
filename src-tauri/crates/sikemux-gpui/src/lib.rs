@@ -52,6 +52,7 @@ pub mod theme;
 mod theme_palette;
 mod track;
 mod ui;
+pub mod voice;
 pub mod workbench;
 pub mod worktree_switch;
 

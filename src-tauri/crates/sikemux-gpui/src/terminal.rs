@@ -906,6 +906,20 @@ impl Grid for View<'_> {
     }
 }
 
+/// The terminal holding the keyboard, if one does.
+pub fn focused(bench: &Workbench) -> Option<SessionId> {
+    bench.terminals.focused
+}
+
+/// Types `text` into terminal `id` as a paste, as dictation does; whether it is still open.
+pub fn type_text(bench: &mut Workbench, id: SessionId, text: String) -> bool {
+    if !bench.terminals.open.contains_key(&id) {
+        return false;
+    }
+    send(bench, id, TerminalInput::Paste { text });
+    true
+}
+
 fn send(bench: &mut Workbench, id: SessionId, input: TerminalInput) {
     if let Some(terminal) = bench.terminals.open.get_mut(&id) {
         terminal.top = None;

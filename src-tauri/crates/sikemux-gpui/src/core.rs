@@ -400,6 +400,9 @@ pub fn stream(
 
 /// Talks to the core on a thread of its own, so the window's thread only draws.
 pub fn start(home: Home) -> Link {
+    // Downloads made in this process, such as dictation's model, need TLS to have a
+    // crypto provider chosen before the first one, as the host chooses its own.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let (updates_tx, updates) = mpsc::unbounded_channel();
     let (asks, asks_rx) = mpsc::unbounded_channel();
     std::thread::Builder::new()

@@ -29,6 +29,7 @@ pub struct IconButton {
     pressed: bool,
     disabled: bool,
     turned: f32,
+    tint: Option<Hsla>,
     label: SharedString,
     on_click: Option<OnClick>,
 }
@@ -47,9 +48,16 @@ impl IconButton {
             pressed: false,
             disabled: false,
             turned: 0.,
+            tint: None,
             label: label.into(),
             on_click: None,
         }
+    }
+
+    /// Drawn in `tint` on a wash of it, as the mic while it listens.
+    pub fn tint(mut self, tint: Hsla) -> Self {
+        self.tint = Some(tint);
+        self
     }
 
     /// Shown, but with nothing to do now, as Back on a page with no history.
@@ -121,6 +129,13 @@ impl RenderOnce for IconButton {
             (Hsla::transparent_black(), rest)
         } else {
             (hover, primary)
+        };
+        let (rest, hover, primary, chosen) = match self.tint {
+            Some(tint) => {
+                let wash = Hsla { a: 0.14, ..tint };
+                (tint, wash, tint, wash)
+            }
+            None => (rest, hover, primary, chosen),
         };
         let on_click = self.on_click.filter(|_| !self.disabled);
         BaseButton::new(self.id)

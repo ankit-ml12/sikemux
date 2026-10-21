@@ -52,6 +52,9 @@ pub struct Workbench {
     pub lost: Option<String>,
     /// Opening has taken long enough to say what the window waits for.
     pub slow_start: bool,
+    /// Dictation, heard into the chat or terminal holding the keyboard.
+    pub voice: Entity<crate::voice::Dictation>,
+    _voice_heard: [Subscription; 2],
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     pub battery: Option<Battery>,
@@ -355,12 +358,25 @@ impl Workbench {
             }
         })
         .detach();
+        let voice = cx.new(|_| crate::voice::Dictation::default());
+        let voice_heard = [
+            cx.subscribe_in(&voice, window, |bench, _, heard, window, cx| {
+                bench.dictated(heard, window, cx)
+            }),
+            cx.observe_window_activation(window, |bench, window, cx| {
+                if !window.is_window_active() {
+                    bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx));
+                }
+            }),
+        ];
         let bench = Self {
             version: String::new(),
             view: None,
             reads: HashMap::new(),
             lost: None,
             slow_start: false,
+            voice,
+            _voice_heard: voice_heard,
             watched_project: None,
             watched_ci: None,
             battery: crate::battery::read(),
@@ -591,6 +607,8 @@ impl Workbench {
             Update::Read("preferences", value) => {
                 if let Ok(preferences) = serde_json::from_value::<Preferences>(value.clone()) {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
+                    let on = preferences.voice_dictation;
+                    self.voice.update(cx, |voice, cx| voice.follow(on, cx));
                 }
                 self.reads.insert("preferences", value);
                 crate::notifications::introduce(self, cx);
@@ -767,9 +785,18 @@ impl Workbench {
                 },
             )
         };
+        let mic = {
+            let (voice, toggle) = (
+                self.voice.clone(),
+                crate::chat::dictate(&agent, cx.weak_entity()),
+            );
+            let agent = agent.clone();
+            cx.new(|cx| crate::voice::MicButton::new(voice, agent, toggle, cx))
+        };
         chat.composer = Some(Composing {
             draft,
             secret,
+            mic,
             hint: SharedString::default(),
             attachments: Vec::new(),
             menu: None,
@@ -898,6 +925,12 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let waits = self
+            .voice
+            .update(cx, |voice, cx| voice.send_after_words(agent, primary, cx));
+        if waits {
+            return;
+        }
         let Some(composing) = self
             .chats
             .get(agent)
@@ -2451,6 +2484,12 @@ impl Render for Workbench {
                     bench.toggle_theme_palette(window, cx);
                 }),
             )
+            .on_modifiers_changed(
+                cx.listener(|bench, event, window, cx| bench.voice_keys(event, window, cx)),
+            )
+            .capture_key_down(cx.listener(|bench, _: &gpui_kit::KeyDownEvent, _, cx| {
+                bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx))
+            }))
             .on_action(cx.listener(|bench, _: &OpenFile, window, cx| {
                 bench.toggle_finder(window, cx);
                 cx.notify();
