@@ -152,7 +152,7 @@ describe("agent shortcuts", () => {
 });
 
 describe("terminal and browser shortcuts", () => {
-    it("opens a terminal tab with Command+T, not a chooser or a browser tab", () => {
+    it("opens a terminal tab with Command+T, not a chooser or a browser tab", async () => {
         const open = vi.spyOn(browserApi, "newTab").mockResolvedValue("browser-tab");
         lookAtAgent("one", "agent-one");
         const before = getState().windowsBySession.one?.length ?? 0;
@@ -160,8 +160,7 @@ describe("terminal and browser shortcuts", () => {
 
         pressAction("terminal.new");
 
-        const windows = getState().windowsBySession.one ?? [];
-        expect(windows).toHaveLength(before + 1);
+        await waitFor(() => expect(getState().windowsBySession.one ?? []).toHaveLength(before + 1));
         expect(getState().windows[getState().sessions.one.activeWindowId].role).toBe("term");
         expect(getState().newTabPaletteOpen).toBe(false);
         expect(open).not.toHaveBeenCalled();
