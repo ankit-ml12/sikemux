@@ -61,6 +61,8 @@ pub struct Workbench {
     /// Where remote access stands, once the core has said.
     pub remote: Option<RemoteStatus>,
     pub accounts: crate::accounts::Accounts,
+    /// The number the Dock icon's badge shows.
+    pub badge: usize,
     pub all_projects: bool,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
@@ -335,6 +337,7 @@ impl Workbench {
             signing_in: false,
             remote: None,
             accounts: Default::default(),
+            badge: 0,
             all_projects: false,
             picked_tasks: HashMap::new(),
             space: None,
@@ -412,6 +415,7 @@ impl Workbench {
                     &self.asks,
                 );
                 crate::editor::keep(self);
+                crate::notifications::badge(self);
                 self.watch_project();
                 self.watch_picture();
                 self.watch_ci();
@@ -533,6 +537,7 @@ impl Workbench {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
                 }
                 self.reads.insert("preferences", value);
+                crate::notifications::introduce(self, cx);
             }
             Update::Read("drafts", value) => {
                 if let Some(pane) = &self.git {
@@ -563,6 +568,9 @@ impl Workbench {
             }
             Update::Lost(reason) => self.lost = Some(reason),
             Update::ShutDown => return cx.quit(),
+            Update::Notice { title, body, agent } => {
+                return crate::notifications::notice(self, title, body, agent, cx);
+            }
             Update::Remote(status) => {
                 self.remote = Some(*status);
                 crate::settings::remote_moved(self, cx);

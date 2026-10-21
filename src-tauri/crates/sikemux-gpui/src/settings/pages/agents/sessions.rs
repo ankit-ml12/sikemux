@@ -234,6 +234,16 @@ pub fn render(
             ),
             cx,
         ))
+        .child(rows::row(
+            "Test notification",
+            Some("Sends one now, with its sound. The first one also has macOS ask whether Sikemux may notify you."),
+            {
+                let this = this.clone();
+                ui::Button::new("notification-test", "Send test", ui::Variant::Outline)
+                    .on_click(move |_, _, cx| this.update(cx, |_, cx| crate::notifications::test(cx)))
+            },
+            cx,
+        ))
         .child(rows::row_with(
             None,
             "Sending while an agent works",

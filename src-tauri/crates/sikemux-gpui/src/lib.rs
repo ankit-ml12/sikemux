@@ -21,6 +21,7 @@ mod home;
 pub mod icons;
 mod keymap;
 pub mod model_picker;
+pub mod notifications;
 mod panes;
 mod picture;
 mod ports;

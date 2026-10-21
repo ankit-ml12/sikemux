@@ -32,6 +32,12 @@ pub enum Update {
     ShutDown,
     /// Where remote access stands, whenever it changes.
     Remote(Box<RemoteStatus>),
+    /// Something the core says the person should hear about an agent, such as it needing them.
+    Notice {
+        title: String,
+        body: String,
+        agent: String,
+    },
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
     /// Something the core asks of a window, such as an agent's browser step.
@@ -397,6 +403,9 @@ async fn run(
                             Some(ClientEvent::Grid { stream, frame }) => streams.frame(stream, frame),
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
                                 let _ = updates.send(Update::View(Box::new(view)));
+                            }
+                            Some(ClientEvent::Event(Event::Notice { title, body, agent_id })) => {
+                                let _ = updates.send(Update::Notice { title, body, agent: agent_id });
                             }
                             Some(ClientEvent::Event(Event::Remote { status })) => {
                                 let _ = updates.send(Update::Remote(Box::new(status)));
