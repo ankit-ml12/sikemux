@@ -13,8 +13,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager, Url, Webview};
 
 use super::{BrowserManager, BLANK_URL, USER_AGENT};
-use crate::error::AppResult;
-use crate::http_client::{
+use sikemux_core::http::{
     builder, data_url, fetch_image, follow_if, names_private_address, public_client, shared,
 };
 
@@ -204,7 +203,7 @@ fn same_host(a: &Url, b: &Url) -> bool {
 
 /// For an icon on the page's own host, which the page can already reach, as
 /// long as every redirect stays there too.
-fn own_host_client() -> AppResult<&'static Client> {
+fn own_host_client() -> reqwest::Result<&'static Client> {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     shared(&CLIENT, || {
         builder().no_proxy().redirect(Policy::custom(|attempt| {

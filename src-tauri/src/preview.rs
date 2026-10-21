@@ -14,7 +14,8 @@ use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{Manager, Runtime, State, UriSchemeContext, UriSchemeResponder};
 
 use crate::error::{AppError, AppResult};
-use crate::file_serving::{content_type, parse_range, percent_decode, sniff};
+use crate::file_serving::{content_type, parse_range, percent_decode};
+use sikemux_core::http::sniff;
 
 pub const SCHEME: &str = "preview";
 

@@ -41,7 +41,7 @@ fn read_wallpaper(path: &Path) -> AppResult<Wallpaper> {
         .unwrap_or_else(|| "Wallpaper".into());
     Ok(Wallpaper {
         name,
-        data_url: crate::http_client::data_url(mime, &bytes),
+        data_url: sikemux_core::http::data_url(mime, &bytes),
     })
 }
 

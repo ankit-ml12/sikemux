@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::error::{AppError, AppResult};
-use crate::http_client::client;
+use sikemux_core::http::client;
 
 const MANIFEST: &str = include_str!("../voice-models.json");
 /// Holds the hash of the manifest the models were last checked against.

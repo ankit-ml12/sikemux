@@ -20,6 +20,7 @@ pub mod git;
 #[cfg(unix)]
 pub mod git_guard;
 pub mod harness;
+pub mod http;
 #[cfg(unix)]
 pub mod join;
 #[cfg(unix)]

@@ -64,90 +64,6 @@ pub fn content_type(path: &Path) -> &'static str {
     }
 }
 
-/// The type a file's first bytes announce, for files whose name does not say
-/// and downloads whose server cannot be trusted to.
-pub fn sniff(head: &[u8]) -> Option<&'static str> {
-    let starts = |magic: &[u8]| head.starts_with(magic);
-    let at = |offset: usize, magic: &[u8]| head.get(offset..offset + magic.len()) == Some(magic);
-    if starts(b"%PDF-") {
-        return Some("application/pdf");
-    }
-    if starts(b"\x89PNG\r\n\x1a\n") {
-        return Some("image/png");
-    }
-    if starts(b"\xff\xd8\xff") {
-        return Some("image/jpeg");
-    }
-    if starts(b"GIF87a") || starts(b"GIF89a") {
-        return Some("image/gif");
-    }
-    if starts(b"RIFF") {
-        return match head.get(8..12) {
-            Some(b"WEBP") => Some("image/webp"),
-            Some(b"WAVE") => Some("audio/wav"),
-            Some(b"AVI ") => Some("video/x-msvideo"),
-            _ => None,
-        };
-    }
-    if at(4, b"ftyp") {
-        return Some(match head.get(8..12) {
-            Some(b"heic" | b"heix" | b"mif1" | b"msf1") => "image/heic",
-            Some(b"avif") => "image/avif",
-            Some(b"M4A " | b"M4B ") => "audio/mp4",
-            Some(b"qt  ") => "video/quicktime",
-            _ => "video/mp4",
-        });
-    }
-    if starts(b"\x00\x00\x01\x00") || starts(b"\x00\x00\x02\x00") {
-        return Some("image/x-icon");
-    }
-    if starts(b"ID3") || starts(b"\xff\xfb") || starts(b"\xff\xf3") || starts(b"\xff\xf2") {
-        return Some("audio/mpeg");
-    }
-    if starts(b"fLaC") {
-        return Some("audio/flac");
-    }
-    if starts(b"OggS") {
-        return Some("audio/ogg");
-    }
-    if starts(b"FORM") && (at(8, b"AIFF") || at(8, b"AIFC")) {
-        return Some("audio/aiff");
-    }
-    if starts(b"\x1a\x45\xdf\xa3") {
-        return Some("video/webm");
-    }
-    if starts(b"wOFF") {
-        return Some("font/woff");
-    }
-    if starts(b"wOF2") {
-        return Some("font/woff2");
-    }
-    if starts(b"OTTO") {
-        return Some("font/otf");
-    }
-    if starts(b"\x00\x01\x00\x00\x00") {
-        return Some("font/ttf");
-    }
-    if starts(b"8BPS") {
-        return Some("image/vnd.adobe.photoshop");
-    }
-    if starts(b"II*\x00") || starts(b"MM\x00*") {
-        return Some("image/tiff");
-    }
-    if starts(b"{\\rtf") {
-        return Some("application/rtf");
-    }
-    if starts(b"PK\x03\x04") {
-        return Some("application/zip");
-    }
-    let text = head.trim_ascii_start();
-    let svg = |bytes: &[u8]| bytes.eq_ignore_ascii_case(b"<svg");
-    if text.get(..4).is_some_and(svg) || (text.starts_with(b"<?xml") && head.windows(4).any(svg)) {
-        return Some("image/svg+xml");
-    }
-    None
-}
-
 /// A single `bytes=start-` or `bytes=start-end` range, which is all media elements ask for.
 pub fn parse_range(value: &str) -> Option<(u64, Option<u64>)> {
     let (start, end) = value.strip_prefix("bytes=")?.split_once('-')?;
@@ -190,29 +106,6 @@ mod tests {
             content_type(Path::new("/a/noext")),
             "application/octet-stream"
         );
-    }
-
-    #[test]
-    fn first_bytes_decide_the_type_of_unnamed_files() {
-        assert_eq!(sniff(b"%PDF-1.7\n"), Some("application/pdf"));
-        assert_eq!(sniff(b"\0\0\0\x20ftypheic"), Some("image/heic"));
-        assert_eq!(sniff(b"\0\0\0\x20ftypisom"), Some("video/mp4"));
-        assert_eq!(sniff(b"RIFF\0\0\0\0WAVEfmt "), Some("audio/wav"));
-        assert_eq!(sniff(b"ID3\x04"), Some("audio/mpeg"));
-        assert_eq!(sniff(b"\x7fELF"), None);
-        assert_eq!(sniff(b""), None);
-    }
-
-    #[test]
-    fn bytes_name_themselves_and_a_page_of_html_names_nothing() {
-        assert_eq!(sniff(b"\x89PNG\r\n\x1a\n rest"), Some("image/png"));
-        assert_eq!(sniff(b"\xff\xd8\xff\xe0"), Some("image/jpeg"));
-        assert_eq!(sniff(b"\x00\x00\x01\x00rest"), Some("image/x-icon"));
-        assert_eq!(
-            sniff(b"  <svg viewBox=\"0 0 1 1\"/>"),
-            Some("image/svg+xml")
-        );
-        assert_eq!(sniff(b"<!doctype html><html>"), None);
     }
 
     #[test]

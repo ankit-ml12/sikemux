@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::http_client::{client, data_url, fetch_image};
+use sikemux_core::http::{client, data_url, fetch_image};
 
 const REPO_API: &str = "https://api.github.com/repos/nodelike/sikemux";
 const REPO_WEB: &str = "https://github.com/nodelike/sikemux";

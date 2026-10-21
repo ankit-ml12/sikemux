@@ -11,8 +11,8 @@ use sha2::{Digest, Sha256};
 use sikemux_core::accounts::protocol::AccountProfile;
 use url::Url;
 
-use crate::file_serving::sniff;
-use crate::http_client::{self, fetch_image, names_private_address, public_client};
+use sikemux_core::http::sniff;
+use sikemux_core::http::{self, fetch_image, names_private_address, public_client};
 
 const PROFILE_FILE: &str = "profile.json";
 const PICTURE_PREFIX: &str = "picture-";
@@ -83,7 +83,7 @@ fn data_url(bytes: &[u8]) -> Option<String> {
     }
     let mime =
         sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")?;
-    Some(http_client::data_url(mime, bytes))
+    Some(http::data_url(mime, bytes))
 }
 
 pub async fn read(dir: &Path) -> Option<Profile> {

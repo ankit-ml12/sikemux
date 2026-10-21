@@ -23,7 +23,6 @@ mod fs;
 mod grammars;
 mod harness;
 mod hosts;
-mod http_client;
 mod inbox;
 mod lsp;
 mod markdown;
