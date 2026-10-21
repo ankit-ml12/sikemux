@@ -1,6 +1,6 @@
 import { coreCall } from "../api/core";
 import { onCoreChanged } from "../api/coreChanged";
-import type { CustomCommand, Preferences, ProjectRoot, UpdateChannel } from "../api/generated/wire";
+import { DEFAULT_PREFERENCES, type CustomCommand, type Preferences, type ProjectRoot, type UpdateChannel } from "../api/generated/wire";
 import { getState, setState, useStore, type StoreState } from "./store";
 import { swallow } from "./toast";
 
@@ -37,57 +37,8 @@ export const customCommandsOf = (s: StoreState): CustomCommand[] => s.preference
 const NO_PLUGIN_SETTINGS: Readonly<Record<string, unknown>> = {};
 export const pluginSettingsOf = (s: StoreState): Readonly<Record<string, unknown>> => s.preferences?.pluginSettings ?? NO_PLUGIN_SETTINGS;
 
-/** What the app shows until the core has said, which are the core's defaults. */
-export const PREFERENCES_BEFORE_CORE: Preferences = {
-    midTurnSend: "steer",
-    uiTextScale: 1,
-    terminalFontSize: 13,
-    chatTextScale: 1,
-    editorTextScale: 1,
-    themeId: "aura-noir",
-    customThemes: [],
-    lastAgentType: null,
-    agentWorktreeDefaults: {},
-    restoreAgentTabs: true,
-    agentNotifications: true,
-    projectRoots: [],
-    defaultGitRepos: {},
-    languageServerTrust: {},
-    customCommands: [],
-    pluginSettings: {},
-    cloudBrowser: "",
-    cloudBrowserShortcut: "",
-    iosSimulator: true,
-    notch: {
-        enabled: true,
-        displays: "all",
-        openWith: "hover",
-        fullScreen: "needsYou",
-        peeks: "all",
-        answerInNotch: true,
-        sound: true,
-        haptics: true,
-        yieldToDev: true,
-    },
-    voiceDictation: false,
-    updateChannel: "stable",
-    shareUsageData: true,
-    onboardingComplete: false,
-    lastSeenVersion: "",
-    notificationsIntroduced: false,
-    keptRunningNoticeShown: false,
-    paneShader: true,
-    paneImage: null,
-    paneStrength: 1,
-    windowOpacity: 1,
-    windowBlur: 0,
-    railDensity: "comfortable",
-    simulatorFrame: true,
-    keybindingOverrides: {},
-};
-
 /** The person's preferences, or the core's defaults until it has said. */
-export const preferencesOf = (s: StoreState): Preferences => s.preferences ?? PREFERENCES_BEFORE_CORE;
+export const preferencesOf = (s: StoreState): Preferences => s.preferences ?? DEFAULT_PREFERENCES;
 
 /** The channel updates come from; stable until the core has said. */
 export const updateChannelOf = (s: StoreState): UpdateChannel => preferencesOf(s).updateChannel;

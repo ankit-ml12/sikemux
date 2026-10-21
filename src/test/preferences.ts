@@ -1,7 +1,6 @@
-import type { Preferences } from "../api/generated/wire";
-import { PREFERENCES_BEFORE_CORE } from "../state/preferences";
+import { DEFAULT_PREFERENCES, type Preferences } from "../api/generated/wire";
 
 /** Preferences as a core answers them for someone past the introduction, with `changes` laid over. */
 export function testPreferences(changes: Partial<Preferences> = {}): Preferences {
-    return { ...PREFERENCES_BEFORE_CORE, onboardingComplete: true, ...changes };
+    return { ...DEFAULT_PREFERENCES, onboardingComplete: true, ...changes };
 }
