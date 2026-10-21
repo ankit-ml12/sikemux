@@ -600,6 +600,13 @@ export interface Layout {
   activeProject?: string;
   /** Each project's tabs, by project id. */
   projects?: Record<string, ProjectLayout>;
+  /** The SSH host in front instead of a project, by its alias. */
+  activeHost?: string;
+  /**
+   * The terminal tabs open to each SSH host, by its alias. A host with
+   * none left has no strip.
+   */
+  hosts?: Record<string, ProjectLayout>;
 }
 
 export interface ProjectLayout {
