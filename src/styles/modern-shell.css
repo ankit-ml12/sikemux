@@ -1356,11 +1356,10 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
 }
 
 /* ---- Top bar -------------------------------------------------------------
- * The bar wears the rails' surface across the window's top, so it reads as one band
- * above the tab row, with no rule between them.
+ * The bar wears the rails' surface and their border across the window's top.
  */
 .top-bar {
-    border-bottom: 0;
+    border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 
