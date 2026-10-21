@@ -115,6 +115,17 @@ jobs:
         working-directory: mobile
         run: pnpm install --frozen-lockfile
 
+      # Gradle would otherwise download React Native's NDK mid-build, and that download fails often.
+      - name: Install the NDK React Native builds with
+        working-directory: mobile/app
+        run: |
+          ndk="$(sed -n 's/^ndkVersion = "\(.*\)"$/\1/p' node_modules/react-native/gradle/libs.versions.toml)"
+          for _ in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null && break
+            sleep 20
+          done
+          test -d "$ANDROID_HOME/ndk/$ndk"
+
       - name: Build the Rust client
         working-directory: mobile
         run: pnpm native:android:release
