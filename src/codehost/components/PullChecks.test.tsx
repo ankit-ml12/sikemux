@@ -9,7 +9,7 @@ import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { PullChecks } from "./PullChecks";
 
 const host = registerTestHost(api);
-const core = ciCore();
+const core = ciCore(api);
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeRun = (overrides: Partial<Run> = {}): Run => ({
@@ -41,7 +41,7 @@ async function renderChecks(runs: Run[], onOpenRun = vi.fn()) {
     api.runs.mockResolvedValue({ runs, total: runs.length, nextPage: null });
     const view = render(
         <InHost host={host}>
-            <PullChecks repo={repo} sha="abc" active onOpenRun={onOpenRun} />
+            <PullChecks repo={repo} project="/repo" sha="abc" active onOpenRun={onOpenRun} />
         </InHost>,
     );
     await act(async () => {});
@@ -92,12 +92,12 @@ describe("PullChecks", () => {
         expect(overall()).toBe("Waiting for approval");
     });
 
-    it("reads the checks again when the core says the repository's CI moved", async () => {
+    it("reads the checks again when the core says the runs moved", async () => {
         await renderChecks([makeRun({ status: "in_progress", conclusion: null, outcome: "running" })]);
         expect(api.runs).toHaveBeenCalledTimes(1);
         api.runs.mockResolvedValue({ runs: [makeRun()], total: 1, nextPage: null });
         await act(async () => {
-            core.moved(repo);
+            core.listsMoved();
         });
         expect(api.runs).toHaveBeenCalledTimes(2);
         expect(headline()).toBe("All checks passed");

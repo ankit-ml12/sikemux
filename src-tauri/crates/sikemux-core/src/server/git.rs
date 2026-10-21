@@ -333,6 +333,7 @@ pub(crate) fn follow_projects(core: &Core) {
         read_chips(&core, projects.to_vec());
         if state_moved {
             read_hosts(&core, projects.to_vec());
+            super::codehost::refs_moved(&core, projects);
         }
         for project in projects {
             super::project_files::moved(project, paths.as_deref());

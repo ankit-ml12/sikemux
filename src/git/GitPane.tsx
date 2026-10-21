@@ -164,7 +164,7 @@ function GitWorkbench({
 
     const overview = useCachedResourceEnabled(fetching && !!repo, gitOverviewR, repo || "");
     const hostRepo = useHostRepo(repo || null, fetching && !!repo);
-    const branchPulls = useBranchPulls(hostRepo.repo, fetching && panel === "branches");
+    const branchPulls = useBranchPulls(hostRepo.repo ? repo : null, fetching && panel === "branches");
     const openBranchPull = (pull: Pull) => {
         cmd.setGitView(paneId, { area: "pulls" });
         showItem(paneId, pull.number);

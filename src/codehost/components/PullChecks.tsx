@@ -1,6 +1,7 @@
 import { useResourceEnabled } from "../../plugin-api/resources";
 import type { RepoRef } from "../api";
-import { runsR } from "../resources";
+import { useMemo } from "react";
+import { runListR } from "../lists";
 import { checksSummary, elapsedMs, eventLabel, isUnfinished, outcomeOf, OUTCOME_LABEL, overallOutcome } from "../runStatus";
 import { StatusMark } from "./ActionsIcon";
 import { useNow } from "../../plugin-api/hooks";
@@ -9,15 +10,16 @@ import { formatDuration } from "../../lib/format";
 
 interface Props {
     repo: RepoRef;
+    project: string;
     sha: string;
     active: boolean;
     onOpenRun: (runId: string) => void;
 }
 
 /** The checks part of a pull request's merge box, one row per workflow run on its head commit. */
-export function PullChecks({ repo, sha, active, onOpenRun }: Props) {
-    const found = useResourceEnabled(active, runsR, { ...repo, headSha: sha, perPage: 30 });
-    const runs = found.data?.runs ?? [];
+export function PullChecks({ repo, project, sha, active, onOpenRun }: Props) {
+    const found = useResourceEnabled(active, runListR, project, { headSha: sha, perPage: 30 });
+    const runs = useMemo(() => found.data?.runs.map(({ run }) => run) ?? [], [found.data]);
     const live = active && runs.some(isUnfinished);
     const now = useNow(live);
     useCiWatch(repo, active);

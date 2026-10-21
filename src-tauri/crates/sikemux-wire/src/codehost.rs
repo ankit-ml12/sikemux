@@ -544,6 +544,9 @@ pub struct ListedPull {
     pub state: PullState,
     /// The issues its description says it closes, such as "Fixes #12".
     pub closes: Vec<u64>,
+    /// Its branch is in this repository rather than a fork's, so a branch of
+    /// the same name here is the one it was opened from.
+    pub own_branch: bool,
     /// How the runs on its head commit stand, once any have run.
     pub checks: Option<CheckTally>,
 }
@@ -611,6 +614,24 @@ pub struct IssueList {
     pub next_page: Option<u32>,
     /// How many are open and closed, from hosts that count them cheaply.
     pub counts: Option<PullCounts>,
+}
+
+/// An open issue or pull request a message can be about.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackedItem {
+    pub kind: TrackedKind,
+    pub number: u64,
+    pub title: String,
+    pub created_at: String,
+    pub url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TrackedKind {
+    Issue,
+    Pull,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

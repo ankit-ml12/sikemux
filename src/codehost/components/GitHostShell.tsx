@@ -53,15 +53,7 @@ export function GitHostShell({ paneId, cwd, area, active, fetching, onArea, chil
         if (!hosted) return;
         return subscribe("git-refresh", (event) => {
             if (event.repo !== cwd) return;
-            invalidate(
-                (kind) =>
-                    kind === "host.runs" ||
-                    kind === "host.pulls" ||
-                    kind === "host.pull" ||
-                    kind === "host.timeline" ||
-                    kind === "host.pullCommits" ||
-                    kind === "host.pullFiles",
-            );
+            invalidate((kind) => kind === "host.pull" || kind === "host.timeline" || kind === "host.pullCommits" || kind === "host.pullFiles");
         });
     }, [cwd, hosted]);
 

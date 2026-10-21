@@ -12,6 +12,11 @@ export interface ListedPull {
     state: PullState;
     /** The issues its description says it closes, such as "Fixes #12". */
     closes: number[];
+    /**
+     * Its branch is in this repository rather than a fork's, so a branch of
+     * the same name here is the one it was opened from.
+     */
+    ownBranch: boolean;
     /** How the runs on its head commit stand, once any have run. */
     checks: CheckTally | null;
 }
@@ -191,6 +196,17 @@ export interface ReleaseAsset {
     sizeBytes: number;
     downloads: number;
 }
+
+/** An open issue or pull request a message can be about. */
+export interface TrackedItem {
+    kind: TrackedKind;
+    number: number;
+    title: string;
+    createdAt: string;
+    url: string;
+}
+
+export type TrackedKind = "issue" | "pull";
 
 export interface RateLimit {
     /** Whether requests are being held back until `resets_at`. */

@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    CheckTally, IssueList, IssuePage, ListedPull, ListedRun, Outcome, Pull, PullCounts, PullList,
-    PullState, Release, ReleaseList, Run, RunList, RunPage,
+    CheckTally, Issue, IssueList, IssuePage, ListedPull, ListedRun, Outcome, Pull, PullCounts,
+    PullList, PullState, Release, ReleaseList, Run, RunList, RunPage, TrackedItem, TrackedKind,
 };
 use tokio::task::JoinSet;
 
@@ -68,6 +68,7 @@ enum List {
     Runs(RunQuery),
     Issues { state: String, page: u32 },
     Releases,
+    Tracked,
 }
 
 impl List {
@@ -78,6 +79,7 @@ impl List {
             Self::Runs(_) => 1,
             Self::Issues { .. } => 2,
             Self::Releases => 3,
+            Self::Tracked => 4,
         }
     }
 }
@@ -174,6 +176,10 @@ pub(crate) async fn issues(core: &Arc<Core>, client: ClientId, params: IssuesPar
         }
         Err(failure) => Answer::Failed(failure),
     }
+}
+
+pub(crate) async fn tracked(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
+    answered(core, client, params.project, List::Tracked).await
 }
 
 pub(crate) async fn releases(core: &Arc<Core>, client: ClientId, params: ReleasesParams) -> Answer {
@@ -309,6 +315,28 @@ pub(crate) fn picked(core: &Core, project: &str) {
     }
 }
 
+/// The refs of `projects` moved, as a push, pull or commit moves them, so
+/// their pull requests and runs are read again now.
+pub(crate) fn refs_moved(core: &Arc<Core>, projects: &[String]) {
+    let keys: Vec<Key> = core
+        .code_host_lists
+        .state
+        .locked()
+        .kept
+        .keys()
+        .filter(|key| {
+            projects.contains(&key.project)
+                && matches!(key.list, List::Pulls { .. } | List::Runs(_) | List::Tracked)
+        })
+        .cloned()
+        .collect();
+    if keys.is_empty() {
+        return;
+    }
+    let core = core.clone();
+    tokio::spawn(async move { refresh(&core, keys).await });
+}
+
 /// The runs of the repository `repo` moved, so its runs and the checks on its
 /// pull requests are read again now.
 pub(crate) fn ci_moved(core: &Arc<Core>, repo: &str) {
@@ -337,6 +365,7 @@ async fn read(core: &Arc<Core>, key: &Key) -> Result<(Value, String), Failure> {
         List::Runs(query) => shaped(&repo, run_list(&repo, query).await?),
         List::Issues { state, page } => shaped(&repo, issue_list(&repo, state, *page).await?),
         List::Releases => shaped(&repo, release_list(&repo).await?),
+        List::Tracked => shaped(&repo, tracked_list(&repo).await?),
     }?;
     Ok((answer, repo.key()))
 }
@@ -394,6 +423,7 @@ async fn pull_list(core: &Core, repo: &Repo, state: &str) -> Result<PullList, Fa
             ListedPull {
                 state: state_of(&pull),
                 closes: closes(&pull.body),
+                own_branch: own_branch(&pull, repo.owner()),
                 checks,
                 pull,
             }
@@ -458,6 +488,15 @@ async fn own_runs(core: &Core, repo: &Repo, shas: HashSet<String>) -> HashMap<St
         state.commits.remove(&oldest);
     }
     runs
+}
+
+fn own_branch(pull: &Pull, owner: &str) -> bool {
+    pull.head.is_some()
+        && pull
+            .head_label
+            .as_deref()
+            .and_then(|label| label.split(':').next())
+            .is_none_or(|head| head.is_empty() || head == owner)
 }
 
 fn state_of(pull: &Pull) -> PullState {
@@ -562,6 +601,50 @@ async fn issue_list(repo: &Repo, state: &str, page: u32) -> Result<IssueList, Fa
     })
 }
 
+/// The open issues and pull requests together, newest first. A host that
+/// lists pull requests among its issues has each kept once, as a pull request.
+async fn tracked_list(repo: &Repo) -> Result<Vec<TrackedItem>, Failure> {
+    let (pulls, issues) = tokio::join!(
+        repo.call("pulls", json!({ "state": "open" })),
+        repo.call("issues", json!({ "state": "open", "page": 1 })),
+    );
+    let pulls: Vec<Pull> = typed(repo, pulls?)?;
+    let issues = issues
+        .ok()
+        .and_then(|found| serde_json::from_value::<IssuePage>(found).ok())
+        .map(|page| page.issues)
+        .unwrap_or_default();
+    Ok(tracked_items(pulls, issues))
+}
+
+fn tracked_items(pulls: Vec<Pull>, issues: Vec<Issue>) -> Vec<TrackedItem> {
+    let numbers: HashSet<u64> = pulls.iter().map(|pull| pull.number).collect();
+    let pulls = pulls.into_iter().map(|pull| TrackedItem {
+        kind: TrackedKind::Pull,
+        number: pull.number,
+        title: pull.title,
+        created_at: pull.created_at,
+        url: pull.url,
+    });
+    let issues = issues
+        .into_iter()
+        .filter(|issue| !numbers.contains(&issue.number))
+        .map(|issue| TrackedItem {
+            kind: TrackedKind::Issue,
+            number: issue.number,
+            title: issue.title,
+            created_at: issue.created_at,
+            url: issue.url,
+        });
+    let mut items: Vec<TrackedItem> = pulls.chain(issues).collect();
+    items.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then(b.number.cmp(&a.number))
+    });
+    items
+}
+
 async fn release_list(repo: &Repo) -> Result<ReleaseList, Failure> {
     let releases: Vec<Release> = typed(repo, repo.call("releases", json!({})).await?)?;
     let latest = releases
@@ -584,6 +667,57 @@ mod tests {
             "startedAt": null, "updatedAt": "", "pullRequests": [], "url": ""
         }))
         .expect("a run")
+    }
+
+    fn pull(number: u64, head_label: &str, created_at: &str) -> Pull {
+        serde_json::from_value(json!({
+            "number": number, "title": format!("pull {number}"), "body": "", "state": "open",
+            "draft": false, "author": null, "avatarUrl": null, "authorAssociation": null,
+            "head": "main", "headLabel": head_label, "base": "main", "headSha": null,
+            "createdAt": created_at, "updatedAt": created_at, "comments": null, "additions": null,
+            "deletions": null, "changedFiles": null, "mergeable": null, "mergeState": null,
+            "labels": [], "reviewers": [], "assignees": [], "milestone": null, "commits": null,
+            "mergedAt": null, "mergedBy": null, "mergeCommitSha": null, "avatars": {}, "url": ""
+        }))
+        .expect("a pull request")
+    }
+
+    fn issue(number: u64, created_at: &str) -> Issue {
+        serde_json::from_value(json!({
+            "number": number, "title": format!("issue {number}"), "body": "", "state": "open",
+            "stateReason": null, "author": null, "avatarUrl": null, "createdAt": created_at,
+            "updatedAt": created_at, "closedAt": null, "comments": 0, "labels": [],
+            "assignees": [], "url": ""
+        }))
+        .expect("an issue")
+    }
+
+    #[test]
+    fn a_forks_branch_only_shares_a_name_with_one_here() {
+        assert!(own_branch(&pull(1, "nodelike:main", ""), "nodelike"));
+        assert!(own_branch(&pull(1, "", ""), "nodelike"));
+        assert!(!own_branch(&pull(49, "Sujal85526:main", ""), "nodelike"));
+    }
+
+    #[test]
+    fn tracked_items_are_newest_first_and_a_pull_request_listed_as_an_issue_once() {
+        let items = tracked_items(
+            vec![pull(2, "", "2026-02-01")],
+            vec![
+                issue(1, "2026-01-01"),
+                issue(2, "2026-02-01"),
+                issue(3, "2026-03-01"),
+            ],
+        );
+        let shown: Vec<_> = items.iter().map(|item| (item.kind, item.number)).collect();
+        assert_eq!(
+            shown,
+            [
+                (TrackedKind::Issue, 3),
+                (TrackedKind::Pull, 2),
+                (TrackedKind::Issue, 1)
+            ]
+        );
     }
 
     #[test]

@@ -6,13 +6,11 @@ import {
     type WorkflowFile,
     type ChangedFile,
     type Issue,
-    type IssuePage,
     type Notification,
     type Pull,
     type PullCommit,
     type CommitAuthor,
     type TimelineItem,
-    type Release,
     type Review,
     type Artifact,
     type PendingApproval,
@@ -20,8 +18,6 @@ import {
     type RepoListing,
     type RepoRef,
     type RunDetail,
-    type RunPage,
-    type RunQuery,
     type RateLimit,
     type Workflow,
 } from "./types";
@@ -69,12 +65,6 @@ export const hostBranchesR = resource({
     kind: "host.branches",
     fetch: (repo: RepoRef): Promise<string[]> => hostApi(repo.provider).branches(repo),
     staleAfterMs: 5 * 60_000,
-});
-
-export const runsR = resource({
-    kind: "host.runs",
-    fetch: (query: RunQuery): Promise<RunPage> => hostApi(query.provider).runs(query),
-    staleAfterMs: 15_000,
 });
 
 export const runR = resource({
@@ -157,18 +147,6 @@ export const runAttemptR = resource({
     staleAfterMs: 5 * 60_000,
 });
 
-export const pullsR = resource({
-    kind: "host.pulls",
-    fetch: (repo: RepoRef, state: string): Promise<Pull[]> => hostApi(repo.provider).pulls(repo, state),
-    staleAfterMs: 60_000,
-});
-
-export const pullCountsR = resource({
-    kind: "host.pullCounts",
-    fetch: (repo: RepoRef): Promise<{ open: number; closed: number } | null> => hostApi(repo.provider).pullCounts?.(repo) ?? Promise.resolve(null),
-    staleAfterMs: 60_000,
-});
-
 export const pullR = resource({
     kind: "host.pull",
     fetch: (repo: RepoRef, number: number): Promise<Pull> => hostApi(repo.provider).pull(repo, number),
@@ -206,28 +184,10 @@ export const pullReviewsR = resource({
     staleAfterMs: 60_000,
 });
 
-export const issuesR = resource({
-    kind: "host.issues",
-    fetch: (repo: RepoRef, state: string, page: number): Promise<IssuePage> => hostApi(repo.provider).issues(repo, state, page),
-    staleAfterMs: 60_000,
-});
-
-export const issueCountsR = resource({
-    kind: "host.issueCounts",
-    fetch: (repo: RepoRef): Promise<{ open: number; closed: number } | null> => hostApi(repo.provider).issueCounts?.(repo) ?? Promise.resolve(null),
-    staleAfterMs: 60_000,
-});
-
 export const issueR = resource({
     kind: "host.issue",
     fetch: (repo: RepoRef, number: number): Promise<Issue> => hostApi(repo.provider).issue(repo, number),
     staleAfterMs: 30_000,
-});
-
-export const releasesR = resource({
-    kind: "host.releases",
-    fetch: (repo: RepoRef): Promise<Release[]> => hostApi(repo.provider).releases(repo),
-    staleAfterMs: 5 * 60_000,
 });
 
 export const inboxR = resource({

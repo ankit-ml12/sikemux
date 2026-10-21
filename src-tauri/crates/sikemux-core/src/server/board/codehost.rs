@@ -219,7 +219,9 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
         return Err(unsupported("this project has no origin remote"));
     };
     let Some((host, _, _)) = locate(&origin, &picks).await else {
-        return Err(unsupported("this project's origin is on no code host Sikemux knows"));
+        return Err(unsupported(
+            "this project's origin is on no code host Sikemux knows",
+        ));
     };
     find(&origin, &picks)
         .await
@@ -227,6 +229,10 @@ pub(crate) async fn of_project(core: &Arc<Core>, project: &str) -> Result<Repo, 
 }
 
 impl Repo {
+    pub(crate) fn owner(&self) -> &str {
+        &self.owner
+    }
+
     /// What a `ci` change names the repository by.
     pub(crate) fn key(&self) -> String {
         format!("{}:{}/{}", self.host.plugin(), self.owner, self.name)

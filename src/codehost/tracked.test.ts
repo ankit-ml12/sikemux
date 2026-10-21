@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterTracked, trackedContext, trackedItems, type TrackedItem } from "./tracked";
+import { filterTracked, trackedContext, type TrackedItem } from "./tracked";
 import type { Comment, Issue, Pull } from "./types";
 
 const issue = (number: number, title: string, createdAt: string, extra: Partial<Issue> = {}): Issue => ({
@@ -46,24 +46,13 @@ const comment = (id: number, body: string): Comment => ({
     url: null,
 });
 
-describe("trackedItems", () => {
-    it("puts issues and pull requests together, newest first", () => {
-        const items = trackedItems([issue(1, "Old", "2026-01-01"), issue(3, "New", "2026-03-01")], [pull(2, "Middle", "2026-02-01")]);
-        expect(items.map((item) => `${item.kind}${item.number}`)).toEqual(["issue3", "pull2", "issue1"]);
-    });
-
-    it("keeps a pull request listed among the issues once, as a pull request", () => {
-        const items = trackedItems([issue(2, "Middle", "2026-02-01")], [pull(2, "Middle", "2026-02-01")]);
-        expect(items).toHaveLength(1);
-        expect(items[0].kind).toBe("pull");
-    });
-});
-
 describe("filterTracked", () => {
-    const items: TrackedItem[] = trackedItems(
-        [issue(12, "Login crashes on start", "2026-01-03"), issue(120, "Dark theme", "2026-01-02"), issue(7, "Crash in login form", "2026-01-01")],
-        [],
-    );
+    const item = (number: number, title: string, createdAt: string): TrackedItem => ({ kind: "issue", number, title, createdAt, url: "" });
+    const items = [
+        item(12, "Login crashes on start", "2026-01-03"),
+        item(120, "Dark theme", "2026-01-02"),
+        item(7, "Crash in login form", "2026-01-01"),
+    ];
 
     it("matches digits against the start of a number", () => {
         expect(filterTracked(items, "12", 10).map((item) => item.number)).toEqual([12, 120]);

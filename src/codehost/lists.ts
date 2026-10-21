@@ -4,7 +4,7 @@ import type { PluginFailure } from "../api/plugins";
 import { isSignedOutFailure } from "../plugin-api/backend";
 import { resourceKind } from "../plugin-api/identity";
 import { invalidate, resource } from "../state/resources";
-import type { IssueList, PullList, ReleaseList, RunList } from "./types";
+import type { IssueList, PullList, ReleaseList, RunList, TrackedItem } from "./types";
 
 type Answer<T> = { value: T } | { failed: PluginFailure & { plugin: string } };
 
@@ -18,7 +18,7 @@ async function list<T>(method: string, params: Record<string, unknown>): Promise
     throw failed;
 }
 
-const LISTS = new Set(["host.pullList", "host.runList", "host.issueList", "host.releaseList"]);
+const LISTS = new Set(["host.pullList", "host.runList", "host.issueList", "host.releaseList", "host.trackedList"]);
 let following = false;
 
 /** The core says when lists moved, so they are read again then and at no other time; it answers the unchanged ones from what it keeps. */
@@ -32,6 +32,7 @@ export interface RunFilter {
     workflowId?: string;
     branch?: string;
     status?: string;
+    headSha?: string;
     page?: number;
     perPage?: number;
 }
@@ -54,4 +55,10 @@ export const issueListR = resource({
 export const releaseListR = resource({
     kind: "host.releaseList",
     fetch: (project: string): Promise<ReleaseList> => list("codeHostReleases", { project }),
+});
+
+/** The open issues and pull requests a message can be about, newest first. */
+export const trackedListR = resource({
+    kind: "host.trackedList",
+    fetch: (project: string): Promise<TrackedItem[]> => list("codeHostTracked", { project }),
 });

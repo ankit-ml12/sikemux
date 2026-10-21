@@ -167,6 +167,7 @@ function PullRow({ listed, now, onOpen }: { listed: ListedPull; now: number; onO
 
 interface DetailProps {
     repo: RepoRef;
+    project: string;
     cwd: string | null;
     projectBranch: string | null;
     number: number;
@@ -213,6 +214,7 @@ function MergePart({ outcome, title, detail }: { outcome: Outcome; title: string
 
 function MergeBox({
     repo,
+    project,
     pull,
     verdict,
     reviewed,
@@ -220,6 +222,7 @@ function MergeBox({
     onOpenRun,
 }: {
     repo: RepoRef;
+    project: string;
     pull: Pull;
     verdict: string | null;
     reviewed: boolean;
@@ -270,7 +273,7 @@ function MergeBox({
         }
     };
 
-    const checks = pull.headSha ? <PullChecks repo={repo} sha={pull.headSha} active={active} onOpenRun={onOpenRun} /> : null;
+    const checks = pull.headSha ? <PullChecks repo={repo} project={project} sha={pull.headSha} active={active} onOpenRun={onOpenRun} /> : null;
     if (pull.state === "merged") {
         const merger = pull.mergedBy ?? null;
         const commit = pull.mergeCommitSha;
@@ -661,6 +664,7 @@ type SidePage = "files" | "commits" | "merge";
 /** An open pull request's side panel, laid out like the git pane's: what it is and its actions, then its files, commits and merge as pages. */
 function PullColumn({
     repo,
+    project,
     cwd,
     projectBranch,
     number,
@@ -692,6 +696,7 @@ function PullColumn({
         <div className="pr-card">
             <MergeBox
                 repo={repo}
+                project={project}
                 pull={found}
                 verdict={reviewVerdict(reviewList)}
                 reviewed={reviewList.length > 0}
@@ -864,6 +869,7 @@ export function PullsView({ paneId, repo, project, listState, item, composing, p
     const left = (
         <PullColumn
             repo={repo}
+            project={project}
             cwd={cwd}
             projectBranch={projectBranch}
             number={item}
