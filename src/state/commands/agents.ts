@@ -23,7 +23,7 @@ import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
-import { bringForward, hostTitle, newWorkHost, projectCopyOn, startRemoteChat, type HostChoice } from "../../hosts/hosts";
+import { bringForward, chooseHost, hostOf, hostTitle, newWorkHost, projectCopyOn, startRemoteChat, type HostChoice } from "../../hosts/hosts";
 
 /** Providers list a session under at most this many characters. */
 const SESSION_TITLE_MAX = 72;
@@ -432,13 +432,14 @@ export function selectAgent(id: string): void {
     });
 }
 
-/** Open an agent that lives in some other project, switching to it on the way. */
+/** Open an agent that lives in some other project or on another host, choosing them on the way. */
 export function revealAgent(id: string): void {
     const state = getState();
     const windowId = agentWindowId(state, id);
     const sessionId = windowId ? ownerSessionId(state, windowId) : null;
     if (!sessionId) return;
     if (sessionId !== state.activeSessionId) selectSession(sessionId);
+    chooseHost(hostOf(state.agents[id]?.host));
     selectAgent(id);
 }
 
