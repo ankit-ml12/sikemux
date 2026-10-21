@@ -7,3 +7,4 @@ pub mod chat;
 pub mod grid;
 pub mod protocol;
 pub mod pty;
+pub mod theme;
