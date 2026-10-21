@@ -98,6 +98,7 @@ const TS_ROOTS = [
   "ChatChange",
   "ToolDetail",
   "CoreChangeTopic",
+  "Preferences",
   "ProjectBoard",
   "HostInfo",
   "RemoteStatus",

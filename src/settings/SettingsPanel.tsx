@@ -25,6 +25,8 @@ import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
 import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
+import { setPreference, usePreference } from "../state/preferences";
+import type { MidTurnSend } from "../api/generated/wire";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
@@ -511,7 +513,7 @@ function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
     const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
-    const midTurnSend = useStore((s) => s.midTurnSend);
+    const midTurnSend = usePreference("midTurnSend");
     const profiles = useStore((s) => s.providerProfiles);
     const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
     const [draft, setDraft] = useState<ProviderProfile>(
@@ -679,12 +681,12 @@ function AgentsPage() {
                         <Dropdown
                             className="settings-dd"
                             label="sending while an agent works"
-                            value={midTurnSend}
+                            value={midTurnSend ?? ""}
                             options={[
                                 { value: "steer", label: "Steer", detail: "The agent reads it in the running turn" },
                                 { value: "queue", label: "Queue", detail: "It waits until the turn ends" },
                             ]}
-                            onChange={(value) => cmd.setMidTurnSend(value as "steer" | "queue")}
+                            onChange={(value) => setPreference("midTurnSend", value as MidTurnSend)}
                         />
                     </SettingsRow>
                     <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>

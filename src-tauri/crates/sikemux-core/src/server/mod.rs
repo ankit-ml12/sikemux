@@ -45,6 +45,8 @@ mod lsp;
 mod project_files;
 mod project_roots;
 mod faces;
+mod from_app;
+mod preferences;
 mod search;
 mod streams;
 mod prepare;
@@ -374,6 +376,8 @@ pub(crate) struct Core {
     pub(crate) hosts: hosts::Hosts,
     /// The faces agents wear, and the style the person picked for them.
     pub(crate) faces: faces::Faces,
+    /// How the person wants Sikemux to behave.
+    pub(crate) preferences: preferences::Prefs,
     /// Answers in parts on the connections that asked for them.
     pub(crate) streams: streams::Streams,
     /// The view paired devices were last sent, as sent.
@@ -409,7 +413,7 @@ impl Core {
         let hosts = hosts::Hosts::new(data_dir);
         names.pin(hosts.team.ids());
         let harness = harness::Harness::new(data_dir, |agent_id| names.get(agent_id).is_some());
-        Ok(Arc::new_cyclic(|me| Self {
+        let core = Arc::new_cyclic(|me| Self {
             me: me.clone(),
             sessions: Mutex::new(HashMap::new()),
             next_session_id: AtomicU64::new(first_session_id()),
@@ -461,10 +465,13 @@ impl Core {
             inbox: inbox::Inbox::default(),
             hosts,
             faces: faces::Faces::new(data_dir),
+            preferences: preferences::Prefs::new(data_dir),
             streams: streams::Streams::default(),
             device_view: Mutex::new(Vec::new()),
             terminal_colors: Mutex::default(),
-        }))
+        });
+        from_app::carry(&core, data_dir);
+        Ok(core)
     }
 
     /// This core, for work that outlives the call it starts in.

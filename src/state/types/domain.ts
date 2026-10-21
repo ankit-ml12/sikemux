@@ -186,8 +186,6 @@ export interface PtyContext {
 }
 
 export type RailDensity = "comfortable" | "compact";
-/** What a message sent while the agent works does: goes into the running turn, or waits for it to end. */
-export type MidTurnSend = "steer" | "queue";
 /** Whether the tab rail lists the open project or every open project. */
 export type TabRailScope = "project" | "all";
 /** Which of its pages the tab rail shows: the project's agents, its terminals or its open files. */

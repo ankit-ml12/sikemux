@@ -113,6 +113,19 @@ impl Hosts {
         }
     }
 
+    /// Takes the SSH hosts the app noted hosts were installed on from here,
+    /// keeping any the core noted itself.
+    pub(crate) fn carry_installed_from(&self, carried: BTreeMap<String, String>) {
+        if carried.is_empty() {
+            return;
+        }
+        let mut installed = self.installed.locked();
+        for (key, alias) in carried {
+            installed.entry(key).or_insert(alias);
+        }
+        self.installed_kept.save(&*installed);
+    }
+
     fn reach(&self, host: &str) -> listed::Reach {
         let state = self.state.locked();
         if state.connections.contains_key(host) {

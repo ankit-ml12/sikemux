@@ -288,6 +288,13 @@ calls! { core, client, params;
         core.view_changed();
         answer(style)
     },
+    "preferences": Watch => answer(core.preferences.get()),
+    "setPreference": Person => {
+        let params: SetPreferenceParams = parse(params)?;
+        let preferences = core.preferences.set(&params.key, params.value)?;
+        core.changes.changed(Topic::Preferences, None, None);
+        answer(preferences)
+    },
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
@@ -479,6 +486,12 @@ struct PortsParams {
 struct TrustProjectParams {
     project: String,
     fingerprint: String,
+}
+
+#[derive(Deserialize)]
+struct SetPreferenceParams {
+    key: String,
+    value: Value,
 }
 
 #[derive(Deserialize)]

@@ -36,7 +36,6 @@ export const setPaneStrength = (value: number): void => setState({ paneStrength:
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
-export const setMidTurnSend = (value: import("../types").MidTurnSend): void => setState({ midTurnSend: value });
 export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });
 export const setTabRailScope = (value: import("../types").TabRailScope): void => setState({ tabRailScope: value });
 export const setTabRailPage = (value: import("../types").TabRailPage): void => setState({ tabRailPage: value });

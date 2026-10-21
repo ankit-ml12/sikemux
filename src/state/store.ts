@@ -1,5 +1,5 @@
 import { DEFAULT_NOTCH_SETTINGS } from "../notch/notchSettings";
-import type { CodeHostChoice } from "../api/generated/wire";
+import type { CodeHostChoice, Preferences } from "../api/generated/wire";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
@@ -36,7 +36,6 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RailDensity,
-    MidTurnSend,
     TabRailScope,
     TabRailPage,
     PinnedChat,
@@ -110,7 +109,8 @@ export interface DomainState {
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
-    midTurnSend: MidTurnSend;
+    /** How the person wants Sikemux to behave, as the core keeps it; null until read. */
+    preferences: Preferences | null;
     /** The tab rail shows every CLI's chats instead of one provider's. */
     tabRailAllAgents: boolean;
     /** Providers whose chats move to the next signed-in account when one runs out of usage. */
@@ -325,7 +325,7 @@ export const useStore = create<StoreState>(() => {
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
-        midTurnSend: "steer",
+        preferences: null,
         tabRailAllAgents: false,
         accountAutoSwitch: {},
         tabRailScope: "project",

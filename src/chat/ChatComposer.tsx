@@ -10,7 +10,7 @@ import { registerPathDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import type { Agent, ProviderProfile } from "../state/types";
 import * as cmd from "../state/commands";
-import { useStore } from "../state/store";
+import { usePreference } from "../state/preferences";
 import { IconArrowUp, IconClose, IconPlus } from "../ui/Icons";
 import { FileTypeIcon } from "../ui/FileIcon";
 import { usePathRoots } from "./FileRef";
@@ -540,7 +540,7 @@ export function ChatComposer({
     }, [stopping]);
 
     const canSteerQueued = running && steerable && queuedCount > 0;
-    const steersByDefault = useStore((s) => s.midTurnSend) === "steer";
+    const steersByDefault = usePreference("midTurnSend") !== "queue";
 
     const clear = () => {
         setDraft("");

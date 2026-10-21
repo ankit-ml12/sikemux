@@ -1192,7 +1192,19 @@ export type CoreChangeTopic =
     | "questions"
     | "account"
     | "hosts"
-    | "lsp";
+    | "lsp"
+    | "preferences";
+
+/**
+ * How the person wants Sikemux to behave, the same in every app. A field
+ * left out reads as its default.
+ */
+export interface Preferences {
+    /** What sending does while an agent's turn runs. */
+    midTurnSend: MidTurnSend;
+}
+
+export type MidTurnSend = "steer" | "queue";
 
 /** A board as the app and devices read it. */
 export interface ProjectBoard {

@@ -140,7 +140,6 @@ const PREFS = {
     notificationsIntroduced: flag,
     keptRunningNoticeShown: flag,
     railDensity: oneOf("comfortable", "compact"),
-    midTurnSend: oneOf("steer", "queue"),
     tabRailAllAgents: flag,
     tabRailScope: oneOf("project", "all"),
     tabRailPage: oneOf("agents", "terminals", "files"),
@@ -192,7 +191,11 @@ function packPrefs(s: StoreState): PersistedPrefs {
     return Object.fromEntries(PREF_KEYS.map((key) => [key, s[key]])) as PersistedPrefs;
 }
 
+/* Saved settings this window no longer reads, kept as they were until the core copies them over on its next start. */
+let unreadPrefs: Record<string, unknown> = {};
+
 function readPrefs(saved: Record<string, unknown>, current: StoreState): PersistedPrefs {
+    unreadPrefs = Object.fromEntries(Object.entries(saved).filter(([key]) => !(key in PREFS)));
     return Object.fromEntries(PREF_KEYS.map((key) => [key, (PREFS[key] as Read<unknown>)(saved[key], current[key])])) as PersistedPrefs;
 }
 
@@ -461,7 +464,7 @@ function snapshot(): string {
         activeSessionId: s.activeSessionId,
         chosenHost: savedHostChoice(s),
         recent: s.recent,
-        prefs: packPrefs(s),
+        prefs: { ...unreadPrefs, ...packPrefs(s) },
         itemStates,
         hostAgents: Object.values(s.agents).filter((agent) => agent.host),
     };
@@ -1051,4 +1054,5 @@ export function resetPersistenceForTests(): void {
     saveLoop = null;
     lastSlices = null;
     persistenceReady = false;
+    unreadPrefs = {};
 }

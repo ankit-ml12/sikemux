@@ -50,6 +50,8 @@ pub(crate) enum Topic {
     Hosts,
     /// A language server's diagnostics for the files in `paths` moved.
     Lsp,
+    /// How the person wants Sikemux to behave.
+    Preferences,
 }
 
 /// Paths by topic and project; none means anything may have changed.

@@ -1085,6 +1085,25 @@ impl Default for FaceStyle {
     }
 }
 
+/// How the person wants Sikemux to behave, the same in every app. A field
+/// left out reads as its default.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Preferences {
+    /// What sending does while an agent's turn runs.
+    pub mid_turn_send: MidTurnSend,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MidTurnSend {
+    /// The message joins the turn that runs.
+    #[default]
+    Steer,
+    /// The message waits for the turn to end.
+    Queue,
+}
+
 /// What a device learns about a launcher: never its program or environment.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

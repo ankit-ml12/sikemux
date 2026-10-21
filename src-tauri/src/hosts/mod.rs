@@ -91,6 +91,9 @@ struct Saved {
 struct HostsFile {
     hosts: Vec<Saved>,
     slots: BTreeMap<String, u64>,
+    /// What the app no longer reads stays saved until the core has copied it.
+    #[serde(flatten)]
+    rest: serde_json::Map<String, serde_json::Value>,
 }
 
 pub(crate) struct Host {
@@ -183,6 +186,7 @@ pub struct Hosts {
     device: tokio::sync::OnceCell<Arc<Device>>,
     hosts: Mutex<Vec<Arc<Host>>>,
     slots: Mutex<BTreeMap<String, u64>>,
+    rest: Mutex<serde_json::Map<String, serde_json::Value>>,
     saving: Mutex<()>,
     following: tokio::sync::Mutex<()>,
 }
@@ -240,6 +244,7 @@ impl Hosts {
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
         *self.slots.locked() = file.slots;
+        *self.rest.locked() = file.rest;
         for saved in file.hosts {
             self.add(saved);
         }
@@ -304,6 +309,7 @@ impl Hosts {
                 .map(|host| host.saved())
                 .collect(),
             slots: self.slots.locked().clone(),
+            rest: self.rest.locked().clone(),
         };
         if let Ok(bytes) = serde_json::to_vec_pretty(&saved) {
             if let Some(directory) = file.parent() {
