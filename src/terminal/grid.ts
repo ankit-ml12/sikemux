@@ -120,7 +120,11 @@ const utf8 = new TextDecoder();
 
 class Reader {
     offset = 0;
-    constructor(private readonly bytes: Uint8Array) {}
+    private readonly bytes: Uint8Array;
+
+    constructor(bytes: Uint8Array) {
+        this.bytes = bytes;
+    }
 
     byte(): number {
         if (this.offset >= this.bytes.length) throw new RangeError("terminal frame ended early");

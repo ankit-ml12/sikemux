@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TerminalGrid, decodeFrame, rowText } from "../src/terminal/grid.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Read from the core's source so the greeting cannot fall behind a protocol bump.
@@ -264,44 +265,51 @@ function openCore(path) {
         );
         return reply && control(reply);
       };
-      const text = async (id) =>
-        (await request({ op: "terminalText", id }, 5_000))?.response?.text ??
-        "";
+      // Each attached stream's screen, drawn from its frames and acked as a
+      // pane does, since the core sends only a couple of frames ahead of that.
+      const screens = new Map();
+      const draw = (stream, bytes) => {
+        const frame = decodeFrame(bytes);
+        screens.get(stream).grid.apply(frame);
+        socket.write(
+          coreControl({ type: "ack", stream, frame: frame.header.frame }),
+        );
+      };
+      const shown = (id) =>
+        [...screens.values()]
+          .filter((screen) => screen.id === id)
+          .map(({ grid }) =>
+            grid.rows.map((row) => rowText(row, grid.cols)).join("\n"),
+          )
+          .join("\n");
+      const attach = async (id) => {
+        const attachId = ++requestId;
+        socket.write(
+          coreControl({
+            type: "request",
+            requestId: attachId,
+            request: { op: "attach", id },
+          }),
+        );
+        const reply = await next(
+          (frame) =>
+            (frame.kind === CORE_FRAME.snapshot &&
+              frame.payload.readBigUInt64BE(0) === BigInt(attachId)) ||
+            control(frame)?.requestId === attachId,
+        );
+        if (reply?.kind !== CORE_FRAME.snapshot) return false;
+        const stream = reply.payload.readUInt32BE(16);
+        const headerLength = reply.payload.readUInt32BE(20);
+        screens.set(stream, { id, grid: new TerminalGrid() });
+        draw(stream, reply.payload.subarray(24 + headerLength));
+        return true;
+      };
       resolveOpen({
         hello: control(hello),
         request,
-        async attach(id) {
-          const attachId = ++requestId;
-          socket.write(
-            coreControl({
-              type: "request",
-              requestId: attachId,
-              request: { op: "attach", id },
-            }),
-          );
-          const reply = await next(
-            (frame) =>
-              (frame.kind === CORE_FRAME.snapshot &&
-                frame.payload.readBigUInt64BE(0) === BigInt(attachId)) ||
-              control(frame)?.requestId === attachId,
-          );
-          return reply?.kind === CORE_FRAME.snapshot;
-        },
+        attach,
         async attachReplay(id) {
-          const attachId = ++requestId;
-          socket.write(
-            coreControl({
-              type: "request",
-              requestId: attachId,
-              request: { op: "attach", id },
-            }),
-          );
-          const reply = await next(
-            (frame) =>
-              frame.kind === CORE_FRAME.snapshot &&
-              frame.payload.readBigUInt64BE(0) === BigInt(attachId),
-          );
-          return reply ? text(id) : "";
+          return (await attach(id)) ? shown(id) : "";
         },
         write(id, text) {
           const header = Buffer.alloc(16);
@@ -314,15 +322,19 @@ function openCore(path) {
             ),
           );
         },
-        // The core sends a pane cells, not the program's bytes, so what a
-        // terminal printed is read back as the text it holds.
         async output(id, needle, timeout) {
           const deadline = Date.now() + timeout;
-          for (;;) {
-            if ((await text(id)).includes(needle)) return true;
-            if (Date.now() >= deadline) return false;
-            await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+          while (!shown(id).includes(needle)) {
+            const frame = await next(
+              (candidate) =>
+                candidate.kind === CORE_FRAME.output &&
+                screens.get(candidate.payload.readUInt32BE(0))?.id === id,
+              deadline - Date.now(),
+            );
+            if (!frame) return false;
+            draw(frame.payload.readUInt32BE(0), frame.payload.subarray(4));
           }
+          return true;
         },
         async chatEvent(agentId, accept, timeout = 10_000) {
           const frame = await next((candidate) => {
