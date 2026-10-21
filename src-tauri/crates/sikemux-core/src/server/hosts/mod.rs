@@ -13,15 +13,16 @@ mod calls;
 mod code;
 mod join;
 mod link;
+mod listed;
 mod outbox;
 pub(crate) mod route;
 pub(crate) mod spawn;
 pub(crate) mod team;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -33,6 +34,8 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 use tokio::sync::Semaphore;
 
+use super::changed::Topic;
+use super::kept::Kept;
 use super::remote::{self, LinkedHost};
 use super::wake::{sooner, Wake};
 use super::{Core, CoreError, CoreResult};
@@ -40,6 +43,7 @@ use crate::backoff::Backoff;
 
 pub(crate) use join::link_host;
 pub(crate) use link::{Failed, LINK_ALPN};
+pub(crate) use listed::{installed_from, rows};
 pub(crate) use outbox::Sending;
 
 const DIAL_WAIT: Duration = Duration::from_secs(15);
@@ -54,6 +58,7 @@ const OUT_OF_REACH_MS: u64 = 2 * 60_000;
 /// Asks one linked host may have this host answer at once.
 const MAX_ANSWERING: usize = 32;
 const MAX_ADDRESSES: usize = 8;
+const INSTALLED_FILE: &str = "host-installed-from.json";
 
 /// A linked host out of reach, and when to try it again.
 struct Down {
@@ -84,10 +89,17 @@ pub(crate) struct Hosts {
     /// Links with the account's other hosts, when it may have one not linked.
     pub(crate) relink: Wake,
     linking: AtomicBool,
+    /// A client lists the hosts, so every linked one is kept in reach to say
+    /// how it is reached.
+    listed: AtomicBool,
+    /// The SSH host each host was installed on from here, by its key.
+    installed: Mutex<BTreeMap<String, String>>,
+    installed_kept: Kept,
 }
 
 impl Hosts {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
+        let installed_kept = Kept::new(data_dir, INSTALLED_FILE);
         Self {
             state: Mutex::new(State::default()),
             outbox: outbox::Outbox::new(data_dir),
@@ -95,6 +107,20 @@ impl Hosts {
             wake: Wake::default(),
             relink: Wake::default(),
             linking: AtomicBool::new(false),
+            listed: AtomicBool::new(false),
+            installed: Mutex::new(installed_kept.load()),
+            installed_kept,
+        }
+    }
+
+    fn reach(&self, host: &str) -> listed::Reach {
+        let state = self.state.locked();
+        if state.connections.contains_key(host) {
+            listed::Reach::Connected
+        } else if state.down.get(host).is_some_and(|down| down.failures > 0) {
+            listed::Reach::Away
+        } else {
+            listed::Reach::Connecting
         }
     }
 
@@ -507,7 +533,9 @@ pub(crate) fn settle(core: &Arc<Core>) {
         let mut state = core.hosts.state.locked();
         state.down.retain(|host, _| linked.contains(host));
         for link in &links {
-            let wanted = core.hosts.outbox.has(&link.id) || core.hosts.team.has_host(&link.id);
+            let wanted = core.hosts.outbox.has(&link.id)
+                || core.hosts.team.has_host(&link.id)
+                || core.hosts.listed.load(Ordering::Acquire);
             if !wanted
                 || state.connections.contains_key(&link.id)
                 || state.dialing.contains(&link.id)
@@ -556,7 +584,10 @@ pub(crate) fn settle(core: &Arc<Core>) {
             }
             match dialed {
                 Ok(connection) => adopt(&core, &link.id, connection),
-                Err(_) => core.hosts.wake.now(),
+                Err(_) => {
+                    core.changes.changed(Topic::Hosts, None, None);
+                    core.hosts.wake.now();
+                }
             }
         });
     }

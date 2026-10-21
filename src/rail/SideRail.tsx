@@ -818,7 +818,7 @@ export const SideRail = memo(function SideRail() {
                     <Group
                         label="Hosts"
                         list={sshs}
-                        rows={<HostRows sshSessions={sshs} onMenu={openMenu} />}
+                        rows={<HostRows onMenu={openMenu} />}
                         add={() => cmd.openPicker("ssh")}
                         addTitle={`Find a host — ${kb("ssh.open")}`}
                         addKbd={kb("ssh.open")}

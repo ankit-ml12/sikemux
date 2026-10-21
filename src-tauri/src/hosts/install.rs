@@ -10,12 +10,10 @@ use std::time::Duration;
 use serde::Serialize;
 use sikemux_core::protocol::{BuildChannel, SessionId, SpawnTarget, TerminalSpawn};
 use sikemux_pty::launch::PtyDirectCommand;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
-
-use super::Hosts;
 
 /// Long enough to type a password, download the core and sign in.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -126,9 +124,13 @@ pub async fn host_install(
                     AppError::Other("the installer ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
                 })?;
             let host = crate::account::approve_host_code(&core_for_approval, &code).await?;
-            if let Some(hosts) = app_for_task.try_state::<Hosts>() {
-                hosts.reached_by(&host.key, &alias);
-            }
+            core_for_approval
+                .call(
+                    "hostInstalledFrom",
+                    serde_json::json!({ "key": host.key, "alias": alias }),
+                )
+                .await
+                .map_err(core_error)?;
             super::follow_links(&app_for_task);
             AppResult::Ok(())
         };

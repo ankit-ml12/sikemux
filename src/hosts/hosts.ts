@@ -1,4 +1,5 @@
 import { coreCall, coreRequest } from "../api/core";
+import type { CoreChange } from "../api/coreChanged";
 import type { ChatInfo, DeviceView, ProjectInfo, SessionInfo } from "../api/generated/wire";
 import { invokeCommand as invoke } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
@@ -17,19 +18,23 @@ import type { Agent, PaneNode, Session } from "../state/types";
 import type { Draft } from "immer";
 import { isRecord } from "../lib/guards";
 
-/** Another host on the account the app joined, as the app reaches it. */
-export interface HostEntry {
-    /** The host's core key, which every request to it names. */
-    readonly id: string;
+/** A row of the rail's Hosts group, as the core lists it: a host linked with this one, or an SSH host a terminal is open to. */
+export interface HostRow {
+    /** The host's core key, which every request to it names; none for an SSH host without Sikemux. */
+    readonly id: string | null;
     readonly name: string;
-    readonly platform: string;
-    readonly reach: "connecting" | "connected" | "away";
-    /** The SSH host it was installed on from here, which the rail shows it as. */
+    readonly platform: string | null;
+    /** How this host's core reaches it; `failed` only for an SSH host ssh gave up on. */
+    readonly reach: "connecting" | "connected" | "away" | "failed";
+    /** The SSH host it was installed on from here, or the row's own alias. */
     readonly ssh: string | null;
 }
 
+/** Another host on the account. */
+export type HostEntry = HostRow & { readonly id: string; readonly platform: string };
+
 export const hostsApi = {
-    list: () => invoke<HostEntry[]>("hosts_list"),
+    list: () => coreCall<HostRow[]>("hosts"),
 };
 
 /**
@@ -475,17 +480,25 @@ export function startHosts(): () => void {
         restored = null;
         if ((!host || host.reach === "away") && getState().chosenHost === choice) setState({ chosenHost: null });
     };
-    const setHosts = (hosts: HostEntry[]) => {
+    const setHosts = (rows: HostRow[]) => {
+        const hosts = rows.filter((row): row is HostEntry => row.id !== null);
         const ids = new Set(hosts.map((host) => host.id));
         setState({
             hosts,
+            openSshHosts: rows.filter((row) => row.id === null),
             hostViews: Object.fromEntries(Object.entries(getState().hostViews).filter(([id]) => ids.has(id))),
         });
         settleRestored(hosts);
         placeRemoteProjects();
     };
     void transport
-        .subscribe<HostEntry[]>("hosts_changed", (event) => setHosts(event.payload), { signal: controller.signal })
+        .subscribe<CoreChange>(
+            "core_changed",
+            ({ payload }) => {
+                if (payload.topic === "hosts") void hostsApi.list().then(setHosts).catch(swallow("list other hosts"));
+            },
+            { signal: controller.signal },
+        )
         .catch(swallow("follow other hosts"));
     void transport
         .subscribe<{ host: string; view: DeviceView }>(

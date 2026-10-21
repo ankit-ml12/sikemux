@@ -18,7 +18,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "pty_reset_modes",
     "pty_kill",
     "pty_sessions",
-    "hosts_list",
     "host_install",
     "account_remove_device",
     "account_rename_device",

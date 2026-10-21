@@ -595,7 +595,7 @@ impl Core {
     }
 
     /// Each ssh terminal's config host and how it reaches it.
-    pub(crate) fn ssh_links(&self) -> Vec<(String, sikemux_pty::shell_protocol::SshLink)> {
+    pub(crate) fn ssh_links(&self) -> Vec<(String, Option<sikemux_pty::shell_protocol::SshLink>)> {
         self.all_sessions()
             .iter()
             .filter(|session| session.is_running())
@@ -621,7 +621,11 @@ impl Core {
     }
 
     fn insert_session(&self, session: Arc<Session>) {
+        let ssh = session.ssh_link().is_some();
         self.sessions.locked().insert(session.id, session);
+        if ssh {
+            ssh::moved(self);
+        }
     }
 
     pub(crate) fn remove_session(&self, session: &Arc<Session>) -> bool {

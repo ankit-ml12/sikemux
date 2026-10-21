@@ -50,9 +50,10 @@ pub(crate) fn hosts(core: &Core) -> Vec<SshHost> {
             .into_iter()
             .filter(|(host, _)| host == alias)
             .map(|(_, link)| match link {
-                SshLink::Connected => Reach::Ok,
-                SshLink::Connecting => Reach::Connecting,
-                SshLink::Disconnected => Reach::Failed,
+                Some(SshLink::Connected) => Reach::Ok,
+                Some(SshLink::Connecting) => Reach::Connecting,
+                Some(SshLink::Disconnected) => Reach::Failed,
+                None => Reach::Idle,
             })
             .max()
             .unwrap_or(Reach::Idle)
@@ -122,4 +123,10 @@ fn watch(core: &Core) {
         watcher.watch(&folder, RecursiveMode::NonRecursive).ok()?;
         Some(watcher)
     });
+}
+
+/// A terminal to an SSH host started, ended, or changed how it reaches it.
+pub(crate) fn moved(core: &Core) {
+    core.changes.changed(Topic::Ssh, None, None);
+    core.changes.changed(Topic::Hosts, None, None);
 }

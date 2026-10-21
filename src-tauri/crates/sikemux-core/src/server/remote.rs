@@ -34,6 +34,7 @@ use crate::push::NotificationKey;
 use crate::remote::CORE_ALPN;
 
 use super::access::{Peer, Setup, Standing};
+use super::changed::Topic;
 use super::connection::{blocking, serve_client};
 use super::host_key::{secret_from_hex, HostKey, Keeper};
 use super::{Core, CoreError, CoreResult, ServerConfig};
@@ -1907,6 +1908,7 @@ pub(crate) fn announce(core: &Core) -> RemoteStatus {
     if let Some(core) = core.arc() {
         tokio::spawn(async move { super::account::show(&core).await });
     }
+    core.changes.changed(Topic::Hosts, None, None);
     let status = core.remote.status();
     core.broadcast_local(&Event::Remote {
         status: status.clone(),

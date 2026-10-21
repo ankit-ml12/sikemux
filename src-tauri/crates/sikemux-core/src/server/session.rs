@@ -26,7 +26,6 @@ use crate::protocol::{
 };
 
 use super::agent::{self, AgentActivity};
-use super::changed::Topic;
 use super::connection::ClientConn;
 use super::prepare::{Owner, PreparedLaunch};
 use super::{uptime_ms, CapacityPermit, Core, CoreError, CoreResult};
@@ -242,10 +241,18 @@ impl Session {
         !self.subscribers.locked().is_empty()
     }
 
-    /// The SSH config host an ssh terminal connects to, and how it reaches it.
-    pub(crate) fn ssh_link(&self) -> Option<(String, sikemux_pty::shell_protocol::SshLink)> {
+    /// The SSH config host an ssh terminal connects to, and how it reaches
+    /// it while ssh is up, on its way, or gave up.
+    pub(crate) fn ssh_link(
+        &self,
+    ) -> Option<(String, Option<sikemux_pty::shell_protocol::SshLink>)> {
         let host = self.owner.ssh_host.clone()?;
-        let link = self.screen.locked().shell.as_ref()?.ssh()?;
+        let link = self
+            .screen
+            .locked()
+            .shell
+            .as_ref()
+            .and_then(|shell| shell.ssh_reach());
         Some((host, link))
     }
 
@@ -735,6 +742,9 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
     });
     drop(screen);
     core.ports.changed();
+    if session.owner.ssh_host.is_some() {
+        super::ssh::moved(core);
+    }
     let failed = match (&code, &signal) {
         (_, Some(signal)) => Some(format!("It stopped from signal {signal}.")),
         (Some(code), None) if *code != 0 => Some(format!("It exited with code {code}.")),
@@ -835,7 +845,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
             link,
         });
         if session.owner.ssh_host.is_some() {
-            core.changes.changed(Topic::Ssh, None, None);
+            super::ssh::moved(core);
         }
     }
 }

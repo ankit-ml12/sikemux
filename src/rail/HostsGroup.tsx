@@ -13,13 +13,12 @@ import {
     startRemoteChat,
     type HostChoice,
     type HostEntry,
+    type HostRow as CoreHostRow,
 } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { confirmDialog, promptDialog } from "../state/dialog";
 import { getState, useStore, type StoreState } from "../state/store";
 import { reportError, swallow } from "../state/toast";
-import type { Session } from "../state/types";
-import { useSshTone } from "../terminal/sshLinks";
 import { IconDownload, IconFolder, IconLock, IconLaptop, IconMore, IconPencil, IconPlus, IconServer, IconTerminal, IconTrash } from "../ui/Icons";
 import { StatusDot } from "../ui/StatusDot";
 import type { CtxItem } from "./FileTree";
@@ -188,8 +187,11 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
     );
 }
 
-function SshHostRow({ alias, session, onMenu }: { alias: string; session: Session | undefined; onMenu: OpenMenu }) {
-    const tone = useSshTone(session?.id ?? "");
+const SSH_TONE = { connected: "ok", connecting: "pending", failed: "failed", away: "idle" } as const;
+const SSH_LABEL = { connected: "Connected", connecting: "Connecting", failed: "Failed", away: "Not connected" } as const;
+
+function SshHostRow({ row, onMenu }: { row: CoreHostRow; onMenu: OpenMenu }) {
+    const alias = row.name;
     const choice = useMemo<HostChoice>(() => ({ kind: "ssh", alias }), [alias]);
     const [installing, setInstalling] = useState(false);
     const install = () => {
@@ -203,12 +205,7 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
             kind="ssh"
             name={alias}
             detail={installing ? "installing" : null}
-            status={
-                <StatusDot
-                    tone={installing ? "pending" : session ? tone : "idle"}
-                    label={installing ? "Installing" : session ? tone : "Not connected"}
-                />
-            }
+            status={<StatusDot tone={installing ? "pending" : SSH_TONE[row.reach]} label={installing ? "Installing" : SSH_LABEL[row.reach]} />}
             choice={choice}
             menu={async () => [
                 {
@@ -229,18 +226,17 @@ function SshHostRow({ alias, session, onMenu }: { alias: string; session: Sessio
 }
 
 /** Every host in one list: this one, every host on the account, and the SSH hosts open now (ADR 0018). */
-export function HostRows({ sshSessions, onMenu }: { sshSessions: readonly Session[]; onMenu: OpenMenu }) {
+export function HostRows({ onMenu }: { onMenu: OpenMenu }) {
     const hosts = useStore((s) => s.hosts);
-    const installed = new Set(hosts.flatMap((host) => host.ssh ?? []));
-    const sshNames = [...new Set(sshSessions.map((session) => session.name))].filter((alias) => !installed.has(alias));
+    const sshHosts = useStore((s) => s.openSshHosts);
     return (
         <>
             <ThisHostRow onMenu={onMenu} />
             {hosts.map((host) => (
                 <AccountHostRow key={host.id} host={host} onMenu={onMenu} />
             ))}
-            {sshNames.map((alias) => (
-                <SshHostRow key={alias} alias={alias} session={sshSessions.find((session) => session.name === alias)} onMenu={onMenu} />
+            {sshHosts.map((row) => (
+                <SshHostRow key={row.name} row={row} onMenu={onMenu} />
             ))}
         </>
     );

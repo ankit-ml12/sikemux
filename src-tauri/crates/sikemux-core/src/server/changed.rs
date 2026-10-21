@@ -43,6 +43,9 @@ pub(crate) enum Topic {
     Plugins,
     /// Who this host is signed in to Sikemux as.
     Account,
+    /// The hosts linked with this one, the SSH hosts a terminal is open to,
+    /// and how each is reached.
+    Hosts,
 }
 
 /// Paths by topic and project; none means anything may have changed.

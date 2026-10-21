@@ -264,7 +264,6 @@ pub fn run() {
             pty::commands::pty_reset_modes,
             pty::commands::pty_kill,
             pty::commands::pty_sessions,
-            hosts::hosts_list,
             hosts::install::host_install,
             account::account_remove_device,
             account::account_rename_device,

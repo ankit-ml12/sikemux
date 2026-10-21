@@ -237,6 +237,8 @@ export interface ViewState {
     lastSessionId: string | null;
     /** The account's other hosts this app joined, and how each is reached. */
     hosts: readonly import("../hosts/hosts").HostEntry[];
+    /** The SSH hosts a terminal is open to, without Sikemux on them from here, as the core lists them. */
+    openSshHosts: readonly import("../hosts/hosts").HostRow[];
     /** What each of those hosts last showed this app, by its id. */
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
     /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
@@ -387,6 +389,7 @@ export const useStore = create<StoreState>(() => {
         terminalTitles: {},
         lastSessionId: null,
         hosts: [],
+        openSshHosts: [],
         hostViews: {},
         projectIdentities: {},
         chosenHost: null,

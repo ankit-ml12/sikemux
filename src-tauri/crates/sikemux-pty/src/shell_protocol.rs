@@ -115,6 +115,9 @@ pub struct ShellProtocolParser {
     osc_overflowed: bool,
     metadata: ShellMetadataSnapshot,
     ssh: Option<SshLink>,
+    /// The last disconnect came while ssh was still connecting, so it gave up
+    /// rather than the person logging out.
+    ssh_gave_up: bool,
     events: ShellEventCoalescer,
 }
 
@@ -131,6 +134,7 @@ impl Default for ShellProtocolParser {
                 last_exit_code: None,
             },
             ssh: None,
+            ssh_gave_up: false,
             events: ShellEventCoalescer::default(),
         }
     }
@@ -143,6 +147,15 @@ impl ShellProtocolParser {
 
     pub fn ssh(&self) -> Option<SshLink> {
         self.ssh
+    }
+
+    /// The link as the person reads it: none after a logout, and
+    /// `Disconnected` only when ssh gave up connecting.
+    pub fn ssh_reach(&self) -> Option<SshLink> {
+        match self.ssh {
+            Some(SshLink::Disconnected) if !self.ssh_gave_up => None,
+            link => link,
+        }
     }
 
     /// Carries on from what another parser had seen.
@@ -268,6 +281,8 @@ impl ShellProtocolParser {
             }
             ShellSignal::Ssh(link) => {
                 if self.ssh != Some(link) {
+                    self.ssh_gave_up =
+                        link == SshLink::Disconnected && self.ssh == Some(SshLink::Connecting);
                     self.ssh = Some(link);
                     batch.ssh = Some(link);
                 }
