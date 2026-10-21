@@ -123,8 +123,9 @@
 .top-bar .tb-place .tb-place-btn {
     height: 26px;
     max-width: 220px;
-    padding: 0 8px;
+    padding: 0 10px;
     border-color: transparent;
+    border-radius: var(--radius-full);
     background: var(--surface-chosen);
     color: var(--text-primary);
     font-size: var(--text-xs);
