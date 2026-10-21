@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
     anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent,
-    ClipboardItem, Context, CursorStyle, Entity, FocusHandle, FontFallbacks, Hsla, InputHandler,
-    InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton as Button,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, Rgba,
-    ScrollWheelEvent, SharedString, Styled, Subscription, Task, UTF16Selection, Window,
+    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
+    InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers,
+    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled, Subscription, Task,
+    UTF16Selection, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -445,7 +446,17 @@ pub fn pane(
                     bench.parts.redraw(&bench.parts.stage, cx);
                 }
             },
-        ));
+        ))
+        .on_drop(
+            window.listener_for(&this, move |bench, dropped: &ExternalPaths, _, _| {
+                let paths = dropped
+                    .paths()
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect();
+                send(bench, id, TerminalInput::Paths { paths });
+            }),
+        );
     if let Some(terminal) = bench.terminals.open.get(&id) {
         pane = pane.track_focus(&terminal.focus);
         if terminal.link.is_some() {
