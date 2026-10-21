@@ -49,6 +49,8 @@ pub struct Composer {
     attachments: Option<(Option<AnyElement>, Act, Paste, Chip)>,
     /// What the word at the caret is offered, docked over the top edge.
     menu: Option<DockMenu>,
+    /// Why the core turned down the last message.
+    refusal: Option<SharedString>,
     on_send: Act,
     on_stop: Act,
 }
@@ -74,6 +76,7 @@ impl Composer {
             usage: None,
             attachments: None,
             menu: None,
+            refusal: None,
             on_send,
             on_stop,
         }
@@ -127,6 +130,11 @@ impl Composer {
         let chip: Chip =
             Rc::new(move |token, window, cx| chip(token, window, cx).into_any_element());
         self.attachments = Some((tiles, on_add, on_paste, chip));
+        self
+    }
+
+    pub fn refusal(mut self, refusal: Option<SharedString>) -> Self {
+        self.refusal = refusal;
         self
     }
 
@@ -250,6 +258,16 @@ impl RenderOnce for Composer {
                     .child(bar)
                     .children(self.menu),
             )
+            .children(self.refusal.map(|refusal| {
+                div()
+                    .w_full()
+                    .max_w(px(820.))
+                    .pt(px(6.))
+                    .px(px(4.))
+                    .text_size(px(12.))
+                    .text_color(t.danger)
+                    .child(refusal)
+            }))
     }
 }
 

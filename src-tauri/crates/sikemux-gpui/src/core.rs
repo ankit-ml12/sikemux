@@ -52,6 +52,11 @@ pub enum ChatNews {
         tool: String,
         detail: Value,
     },
+    /// The core turned down what the person sent, which goes back to them with why.
+    Refused {
+        error: String,
+        text: String,
+    },
 }
 
 /// What an attached terminal sends, decoded on the core's thread.
@@ -481,12 +486,19 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             text,
             paths,
             context,
-        } => {
-            return report(
-                "prompt",
-                client.acp_prompt(agent, None, text, paths, context).await,
-            )
-        }
+        } => match client
+            .acp_prompt(agent.clone(), None, text.clone(), paths, context)
+            .await
+        {
+            Ok(()) => return,
+            Err(error) => (
+                agent,
+                ChatNews::Refused {
+                    error: error.to_string(),
+                    text,
+                },
+            ),
+        },
         ChatAsk::Keep {
             agent,
             name,
@@ -507,14 +519,19 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             message,
             text,
             paths,
-        } => {
-            return report(
-                "edit a message in",
-                client
-                    .acp_edit(agent, message, text, paths, Vec::new())
-                    .await,
-            )
-        }
+        } => match client
+            .acp_edit(agent.clone(), message, text.clone(), paths, Vec::new())
+            .await
+        {
+            Ok(()) => return,
+            Err(error) => (
+                agent,
+                ChatNews::Refused {
+                    error: error.to_string(),
+                    text,
+                },
+            ),
+        },
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
         ChatAsk::Permission {
             agent,

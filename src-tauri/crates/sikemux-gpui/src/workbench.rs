@@ -21,7 +21,7 @@ use sikemux_wire::protocol::{
 use tokio::sync::mpsc;
 
 use crate::battery::Battery;
-use crate::chat::{Chat, Composing, Question};
+use crate::chat::{Chat, Composing, Question, Sent};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::editor::OpenAt;
 use crate::files::FileTree;
@@ -335,6 +335,21 @@ impl Workbench {
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
                     ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
+                    ChatNews::Refused { error, text } => {
+                        if let Some(composing) = chat.composer.as_mut() {
+                            composing.refusal = Some(error.into());
+                            let held = composing
+                                .sent
+                                .take()
+                                .filter(|sent| sent.content.text().trim() == text);
+                            composing.returned = Some(held.unwrap_or_else(|| Sent {
+                                content: text.into(),
+                                attachments: Vec::new(),
+                                earlier: Vec::new(),
+                            }));
+                        }
+                        return self.parts.redraw(&self.parts.stage, cx);
+                    }
                 }
                 let restage = self
                     .chats
@@ -527,6 +542,9 @@ impl Workbench {
             attachments: Vec::new(),
             menu: None,
             earlier: Vec::new(),
+            refusal: None,
+            sent: None,
+            returned: None,
             _heard: [sending, keeping],
         });
         if let Some(text) = self.deliveries.remove(&agent) {
@@ -598,6 +616,16 @@ impl Workbench {
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
+        if let Some(composing) = chat.composer.as_mut() {
+            let empty = composing.draft.read(cx).value().trim().is_empty();
+            if let Some(returned) = composing.returned.take().filter(|_| empty) {
+                composing.draft.update(cx, |draft, cx| {
+                    draft.set_value(returned.content, window, cx)
+                });
+                composing.attachments = returned.attachments;
+                composing.earlier = returned.earlier;
+            }
+        }
         let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
         let Some(composing) = chat
             .composer
@@ -643,8 +671,16 @@ impl Workbench {
             }
             return;
         }
+        let sent = Sent {
+            content: draft.read(cx).content(),
+            attachments: composing.attachments.clone(),
+            earlier: composing.earlier.clone(),
+        };
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
         self.answer(agent, |chat, open| {
+            if let Some(composing) = chat.composer.as_mut() {
+                composing.sent = Some(sent);
+            }
             chat.sent(agent, text, outgoing, primary == steers, open)
         });
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));

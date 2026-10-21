@@ -367,7 +367,20 @@ pub struct Composing {
     pub menu: Option<mention::Menu>,
     /// Earlier chats with no name the message names, by their uri, with their title.
     pub earlier: Vec<(String, String)>,
+    /// Why the core turned down the last message, until the next is sent.
+    pub refusal: Option<SharedString>,
+    /// The last message as it was written, chips, files and all, until the core takes it.
+    pub sent: Option<Sent>,
+    /// A turned-down message, going back into the draft when it next draws.
+    pub returned: Option<Sent>,
     pub _heard: [Subscription; 2],
+}
+
+/// A message as the composer held it when it was sent.
+pub struct Sent {
+    pub content: gpui_kit::base::input::InputContent,
+    pub attachments: Vec<PathBuf>,
+    pub earlier: Vec<(String, String)>,
 }
 
 /// A question an agent put to the person, as the core's `questions` call lists it.
@@ -1052,6 +1065,9 @@ impl Chat {
         queue: bool,
         open: &[&Question],
     ) -> Option<Ask> {
+        if let Some(composing) = self.composer.as_mut() {
+            composing.refusal = None;
+        }
         self.recalled = None;
         if let Some(id) = self.writing.take() {
             return Some(Ask::Call {
@@ -2097,6 +2113,7 @@ fn composer(
     )
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
+        .refusal(composing.refusal.clone())
         .attachments(
             tiles,
             on_add,
