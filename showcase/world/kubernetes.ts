@@ -556,6 +556,205 @@ function podsFor(params: Params) {
   return [...found].sort((a, b) => rank(a.status) - rank(b.status));
 }
 
+const GIB = 1024 ** 3;
+
+const nodeOf = (name: string, index: number, patch: Params = {}) => ({
+  name,
+  roles: [],
+  status: "Ready",
+  cordoned: false,
+  pressure: [] as string[],
+  reason: null,
+  version: "v1.37.2-gke.1100",
+  os: "Container-Optimized OS from Google",
+  arch: "amd64",
+  runtime: "containerd://2.1.4",
+  internalIp: `10.132.0.${11 + index}`,
+  cpuMillis: 3920,
+  memoryBytes: Math.round(13.4 * GIB),
+  maxPods: 110,
+  cpuUsedMillis: [1840, 2310, 960, 3720][index] ?? 900,
+  memoryUsedBytes: Math.round([7.1, 9.8, 4.2, 12.6][index] * GIB),
+  taints: [] as string[],
+  created: ago(60 * 24 * (40 - index * 7)),
+  ...patch,
+});
+
+const NODE_LIST = [
+  nodeOf(NODES[0], 0),
+  nodeOf(NODES[1], 1),
+  nodeOf(NODES[2], 2, { cordoned: true }),
+  nodeOf(NODES[3], 3, {
+    pressure: ["MemoryPressure"],
+    taints: ["dedicated=batch:NoSchedule"],
+  }),
+];
+
+const revision = (
+  number: number,
+  image: string,
+  minutes: number,
+  patch: Params = {},
+) => ({
+  revision: number,
+  name: `checkout-api-${number}`,
+  current: false,
+  changeCause: null,
+  images: [`europe-docker.pkg.dev/acme/shop/checkout-api:${image}`],
+  restart: false,
+  created: ago(minutes),
+  pods: 0,
+  ...patch,
+});
+
+const HISTORY = {
+  kind: "Deployment",
+  name: "checkout-api",
+  paused: false,
+  applied: true,
+  current: 7,
+  revisions: [
+    revision(7, "4.13.0", 6, {
+      current: true,
+      changeCause: "4.13.0: retry captures on a 409 from payments",
+      pods: 3,
+    }),
+    revision(6, "4.12.0", 60 * 26, { restart: true }),
+    revision(5, "4.12.0", 60 * 24 * 3, {
+      changeCause: "4.12.0: idempotency keys on every capture",
+    }),
+    revision(4, "4.11.2", 60 * 24 * 9, {
+      changeCause: "4.11.2: hotfix for the currency rounding",
+    }),
+    revision(3, "4.11.0", 60 * 24 * 14),
+  ],
+};
+
+const RELEASES = [
+  {
+    name: "ingress-nginx",
+    namespace: "ingress",
+    revision: 12,
+    updated: ago(60 * 24 * 5),
+    status: "deployed",
+    chart: "ingress-nginx",
+    chartVersion: "4.11.3",
+    appVersion: "1.11.3",
+  },
+  {
+    name: "storefront",
+    namespace: "shop",
+    revision: 3,
+    updated: ago(9),
+    status: "failed",
+    chart: "storefront",
+    chartVersion: "2.4.0",
+    appVersion: "4.13.0",
+  },
+  {
+    name: "redis",
+    namespace: "shop",
+    revision: 4,
+    updated: ago(60 * 24 * 12),
+    status: "deployed",
+    chart: "redis",
+    chartVersion: "20.1.4",
+    appVersion: "7.4.1",
+  },
+  {
+    name: "kube-prometheus-stack",
+    namespace: "monitoring",
+    revision: 18,
+    updated: ago(60 * 24 * 2),
+    status: "deployed",
+    chart: "kube-prometheus-stack",
+    chartVersion: "65.1.0",
+    appVersion: "v0.77.1",
+  },
+];
+
+const STOREFRONT_HISTORY = [
+  {
+    revision: 3,
+    updated: ago(9),
+    status: "failed",
+    chart: "storefront",
+    chartVersion: "2.4.0",
+    appVersion: "4.13.0",
+    description:
+      'Upgrade "storefront" failed: resource Deployment/shop/storefront not ready. status: InProgress, message: 1 of 3 updated replicas are available\ncontext deadline exceeded',
+  },
+  {
+    revision: 2,
+    updated: ago(60 * 24 * 3),
+    status: "deployed",
+    chart: "storefront",
+    chartVersion: "2.3.1",
+    appVersion: "4.12.0",
+    description: "Upgrade complete",
+  },
+  {
+    revision: 1,
+    updated: ago(60 * 24 * 30),
+    status: "superseded",
+    chart: "storefront",
+    chartVersion: "2.3.0",
+    appVersion: "4.11.0",
+    description: "Install complete",
+  },
+];
+
+const YAML = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "7"
+    kubernetes.io/change-cause: "4.13.0: retry captures on a 409 from payments"
+  labels:
+    app: checkout-api
+  name: checkout-api
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: checkout-api
+  strategy:
+    rollingUpdate:
+      maxSurge: "25%"
+      maxUnavailable: "25%"
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      containers:
+      - env:
+        - name: PAYMENTS_URL
+          value: "(hidden)"
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: stripe
+              name: checkout-secrets
+        image: europe-docker.pkg.dev/acme/shop/checkout-api:4.13.0
+        name: checkout-api
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+`;
+
 export const KUBERNETES: Record<string, (params: Params) => unknown> = {
   status: () => ({
     ready: true,
@@ -582,6 +781,38 @@ export const KUBERNETES: Record<string, (params: Params) => unknown> = {
     configMaps: inScope(CONFIG.configMaps, params),
     secrets: inScope(CONFIG.secrets, params),
   }),
+  nodes: () => NODE_LIST,
+  cordon: (params) => ({
+    message: `node/${String(params.name)} ${params.cordon ? "cordoned" : "uncordoned"}`,
+  }),
+  history: (params) => ({ ...HISTORY, name: String(params.name) }),
+  helmReleases: (params) =>
+    params.allNamespaces || !params.namespace
+      ? RELEASES
+      : RELEASES.filter((release) => release.namespace === params.namespace),
+  helmRelease: (params) => ({
+    history:
+      params.name === "storefront"
+        ? STOREFRONT_HISTORY
+        : [{ ...STOREFRONT_HISTORY[1], description: "Upgrade complete" }],
+    made: [
+      { kind: "ServiceAccount", name: String(params.name), namespace: null },
+      {
+        kind: "ConfigMap",
+        name: `${String(params.name)}-config`,
+        namespace: null,
+      },
+      { kind: "Service", name: String(params.name), namespace: null },
+      { kind: "Deployment", name: String(params.name), namespace: null },
+      {
+        kind: "HorizontalPodAutoscaler",
+        name: String(params.name),
+        namespace: null,
+      },
+    ],
+  }),
+  helmRollback: () => ({ message: "Rollback was a success! Happy Helming!" }),
+  yaml: () => YAML,
   act: (params) => ({
     message: `${String(params.kind ?? "deployment").toLowerCase()}.apps/${String(params.name)} ${params.action === "scale" ? "scaled" : "restarted"}`,
   }),
