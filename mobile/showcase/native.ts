@@ -49,6 +49,31 @@ type Listener = {
 
 const projectPath = (id: string) => PROJECTS.find((project) => project.id === id)?.path ?? '/';
 
+/** The words a core shows for each group. */
+const GROUP_LABELS = { blocked: 'Needs input', working: 'Working', done: 'Done', idle: 'Idle' } as const;
+
+/** How the core shows each demo chat, in the order it lists them. */
+function shown() {
+  return CHATS.map((chat) => {
+    const asks = chat.asking || QUESTIONS.some((question) => question.agentId === chat.agentId && question.blocked);
+    const group = asks ? 'blocked' : chat.running ? 'working' : 'idle';
+    return {
+      agentId: chat.agentId,
+      cli: chat.provider,
+      title: chat.title,
+      status: group,
+      group,
+      label: GROUP_LABELS[group],
+      unread: false,
+      subagents: 0,
+      tasks: 0,
+      busy: group !== 'idle',
+      background: false,
+      activeAt: Date.now(),
+    };
+  }).sort((a, b) => Object.keys(GROUP_LABELS).indexOf(a.group) - Object.keys(GROUP_LABELS).indexOf(b.group));
+}
+
 /** The host's inbox as its core would rank the demo world. */
 function inbox() {
   const by = (chat: (typeof CHATS)[number]) => ({
@@ -114,7 +139,7 @@ function inbox() {
     away: false,
     agentMessages: {},
     remoteAgents: [],
-    agents: [],
+    agents: shown(),
   };
 }
 
