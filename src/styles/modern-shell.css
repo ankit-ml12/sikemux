@@ -62,9 +62,11 @@ textarea:focus,
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
-/* Its chips centre on the line macOS puts the window buttons on, 23px down, with as much room under them as over them. */
+/* Its chips centre on the line macOS puts the window buttons on, 23px down, and the bar ends at their foot. */
 .top-bar {
-    height: 46px;
+    box-sizing: border-box;
+    height: 35px;
+    padding-top: 11px;
 }
 
 .tb-right {
@@ -1356,11 +1358,10 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
 }
 
 /* ---- Top bar -------------------------------------------------------------
- * The bar shares the shell's ground, and a hairline sets it apart from the tab
- * row under it.
+ * The bar shares the shell's ground, with no rule between it and the tab row.
  */
 .top-bar {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 0;
     background: transparent;
 }
 
