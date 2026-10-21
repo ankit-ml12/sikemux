@@ -197,6 +197,9 @@ pub(crate) struct Shown {
     /// It still has subagents or shells running.
     pub background: bool,
     pub active_at: Option<u64>,
+    /// The face it wears, as the workspace's agent does; none while it shows
+    /// its CLI's logo.
+    pub face: Option<crate::protocol::AgentFace>,
 }
 
 impl Shown {
@@ -220,6 +223,7 @@ impl Shown {
             busy: matches!(group, AgentGroup::Blocked | AgentGroup::Working),
             background: false,
             active_at: None,
+            face: None,
         }
     }
 
@@ -806,7 +810,11 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
-    let listed = shown(core, chats, sessions);
+    let mut listed = shown(core, chats, sessions);
+    let mut faces = core.agent_faces();
+    for agent in &mut listed {
+        agent.face = faces.remove(&agent.agent_id);
+    }
     let mut by_project: BTreeMap<String, Vec<&Shown>> = BTreeMap::new();
     let mut project_of = core.workspaces.agent_projects();
     for agent in &listed {

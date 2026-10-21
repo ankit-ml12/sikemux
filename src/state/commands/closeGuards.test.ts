@@ -49,6 +49,7 @@ describe("closing what holds agents", () => {
                     busy: true,
                     background: false,
                     activeAt: null,
+                    face: null,
                 },
             ],
             projects: {},

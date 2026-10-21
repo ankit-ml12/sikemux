@@ -54,6 +54,7 @@ function shown(agentId: string, group: AgentGroup): Record<string, AgentShown> {
             busy,
             background: false,
             activeAt: null,
+            face: null,
         },
     };
 }

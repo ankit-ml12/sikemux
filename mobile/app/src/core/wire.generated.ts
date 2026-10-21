@@ -569,6 +569,11 @@ export interface AgentShown {
   /** It still has subagents or shells running. */
   background: boolean;
   activeAt?: number;
+  /**
+   * The face it wears, as the workspace's agent does; none while it shows
+   * its CLI's logo.
+   */
+  face?: AgentFace;
 }
 
 /**
