@@ -77,22 +77,6 @@ pub fn kbd(keys: &'static str) -> Div {
         .child(keys)
 }
 
-/// GPUI has no letter-spacing, so the spaced capitals of a group's header are
-/// laid out a letter at a time.
-pub fn tracked(label: &str, size: f32, spacing: f32, color: Rgba) -> Div {
-    div()
-        .flex()
-        .flex_none()
-        .text_size(px(size))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(color)
-        .children(label.chars().map(move |letter| {
-            div()
-                .mr(px(size * spacing))
-                .child(SharedString::from(letter.to_string()))
-        }))
-}
-
 /// A group's header: its spaced capitals, a rule and what it can do.
 pub fn group_header(label: &str, actions: Option<Div>) -> Div {
     div()
@@ -104,7 +88,15 @@ pub fn group_header(label: &str, actions: Option<Div>) -> Div {
         .pb(px(6.))
         .pl(px(8.))
         .line_height(px(11. * 1.45))
-        .child(tracked(&label.to_uppercase(), 11., 0.2, theme::tertiary()))
+        .child(
+            div()
+                .flex_none()
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .letter_spacing(0.2)
+                .text_color(theme::tertiary())
+                .child(label.to_uppercase()),
+        )
         .child(div().flex_1().h(px(1.)).bg(theme::border()))
         .children(actions)
 }

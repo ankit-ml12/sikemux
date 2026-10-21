@@ -21,7 +21,8 @@ if (!existsSync(join(fork, ".git"))) {
 }
 git("fetch", "--quiet", "origin", REV);
 git("checkout", "--quiet", "--force", REV);
-// What GPUI Kit needs of the fork to build against it as it does against gpui-pre.
+// What we add to the fork until sonorahq takes it: PaintQuad kept as upstream has
+// it, so GPUI Kit builds, and letter spacing.
 git("apply", join(dirname(fileURLToPath(import.meta.url)), "fork.patch"));
 
 // Zed's `util` is unpublished and would take `gpui_util`'s name.
