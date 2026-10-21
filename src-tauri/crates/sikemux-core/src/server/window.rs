@@ -71,14 +71,6 @@ impl Window {
         self.next_call.fetch_max(mark, Ordering::AcqRel);
     }
 
-    pub(crate) fn is_window(&self, client: ClientId) -> bool {
-        self.inner
-            .locked()
-            .client
-            .as_ref()
-            .is_some_and(|window| window.id == client)
-    }
-
     /// The connection the window speaks through, while one is open.
     pub(crate) fn client_id(&self) -> Option<ClientId> {
         self.inner.locked().client.as_ref().map(|client| client.id)

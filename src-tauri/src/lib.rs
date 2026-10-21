@@ -306,7 +306,6 @@ pub fn run() {
             grammars::grammar_load,
             state::state_save,
             agents::executable::available_agents,
-            fs::files_call,
             fs::keep_dropped_paths,
             fs::read_text_file_limited,
             fs::open_in_default_app,

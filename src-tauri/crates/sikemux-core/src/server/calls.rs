@@ -275,12 +275,6 @@ calls! { core, client, params;
     "edits": Watch, any_program => answer(edits(&core, parse(params)?).await?),
     "changeOwners": Watch, any_program => answer(change_owners(&core, parse(params)?).await?),
     "commitStaged": Person => answer(commit_staged(&core, parse(params)?).await?),
-    "personSaved": Local => {
-        only_window(&core, client)?;
-        let params: PersonSavedParams = parse(params)?;
-        core.edits.saved(params.path);
-        answer(())
-    },
     "commitOwners": Watch, any_program => answer(who_wrote::call(&core, parse(params)?).await?),
     "inbox": Watch, any_program => answer(inbox(&core).await?),
     "digest": Watch, any_program => answer(digest(&core, parse(params)?).await?),
@@ -376,14 +370,6 @@ async fn not_an_agent(client: &ClientConn) -> CoreResult<()> {
             Err("an agent cannot sign the person in to a service; the person runs this".into())
         }
         None => Ok(()),
-    }
-}
-
-fn only_window(core: &Core, client: &ClientConn) -> CoreResult<()> {
-    if core.window.is_window(client.id) {
-        Ok(())
-    } else {
-        Err("only Sikemux's window may say the person saved a file".into())
     }
 }
 
@@ -678,11 +664,6 @@ async fn agent_names(core: &Arc<Core>) -> CoreResult<Vec<AgentName>> {
         Ok(core.names.of(&agents))
     })
     .await
-}
-
-#[derive(Deserialize)]
-struct PersonSavedParams {
-    path: PathBuf,
 }
 
 #[derive(Deserialize)]

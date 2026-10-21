@@ -53,9 +53,8 @@ interface Piece {
 const SAVE_PIECE = 512 * 1024;
 const READ_TRIES = 3;
 
-/** This host's disk is read in the app itself; another host's through its core. */
 function call<T>(host: FilesHost, method: string, params: unknown): Promise<T> {
-    return host === undefined ? invoke<T>("files_call", { method, params }) : coreCall<T>(method, params, host);
+    return coreCall<T>(method, params, host);
 }
 
 async function readDirs(host: FilesHost, dirs: readonly string[]): Promise<DirListing[]> {
@@ -102,8 +101,7 @@ async function readFileVersioned(host: FilesHost, path: string): Promise<FileSna
     }
 }
 
-function pieces(host: FilesHost, content: string): string[] {
-    if (host === undefined) return [content];
+function pieces(content: string): string[] {
     const out: string[] = [];
     let at = 0;
     do {
@@ -118,7 +116,7 @@ function pieces(host: FilesHost, content: string): string[] {
 
 /** Saves over the file at `version`, as a new file with `new`, or over whatever is there with neither. */
 async function write(host: FilesHost, path: string, content: string, options: { version?: string; new?: boolean }): Promise<FileWriteResult> {
-    const parts = pieces(host, content);
+    const parts = pieces(content);
     let upload: string | null = null;
     for (let index = 0; ; index++) {
         const more = index < parts.length - 1;

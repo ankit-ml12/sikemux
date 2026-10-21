@@ -3,49 +3,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose, Engine as _};
-use serde_json::Value;
 use tauri::async_runtime::spawn_blocking;
 
 use crate::error::{AppError, AppResult};
-
-/// The file tree's and the editor's methods on this host's own disk: the same
-/// `files.*` the core serves other devices, run here so nothing waits on the
-/// core's connection, and a whole file read at once.
-#[tauri::command]
-pub async fn files_call(
-    manager: tauri::State<'_, crate::pty::PtyManager>,
-    method: String,
-    params: Value,
-) -> AppResult<Value> {
-    use sikemux_core::files;
-    let path = params
-        .get("path")
-        .and_then(Value::as_str)
-        .map(PathBuf::from);
-    let (method, answer) = spawn_blocking(move || {
-        let answer = files::run(&method, params, files::MAX_TEXT_BYTES);
-        (method, answer)
-    })
-    .await
-    .map_err(|e| AppError::Other(format!("files_call join: {e}")))?;
-    let answer = answer.map_err(|error| crate::pty::core_message(error.to_string()))?;
-    if let Some(path) = path.filter(|_| files::saved(&method, &answer)) {
-        person_wrote(&manager, path);
-    }
-    Ok(answer)
-}
-
-/// Tells the core the person wrote `path`, so the change is theirs even
-/// while an agent is at work in the same checkout.
-fn person_wrote(manager: &crate::pty::PtyManager, path: PathBuf) {
-    let Some(client) = manager.current_client() else {
-        return;
-    };
-    tauri::async_runtime::spawn(async move {
-        let params = serde_json::json!({ "path": path });
-        let _ = client.call("personSaved", params).await;
-    });
-}
 
 /// A screenshot dragged straight from the macOS thumbnail lives in a folder
 /// only the app it was dropped on may open, and only until the thumbnail goes.

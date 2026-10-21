@@ -77,7 +77,6 @@
     "allow-grammar-load",
     "allow-state-save",
     "allow-available-agents",
-    "allow-files-call",
     "allow-keep-dropped-paths",
     "allow-read-text-file-limited",
     "allow-open-in-default-app",

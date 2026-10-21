@@ -60,7 +60,6 @@ export const IPC_COMMANDS = [
     "grammar_load",
     "state_save",
     "available_agents",
-    "files_call",
     "keep_dropped_paths",
     "read_text_file_limited",
     "open_in_default_app",
