@@ -21,7 +21,7 @@ use crate::ui::{self, IconButton};
 use crate::workbench::Workbench;
 
 /// One thing in a folder, as the core listed it: folders first, then by name.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Entry {
     pub name: String,
     pub dir: bool,
@@ -42,8 +42,11 @@ pub struct Row {
 pub struct FileTree {
     pub root: Option<PathBuf>,
     listed: HashMap<PathBuf, Vec<Entry>>,
-    /// How many entries the core said a folder holds, while its pages are still coming.
-    totals: HashMap<PathBuf, usize>,
+    /// The pages of each listing on its way, shown only once the whole folder is in.
+    incoming: HashMap<PathBuf, Vec<Entry>>,
+    /// The folders being listed, and those that changed meanwhile and are listed once more after.
+    asked: HashSet<PathBuf>,
+    again: HashSet<PathBuf>,
     pub expanded: HashSet<PathBuf>,
     pub selected_dir: Option<PathBuf>,
     /// What git says of each changed file and the folders holding it, by absolute path.
@@ -63,8 +66,32 @@ impl FileTree {
             ..FileTree::default()
         };
         if let Some(root) = root {
-            list(asks, &[root], None);
+            self.relist(vec![root], asks);
         }
+    }
+
+    /// Lists every shown folder again from scratch, for when answers on their way were lost.
+    pub fn relist_shown(&mut self, asks: &UnboundedSender<Ask>) {
+        self.asked.clear();
+        self.again.clear();
+        self.incoming.clear();
+        self.changed(None, asks);
+    }
+
+    /// Asks the core to list `dirs`; one already being listed is listed once more when it is in.
+    fn relist(&mut self, dirs: Vec<PathBuf>, asks: &UnboundedSender<Ask>) {
+        let fresh: Vec<PathBuf> = dirs
+            .into_iter()
+            .filter(|dir| {
+                if self.asked.contains(dir) {
+                    self.again.insert(dir.clone());
+                    return false;
+                }
+                self.asked.insert(dir.clone());
+                true
+            })
+            .collect();
+        list(asks, &fresh, None);
     }
 
     /// Takes in a `files.list` answer, asking for the next page of any folder it left short.
@@ -74,6 +101,9 @@ impl FileTree {
                 continue;
             };
             if folder["error"].is_string() {
+                self.asked.remove(&dir);
+                self.again.remove(&dir);
+                self.incoming.remove(&dir);
                 continue;
             }
             let entries: Vec<Entry> = folder["entries"]
@@ -89,19 +119,21 @@ impl FileTree {
                 })
                 .collect();
             let total = folder["total"].as_u64().unwrap_or(0) as usize;
-            let paging = self.totals.contains_key(&dir);
-            self.rows.take();
-            let list = self.listed.entry(dir.clone()).or_default();
-            if !paging {
-                list.clear();
-            }
             let got = entries.len();
-            list.extend(entries);
-            if got > 0 && list.len() < total {
-                self.totals.insert(dir.clone(), total);
-                list_from(asks, &dir, list.len());
-            } else {
-                self.totals.remove(&dir);
+            let incoming = self.incoming.entry(dir.clone()).or_default();
+            incoming.extend(entries);
+            if got > 0 && incoming.len() < total {
+                list_from(asks, &dir, incoming.len());
+                continue;
+            }
+            let whole = self.incoming.remove(&dir).unwrap_or_default();
+            if self.listed.get(&dir) != Some(&whole) {
+                self.listed.insert(dir.clone(), whole);
+                self.rows.take();
+            }
+            self.asked.remove(&dir);
+            if self.again.remove(&dir) {
+                self.relist(vec![dir], asks);
             }
         }
     }
@@ -135,7 +167,7 @@ impl FileTree {
             }
         };
         if !stale.is_empty() {
-            list(asks, &stale, None);
+            self.relist(stale, asks);
         }
     }
 
@@ -145,7 +177,7 @@ impl FileTree {
         if !self.expanded.remove(dir) {
             self.expanded.insert(dir.to_owned());
             if !self.listed.contains_key(dir) {
-                list(asks, &[dir.to_owned()], None);
+                self.relist(vec![dir.to_owned()], asks);
             }
         }
     }

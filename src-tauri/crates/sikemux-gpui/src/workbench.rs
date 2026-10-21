@@ -235,6 +235,7 @@ impl Workbench {
                     });
                 }
                 self.terminals.reattach(&self.asks);
+                self.files.relist_shown(&self.asks);
             }
             Update::View(view) => {
                 self.view = Some(*view);
@@ -311,6 +312,9 @@ impl Workbench {
                 eprintln!("sikemux: the core refused {key}: {error}");
                 if key.starts_with("sign-in") {
                     self.signing_in = false;
+                }
+                if key == "files.list" {
+                    self.files.relist_shown(&self.asks);
                 }
             }
             Update::Read("files.list", value) => {
