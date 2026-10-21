@@ -25,7 +25,7 @@ const APP_DATA_DIR: &str = if cfg!(debug_assertions) {
     "com.nodelike.sikemux"
 };
 
-fn app_data_dir(data_dir: Option<&Path>) -> Option<&Path> {
+pub(super) fn app_data_dir(data_dir: Option<&Path>) -> Option<&Path> {
     data_dir.filter(|dir| dir.file_name() == Some(APP_DATA_DIR.as_ref()))
 }
 

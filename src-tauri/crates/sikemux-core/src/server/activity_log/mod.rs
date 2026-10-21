@@ -165,8 +165,8 @@ fn take_over_app_database(path: &Path) {
 impl ActivityLog {
     pub(crate) fn new(data_dir: Option<&Path>) -> Self {
         let path = data_dir.map(|dir| dir.join(DATABASE));
-        if let Some(path) = &path {
-            take_over_app_database(path);
+        if let Some(dir) = super::from_app::app_data_dir(data_dir) {
+            take_over_app_database(&dir.join(DATABASE));
         }
         Self {
             path,
