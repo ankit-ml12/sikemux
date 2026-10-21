@@ -445,6 +445,8 @@ export interface RecentInfo {
   activeAt: number;
   /** The agent in the workspace that holds the chat, open or asleep. */
   agentId?: string;
+  /** The person pinned it, so it shows above the rest however long ago it ran. */
+  pinned?: boolean;
 }
 
 export interface Inbox {

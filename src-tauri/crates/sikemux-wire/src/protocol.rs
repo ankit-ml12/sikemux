@@ -480,6 +480,9 @@ pub struct RecentInfo {
     /// The agent in the workspace that holds the chat, open or asleep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
+    /// The person pinned it, so it shows above the rest however long ago it ran.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// Something read elsewhere and handed to the agent whole, such as an issue.

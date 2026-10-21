@@ -1156,9 +1156,34 @@ impl Workspaces {
                         .map(|kept| kept.agent.id.clone())
                 })
         };
+        let pinned = |chat: &Recent| {
+            saved
+                .pinned
+                .iter()
+                .any(|pin| pin.provider == chat.provider && pin.session_id == chat.session_id)
+        };
+        let aged_out: Vec<Recent> = saved
+            .pinned
+            .iter()
+            .filter(|pin| {
+                !published
+                    .recent
+                    .iter()
+                    .any(|chat| chat.provider == pin.provider && chat.session_id == pin.session_id)
+            })
+            .map(|pin| Recent {
+                launcher: String::new(),
+                provider: pin.provider.clone(),
+                session_id: pin.session_id.clone(),
+                title: pin.title.clone(),
+                cwd: pin.project.clone(),
+                active_at: 0,
+            })
+            .collect();
         published
             .recent
             .iter()
+            .chain(&aged_out)
             .filter_map(|chat| {
                 let project = saved
                     .projects
@@ -1172,6 +1197,7 @@ impl Workspaces {
                     cwd: chat.cwd.clone(),
                     active_at: chat.active_at,
                     agent_id: holder(chat),
+                    pinned: pinned(chat),
                 })
             })
             .collect()
@@ -1236,10 +1262,22 @@ impl Workspaces {
     ) -> CoreResult<ChatChoice> {
         let published = self.published.locked();
         let saved = &published.saved;
+        let pinned = saved.pinned.iter().find_map(|pin| {
+            let chat = Recent {
+                launcher: String::new(),
+                provider: pin.provider.clone(),
+                session_id: pin.session_id.clone(),
+                title: pin.title.clone(),
+                cwd: pin.project.clone(),
+                active_at: 0,
+            };
+            (recent_id(&chat) == choice.recent).then_some(chat)
+        });
         let chat = published
             .recent
             .iter()
             .find(|chat| recent_id(chat) == choice.recent)
+            .or(pinned.as_ref())
             .ok_or_else(|| {
                 CoreError::from("that chat is no longer among the recent ones on this host")
             })?;
@@ -1251,11 +1289,27 @@ impl Workspaces {
             .iter()
             .find(|project| project.path == chat.cwd)
             .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
+        // A pinned chat that left the recent ones keeps no launcher, so it
+        // starts on the account the person chose for its agent.
+        let chosen = saved
+            .accounts
+            .as_ref()
+            .map(|book| format!("{}:{}", chat.provider, book.chosen(&chat.provider)));
         let launcher = published
             .launchers
             .iter()
+            .filter(|launcher| launcher.agent.provider == chat.provider)
             .find(|launcher| {
-                launcher.id == chat.launcher && launcher.agent.provider == chat.provider
+                launcher.id == chat.launcher
+                    || (chat.launcher.is_empty() && Some(&launcher.id) == chosen.as_ref())
+            })
+            .or_else(|| {
+                chat.launcher.is_empty().then(|| {
+                    published
+                        .launchers
+                        .iter()
+                        .find(|launcher| launcher.agent.provider == chat.provider)
+                })?
             })
             .ok_or_else(|| {
                 CoreError::from("Sikemux on this host can no longer start that chat's agent")
