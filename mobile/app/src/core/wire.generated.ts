@@ -56,6 +56,11 @@ export interface ProjectInfo {
    * it in; clients only read it.
    */
   git?: ProjectGit;
+  /**
+   * The launcher a new agent here starts with: that of the agent last
+   * started here, else the first offered. The core fills it in.
+   */
+  launcher?: string;
 }
 
 /** A repository or account picked for a project on one code host. */

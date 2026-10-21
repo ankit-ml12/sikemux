@@ -881,6 +881,10 @@ pub struct ProjectInfo {
     /// it in; clients only read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<ProjectGit>,
+    /// The launcher a new agent here starts with: that of the agent last
+    /// started here, else the first offered. The core fills it in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launcher: Option<String>,
 }
 
 /// A project's branch as its chip shows it.

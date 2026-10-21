@@ -509,6 +509,7 @@ impl Workspaces {
                 code_hosts: Default::default(),
                 identity: None,
                 git: None,
+                launcher: None,
             };
             check_project(&project, saved)?;
             saved.projects.push(project.clone());
@@ -1402,8 +1403,36 @@ impl Workspaces {
     pub(crate) fn view(&self) -> Workspace {
         let published = self.published.locked();
         let saved = &published.saved;
+        let offered = |id: &String| {
+            published
+                .launchers
+                .iter()
+                .any(|launcher| &launcher.id == id)
+        };
+        let launcher = |project: &ProjectInfo| {
+            saved
+                .agents
+                .iter()
+                .filter(|kept| kept.agent.project == project.id)
+                .max_by_key(|kept| kept.agent.created_at)
+                .map(|kept| launcher_of(&kept.agent))
+                .filter(offered)
+                .or_else(|| {
+                    published
+                        .launchers
+                        .first()
+                        .map(|launcher| launcher.id.clone())
+                })
+        };
         Workspace {
-            projects: saved.projects.clone(),
+            projects: saved
+                .projects
+                .iter()
+                .map(|project| ProjectInfo {
+                    launcher: launcher(project),
+                    ..project.clone()
+                })
+                .collect(),
             spaces: saved.spaces.clone(),
             agents: saved.agents.iter().map(|kept| kept.agent.clone()).collect(),
             pinned: saved.pinned.clone(),
@@ -1989,6 +2018,7 @@ mod tests {
             code_hosts: Default::default(),
             identity: None,
             git: None,
+            launcher: None,
         }
     }
 
