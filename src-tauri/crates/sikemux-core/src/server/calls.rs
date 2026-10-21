@@ -320,6 +320,7 @@ calls! { core, client, params;
     },
     "plugin": Person => answer(plugins::window_call(&core, parse(params)?).await),
     "pluginManifests": Person => answer(plugins::manifests()),
+    "plugins": Watch => answer(plugins::listed().await),
     "pluginSetDisabled": Person => {
         plugins::set_disabled(&core, parse(params)?);
         answer(())

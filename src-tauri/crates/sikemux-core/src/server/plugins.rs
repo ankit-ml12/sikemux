@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
+use super::changed::Topic;
 use super::{Core, CoreError, CoreResult};
 
 /// How a plugin call failed, as the window shows it.
@@ -137,6 +138,7 @@ pub(crate) async fn window_call(core: &Core, call: WindowCall) -> Outcome {
         Err(failure) => Err(failure),
     };
     tell_agents_if_theirs(core, &call.plugin);
+    sign_in_moved(core, &call.method);
     match outcome {
         Ok(value) => Outcome::Value(value),
         Err(failure) => Outcome::Failed(failure),
@@ -168,6 +170,7 @@ pub(crate) fn set_disabled(core: &Core, disabled: Disabled) {
     if let Some(plugins) = PLUGINS.get() {
         plugins.set_disabled(disabled.ids);
         core.harness.plugins_changed();
+        core.changes.changed(Topic::Plugins, None, None);
         core.view_changed();
     }
 }
@@ -203,6 +206,61 @@ pub(crate) fn sign_in_callback(landed: Landed) -> CoreResult<()> {
         .map_err(|failure| CoreError::from(failure.message))?
         .relay_sign_in(&landed.target)
         .map_err(CoreError::from)
+}
+
+/// A plugin as the rail lists it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Listed {
+    id: String,
+    name: String,
+    enabled: bool,
+    /// Whether its sign-in works; none for a plugin with no sign-in, or one
+    /// switched off.
+    signed_in: Option<bool>,
+}
+
+/// Every plugin built in, each with whether its sign-in works, asked of its
+/// service now.
+pub(crate) async fn listed() -> Vec<Listed> {
+    let disabled = disabled();
+    let asked = manifests().into_iter().filter_map(|manifest| {
+        let id = manifest["id"].as_str()?.to_owned();
+        let name = manifest["name"].as_str().unwrap_or(&id).to_owned();
+        let enabled = !disabled.contains(&id);
+        Some(async move {
+            let signed_in = if enabled {
+                match call(&id, "status", Value::Null).await {
+                    Ok(status) => Some(
+                        status["configured"] == Value::Bool(true)
+                            && status["authFailed"] != Value::Bool(true),
+                    ),
+                    Err(failure) if failure.category == "unknown-method" => None,
+                    Err(_) => Some(false),
+                }
+            } else {
+                None
+            };
+            Listed {
+                id,
+                name,
+                enabled,
+                signed_in,
+            }
+        })
+    });
+    futures_util::future::join_all(asked).await
+}
+
+/// A plugin's call may have signed it in or out, or picked another account,
+/// so clients read the plugins again.
+pub(crate) fn sign_in_moved(core: &Core, method: &str) {
+    if method.starts_with("signIn")
+        || method.starts_with("signOut")
+        || method == "setDefaultAccount"
+    {
+        core.changes.changed(Topic::Plugins, None, None);
+    }
 }
 
 /// The plugins the person switched off, which every client shows.

@@ -363,6 +363,7 @@ async fn serve(core: Arc<Core>, stream: TcpStream, secret: &str, port: u16) {
                 .await;
             }
             plugins::tell_agents_if_theirs(&core, &pending.plugin);
+            plugins::sign_in_moved(&core, &pending.method);
             return;
         }
     };

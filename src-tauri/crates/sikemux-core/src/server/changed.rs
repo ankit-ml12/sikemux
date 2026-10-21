@@ -39,6 +39,8 @@ pub(crate) enum Topic {
     Usage,
     /// The SSH config's hosts, or how a terminal reaches one.
     Ssh,
+    /// Which plugins are on, and whether each is signed in.
+    Plugins,
 }
 
 /// Paths by topic and project; none means anything may have changed.
