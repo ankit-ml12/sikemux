@@ -294,7 +294,9 @@ pub fn pane(
                         &path,
                         &document.state,
                         &document.gutter,
-                        gpui_kit::component::input::RopeExt::lines_len(document.state.read(cx).text()),
+                        gpui_kit::component::input::RopeExt::lines_len(
+                            document.state.read(cx).text(),
+                        ),
                     ))
                     .child(blame::overlay(
                         &document.state,
@@ -653,17 +655,13 @@ fn notice_bar(
             .into()
         }
     };
-    let button =
-        |id: &'static str,
-         label: &'static str,
-         variant,
-         run: Rc<Run>| {
-            let this = this.clone();
-            ui::Button::new(id, label, variant).on_click(move |_, window, cx| {
-                let run = run.clone();
-                this.update(cx, |bench, cx| run(bench, window, cx))
-            })
-        };
+    let button = |id: &'static str, label: &'static str, variant, run: Rc<Run>| {
+        let this = this.clone();
+        ui::Button::new(id, label, variant).on_click(move |_, window, cx| {
+            let run = run.clone();
+            this.update(cx, |bench, cx| run(bench, window, cx))
+        })
+    };
     let reload = {
         let path = path.to_owned();
         button(

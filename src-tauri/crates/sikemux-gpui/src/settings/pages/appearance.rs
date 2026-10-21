@@ -8,8 +8,8 @@ use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, AppContext, Context, Entity, InteractiveElement,
-    ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};

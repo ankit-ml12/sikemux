@@ -399,9 +399,8 @@ fn price_form(
                     )
                 })
                 .child(
-                    ui::Button::new("price-cancel", "Cancel", ui::Variant::Outline).on_click(
-                        move |_, _, cx| cancel.update(cx, close_form),
-                    ),
+                    ui::Button::new("price-cancel", "Cancel", ui::Variant::Outline)
+                        .on_click(move |_, _, cx| cancel.update(cx, close_form)),
                 )
                 .child(
                     ui::Button::new("price-save", "Save", ui::Variant::Primary)
@@ -424,12 +423,7 @@ fn price_form(
         .into_any_element()
 }
 
-fn models(
-    summary: &Value,
-    fields: &Fields,
-    this: &Entity<Workbench>,
-    cx: &App,
-) -> AnyElement {
+fn models(summary: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let Some(models) = summary["models"].as_array() else {
         return div().into_any_element();
