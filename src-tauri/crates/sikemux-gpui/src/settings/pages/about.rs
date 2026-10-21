@@ -1,14 +1,19 @@
-//! Which releases updates come from, and whether anonymous usage is shared.
+//! Which releases updates come from and when they were last checked, and whether anonymous
+//! usage is shared.
 
-use gpui_kit::{div, AnyElement, Context, Entity, ParentElement, SharedString};
+use gpui_kit::{div, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString};
+use serde_json::json;
 use sikemux_wire::protocol::UpdateChannel;
 
+use crate::core::Ask;
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::ui;
 use crate::workbench::Workbench;
 
 pub const SECTIONS: &[&str] = &["Updates", "Privacy"];
+
+const RELEASES: &str = "https://github.com/nodelike/sikemux/releases";
 
 pub fn render(
     bench: &Workbench,
@@ -38,14 +43,66 @@ pub fn render(
             })
         })
     };
-    let updates = div()
-        .child(rows::row(
-            "Channel",
-            Some("Stable follows the latest signed release; nightly the newest build, prerelease or stable."),
-            channel,
-            cx,
-        ))
-        .child(rows::note("Checking for updates arrives with the updater.", cx));
+    let status = bench.read("update");
+    let updates: AnyElement = match status.is_some_and(|status| status["updates"] == true) {
+        true => {
+            let status = status.cloned().unwrap_or_default();
+            let busy = matches!(
+                status["state"].as_str(),
+                Some("downloading" | "installing" | "ready")
+            );
+            let checked = &status["checked"];
+            let last: SharedString = match checked["at"]
+                .as_i64()
+                .and_then(chrono::DateTime::from_timestamp_millis)
+            {
+                None => "Not checked yet this session.".into(),
+                Some(at) => {
+                    let when = at.with_timezone(&chrono::Local).format("%-I:%M:%S %p");
+                    let channel = checked["channel"].as_str().unwrap_or("stable");
+                    match checked["error"].as_str() {
+                        Some(error) => {
+                            format!("Last {channel} check failed at {when} — {error}").into()
+                        }
+                        None => format!("Checked {channel} at {when}.").into(),
+                    }
+                }
+            };
+            let check = {
+                let this = this.clone();
+                ui::Button::new("update-check", "Check now", ui::Variant::Outline)
+                    .disabled(busy)
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |bench, _| {
+                            let _ = bench.asks.send(Ask::Call {
+                                method: "updateCheck",
+                                params: json!({}),
+                            });
+                        })
+                    })
+            };
+            div()
+                .child(rows::row(
+                    "Channel",
+                    Some("Stable follows the latest signed release; nightly the newest build, prerelease or stable."),
+                    channel,
+                    cx,
+                ))
+                .child(rows::row_with(None, "Last checked", Some(last), check, cx))
+                .into_any_element()
+        }
+        false => {
+            let this = this.clone();
+            rows::row(
+                "New versions",
+                Some("This build does not update itself. Download each new release from GitHub."),
+                ui::Button::new("update-releases", "Open releases", ui::Variant::Outline)
+                    .on_click(move |_, _, cx| this.update(cx, |_, cx| cx.open_url(RELEASES))),
+                cx,
+            )
+            .into_any_element()
+        }
+    };
     let privacy = rows::row(
         "Share anonymous usage",
         Some("Once a day, sends a random install ID and a one-way hash of your account with the app version, update channel and system version. Never your files, commands or projects."),
