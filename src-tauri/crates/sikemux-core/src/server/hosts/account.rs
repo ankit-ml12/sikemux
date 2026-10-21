@@ -23,7 +23,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// How soon a pass that found one already running looks again.
 const AGAIN: Duration = Duration::from_secs(5);
 
-fn client() -> CoreResult<&'static Client> {
+pub(crate) fn client() -> CoreResult<&'static Client> {
     static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
     CLIENT
         .get_or_init(|| {

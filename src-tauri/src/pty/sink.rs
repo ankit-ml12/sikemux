@@ -173,7 +173,6 @@ impl EventSink for AppSink {
                 crate::acp::deliver(&self.app, &agent_id, seq, changes)
             }
             Event::Remote { status } => {
-                crate::account::notice_remote(&self.app, &status);
                 crate::remote::follow_remote_access(&self.app, status.enabled);
                 crate::hosts::follow_links(&self.app);
                 self.emit("remote_status_changed", status);

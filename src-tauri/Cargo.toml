@@ -71,7 +71,6 @@ futures = "0.3"
 semver = "1"
 sikemux-plugin-api = { path = "crates/sikemux-plugin-api" }
 sikemux-keychain = { path = "crates/sikemux-keychain" }
-sikemux-loopback = { path = "crates/sikemux-loopback" }
 sikemux-process = { path = "crates/sikemux-process" }
 sikemux-markdown = { path = "crates/sikemux-markdown" }
 sikemux-pty = { path = "crates/sikemux-pty" }

@@ -1904,6 +1904,9 @@ pub(crate) fn change_device(core: &Core, change: DeviceChange) -> CoreResult<Pai
 
 /// Tells the app what changed, and answers with the same status.
 pub(crate) fn announce(core: &Core) -> RemoteStatus {
+    if let Some(core) = core.arc() {
+        tokio::spawn(async move { super::account::show(&core).await });
+    }
     let status = core.remote.status();
     core.broadcast_local(&Event::Remote {
         status: status.clone(),

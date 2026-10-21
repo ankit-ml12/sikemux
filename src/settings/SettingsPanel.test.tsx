@@ -228,7 +228,7 @@ describe("SettingsPanel navigation", () => {
         const transport = new MemoryIpcTransport();
         installIpcTransportForTests(transport);
         transport.registerCoreRequest("remoteStatus", () => ({ status: new Promise(() => {}) }));
-        transport.register("account_status", () => new Promise(() => {}));
+        transport.register("core_call", () => new Promise(() => {}));
         cmd.openSettings("devices", "Your account");
         const { container } = render(<SettingsPanel />);
 

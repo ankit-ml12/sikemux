@@ -27,6 +27,7 @@ uuid = { version = "1", features = ["v4", "v7"] }
 base64 = "0.22"
 sikemux-client = { path = "../sikemux-client" }
 sikemux-keychain = { path = "../sikemux-keychain" }
+sikemux-loopback = { path = "../sikemux-loopback" }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 hashlink = "0.12"

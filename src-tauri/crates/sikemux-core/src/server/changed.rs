@@ -41,6 +41,8 @@ pub(crate) enum Topic {
     Ssh,
     /// Which plugins are on, and whether each is signed in.
     Plugins,
+    /// Who this host is signed in to Sikemux as.
+    Account,
 }
 
 /// Paths by topic and project; none means anything may have changed.

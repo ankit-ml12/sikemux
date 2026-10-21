@@ -1,22 +1,26 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_CHANGED_EVENT, type AccountStatus } from "../api/account";
+import type { AccountInfo } from "../api/generated/wire";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { initials } from "../lib/initials";
 import { useAccount } from "./account";
 import { RailAccount } from "./RailAccount";
 
 const PICTURE = "data:image/png;base64,iVBORw0KGgo=";
-const SIGNED_OUT: AccountStatus = { signedIn: false, userId: null, email: null, name: null, picture: null };
-const SIGNED_IN: AccountStatus = { signedIn: true, userId: "user_1", email: "ada@example.com", name: "Ada Lovelace", picture: null };
+const SIGNED_IN: AccountInfo = { name: "Ada Lovelace", email: "ada@example.com", pictureHash: null };
 
 let transport: MemoryIpcTransport;
+let account: AccountInfo | null;
 
-function serve(cached: AccountStatus, refreshed: AccountStatus = cached) {
-    transport.register("account_status", () => cached);
-    const refresh = vi.fn(() => refreshed);
-    transport.register("account_refresh_profile", refresh);
-    return refresh;
+/** The core's account calls, answering with `account` as it is when asked. */
+function serve(shown: AccountInfo) {
+    account = shown;
+    transport.register("core_call", (args) => {
+        const { method } = args as { method: string };
+        if (method === "account") return account;
+        if (method === "accountPicture") return { mime: "image/png", data: "iVBORw0KGgo=" };
+        throw new Error(`unexpected core call ${method}`);
+    });
 }
 
 beforeEach(() => {
@@ -42,7 +46,7 @@ describe("initials", () => {
 
 describe("RailAccount", () => {
     it("shows initials until a picture arrives, then the picture", async () => {
-        serve(SIGNED_IN, { ...SIGNED_IN, picture: PICTURE });
+        serve({ ...SIGNED_IN, pictureHash: "abc" });
         const { container } = render(<RailAccount />);
 
         await vi.waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe(PICTURE));
@@ -50,7 +54,7 @@ describe("RailAccount", () => {
     });
 
     it("falls back to initials when the picture cannot be drawn", async () => {
-        serve({ ...SIGNED_IN, picture: PICTURE });
+        serve({ ...SIGNED_IN, pictureHash: "def" });
         const { container } = render(<RailAccount />);
 
         const image = await vi.waitFor(() => {
@@ -67,7 +71,8 @@ describe("RailAccount", () => {
         render(<RailAccount />);
 
         expect(await screen.findByRole("button", { name: "Account: ada@example.com" })).toBeInTheDocument();
-        transport.emit(ACCOUNT_CHANGED_EVENT, SIGNED_OUT);
+        account = null;
+        transport.emit("core_changed", { topic: "account", project: null, paths: null });
         expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     });
 });

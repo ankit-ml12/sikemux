@@ -1,6 +1,6 @@
-//! The signed-in account's name and picture, kept on disk so the top bar can
-//! show them offline. The picture is downloaded here and handed to the window
-//! as a `data:` URL, because the window's security policy blocks remote images.
+//! The signed-in account's name and picture, kept on disk so clients can show
+//! them offline. The picture is downloaded here and handed to clients inline,
+//! since the app window's security policy blocks remote images.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -8,11 +8,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sikemux_core::accounts::protocol::AccountProfile;
 use url::Url;
 
-use sikemux_core::http::sniff;
-use sikemux_core::http::{self, fetch_image, names_private_address, public_client};
+use crate::accounts::protocol::AccountProfile;
+use crate::http::{fetch_image, names_private_address, public_client, sniff};
 
 const PROFILE_FILE: &str = "profile.json";
 const PICTURE_PREFIX: &str = "picture-";
@@ -67,23 +66,22 @@ fn picture_url(url: &str) -> Option<Url> {
         .filter(|url| url.scheme() == "https" && !names_private_address(url))
 }
 
-fn cache_key(url: &str) -> String {
+/// What names the picture cached for `url`, which changes with it.
+pub fn cache_key(url: &str) -> String {
     hex::encode(Sha256::digest(url.as_bytes()).get(..16).unwrap_or_default())
 }
 
-fn picture_path(dir: &Path, url: &str) -> PathBuf {
+pub fn picture_path(dir: &Path, url: &str) -> PathBuf {
     dir.join(format!("{PICTURE_PREFIX}{}", cache_key(url)))
 }
 
-/// The picture as a `data:` URL, or nothing if it is too large or not an
-/// image made of pixels; a drawing could carry script.
-fn data_url(bytes: &[u8]) -> Option<String> {
+/// The picture's type, or nothing if it is too large or not an image made
+/// of pixels; a drawing could carry script.
+fn image_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() > MAX_PICTURE_BYTES {
         return None;
     }
-    let mime =
-        sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")?;
-    Some(http::data_url(mime, bytes))
+    sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")
 }
 
 pub async fn read(dir: &Path) -> Option<Profile> {
@@ -91,9 +89,15 @@ pub async fn read(dir: &Path) -> Option<Profile> {
     serde_json::from_slice(&text).ok()
 }
 
-pub async fn picture(dir: &Path, profile: &Profile) -> Option<String> {
-    let url = profile.picture.as_deref()?;
-    data_url(&tokio::fs::read(picture_path(dir, url)).await.ok()?)
+/// The cached picture `hash` names, and its type.
+pub async fn picture(dir: &Path, hash: &str) -> Option<(&'static str, Vec<u8>)> {
+    if !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let bytes = tokio::fs::read(dir.join(format!("{PICTURE_PREFIX}{hash}")))
+        .await
+        .ok()?;
+    Some((image_type(&bytes)?, bytes))
 }
 
 /// Saves the profile and fetches its picture if it is not cached yet. A picture
@@ -141,7 +145,7 @@ async fn download(url: &str) -> Option<Vec<u8>> {
 
 /// The picture small enough to hand to the window, shrunk with macOS's `sips` when it is not.
 async fn fit(dir: &Path, bytes: Vec<u8>) -> Option<Vec<u8>> {
-    if data_url(&bytes).is_some() {
+    if image_type(&bytes).is_some() {
         return Some(bytes);
     }
     if !cfg!(target_os = "macos") {
@@ -168,7 +172,7 @@ async fn fit(dir: &Path, bytes: Vec<u8>) -> Option<Vec<u8>> {
     .flatten();
     let _ = tokio::fs::remove_file(&original).await;
     let _ = tokio::fs::remove_file(&shrunk).await;
-    result.filter(|bytes| data_url(bytes).is_some())
+    result.filter(|bytes| image_type(bytes).is_some())
 }
 
 #[cfg(test)]
@@ -192,9 +196,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         let mut large = TINY_PNG.to_vec();
         large.resize(MAX_PICTURE_BYTES + 1, 0);
-        assert!(data_url(&large).is_none());
+        assert!(image_type(&large).is_none());
         let shrunk = fit(dir.path(), large).await.expect("shrunk");
-        assert!(data_url(&shrunk).is_some());
+        assert!(image_type(&shrunk).is_some());
         let left: Vec<_> = std::fs::read_dir(dir.path()).expect("dir").collect();
         assert!(left.is_empty(), "the working files are removed");
     }
@@ -219,11 +223,11 @@ mod tests {
 
     #[test]
     fn a_picture_must_be_a_known_image_under_the_size_cap() {
-        assert!(data_url(PNG).is_some_and(|url| url.starts_with("data:image/png;base64,")));
-        assert_eq!(data_url(b"<svg onload=alert(1)>"), None);
+        assert_eq!(image_type(PNG), Some("image/png"));
+        assert_eq!(image_type(b"<svg onload=alert(1)>"), None);
         let mut huge = PNG.to_vec();
         huge.resize(MAX_PICTURE_BYTES + 1, 0);
-        assert_eq!(data_url(&huge), None);
+        assert_eq!(image_type(&huge), None);
     }
 
     #[tokio::test]
@@ -246,9 +250,12 @@ mod tests {
         save(&dir, &profile).await.unwrap();
 
         assert_eq!(read(&dir).await, Some(profile.clone()));
-        assert!(picture(&dir, &profile)
-            .await
-            .is_some_and(|url| url.starts_with("data:image/png;base64,")));
+        assert_eq!(
+            picture(&dir, &cache_key(current))
+                .await
+                .map(|(mime, _)| mime),
+            Some("image/png")
+        );
         let mut names = Vec::new();
         let mut entries = tokio::fs::read_dir(&dir).await.unwrap();
         while let Some(entry) = entries.next_entry().await.unwrap() {

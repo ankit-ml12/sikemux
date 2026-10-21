@@ -845,15 +845,14 @@ export class ShowcaseBackend implements IpcTransport {
         platform: string;
       }[],
     };
-    const account = {
-      signedIn: true,
-      userId: "user_demo",
-      email: "edon@acme.dev",
-      name: "Edon Ramos",
-      picture: null,
-    };
-    this.on("account_status", () => account);
-    this.on("account_refresh_profile", () => account);
+    this.onCore(
+      ["account"],
+      constant({
+        name: "Edon Ramos",
+        email: "edon@acme.dev",
+        pictureHash: null,
+      }),
+    );
     this.on("account_phones", constant([]));
     this.on("account_hosts", constant([]));
     this.on("remote_status", () => ({ ...remote }));

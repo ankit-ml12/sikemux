@@ -234,7 +234,6 @@ pub fn run() {
         .manage(deep_link::DeepLinks::default())
         .manage(PtyManager::default())
         .manage(hosts::Hosts::default())
-        .manage(account::PendingSignIn::default())
         .manage(harness::HarnessBroker::default())
         .manage(cli_open::CliOpens::default())
         .manage(AcpManager::default())
@@ -269,12 +268,7 @@ pub fn run() {
             hosts::install::host_install,
             account::account_remove_device,
             account::account_rename_device,
-            account::account_status,
-            account::account_refresh_profile,
-            account::account_sign_in,
-            account::account_cancel_sign_in,
             account::account_phones,
-            account::account_sign_out,
             share::share_access,
             share::share_viewer_hello,
             core_call::core_call,

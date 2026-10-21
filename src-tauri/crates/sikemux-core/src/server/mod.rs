@@ -353,10 +353,8 @@ pub(crate) struct Core {
     pub(crate) code_hosts: Mutex<HashMap<String, git::Hosted>>,
     pub(crate) usage: agent_accounts::UsageWatch,
     pub(crate) layouts: layout::Layouts,
-    /// Who this host is signed in to Sikemux as, as the app last left it.
-    pub(crate) account: Mutex<Option<crate::protocol::AccountInfo>>,
-    /// Watches the app's account folder.
-    pub(crate) account_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
+    /// Who this host is signed in to Sikemux as.
+    pub(crate) account: account::Account,
     /// Watches the SSH config once a client has listed its hosts.
     pub(crate) ssh_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
     pub(crate) ci: ci::Ci,
@@ -441,8 +439,7 @@ impl Core {
             code_hosts: Default::default(),
             usage: Default::default(),
             layouts: layout::Layouts::new(data_dir),
-            account: Mutex::new(None),
-            account_watch: OnceLock::new(),
+            account: Default::default(),
             ssh_watch: OnceLock::new(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
@@ -815,7 +812,7 @@ impl Core {
             recent,
             inbox,
             layout,
-            account: self.account.locked().clone().map(Box::new),
+            account: self.account.shown().map(Box::new),
         };
         let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
@@ -1146,7 +1143,7 @@ pub(crate) async fn run_core(
         crate::git_guard::shim::install(data_dir, config.cli_endpoint.as_deref());
         tokio::spawn(workspace::refresh_launchers(core.clone()));
         skill_library::watch_global(&core);
-        account::watch(&core, data_dir.to_owned());
+        account::start(&core);
         if crate::usage::Install::Host.reports() {
             let host = host_info();
             let core = core.clone();

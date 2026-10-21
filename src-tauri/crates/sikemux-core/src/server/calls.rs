@@ -185,11 +185,18 @@ calls! { core, client, params;
     "activateTab": Full => answer(super::layout::activate_tab(&core, parse(params)?)?),
     "moveTab": Full => answer(super::layout::move_tab(&core, parse(params)?)?),
     "activateProject": Full => answer(super::layout::activate_project(&core, parse(params)?)?),
+    "account": Watch => answer(core.account.shown()),
     "accountPicture": Watch => {
         let params: AccountPictureParams = parse(params)?;
-        let core = core.clone();
-        answer(blocking(move || Ok(super::account::picture(&core, &params.hash))).await?)
+        answer(super::account::picture(&core, &params.hash).await)
     },
+    "accountSignIn": Person => answer(super::account::sign_in(&core, client.peer.clone()).await?),
+    "accountSignInFinish": Person => answer(super::account::sign_in_finished(&core).await?),
+    "accountSignInCancel": Person => {
+        super::account::cancel_sign_in(&core);
+        answer(Value::Null)
+    },
+    "accountSignOut": Person => answer(super::account::sign_out(&core, &client.peer).await?),
     "sshHosts": Watch, any_program => {
         let core = core.clone();
         answer(blocking(move || Ok(super::ssh::hosts(&core))).await?)
