@@ -1,10 +1,7 @@
 import { createPluginBackend, type PluginStream, type PluginStreamHandlers } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { AZURE_PLUGIN_ID } from "./kinds";
+import { AZURE_PLUGIN } from "./kinds";
 
-export { failureMessage } from "../../plugin-api/backend";
-
-const backend = createPluginBackend(AZURE_PLUGIN_ID, { signInStatus: (kind) => kind === "azure.status" });
+const backend = createPluginBackend(AZURE_PLUGIN.id);
 
 export interface Subscription {
     id: string;
@@ -168,8 +165,6 @@ export interface Metric {
     latest: number | null;
     total: number | null;
 }
-
-export const refreshAzure = () => invalidate((kind) => kind.startsWith("azure."));
 
 /** What a call is for: a subscription, and sometimes one of its resource groups. */
 export interface Scope {

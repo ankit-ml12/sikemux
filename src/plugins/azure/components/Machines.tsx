@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { confirmDialog, notify } from "../../../plugin-api/host";
-import { azureApi, failureMessage, refreshAzure, type Machine, type MachineAction, type Scope } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { azure } from "../resources";
+import { azureApi, type Machine, type MachineAction, type Scope } from "../api";
 import { actionsFor, powerTone, region, size } from "../format";
 import { Dot } from "./parts";
 
@@ -96,9 +98,9 @@ export function MachineActions({ machine, scope }: { machine: Machine; scope: Sc
         try {
             const done = await azureApi.vmAct({ ...scope, group: machine.group }, machine.name, action);
             notify("success", done.message);
-            refreshAzure();
+            azure.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         } finally {
             setBusy(null);
         }

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { notify, openUrl, swallow } from "../../../plugin-api/host";
-import { azureApi, failureMessage, refreshAzure, type App, type AppAction, type Scope } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { azure } from "../resources";
+import { azureApi, type App, type AppAction, type Scope } from "../api";
 import { appTone, region } from "../format";
 import { Dot } from "./parts";
 
@@ -73,9 +75,9 @@ export function AppActions({ app, scope }: { app: App; scope: Scope }) {
         try {
             const done = await azureApi.appAct({ ...scope, group: app.group }, app.name, action);
             notify("success", done.message);
-            refreshAzure();
+            azure.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         } finally {
             setBusy(null);
         }

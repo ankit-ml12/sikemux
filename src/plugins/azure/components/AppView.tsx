@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { copyWithNotice, openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Seg, SkeletonRows, StaleNotice, VirtualLogList } from "../../../plugin-api/ui";
-import { azureApi, failureMessage, type AppDetail, type Scope } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { azureApi, type AppDetail, type Scope } from "../api";
 import { appTone, region } from "../format";
 import { azureAppR } from "../resources";
 import { AppActions } from "./Apps";
@@ -151,7 +152,7 @@ export function AppLogs({ scope, name }: { scope: Scope; name: string }) {
         setError(null);
         const stream = azureApi.tailAppLogs({ subscription, group }, name, {
             onItem: (item) => setLines((held) => [...(held ?? []), item.line].slice(-KEEP_LINES)),
-            onError: (failure) => setError(failureMessage(failure)),
+            onError: (failure) => setError(errorText(failure)),
         });
         return () => stream.stop();
     }, [subscription, group, name]);

@@ -2,8 +2,9 @@ import { useRef, useState, type ReactNode } from "react";
 import { notify } from "../../../plugin-api/host";
 import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/resources";
 import { Dropdown, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { azureApi, failureMessage, refreshAzure, type AzureStatus, type Scope } from "../api";
-import { azureActivityR, azureAppsR, azureGroupsR, azureResourcesR, azureStatusR, azureStorageR, azureVmsR } from "../resources";
+import { errorText } from "../../../plugin-api/format";
+import { azureApi, type AzureStatus, type Scope } from "../api";
+import { azure, azureActivityR, azureAppsR, azureGroupsR, azureResourcesR, azureStorageR, azureVmsR } from "../resources";
 import { ALL_GROUPS, updateAzureView, useAzureView, type AzureSection } from "../state";
 import { Activity } from "./Activity";
 import { AppView } from "./AppView";
@@ -28,9 +29,9 @@ const SECTIONS: { value: AzureSection; label: string }[] = [
 ];
 
 export function AzurePane({ paneId, active }: { paneId: string; active: boolean }) {
-    const status = useResourceEnabled(active, azureStatusR);
+    const status = useResourceEnabled(active, azure.statusR);
     if (status.data === undefined && status.status !== "error") return <SkeletonRows rows={5} label="Reading your Azure sign-in" />;
-    if (!status.data?.ready) return <AzureSignIn status={status.data} onSignedIn={() => refreshAzure()} />;
+    if (!status.data?.ready) return <AzureSignIn status={status.data} onSignedIn={() => azure.refresh()} />;
     return <Portal paneId={paneId} active={active} status={status.data} />;
 }
 
@@ -54,9 +55,9 @@ function Portal({ paneId, active, status }: { paneId: string; active: boolean; s
         updateAzureView(paneId, { subscription: next, group: ALL_GROUPS, open: null });
         try {
             await azureApi.useSubscription(next);
-            refreshAzure();
+            azure.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         }
     };
 
@@ -143,7 +144,7 @@ function Portal({ paneId, active, status }: { paneId: string; active: boolean; s
                         {all ? "All resource groups" : view.group}
                         {view.find ? ` · “${view.find}”` : ""}
                     </span>
-                    <button type="button" className="az-button" onClick={() => refreshAzure()}>
+                    <button type="button" className="az-button" onClick={() => azure.refresh()}>
                         Refresh
                     </button>
                 </header>

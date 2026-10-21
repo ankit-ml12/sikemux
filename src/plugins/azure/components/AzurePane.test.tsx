@@ -38,7 +38,7 @@ const host = vi.hoisted(() => ({ notify: vi.fn(), confirmDialog: vi.fn(), copyWi
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), azureApi: api }));
 vi.mock("../../../plugin-api/host", async (importOriginal) => ({ ...(await importOriginal<object>()), ...host }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { azure } from "../resources";
 import { AzurePane } from "./AzurePane";
 
 let pane = 0;
@@ -46,7 +46,7 @@ const renderPane = () => render(<AzurePane paneId={`azure-${++pane}`} active />)
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("azure."));
+    azure.refresh();
 });
 beforeEach(() => {
     Object.values({ ...api, ...host }).forEach((mock) => mock.mockReset());

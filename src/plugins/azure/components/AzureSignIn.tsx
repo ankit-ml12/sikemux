@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { copyWithNotice, openUrl, swallow } from "../../../plugin-api/host";
 import { EmptyState, SignInError } from "../../../plugin-api/ui";
-import { azureApi, failureMessage, type AzureStatus } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { azureApi, type AzureStatus } from "../api";
 import { AzureMark } from "./AzureMark";
 
 const INSTALL = "https://learn.microsoft.com/cli/azure/install-azure-cli-macos";
@@ -19,7 +20,7 @@ export function AzureSignIn({ status, onSignedIn }: { status: AzureStatus | unde
             await azureApi.signIn();
             onSignedIn();
         } catch (failure) {
-            setError(failureMessage(failure));
+            setError(errorText(failure));
         } finally {
             setBusy(false);
         }

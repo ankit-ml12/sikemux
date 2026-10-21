@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { Seg, SkeletonRows } from "../../../plugin-api/ui";
-import { azureApi, failureMessage, type Container, type Scope, type StorageAccount, type Vault } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { azureApi, type Container, type Scope, type StorageAccount, type Vault } from "../api";
 import { ago, region } from "../format";
 import { azureVaultsR } from "../resources";
 
@@ -53,7 +54,7 @@ function AccountCard({ account, scope, showGroup }: { account: StorageAccount; s
         try {
             setContainers(await azureApi.containers({ ...scope, group: account.group }, account.name));
         } catch (failure) {
-            setError(failureMessage(failure));
+            setError(errorText(failure));
         }
     };
 
