@@ -73,11 +73,6 @@ export interface WorkspaceAgent {
     id: string;
     /** The CLI it runs, such as `claude`. */
     provider: string;
-    /**
-     * What the core calls it, such as Otter, open or asleep. The core fills
-     * it in; clients only read it.
-     */
-    name?: string;
     /** Its project, by id. */
     project: string;
     cwd: string;
@@ -509,6 +504,491 @@ export interface BuddyLook {
     pack: string;
     shape: string;
     color: string;
+}
+
+/**
+ * A chat as a client opening it is sent: how it stands, its latest rows, and
+ * the rows of the subagents those name.
+ */
+export interface ChatView {
+    head: ChatHead;
+    rows: ChatMessage[];
+    /** Each subagent's own rows, by its session. */
+    subagents?: Record<string, ChatMessage[]>;
+    /** Earlier rows start before this event, and `AcpHistory` pages back to them. */
+    olderBefore?: number;
+}
+
+/** How a chat stands, apart from what it said. */
+export interface ChatHead {
+    sessionId?: string;
+    connection: ChatConnection;
+    running: boolean;
+    /** A turn has run in this session, so the provider keeps it. */
+    turned: boolean;
+    permissionMode: string;
+    /** A turn has begun and its first row has not arrived yet. */
+    turnOpening?: TurnStart;
+    /** The agent is retrying a request the network or its service failed. */
+    retrying?: Retrying;
+    error?: string;
+    failure?: ChatFailure;
+    stopReason?: string;
+    title?: string;
+    usage?: ContextUsage;
+    plan?: unknown;
+    commands: ChatCommandInfo[];
+    capabilities: unknown;
+    setup: unknown;
+    permissions: PermissionAsk[];
+    tasks: AsyncTask[];
+    /** The chat's own subagents still at work. */
+    runningSubagents: SubagentCard[];
+    /** What the person sent mid-turn, waiting to go out once the turn ends. */
+    queued: QueuedMessage[];
+    /** The host no longer keeps the turns before the first row. */
+    earlierLost: boolean;
+    /** Why the agent's session ended, once it has. */
+    ended?: SessionEnded;
+    /** The tool part still running at the end of the last row. */
+    activeTool?: string;
+}
+
+export type ChatConnection = "connecting" | "starting" | "initializing" | "ready" | "stopped" | "error";
+
+export interface TurnStart {
+    /** Unix milliseconds, when the core knows. */
+    at?: number;
+}
+
+export interface Retrying {
+    attempt?: number;
+    /** The connection was lost, rather than the service answering with an error. */
+    connection: boolean;
+}
+
+/** Why the last turn failed, when it was the account's or the network's doing. */
+export interface ChatFailure {
+    kind: FailureKind;
+    /** What the agent itself said, behind the plain words. */
+    details?: string;
+    /** The profile id of the account it failed on. */
+    account?: string;
+    /** When the core sends the stopped prompt again, once a usage limit resets, in Unix milliseconds. */
+    resumesAt?: number;
+}
+
+export type FailureKind = "signIn" | "limit" | "network" | "other";
+
+/** How full the session's context window is, as the agent last reported it. */
+export interface ContextUsage {
+    used: number;
+    size: number;
+    cost?: UsageCost;
+}
+
+export interface UsageCost {
+    amount: number;
+    currency: string;
+}
+
+/** A slash command the agent offers. */
+export interface ChatCommandInfo {
+    name: string;
+    description: string;
+    hint?: string;
+}
+
+/** A tool call waiting on the person's permission. */
+export interface PermissionAsk {
+    requestId: string;
+    sessionId: string;
+    toolCall: ToolCall;
+    /** The change the call asks to make, counted. */
+    diff?: DiffSummary;
+    options: PermissionOption[];
+}
+
+/**
+ * A tool call as its row needs it: what it is, how it went, and the few
+ * arguments a row names, not everything it was handed or handed back.
+ */
+export interface ToolCall {
+    toolCallId: string;
+    title: string;
+    kind?: string;
+    /** `pending`, `in_progress`, `completed`, `failed` or `cancelled`. */
+    status?: string;
+    /** Its arguments, each cut to one short line. */
+    rawInput?: unknown;
+    /** The file it touched, with its line when it said. */
+    path?: string;
+    /** What the agent said a command is for. */
+    description?: string;
+}
+
+/** The change a call made, counted. `chatToolDetail` sends its lines. */
+export interface DiffSummary {
+    path: string;
+    adds: number;
+    dels: number;
+}
+
+export interface PermissionOption {
+    optionId: string;
+    name: string;
+    /** `allow_once`, `allow_always`, `reject_once` or `reject_always`. */
+    kind: string;
+}
+
+/** Work the agent left running in the background. */
+export interface AsyncTask {
+    asyncTaskId: string;
+    name: string;
+    taskType: string;
+    description: string;
+    state: TaskState;
+    canStop: boolean;
+    summary?: string;
+    lastToolName?: string;
+    outputFilePath?: string;
+    usage?: TaskUsage;
+    /** The subagent that started it, when the chat itself did not. */
+    owner?: string;
+    /** The agents a workflow has started so far. */
+    agents?: WorkflowAgent[];
+}
+
+export type TaskState = "running" | "paused" | "completed" | "failed" | "stopped";
+
+export interface TaskUsage {
+    totalTokens: number;
+    toolUses: number;
+    durationMs: number;
+}
+
+export interface WorkflowAgent {
+    index: number;
+    label: string;
+    state: WorkflowAgentState;
+    phase?: string;
+    activity?: string;
+    error?: string;
+    tokens?: number;
+    toolCalls?: number;
+}
+
+export type WorkflowAgentState = "queued" | "running" | "completed" | "failed";
+
+/** A subagent the chat started. Its own rows come under its session. */
+export interface SubagentCard {
+    sessionId: string;
+    name: string;
+    task: string;
+    state: SubagentState;
+    tokens?: number;
+    /** How many tools it called. */
+    calls: number;
+    /** The last tool it called, which says what it is up to. */
+    lastTool?: ToolCall;
+}
+
+export type SubagentState = "running" | "completed" | "failed" | "cancelled" | "disconnected";
+
+/** A message waiting behind the running turn. */
+export interface QueuedMessage {
+    id: string;
+    text: string;
+    paths: string[];
+    context: SentContext[];
+}
+
+/** Something read elsewhere and sent with a message, named. */
+export interface SentContext {
+    uri: string;
+    title: string;
+}
+
+export interface SessionEnded {
+    /** `requested`, `exited` after it was up, or `failed` before it got there. */
+    reason: string;
+    message?: string;
+}
+
+/** One message of a chat. */
+export interface ChatMessage {
+    id: string;
+    role: ChatRole;
+    /** What the agent knows a message the person sent by, for editing it. */
+    promptId?: string;
+    parts: ChatPart[];
+    attachments?: string[];
+    /** What the person sent with it, named rather than whole. */
+    context?: SentContext[];
+    /** The messages from other agents and answers it is made of, when that is all it holds. */
+    letters?: AgentLetter[];
+    /** When the person sent it, in Unix milliseconds. */
+    sentAt?: number;
+    /** When the turn it closed finished. */
+    endedAt?: number;
+    /** The agent began a turn with it, without a prompt before it. */
+    opensTurn?: TurnStart;
+    /** What its row says beneath it: on a prompt, and on the last message of an answer. */
+    meta?: RowMeta;
+    /** The finished turn it belongs to, when that turn folds its work away. */
+    fold?: WorkFold;
+}
+
+export type ChatRole = "user" | "assistant";
+
+export type ChatPart =
+    | {
+          kind: "text";
+          id: string;
+          text: string;
+          md?: PartTree;
+      }
+    | {
+          kind: "thought";
+          id: string;
+          text: string;
+          md?: PartTree;
+      }
+    /** A picture or a file the agent put in its reply, as its protocol gave it. */
+    | {
+          kind: "content";
+          id: string;
+          content: unknown;
+      }
+    | {
+          kind: "tool";
+          id: string;
+          tool: ToolCall;
+          diff?: DiffSummary;
+          output?: OutputSummary;
+          page?: PageRef;
+          /** What a failed call left behind, short enough to sit under it. */
+          failure?: string;
+          startedAt?: number;
+          endedAt?: number;
+      }
+    | {
+          kind: "subagent";
+          id: string;
+          subagent: SubagentCard;
+      }
+    | {
+          kind: "notice";
+          id: string;
+          notice: TaskNotice;
+      }
+    | {
+          kind: "agent_notice";
+          id: string;
+          notice: AgentNotice;
+      }
+    | {
+          kind: "account";
+          id: string;
+          move: AccountMove;
+      };
+
+/** The core's markdown tree of a part's text and how much of the text it covers. */
+export interface PartTree {
+    blocks: unknown;
+    n: number;
+}
+
+/** What a command or MCP call printed, counted. `chatToolDetail` sends it. */
+export interface OutputSummary {
+    lines: number;
+    /** It ran past what the core keeps, and the rest was let go. */
+    cut: boolean;
+    exitCode?: number;
+    image: boolean;
+}
+
+/** A page an agent showed with `page_show`. */
+export interface PageRef {
+    id: string;
+    title: string;
+    /** Its height at the reply width, when the agent measured it. */
+    height?: number;
+}
+
+/** What a background task left behind once it ended. */
+export interface TaskNotice {
+    name: string;
+    state: NoticeState;
+    summary?: string;
+    taskType?: string;
+    /** A subagent's notice shows that subagent's own card. */
+    subagent?: string;
+}
+
+export type NoticeState = "completed" | "failed" | "stopped";
+
+/** Something the agent tells the person outside its reply, like a model fallback. */
+export interface AgentNotice {
+    severity: NoticeSeverity;
+    title: string;
+    description?: string;
+}
+
+export type NoticeSeverity = "info" | "warning" | "error";
+
+/** The chat moved to another of the person's accounts. */
+export interface AccountMove {
+    label: string;
+    from?: string;
+    reason: MoveReason;
+}
+
+export type MoveReason = "limit" | "chosen";
+
+/**
+ * A message from another agent, or an answer to an agent's question, as the
+ * core hands it to the agent.
+ */
+export interface AgentLetter {
+    kind: LetterKind;
+    /** Who sent it, or for an answer the agent that asked. */
+    name: string;
+    agentId?: string;
+    cli: string;
+    /** The question an answer answers. */
+    question?: string;
+    text: string;
+    /** The answer is a secret the agent reads from a file, so `text` only says where. */
+    secret?: boolean;
+}
+
+export type LetterKind = "message" | "answer";
+
+/** The line under a prompt, or under the last message of an answer. */
+export interface RowMeta {
+    /** The first message of the answer it closes, or its own id on a prompt. */
+    from: string;
+    /** Tokens a second the answer was written at, estimated from its characters. */
+    rate?: number;
+    /** When a prompt was sent, or when an answer's turn finished. */
+    at?: number;
+    /** How long the turn took, from the prompt that started it to its finish. */
+    took?: number;
+}
+
+/** A finished turn, whose work folds away behind the reply it closed with. */
+export interface WorkFold {
+    /** The turn's first message, which names the fold. */
+    id: string;
+    /** The turn's last message. */
+    last: string;
+    /** Where the reply starts among the last message's parts. */
+    from: number;
+    calls: number;
+    took?: number;
+    /** Everything folded is thinking. */
+    thought: boolean;
+}
+
+/** Rows from before what a client holds, oldest first. */
+export interface ChatPage {
+    rows: ChatMessage[];
+    subagents?: Record<string, ChatMessage[]>;
+    olderBefore?: number;
+}
+
+/**
+ * One change to a chat a client holds. `in` names the subagent session whose
+ * rows it changes; without it, the chat's own.
+ */
+export type ChatChange =
+    /** These fields of the head change; the rest stay. */
+    | {
+          op: "head";
+          set: unknown;
+      }
+    /** A new row goes at the end, or a row already held is replaced whole. */
+    | {
+          op: "row";
+          row: ChatMessage;
+          in?: string;
+      }
+    /** A new part goes at the end of the row, or a part already held is replaced. */
+    | {
+          op: "part";
+          row: string;
+          part: ChatPart;
+          in?: string;
+      }
+    /**
+     * Text written on to the end of a text or thought part, and what that
+     * changes in its markdown tree.
+     */
+    | {
+          op: "text";
+          row: string;
+          part: string;
+          text: string;
+          md?: unknown;
+          in?: string;
+      }
+    /** These fields of the row change; its parts stay. */
+    | {
+          op: "set";
+          row: string;
+          set: unknown;
+          in?: string;
+      }
+    /** Only these rows stay, in this order: a client catching up drops the rest. */
+    | {
+          op: "keep";
+          rows: string[];
+      }
+    /** The row and every row after it go. */
+    | {
+          op: "drop";
+          from: string;
+      }
+    /** Everything held is replaced. */
+    | {
+          op: "view";
+          view: ChatView;
+      };
+
+/** What `chatToolDetail` answers: a call's change line by line and what it printed. */
+export interface ToolDetail {
+    diff?: ToolDiff;
+    output?: ToolOutput;
+}
+
+export interface ToolDiff {
+    path: string;
+    adds: number;
+    dels: number;
+    lines: DiffLine[];
+}
+
+export interface DiffLine {
+    /** ` `, `+` or `-`. */
+    sign: string;
+    text: string;
+    oldLine?: number;
+    newLine?: number;
+    /** The span that changed, in UTF-16 units, when one deleted line pairs with one added line. */
+    mark?: number[];
+}
+
+export interface ToolOutput {
+    text: string;
+    cut: boolean;
+    exitCode?: number;
+    image?: OutputImage;
+}
+
+export interface OutputImage {
+    data: string;
+    mimeType: string;
 }
 
 /** What a client reads again, as `Event::Changed` names it. */

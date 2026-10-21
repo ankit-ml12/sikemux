@@ -5854,6 +5854,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sikemux-client",
+ "sikemux-fold",
  "sikemux-keychain",
  "sikemux-markdown",
  "sikemux-process",
@@ -5871,6 +5872,17 @@ dependencies = [
  "uuid",
  "vt100",
  "webpki-roots",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-fold"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sikemux-markdown",
+ "sikemux-wire",
  "workspace-hack",
 ]
 

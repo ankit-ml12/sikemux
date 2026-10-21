@@ -1,0 +1,635 @@
+//! What clients are sent of a fold: the changes since the last flush, a
+//! window of the latest rows for a client opening the chat, what a client
+//! coming back missed, and pages of earlier rows.
+
+use std::collections::{BTreeMap, HashMap};
+
+use serde_json::{json, Map, Value};
+use sikemux_markdown::{Doc, Op, Options};
+
+use sikemux_wire::chat::{
+    ChatChange, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, SubagentCard,
+};
+
+use super::event::ChatEvent;
+use super::{tools, Fold, Row, Side, Transcript};
+
+/// How an agent's answers are read as markdown.
+const ANSWER: Options = Options {
+    gfm: true,
+    html_as_text: false,
+    file_links: true,
+    html_images: false,
+};
+
+/// A client opening a chat is sent this much of its end and pages back
+/// through the rest. The byte bound only stops a run of huge tool calls.
+const TAIL_TURNS: usize = 50;
+const TAIL_BYTES: usize = 2 * 1024 * 1024;
+/// The most of a long chat the fold holds; older rows page back from the
+/// chat's events.
+const FOLD_BYTES: usize = 8 * 1024 * 1024;
+/// What a part costs beyond its text, roughly.
+const PART_BYTES: usize = 160;
+
+/// The head's fields a client drops when they are absent, so a catch-up
+/// names each one.
+const OPTIONAL_HEAD: [&str; 11] = [
+    "sessionId",
+    "turnOpening",
+    "retrying",
+    "error",
+    "failure",
+    "stopReason",
+    "title",
+    "usage",
+    "plan",
+    "activeTool",
+    "ended",
+];
+
+/// A flush's changes and the rows they touched.
+pub type Flushed = Vec<ChatChange>;
+
+fn tree_of(patch: Vec<Op>, n: usize) -> PartTree {
+    let blocks = patch
+        .into_iter()
+        .next()
+        .and_then(|op| match op {
+            Op::List { c, .. } => Some(Value::Array(c)),
+            Op::Text { .. } => None,
+        })
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    PartTree {
+        blocks,
+        n: n as u64,
+    }
+}
+
+fn units(text: &str) -> usize {
+    text.encode_utf16().count()
+}
+
+/// The whole tree of `text`, read from scratch.
+fn read(text: &str) -> PartTree {
+    tree_of(Doc::read(text, ANSWER), units(text))
+}
+
+/// A part as clients get it, with the tree of its text when the agent wrote it.
+fn shown(part: &ChatPart, role: ChatRole, side: Option<&mut Side>, open: bool) -> ChatPart {
+    let mut part = part.clone();
+    if role != ChatRole::Assistant {
+        return part;
+    }
+    if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = &mut part {
+        *md = Some(match side {
+            Some(side) if open => {
+                let mut doc = Doc::new(ANSWER);
+                doc.push(text);
+                let tree = tree_of(doc.patch(), doc.units());
+                side.doc = Some(doc);
+                tree
+            }
+            _ => read(text),
+        });
+    }
+    part
+}
+
+fn text_len(part: &ChatPart) -> Option<usize> {
+    match part {
+        ChatPart::Text { text, .. } | ChatPart::Thought { text, .. } => Some(text.len()),
+        _ => None,
+    }
+}
+
+fn row_bytes(row: &Row) -> usize {
+    row.msg
+        .parts
+        .iter()
+        .map(|part| PART_BYTES + text_len(part).unwrap_or(0))
+        .sum::<usize>()
+        + PART_BYTES
+}
+
+/// Only the text being written keeps its tree between flushes: the last part
+/// of the last row, while it is text.
+fn open_part(transcript: &Transcript, position: usize) -> Option<usize> {
+    if position + 1 != transcript.rows.len() {
+        return None;
+    }
+    let row = &transcript.rows[position];
+    if row.msg.role != ChatRole::Assistant {
+        return None;
+    }
+    let last = row.msg.parts.len().checked_sub(1)?;
+    text_len(&row.msg.parts[last]).map(|_| last)
+}
+
+/// The row with every tree read, for a client that holds none of it.
+fn whole_row(row: &Row) -> ChatMessage {
+    let mut msg = row.msg.clone();
+    if row.msg.role == ChatRole::Assistant {
+        for part in &mut msg.parts {
+            if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = part {
+                *md = Some(read(text));
+            }
+        }
+    }
+    msg
+}
+
+fn field(row: &ChatMessage, name: &str) -> Value {
+    let value = match name {
+        "sentAt" => serde_json::to_value(row.sent_at),
+        "endedAt" => serde_json::to_value(row.ended_at),
+        "opensTurn" => serde_json::to_value(&row.opens_turn),
+        "meta" => serde_json::to_value(&row.meta),
+        "fold" => serde_json::to_value(&row.fold),
+        "context" => serde_json::to_value(&row.context),
+        "letters" => serde_json::to_value(&row.letters),
+        _ => Ok(Value::Null),
+    };
+    value.unwrap_or_default()
+}
+
+fn fields(row: &ChatMessage, names: impl IntoIterator<Item = &'static str>) -> Value {
+    Value::Object(
+        names
+            .into_iter()
+            .map(|name| (name.to_owned(), field(row, name)))
+            .collect(),
+    )
+}
+
+/// The changes to one row since the last flush.
+fn row_changes(
+    transcript: &mut Transcript,
+    position: usize,
+    within: &Option<String>,
+    seq: u64,
+    out: &mut Vec<ChatChange>,
+) {
+    let open = open_part(transcript, position);
+    let row = &mut transcript.rows[position];
+    row.v = seq;
+    let role = row.msg.role;
+    if row.fresh {
+        let mut msg = row.msg.clone();
+        for (at, part) in msg.parts.iter_mut().enumerate() {
+            *part = shown(
+                &row.msg.parts[at],
+                role,
+                row.sides.get_mut(at),
+                open == Some(at),
+            );
+        }
+        for (side, part) in row.sides.iter_mut().zip(&row.msg.parts) {
+            side.sent = text_len(part).unwrap_or(0);
+        }
+        out.push(ChatChange::Row {
+            row: msg,
+            within: within.clone(),
+        });
+        row.fresh = false;
+        row.parts.clear();
+        row.fields.clear();
+        return;
+    }
+    let id = row.msg.id.clone();
+    let mut replaced = std::mem::take(&mut row.parts);
+    replaced.sort_unstable();
+    for at in 0..row.msg.parts.len() {
+        if replaced.contains(&at) {
+            let part = shown(
+                &row.msg.parts[at],
+                role,
+                row.sides.get_mut(at),
+                open == Some(at),
+            );
+            row.sides[at].sent = text_len(&row.msg.parts[at]).unwrap_or(0);
+            out.push(ChatChange::Part {
+                row: id.clone(),
+                part,
+                within: within.clone(),
+            });
+            continue;
+        }
+        let Some(len) = text_len(&row.msg.parts[at]) else {
+            continue;
+        };
+        let side = &mut row.sides[at];
+        if len <= side.sent {
+            continue;
+        }
+        let (ChatPart::Text { id: part, text, .. } | ChatPart::Thought { id: part, text, .. }) =
+            &row.msg.parts[at]
+        else {
+            continue;
+        };
+        let more = text[side.sent..].to_owned();
+        let md = (role == ChatRole::Assistant).then(|| {
+            let doc = side.doc.get_or_insert_with(|| {
+                let mut doc = Doc::new(ANSWER);
+                doc.push(text);
+                doc
+            });
+            json!({ "n": doc.units(), "o": doc.patch() })
+        });
+        side.sent = len;
+        out.push(ChatChange::Text {
+            row: id.clone(),
+            part: part.clone(),
+            text: more,
+            md,
+            within: within.clone(),
+        });
+    }
+    if !row.fields.is_empty() {
+        let names: Vec<&'static str> = std::mem::take(&mut row.fields).into_iter().collect();
+        out.push(ChatChange::Set {
+            row: id,
+            set: fields(&row.msg, names),
+            within: within.clone(),
+        });
+    }
+}
+
+fn flush_transcript(
+    transcript: &mut Transcript,
+    within: &Option<String>,
+    seq: u64,
+    out: &mut Vec<ChatChange>,
+) {
+    let mut first = transcript.rows.len().saturating_sub(2);
+    for id in std::mem::take(&mut transcript.touched) {
+        if let Some(position) = transcript.position(&id) {
+            first = first.min(position);
+            row_changes(transcript, position, within, seq, out);
+            let row = &mut transcript.rows[position];
+            let bytes = row_bytes(row);
+            transcript.bytes = transcript.bytes + bytes - row.bytes;
+            row.bytes = bytes;
+        }
+    }
+    let last = transcript.rows.len().checked_sub(1);
+    let open = last.and_then(|last| open_part(transcript, last).map(|part| (last, part)));
+    for (position, row) in transcript.rows.iter_mut().enumerate().skip(first) {
+        for (at, side) in row.sides.iter_mut().enumerate() {
+            if open != Some((position, at)) {
+                side.doc = None;
+            }
+        }
+    }
+}
+
+impl Fold {
+    /// What changed since the last flush, as change number `seq`.
+    pub fn flush(&mut self, seq: u64) -> Flushed {
+        self.settle_runs();
+        let mut out = Vec::new();
+        if let Some(from) = self.dropped.take() {
+            out.push(ChatChange::Drop { from });
+        }
+        if !self.head_dirty.is_empty() {
+            let whole = serde_json::to_value(&self.head).unwrap_or_default();
+            let set: Map<String, Value> = std::mem::take(&mut self.head_dirty)
+                .into_iter()
+                .map(|name| {
+                    (
+                        name.to_owned(),
+                        whole.get(name).cloned().unwrap_or(Value::Null),
+                    )
+                })
+                .collect();
+            out.push(ChatChange::Head {
+                set: Value::Object(set),
+            });
+        }
+        let active = self.active_tool();
+        if active != self.head.active_tool {
+            self.head.active_tool = active.clone();
+            out.push(ChatChange::Head {
+                set: json!({ "activeTool": active }),
+            });
+        }
+        flush_transcript(&mut self.main, &None, seq, &mut out);
+        let mut sessions: Vec<String> = self
+            .subs
+            .iter()
+            .filter(|(_, sub)| !sub.touched.is_empty())
+            .map(|(session, _)| session.clone())
+            .collect();
+        sessions.sort();
+        for session in sessions {
+            if let Some(sub) = self.subs.get_mut(&session) {
+                flush_transcript(sub, &Some(session.clone()), seq, &mut out);
+            }
+        }
+        self.seq = seq;
+        self.trim();
+        out
+    }
+
+    /// Whether anything waits to go out.
+    pub fn is_dirty(&self) -> bool {
+        !self.head_dirty.is_empty()
+            || self.dropped.is_some()
+            || self.settle_from.is_some()
+            || !self.main.touched.is_empty()
+            || self.subs.values().any(|sub| !sub.touched.is_empty())
+    }
+
+    fn active_tool(&self) -> Option<String> {
+        let last = self.main.rows.last()?;
+        last.msg.parts.iter().rev().find_map(|part| match part {
+            ChatPart::Tool { id, tool, .. } => {
+                Some(tools::running(tool.status.as_deref()).then(|| id.clone()))
+            }
+            _ => None,
+        })?
+    }
+
+    /// Lets go of the oldest turns once the fold holds more than it should.
+    /// They page back from the chat's events like any earlier turn.
+    fn trim(&mut self) {
+        let mut bytes = self.main.bytes;
+        if bytes <= FOLD_BYTES {
+            return;
+        }
+        let mut cut = 0;
+        while cut < self.main.rows.len().saturating_sub(1) && bytes > FOLD_BYTES / 2 {
+            bytes -= self.main.rows[cut].bytes;
+            cut += 1;
+        }
+        while cut < self.main.rows.len() && !starts_turn(&self.main.rows, cut) {
+            cut += 1;
+        }
+        let gone: Vec<Row> = self.main.rows.drain(..cut).collect();
+        for row in &gone {
+            self.main.bytes -= row.bytes;
+            self.forget_row(&None, row);
+        }
+        if let Some(position) = self.settle_from.as_mut() {
+            *position = position.saturating_sub(cut);
+        }
+    }
+
+    /// The index of the event the fold's first row came from.
+    pub fn floor(&self) -> Option<u64> {
+        self.main.rows.first().map(|row| row.index)
+    }
+
+    fn window_start(&self) -> usize {
+        let rows = &self.main.rows;
+        let mut turns = 0;
+        let mut bytes = 0;
+        let mut start = rows.len();
+        for (position, row) in rows.iter().enumerate().rev() {
+            bytes += row_bytes(row);
+            if bytes > TAIL_BYTES && start < rows.len() {
+                break;
+            }
+            if starts_turn(rows, position) {
+                start = position;
+                turns += 1;
+                if turns >= TAIL_TURNS {
+                    break;
+                }
+            }
+        }
+        if start == rows.len() {
+            0
+        } else {
+            start
+        }
+    }
+
+    fn subagent_rows(&self, rows: &[&Row]) -> BTreeMap<String, Vec<ChatMessage>> {
+        let mut found = BTreeMap::new();
+        let mut sessions: Vec<String> = Vec::new();
+        let note = |parts: &[ChatPart], sessions: &mut Vec<String>| {
+            for part in parts {
+                if let ChatPart::Subagent { subagent, .. } = part {
+                    sessions.push(subagent.session_id.clone());
+                }
+            }
+        };
+        for row in rows {
+            note(&row.msg.parts, &mut sessions);
+        }
+        sessions.extend(
+            self.head
+                .running_subagents
+                .iter()
+                .map(|card| card.session_id.clone()),
+        );
+        while let Some(session) = sessions.pop() {
+            if found.contains_key(&session) {
+                continue;
+            }
+            let Some(sub) = self.subs.get(&session) else {
+                continue;
+            };
+            for row in &sub.rows {
+                note(&row.msg.parts, &mut sessions);
+            }
+            found.insert(session, sub.rows.iter().map(whole_row).collect());
+        }
+        found
+    }
+
+    /// The chat as a client opening it is sent. `older` says whether the
+    /// chat's events hold turns before the fold's first row.
+    pub fn view(&self, older: bool) -> ChatView {
+        let start = self.window_start();
+        let rows: Vec<&Row> = self.main.rows[start..].iter().collect();
+        let older_before = rows
+            .first()
+            .filter(|_| start > 0 || older)
+            .map(|row| row.index);
+        let mut head = self.head.clone();
+        head.active_tool = self.active_tool();
+        ChatView {
+            head,
+            subagents: self.subagent_rows(&rows),
+            rows: rows.iter().map(|row| whole_row(row)).collect(),
+            older_before,
+        }
+    }
+
+    /// What a client that held every change up to `since` missed: the head,
+    /// which rows of the window stay, and each row changed since. None when
+    /// the window starts past what it held, and it needs the view whole.
+    pub fn catch_up(&self, since: u64) -> Option<Vec<ChatChange>> {
+        let start = self.window_start();
+        let rows = &self.main.rows[start..];
+        if rows.first().is_some_and(|row| row.v > since) {
+            return None;
+        }
+        let mut head = self.head.clone();
+        head.active_tool = self.active_tool();
+        let mut set = serde_json::to_value(&head).unwrap_or_default();
+        if let Some(fields) = set.as_object_mut() {
+            for name in OPTIONAL_HEAD {
+                fields.entry(name).or_insert(Value::Null);
+            }
+        }
+        let mut out = vec![
+            ChatChange::Head { set },
+            ChatChange::Keep {
+                rows: rows.iter().map(|row| row.msg.id.clone()).collect(),
+            },
+        ];
+        for row in rows.iter().filter(|row| row.v > since) {
+            out.push(ChatChange::Row {
+                row: whole_row(row),
+                within: None,
+            });
+        }
+        let window: Vec<&Row> = rows.iter().collect();
+        for (session, sub_rows) in self.subagent_rows(&window) {
+            let Some(sub) = self.subs.get(&session) else {
+                continue;
+            };
+            for (row, msg) in sub.rows.iter().zip(sub_rows) {
+                if row.v > since {
+                    out.push(ChatChange::Row {
+                        row: msg,
+                        within: Some(session.clone()),
+                    });
+                }
+            }
+        }
+        Some(out)
+    }
+
+    /// Rows before event `before`, folded on their own from the chat's events
+    /// `events`, each with its index. A subagent or a call that ended after
+    /// the page shows how it ended, as this fold knows it.
+    pub fn page(
+        &self,
+        events: &[(u64, ChatEvent)],
+        before: u64,
+        older_before: Option<u64>,
+    ) -> ChatPage {
+        let mut fold = Fold::new(&self.head.permission_mode);
+        fold.head.session_id = self.head.session_id.clone();
+        for (index, event) in events {
+            let at = event
+                .payload
+                .get("at")
+                .and_then(Value::as_u64)
+                .unwrap_or_default();
+            fold.apply(*index, event.kind, &event.payload, at);
+        }
+        let cards: HashMap<&str, &SubagentCard> = self.cards_by_session();
+        let mut rows: Vec<Row> = fold
+            .main
+            .rows
+            .drain(..)
+            .filter(|row| row.index < before)
+            .collect();
+        for row in &mut rows {
+            for part in &mut row.msg.parts {
+                match part {
+                    ChatPart::Subagent { subagent, .. } => {
+                        if let Some(card) = cards.get(subagent.session_id.as_str()) {
+                            *subagent = (*card).clone();
+                        }
+                    }
+                    ChatPart::Tool { tool, .. } if tools::running(tool.status.as_deref()) => {
+                        if let Some(known) = self.tool_part(&tool.tool_call_id) {
+                            *part = known;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        super::turns::settle_all(&mut rows);
+        let refs: Vec<&Row> = rows.iter().collect();
+        let mut subagents = fold.subagent_rows(&refs);
+        for (session, rows) in subagents.iter_mut() {
+            if let Some(sub) = self.subs.get(session) {
+                *rows = sub.rows.iter().map(whole_row).collect();
+            }
+        }
+        ChatPage {
+            rows: rows.iter().map(whole_row).collect(),
+            subagents,
+            older_before,
+        }
+    }
+
+    fn cards_by_session(&self) -> HashMap<&str, &SubagentCard> {
+        let mut cards = HashMap::new();
+        for transcript in std::iter::once(&self.main).chain(self.subs.values()) {
+            for row in &transcript.rows {
+                for part in &row.msg.parts {
+                    if let ChatPart::Subagent { subagent, .. } = part {
+                        cards.insert(subagent.session_id.as_str(), subagent);
+                    }
+                }
+            }
+        }
+        cards
+    }
+
+    fn tool_part(&self, tool_call_id: &str) -> Option<ChatPart> {
+        let place = self
+            .tools
+            .iter()
+            .find(|((_, id), _)| id == tool_call_id)
+            .map(|(_, place)| place)?;
+        let transcript = match &place.within {
+            None => &self.main,
+            Some(session) => self.subs.get(session)?,
+        };
+        let row = &transcript.rows[transcript.position(&place.row)?];
+        row.msg.parts.get(place.part).cloned()
+    }
+
+    /// Every row the fold holds now counts as changed, for a fold built again
+    /// from the chat's events: a client coming back gets the rows whole.
+    pub fn rebuilt(&mut self, seq: u64) {
+        self.seq = seq;
+        for transcript in std::iter::once(&mut self.main).chain(self.subs.values_mut()) {
+            transcript.touched.clear();
+            transcript.bytes = 0;
+            for row in &mut transcript.rows {
+                row.bytes = row_bytes(row);
+                transcript.bytes += row.bytes;
+                row.v = seq;
+                row.fresh = false;
+                row.parts.clear();
+                row.fields.clear();
+                for (side, part) in row.sides.iter_mut().zip(&row.msg.parts) {
+                    side.sent = text_len(part).unwrap_or(0);
+                    side.doc = None;
+                }
+            }
+        }
+        self.head_dirty.clear();
+        self.dropped = None;
+        self.settle_runs();
+        for transcript in std::iter::once(&mut self.main).chain(self.subs.values_mut()) {
+            transcript.touched.clear();
+            for row in &mut transcript.rows {
+                row.fields.clear();
+            }
+        }
+        self.head.active_tool = self.active_tool();
+    }
+}
+
+/// Where a turn starts: a prompt, or a message the agent began a turn with
+/// by itself.
+fn starts_turn(rows: &[Row], at: usize) -> bool {
+    let message = &rows[at].msg;
+    message.role == ChatRole::User
+        || message.opens_turn.is_some()
+            && at
+                .checked_sub(1)
+                .is_none_or(|before| rows[before].msg.role != ChatRole::User)
+}
