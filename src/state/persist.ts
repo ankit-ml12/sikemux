@@ -119,9 +119,7 @@ const PREFS = {
     sideRailWidth: finite((width) => clampRailWidth("start", width)),
     tabRailWidth: finite((width) => clampRailWidth("end", width)),
     pluginSettings: (saved) => normalisePluginSettings(saved),
-    restoreAgentTabs: flag,
     activeSpaceId: (saved, current) => (typeof saved === "string" ? saved : current),
-    agentNotifications: flag,
     notch: (saved) => normaliseNotchSettings(saved),
     voiceDictation: flag,
     iosSimulator: flag,
@@ -140,9 +138,7 @@ const PREFS = {
     lastReleaseNotes: (saved) => readReleaseNotes(saved),
     recentCommandKeys: (saved, current) =>
         Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string").slice(0, 20) : current,
-    lastAgentType: (saved, current) => (isAgentType(saved) ? saved : current),
     languageServerTrust: (saved) => booleansByPath(saved),
-    agentWorktreeDefaults: (saved) => booleansByPath(saved),
     defaultGitRepos: (saved) => stringsByPath(saved),
 } satisfies { [K in keyof StoreState]?: Read<StoreState[K]> };
 
@@ -897,7 +893,7 @@ export function applyHydrate(raw: string, accounts?: AgentAccountBook | null, wo
     const shared = workspace ? sharedFromCore(workspace) : null;
     const placed = new Set(Object.values(windows).flatMap((win) => (win.role === "agent" ? (agentPaneId(win) ?? []) : [])));
     const claimedResumeIds = new Set<string>();
-    if (prefs.restoreAgentTabs) {
+    if (cur.preferences?.restoreAgentTabs) {
         for (const record of workspace?.agents ?? []) {
             const saved = agentFromCore(record);
             if (!saved || agents[saved.id] || sessions[record.project]?.kind !== "project") continue;

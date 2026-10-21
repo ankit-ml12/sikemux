@@ -118,7 +118,7 @@ describe("agent shortcuts", () => {
 
     it("starts the agent launched last, from any tab of the project", async () => {
         const available = vi.spyOn(agentApi, "available").mockResolvedValue([{ ...codex, type: "claude", label: "Claude" }, codex]);
-        setState({ lastAgentType: "codex" });
+        setState({ preferences: testPreferences({ lastAgentType: "codex" }) });
         render(<KeymapHarness />);
 
         pressAction("agent.new");

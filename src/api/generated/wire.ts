@@ -1217,6 +1217,14 @@ export interface Preferences {
     themeId: string;
     /** The themes the person made. */
     customThemes: Theme[];
+    /** The agent a new chat starts as when none is picked: the last one picked. */
+    lastAgentType: string | null;
+    /** The projects, by folder, whose new chats start in a worktree of their own. */
+    agentWorktreeDefaults: Record<string, boolean>;
+    /** Agent tabs open when the app quit open again when it starts. */
+    restoreAgentTabs: boolean;
+    /** The desktop says when an agent needs the person. */
+    agentNotifications: boolean;
 }
 
 export type MidTurnSend = "steer" | "queue";

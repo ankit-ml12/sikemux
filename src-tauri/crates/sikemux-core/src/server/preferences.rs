@@ -122,6 +122,9 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
                 .total_cmp(&(b - preferences.ui_text_scale).abs())
         })
         .unwrap_or(UI_TEXT_SCALES[0]);
+    preferences.last_agent_type = preferences
+        .last_agent_type
+        .filter(|agent| crate::agent_catalog::agent(agent).is_some());
     preferences
 }
 

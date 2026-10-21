@@ -22,6 +22,7 @@ import type { Workspace } from "../api/generated/wire";
 import { localWorkspace } from "./coreWorkspace";
 import type { Agent } from "./types";
 import { useToasts } from "./toast";
+import { testPreferences } from "../test/preferences";
 
 function browserTab(id: string, url: string, title: string) {
     return { id, title, url, active: false, loading: false, canGoBack: false, canGoForward: false, favicon: null, acting: false };
@@ -60,6 +61,7 @@ beforeEach(() => {
     invoke.mockReset();
     resetPersistenceForTests();
     setState(initial, true);
+    setState({ preferences: testPreferences() });
     useToasts.setState({ toasts: [] });
 });
 
@@ -233,20 +235,6 @@ describe("frontend persistence", () => {
         saved.prefs.languageServerTrust["/odd"] = "yes";
         applyHydrate(JSON.stringify(saved));
         expect(getState().languageServerTrust).toEqual({ "/trusted": true, "/refused": false });
-    });
-
-    it("remembers each project's Worktree switch default", async () => {
-        setState({ agentWorktreeDefaults: { "/code/app": true } });
-        invoke.mockResolvedValue(undefined);
-
-        await expect(flushPersist()).resolves.toBe(true);
-        const saved = JSON.parse(invoke.mock.calls[0][1].data as string);
-        expect(saved.prefs.agentWorktreeDefaults).toEqual({ "/code/app": true });
-
-        setState({ agentWorktreeDefaults: {} });
-        saved.prefs.agentWorktreeDefaults["/odd"] = 1;
-        applyHydrate(JSON.stringify(saved));
-        expect(getState().agentWorktreeDefaults).toEqual({ "/code/app": true });
     });
 
     it("takes the spaces and each project's space from the core, and remembers which space is shown", async () => {

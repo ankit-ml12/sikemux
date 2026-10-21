@@ -81,13 +81,11 @@ export interface DomainState {
     disabledPlugins: readonly string[];
     /** The repository and account picked by hand on each code host, by project folder, as the core keeps them. */
     codeHosts: Readonly<Record<string, Record<string, CodeHostChoice>>>;
-    restoreAgentTabs: boolean;
     spaces: readonly ProjectSpace[];
     /** The space id each project belongs to, by project folder, so it outlives closing the project. */
     projectSpaces: Readonly<Record<string, string>>;
     /** The space the rail shows, or null for every project. */
     activeSpaceId: string | null;
-    agentNotifications: boolean;
     notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
     /** Agents get the iOS Simulator tools on a Mac that can run it. */
@@ -118,12 +116,8 @@ export interface DomainState {
     providerProfiles: ProviderProfile[];
     selectedProviderProfileIds: ProviderProfileSelection;
     defaultAgentPermissionMode: AgentPermissionMode;
-    /** The agent ⌘N starts: whichever was launched last. */
-    lastAgentType: AgentType | null;
     /** Whether each project, by root path, may start its language servers. A project absent here has not been asked. */
     languageServerTrust: Record<string, boolean>;
-    /** Whether a new chat in each project, by root path, starts with its Worktree switch on. */
-    agentWorktreeDefaults: Record<string, boolean>;
     /** For a project folder that holds several repositories, by root path, the one its Git views open. */
     defaultGitRepos: Record<string, string>;
 }
@@ -296,11 +290,9 @@ export const useStore = create<StoreState>(() => {
         pluginSettings: {},
         disabledPlugins: [],
         codeHosts: {},
-        restoreAgentTabs: true,
         spaces: [],
         projectSpaces: {},
         activeSpaceId: null,
-        agentNotifications: true,
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
         iosSimulator: true,
@@ -324,9 +316,7 @@ export const useStore = create<StoreState>(() => {
         providerProfiles: defaultProviderProfiles(),
         selectedProviderProfileIds: defaultProviderProfileSelection(),
         defaultAgentPermissionMode: "bypass",
-        lastAgentType: null,
         languageServerTrust: {},
-        agentWorktreeDefaults: {},
         defaultGitRepos: {},
 
         home: "",

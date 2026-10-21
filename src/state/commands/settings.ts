@@ -13,8 +13,8 @@ import type { AgentType } from "../../agents/catalog";
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
 
-export const setRestoreAgentTabs = (value: boolean): void => setState({ restoreAgentTabs: value });
-export const setAgentNotifications = (value: boolean): void => setState({ agentNotifications: value });
+export const setRestoreAgentTabs = (value: boolean): void => setPreference("restoreAgentTabs", value);
+export const setAgentNotifications = (value: boolean): void => setPreference("agentNotifications", value);
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
 export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
     setState({ notch: { ...getState().notch, ...patch } });
@@ -68,7 +68,7 @@ export const setLanguageServerTrust = (project: string, allowed: boolean): void 
     setState((s) => ({ languageServerTrust: { ...s.languageServerTrust, [project]: allowed } }));
 
 export const setAgentWorktreeDefault = (project: string, on: boolean): void =>
-    setState((s) => ({ agentWorktreeDefaults: { ...s.agentWorktreeDefaults, [project]: on } }));
+    setPreference("agentWorktreeDefaults", { ...getState().preferences?.agentWorktreeDefaults, [project]: on });
 
 /** Null clears it, so the project's Git views go back to asking. */
 export function setDefaultGitRepo(project: string, repo: string | null): void {

@@ -606,7 +606,6 @@ function baseSnapshot(): PersistedSnapshot {
       tabRailOpen: true,
       onboardingComplete: true,
       notificationsIntroduced: true,
-      agentNotifications: false,
       lastReleaseNotes: null,
       lastSeenVersion: "0.5.3",
       activeSpaceId: null,

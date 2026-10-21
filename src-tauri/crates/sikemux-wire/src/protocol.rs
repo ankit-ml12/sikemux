@@ -1112,6 +1112,14 @@ pub struct Preferences {
     pub theme_id: String,
     /// The themes the person made.
     pub custom_themes: Vec<crate::theme::Theme>,
+    /// The agent a new chat starts as when none is picked: the last one picked.
+    pub last_agent_type: Option<String>,
+    /// The projects, by folder, whose new chats start in a worktree of their own.
+    pub agent_worktree_defaults: BTreeMap<String, bool>,
+    /// Agent tabs open when the app quit open again when it starts.
+    pub restore_agent_tabs: bool,
+    /// The desktop says when an agent needs the person.
+    pub agent_notifications: bool,
 }
 
 impl Default for Preferences {
@@ -1124,6 +1132,10 @@ impl Default for Preferences {
             editor_text_scale: DEFAULT_TEXT_SCALE,
             theme_id: DEFAULT_THEME_ID.to_owned(),
             custom_themes: Vec::new(),
+            last_agent_type: None,
+            agent_worktree_defaults: BTreeMap::new(),
+            restore_agent_tabs: true,
+            agent_notifications: true,
         }
     }
 }

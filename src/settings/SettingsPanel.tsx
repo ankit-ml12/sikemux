@@ -520,8 +520,8 @@ function ActionsPage() {
 }
 
 function AgentsPage() {
-    const restore = useStore((s) => s.restoreAgentTabs);
-    const notifications = useStore((s) => s.agentNotifications);
+    const restore = usePreference("restoreAgentTabs") === true;
+    const notifications = usePreference("agentNotifications") === true;
     const density = useStore((s) => s.railDensity);
     const midTurnSend = usePreference("midTurnSend");
     const profiles = useStore((s) => s.providerProfiles);

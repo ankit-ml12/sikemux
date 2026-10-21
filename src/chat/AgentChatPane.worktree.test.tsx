@@ -8,6 +8,7 @@ import { AgentChatPane } from "./AgentChatPane";
 import type { ChatView } from "./types";
 import type { PreparedWorktree } from "./useChatWorktree";
 import { draftOf, typeDraft } from "../test/draft";
+import { testPreferences } from "../test/preferences";
 
 const mocks = vi.hoisted(() => ({
     prompt: vi.fn(async () => {}),
@@ -125,7 +126,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.started = false;
     resetResourcesForTests();
-    setState({ agentWorktreeDefaults: {} });
+    setState({ preferences: testPreferences() });
     mocks.create.mockImplementation(
         () =>
             new Promise<PreparedWorktree>((resolve) => {

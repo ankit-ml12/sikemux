@@ -137,7 +137,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         const state = getState();
         const place = projectCopyOn(state, host.id, state.sessions[state.activeSessionId]);
         if (!place) return;
-        void startRemoteChat(place.session.id, place.copy, state.lastAgentType ?? "claude").catch(reportError(`New chat on ${host.name}`));
+        void startRemoteChat(place.session.id, place.copy, cmd.lastAgentType() ?? "claude").catch(reportError(`New chat on ${host.name}`));
     };
     const files = () => {
         const state = getState();

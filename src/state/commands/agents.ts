@@ -4,13 +4,21 @@ import { acpAccount } from "../../agents/accounts";
 import { coreCall } from "../../api/core";
 import { agentNamesApi } from "../../api/agentNames";
 import type { AgentQuestion } from "../../api/agentQuestions";
-import { agentSupportsChat, canBypassPermissions, hasRelocatableSessions, setAgentCatalog, type CatalogAgent } from "../../agents/catalog";
+import {
+    agentSupportsChat,
+    canBypassPermissions,
+    hasRelocatableSessions,
+    isAgentType,
+    setAgentCatalog,
+    type CatalogAgent,
+} from "../../agents/catalog";
 import { effectiveMode, isResumeId, MAX_AGENT_MODEL_LENGTH, normalizePermissionMode } from "../../agents/agentLaunch";
 import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../../agents/agentProfiles";
 import { emit } from "../bus";
 import { confirmDialog } from "../dialog";
 import { invalidate, peekResource } from "../resources";
 import { agentCatalogR } from "../resources.defs";
+import { setPreference } from "../preferences";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { notify, reportError, swallow } from "../toast";
 import { agentExecutablePath, profileOf } from "./agentLaunchCommand";
@@ -138,6 +146,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     if (!home) return false;
     const cwd = home === target ? options.cwd : undefined;
     let attached = false;
+    let started = false;
     mutate((d) => {
         const session = d.sessions[home.id];
         if (!session) return;
@@ -183,7 +192,7 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             launchState: "live",
         };
         d.agents[agent.id] = agent;
-        d.lastAgentType = type;
+        started = true;
         const win = agentWindow(agent, agentCwd);
         d.windows[win.id] = win;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), win.id];
@@ -192,7 +201,14 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
             if (home !== target) bringForward(d, session.id);
         }
     });
+    if (started) setPreference("lastAgentType", type);
     return attached;
+}
+
+/** The agent a new chat starts as when none is picked. */
+export function lastAgentType(): AgentType | null {
+    const type = getState().preferences?.lastAgentType;
+    return isAgentType(type) ? type : null;
 }
 
 /** A session an agent CLI saved, by its id, in the project it ran in. */

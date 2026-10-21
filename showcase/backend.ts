@@ -324,6 +324,10 @@ export class ShowcaseBackend implements IpcTransport {
         editorTextScale: 1,
         themeId: "aura-noir",
         customThemes: [],
+        lastAgentType: null,
+        agentWorktreeDefaults: {},
+        restoreAgentTabs: true,
+        agentNotifications: false,
       }),
     );
     this.onCore(

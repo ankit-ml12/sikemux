@@ -10,6 +10,10 @@ export function testPreferences(changes: Partial<Preferences> = {}): Preferences
         editorTextScale: 1,
         themeId: "aura-noir",
         customThemes: [],
+        lastAgentType: null,
+        agentWorktreeDefaults: {},
+        restoreAgentTabs: true,
+        agentNotifications: true,
         ...changes,
     };
 }

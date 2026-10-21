@@ -42,7 +42,7 @@ export function sendTestNotification(): void {
  */
 export function introduceNotifications(): void {
     const state = getState();
-    if (!state.agentNotifications || state.notificationsIntroduced) return;
+    if (!state.preferences?.agentNotifications || state.notificationsIntroduced) return;
     setState({ notificationsIntroduced: true });
     sendTestNotification();
 }
@@ -82,7 +82,7 @@ export function installAgentNotifications(hasFocus: () => boolean = () => docume
         .subscribe<AgentNotice>(
             "agent_notice",
             ({ payload }) => {
-                if (!getState().agentNotifications || hasFocus()) return;
+                if (!getState().preferences?.agentNotifications || hasFocus()) return;
                 getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(swallow("bounce dock icon"));
                 postNotification(payload.title, payload.body, payload.agentId).catch(swallow("agent notification"));
             },
