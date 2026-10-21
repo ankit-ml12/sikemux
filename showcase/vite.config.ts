@@ -586,6 +586,4 @@ export default mergeConfig(base, {
   optimizeDeps: { rolldownOptions: { plugins: [ownTauriGlobals] } },
   cacheDir: resolve(import.meta.dirname, "../node_modules/.vite-showcase"),
   server: { port: 1471, strictPort: true },
-  // Headless Chrome's WebGL context scales xterm's glyphs twice at 2x; the DOM renderer draws the same cells.
-  define: { "import.meta.env.VITE_TERMINAL_WEBGL": JSON.stringify("0") },
 });
