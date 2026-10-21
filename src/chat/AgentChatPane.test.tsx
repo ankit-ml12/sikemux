@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
     stopTask: vi.fn(async () => {}),
     setConfig: vi.fn(),
     toolDetail: vi.fn(async (_agentId: string, _toolCallId: string): Promise<ToolDetail> => ({})),
-    setAgentModelPreferences: vi.fn(),
     setAgentPermissionMode: vi.fn(),
     /* Stands for the core starting the chat, answering how its head stands; the pane takes it up by attaching once. */
     start: vi.fn(async (_agentId: string): Promise<Partial<ChatHead>> => ({})),
@@ -96,7 +95,6 @@ vi.mock("../state/commands", () => ({
     openUrlOnDesk: mocks.openUrlOnDesk,
     openFileOnDesk: mocks.openFileOnDesk,
     setAgentPermissionMode: mocks.setAgentPermissionMode,
-    setAgentModelPreferences: mocks.setAgentModelPreferences,
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),
@@ -383,7 +381,7 @@ describe("AgentChatPane", () => {
         }
     });
 
-    it("changes the model live and persists only the confirmed configuration", async () => {
+    it("changes the model live without restarting the chat", async () => {
         const model = (current: string) => ({
             id: "model",
             current,
@@ -401,7 +399,6 @@ describe("AgentChatPane", () => {
         fireEvent.change(screen.getByRole("combobox", { name: "Search model" }), { target: { value: "Sol" } });
         fireEvent.keyDown(screen.getByRole("combobox", { name: "Search model" }), { key: "Enter" });
         await waitFor(() => expect(mocks.setConfig).toHaveBeenCalledWith(agent.id, "model", "sol"));
-        await waitFor(() => expect(mocks.setAgentModelPreferences).toHaveBeenCalledWith(agent.id, "sol", "high"));
         send(head({ model: model("sol") }));
         expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("GPT-5.6 Sol");
         expect(mocks.start).toHaveBeenCalledTimes(1);

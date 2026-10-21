@@ -3,7 +3,6 @@ import { errorText } from "../lib/format";
 import { acpApi } from "../api/acp";
 import type { ConfigPicker } from "../api/generated/wire";
 import type { Agent, ProviderProfile } from "../state/types";
-import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { hasPrimaryModifier } from "../lib/platform";
 import { IconArrowDown, IconFile, IconPlug, IconWarning } from "../ui/Icons";
@@ -15,7 +14,7 @@ import { newFoldMemory } from "./longText";
 import { sentPrompts } from "./promptHistory";
 import { activeToolLabel } from "./toolLabels";
 import { subagentCards } from "./transcript";
-import { activityText, composerPlaceholder as placeholderFor, connectingLabel, knownEffort, lostConnectionText } from "./chatStatus";
+import { activityText, composerPlaceholder as placeholderFor, connectingLabel, lostConnectionText } from "./chatStatus";
 import { ChatAgentContext, ChatSubagentsContext, ReaderScrollContext, ToolDetailContext } from "./chatAgent";
 import { warmTranscript } from "./ChatMessageRow";
 import { ChatTranscript } from "./ChatTranscript";
@@ -248,11 +247,6 @@ export const AgentChatPane = memo(function AgentChatPane({
         const sessionId = state.sessionId;
         try {
             await acpApi.setConfig(agent.id, picker.id, value);
-            if (agentRef.current.id !== agent.id) return;
-            const chosen = (held: ConfigPicker | undefined) => (held && picker.id === held.id ? value : held?.current);
-            const model = chosen(state.model) ?? agent.model;
-            const effort = chosen(state.effort) || agent.effort;
-            cmd.setAgentModelPreferences(agent.id, model, knownEffort(effort));
         } catch (error) {
             if (state.sessionId === sessionId) setComposerError(errorText(error));
         } finally {

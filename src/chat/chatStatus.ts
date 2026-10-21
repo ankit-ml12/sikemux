@@ -1,11 +1,4 @@
-import type { Agent } from "../state/types";
 import type { ChatRows } from "./types";
-
-export function knownEffort(effort: string | undefined): Agent["effort"] {
-    return ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort ?? "")
-        ? (effort as Agent["effort"])
-        : undefined;
-}
 
 export function connectingLabel(connection: ChatRows["connection"]): string | null {
     if (connection === "starting") return "Starting agent…";

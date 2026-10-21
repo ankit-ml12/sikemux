@@ -58,7 +58,6 @@ vi.mock("../state/commands", () => ({
     setAgentWorktree: mocks.setAgentWorktree,
     setAgentWorktreeDefault: mocks.setAgentWorktreeDefault,
     setAgentPermissionMode: vi.fn(),
-    setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),

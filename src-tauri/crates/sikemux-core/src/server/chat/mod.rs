@@ -2082,8 +2082,37 @@ pub(crate) async fn set_config(
         value,
         reply,
     })?;
-    answer
+    let answer = answer
         .await
         .map_err(|_| CoreError::from(STOPPED))?
-        .map_err(CoreError::from)
+        .map_err(CoreError::from)?;
+    keep_model_choice(core, agent_id, &answer["configOptions"]);
+    Ok(answer)
+}
+
+/// Keeps the model and effort a chat now runs on with its agent, so its next
+/// session starts on them. An effort its CLI does not take is left out.
+fn keep_model_choice(core: &Core, agent_id: &str, options: &Value) {
+    let Some(agent) = core.workspaces.agent(agent_id) else {
+        return;
+    };
+    let (model, effort) = crate::acp::pickers::pickers(options);
+    let mut patch = serde_json::Map::new();
+    if let Some(model) = model.filter(|model| !model.current.is_empty()) {
+        patch.insert("model".into(), Value::String(model.current));
+    }
+    let takes = |effort: &str| {
+        crate::agent_catalog::agent(&agent.provider)
+            .is_some_and(|entry| entry.efforts.contains(&effort))
+    };
+    if let Some(effort) = effort.filter(|effort| takes(&effort.current)) {
+        patch.insert("effort".into(), Value::String(effort.current));
+    }
+    if patch.is_empty() {
+        return;
+    }
+    match core.workspaces.update_agent(agent_id, patch) {
+        Ok(_) => core.view_changed(),
+        Err(error) => eprintln!("sikemux core: the agent's model choice was not kept: {error}"),
+    }
 }

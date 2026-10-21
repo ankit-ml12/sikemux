@@ -45,7 +45,6 @@ vi.mock("../api/acp", () => ({
 vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     setAgentPermissionMode: vi.fn(),
-    setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),

@@ -67,15 +67,6 @@ export function configureEmptyAgent(id: string, type: AgentType, profileId?: str
     });
 }
 
-export function setAgentModelPreferences(id: string, model: string | undefined, effort: AgentEffort | undefined): void {
-    mutate((d) => {
-        const agent = d.agents[id];
-        if (!agent) return;
-        agent.model = model;
-        agent.effort = effort;
-    });
-}
-
 export function setAgentPermissionMode(id: string, requestedMode: AgentPermissionMode): void {
     mutate((d) => {
         const a = d.agents[id];
