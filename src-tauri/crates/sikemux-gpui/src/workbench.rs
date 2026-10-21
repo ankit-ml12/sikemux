@@ -7,9 +7,10 @@ use std::time::Duration;
 use chrono::Timelike;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AppContext, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, Styled, Subscription, Window,
+    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, Styled, StyleRefinement, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
@@ -65,6 +66,7 @@ pub struct Workbench {
     pub terminals: terminal::Terminals,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
+    pub parts: Parts,
     _filtering: Option<Subscription>,
 }
 
@@ -178,6 +180,7 @@ impl Workbench {
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             focus: cx.focus_handle(),
+            parts: Parts::new(cx),
             _filtering: None,
         };
         bench.focus.focus(window, cx);
@@ -261,20 +264,29 @@ impl Workbench {
                     self.signing_in = false;
                 }
             }
-            Update::Read("files.list", value) => self.files.listed(&value, &self.asks),
+            Update::Read("files.list", value) => {
+                self.files.listed(&value, &self.asks);
+                return self.parts.redraw(&self.parts.tabs, cx);
+            }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
                 self.reads.insert("git-overview", value);
+                self.parts.redraw(&self.parts.top, cx);
+                return self.parts.redraw(&self.parts.tabs, cx);
             }
             Update::Read("projectFiles", value) => {
                 if self.project_files.answered(&value) {
                     self.rank(cx);
                 }
+                return;
             }
             Update::Read(key, value) => {
                 self.reads.insert(key, value);
             }
-            Update::Terminal(session, screenful) => self.terminals.apply(session, screenful, cx),
+            Update::Terminal(session, screenful) => {
+                self.terminals.apply(session, screenful, cx);
+                return self.parts.redraw(&self.parts.stage, cx);
+            }
             Update::Lost(reason) => self.lost = Some(reason),
             Update::Changed { topic, project, paths } => {
                 let root = self.files.root.as_ref().map(|root| root.to_string_lossy().into_owned());
@@ -284,6 +296,7 @@ impl Workbench {
                         self.project_files.read(root.as_deref(), &self.asks);
                     }
                 }
+                return;
             }
         }
         cx.notify();
@@ -757,11 +770,65 @@ pub fn shows(tab: &Tab, kind: PaneKind) -> Option<&String> {
     }
 }
 
-impl Render for Workbench {
+/// One part of the window, drawn as a view of its own so that it draws again only when the
+/// store changes everywhere or names this part.
+pub struct Part {
+    bench: WeakEntity<Workbench>,
+    draw: fn(&mut Workbench, &mut Window, &mut Context<Workbench>) -> AnyElement,
+    column: bool,
+    _store: Subscription,
+}
+
+impl Render for Part {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.compose(window, cx);
-        self.hint(window, cx);
+        let draw = self.draw;
+        let drawn = self.bench.update(cx, |bench, cx| draw(bench, window, cx)).unwrap_or_else(|_| div().into_any_element());
+        div().size_full().flex().when(self.column, |part| part.flex_col()).child(drawn)
+    }
+}
+
+/// The window's parts. A plain `cx.notify()` on the store draws them all again; output that
+/// touches one part, such as a terminal's, draws only that one.
+#[derive(Clone)]
+pub struct Parts {
+    pub top: Entity<Part>,
+    pub rail: Entity<Part>,
+    pub stage: Entity<Part>,
+    pub tabs: Entity<Part>,
+    pub finder: Entity<Part>,
+}
+
+impl Parts {
+    fn new(cx: &mut Context<Workbench>) -> Self {
+        let bench = cx.entity();
+        let mut part = |draw: fn(&mut Workbench, &mut Window, &mut Context<Workbench>) -> AnyElement, column: bool| {
+            cx.new(|cx| Part { bench: bench.downgrade(), draw, column, _store: cx.observe(&bench, |_, _, cx| cx.notify()) })
+        };
+        Self {
+            top: part(|bench, _, cx| tabs::top_bar(bench, cx).into_any_element(), true),
+            rail: part(|bench, _, cx| rail::side_rail(bench, cx).into_any_element(), false),
+            stage: part(
+                |bench, window, cx| {
+                    bench.compose(window, cx);
+                    bench.hint(window, cx);
+                    home::stage(bench, window, cx)
+                },
+                false,
+            ),
+            tabs: part(|bench, _, cx| agents::tab_rail(bench, cx), false),
+            finder: part(|bench, window, cx| crate::finder::overlay(bench, window, cx).unwrap_or_else(|| div().into_any_element()), true),
+        }
+    }
+
+    pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {
+        part.update(cx, |_, cx| cx.notify());
+    }
+}
+
+impl Render for Workbench {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx);
+        let parts = &self.parts;
         div()
             .id("shell")
             .track_focus(&self.focus)
@@ -779,7 +846,7 @@ impl Render for Workbench {
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
             .text_color(t.text_secondary)
-            .child(tabs::top_bar(self, cx))
+            .child(parts.top.clone().cached(StyleRefinement::default().w_full().h(px(34.)).flex_none()))
             .child(
                 div()
                     .flex()
@@ -789,10 +856,10 @@ impl Render for Workbench {
                     .pt(px(4.))
                     .px(px(10.))
                     .pb(px(10.))
-                    .child(rail::side_rail(self, cx))
-                    .child(home::stage(self, window, cx))
-                    .child(agents::tab_rail(self, cx)),
+                    .child(parts.rail.clone().cached(StyleRefinement::default().w(px(rail::SIDE_RAIL_WIDTH)).h_full().flex_none()))
+                    .child(parts.stage.clone().cached(StyleRefinement::default().flex_1().min_w_0().h_full()))
+                    .child(parts.tabs.clone().cached(StyleRefinement::default().w(px(agents::TAB_RAIL_WIDTH)).h_full().flex_none())),
             )
-            .children(crate::finder::overlay(self, window, cx))
+            .when(self.finder.is_some(), |shell| shell.child(parts.finder.clone().cached(StyleRefinement::default().absolute().inset_0())))
     }
 }

@@ -9,11 +9,12 @@ use gpui_kit::{
     Window,
 };
 
-use super::{icon, kbd, text};
+use super::{icon, text};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
 
-type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+pub(super) type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+type OnSelect = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
 /// A glyph you press: the rails' header actions at 26px, their add buttons at 18px.
 #[derive(IntoElement)]
@@ -145,7 +146,6 @@ pub struct Button {
     id: ElementId,
     label: SharedString,
     icon: Option<Icon>,
-    keys: Option<&'static str>,
     variant: Variant,
     on_click: Option<OnClick>,
 }
@@ -156,7 +156,6 @@ impl Button {
             id: id.into(),
             label: label.into(),
             icon: None,
-            keys: None,
             variant,
             on_click: None,
         }
@@ -164,11 +163,6 @@ impl Button {
 
     pub fn icon(mut self, icon: Icon) -> Self {
         self.icon = Some(icon);
-        self
-    }
-
-    pub fn keys(mut self, keys: &'static str) -> Self {
-        self.keys = Some(keys);
         self
     }
 
@@ -231,7 +225,6 @@ impl RenderOnce for Button {
                 icon(icon_name, glyph).text_color(rest).group_hover(GROUP, move |style| style.text_color(hover))
             }))
             .child(self.label)
-            .children(self.keys.map(|keys| kbd(keys, cx).font_family(crate::theme::MONO)))
     }
 }
 
@@ -242,7 +235,7 @@ pub struct Segmented {
     options: Vec<(Icon, SharedString)>,
     selected: usize,
     pill: bool,
-    on_select: Option<Rc<dyn Fn(&usize, &mut Window, &mut App)>>,
+    on_select: Option<OnSelect>,
 }
 
 impl Segmented {

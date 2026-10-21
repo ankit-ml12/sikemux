@@ -283,7 +283,7 @@ fn main() {
     };
     let log = std::env::args().nth(1).unwrap_or_else(|| "/tmp/termbench/buildlog-crlf.txt".into());
     let shots = std::env::args().nth(2).map(PathBuf::from);
-    let link = core::start(core::Home::new());
+    let link = core::start(core::Home::default());
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let started = Instant::now();
     let client = loop {

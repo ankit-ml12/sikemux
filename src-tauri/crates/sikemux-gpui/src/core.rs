@@ -128,8 +128,8 @@ pub struct Home {
     manifest_dir: Option<PathBuf>,
 }
 
-impl Home {
-    pub fn new() -> Self {
+impl Default for Home {
+    fn default() -> Self {
         let library = sikemux_process::paths::home().map(|home| home.join("Library"));
         let support = library.as_ref().map(|library| library.join("Application Support").join(IDENTIFIER));
         let socket = sikemux_core::default_socket_path().unwrap_or_default();

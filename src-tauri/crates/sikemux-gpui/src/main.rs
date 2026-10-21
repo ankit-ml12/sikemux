@@ -9,7 +9,7 @@ fn main() {
             std::env::set_var(sikemux_process::vars::CONFIG_DIR, home.join(".config").join("sikemux-gpui"));
         }
     }
-    let link = core::start(core::Home::new());
+    let link = core::start(core::Home::default());
     gpui_kit::application()
         .with_assets(icons::Icons)
         .run(move |cx| {

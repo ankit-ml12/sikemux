@@ -310,32 +310,32 @@ pub fn pane(bench: &Workbench, this: &Entity<Workbench>, session: &str, window: 
         .on_key_down(window.listener_for(&this, move |bench, event: &KeyDownEvent, window, cx| {
             if key(bench, id, &event.keystroke, window, cx) {
                 cx.stop_propagation();
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
             }
         }))
         .on_mouse_down(Button::Left, window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
             mouse_down(bench, id, event, window, cx);
-            cx.notify();
+            bench.parts.redraw(&bench.parts.stage, cx);
         }))
         .on_mouse_move(window.listener_for(&this, move |bench, event: &MouseMoveEvent, _, cx| {
             if mouse_move(bench, id, event) {
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
             }
         }))
         .on_mouse_down(Button::Right, window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
             if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                 window.focus(&terminal.focus, cx);
                 terminal.menu = Some(event.position);
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
             }
         }))
         .on_mouse_up(Button::Left, window.listener_for(&this, move |bench, event: &MouseUpEvent, _, cx| {
             mouse_up(bench, id, event, cx);
-            cx.notify();
+            bench.parts.redraw(&bench.parts.stage, cx);
         }))
         .on_scroll_wheel(window.listener_for(&this, move |bench, event: &ScrollWheelEvent, _, cx| {
             if wheel(bench, id, event) {
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
             }
         }));
     if let Some(terminal) = bench.terminals.open.get(&id) {
@@ -392,7 +392,7 @@ fn layout(
     let asks = bench.asks.clone();
     let terminal = bench.terminals.open.entry(id).or_insert_with(|| {
         let _ = asks.send(Ask::Terminal(id, TerminalAsk::Attach));
-        cx.notify();
+        bench.parts.redraw(&bench.parts.stage, cx);
         let focus = cx.focus_handle();
         Terminal {
             screen: Screen::default(),
@@ -676,7 +676,7 @@ impl Typing {
         self.bench.update(cx, |bench, cx| {
             if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                 terminal.marked = marked.filter(|text| !text.is_empty());
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
             }
         });
     }
@@ -914,7 +914,7 @@ fn find(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workb
     let query = find.input.read(cx).value().to_string();
     if query.is_empty() {
         find.found = FindResult::default();
-        return cx.notify();
+        return bench.parts.redraw(&bench.parts.stage, cx);
     }
     let current = find.found.current.and_then(|current| find.found.matches.get(current)).map(|(start, _)| *start);
     let ask = TerminalAsk::Find {
@@ -1015,7 +1015,7 @@ impl RenderOnce for TerminalMenu {
                         terminal.menu = None;
                     }
                     run(bench, id, window, cx);
-                    cx.notify();
+                    bench.parts.redraw(&bench.parts.stage, cx);
                 })
             })
         };
@@ -1026,7 +1026,7 @@ impl RenderOnce for TerminalMenu {
                 close.update(cx, |bench, cx| {
                     if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                         terminal.menu = None;
-                        cx.notify();
+                        bench.parts.redraw(&bench.parts.stage, cx);
                     }
                 })
             })
@@ -1095,7 +1095,7 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
                 if wait.is_none() {
                     bench.terminals.blinking = None;
                 }
-                cx.notify();
+                bench.parts.redraw(&bench.parts.stage, cx);
                 wait
             }) else {
                 return;
@@ -1106,5 +1106,5 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
             }
         }));
     }
-    cx.notify();
+    bench.parts.redraw(&bench.parts.stage, cx);
 }

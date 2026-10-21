@@ -196,7 +196,7 @@ impl Workbench {
                     finder.shown = shown;
                     finder.ranked = files;
                     finder.select(0);
-                    cx.notify();
+                    bench.parts.redraw(&bench.parts.finder, cx);
                 }
             });
         }));
@@ -259,12 +259,16 @@ pub fn overlay(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) 
                     .overflow_hidden()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_action(cx.listener(|bench, _: &Next, _, cx| {
-                        bench.finder.as_mut().map(|finder| finder.step(1));
-                        cx.notify();
+                        if let Some(finder) = bench.finder.as_mut() {
+                            finder.step(1);
+                        }
+                        bench.parts.redraw(&bench.parts.finder, cx);
                     }))
                     .on_action(cx.listener(|bench, _: &Previous, _, cx| {
-                        bench.finder.as_mut().map(|finder| finder.step(-1));
-                        cx.notify();
+                        if let Some(finder) = bench.finder.as_mut() {
+                            finder.step(-1);
+                        }
+                        bench.parts.redraw(&bench.parts.finder, cx);
                     }))
                     .on_action(cx.listener(|bench, _: &Choose, window, cx| {
                         let selected = bench.finder.as_ref().map_or(0, |finder| finder.selected);
@@ -337,7 +341,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .on_mouse_move(cx.listener(move |bench, _, _, cx| {
             if let Some(finder) = bench.finder.as_mut().filter(|finder| finder.selected != place) {
                 finder.selected = place;
-                cx.notify();
+                bench.parts.redraw(&bench.parts.finder, cx);
             }
         }))
         .on_click(cx.listener(move |bench, _, window, cx| bench.choose(place, window, cx)))

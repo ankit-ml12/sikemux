@@ -9,6 +9,7 @@ use gpui_kit::{
 };
 use smallvec::SmallVec;
 
+use super::controls::OnClick;
 use super::{icon, text};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2, RADIUS_4};
@@ -70,12 +71,10 @@ pub struct MenuItem {
     label: SharedString,
     icon: Option<Icon>,
     mark: Option<AnyElement>,
-    detail: Option<SharedString>,
     hint: Option<SharedString>,
     checked: bool,
-    danger: bool,
     disabled: bool,
-    on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    on_click: Option<OnClick>,
 }
 
 impl MenuItem {
@@ -85,10 +84,8 @@ impl MenuItem {
             label: label.into(),
             icon: None,
             mark: None,
-            detail: None,
             hint: None,
             checked: false,
-            danger: false,
             disabled: false,
             on_click: None,
         }
@@ -105,11 +102,6 @@ impl MenuItem {
         self
     }
 
-    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
-        self.detail = Some(detail.into());
-        self
-    }
-
     pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
         self.hint = Some(hint.into());
         self
@@ -117,11 +109,6 @@ impl MenuItem {
 
     pub fn checked(mut self, checked: bool) -> Self {
         self.checked = checked;
-        self
-    }
-
-    pub fn danger(mut self) -> Self {
-        self.danger = true;
         self
     }
 
@@ -139,11 +126,7 @@ impl MenuItem {
 impl RenderOnce for MenuItem {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let (rest, hover, wash) = if self.danger {
-            (Hsla { a: 0.92, ..t.danger }, t.danger, Hsla { a: 0.12, ..t.danger })
-        } else {
-            (t.text_secondary, t.text_primary, t.surface_hover)
-        };
+        let (rest, hover, wash) = (t.text_secondary, t.text_primary, t.surface_hover);
         let on_click = self.on_click.filter(|_| !self.disabled);
         BaseButton::new(self.id)
             .group(GROUP)
@@ -170,17 +153,7 @@ impl RenderOnce for MenuItem {
                 )
             }))
             .children(self.mark.map(|mark| div().min_w(px(14.)).mr(px(-2.)).child(mark)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(div().overflow_hidden().text_ellipsis().whitespace_nowrap().child(self.label))
-                    .children(self.detail.map(|detail| {
-                        text(detail, 10., FontWeight::NORMAL).text_color(t.text_tertiary)
-                    })),
-            )
+            .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(self.label))
             .children(self.hint.map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(t.text_tertiary)))
             .when(self.checked, |item| item.child(icon(Icon::Check, 11.).text_color(t.accent)))
     }
