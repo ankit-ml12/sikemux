@@ -213,6 +213,7 @@ calls! { core, client, params;
     "closePane": Full => answer(super::layout::close_pane(&core, parse(params)?)?),
     "resizeSplit": Full => answer(super::layout::resize_split(&core, parse(params)?)?),
     "account": Watch => answer(core.account.shown()),
+    "remoteImage": Watch => answer(super::remote_image::fetch(&core.remote_images, parse(params)?).await?),
     "accountPicture": Watch => {
         let params: AccountPictureParams = parse(params)?;
         answer(super::account::picture(&core, &params.hash).await)

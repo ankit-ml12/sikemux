@@ -79,6 +79,13 @@ pub async fn fetch_image(
     request: RequestBuilder,
     max_bytes: usize,
 ) -> Option<(Vec<u8>, &'static str)> {
+    let body = fetch_bounded(request, max_bytes).await?;
+    let mime = sniff(&body).filter(|mime| mime.starts_with("image/"))?;
+    Some((body, mime))
+}
+
+/// The answer's bytes, or nothing when it fails or holds more than `max_bytes`.
+pub async fn fetch_bounded(request: RequestBuilder, max_bytes: usize) -> Option<Vec<u8>> {
     let response = request.send().await.ok()?;
     if !response.status().is_success()
         || response
@@ -96,8 +103,7 @@ pub async fn fetch_image(
         }
         body.extend_from_slice(&chunk);
     }
-    let mime = sniff(&body).filter(|mime| mime.starts_with("image/"))?;
-    Some((body, mime))
+    Some(body)
 }
 
 pub fn data_url(mime: &str, bytes: &[u8]) -> String {

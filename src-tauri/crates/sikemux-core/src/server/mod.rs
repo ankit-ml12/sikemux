@@ -62,6 +62,7 @@ mod project_roots;
 mod prompt_draft;
 mod questions;
 mod remote;
+mod remote_image;
 mod sandbox;
 mod saved;
 mod saved_sessions;
@@ -371,6 +372,7 @@ pub(crate) struct Core {
     pub(crate) ports: ports::Ports,
     pub(crate) spares: spare::Spares,
     pub(crate) updates: updates::Updates,
+    pub(crate) remote_images: remote_image::RemoteImages,
     pub(crate) tasks: tasks::Tasks,
     pub(crate) git_watches: crate::git::watch::Watches,
     /// Each project's branch chip, by project folder.
@@ -479,6 +481,7 @@ impl Core {
             ports: ports::Ports::default(),
             spares: spare::Spares::default(),
             updates: updates::Updates::default(),
+            remote_images: remote_image::RemoteImages::default(),
             tasks: tasks::Tasks::new(data_dir),
             git_watches: Default::default(),
             git_chips: Default::default(),
