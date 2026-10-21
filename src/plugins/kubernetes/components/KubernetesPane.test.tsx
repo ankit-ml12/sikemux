@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD } from "../testing";
+import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD, CONTROL, SICK } from "../testing";
 
 const api = vi.hoisted(() => ({
     status: vi.fn(),
@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
     network: vi.fn(),
     config: vi.fn(),
     pod: vi.fn(),
+    nodes: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
@@ -36,6 +37,7 @@ beforeEach(() => {
     api.events.mockResolvedValue([]);
     api.network.mockResolvedValue({ services: [], ingresses: [] });
     api.config.mockResolvedValue({ configMaps: [], secrets: [] });
+    api.nodes.mockResolvedValue([CONTROL]);
 });
 
 const openSection = async (name: RegExp) =>
@@ -171,5 +173,16 @@ describe("the Kubernetes pane", () => {
         const before = api.workloads.mock.calls.length;
         fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
         await waitFor(() => expect(api.workloads.mock.calls.length).toBeGreaterThan(before));
+    });
+
+    it("lists the cluster's nodes, and counts the ones not ready in the sidebar", async () => {
+        api.nodes.mockResolvedValue([SICK, CONTROL]);
+        renderPane();
+        const nav = await screen.findByRole("navigation", { name: "Kubernetes" });
+        await waitFor(() => expect(within(nav).getByRole("button", { name: /Nodes/ })).toHaveTextContent("1"));
+        fireEvent.click(within(nav).getByRole("button", { name: /Nodes/ }));
+        const table = await screen.findByRole("table", { name: "Nodes" });
+        expect(within(table).getAllByRole("row")).toHaveLength(3);
+        expect(api.nodes).toHaveBeenCalledWith("kind-dev");
     });
 });

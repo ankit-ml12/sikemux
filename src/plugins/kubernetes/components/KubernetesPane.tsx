@@ -3,12 +3,23 @@ import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/res
 import { Dropdown, EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import type { KubeStatus, Scope } from "../api";
 import { usePoll } from "../hooks";
-import { kubeConfigR, kubeEventsR, kubeNamespacesR, kubeNetworkR, kubePodsR, kubeStatusR, kubeWorkloadsR, kubernetes } from "../resources";
+import {
+    kubeConfigR,
+    kubeEventsR,
+    kubeNamespacesR,
+    kubeNetworkR,
+    kubeNodesR,
+    kubePodsR,
+    kubeStatusR,
+    kubeWorkloadsR,
+    kubernetes,
+} from "../resources";
 import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from "../state";
 import { KubernetesMark } from "./KubernetesMark";
 import { Config } from "./Config";
 import { Events } from "./Events";
 import { Network } from "./Network";
+import { Nodes } from "./Nodes";
 import { Pods } from "./Pods";
 import { PodView } from "./PodView";
 import { Workloads } from "./Workloads";
@@ -46,6 +57,7 @@ const SECTIONS: { value: KubeSection; label: string }[] = [
     { value: "network", label: "Services" },
     { value: "config", label: "Config" },
     { value: "events", label: "Events" },
+    { value: "nodes", label: "Nodes" },
 ];
 
 function Cluster({ paneId, active, status }: { paneId: string; active: boolean; status: KubeStatus }) {
@@ -65,6 +77,9 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const network = useResourceEnabled(listing && view.section === "network", kubeNetworkR, scope, all);
     const config = useResourceEnabled(listing && view.section === "config", kubeConfigR, scope, all);
     const events = useResourceEnabled(active, kubeEventsR, scope, all);
+    const nodes = useResourceEnabled(active, kubeNodesR, context);
+    usePoll(listing && view.section === "nodes", LIST_POLL_MS, nodes.refresh);
+    const notReady = nodes.data?.filter((node) => node.status !== "Ready").length ?? 0;
     usePoll(listing && view.section === "events", EVENTS_POLL_MS, events.refresh);
     const warnings = events.data?.filter((event) => event.kind === "Warning").length ?? 0;
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
@@ -73,6 +88,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
         pods: pods.data ? String(pods.data.length) : "",
         network: network.data ? String(network.data.services.length) : "",
         events: warnings > 0 ? `${warnings} !` : "",
+        nodes: notReady > 0 ? `${notReady} !` : nodes.data ? String(nodes.data.length) : "",
     };
 
     return (
@@ -201,6 +217,10 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     ) : view.section === "config" ? (
                         <Loaded handle={config} label="config">
                             {(data) => <Config configMaps={data.configMaps} secrets={data.secrets} find={view.find} showNamespace={all} />}
+                        </Loaded>
+                    ) : view.section === "nodes" ? (
+                        <Loaded handle={nodes} label="nodes">
+                            {(data) => <Nodes nodes={data} context={context} />}
                         </Loaded>
                     ) : view.section === "events" ? (
                         <Loaded handle={events} label="events">

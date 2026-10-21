@@ -89,7 +89,18 @@ async function confirmed(action: KubeAction, workload: Workload, scope: Scope): 
             body: "Its jobs start again on schedule.",
             command: `${kubectl} patch ${target} -p '{"spec":{"suspend":false}}'`,
         },
+        pauseRollout: {
+            title: `Pause ${workload.name}'s rollout?`,
+            body: "Changes to it wait, unrolled, until the rollout is resumed. The pods running now keep running.",
+            command: `${kubectl} rollout pause ${target}`,
+        },
+        resumeRollout: {
+            title: `Resume ${workload.name}'s rollout?`,
+            body: "Any change made while it was paused rolls out now.",
+            command: `${kubectl} rollout resume ${target}`,
+        },
         deletePod: null,
+        undo: null,
     }[action];
     if (!asked) return false;
     const yes = await confirmDialog({

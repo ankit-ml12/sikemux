@@ -1,4 +1,4 @@
-import type { KubeStatus, Pod, PodDetail, Workload } from "./api";
+import type { HelmDetail, HelmRelease, KubeNode, KubeStatus, Pod, PodDetail, RolloutHistory, Workload } from "./api";
 
 export const ready: KubeStatus = {
     ready: true,
@@ -119,5 +119,135 @@ export const WORKER_DETAIL: PodDetail = {
             object: "Pod/worker-546f6f965-9swqn",
             namespace: "shop",
         },
+    ],
+};
+
+export function node(name: string, patch: Partial<KubeNode> = {}): KubeNode {
+    return {
+        name,
+        roles: [],
+        status: "Ready",
+        cordoned: false,
+        pressure: [],
+        reason: null,
+        version: "v1.37.0",
+        os: "Debian GNU/Linux 13",
+        arch: "arm64",
+        runtime: "containerd://2.3.4",
+        internalIp: "10.0.0.4",
+        cpuMillis: 4000,
+        memoryBytes: 8 * 1024 ** 3,
+        maxPods: 110,
+        cpuUsedMillis: null,
+        memoryUsedBytes: null,
+        taints: [],
+        created: "2026-10-19T08:00:00Z",
+        ...patch,
+    };
+}
+
+export const CONTROL = node("kind-dev-control-plane", { roles: ["control-plane"] });
+export const SICK = node("kind-dev-worker", {
+    status: "NotReady",
+    reason: "container runtime network not ready",
+    pressure: ["MemoryPressure"],
+    cordoned: true,
+    taints: ["dedicated=gpu:NoSchedule"],
+});
+
+export const WEB_HISTORY: RolloutHistory = {
+    kind: "Deployment",
+    name: "web",
+    paused: false,
+    applied: true,
+    current: 4,
+    revisions: [
+        {
+            revision: 4,
+            name: "web-4",
+            current: true,
+            changeCause: "pin nginx 1.27.3",
+            images: ["nginx:1.27.3-alpine"],
+            restart: false,
+            created: "2026-10-21T06:15:30Z",
+            pods: 2,
+        },
+        {
+            revision: 3,
+            name: "web-3",
+            current: false,
+            changeCause: "move to nginx 1.27",
+            images: ["nginx:1.27-alpine"],
+            restart: false,
+            created: "2026-10-21T06:15:13Z",
+            pods: 0,
+        },
+        {
+            revision: 2,
+            name: "web-2",
+            current: false,
+            changeCause: null,
+            images: ["nginx:alpine"],
+            restart: true,
+            created: "2026-10-19T11:54:04Z",
+            pods: 0,
+        },
+        {
+            revision: 1,
+            name: "web-1",
+            current: false,
+            changeCause: null,
+            images: ["nginx:alpine"],
+            restart: false,
+            created: "2026-10-19T11:40:21Z",
+            pods: 0,
+        },
+    ],
+};
+
+export const STOREFRONT: HelmRelease = {
+    name: "storefront",
+    namespace: "helm-demo",
+    revision: 3,
+    updated: "2026-10-21T11:41:22+05:30",
+    status: "failed",
+    chart: "demo-chart",
+    chartVersion: "0.1.0",
+    appVersion: "1.16.0",
+};
+
+export const STOREFRONT_DETAIL: HelmDetail = {
+    history: [
+        {
+            revision: 3,
+            updated: "2026-10-21T11:41:22+05:30",
+            status: "failed",
+            chart: "demo-chart",
+            chartVersion: "0.1.0",
+            appVersion: "1.16.0",
+            description: "Upgrade failed: context deadline exceeded",
+        },
+        {
+            revision: 2,
+            updated: "2026-10-21T11:41:21+05:30",
+            status: "deployed",
+            chart: "demo-chart",
+            chartVersion: "0.1.0",
+            appVersion: "1.16.0",
+            description: "two replicas for the sale",
+        },
+        {
+            revision: 1,
+            updated: "2026-10-21T11:40:35+05:30",
+            status: "superseded",
+            chart: "demo-chart",
+            chartVersion: "0.1.0",
+            appVersion: "1.16.0",
+            description: "Install complete",
+        },
+    ],
+    made: [
+        { kind: "Service", name: "storefront-demo-chart", namespace: null },
+        { kind: "Deployment", name: "storefront-demo-chart", namespace: null },
     ],
 };

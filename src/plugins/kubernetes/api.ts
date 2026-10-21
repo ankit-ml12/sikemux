@@ -146,7 +146,85 @@ export interface Store {
     keys: { name: string; size: number }[];
 }
 
-export type KubeAction = "restart" | "scale" | "deletePod" | "runNow" | "suspend" | "resume";
+export type KubeAction = "restart" | "scale" | "deletePod" | "runNow" | "suspend" | "resume" | "undo" | "pauseRollout" | "resumeRollout";
+
+export interface KubeNode {
+    name: string;
+    /** Such as control-plane or worker. */
+    roles: string[];
+    /** Ready, NotReady or Unknown. */
+    status: string;
+    /** No new pods are placed on it. */
+    cordoned: boolean;
+    /** MemoryPressure, DiskPressure, PIDPressure or NetworkUnavailable, whichever are on. */
+    pressure: string[];
+    reason: string | null;
+    version: string;
+    os: string;
+    arch: string;
+    runtime: string;
+    internalIp: string | null;
+    cpuMillis: number;
+    memoryBytes: number;
+    maxPods: number;
+    /** Only when the cluster runs metrics-server. */
+    cpuUsedMillis: number | null;
+    memoryUsedBytes: number | null;
+    taints: string[];
+    created: string | null;
+}
+
+export interface Revision {
+    revision: number;
+    name: string;
+    current: boolean;
+    changeCause: string | null;
+    images: string[];
+    /** Made by a restart rather than a change. */
+    restart: boolean;
+    created: string | null;
+    pods: number | null;
+}
+
+export interface RolloutHistory {
+    kind: string;
+    name: string;
+    paused: boolean;
+    /** Made with kubectl apply, so the next apply of the old file reverts an undo made here. */
+    applied: boolean;
+    current: number | null;
+    /** Newest first. */
+    revisions: Revision[];
+}
+
+export interface HelmRelease {
+    name: string;
+    namespace: string;
+    revision: number;
+    updated: string | null;
+    /** deployed, failed, pending-install, pending-upgrade, pending-rollback, superseded or uninstalling. */
+    status: string;
+    chart: string;
+    chartVersion: string | null;
+    appVersion: string | null;
+}
+
+export interface HelmStep {
+    revision: number;
+    updated: string | null;
+    status: string;
+    chart: string;
+    chartVersion: string | null;
+    appVersion: string | null;
+    description: string;
+}
+
+export interface HelmDetail {
+    /** Newest first. */
+    history: HelmStep[];
+    /** What the release made, by kind and name only. */
+    made: { kind: string; name: string; namespace: string | null }[];
+}
 
 export const kubeApi = {
     status: () => backend.call<KubeStatus>("status"),
@@ -167,6 +245,13 @@ export const kubeApi = {
     network: (scope: Scope, allNamespaces: boolean) =>
         backend.call<{ services: Service[]; ingresses: Ingress[] }>("network", { ...scope, allNamespaces }),
     config: (scope: Scope, allNamespaces: boolean) => backend.call<{ configMaps: Store[]; secrets: Store[] }>("config", { ...scope, allNamespaces }),
-    act: (scope: Scope, action: KubeAction, name: string, kind?: string, replicas?: number) =>
-        backend.call<{ message: string }>("act", { ...scope, action, name, kind, replicas }),
+    act: (scope: Scope, action: KubeAction, name: string, kind?: string, replicas?: number, revision?: number) =>
+        backend.call<{ message: string }>("act", { ...scope, action, name, kind, replicas, revision }),
+    nodes: (context: string) => backend.call<KubeNode[]>("nodes", { context }),
+    cordon: (context: string, name: string, cordon: boolean) => backend.call<{ message: string }>("cordon", { context, name, cordon }),
+    history: (scope: Scope, kind: string, name: string) => backend.call<RolloutHistory>("history", { ...scope, kind, name }),
+    helmReleases: (scope: Scope, allNamespaces: boolean) => backend.call<HelmRelease[]>("helmReleases", { ...scope, allNamespaces }),
+    helmRelease: (scope: Scope, name: string) => backend.call<HelmDetail>("helmRelease", { ...scope, name }),
+    helmRollback: (scope: Scope, name: string, revision: number) => backend.call<{ message: string }>("helmRollback", { ...scope, name, revision }),
+    yaml: (scope: Scope, kind: string, name: string) => backend.call<string>("yaml", { ...scope, kind, name }),
 };

@@ -23,3 +23,13 @@ export const kubePodR = kubernetes.resource("pod", (scope: Scope, name: string) 
 export const kubeNetworkR = kubernetes.resource("network", (scope: Scope, all: boolean) => kubeApi.network(scope, all), 15_000);
 
 export const kubeConfigR = kubernetes.resource("config", (scope: Scope, all: boolean) => kubeApi.config(scope, all), 30_000);
+
+export const kubeNodesR = kubernetes.resource("nodes", (context: string) => kubeApi.nodes(context), 15_000);
+
+export const kubeHistoryR = kubernetes.resource("history", (scope: Scope, kind: string, name: string) => kubeApi.history(scope, kind, name), 10_000);
+
+export const kubeHelmReleasesR = kubernetes.resource("helmReleases", (scope: Scope, all: boolean) => kubeApi.helmReleases(scope, all), 15_000);
+
+export const kubeHelmReleaseR = kubernetes.resource("helmRelease", (scope: Scope, name: string) => kubeApi.helmRelease(scope, name), 15_000);
+
+export const kubeYamlR = kubernetes.resource("yaml", (scope: Scope, kind: string, name: string) => kubeApi.yaml(scope, kind, name), 15_000);

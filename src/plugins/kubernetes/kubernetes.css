@@ -763,3 +763,83 @@
 .k8s-log-line.warn .k8s-log-text {
     color: var(--warn);
 }
+
+.k8s-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.k8s-chips .k8s-chip {
+    margin-left: 0;
+}
+
+.k8s-chip.warn {
+    color: var(--warn);
+}
+
+.k8s-use {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+    font-variant-numeric: tabular-nums;
+}
+
+.k8s-use-bar {
+    width: 72px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--surface-sunken);
+    overflow: hidden;
+}
+
+.k8s-use-bar span {
+    display: block;
+    height: 100%;
+    background: var(--live);
+}
+
+.k8s-use-bar.high span {
+    background: var(--warn);
+}
+
+.k8s-yaml {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    flex: 1;
+}
+
+.k8s-yaml-copy {
+    margin-left: auto;
+}
+
+.k8s-yaml-text {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 8px 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface-sunken);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 18px;
+}
+
+.k8s-yaml-text > span {
+    padding-right: 12px;
+    white-space: pre;
+}
+
+.k8s-yaml-no {
+    display: inline-block;
+    width: 44px;
+    margin-right: 12px;
+    color: var(--text-tertiary);
+    text-align: right;
+    user-select: none;
+}

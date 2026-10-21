@@ -30,3 +30,17 @@ export function age(at: string | null, now = Date.now()): string {
 export function shortImage(image: string): string {
     return image.replace(/^docker\.io\//, "").replace(/^library\//, "");
 }
+
+/** CPU in cores as people say it: 4, 3.8 or 250m. */
+export function cores(millis: number): string {
+    if (millis < 1000) return `${millis}m`;
+    const whole = millis / 1000;
+    return Number.isInteger(whole) ? String(whole) : whole.toFixed(1).replace(/\.0$/, "");
+}
+
+/** Memory as people say it: 512 MiB or 5.8 GiB. */
+export function memory(bytes: number): string {
+    const gib = bytes / 1024 ** 3;
+    if (gib >= 1) return `${gib.toFixed(1).replace(/\.0$/, "")} GiB`;
+    return `${Math.round(bytes / 1024 ** 2)} MiB`;
+}
