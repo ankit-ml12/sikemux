@@ -11,7 +11,7 @@ use sikemux_wire::protocol::{AgentFace, AgentGroup, AgentStatus, DeviceView, Lau
 use tokio::sync::mpsc;
 
 use crate::battery::Battery;
-use crate::chat::Chat;
+use crate::chat::{Chat, Composing, Question};
 use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -45,6 +45,8 @@ pub struct Workbench {
     pub asks: mpsc::UnboundedSender<Ask>,
     /// The chats of the agents with a tab open, by agent id.
     pub chats: HashMap<String, Chat>,
+    /// What agents asked the person, and the assumptions they went on.
+    pub questions: Vec<Question>,
     pub terminals: terminal::Terminals,
     _filtering: Option<Subscription>,
 }
@@ -109,6 +111,8 @@ impl Workbench {
         let _ = asks.send(Ask::Watch("plugins", Watch::new("plugins", json!({}), &["plugins"])));
         let _ = asks.send(Ask::Watch("hosts", Watch::new("hosts", json!({}), &["hosts"])));
         let _ = asks.send(Ask::Watch("runs", Watch::new("taskRuns", json!({}), &["runs"])));
+        let _ = asks.send(Ask::Watch("questions", Watch::new("questions", json!({}), &["questions"])));
+        let _ = asks.send(Ask::Watch("catalog", Watch::new("agentCatalog", json!({}), &[])));
         cx.spawn(async move |this, cx| loop {
             let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
                 break;
@@ -138,6 +142,7 @@ impl Workbench {
             filter_text: String::new(),
             asks,
             chats: HashMap::new(),
+            questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             _filtering: None,
         };
@@ -190,6 +195,10 @@ impl Workbench {
                 self.reads.insert("plugins", value);
                 self.watch_ci();
             }
+            Update::Read("questions", value) => match serde_json::from_value(value) {
+                Ok(questions) => self.questions = questions,
+                Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
+            },
             Update::Read("picture", value) => self.picture = decode_picture(&value),
             Update::Read("sign-in", value) => match value["url"].as_str() {
                 Some(url) => {
@@ -214,7 +223,7 @@ impl Workbench {
         cx.notify();
     }
 
-    fn ask_chat(&self, ask: ChatAsk) {
+    pub fn ask_chat(&self, ask: ChatAsk) {
         let _ = self.asks.send(Ask::Chat(ask));
     }
 
@@ -239,25 +248,64 @@ impl Workbench {
         let Some(chat) = self.chats.get_mut(&agent).filter(|chat| chat.composer.is_none()) else {
             return;
         };
-        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true).placeholder("Ask anything"));
-        let sending = cx.subscribe_in(&draft, window, move |bench, draft, event: &InputEvent, window, cx| {
-            if let InputEvent::PressEnter { shift: false, .. } = event {
-                bench.send(&agent, draft, window, cx);
+        let draft = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12).submit_on_enter(true).placeholder("Ask about this project"));
+        let secret = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Type the answer"));
+        let sending = {
+            let agent = agent.clone();
+            cx.subscribe_in(&draft, window, move |bench, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { shift: false, secondary } = event {
+                    bench.send(&agent, *secondary, window, cx);
+                }
+            })
+        };
+        let keeping = cx.subscribe_in(&secret, window, move |bench, _, event: &InputEvent, window, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                bench.keep_secret(&agent, window, cx);
             }
         });
-        chat.composer = Some((draft, sending));
+        chat.composer = Some(Composing { draft, secret, _heard: [sending, keeping] });
     }
 
-    /// Sends what the person wrote: a prompt, or while a turn runs, words that steer it.
-    fn send(&mut self, agent: &str, draft: &Entity<TextareaState>, window: &mut Window, cx: &mut Context<Self>) {
+    /// Sends what the person wrote: the answer to a question it answers, else words for
+    /// the agent, which steer a running turn, or with ⌘ wait behind it.
+    pub fn send(&mut self, agent: &str, queue: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(draft) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.draft.clone())) else {
+            return;
+        };
         let text = draft.read(cx).value().trim().to_owned();
         if text.is_empty() {
             return;
         }
-        let agent = agent.to_owned();
-        let running = self.chats.get(&agent).is_some_and(Chat::running);
-        self.ask_chat(if running { ChatAsk::Steer { agent, text } } else { ChatAsk::Prompt { agent, text } });
+        self.answer(agent, |chat, open| chat.sent(agent, text, queue, open));
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
+        cx.notify();
+    }
+
+    pub fn keep_secret(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(field) = self.chats.get(agent).and_then(|chat| Some(chat.composer.as_ref()?.secret.clone())) else {
+            return;
+        };
+        let text = field.read(cx).value().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.answer(agent, |chat, open| chat.keep_secret(text, open));
+        field.update(cx, |field, cx| field.set_value("", window, cx));
+        cx.notify();
+    }
+
+    /// Changes the chat of `agent` with its open questions to hand, and asks the core what that asks.
+    pub fn answer(&mut self, agent: &str, change: impl FnOnce(&mut Chat, &[&Question]) -> Option<Ask>) {
+        let open: Vec<&Question> = self.questions.iter().filter(|question| question.of(agent, "open")).collect();
+        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| change(chat, &open)) {
+            let _ = self.asks.send(ask);
+        }
+    }
+
+    /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
+    pub fn switch_mode(&self, agent: &str, mode: &str) {
+        let _ = self.asks.send(Ask::Call { method: "updateAgent", params: json!({ "agentId": agent, "patch": { "permissionMode": mode } }) });
+        self.ask_chat(ChatAsk::Mode { agent: agent.to_owned(), mode: mode.to_owned() });
     }
 
     /// Lets go of the chats whose agents no longer have a tab.

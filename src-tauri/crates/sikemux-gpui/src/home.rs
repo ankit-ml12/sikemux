@@ -36,9 +36,9 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
     let project = bench.project();
     let agent = bench.agent();
     let header = agent.as_ref().zip(project).map(|(agent, project)| pane_header(bench, agent, &project.id));
-    let chat = bench.agent().and_then(|agent| Some((bench.chats.get(&agent.id)?, agent.id)));
-    if let Some((chat, agent)) = chat {
-        let pane = ui::pane(cx).child(chat::pane(&agent, chat, &bench.asks, cx)).children(header);
+    if let Some((agent, chat)) = agent.as_ref().and_then(|agent| Some((agent, bench.chats.get(&agent.id)?))) {
+        let welcome = chat.is_empty(cx).then(|| welcome(bench, Some(agent), cx).into_any_element());
+        let pane = ui::pane(cx).child(chat::pane(bench, agent, chat, welcome, cx)).children(header);
         return div().flex_1().min_w_0().child(pane).into_any_element();
     }
     div()

@@ -7,7 +7,10 @@
 //! `SIKEMUX_CORE_SOCKET=/tmp/sx/core.sock cargo run --example shot` then shows the chat.
 //! The fake agent answers `work` with a thought and three tool calls, `ask`
 //! with a permission request, `stream N` with N words, and anything else by
-//! echoing it, markdown and all.
+//! echoing it, markdown and all. `FAKE_PROVIDER=claude` with
+//! `sikemux-fake-claude` in its place also answers `question` with two
+//! questions for the person, and `FAKE_MODE=workspace-write` has the agent
+//! ask before it acts.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -25,13 +28,18 @@ async fn run() -> anyhow::Result<()> {
     let agent = args.next().ok_or_else(|| anyhow::anyhow!("where is sikemux-fake-acp-agent?"))?;
     let (client, _events) = CoreClient::connect(&socket).await?;
     client.register_window().await?;
-    let profile = json!({ "id": "fake", "name": "Fake", "provider": "opencode", "accent": "#a277ff", "executablePath": agent });
+    let provider = std::env::var("FAKE_PROVIDER").unwrap_or("opencode".into());
+    let profile = json!({ "id": "fake", "name": "Fake", "provider": provider, "accent": "#a277ff", "executablePath": agent });
     client.call("setAgentAccounts", json!({ "profiles": [profile] })).await?;
     let project = json!({ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() });
     client.call("addProject", project).await?;
-    let (chat, _) = client.start_chat("opencode:fake".into(), "tmp".into(), None).await?;
+    let (chat, _) = client.start_chat(format!("{provider}:fake"), "tmp".into(), None).await?;
     client.call("openTab", json!({ "project": "tmp", "kind": "agent", "target": chat })).await?;
     println!("chat {chat}");
+    if let Ok(mode) = std::env::var("FAKE_MODE") {
+        std::thread::sleep(Duration::from_secs(2));
+        client.acp_set_permission_mode(chat.clone(), mode).await?;
+    }
     for prompt in args {
         client.acp_prompt(chat.clone(), None, prompt, Vec::new(), Vec::new()).await?;
         std::thread::sleep(Duration::from_secs(2));

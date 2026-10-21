@@ -96,6 +96,9 @@ pub enum ChatAsk {
     /// Words for a turn that is running, which it takes at its next step.
     Steer { agent: String, text: String },
     Cancel { agent: String },
+    /// The person's answer to a tool's request for permission; none turns it down.
+    Permission { agent: String, request: String, option: Option<String> },
+    Mode { agent: String, mode: String },
 }
 
 pub struct Link {
@@ -263,6 +266,10 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
         ChatAsk::Prompt { agent, text } => return report("prompt", client.acp_prompt(agent, None, text, Vec::new(), Vec::new()).await),
         ChatAsk::Steer { agent, text } => return report("steer", client.acp_steer(agent, text, Vec::new(), Vec::new()).await.map(drop)),
         ChatAsk::Cancel { agent } => return report("stop", client.acp_cancel(agent).await),
+        ChatAsk::Permission { agent, request, option } => {
+            return report("answer", client.acp_permission_reply(agent, request, option).await)
+        }
+        ChatAsk::Mode { agent, mode } => return report("switch the mode of", client.acp_set_permission_mode(agent, mode).await),
     };
     let _ = updates.send(Update::Chat(agent, news));
 }

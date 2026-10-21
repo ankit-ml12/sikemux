@@ -3,28 +3,32 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::Scrollbar;
+use gpui_kit::base::{Button as BaseButton, Scrollbar};
+use gpui_kit::component::input::{Input, InputState, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, AppContext, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled, Transformation, WeakEntity, Window,
+    div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable, FontWeight, HighlightStyle, Hsla,
+    InteractiveElement, IntoElement, ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled, StyledText,
+    Subscription, Transformation, WeakEntity, Window,
 };
-use gpui_kit::component::input::{Textarea, TextareaState};
-use gpui_kit::Subscription;
-use tokio::sync::mpsc::UnboundedSender;
 use gpui_transcript::{Change, Markdown, Pen, Row, Style, Transcript};
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sikemux_wire::chat::{ChatChange, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, SubagentState, WorkFold};
+use sikemux_wire::chat::{
+    ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView, PartTree, PermissionAsk, SubagentState,
+    WorkFold,
+};
 use sikemux_wire::protocol::{ChatAttachment, ChatMark};
 
+use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk};
-use crate::ui::{Button, Variant};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui;
-use crate::workbench::Workbench;
+use crate::ui::{self, Button, Variant};
+use crate::workbench::{AgentRow, Workbench};
 
 /// Turns asked for each time the reader nears the top of what is held.
 const PAGE_TURNS: u32 = 20;
@@ -172,12 +176,83 @@ fn merge(on: &mut Value, fields: &Value) {
 pub struct Chat {
     pub transcript: Entity<Transcript<ChatRow>>,
     head: Map<String, Value>,
+    /// The head as last changed, read once for each change.
+    state: Option<ChatHead>,
     subagents: HashMap<String, Vec<ChatRow>>,
     pub mark: Option<ChatMark>,
     older_before: Option<u64>,
     asked_earlier: bool,
-    /// What the person is writing to the agent, made once the window can make it.
-    pub composer: Option<(Entity<TextareaState>, Subscription)>,
+    /// What the person writes to the agent, made once the window can make it.
+    pub composer: Option<Composing>,
+    /// The answers picked for the agent's open questions, sent once each has one.
+    picks: HashMap<String, Pick>,
+    /// The open question on show, once the person chose one.
+    shown: Option<String>,
+    /// The first open question when the person folded them away; another coming first unfolds them.
+    folded: Option<String>,
+    /// The assumption the person chose to change, which the composer then answers.
+    writing: Option<String>,
+}
+
+/// The draft, and the masked field a secret answer is typed into.
+pub struct Composing {
+    pub draft: Entity<TextareaState>,
+    pub secret: Entity<InputState>,
+    pub _heard: [Subscription; 2],
+}
+
+/// A question an agent put to the person, as the core's `questions` call lists it.
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    id: String,
+    agent_id: String,
+    name: String,
+    text: String,
+    header: Option<String>,
+    #[serde(default)]
+    choices: Vec<Choice>,
+    #[serde(default)]
+    multi: bool,
+    assumption: Option<String>,
+    #[serde(default)]
+    secret: bool,
+    /// `lead` while the asker's lead has it, `open`, `assumed` or `answered`.
+    state: String,
+    via_note: Option<String>,
+    secret_note: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+struct Choice {
+    label: String,
+    detail: Option<String>,
+}
+
+impl Question {
+    pub fn of(&self, agent: &str, state: &str) -> bool {
+        self.agent_id == agent && self.state == state
+    }
+
+    fn title(&self, ix: usize, count: usize) -> String {
+        match &self.header {
+            Some(header) => header.clone(),
+            None if count > 1 => format!("Question {}", ix + 1),
+            None => "Question".into(),
+        }
+    }
+}
+
+enum Answer {
+    Choice(usize),
+    Choices(Vec<usize>),
+    Text(String),
+}
+
+/// An answer picked for an open question, and what the dock shows was picked; empty for a secret.
+struct Pick {
+    answer: Answer,
+    shown: String,
 }
 
 impl Chat {
@@ -189,7 +264,20 @@ impl Chat {
                     bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
                 })
         });
-        Chat { transcript, head: Map::new(), subagents: HashMap::new(), mark: None, older_before: None, asked_earlier: false, composer: None }
+        Chat {
+            transcript,
+            head: Map::new(),
+            state: None,
+            subagents: HashMap::new(),
+            mark: None,
+            older_before: None,
+            asked_earlier: false,
+            composer: None,
+            picks: HashMap::new(),
+            shown: None,
+            folded: None,
+            writing: None,
+        }
     }
 
     /// What the core answered an attach with.
@@ -228,6 +316,7 @@ impl Chat {
 
     fn show(&mut self, view: ChatView, cx: &mut App) {
         self.head = serde_json::to_value(&view.head).ok().and_then(|head| head.as_object().cloned()).unwrap_or_default();
+        self.state = Some(view.head);
         self.subagents = rows_by_session(view.subagents);
         self.older_before = view.older_before;
         self.asked_earlier = false;
@@ -235,9 +324,12 @@ impl Chat {
         self.transcript.update(cx, |transcript, cx| transcript.push(Change::Reset(rows), cx));
     }
 
-    /// A turn is running, so what the person sends steers it.
     pub fn running(&self) -> bool {
-        self.head.get("running").and_then(Value::as_bool).unwrap_or(false)
+        self.state.as_ref().is_some_and(|head| head.running)
+    }
+
+    pub fn is_empty(&self, cx: &App) -> bool {
+        self.transcript.read(cx).rows().is_empty()
     }
 
     /// The earlier turns to ask for, when there are more and none are on their way.
@@ -274,6 +366,7 @@ impl Chat {
                 ChatChange::Head { set } => {
                     let mut head = Value::Object(std::mem::take(&mut self.head));
                     merge(&mut head, &set);
+                    self.state = serde_json::from_value(head.clone()).ok();
                     self.head = head.as_object().cloned().unwrap_or_default();
                 }
                 ChatChange::View { view } => {
@@ -320,6 +413,112 @@ impl Chat {
     }
 }
 
+/// The questions the agent put to the person, answered from its chat.
+impl Chat {
+    /// The open question on show: the one the person chose, else the first still unanswered.
+    fn current<'a>(&self, open: &[&'a Question]) -> Option<&'a Question> {
+        let chosen = self.shown.as_ref().and_then(|id| open.iter().find(|question| &question.id == id));
+        chosen.or_else(|| open.iter().find(|question| !self.picks.contains_key(&question.id))).or(open.first()).copied()
+    }
+
+    fn is_folded(&self, open: &[&Question]) -> bool {
+        open.first().is_some_and(|first| self.folded.as_ref() == Some(&first.id))
+    }
+
+    pub fn fold(&mut self, open: &[&Question], fold: bool) {
+        self.folded = open.first().filter(|_| fold).map(|first| first.id.clone());
+    }
+
+    pub fn show_question(&mut self, id: &str) {
+        self.shown = Some(id.to_owned());
+    }
+
+    pub fn write(&mut self, id: &str) {
+        self.writing = Some(id.to_owned());
+    }
+
+    /// Holds the answer, then moves on to the next question still without one, or sends a lone question.
+    fn pick(&mut self, id: &str, pick: Pick, open: &[&Question]) -> Option<Ask> {
+        self.picks.insert(id.to_owned(), pick);
+        if open.len() == 1 {
+            return self.send_answers(open);
+        }
+        let after = open.iter().skip_while(|question| question.id != id).skip(1);
+        if let Some(next) = after.chain(open).find(|question| !self.picks.contains_key(&question.id)) {
+            self.shown = Some(next.id.clone());
+        }
+        None
+    }
+
+    /// Picks a choice, or on a question that takes several, ticks or unticks it.
+    pub fn choose(&mut self, id: &str, choice: usize, open: &[&Question]) -> Option<Ask> {
+        let question = open.iter().find(|question| question.id == id)?;
+        let label = |ix: &usize| question.choices.get(*ix).map_or("", |choice| choice.label.as_str());
+        if !question.multi {
+            return self.pick(id, Pick { answer: Answer::Choice(choice), shown: label(&choice).to_owned() }, open);
+        }
+        let mut ticked = match self.picks.remove(id) {
+            Some(Pick { answer: Answer::Choices(ticked), .. }) => ticked,
+            _ => Vec::new(),
+        };
+        match ticked.iter().position(|held| *held == choice) {
+            Some(at) => {
+                ticked.remove(at);
+            }
+            None => {
+                ticked.push(choice);
+                ticked.sort_unstable();
+            }
+        }
+        if !ticked.is_empty() {
+            let shown = ticked.iter().map(label).collect::<Vec<_>>().join(", ");
+            self.picks.insert(id.to_owned(), Pick { answer: Answer::Choices(ticked), shown });
+        }
+        None
+    }
+
+    pub fn keep_secret(&mut self, text: String, open: &[&Question]) -> Option<Ask> {
+        let question = self.current(open).filter(|question| question.secret && !self.is_folded(open))?;
+        let id = question.id.clone();
+        self.pick(&id, Pick { answer: Answer::Text(text), shown: String::new() }, open)
+    }
+
+    /// Sends every open question's answer together, once each has one.
+    pub fn send_answers(&mut self, open: &[&Question]) -> Option<Ask> {
+        if open.is_empty() || !open.iter().all(|question| self.picks.contains_key(&question.id)) {
+            return None;
+        }
+        let answers: Vec<Value> = open
+            .iter()
+            .filter_map(|question| {
+                let id = &question.id;
+                Some(match self.picks.remove(id)?.answer {
+                    Answer::Choice(choice) => json!({ "id": id, "choice": choice }),
+                    Answer::Choices(choices) => json!({ "id": id, "choices": choices }),
+                    Answer::Text(answer) => json!({ "id": id, "answer": answer }),
+                })
+            })
+            .collect();
+        self.picks.clear();
+        self.shown = None;
+        Some(Ask::Call { method: "answerQuestions", params: json!({ "answers": answers }) })
+    }
+
+    /// What the composer's text asks of the core: the answer to the question it answers, or
+    /// words for the agent, which steer a running turn unless queued behind it.
+    pub fn sent(&mut self, agent: &str, text: String, queue: bool, open: &[&Question]) -> Option<Ask> {
+        if let Some(id) = self.writing.take() {
+            return Some(Ask::Call { method: "answerQuestion", params: json!({ "id": id, "answer": text }) });
+        }
+        let answering = self.current(open).filter(|question| !question.secret && !self.is_folded(open));
+        if let Some(id) = answering.map(|question| question.id.clone()) {
+            return self.pick(&id, Pick { answer: Answer::Text(text.clone()), shown: text }, open);
+        }
+        let agent = agent.to_owned();
+        Some(Ask::Chat(if self.running() && !queue { ChatAsk::Steer { agent, text } } else { ChatAsk::Prompt { agent, text } }))
+    }
+}
+
 fn rows_by_session(subagents: impl IntoIterator<Item = (String, Vec<ChatMessage>)>) -> HashMap<String, Vec<ChatRow>> {
     subagents
         .into_iter()
@@ -327,39 +526,482 @@ fn rows_by_session(subagents: impl IntoIterator<Item = (String, Vec<ChatMessage>
         .collect()
 }
 
-/// The chat in the stage: its rows, with a scrollbar over their right edge,
-/// and under them what the person writes.
-pub fn pane(agent: &str, chat: &Chat, asks: &UnboundedSender<Ask>, cx: &App) -> impl IntoElement {
-    let t = Tokens::get(cx);
+/// The chat in the stage: its rows, with a scrollbar over their right edge, or before its
+/// first message `welcome`; under them what waits on the person, then the composer.
+pub fn pane(bench: &Workbench, agent: &AgentRow, chat: &Chat, welcome: Option<AnyElement>, cx: &mut Context<Workbench>) -> impl IntoElement {
     let list = chat.transcript.read(cx).list().clone();
     let rows = div()
         .flex_1()
         .min_h_0()
         .relative()
         .child(chat.transcript.clone())
-        .child(div().absolute().top_0().right_0().bottom_0().child(Scrollbar::vertical(&list)));
-    let composer = chat.composer.as_ref().map(|(draft, _)| {
-        let (asks, agent) = (asks.clone(), agent.to_owned());
-        let stop = Button::new("chat-stop", "Stop", Variant::Outline).icon(Icon::Stop).on_click(move |_, _, _| {
-            let _ = asks.send(Ask::Chat(ChatAsk::Cancel { agent: agent.clone() }));
-        });
-        div().px(px(16.)).pb(px(16.)).flex().justify_center().child(
-            div()
-                .w_full()
-                .max_w(px(820.))
-                .p(px(8.))
+        .child(div().absolute().top_0().right_0().bottom_0().child(Scrollbar::vertical(&list)))
+        .children(welcome.map(|welcome| div().absolute().top_0().left_0().right_0().flex().justify_center().child(welcome)));
+    let open: Vec<&Question> = bench.questions.iter().filter(|question| question.of(&agent.id, "open")).collect();
+    let permissions = chat.state.as_ref().map_or(&[][..], |head| head.permissions.as_slice());
+    let permissions: Vec<_> = permissions.iter().map(|ask| permission(&agent.id, ask, cx)).collect();
+    let assumed: Vec<_> = bench.questions.iter().filter(|question| question.of(&agent.id, "assumed")).map(|question| assumption(question, cx)).collect();
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .child(rows)
+        .children(permissions)
+        .children(assumed)
+        .children(questions(&agent.id, chat, &open, cx))
+        .children(composer(bench, agent, chat, cx))
+}
+
+/// Centred on the transcript's column.
+fn column() -> gpui_kit::Div {
+    div().w_full().px(px(22.)).flex().justify_center()
+}
+
+fn permission(agent: &str, ask: &PermissionAsk, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let rejects = |kind: &str| kind.starts_with("reject");
+    let mut answers: Vec<(String, Option<String>, bool)> =
+        ask.options.iter().map(|option| (option.name.clone(), Some(option.option_id.clone()), !rejects(&option.kind))).collect();
+    if !ask.options.iter().any(|option| rejects(&option.kind)) {
+        answers.push(("Cancel".into(), None, false));
+    }
+    let buttons: Vec<_> = answers
+        .into_iter()
+        .map(|(name, option, allow)| {
+            let (agent, request) = (agent.to_owned(), ask.request_id.clone());
+            let id = SharedString::from(format!("permission-{request}-{}", option.as_deref().unwrap_or("")));
+            BaseButton::new(id)
+                .h(px(28.))
+                .px(px(10.))
                 .flex()
-                .flex_col()
-                .gap(px(6.))
+                .items_center()
                 .border_1()
-                .border_color(t.border)
-                .rounded(theme::RADIUS_3)
-                .bg(t.surface_raised)
-                .child(Textarea::new(draft).appearance(false).text_size(px(14.5)))
-                .when(chat.running(), |composer| composer.child(div().flex().justify_end().child(stop))),
-        )
+                .border_color(if allow { Hsla { a: 0.45, ..t.warn } } else { t.line })
+                .rounded(theme::RADIUS_2)
+                .bg(t.line_soft)
+                .hover(move |style| style.bg(t.surface_chosen))
+                .text_size(px(10.5))
+                .text_color(if allow { t.text_primary } else { t.text_tertiary })
+                .on_click(cx.listener(move |bench, _, _, _| {
+                    bench.ask_chat(ChatAsk::Permission { agent: agent.clone(), request: request.clone(), option: option.clone() })
+                }))
+                .child(name)
+        })
+        .collect();
+    let copy = div()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .child(ui::text(ask.tool_call.title.clone(), 12., FontWeight::SEMIBOLD).text_color(t.text_primary))
+        .child(ui::text("Agent needs permission before this tool can continue.", 11., FontWeight::NORMAL).text_color(t.text_tertiary));
+    column().child(
+        div()
+            .w_full()
+            .max_w(px(756.))
+            .mt(px(12.))
+            .mb(px(12.))
+            .p(px(12.))
+            .border_1()
+            .border_color(Hsla { a: 0.44, ..t.warn })
+            .rounded(theme::RADIUS_3)
+            .bg(Hsla { a: 0.07, ..t.warn })
+            .child(div().flex().gap(px(9.)).child(ui::icon(Icon::ShieldBolt, 16.).flex_none().text_color(t.warn)).child(copy))
+            .child(div().mt(px(11.)).flex().justify_end().gap(px(6.)).children(buttons)),
+    )
+}
+
+/// A plain text button, for answering in a line of text.
+fn word(id: impl Into<SharedString>, label: &'static str, t: &Tokens) -> BaseButton {
+    let hover = t.text_primary;
+    BaseButton::new(gpui_kit::ElementId::Name(id.into()))
+        .px(px(4.))
+        .rounded(theme::RADIUS_1)
+        .text_color(t.text_secondary)
+        .hover(move |style| style.text_color(hover))
+        .child(label)
+}
+
+/// A question the agent went on without, on the assumption it stated.
+fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let (fine, change) = (question.id.clone(), question.id.clone());
+    let (agent, assumed) = (question.agent_id.clone(), question.assumption.clone().unwrap_or_default());
+    let said = format!("{} assumed {assumed}", question.name);
+    let bold = HighlightStyle { color: Some(t.text_primary), font_weight: Some(FontWeight::SEMIBOLD), ..Default::default() };
+    column().child(
+        div()
+            .w_full()
+            .max_w(px(756.))
+            .min_h(px(26.))
+            .pt(px(12.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .text_size(px(12.))
+            .text_color(t.text_tertiary)
+            .child(ui::icon(Icon::Check, 14.).flex_none().text_color(t.text_disabled))
+            .child(div().min_w_0().truncate().child(StyledText::new(said).with_highlights([(0..question.name.len(), bold)])))
+            .child("·")
+            .child(word(format!("fine-{fine}"), "Fine", &t).on_click(cx.listener(move |bench, _, _, _| {
+                let _ = bench.asks.send(Ask::Call { method: "answerQuestion", params: json!({ "id": fine, "fine": true }) });
+            })))
+            .child(word(format!("change-{change}"), "Change", &t).on_click(cx.listener(move |bench, _, window, cx| {
+                if let Some(chat) = bench.chats.get_mut(&agent) {
+                    chat.write(&change);
+                    if let Some(composing) = &chat.composer {
+                        window.focus(&composing.draft.focus_handle(cx), cx);
+                    }
+                }
+            }))),
+    )
+}
+
+/// The questions the agent waits on, docked on the composer: a tab for each, what the one on
+/// show asks, and its choices.
+fn questions(agent: &str, chat: &Chat, open: &[&Question], cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
+    let current = chat.current(open)?;
+    let t = Tokens::get(cx).clone();
+    let count = open.len();
+    let body = if chat.is_folded(open) {
+        let agent = agent.to_owned();
+        let peek = open.iter().enumerate().map(|(ix, question)| question.title(ix, count)).collect::<Vec<_>>().join(" · ");
+        BaseButton::new("questions-unfold")
+            .w_full()
+            .px(px(11.))
+            .py(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(px(10.))
+            .text_color(t.text_disabled)
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.answer(&agent, |chat, open| {
+                    chat.fold(open, false);
+                    None
+                });
+                cx.notify();
+            }))
+            .child(if count == 1 { "QUESTION" } else { "QUESTIONS" })
+            .child(div().font_family(theme::MONO).text_color(t.text_tertiary).child(count.to_string()))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).child(peek))
+            .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled))
+            .into_any_element()
+    } else {
+        asking(agent, chat, open, current, &t, cx).into_any_element()
+    };
+    let docked = div()
+        .w_full()
+        .max_w(px(780.))
+        .border_t_1()
+        .border_l_1()
+        .border_r_1()
+        .border_color(t.border)
+        .rounded_t(theme::RADIUS_3)
+        .bg(t.surface_composer)
+        .child(body);
+    Some(div().w_full().px(px(36.)).flex().justify_center().child(docked))
+}
+
+fn asking(agent: &str, chat: &Chat, open: &[&Question], current: &Question, t: &Tokens, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let count = open.len();
+    let edge = Hsla { a: 0.06, ..t.text_primary };
+    let tabs: Vec<_> = open
+        .iter()
+        .enumerate()
+        .map(|(ix, question)| {
+            let on = question.id == current.id;
+            let (agent, id) = (agent.to_owned(), question.id.clone());
+            let mark = if chat.picks.contains_key(&question.id) {
+                ui::icon(Icon::Check, 10.).text_color(t.text_disabled).into_any_element()
+            } else {
+                div().font_family(theme::MONO).text_size(px(10.)).text_color(t.text_disabled).child((ix + 1).to_string()).into_any_element()
+            };
+            let hover = t.surface_hover;
+            BaseButton::new(SharedString::from(format!("question-tab-{id}")))
+                .h(px(24.))
+                .px(px(9.))
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .rounded(theme::RADIUS_2)
+                .text_size(px(11.))
+                .map(|tab| if on { tab.bg(t.surface_chosen).text_color(t.text_primary) } else { tab.border_1().border_color(edge).text_color(t.text_secondary) })
+                .hover(move |style| style.bg(hover))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench.answer(&agent, |chat, _| {
+                        chat.show_question(&id);
+                        None
+                    });
+                    cx.notify();
+                }))
+                .child(mark)
+                .child(div().min_w_0().truncate().child(question.title(ix, count)))
+        })
+        .collect();
+    let ready = open.iter().all(|question| chat.picks.contains_key(&question.id));
+    let send = (count > 1 || current.multi).then(|| {
+        let agent = agent.to_owned();
+        BaseButton::new("questions-send")
+            .disabled(!ready)
+            .h(px(22.))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(theme::RADIUS_2)
+            .text_size(px(11.))
+            .map(|send| if ready { send.bg(t.surface_chosen).text_color(t.text_primary) } else { send.border_1().border_color(edge).text_color(t.text_disabled) })
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.answer(&agent, |chat, open| chat.send_answers(open));
+                cx.notify();
+            }))
+            .child("Send")
+            .child(div().pl(px(6.)).border_l_1().border_color(t.line).text_size(px(9.5)).text_color(t.text_disabled).child("⌘↵"))
     });
-    div().size_full().flex().flex_col().child(rows).children(composer)
+    let fold = {
+        let agent = agent.to_owned();
+        let hover = t.surface_hover;
+        BaseButton::new("questions-fold")
+            .accessibility_label("Fold the questions away")
+            .size(px(22.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(theme::RADIUS_2)
+            .hover(move |style| style.bg(hover))
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.answer(&agent, |chat, open| {
+                    chat.fold(open, true);
+                    None
+                });
+                cx.notify();
+            }))
+            .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled).with_transformation(Transformation::rotate(Radians(FRAC_PI_2))))
+    };
+    let head = div()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .px(px(6.))
+        .pt(px(6.))
+        .child(div().flex_1().min_w_0().flex().gap(px(4.)).overflow_hidden().children(tabs))
+        .children(send)
+        .child(fold);
+    let mut asked = current.text.clone();
+    let plain = asked.len();
+    if current.multi {
+        asked.push_str(" Pick any.");
+    }
+    if let Some(via) = &current.via_note {
+        asked.push_str(&format!(" · {via}"));
+    }
+    let faint = HighlightStyle { color: Some(t.text_disabled), ..Default::default() };
+    let text = div()
+        .px(px(12.))
+        .pt(px(10.))
+        .pb(px(4.))
+        .text_size(px(13.5))
+        .line_height(relative(1.5))
+        .text_color(t.text_primary)
+        .child(StyledText::new(asked.clone()).with_highlights([(plain..asked.len(), faint)]));
+    let picked = chat.picks.get(&current.id);
+    let chosen = |ix: usize| match picked.map(|pick| &pick.answer) {
+        Some(Answer::Choice(choice)) => *choice == ix,
+        Some(Answer::Choices(choices)) => choices.contains(&ix),
+        _ => false,
+    };
+    let mut choices: Vec<AnyElement> = current
+        .choices
+        .iter()
+        .enumerate()
+        .map(|(ix, choice)| {
+            let (agent, id) = (agent.to_owned(), current.id.clone());
+            let key = if current.multi {
+                tick(chosen(ix), t)
+            } else {
+                div().font_family(theme::MONO).text_size(px(10.)).font_weight(FontWeight::SEMIBOLD).child((ix + 1).to_string()).into_any_element()
+            };
+            let (label, recommended) = recommended(&choice.label);
+            let label = div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_x(px(8.))
+                .child(ui::text(label.to_owned(), 13., FontWeight::MEDIUM).line_height(px(19.)))
+                .when(recommended, |label| label.child(ui::text("recommended", 11., FontWeight::NORMAL).text_color(t.text_disabled)));
+            let detail = choice.detail.clone().map(|detail| div().text_size(px(12.)).line_height(relative(1.45)).text_color(t.text_tertiary).child(detail));
+            answer_row(SharedString::from(format!("question-{id}-{ix}")), chosen(ix), key, div().child(label).children(detail), t)
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench.answer(&agent, |chat, open| chat.choose(&id, ix, open));
+                    cx.notify();
+                }))
+                .into_any_element()
+        })
+        .collect();
+    if let Some(Pick { answer: Answer::Text(_), shown }) = picked.filter(|_| !current.secret) {
+        let key = ui::icon(Icon::Pencil, 11.).mt(px(4.)).into_any_element();
+        let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM).line_height(px(19.));
+        choices.push(answer_row(SharedString::from(format!("question-{}-typed", current.id)), true, key, typed, t).into_any_element());
+    }
+    let secret = match (current.secret, picked) {
+        (false, _) => None,
+        (true, Some(_)) => Some(kept(t).into_any_element()),
+        (true, None) => secret(agent, current, chat, t, cx).map(IntoElement::into_any_element),
+    };
+    div()
+        .flex()
+        .flex_col()
+        .child(head)
+        .child(text)
+        .when(!choices.is_empty(), |body| body.child(div().px(px(12.)).pt(px(6.)).pb(px(12.)).flex().flex_col().gap(px(4.)).children(choices)))
+        .children(secret)
+}
+
+/// A choice's label without the "(recommended)" the agent put after it, and whether it did.
+fn recommended(label: &str) -> (&str, bool) {
+    const MARK: &str = "(recommended)";
+    let trimmed = label.trim_end();
+    let cut = trimmed.len().checked_sub(MARK.len()).filter(|&at| trimmed.is_char_boundary(at));
+    match cut {
+        Some(at) if trimmed[at..].eq_ignore_ascii_case(MARK) => (trimmed[..at].trim_end(), true),
+        _ => (label, false),
+    }
+}
+
+fn answer_row(id: SharedString, chosen: bool, key: AnyElement, body: impl IntoElement, t: &Tokens) -> BaseButton {
+    let hover = t.surface_chosen;
+    BaseButton::new(id)
+        .w_full()
+        .pt(px(7.))
+        .pb(px(8.))
+        .pl(px(4.))
+        .pr(px(8.))
+        .flex()
+        .items_start()
+        .rounded(theme::RADIUS_2)
+        .bg(if chosen { Hsla { a: 0.14, ..t.text_primary } } else { t.surface_hover })
+        .text_color(if chosen { t.text_primary } else { t.text_secondary })
+        .hover(move |style| style.bg(hover))
+        .child(div().w(px(22.)).flex_none().flex().justify_center().line_height(px(19.)).text_color(t.text_disabled).child(key))
+        .child(div().flex_1().min_w_0().flex().flex_col().child(body))
+}
+
+/// The box of a choice on a question that takes several.
+fn tick(on: bool, t: &Tokens) -> AnyElement {
+    let tick = div().mt(px(3.5)).size(px(12.)).flex().items_center().justify_center().rounded(px(3.));
+    match on {
+        true => tick.bg(t.text_primary).child(ui::icon(Icon::Check, 9.).text_color(t.surface_sunken)),
+        false => tick.border_1().border_color(Hsla { a: 0.3, ..t.text_primary }),
+    }
+    .into_any_element()
+}
+
+fn kept(t: &Tokens) -> impl IntoElement {
+    div()
+        .px(px(12.))
+        .pt(px(4.))
+        .pb(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .text_size(px(11.))
+        .text_color(t.text_tertiary)
+        .child(ui::icon(Icon::Shield, 12.))
+        .child("Answer kept, sent with the rest")
+}
+
+/// The masked field a secret answer is typed into, which keeps nothing once it is picked.
+fn secret(agent: &str, question: &Question, chat: &Chat, t: &Tokens, cx: &mut Context<Workbench>) -> Option<impl IntoElement> {
+    let field = chat.composer.as_ref()?.secret.clone();
+    let agent = agent.to_owned();
+    let done = Button::new("secret-done", "Done", Variant::Outline).on_click(cx.listener(move |bench, _, window, cx| bench.keep_secret(&agent, window, cx)));
+    Some(
+        div()
+            .px(px(12.))
+            .pt(px(4.))
+            .pb(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .h(px(30.))
+                            .px(px(10.))
+                            .flex()
+                            .items_center()
+                            .border_1()
+                            .border_color(t.line)
+                            .rounded(theme::RADIUS_2)
+                            .bg(t.surface_sunken)
+                            .text_size(px(12.))
+                            .child(Input::new(&field).appearance(false).bordered(false)),
+                    )
+                    .child(done),
+            )
+            .children(question.secret_note.clone().map(|note| {
+                div().flex().items_center().gap(px(6.)).text_size(px(11.)).text_color(t.text_tertiary).child(ui::icon(Icon::Shield, 12.)).child(note)
+            })),
+    )
+}
+
+/// The composer, with what this chat lets the person change.
+fn composer(bench: &Workbench, agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Option<Composer> {
+    let composing = chat.composer.as_ref()?;
+    let head = chat.state.as_ref();
+    let kinds = bench.read("catalog").and_then(Value::as_array);
+    let kind = kinds.and_then(|kinds| kinds.iter().find(|kind| kind["type"] == agent.provider.as_str()));
+    let label = kind.and_then(|kind| kind["label"].as_str()).unwrap_or(&agent.provider).to_owned();
+    let this = cx.weak_entity();
+    let on_send = {
+        let (this, agent) = (this.clone(), agent.id.clone());
+        Rc::new(move |window: &mut Window, cx: &mut App| {
+            this.update(cx, |bench, cx| bench.send(&agent, false, window, cx)).ok();
+        })
+    };
+    let on_stop = {
+        let (asks, agent) = (bench.asks.clone(), agent.id.clone());
+        Rc::new(move |_: &mut Window, _: &mut App| {
+            let _ = asks.send(Ask::Chat(ChatAsk::Cancel { agent: agent.clone() }));
+        })
+    };
+    let saved = bench.view.as_ref().and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent.id));
+    let fresh = chat.is_empty(cx) && saved.is_some_and(|saved| saved.resume_id.is_none() && saved.worktree.is_none());
+    let strip = saved.filter(|_| fresh).map(|saved| Strip {
+        project: saved.cwd.file_name().map_or_else(|| saved.cwd.to_string_lossy(), |name| name.to_string_lossy()).into_owned().into(),
+        path: tilde(&saved.cwd).into(),
+        branch: bench.project().and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
+    });
+    let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
+        .strip(strip)
+        .ready(head.is_some_and(|head| head.connection == ChatConnection::Ready))
+        .running(chat.running())
+        .usage(head.and_then(|head| head.usage.clone()));
+    if kind.is_some_and(|kind| kind["bypass"] == true) {
+        let on = head.is_some_and(|head| head.permission_mode == "bypass");
+        let agent = agent.id.clone();
+        composer = composer.yolo(
+            on,
+            Rc::new(move |_, cx| {
+                this.update(cx, |bench, _| bench.switch_mode(&agent, if on { "workspace-write" } else { "bypass" })).ok();
+            }),
+        );
+    }
+    Some(composer)
+}
+
+fn tilde(path: &std::path::Path) -> String {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    match home.as_deref().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
 }
 
 /// How the chat's markdown looks: an answer, a thought, and what the person wrote.

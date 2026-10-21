@@ -257,6 +257,20 @@ impl Claude {
                 self.say(&message_id, if allowed { "allowed" } else { "denied" });
                 self.finish(uuid, None);
             }
+            "question" => {
+                let input = json!({ "questions": [
+                    { "question": "Which database should the cache use?", "header": "Cache store", "options": [
+                        { "label": "Redis (recommended)", "description": "Fast, and already running here" },
+                        { "label": "SQLite", "description": "No server to keep up" }
+                    ] },
+                    { "question": "Which checks should run before landing?", "header": "Checks", "multiSelect": true, "options": [
+                        { "label": "Unit tests" }, { "label": "Clippy" }, { "label": "Format" }
+                    ] }
+                ] });
+                self.ask(json!({ "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": input, "tool_use_id": format!("toolu-{uuid}"), "permission_suggestions": [] }));
+                self.say(&message_id, "asked");
+                self.finish(uuid, None);
+            }
             "hold" => {
                 let ms: u64 = words.next().and_then(|n| n.parse().ok()).unwrap_or(1000);
                 self.say(&format!("{message_id}-a"), "holding");
