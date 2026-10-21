@@ -6,6 +6,7 @@ import { usePoll } from "../hooks";
 import {
     kubeConfigR,
     kubeEventsR,
+    kubeHelmReleasesR,
     kubeNamespacesR,
     kubeNetworkR,
     kubeNodesR,
@@ -18,6 +19,7 @@ import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from ".
 import { KubernetesMark } from "./KubernetesMark";
 import { Config } from "./Config";
 import { Events } from "./Events";
+import { HelmReleases, HelmReleaseView } from "./Helm";
 import { Network } from "./Network";
 import { Nodes } from "./Nodes";
 import { Pods } from "./Pods";
@@ -59,6 +61,7 @@ const SECTIONS: { value: KubeSection; label: string }[] = [
     { value: "config", label: "Config" },
     { value: "events", label: "Events" },
     { value: "nodes", label: "Nodes" },
+    { value: "helm", label: "Helm" },
 ];
 
 function Cluster({ paneId, active, status }: { paneId: string; active: boolean; status: KubeStatus }) {
@@ -71,8 +74,8 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const scope: Scope = { context, namespace };
     const namespaces = useResourceEnabled(active, kubeNamespacesR, context);
     const workloads = useResourceEnabled(active && view.section === "workloads", kubeWorkloadsR, scope, all);
-    usePoll(active && view.pod === null && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
-    const listing = active && view.pod === null;
+    const listing = active && view.pod === null && view.workload === null && view.release === null;
+    usePoll(listing && view.section === "workloads", LIST_POLL_MS, workloads.refresh);
     const pods = useResourceEnabled(active && view.section === "pods", kubePodsR, scope, all, view.selector);
     usePoll(listing && view.section === "pods", LIST_POLL_MS, pods.refresh);
     const network = useResourceEnabled(listing && view.section === "network", kubeNetworkR, scope, all);
@@ -81,6 +84,8 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
     const nodes = useResourceEnabled(active, kubeNodesR, context);
     usePoll(listing && view.section === "nodes", LIST_POLL_MS, nodes.refresh);
     const notReady = nodes.data?.filter((node) => node.status !== "Ready").length ?? 0;
+    const releases = useResourceEnabled(listing && view.section === "helm", kubeHelmReleasesR, scope, all);
+    const failedReleases = releases.data?.filter((release) => release.status === "failed").length ?? 0;
     usePoll(listing && view.section === "events", EVENTS_POLL_MS, events.refresh);
     const warnings = events.data?.filter((event) => event.kind === "Warning").length ?? 0;
     const trouble = workloads.data?.filter((each) => each.health !== "ok").length ?? 0;
@@ -90,6 +95,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
         network: network.data ? String(network.data.services.length) : "",
         events: warnings > 0 ? `${warnings} !` : "",
         nodes: notReady > 0 ? `${notReady} !` : nodes.data ? String(nodes.data.length) : "",
+        helm: failedReleases > 0 ? `${failedReleases} !` : releases.data ? String(releases.data.length) : "",
     };
 
     return (
@@ -177,7 +183,15 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     </button>
                 </header>
                 <div className="k8s-page">
-                    {view.workload ? (
+                    {view.release ? (
+                        <HelmReleaseView
+                            key={`${view.release.namespace}/${view.release.name}`}
+                            scope={{ context, namespace: view.release.namespace }}
+                            name={view.release.name}
+                            active={active}
+                            onBack={() => updateKubeView(paneId, { release: null })}
+                        />
+                    ) : view.workload ? (
                         <WorkloadView
                             key={`${view.workload.namespace}/${view.workload.kind}/${view.workload.name}`}
                             scope={{ context, namespace: view.workload.namespace }}
@@ -229,6 +243,17 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                     ) : view.section === "config" ? (
                         <Loaded handle={config} label="config">
                             {(data) => <Config configMaps={data.configMaps} secrets={data.secrets} find={view.find} showNamespace={all} />}
+                        </Loaded>
+                    ) : view.section === "helm" ? (
+                        <Loaded handle={releases} label="Helm releases">
+                            {(data) => (
+                                <HelmReleases
+                                    releases={data}
+                                    find={view.find}
+                                    showNamespace={all}
+                                    onOpen={(release) => updateKubeView(paneId, { release: { namespace: release.namespace, name: release.name } })}
+                                />
+                            )}
                         </Loaded>
                     ) : view.section === "nodes" ? (
                         <Loaded handle={nodes} label="nodes">

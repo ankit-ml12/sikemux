@@ -897,3 +897,8 @@
 .k8s-revision-cause {
     color: var(--text-primary);
 }
+
+.k8s-revision-cause.failed {
+    color: var(--danger);
+    white-space: pre-wrap;
+}

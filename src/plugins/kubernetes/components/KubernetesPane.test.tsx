@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD, CONTROL, SICK, WEB_HISTORY } from "../testing";
+import { NIGHTLY, noKubectl, ready, WEB, WEB_POD, WORKER, WORKER_POD, CONTROL, SICK, WEB_HISTORY, STOREFRONT } from "../testing";
 
 const api = vi.hoisted(() => ({
     status: vi.fn(),
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
     pod: vi.fn(),
     nodes: vi.fn(),
     history: vi.fn(),
+    helmReleases: vi.fn(),
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
@@ -40,6 +41,7 @@ beforeEach(() => {
     api.config.mockResolvedValue({ configMaps: [], secrets: [] });
     api.nodes.mockResolvedValue([CONTROL]);
     api.history.mockResolvedValue(WEB_HISTORY);
+    api.helmReleases.mockResolvedValue([STOREFRONT]);
 });
 
 const openSection = async (name: RegExp) =>
@@ -197,5 +199,15 @@ describe("the Kubernetes pane", () => {
         fireEvent.click(screen.getByRole("button", { name: "Back to workloads" }));
         expect(await screen.findByRole("table", { name: "Workloads" })).toBeInTheDocument();
         expect(within(screen.getByRole("table", { name: "Workloads" })).queryByRole("button", { name: "History of nightly-report" })).toBeNull();
+    });
+
+    it("lists Helm releases and counts the failed ones in the sidebar", async () => {
+        renderPane();
+        const nav = await screen.findByRole("navigation", { name: "Kubernetes" });
+        fireEvent.click(within(nav).getByRole("button", { name: /Helm/ }));
+        const table = await screen.findByRole("table", { name: "Helm releases" });
+        expect(within(table).getByRole("row", { name: "storefront" })).toBeInTheDocument();
+        expect(api.helmReleases).toHaveBeenCalledWith({ context: "kind-dev", namespace: "default" }, false);
+        await waitFor(() => expect(within(nav).getByRole("button", { name: /Helm/ })).toHaveTextContent("1"));
     });
 });
