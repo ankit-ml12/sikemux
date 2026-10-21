@@ -198,7 +198,9 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
     idle: chat.earlier === 'idle',
     load: session.loadEarlier,
   });
-  const activity = activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
+  const activity = chat.stoppingTurn
+    ? 'Stopping…'
+    : activityText({ ...state, permissions: chat.permissions }, activeToolLabel(state.messages));
   const title = state.title ?? live.snapshot?.inbox.agents.find((shown) => shown.agentId === agentId)?.title ?? agentLabel(provider);
   const watchOnly = access === 'watch';
   const steerable = state.capabilities.steering === true && state.running && !watchOnly;
@@ -329,7 +331,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 key={question.id}
                                 question={question}
                                 canAnswer={!watchOnly}
-                                busy={questions.busy === question.id}
                                 writing={questions.writing && composing?.id === question.id}
                                 onChoose={(choice) => void questions.answer(question, { choice }, question.choices[choice]?.label ?? '')}
                                 onWrite={() => {
@@ -344,7 +345,6 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                                 key={question.id}
                                 question={question}
                                 canAnswer={!watchOnly}
-                                busy={questions.busy === question.id}
                                 onFine={() => void questions.answer(question, { fine: true }, null)}
                                 onChange={() => {
                                   questions.write(question);
@@ -382,7 +382,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
             <Composer
               session={session}
               provider={provider}
-              running={state.running}
+              running={state.running && !chat.stoppingTurn}
               setup={state.setup}
               usage={state.usage}
               commands={state.commands}
@@ -398,9 +398,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                     })
               }
               permissionMode={chat.permissionMode ?? ''}
-              modeLocked={
-                state.running || chat.permissions.length > 0 || chat.changingMode || state.connection !== 'ready' || live.status !== 'open'
-              }
+              modeLocked={state.running || chat.permissions.length > 0 || state.connection !== 'ready' || live.status !== 'open'}
               watchOnly={watchOnly}
               offline={live.status !== 'open'}
               hostName={hostName}
@@ -415,7 +413,7 @@ function ChatScreen({ core, agentId }: { core: string; agentId: string }) {
                   cli: composing.cli,
                   text: composing.text,
                   onRemove: questions.stopComposing,
-                  onAnswer: (text) => questions.answer(composing, { answer: text }, text),
+                  onAnswer: (text) => questions.answer(composing, { answer: text }, text, () => session.setDraft(text)),
                 }
               }
             />

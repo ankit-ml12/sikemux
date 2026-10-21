@@ -16,7 +16,6 @@ export type ChatQuestions = {
   assumed: AgentQuestion[];
   /** Answered from this phone, until the transcript holds the answer. */
   answered: { question: AgentQuestion; answer: string }[];
-  busy: string | null;
   /**
    * The question whatever the composer sends answers, while one is open and the person has not taken the chip off; never
    * a secret one, which has its own masked field.
@@ -24,8 +23,11 @@ export type ChatQuestions = {
   composing: AgentQuestion | null;
   /** The person chose to write the answer. */
   writing: boolean;
-  /** `shown` is what the transcript shows as the answer until the agent has it; none for an assumption let stand. */
-  answer: (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => Promise<boolean>;
+  /**
+   * Shows the question answered at once. `shown` is what the transcript shows as the answer until the agent has it; none
+   * for an assumption let stand. `undo` puts the answer back where it was written when the host did not take it.
+   */
+  answer: (question: AgentQuestion, given: QuestionAnswer, shown: string | null, undo?: () => void) => Promise<boolean>;
   write: (question: AgentQuestion) => void;
   stopComposing: () => void;
 };
@@ -41,7 +43,6 @@ export function useQuestions(
   messages: readonly ChatMessage[],
   onError: (problem: string) => void,
 ): ChatQuestions {
-  const [busy, setBusy] = useState<string | null>(null);
   const [sent, setSent] = useState<SentAnswer[]>([]);
   const [writingId, setWritingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
@@ -59,21 +60,18 @@ export function useQuestions(
   const composing = writing ?? open.find((question) => !question.secret && !dismissed.has(question.id)) ?? null;
 
   const answer = useCallback(
-    async (question: AgentQuestion, given: QuestionAnswer, shown: string | null) => {
+    async (question: AgentQuestion, given: QuestionAnswer, shown: string | null, undo?: () => void) => {
       if (!connection) return false;
-      setBusy(question.id);
-      try {
-        await connection.call('answerQuestion', JSON.stringify({ id: question.id, ...given }));
-        setSent((current) => [...current, { question, answer: shown }]);
-        setWritingId((current) => (current === question.id ? null : current));
-        return true;
-      } catch (error) {
+      const answered: SentAnswer = { question, answer: shown };
+      setSent((current) => [...current, answered]);
+      setWritingId((current) => (current === question.id ? null : current));
+      connection.call('answerQuestion', JSON.stringify({ id: question.id, ...given })).catch((error: unknown) => {
+        setSent((current) => current.filter((known) => known !== answered));
+        undo?.();
         onError(problem(error));
         setReads((count) => count + 1);
-        return false;
-      } finally {
-        setBusy(null);
-      }
+      });
+      return true;
     },
     [connection, onError],
   );
@@ -93,5 +91,5 @@ export function useQuestions(
     setDismissed((current) => new Set(current).add(composing.id));
   }, [composing]);
 
-  return { open, assumed, answered, busy, composing, writing: writing !== null, answer, write, stopComposing };
+  return { open, assumed, answered, composing, writing: writing !== null, answer, write, stopComposing };
 }

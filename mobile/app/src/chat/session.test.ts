@@ -307,26 +307,28 @@ describe('a chat session', () => {
     expect(session.snapshot().stopping.size).toBe(0);
   });
 
-  it('puts the picked files on the host before sending their paths with the message', async () => {
+  it('shows the message with its files at once and sends their host paths once they are there', async () => {
     const { session } = harness();
     const connection = fakeConnection(live([], 0));
     session.hold(connection as unknown as ConnectionLike);
     await settle();
     session.attach([picked('shot.jpg', 'image'), picked('notes.txt', 'file')]);
 
-    const sending = session.send('look');
-    expect(session.snapshot().attachments.map((attachment) => attachment.upload)).toEqual(['sending', 'sending']);
-    expect(session.snapshot().agent.messages).toHaveLength(0);
-    expect(await sending).toBe(true);
+    expect(await session.send('look')).toBe(true);
+    const shown = session.snapshot();
+    expect(shown.attachments).toHaveLength(0);
+    const message = shown.agent.messages.at(-1);
+    expect(message?.attachments).toEqual(['file:///picked/shot.jpg', 'file:///picked/notes.txt']);
+    expect(shown.unsent.get(message?.id ?? '')?.state).toBe('sending');
+    expect(shown.sentFiles.get('file:///picked/shot.jpg')?.name).toBe('shot.jpg');
+
+    await settle();
     expect(connection.attachFile.mock.calls.map((call) => call[1])).toEqual(['shot.jpg', 'notes.txt']);
     expect(connection.prompt).toHaveBeenCalledWith('agent', 'look', ['/host/pasted/shot.jpg', '/host/pasted/notes.txt']);
-    const { agent, attachments, sentFiles } = session.snapshot();
-    expect(attachments).toHaveLength(0);
-    expect(agent.messages.at(-1)?.attachments).toEqual(['/host/pasted/shot.jpg', '/host/pasted/notes.txt']);
-    expect(sentFiles.get('/host/pasted/shot.jpg')?.uri).toBe('file:///picked/shot.jpg');
+    expect(session.snapshot().unsent.size).toBe(0);
   });
 
-  it('holds the message while a file did not reach the host, and sends only the rest again', async () => {
+  it('marks the message not sent while a file did not reach the host, and sends only the rest again', async () => {
     const { session } = harness();
     const connection = fakeConnection(live([], 0));
     connection.attachFile.mockRejectedValueOnce(MobileError.Connection.new({ message: 'the connection dropped' }));
@@ -334,13 +336,14 @@ describe('a chat session', () => {
     await settle();
     session.attach([picked('a.jpg', 'image'), picked('b.pdf', 'file')]);
 
-    expect(await session.send('both')).toBe(false);
-    const [first, second] = session.snapshot().attachments;
-    expect(first).toMatchObject({ upload: 'failed', problem: 'the connection dropped' });
-    expect(second.path).toBe('/host/pasted/b.pdf');
+    await session.send('both');
+    await settle();
+    const id = session.snapshot().agent.messages.at(-1)?.id ?? '';
+    expect(session.snapshot().unsent.get(id)).toEqual({ state: 'failed', problem: 'the connection dropped' });
     expect(connection.prompt).not.toHaveBeenCalled();
 
-    expect(await session.send('both')).toBe(true);
+    session.retrySend(id);
+    await settle();
     expect(connection.attachFile).toHaveBeenCalledTimes(3);
     expect(connection.prompt).toHaveBeenCalledWith('agent', 'both', ['/host/pasted/a.jpg', '/host/pasted/b.pdf']);
   });
@@ -360,6 +363,8 @@ describe('a chat session', () => {
     await settle();
     session.attach([picked('shot.jpg', 'image')]);
     await session.send('next');
+    expect(session.snapshot().queued.map((held) => held.text)).toEqual(['next']);
+    await settle();
     startAt(1);
     deliver(queued({ id: 'q1', text: 'next', paths: ['/host/pasted/shot.jpg'] }));
     drawFrame();
