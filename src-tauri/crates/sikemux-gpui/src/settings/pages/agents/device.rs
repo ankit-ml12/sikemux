@@ -21,12 +21,8 @@ pub struct Fields {
     sim_setup: Option<Option<Value>>,
 }
 
-/// Asks whether the simulator can run here and, when it can, what it would run with;
-/// tells the simulator whether new agents get its tools, as the person chose.
+/// Asks whether the simulator can run here and, when it can, what it would run with.
 pub fn read_simulator(bench: &Workbench, cx: &mut Context<Workbench>) {
-    bench
-        .sims
-        .offer_to_agents(bench.preferences().ios_simulator);
     let status = bench.sims.status();
     cx.spawn(async move |bench, cx| {
         let status = status
@@ -316,18 +312,7 @@ pub fn render(
         .child(rows::row(
             "Let agents drive the iOS Simulator",
             Some("Agents tap, type and read simulators without asking, as they do browser tabs, and their screenshots go to the agent's provider. Applies to agents started after a change."),
-            {
-                let this = this.clone();
-                Switch::new("ios-simulator")
-                    .checked(preferences.ios_simulator)
-                    .on_change(move |on: &bool, _: &mut Window, cx: &mut App| {
-                        let on = *on;
-                        this.update(cx, |bench, _| {
-                            bench.sims.offer_to_agents(on);
-                            crate::settings::set(bench, "iosSimulator", on);
-                        })
-                    })
-            },
+            rows::switch("ios-simulator", "iosSimulator", preferences.ios_simulator, this),
             cx,
         ))
         .child(rows::row(

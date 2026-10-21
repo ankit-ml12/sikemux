@@ -68,10 +68,15 @@ impl Workbench {
         };
         let project = match &strip {
             Strip::Host(_) => {
-                let tabs: Vec<String> = self.tabs(&strip).iter().map(|tab| tab.id.clone()).collect();
+                let tabs: Vec<String> =
+                    self.tabs(&strip).iter().map(|tab| tab.id.clone()).collect();
                 return self.close_tabs(&strip, &tabs);
             }
-            Strip::Project(id) => self.projects().iter().find(|project| project.id == *id).cloned(),
+            Strip::Project(id) => self
+                .projects()
+                .iter()
+                .find(|project| project.id == *id)
+                .cloned(),
         };
         let Some(project) = project.filter(|_| self.projects().len() > 1) else {
             return;
@@ -83,7 +88,8 @@ impl Workbench {
             .count();
         let unsaved = self.editors.dirty_under(&project.path);
         let path = project.path.to_string_lossy().into_owned();
-        let close = move |bench: &mut Workbench| bench.call("removeProject", json!({ "path": path }));
+        let close =
+            move |bench: &mut Workbench| bench.call("removeProject", json!({ "path": path }));
         if working == 0 && unsaved == 0 {
             return close(self);
         }
@@ -126,7 +132,7 @@ impl Workbench {
         });
         match file {
             Some((strip, tab)) => self.activate_tab(&strip, &tab),
-            None => self.show_rail_page(RailPage::Files, cx),
+            None => self.open_rail_on(RailPage::Files, cx),
         }
     }
 
@@ -135,7 +141,7 @@ impl Workbench {
         let Some(strip @ Strip::Project(_)) = self.strip() else {
             return;
         };
-        self.show_rail_page(RailPage::Agents, cx);
+        self.open_rail_on(RailPage::Agents, cx);
         let in_front = self
             .tab()
             .and_then(|tab| tabs::first_view(&tab.pane))
@@ -146,7 +152,9 @@ impl Workbench {
         let agent = self
             .tabs(&strip)
             .iter()
-            .find(|tab| tabs::first_view(&tab.pane).is_some_and(|(kind, _)| kind == PaneKind::Agent))
+            .find(|tab| {
+                tabs::first_view(&tab.pane).is_some_and(|(kind, _)| kind == PaneKind::Agent)
+            })
             .map(|tab| tab.id.clone());
         match agent {
             Some(tab) => self.activate_tab(&strip, &tab),
@@ -194,12 +202,14 @@ impl Workbench {
                     .chats
                     .iter()
                     .find(|chat| chat.agent_id == target)
-                    .filter(|chat| matches!(chat.status, AgentStatus::Working | AgentStatus::Blocked))
+                    .filter(|chat| {
+                        matches!(chat.status, AgentStatus::Working | AgentStatus::Blocked)
+                    })
                     .map(|_| ())
             })
             .flatten();
         let title = self
-            .agent_title(&target)
+            .saved_title(&target)
             .unwrap_or_else(|| "the agent".to_owned());
         if mid_turn.is_some() {
             return self.confirm(
@@ -216,9 +226,10 @@ impl Workbench {
             );
         }
         if kind == PaneKind::Files && self.editors.is_dirty(std::path::Path::new(&target)) {
-            let name = std::path::Path::new(&target)
-                .file_name()
-                .map_or_else(|| target.clone(), |name| name.to_string_lossy().into_owned());
+            let name = std::path::Path::new(&target).file_name().map_or_else(
+                || target.clone(),
+                |name| name.to_string_lossy().into_owned(),
+            );
             return self.confirm(
                 format!("Close {name} without saving?"),
                 "Its unsaved changes are lost.",
@@ -235,7 +246,7 @@ impl Workbench {
         close(self);
     }
 
-    fn agent_title(&self, agent: &str) -> Option<String> {
+    fn saved_title(&self, agent: &str) -> Option<String> {
         self.view
             .as_ref()?
             .workspace
@@ -246,9 +257,9 @@ impl Workbench {
     }
 
     /// Opens the tab rail on `page`.
-    pub fn show_rail_page(&mut self, page: RailPage, cx: &mut Context<Self>) {
+    pub fn open_rail_on(&mut self, page: RailPage, cx: &mut Context<Self>) {
         self.tab_rail_open = true;
-        self.rail_page = page;
+        self.show_rail_page(page, cx);
         cx.notify();
     }
 }

@@ -635,6 +635,7 @@ impl Workbench {
             Update::Read("preferences", value) => {
                 if let Ok(preferences) = serde_json::from_value::<Preferences>(value.clone()) {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
+                    self.sims.offer_to_agents(preferences.ios_simulator);
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
                     crate::ui::grain::set(&preferences, cx);
@@ -2519,17 +2520,29 @@ impl Render for Workbench {
                 cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
             )
             .capture_key_down(cx.listener(|bench, event, _, cx| bench.switcher_key(event, cx)))
-            .on_action(cx.listener(|bench, _: &crate::places::ClosePlace, _, cx| bench.close_place(cx)))
-            .on_action(cx.listener(|bench, _: &crate::places::LastPlace, _, _| bench.go_to_last_place()))
+            .on_action(
+                cx.listener(|bench, _: &crate::places::ClosePlace, _, cx| bench.close_place(cx)),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::places::LastPlace, _, _| bench.go_to_last_place()),
+            )
             .on_action(cx.listener(|bench, _: &crate::places::NextGroup, _, _| bench.next_group()))
-            .on_action(cx.listener(|bench, _: &crate::places::FocusTerminals, _, cx| {
-                bench.show_rail_page(RailPage::Terminals, cx)
-            }))
-            .on_action(cx.listener(|bench, _: &crate::places::FocusFiles, _, cx| bench.focus_files(cx)))
-            .on_action(cx.listener(|bench, _: &crate::places::FocusAgents, window, cx| {
-                bench.focus_agents(window, cx)
-            }))
-            .on_action(cx.listener(|bench, _: &crate::places::FocusBoard, _, _| bench.focus_board()))
+            .on_action(
+                cx.listener(|bench, _: &crate::places::FocusTerminals, _, cx| {
+                    bench.show_rail_page(RailPage::Terminals, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::places::FocusFiles, _, cx| bench.focus_files(cx)),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::places::FocusAgents, window, cx| {
+                    bench.focus_agents(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|bench, _: &crate::places::FocusBoard, _, _| bench.focus_board()),
+            )
             .on_action(
                 cx.listener(|bench, _: &crate::switcher::NextPlace, window, cx| {
                     bench.step_place(1, window, cx);
