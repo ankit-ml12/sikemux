@@ -35,11 +35,28 @@ as the web client at app.sikemux.com.
 - **Smaller than what it replaces.** Each area's line count is reported against today's
   TypeScript and CSS for the same area, and is meant to be well below it. Each screen is
   checked against these rules, and simplified, before it lands.
+- **Idiomatic GPUI, not the web app redrawn.** The app matches what people see and can do,
+  never how the web app happens to build it.
+  - It uses GPUI's own model: entities and views, actions with the keymap and key contexts
+    for every shortcut, focus handles, GPUI's lists and scroll handles, its animation API,
+    and its input events, including trackpad gestures and scroll phases.
+  - Nothing GPUI or GPUI Kit already provides is rebuilt by hand. Nothing ports a web-ism:
+    no emulated CSS cascade, no DOM tricks, no copy of the React component tree, no
+    workaround that reproduces a WebKit quirk.
+  - When matching a pixel of today's app would take a hack, the GPUI-natural form wins and
+    its commit says so. `DESIGN.md`'s principles and tokens are the look to match, not
+    today's exact rendering.
+  - No feature is dropped. Swipes between spaces and tabs, every shortcut with today's
+    command ids, drag and drop and the motion rules are all kept, done the GPUI way.
+  - Each screen is reviewed for workarounds when it lands. A workaround already landed is
+    made idiomatic the next time its area is touched, and the commit lists what changed.
+  - A patch to the GPUI fork is a general capability GPUI lacks, fit to send upstream, such
+    as the overlay plane or letter-spacing. It is never a Sikemux-specific hack.
 
 ## Consequences
 
-- The behaviour and the look of the Tauri app are what is ported, not its components or its
-  state.
+- The behaviour and the look of the Tauri app are what is ported, not its components, its
+  state or the way it is built.
 - The React app keeps working on the branch until GPUI replaces it, drawing the same core
   views through `src/chat/rows.ts` and the generated wire types.
 - Pieces nobody has built for GPUI yet become crates others can use, free of Sikemux types
