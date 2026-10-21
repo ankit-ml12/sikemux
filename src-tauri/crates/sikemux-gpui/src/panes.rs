@@ -2,13 +2,14 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AppContext, Bounds, Context, CursorStyle, DragMoveEvent, EmptyView,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, SharedString,
+    div, px, AnyElement, App, AppContext, Bounds, Context, CursorStyle, DragMoveEvent, EmptyView,
+    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
 use sikemux_wire::protocol::{Pane, PaneKind, SplitDir, Tab};
 
+use crate::drag::DraggedTab;
 use crate::workbench::{Strip, Workbench};
 use crate::{desk, home, terminal, ui};
 
@@ -23,6 +24,54 @@ pub struct Panes {
     /// The view the person last clicked into, by id.
     pub focused: Option<String>,
     resizing: Option<Resizing>,
+    /// Where a tab dragged over a view would go beside it.
+    aimed: Option<Aimed>,
+}
+
+/// A tab dragged over a view: the side of the view it would take, which the view lights.
+#[derive(Clone, PartialEq)]
+struct Aimed {
+    tab: String,
+    pane: String,
+    side: Side,
+    from: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Side {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl Side {
+    fn word(self) -> &'static str {
+        match self {
+            Side::Left => "left",
+            Side::Right => "right",
+            Side::Top => "top",
+            Side::Bottom => "bottom",
+        }
+    }
+}
+
+/// A split tab holds at most three views side by side, or two stacked.
+const MOST_SIDE_BY_SIDE: usize = 3;
+
+/// Where one more view can go: any side of a lone view, then only across while a row of
+/// views has room.
+fn open_sides(root: &Pane) -> Vec<Side> {
+    match root {
+        Pane::View { .. } => vec![Side::Left, Side::Right, Side::Top, Side::Bottom],
+        Pane::Split { dir, panes, .. } => {
+            let flat = panes.iter().all(|pane| matches!(pane, Pane::View { .. }));
+            match *dir == SplitDir::Row && flat && panes.len() < MOST_SIDE_BY_SIDE {
+                true => vec![Side::Left, Side::Right],
+                false => Vec::new(),
+            }
+        }
+    }
 }
 
 /// A divider being dragged, and the sizes it gives its split until the core keeps them.
@@ -70,8 +119,16 @@ fn pane(
     match pane {
         Pane::View { id, kind, target } => {
             let focused = id.clone();
+            let (aiming, dropping) = ((tab.to_owned(), id.clone()), id.clone());
+            let aimed = bench
+                .panes
+                .aimed
+                .as_ref()
+                .filter(|aimed| aimed.pane == *id && cx.has_active_drag())
+                .map(|aimed| aimed.side);
             div()
                 .id(SharedString::from(id.clone()))
+                .relative()
                 .flex()
                 .size_full()
                 .min_w_0()
@@ -79,7 +136,17 @@ fn pane(
                 .capture_any_mouse_down(
                     cx.listener(move |bench, _, _, _| bench.panes.focused = Some(focused.clone())),
                 )
+                .on_drag_move(cx.listener(
+                    move |bench, event: &DragMoveEvent<DraggedTab>, _, cx| {
+                        let (tab, pane) = &aiming;
+                        bench.aim_split(tab, pane, event, cx);
+                    },
+                ))
+                .on_drop(cx.listener(move |bench, dropped: &DraggedTab, _, cx| {
+                    bench.drop_split(&dropping, dropped, cx);
+                }))
                 .child(view(bench, tab, id, *kind, target, window, cx))
+                .children(aimed.map(|side| preview(side, cx)))
                 .into_any_element()
         }
         Pane::Split {
@@ -89,6 +156,30 @@ fn pane(
             sizes,
         } => split(bench, tab, id, *dir, panes, sizes, window, cx),
     }
+}
+
+/// The part of a view a dropped tab would take, lit while the tab is over it.
+fn preview(side: Side, cx: &App) -> impl IntoElement {
+    let t = crate::theme::Tokens::get(cx);
+    let across = matches!(side, Side::Left | Side::Right);
+    div()
+        .absolute()
+        .when(side != Side::Right, |half| half.left_0())
+        .when(side == Side::Right, |half| half.right_0())
+        .when(side != Side::Bottom, |half| half.top_0())
+        .when(side == Side::Bottom, |half| half.bottom_0())
+        .when(across, |half| half.w(gpui_kit::relative(0.5)).h_full())
+        .when(!across, |half| half.h(gpui_kit::relative(0.5)).w_full())
+        .rounded(crate::theme::RADIUS_3)
+        .bg(Hsla {
+            a: 0.14,
+            ..t.accent
+        })
+        .border_2()
+        .border_color(Hsla {
+            a: 0.55,
+            ..t.accent
+        })
 }
 
 fn view(
@@ -297,6 +388,78 @@ impl Workbench {
             "target": target,
         });
         self.call("splitPane", strip.with(params));
+    }
+
+    /// Notes the side of the view `pane` of `tab` that a tab dragged over it would take: the
+    /// edge the pointer is nearest that the layout still has room on.
+    fn aim_split(
+        &mut self,
+        tab: &str,
+        pane: &str,
+        event: &DragMoveEvent<DraggedTab>,
+        cx: &mut Context<Self>,
+    ) {
+        let over = event.bounds.contains(&event.event.position);
+        let dragged = event.drag(cx).clone();
+        let open = self
+            .tab()
+            .filter(|shown| shown.id == tab)
+            .map(|shown| open_sides(&shown.pane))
+            .unwrap_or_default();
+        let aimable = over
+            && dragged.tab != tab
+            && self.strip().as_ref() == Some(&dragged.strip)
+            && !open.is_empty();
+        let next = aimable.then(|| {
+            let (bounds, at) = (event.bounds, event.event.position);
+            let distance = |side: Side| match side {
+                Side::Left => f32::from(at.x - bounds.left()) / f32::from(bounds.size.width),
+                Side::Right => f32::from(bounds.right() - at.x) / f32::from(bounds.size.width),
+                Side::Top => f32::from(at.y - bounds.top()) / f32::from(bounds.size.height),
+                Side::Bottom => f32::from(bounds.bottom() - at.y) / f32::from(bounds.size.height),
+            };
+            let side = open
+                .iter()
+                .copied()
+                .min_by(|a, b| distance(*a).total_cmp(&distance(*b)))
+                .unwrap_or(Side::Right);
+            Aimed {
+                tab: tab.to_owned(),
+                pane: pane.to_owned(),
+                side,
+                from: dragged.tab.clone(),
+            }
+        });
+        let leaving = !over
+            && self
+                .panes
+                .aimed
+                .as_ref()
+                .is_some_and(|aimed| aimed.pane == pane);
+        if (next.is_some() || leaving) && self.panes.aimed != next {
+            self.panes.aimed = next;
+            self.parts.redraw(&self.parts.stage, cx);
+        }
+    }
+
+    /// Moves the dropped tab's view beside the view `pane`, on the side it was aimed at.
+    fn drop_split(&mut self, pane: &str, dropped: &DraggedTab, cx: &mut Context<Self>) {
+        let Some(aimed) = self
+            .panes
+            .aimed
+            .take()
+            .filter(|aimed| aimed.pane == pane && aimed.from == dropped.tab)
+        else {
+            return;
+        };
+        let params = json!({
+            "tab": aimed.tab,
+            "pane": aimed.pane,
+            "side": aimed.side.word(),
+            "fromTab": aimed.from,
+        });
+        self.call("splitPane", dropped.strip.with(params));
+        self.parts.redraw(&self.parts.stage, cx);
     }
 
     pub fn close_pane(&self, strip: &Strip, tab: &str, pane: &str) {
