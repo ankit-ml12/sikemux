@@ -902,3 +902,11 @@
     color: var(--danger);
     white-space: pre-wrap;
 }
+
+.k8s-nowrap {
+    white-space: nowrap;
+}
+
+.k8s-use > span:first-child {
+    white-space: nowrap;
+}

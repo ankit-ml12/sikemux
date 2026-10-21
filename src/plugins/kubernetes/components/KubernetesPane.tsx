@@ -177,7 +177,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
             <main className="k8s-main">
                 <header className="k8s-topbar">
                     <span className="k8s-topbar-title">{SECTIONS.find((each) => each.value === view.section)?.label}</span>
-                    <span className="k8s-muted">{all ? "All namespaces" : namespace}</span>
+                    <span className="k8s-muted">{view.section === "nodes" ? "Whole cluster" : all ? "All namespaces" : namespace}</span>
                     <button type="button" className="k8s-button" onClick={() => kubernetes.refresh()}>
                         Refresh
                     </button>

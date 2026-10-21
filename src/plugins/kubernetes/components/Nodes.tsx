@@ -14,9 +14,10 @@ export function nodeTone(node: Pick<KubeNode, "status" | "pressure" | "cordoned"
     return "live";
 }
 
-/** A node's status as `kubectl get nodes` writes it. */
+/** A node's status, saying when it takes no new pods. */
 export function statusLine(node: Pick<KubeNode, "status" | "cordoned">): string {
-    return node.cordoned ? `${node.status},SchedulingDisabled` : node.status;
+    if (!node.cordoned) return node.status;
+    return node.status === "Ready" ? "Cordoned" : `${node.status}, cordoned`;
 }
 
 function Use({ used, of, write }: { used: number | null; of: number; write: (value: number) => string }) {
@@ -87,8 +88,8 @@ export function Nodes({ nodes, context }: { nodes: KubeNode[]; context: string }
                             </td>
                             <td>
                                 <span className="k8s-name">{node.name}</span>
-                                <span className="k8s-note-inline k8s-mono">
-                                    {[node.internalIp, `${node.os} · ${node.arch}`].filter(Boolean).join(" · ")}
+                                <span className="k8s-note-inline k8s-mono" title={`${node.os}, ${node.runtime}`}>
+                                    {[node.internalIp, node.arch].filter(Boolean).join(" · ")}
                                 </span>
                                 {node.reason ? <span className="k8s-note-inline failed">{node.reason}</span> : null}
                                 {node.pressure.length > 0 || node.taints.length > 0 ? (
@@ -107,14 +108,14 @@ export function Nodes({ nodes, context }: { nodes: KubeNode[]; context: string }
                                 ) : null}
                             </td>
                             <td className={`k8s-status ${nodeTone(node)}`}>{statusLine(node)}</td>
-                            <td className="k8s-muted">{node.roles.join(", ") || "worker"}</td>
+                            <td className="k8s-muted">{node.roles.join(", ") || "—"}</td>
                             <td>
                                 <Use used={node.cpuUsedMillis} of={node.cpuMillis} write={cores} />
                             </td>
                             <td>
                                 <Use used={node.memoryUsedBytes} of={node.memoryBytes} write={memory} />
                             </td>
-                            <td className="k8s-mono k8s-muted">{node.version}</td>
+                            <td className="k8s-mono k8s-muted k8s-nowrap">{node.version}</td>
                             <td className="k8s-muted">{age(node.created)}</td>
                             <td className="k8s-cell-actions">
                                 <span className="k8s-row-actions">

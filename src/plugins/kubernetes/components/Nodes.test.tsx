@@ -19,7 +19,8 @@ beforeEach(() => {
 
 describe("nodes", () => {
     it("writes a node's status and size as kubectl and people say them", () => {
-        expect(statusLine(SICK)).toBe("NotReady,SchedulingDisabled");
+        expect(statusLine(SICK)).toBe("NotReady, cordoned");
+        expect(statusLine({ status: "Ready", cordoned: true })).toBe("Cordoned");
         expect(statusLine(CONTROL)).toBe("Ready");
         expect(nodeTone(SICK)).toBe("danger");
         expect(nodeTone({ status: "Ready", pressure: ["DiskPressure"], cordoned: false })).toBe("warn");
