@@ -116,8 +116,6 @@ pub(crate) fn needs(request: &Request) -> Needs {
         | Request::PublishOnScreen { .. }
         | Request::WatchView
         | Request::FocusAgent { .. }
-        | Request::PublishPalette { .. }
-        | Request::SetTerminalColors { .. }
         | Request::PublishBackdrop { .. } => Needs::Local,
     }
 }
@@ -209,8 +207,6 @@ pub(crate) fn for_person(request: &Request, setup: Setup) -> bool {
         | Request::RevokeDevice { .. }
         | Request::AllowDevices { .. }
         | Request::PublishOnScreen { .. }
-        | Request::PublishPalette { .. }
-        | Request::SetTerminalColors { .. }
         | Request::PublishBackdrop { .. } => true,
     }
 }

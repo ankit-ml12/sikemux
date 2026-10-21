@@ -44,6 +44,8 @@ import { terminalReplay } from "./world/terminals";
 import { PtyOutput, type PtyChannel } from "./ptyOutput";
 import { AGENTS, demoSnapshot, demoWorkspace } from "./world/workspace";
 import { DEMO_BOARD, DEMO_MESSAGES } from "./world/board";
+import { DEMO_PALETTE, DEMO_THEMES, demoPalette } from "./world/theme";
+import type { Theme } from "../src/themes";
 import AGENT_CATALOG from "../src/test/agentCatalog.generated.json";
 import type { BoardCard } from "../src/agents/agentBoard";
 
@@ -318,6 +320,14 @@ export class ShowcaseBackend implements IpcTransport {
       ["faceStyle", "setFaceStyle"],
       constant({ on: true, pack: "all", shape: "mixed", motion: true }),
     );
+    this.onCore(["theme"], (args) =>
+      demoPalette((args as { params?: { id?: string } | null }).params?.id),
+    );
+    this.onCore(["themes"], constant(DEMO_THEMES));
+    this.onCore(["themePalette"], (args) => ({
+      ...DEMO_PALETTE,
+      theme: (args as { params: { theme: Theme } }).params.theme,
+    }));
     this.onCore(
       ["preferences", "setPreference"],
       constant({
@@ -332,7 +342,9 @@ export class ShowcaseBackend implements IpcTransport {
         agentWorktreeDefaults: {},
         restoreAgentTabs: true,
         agentNotifications: false,
-        projectRoots: [{ path: `${DEMO_HOME}/code`, depth: 1, selfIndex: false }],
+        projectRoots: [
+          { path: `${DEMO_HOME}/code`, depth: 1, selfIndex: false },
+        ],
         defaultGitRepos: {},
         languageServerTrust: Object.fromEntries(
           DEMO_PROJECTS.map((project) => [project.path, true]),
@@ -430,7 +442,6 @@ export class ShowcaseBackend implements IpcTransport {
       "pty_input",
       "pty_unsubscribe",
       "pty_clear",
-      "pty_set_colors",
       "sim_watch_read",
       "sim_unwatch",
       "sim_prepare",

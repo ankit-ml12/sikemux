@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contrastRatio } from "../lib/themeContrast";
-import { wallpaperTheme } from "./wallpaper";
+import { wallpaperColours } from "./wallpaper";
 
 function paint(size: number, pick: (x: number, y: number) => [number, number, number]): Uint8ClampedArray {
     const pixels = new Uint8ClampedArray(size * size * 4);
@@ -12,35 +11,37 @@ function paint(size: number, pick: (x: number, y: number) => [number, number, nu
     return pixels;
 }
 
-describe("wallpaperTheme", () => {
+const channels = (colour: string) => [1, 3, 5].map((at) => parseInt(colour.slice(at, at + 2), 16));
+const lightness = (colour: string) => channels(colour).reduce((sum, channel) => sum + channel, 0) / 765;
+
+describe("wallpaperColours", () => {
     it("takes a dark ground and its loudest colour from a night wallpaper", () => {
-        const theme = wallpaperTheme(
+        const { colours, accent } = wallpaperColours(
             paint(64, (x, y) => (x > 40 && y > 40 ? [255, 60, 170] : [8, 10, 20])),
             "Night",
         );
-        const [bg, , , ink, , , acc] = theme.chrome;
-        expect(theme.dark).toBe(true);
-        expect(contrastRatio(ink, bg)).toBeGreaterThanOrEqual(7);
-        const [r, g, b] = [1, 3, 5].map((at) => parseInt(acc.slice(at, at + 2), 16));
+        expect(lightness(colours[0])).toBeLessThan(0.25);
+        expect(lightness(colours[1])).toBeGreaterThan(0.8);
+        const [r, g, b] = channels(accent);
         expect(r).toBeGreaterThan(g);
         expect(b).toBeGreaterThan(g);
     });
 
-    it("turns a pale wallpaper into a light theme", () => {
-        const theme = wallpaperTheme(
+    it("turns a pale wallpaper into a light ground with dark text", () => {
+        const { colours } = wallpaperColours(
             paint(64, (x) => (x < 8 ? [40, 120, 200] : [238, 232, 220])),
             "Paper",
         );
-        expect(theme.dark).toBe(false);
-        expect(contrastRatio(theme.chrome[3], theme.chrome[0])).toBeGreaterThanOrEqual(7);
+        expect(lightness(colours[0])).toBeGreaterThan(0.85);
+        expect(lightness(colours[1])).toBeLessThan(0.4);
     });
 
     it("still builds a full palette from a wallpaper with no colour in it", () => {
-        const theme = wallpaperTheme(
+        const { colours } = wallpaperColours(
             paint(32, (x) => [x * 4, x * 4, x * 4]),
             "Grey",
         );
-        expect(theme.terminal).toHaveLength(21);
-        expect(theme.terminal.every((color) => /^#[0-9a-f]{6}$/.test(color))).toBe(true);
+        expect(colours).toHaveLength(21);
+        expect(colours.every((colour) => /^#[0-9a-f]{6}$/.test(colour))).toBe(true);
     });
 });

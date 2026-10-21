@@ -28,18 +28,9 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { customCommandsOf, setPreference, updateChannelOf, usePreference, projectRootsOf, preferencesOf } from "../state/preferences";
 import type { MidTurnSend } from "../api/generated/wire";
-import {
-    cloneTheme,
-    DEFAULT_THEME_ID,
-    newCustomThemeId,
-    NO_THEMES,
-    THEME_GROUPS,
-    THEMES,
-    themeFromColours,
-    type Theme,
-    type ThemeGroupKey,
-} from "../themes";
-import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
+import { cloneTheme, DEFAULT_THEME_ID, newCustomThemeId, NO_THEMES, THEME_GROUPS, type Theme, type ThemeGroupKey } from "../themes";
+import { themeById, useThemeSummaries } from "../themes/summaries";
+import { wallpaperColours, wallpaperPixels } from "../themes/wallpaper";
 import { ThemePicker } from "./ThemePicker";
 import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
@@ -1250,6 +1241,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     const paneStrength = useStore((state) => preferencesOf(state).paneStrength);
     const home = useStore((state) => state.home);
     const customThemes = usePreference("customThemes") ?? NO_THEMES;
+    const summaries = useThemeSummaries();
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
 
@@ -1277,7 +1269,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         setReadingWallpaper(true);
         try {
             const wallpaper = await settingsApi.wallpaperImage();
-            const theme = themeFromColours(wallpaperTheme(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            const theme = await cmd.themeFromColours(wallpaperColours(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
             openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
         } catch (error) {
             reportError("Theme from wallpaper")(error);
@@ -1303,13 +1295,14 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
         <SettingsPage>
             <SettingsSection
                 title="Theme"
-                meta={`${THEMES.length} built-in · ${customThemes.length} custom`}
+                meta={`${summaries.length - customThemes.length} built-in · ${customThemes.length} custom`}
                 sub="Applies instantly to chrome, editor and terminal. Arrow keys in the search step through the list.">
                 <ThemePicker
+                    summaries={summaries}
                     themeId={themeId}
                     customThemes={customThemes}
                     editingId={edit?.theme.id}
-                    onCustomize={customizeFrom}
+                    onCustomize={(id) => void themeById(id).then(customizeFrom).catch(reportError("Customize theme"))}
                     onEdit={editCustom}
                     onFromWallpaper={fromWallpaper}
                     readingWallpaper={readingWallpaper}

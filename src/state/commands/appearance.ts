@@ -1,6 +1,8 @@
 import { invokeCommand as invoke } from "../../api/invoke";
+import { coreCall } from "../../api/core";
 import { DEFAULT_THEME_ID, type Theme } from "../../themes";
-import { applyTheme, applyWindowOpacity, previewTheme, registerCustomThemes } from "../../themes/bus";
+import { applyWindowOpacity, endPreview, previewTheme, previewThemeId } from "../../themes/bus";
+import type { WallpaperColours } from "../../themes/wallpaper";
 import { applyTerminalFontSize, clampTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZE } from "../../terminal/fontSize";
 import { applyChatTextScale, clampChatTextScale, DEFAULT_CHAT_TEXT_SCALE } from "../../chat/textScale";
 import { applyEditorTextScale, clampEditorTextScale, DEFAULT_EDITOR_TEXT_SCALE } from "../../editor/textScale";
@@ -11,8 +13,8 @@ import { swallow } from "../toast";
 export const themeIdNow = (): string => getState().preferences?.themeId ?? DEFAULT_THEME_ID;
 const customThemesNow = (): Theme[] => getState().preferences?.customThemes ?? [];
 
+/** Picks a theme; the window wears it once the core has resolved it. */
 export function setThemeId(id: string): void {
-    applyTheme(id);
     setPreference("themeId", id);
 }
 
@@ -21,23 +23,31 @@ export function previewThemeDraft(theme: Theme): void {
     previewTheme(theme);
 }
 
-/** Discard any active preview and re-apply the persisted theme selection. */
-export function cancelThemePreview(): void {
-    applyTheme(themeIdNow());
+/** Live-apply one of the themes to pick from, without picking it. */
+export function previewThemeById(id: string): void {
+    previewThemeId(id);
 }
 
-/** Insert or overwrite a custom theme (matched by id), register it, and make it the active theme. */
+/** Discard any active preview and wear the picked theme again. */
+export function cancelThemePreview(): void {
+    endPreview();
+}
+
+/** A theme the core works out from colours picked out of a wallpaper. */
+export function themeFromColours(colours: WallpaperColours): Promise<Theme> {
+    return coreCall<Theme>("themeFromColours", colours);
+}
+
+/** Insert or overwrite a custom theme (matched by id) and make it the active theme. */
 export function saveCustomTheme(theme: Theme): void {
     const kept = customThemesNow();
     const customThemes = kept.some((t) => t.id === theme.id) ? kept.map((t) => (t.id === theme.id ? theme : t)) : [...kept, theme];
-    registerCustomThemes(customThemes);
     setPreference("customThemes", customThemes);
     setThemeId(theme.id);
 }
 
 export function deleteCustomTheme(id: string): void {
     const customThemes = customThemesNow().filter((t) => t.id !== id);
-    registerCustomThemes(customThemes);
     setPreference("customThemes", customThemes);
     if (themeIdNow() === id) setThemeId(DEFAULT_THEME_ID);
 }

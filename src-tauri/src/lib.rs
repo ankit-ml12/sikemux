@@ -243,7 +243,6 @@ pub fn run() {
             pty::commands::pty_text,
             pty::commands::pty_find,
             pty::commands::pty_clear,
-            pty::commands::pty_set_colors,
             pty::commands::pty_write,
             pty::commands::pty_resize,
             pty::commands::pty_reset_modes,

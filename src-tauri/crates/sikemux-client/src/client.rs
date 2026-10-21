@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use sikemux_wire::grid::{FindResult, GridPoint, TerminalColors, TerminalInput};
+use sikemux_wire::grid::{FindResult, GridPoint, TerminalInput};
 use sikemux_wire::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use sikemux_wire::pty::output_log::{OutputPage, OutputQuery};
 use sikemux_wire::pty::shell_protocol::ShellMetadataSnapshot;
@@ -502,11 +502,6 @@ impl CoreClient {
         self.request_done(Request::TerminalClear { id }).await
     }
 
-    pub async fn set_terminal_colors(&self, colors: TerminalColors) -> Result<(), ClientError> {
-        self.request_done(Request::SetTerminalColors { colors })
-            .await
-    }
-
     pub async fn reset_modes(&self, id: SessionId) -> Result<(), ClientError> {
         self.request_done(Request::ResetModes { id }).await
     }
@@ -903,13 +898,6 @@ impl CoreClient {
             Response::BackdropImage { data_url } => Ok(data_url),
             _ => Err(ClientError::UnexpectedReply),
         }
-    }
-
-    pub async fn publish_palette(
-        &self,
-        palette: BTreeMap<String, String>,
-    ) -> Result<(), ClientError> {
-        self.request_done(Request::PublishPalette { palette }).await
     }
 
     pub async fn publish_on_screen(

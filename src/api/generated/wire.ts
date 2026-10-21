@@ -39,7 +39,7 @@ export interface Workspace {
     /** The plugins the person switched off, by id. */
     disabledPlugins: string[];
     launchers: LauncherInfo[];
-    /** The app's theme colours by name; empty until the app publishes them. */
+    /** DESIGN's colour tokens for the person's theme, by name. */
     palette: Record<string, string>;
     backdrop: Backdrop;
 }

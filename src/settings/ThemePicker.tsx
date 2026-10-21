@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CURATED_THEMES, THEMES, type Theme } from "../themes";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { Theme, ThemeSummary } from "../themes";
+import { currentTheme, subscribeTheme } from "../themes/bus";
 import * as cmd from "../state/commands";
 import { IconCheck, IconImage, IconPencil, IconSearch, IconTrash } from "../ui/Icons";
 
 type Tone = "all" | "dark" | "light";
 
 interface Row {
-    theme: Theme;
+    theme: ThemeSummary;
     custom: boolean;
 }
 
@@ -23,29 +24,32 @@ const OVERSCAN = 8 * ROW_HEIGHT;
 /** jsdom measures nothing, so a list with no measured height renders a screenful. */
 const FALLBACK_VIEWPORT = 340;
 
-const CURATED_IDS = new Set(CURATED_THEMES.map((theme) => theme.id));
-const GHOSTTY_THEMES = THEMES.filter((theme) => !CURATED_IDS.has(theme.id));
+const GROUPS: readonly [ThemeSummary["source"], string][] = [
+    ["custom", "Your themes"],
+    ["sikemux", "Sikemux"],
+    ["ghostty", "Ghostty"],
+];
 
-function Swatches({ theme }: { theme: Theme }) {
-    const t = theme.terminal;
+function Swatches({ colours }: { colours: readonly string[] }) {
     return (
         <span className="theme-pick-swatches" aria-hidden="true">
-            {[t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan].map((color, i) => (
+            {colours.map((color, i) => (
                 <span key={i} style={{ background: color }} />
             ))}
         </span>
     );
 }
 
-function Chip({ theme }: { theme: Theme }) {
+function Chip({ theme }: { theme: ThemeSummary }) {
     return (
-        <span className="theme-pick-chip" style={{ background: theme.chrome.bg, borderColor: theme.chrome.line }} aria-hidden="true">
-            <span style={{ color: theme.chrome.acc }}>Aa</span>
+        <span className="theme-pick-chip" style={{ background: theme.bg, borderColor: theme.line }} aria-hidden="true">
+            <span style={{ color: theme.acc }}>Aa</span>
         </span>
     );
 }
 
 export function ThemePicker({
+    summaries,
     themeId,
     customThemes,
     editingId,
@@ -54,10 +58,11 @@ export function ThemePicker({
     onFromWallpaper,
     readingWallpaper,
 }: {
+    summaries: readonly ThemeSummary[];
     themeId: string;
     customThemes: readonly Theme[];
     editingId?: string;
-    onCustomize: (theme: Theme) => void;
+    onCustomize: (id: string) => void;
     onEdit: (theme: Theme) => void;
     onFromWallpaper: () => void;
     readingWallpaper: boolean;
@@ -66,16 +71,16 @@ export function ThemePicker({
     const [tone, setTone] = useState<Tone>("all");
     const listRef = useRef<HTMLDivElement>(null);
 
+    const current = useSyncExternalStore(subscribeTheme, currentTheme);
     const groups = useMemo<Group[]>(() => {
         const needle = query.trim().toLowerCase();
-        const keep = (theme: Theme) => (tone === "all" || theme.dark === (tone === "dark")) && (!needle || theme.name.toLowerCase().includes(needle));
-        const rows = (themes: readonly Theme[], custom: boolean) => themes.filter(keep).map((theme) => ({ theme, custom }));
-        return [
-            { label: "Your themes", rows: rows(customThemes, true) },
-            { label: "Sikemux", rows: rows(CURATED_THEMES, false) },
-            { label: "Ghostty", rows: rows(GHOSTTY_THEMES, false) },
-        ].filter((group) => group.rows.length > 0);
-    }, [customThemes, query, tone]);
+        const keep = (theme: ThemeSummary) =>
+            (tone === "all" || theme.dark === (tone === "dark")) && (!needle || theme.name.toLowerCase().includes(needle));
+        return GROUPS.map(([source, label]) => ({
+            label,
+            rows: summaries.filter((theme) => theme.source === source && keep(theme)).map((theme) => ({ theme, custom: source === "custom" })),
+        })).filter((group) => group.rows.length > 0);
+    }, [summaries, query, tone]);
 
     const flat = useMemo(() => groups.flatMap((group) => group.rows), [groups]);
     const layout = useMemo(() => {
@@ -99,8 +104,11 @@ export function ThemePicker({
     }, [layout]);
     const visible = layout.items.filter((item) => item.top + ROW_HEIGHT >= scrollTop - OVERSCAN && item.top <= scrollTop + viewport + OVERSCAN);
     const stuck = layout.items.filter((item) => item.kind === "group" && item.top <= scrollTop).at(-1);
-    const current = [...customThemes, ...THEMES].find((theme) => theme.id === themeId) ?? THEMES[0];
     const currentIsCustom = customThemes.some((theme) => theme.id === current.id);
+    const edit = (id: string) => {
+        const theme = customThemes.find((candidate) => candidate.id === id);
+        if (theme) onEdit(theme);
+    };
 
     useEffect(() => {
         const list = listRef.current;
@@ -134,7 +142,16 @@ export function ThemePicker({
                 </div>
                 <div className="theme-pick-current-body">
                     <span className="theme-pick-current-name">{current.name}</span>
-                    <Swatches theme={current} />
+                    <Swatches
+                        colours={[
+                            current.terminal.red,
+                            current.terminal.green,
+                            current.terminal.yellow,
+                            current.terminal.blue,
+                            current.terminal.magenta,
+                            current.terminal.cyan,
+                        ]}
+                    />
                 </div>
                 <button
                     className="settings-btn"
@@ -146,7 +163,7 @@ export function ThemePicker({
                 </button>
                 <button
                     className="settings-btn"
-                    onClick={() => (currentIsCustom ? onEdit(current) : onCustomize(current))}
+                    onClick={() => (currentIsCustom ? onEdit(current) : onCustomize(current.id))}
                     title={currentIsCustom ? "Edit this theme" : "Fork this theme into an editable copy"}
                     type="button">
                     <IconPencil size={11} /> {currentIsCustom ? "Edit" : "Customize"}
@@ -169,7 +186,7 @@ export function ThemePicker({
                                 setQuery("");
                             }
                         }}
-                        placeholder={`Search ${THEMES.length + customThemes.length} themes`}
+                        placeholder={`Search ${summaries.length} themes`}
                         aria-label="Search themes"
                         spellCheck={false}
                     />
@@ -227,8 +244,8 @@ export function ThemePicker({
                                         className="settings-theme-act"
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            if (custom) onEdit(theme);
-                                            else onCustomize(theme);
+                                            if (custom) edit(theme.id);
+                                            else onCustomize(theme.id);
                                         }}
                                         title={custom ? "Edit theme" : "Customize a copy"}
                                         type="button">
@@ -247,7 +264,7 @@ export function ThemePicker({
                                         </button>
                                     )}
                                 </span>
-                                <Swatches theme={theme} />
+                                <Swatches colours={theme.swatches} />
                                 <span className="theme-pick-check">{active && <IconCheck size={11} />}</span>
                             </div>
                         );

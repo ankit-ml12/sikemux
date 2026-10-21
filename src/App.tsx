@@ -88,8 +88,8 @@ import { notify, reportError, swallow } from "./state/toast";
 import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
-import { DEFAULT_THEME_ID } from "./themes";
-import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
+import type { Palette } from "./themes";
+import { applyWindowOpacity, watchTheme, wearPicked } from "./themes/bus";
 import { startPageTheme } from "./chat/pageTheme";
 import { applyTerminalFontSize, currentTerminalFontSize } from "./terminal/fontSize";
 import { applyChatTextScale } from "./chat/textScale";
@@ -624,13 +624,7 @@ export default function App() {
     useEffect(() => {
         if (windowBlur !== undefined) cmd.applyWindowBlur(windowBlur);
     }, [windowBlur]);
-    const themeId = usePreference("themeId");
-    const customThemes = usePreference("customThemes");
-    useEffect(() => {
-        if (themeId === undefined || !customThemes) return;
-        registerCustomThemes(customThemes);
-        applyTheme(themeId);
-    }, [themeId, customThemes]);
+    useEffect(() => watchTheme(), []);
     const terminalFontSize = usePreference("terminalFontSize");
     useEffect(() => {
         if (terminalFontSize !== undefined && terminalFontSize !== currentTerminalFontSize()) applyTerminalFontSize(terminalFontSize);
@@ -692,13 +686,14 @@ export default function App() {
             fetchCoreWorkspace(),
             agentApi.catalog(),
             coreCall<Preferences>("preferences").catch(() => null),
+            coreCall<Palette>("theme").catch(() => null),
         ]);
         void fromCore.then(
             () => !disposed && setCoreAnswered(true),
             () => {},
         );
         Promise.all([invoke<BootInfo>("boot_init"), fromCore])
-            .then(([boot, [book, shared, catalog, preferences]]) => {
+            .then(([boot, [book, shared, catalog, preferences, palette]]) => {
                 if (disposed) return;
                 cmd.takeAgentCatalog(catalog);
                 if (preferences) showPreferences(preferences);
@@ -709,8 +704,7 @@ export default function App() {
                     cmd.setHome(boot.home);
                     hydrationResult = applyHydrate(boot.state, accounts, workspace);
                     const st = getState();
-                    registerCustomThemes(preferences?.customThemes ?? []);
-                    applyTheme(preferences?.themeId ?? DEFAULT_THEME_ID);
+                    if (palette) wearPicked(palette);
                     startPageTheme();
                     applyWindowOpacity(preferencesOf(st).windowOpacity);
                     if (preferences) {

@@ -30,7 +30,6 @@ export const remoteApi = {
     answerPairing: (id: string, allow: boolean, access: DeviceAccess) => remote({ op: "answerPairing", id, allow, access }),
     allowDevices: (devices: readonly AllowedDevice[]) => remote({ op: "allowDevices", devices }),
     publishOnScreen: (agentIds: readonly string[], focused: boolean) => publish({ op: "publishOnScreen", agentIds, focused }),
-    publishPalette: (palette: Readonly<Record<string, string>>) => publish({ op: "publishPalette", palette }),
     publishBackdrop: (texture: boolean, image: { readonly id: string; readonly dataUrl: string } | null) =>
         publish({ op: "publishBackdrop", texture, image }),
     subscribe: (listener: (status: RemoteStatus) => void, signal: AbortSignal) =>

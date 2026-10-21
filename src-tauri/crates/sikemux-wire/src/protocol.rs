@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use crate::grid::{FindOptions, FindResult, GridPoint, TerminalColors, TerminalInput};
+use crate::grid::{FindOptions, FindResult, GridPoint, TerminalInput};
 use crate::pty::agent_detection::{DetectionExplain, ManifestReloadReport};
 use crate::pty::launch::{PtyContext, PtyDirectCommand};
 use crate::pty::output_log::{OutputPage, OutputQuery};
@@ -186,10 +186,6 @@ pub enum Request {
     /// above it, without telling the program.
     TerminalClear {
         id: SessionId,
-    },
-    /// The theme's colours, for answering programs that ask for them.
-    SetTerminalColors {
-        colors: TerminalColors,
     },
     /// Turns off the input modes a crashed program may have left on, for the
     /// core's screen and every attached client alike.
@@ -394,11 +390,6 @@ pub enum Request {
     },
     /// The picture published with the backdrop, as a data URL.
     BackdropImage,
-    /// The colours of the app's theme, by name, so devices draw in them.
-    /// Replaces what it published before.
-    PublishPalette {
-        palette: BTreeMap<String, String>,
-    },
     /// The agents the app shows now, replacing the last list, and whether its
     /// window is in front. An agent on screen in a window in front is never
     /// left unread, and one on screen is not put to sleep.
@@ -1339,7 +1330,7 @@ pub struct Workspace {
     #[serde(default)]
     pub disabled_plugins: Vec<String>,
     pub launchers: Vec<LauncherInfo>,
-    /// The app's theme colours by name; empty until the app publishes them.
+    /// DESIGN's colour tokens for the person's theme, by name.
     pub palette: BTreeMap<String, String>,
     pub backdrop: Backdrop,
 }

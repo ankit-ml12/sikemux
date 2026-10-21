@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sikemux_core::client::{Attached, ClientError, CoreClient, Reply};
-use sikemux_core::grid::{FindOptions, FindResult, GridPoint, TerminalColors, TerminalInput};
+use sikemux_core::grid::{FindOptions, FindResult, GridPoint, TerminalInput};
 use sikemux_core::protocol::{
     Continuation, LaunchIdentity, Request, SessionId, SessionInfo, SpawnTarget, TerminalSpawn,
 };
@@ -305,16 +305,6 @@ pub async fn pty_clear(
 ) -> AppResult<()> {
     let (client, id) = session_client(&manager, &hosts, id).await?;
     client.clear(id).await.map_err(core_error)
-}
-
-/// The theme's colours, which programs that ask for them are told.
-#[tauri::command]
-pub async fn pty_set_colors(
-    manager: State<'_, PtyManager>,
-    colors: TerminalColors,
-) -> AppResult<()> {
-    let client = manager.client().await?;
-    client.set_terminal_colors(colors).await.map_err(core_error)
 }
 
 #[tauri::command]

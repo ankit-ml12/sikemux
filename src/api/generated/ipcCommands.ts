@@ -12,7 +12,6 @@ export const IPC_COMMANDS = [
     "pty_text",
     "pty_find",
     "pty_clear",
-    "pty_set_colors",
     "pty_write",
     "pty_resize",
     "pty_reset_modes",

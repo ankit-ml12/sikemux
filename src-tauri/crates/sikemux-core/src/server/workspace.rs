@@ -54,10 +54,8 @@ const STAND_IN_TITLE_CHARS: usize = 72;
 const MAX_FIELD_CHARS: usize = 512;
 /// Room for a worktree or a buddy, which are a handful of short fields.
 const MAX_DETAIL_BYTES: usize = 4096;
-const MAX_COLOURS: usize = 64;
 /// A phone-sized JPEG is a few hundred kilobytes; this leaves room without letting one fill a frame.
 const MAX_IMAGE_BYTES: usize = 3 * 1024 * 1024;
-const MAX_COLOUR_CHARS: usize = 64;
 /// Every buddy pack has at least this many colours, so an agent's colour
 /// number means the same slot whichever pack the person picks.
 const BUDDY_COLOURS: usize = 8;
@@ -154,7 +152,6 @@ struct Published {
     recent: Vec<Recent>,
     /// Each provider's `configOptions` from its last session, by provider.
     config_options: BTreeMap<String, Value>,
-    palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
 }
@@ -1141,16 +1138,6 @@ impl Workspaces {
             .map(|image| image.data_url.clone())
     }
 
-    pub(crate) fn publish_palette(&self, palette: BTreeMap<String, String>) -> CoreResult<()> {
-        let oversized = palette
-            .iter()
-            .any(|(name, value)| name.len() > MAX_COLOUR_CHARS || value.len() > MAX_COLOUR_CHARS);
-        if palette.len() > MAX_COLOURS || oversized {
-            return Err("the app published more theme colours than the core keeps".into());
-        }
-        self.published.locked().palette = palette;
-        Ok(())
-    }
 
     /// The recent chats a device may take up again: those in a project on
     /// this host, leaving out any running now.
@@ -1440,7 +1427,7 @@ impl Workspaces {
                     }
                 })
                 .collect(),
-            palette: published.palette.clone(),
+            palette: BTreeMap::new(),
             backdrop: Backdrop {
                 texture: published.texture,
                 image: published.image.as_ref().map(|image| image.id.clone()),

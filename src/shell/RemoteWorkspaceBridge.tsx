@@ -1,11 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { remoteApi } from "../api/remote";
-import { backdropPicture, grainDotColor } from "../remote/backdrop";
+import { backdropPicture } from "../remote/backdrop";
 import { usePaneImage } from "../lib/paneImage";
-import { readPalette } from "../remote/palette";
 import { activeAgentId } from "../state/selectors";
-import { currentTheme, subscribeTheme } from "../themes/bus";
 import { swallow } from "../state/toast";
 import { useStore } from "../state/store";
 import { preferencesOf } from "../state/preferences";
@@ -14,11 +12,10 @@ import { preferencesOf } from "../state/preferences";
 export const PUBLISH_DELAY_MS = 400;
 
 /**
- * Tells the core which agent is on screen. While remote access is on, also the theme and backdrop devices draw in.
+ * Tells the core which agent is on screen. While remote access is on, also the backdrop devices draw in.
  */
 export function RemoteWorkspaceBridge() {
     const [enabled, setEnabled] = useState(false);
-    const [themeChanges, setThemeChanges] = useState(0);
     const active = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const focused = useWindowFocused();
 
@@ -46,17 +43,6 @@ export function RemoteWorkspaceBridge() {
         }, PUBLISH_DELAY_MS);
         return () => window.clearTimeout(timer);
     }, [enabled, texture, paneImage]);
-
-    useEffect(() => subscribeTheme(() => setThemeChanges((count) => count + 1)), []);
-
-    useEffect(() => {
-        if (!enabled) return;
-        const timer = window.setTimeout(() => {
-            const palette = readPalette({ shaderDot: grainDotColor(currentTheme()) });
-            remoteApi.publishPalette(palette).catch(swallow("publish the theme to paired devices"));
-        }, PUBLISH_DELAY_MS);
-        return () => window.clearTimeout(timer);
-    }, [enabled, themeChanges]);
 
     useEffect(() => {
         remoteApi.publishOnScreen(active ? [active] : [], focused).catch(swallow("tell the core which agent is on screen"));

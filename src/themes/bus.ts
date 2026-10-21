@@ -1,10 +1,16 @@
-import { readableColor } from "../lib/themeContrast";
 import type { EditorView } from "@codemirror/view";
 import type { TerminalTheme } from "../terminal/canvas";
-import { invokeCommand } from "../api/invoke";
-import { DEFAULT_THEME_ID, TERMINAL_KEYS, themeById, type Theme } from ".";
+import { coreCall } from "../api/core";
+import { onCoreChanged } from "../api/coreChanged";
+import { swallow } from "../state/toast";
+import curated from "../../src-tauri/crates/sikemux-core/src/server/themes/curated.json";
+import { DEFAULT_THEME_ID, TERMINAL_KEYS, type Palette, type Theme } from ".";
 
-let current: Theme = themeById(DEFAULT_THEME_ID);
+/* Until the core answers at boot, code that asks for the theme gets the default's colours. */
+let current: Theme = (curated as Theme[]).find((theme) => theme.id === DEFAULT_THEME_ID) as Theme;
+/* The palette the core resolved for the person's pick, worn again when a preview ends. */
+let picked: Palette | null = null;
+let previewing = false;
 let currentOpacity = 1;
 
 const views = new Set<EditorView>();
@@ -39,18 +45,7 @@ function loadEditorBridge(): void {
     void import("../editor/themeBridge");
 }
 
-const customRegistry = new Map<string, Theme>();
 const themeListeners = new Set<(theme: Theme) => void>();
-
-/** Keep the bus aware of user-defined themes so {@link applyTheme} can resolve their ids. */
-export function registerCustomThemes(list: readonly Theme[]): void {
-    customRegistry.clear();
-    for (const t of list) customRegistry.set(t.id, t);
-}
-
-function resolveTheme(id: string): Theme {
-    return customRegistry.get(id) ?? themeById(id);
-}
 
 function applyTransparentState() {
     document.documentElement.classList.toggle("is-transparent", currentOpacity < 1);
@@ -70,28 +65,9 @@ function terminalThemeFor(theme: Theme): TerminalTheme {
     };
 }
 
-function rgb(color: string): [number, number, number] | null {
-    const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color.trim());
-    return match ? [parseInt(match[1], 16), parseInt(match[2], 16), parseInt(match[3], 16)] : null;
-}
-
-/** The core answers programs that ask for the terminal's colours, such as one choosing light or dark output. */
-function tellCoreTerminalColors(theme: TerminalTheme): void {
-    const foreground = rgb(theme.foreground);
-    const background = rgb(theme.background);
-    const ansi = theme.ansi.map(rgb);
-    if (!foreground || !background || ansi.length !== 16 || ansi.some((color) => !color)) return;
-    void invokeCommand("pty_set_colors", {
-        colors: { foreground, background, cursor: rgb(theme.cursor), ansi },
-    }).catch(() => {});
-}
-
 /* The one terminal palette, which construction and later theme changes both use. */
 export function currentTerminalTheme(): TerminalTheme {
-    if (!terminalTheme) {
-        terminalTheme = terminalThemeFor(current);
-        tellCoreTerminalColors(terminalTheme);
-    }
+    terminalTheme ??= terminalThemeFor(current);
     return terminalTheme;
 }
 
@@ -106,7 +82,6 @@ export function refreshTerminalTheme(term: ThemedTerminal): void {
 // A terminal out of sight takes the new palette once it is shown again.
 function applyTerminalThemes() {
     terminalTheme = terminalThemeFor(current);
-    tellCoreTerminalColors(terminalTheme);
     terms.forEach((visible, term) => {
         if (visible()) refreshTerminalTheme(term);
     });
@@ -138,7 +113,7 @@ export function registerTerminal(term: ThemedTerminal, visible: () => boolean): 
     return () => terms.delete(term);
 }
 
-function applyChrome(theme: Theme) {
+function applyChrome({ theme, tokens }: Palette) {
     const c = theme.chrome;
     const root = document.documentElement.style;
     document.documentElement.classList.toggle("theme-light", !theme.dark);
@@ -148,36 +123,32 @@ function applyChrome(theme: Theme) {
     root.setProperty("--bg-raised", c.bgRaised);
     root.setProperty("--ink", c.ink);
     root.setProperty("--ink-dim", c.inkDim);
-    const muted = readableColor(c.inkDim, [c.bg, c.bgDim, c.bgRaised], c.ink);
-    root.setProperty("--ink-muted", muted);
-    root.setProperty("--text-tertiary", muted);
+    root.setProperty("--ink-muted", tokens.tertiary);
+    root.setProperty("--text-tertiary", tokens.tertiary);
     root.setProperty("--acc", c.acc);
     root.setProperty("--acc-line", c.accLine);
     root.setProperty("--acc-dim", c.accDim);
     root.setProperty("--line", c.line);
     root.setProperty("--hl", c.hl);
-    root.setProperty("--danger", readableColor(c.danger, [c.bg, c.bgDim, c.bgRaised], c.ink));
+    root.setProperty("--danger", tokens.danger);
 
     root.setProperty("--void", c.bgDim);
     root.setProperty("--rail", c.bg);
     root.setProperty("--rail-2", c.bgRaised);
     root.setProperty("--pane", c.bg);
     root.setProperty("--line-soft", c.bgRaised);
-    root.setProperty("--ink-faint", muted);
+    root.setProperty("--ink-faint", tokens.inkFaint);
     root.setProperty("--acc-soft", c.accDim);
-    root.setProperty("--live", readableColor(theme.dark ? "#78dca1" : "#247345", [c.bg, c.bgRaised], c.ink));
-    root.setProperty("--warn", readableColor(theme.dark ? "#e9ba6c" : "#875508", [c.bg, c.bgRaised], c.ink));
-    for (const [token, color] of Object.entries({
-        "--git-modified": theme.dark ? "#e2c08d" : "#875508",
-        "--git-untracked": theme.dark ? "#73c991" : "#247345",
-        "--git-added": theme.dark ? "#81b88b" : "#247345",
-        "--git-deleted": theme.dark ? "#ed806b" : "#aa3824",
-        "--git-renamed": theme.dark ? "#94b1ef" : "#345bad",
-    }))
-        root.setProperty(token, readableColor(color, [c.bg, c.bgDim, c.bgRaised], c.ink));
+    root.setProperty("--live", tokens.live);
+    root.setProperty("--warn", tokens.warn);
+    root.setProperty("--git-modified", tokens.gitModified);
+    root.setProperty("--git-untracked", tokens.gitUntracked);
+    root.setProperty("--git-added", tokens.gitAdded);
+    root.setProperty("--git-deleted", tokens.gitDeleted);
+    root.setProperty("--git-renamed", tokens.gitRenamed);
     for (const [key, color] of Object.entries(theme.editor)) root.setProperty(`--editor-${key}`, color);
     for (const [key, color] of Object.entries(theme.highlight)) root.setProperty(`--syntax-${key}`, color);
-    root.setProperty("--cmd", theme.highlight.function);
+    root.setProperty("--cmd", tokens.cmd);
     root.setProperty("--terminal-background", theme.terminal.background);
     TERMINAL_KEYS.slice(TERMINAL_KEYS.indexOf("black")).forEach((key, index) => root.setProperty(`--terminal-ansi-${index}`, theme.terminal[key]));
 
@@ -186,11 +157,12 @@ function applyChrome(theme: Theme) {
 
 let settling = 0;
 
-function applyThemeObject(next: Theme): void {
+function applyThemeObject(palette: Palette): void {
+    const next = palette.theme;
     const root = document.documentElement;
     root.classList.add("theme-changing");
     current = next;
-    applyChrome(next);
+    applyChrome(palette);
     editorBridge?.rebuild(next);
     if (editorBridge) views.forEach(editorBridge.push);
     applyTerminalThemes();
@@ -205,20 +177,61 @@ function applyThemeObject(next: Theme): void {
 /* The colours on screen now, so putting the same ones on again does nothing. */
 let worn = "";
 
-function wear(theme: Theme): void {
-    const colours = JSON.stringify(theme);
+function wear(palette: Palette): void {
+    const colours = JSON.stringify(palette);
     if (colours === worn) return;
     worn = colours;
-    applyThemeObject(theme);
+    applyThemeObject(palette);
 }
 
-export function applyTheme(id: string): void {
-    wear(resolveTheme(id));
+/** Wears the palette the core resolved for the person's pick. A preview stays on
+ *  until the pick itself changes, as it does once a previewed theme is kept. */
+export function wearPicked(palette: Palette): void {
+    if (picked?.theme.id !== palette.theme.id) previewing = false;
+    picked = palette;
+    if (!previewing) wear(palette);
 }
 
-/** Apply a theme object directly without touching the persisted selection — used for live editing previews. */
+/** Keeps the window in the person's theme as the core resolves it, for as long as the page runs. */
+export function watchTheme(): () => void {
+    let live = true;
+    const read = () =>
+        coreCall<Palette>("theme")
+            .then((palette) => {
+                if (live) wearPicked(palette);
+            })
+            .catch(swallow("read your theme"));
+    const stop = onCoreChanged("preferences", () => void read());
+    void read();
+    return () => {
+        live = false;
+        stop();
+    };
+}
+
+/** Wears a theme that is not saved yet, as a theme editor changes it, until {@link endPreview}. */
 export function previewTheme(theme: Theme): void {
-    wear(theme);
+    previewing = true;
+    coreCall<Palette>("themePalette", { theme })
+        .then((palette) => {
+            if (previewing) wear(palette);
+        })
+        .catch(swallow("preview the theme"));
+}
+
+/** Wears one of the themes to pick from, by id, until {@link endPreview}. */
+export function previewThemeId(id: string): void {
+    previewing = true;
+    coreCall<Palette>("theme", { id })
+        .then((palette) => {
+            if (previewing) wear(palette);
+        })
+        .catch(swallow("preview the theme"));
+}
+
+export function endPreview(): void {
+    previewing = false;
+    if (picked) wear(picked);
 }
 
 export function applyWindowOpacity(opacity: number): void {

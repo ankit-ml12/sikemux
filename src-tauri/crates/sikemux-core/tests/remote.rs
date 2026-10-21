@@ -623,13 +623,11 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
         Ok(ChatAttachment::Live { .. })
     ));
 
-    app.publish_palette([("ground".to_owned(), "#0f0f13".to_owned())].into())
-        .await
-        .expect("publish palette");
     let workspace = client.workspace().await.expect("workspace");
     assert_eq!(
         workspace.palette.get("ground").map(String::as_str),
-        Some("#0f0f13")
+        Some("#0f0f13"),
+        "a device draws in the core's own colours for the person's theme"
     );
     let picture = BackdropImage {
         id: "pane-1".into(),
@@ -651,9 +649,6 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     assert!(refusal(refused).contains("not an image"));
     let refused = app.unpair().await;
     assert!(refusal(refused).contains("only a paired device"));
-    let refused = client.publish_palette(Default::default()).await;
-    assert!(refusal(refused).contains("only Sikemux on this host"));
-
     let refused = client.publish_on_screen(Vec::new(), true).await;
     assert!(refusal(refused).contains("only Sikemux on this host"));
     let refused = client.watch_view().await;

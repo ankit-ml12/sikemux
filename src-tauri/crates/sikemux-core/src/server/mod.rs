@@ -492,14 +492,10 @@ impl Core {
         self.terminal_colors.locked().clone()
     }
 
-    pub(crate) fn set_terminal_colors(&self, colors: sikemux_wire::grid::TerminalColors) {
-        *self.terminal_colors.locked() = colors;
-    }
-
     /// Resolves the person's theme again, for apps, devices and programs' colour queries.
     pub(crate) fn theme_changed(&self) {
         let palette = themes::palette(&self.preferences.get());
-        self.set_terminal_colors(themes::terminal_colors(&palette.theme));
+        *self.terminal_colors.locked() = themes::terminal_colors(&palette.theme);
         *self.palette.locked() = palette;
         self.view_changed();
     }

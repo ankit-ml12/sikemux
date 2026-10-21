@@ -11,6 +11,8 @@ import * as cmd from "../state/commands";
 import { getState, setState } from "../state/store";
 import { SettingsPanel } from "./SettingsPanel";
 import { testPreferences } from "../test/preferences";
+import { themeById } from "../test/themes";
+import type { ThemeSummary } from "../themes";
 
 vi.mock("../themes/wallpaper", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../themes/wallpaper")>()),
@@ -23,12 +25,47 @@ vi.mock("../themes/wallpaper", async (importOriginal) => ({
 
 const initial = getState();
 
+function summary(id: string, name: string, dark: boolean, source: ThemeSummary["source"]): ThemeSummary {
+    return {
+        id,
+        name,
+        dark,
+        source,
+        bg: dark ? "#191724" : "#faf4ed",
+        line: "#26233a",
+        acc: "#c4a7e7",
+        swatches: ["#eb6f92", "#31748f", "#f6c177", "#9ccfd8", "#c4a7e7", "#ebbcba"],
+    };
+}
+
+const THEME_LIST = [
+    summary("aura-noir", "Aura Noir", true, "sikemux"),
+    summary("ghostty-rose-pine", "Rose Pine", true, "ghostty"),
+    summary("ghostty-rose-pine-dawn", "Rose Pine Dawn", false, "ghostty"),
+    summary("ghostty-rose-pine-moon", "Rose Pine Moon", true, "ghostty"),
+];
+
+/** Answers the theme calls the appearance page makes; anything else stays unanswered. */
+function answerThemeCalls(): void {
+    const transport = new MemoryIpcTransport();
+    installIpcTransportForTests(transport);
+    transport.register("core_call", (args) => {
+        const { method, params } = args as { method: string; params: { name?: string } | null };
+        if (method === "themes") return THEME_LIST;
+        if (method === "themeFromColours") return { ...themeById("aura-noir"), name: params?.name ?? "" };
+        return new Promise(() => {});
+    });
+}
+
 beforeEach(() => {
     setState(initial, true);
     setState({ preferences: testPreferences(), settingsOpen: true });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+    cleanup();
+    resetIpcTransportForTests();
+});
 
 describe("SettingsPanel keybindings", () => {
     it("records, blocks conflicts, clears, and resets shortcuts", async () => {
@@ -87,6 +124,7 @@ describe("SettingsPanel keybindings", () => {
     it("drafts a theme from the wallpaper and keeps it once saved", async () => {
         const user = userEvent.setup();
         vi.spyOn(settingsApi, "wallpaperImage").mockResolvedValue({ name: "Neon", dataUrl: "data:image/png;base64," });
+        answerThemeCalls();
         setState({ preferences: testPreferences() });
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "Appearance" }));
@@ -102,12 +140,14 @@ describe("SettingsPanel keybindings", () => {
 
     it("searches Ghostty's themes and applies them from the keyboard", async () => {
         const user = userEvent.setup();
+        answerThemeCalls();
         setState({ preferences: testPreferences() });
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "Appearance" }));
 
         const themes = screen.getByRole("listbox", { name: "Themes" });
         const search = screen.getByRole("textbox", { name: "Search themes" });
+        await vi.waitFor(() => expect(within(themes).getAllByRole("option").length).toBeGreaterThan(0));
         await user.type(search, "rose pine");
         expect(
             within(themes)

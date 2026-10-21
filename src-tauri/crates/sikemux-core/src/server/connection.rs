@@ -704,10 +704,6 @@ async fn run_requests(
                     session_or_missing(&core, id).map(|target| session::clear(&core, &target));
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::SetTerminalColors { colors } => {
-                core.set_terminal_colors(colors);
-                client.respond(request_id, Ok(Response::Done));
-            }
             Request::ShellAtPrompt { id } => {
                 let result = match session_or_missing(&core, id) {
                     Ok(target) => blocking(move || Ok(target.shell_at_prompt())).await,
@@ -948,10 +944,6 @@ async fn run_requests(
                         data_url: core.workspaces.backdrop_image(),
                     }),
                 );
-            }
-            Request::PublishPalette { palette } => {
-                let result = core.workspaces.publish_palette(palette);
-                client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::PublishOnScreen { agent_ids, focused } => {
                 let shown = core.seen.show(client.id, agent_ids, focused);

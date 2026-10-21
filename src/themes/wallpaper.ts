@@ -1,5 +1,3 @@
-import { ghosttyTheme, type ThemeColours } from "./ghostty";
-
 interface Lch {
     l: number;
     c: number;
@@ -93,8 +91,16 @@ function clusters(rgba: ArrayLike<number>): Cluster[] {
 
 const ANSI_HUES = [29, 100, 142, 195, 262, 328];
 
-/** Turns a wallpaper's pixels into a terminal palette and hands it to the same derivation Ghostty themes use. */
-export function wallpaperTheme(rgba: ArrayLike<number>, name: string): ThemeColours {
+/** A terminal palette picked from a wallpaper, for the core to work a theme out of as it does Ghostty's. */
+export interface WallpaperColours {
+    name: string;
+    /** Background, foreground, cursor, cursor text, selection and the 16 ANSI colours, each `#rrggbb`. */
+    colours: string[];
+    accent: string;
+}
+
+/** Turns a wallpaper's pixels into a terminal palette and an accent. */
+export function wallpaperColours(rgba: ArrayLike<number>, name: string): WallpaperColours {
     const found = clusters(rgba);
     const population = found.reduce((sum, c) => sum + c.count, 0);
     const brightness = found.reduce((sum, c) => sum + c.l * c.count, 0) / population;
@@ -130,8 +136,8 @@ export function wallpaperTheme(rgba: ArrayLike<number>, name: string): ThemeColo
         neutral(dark ? 0.96 : 0.95),
     ];
     const selection = hex({ l: dark ? 0.34 : 0.87, c: Math.min(0.08, chroma), h: accentHue });
-    const encoded = [bg, fg, accent, bg, selection, ...ansi].join(",");
-    return ghosttyTheme(name, encoded, `#${accent}`);
+    const palette = [bg, fg, accent, bg, selection, ...ansi].map((colour) => `#${colour}`);
+    return { name, colours: palette, accent: `#${accent}` };
 }
 
 export async function wallpaperPixels(dataUrl: string, size = 160): Promise<Uint8ClampedArray> {
