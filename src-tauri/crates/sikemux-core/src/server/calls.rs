@@ -159,6 +159,7 @@ calls! { core, client, params;
     "adoptSkill": Person => skill_library::adopt(&core, parse(params)?).await,
     "agentSignIns": Full, any_program => answer(agent_sign_in::pages()),
     "agentSignIn": Person => answer(agent_sign_in::sign_in(&core, parse(params)?).await?),
+    "signInLauncher": Person => answer(agent_sign_in::sign_in_launcher(&core, parse(params)?).await?),
     "agentSignInCode": Person => answer(agent_sign_in::sign_in_code(parse(params)?).await?),
     "cancelAgentSignIn": Person => {
         agent_sign_in::cancel(parse(params)?);
