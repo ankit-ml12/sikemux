@@ -1,7 +1,9 @@
 //! Which releases updates come from and when they were last checked, and whether anonymous
 //! usage is shared.
 
-use gpui_kit::{div, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString};
+use gpui_kit::{
+    div, px, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
+};
 use serde_json::json;
 use sikemux_wire::protocol::UpdateChannel;
 
@@ -11,7 +13,7 @@ use crate::settings::rows;
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Updates", "Privacy"];
+pub const SECTIONS: &[&str] = &["Updates", "Privacy", "Help"];
 
 const RELEASES: &str = "https://github.com/nodelike/sikemux/releases";
 
@@ -109,8 +111,43 @@ pub fn render(
         rows::switch("share-usage", "shareUsageData", preferences.share_usage_data, this),
         cx,
     );
+    let help = {
+        let (news, welcome) = (this.clone(), this.clone());
+        div()
+            .flex()
+            .gap(px(8.))
+            .p(px(14.))
+            .child(
+                ui::Button::new("help-whats-new", "What’s New", ui::Variant::Outline).on_click(
+                    move |_, window, cx| {
+                        news.update(cx, |bench, cx| {
+                            crate::settings::close(bench, window, cx);
+                            crate::experience::open_whats_new(bench, cx);
+                        })
+                    },
+                ),
+            )
+            .child(
+                ui::Button::new("help-welcome", "Show welcome", ui::Variant::Outline).on_click(
+                    move |_, window, cx| {
+                        welcome.update(cx, |bench, cx| {
+                            crate::settings::close(bench, window, cx);
+                            crate::experience::open_welcome(bench, cx);
+                        })
+                    },
+                ),
+            )
+    };
     vec![
         rows::section("Updates", None, None, lit("Updates"), updates, cx),
         rows::section("Privacy", None, None, lit("Privacy"), privacy, cx),
+        rows::section(
+            "Help",
+            None,
+            Some("Both are also searchable from the command deck.".into()),
+            lit("Help"),
+            help,
+            cx,
+        ),
     ]
 }
