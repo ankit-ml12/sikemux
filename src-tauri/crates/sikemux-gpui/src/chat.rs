@@ -1,7 +1,6 @@
 //! An agent's chat: the rows the core folds, kept in a transcript, and how
 //! each row draws. Rows change only by the core's changes.
 
-use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
 use std::path::PathBuf;
@@ -272,8 +271,26 @@ pub enum Press {
     Pick,
 }
 
-/// Each subagent's rows, by its session.
-type Subagents = Rc<RefCell<HashMap<String, Vec<ChatRow>>>>;
+/// What the rows of a chat are drawn with beside their own content: what the reader
+/// opened, each subagent's rows, and whether a turn is running.
+#[derive(Default)]
+struct Reading {
+    /// The finished turns and subagents the reader opened, by their first row or session.
+    opened: HashSet<String>,
+    tools: tools::Opened,
+    /// Each subagent's rows, by its session.
+    subagents: HashMap<String, Vec<ChatRow>>,
+    /// A turn is running, so the last row's run of calls stays open.
+    running: bool,
+}
+
+impl Reading {
+    fn toggle(&mut self, id: &str) {
+        if !self.opened.remove(id) {
+            self.opened.insert(id.to_owned());
+        }
+    }
+}
 
 /// A chat the window shows: its rows in a transcript, how it stands, its
 /// subagents' rows, and where in the core's changes it has got to.
@@ -282,11 +299,9 @@ pub struct Chat {
     head: Map<String, Value>,
     /// The head as last changed, read once for each change.
     state: Option<ChatHead>,
-    tools: Rc<RefCell<tools::Opened>>,
-    running: Rc<Cell<bool>>,
+    reader: Entity<Reading>,
     /// Opened calls whose detail is older than the call, to ask the core for again.
     wanted: Vec<String>,
-    subagents: Subagents,
     pub mark: Option<ChatMark>,
     older_before: Option<u64>,
     asked_earlier: bool,
@@ -374,17 +389,34 @@ struct Pick {
 
 impl Chat {
     pub fn new(agent: String, provider: &str, bench: WeakEntity<Workbench>, cx: &mut App) -> Chat {
-        let looks = Looks::new(Tokens::get(cx), provider, bench.clone(), agent.clone());
-        let (tools, running, subagents) = (
-            looks.tools.clone(),
-            looks.running.clone(),
-            looks.subagents.clone(),
+        let reader = cx.new(|_| Reading::default());
+        let looks = Looks::new(
+            Tokens::get(cx),
+            provider,
+            reader.clone(),
+            bench.clone(),
+            agent.clone(),
         );
         let transcript = cx.new(|cx| {
+            cx.observe(&reader, |_, _, cx| cx.notify()).detach();
             Transcript::new(
                 Vec::new(),
                 looks.text.clone(),
-                move |rows, ix, pen, window, cx| row(rows, ix, pen, &looks, window, cx),
+                move |rows, ix, pen, window, cx| {
+                    looks.reader.clone().update(cx, |reading, cx| {
+                        row(
+                            rows,
+                            ix,
+                            pen,
+                            &Drawn {
+                                looks: &looks,
+                                reading,
+                            },
+                            window,
+                            cx,
+                        )
+                    })
+                },
                 cx,
             )
             .on_reach_top(move |_, cx| {
@@ -395,10 +427,8 @@ impl Chat {
             transcript,
             head: Map::new(),
             state: None,
-            tools,
-            running,
+            reader,
             wanted: Vec::new(),
-            subagents,
             mark: None,
             older_before: None,
             asked_earlier: false,
@@ -452,9 +482,13 @@ impl Chat {
             .ok()
             .and_then(|head| head.as_object().cloned())
             .unwrap_or_default();
-        self.running.set(view.head.running);
+        let (running, subagents) = (view.head.running, rows_by_session(view.subagents));
+        self.reader.update(cx, |reading, cx| {
+            reading.running = running;
+            reading.subagents = subagents;
+            cx.notify();
+        });
         self.state = Some(view.head);
-        *self.subagents.borrow_mut() = rows_by_session(view.subagents);
         self.older_before = view.older_before;
         self.asked_earlier = false;
         let rows = view.rows.into_iter().map(ChatRow::new).collect();
@@ -466,8 +500,10 @@ impl Chat {
     /// What the core sent of a tool call the reader opened.
     pub fn detail(&mut self, tool: String, detail: Value, cx: &mut App) {
         if let Ok(detail) = serde_json::from_value(detail) {
-            self.tools.borrow_mut().held(tool, detail);
-            self.transcript.update(cx, |_, cx| cx.notify());
+            self.reader.update(cx, |reading, cx| {
+                reading.tools.held(tool, detail);
+                cx.notify();
+            });
         }
     }
 
@@ -505,9 +541,12 @@ impl Chat {
             return;
         };
         self.older_before = page.older_before;
-        for (session, rows) in rows_by_session(page.subagents) {
-            self.subagents.borrow_mut().entry(session).or_insert(rows);
-        }
+        self.reader.update(cx, |reading, cx| {
+            for (session, rows) in rows_by_session(page.subagents) {
+                reading.subagents.entry(session).or_insert(rows);
+            }
+            cx.notify();
+        });
         let rows = page.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| {
             transcript.push(Change::Prepend(rows), cx)
@@ -528,7 +567,13 @@ impl Chat {
                     let mut head = Value::Object(std::mem::take(&mut self.head));
                     merge(&mut head, &set);
                     self.state = serde_json::from_value(head.clone()).ok();
-                    self.running.set(self.running());
+                    let running = self.running();
+                    self.reader.update(cx, |reading, cx| {
+                        if reading.running != running {
+                            reading.running = running;
+                            cx.notify();
+                        }
+                    });
                     self.head = head.as_object().cloned().unwrap_or_default();
                 }
                 ChatChange::View { view } => {
@@ -540,17 +585,19 @@ impl Chat {
                     row,
                     within: Some(session),
                 } => {
-                    let mut subagents = self.subagents.borrow_mut();
-                    let held = subagents.entry(session).or_default();
-                    match held.iter_mut().find(|held| held.message.id == row.id) {
-                        Some(held) => *held = ChatRow::new(row),
-                        None => held.push(ChatRow::new(row)),
-                    }
+                    self.reader.update(cx, |reading, cx| {
+                        let held = reading.subagents.entry(session).or_default();
+                        match held.iter_mut().find(|held| held.message.id == row.id) {
+                            Some(held) => *held = ChatRow::new(row),
+                            None => held.push(ChatRow::new(row)),
+                        }
+                        cx.notify();
+                    });
                 }
                 ChatChange::Row { row, within: None } => rows.push(Change::Put(ChatRow::new(row))),
                 ChatChange::Part { row, part, within } => {
-                    self.wanted.extend(self.tools.borrow().stale(&part));
-                    self.update(&mut rows, row, within, move |held| held.put_part(part))
+                    self.wanted.extend(self.reader.read(cx).tools.stale(&part));
+                    self.update(&mut rows, row, within, move |held| held.put_part(part), cx)
                 }
                 ChatChange::Text {
                     row,
@@ -558,11 +605,15 @@ impl Chat {
                     text,
                     md,
                     within,
-                } => self.update(&mut rows, row, within, move |held| {
-                    held.write(&part, &text, md.as_ref())
-                }),
+                } => self.update(
+                    &mut rows,
+                    row,
+                    within,
+                    move |held| held.write(&part, &text, md.as_ref()),
+                    cx,
+                ),
                 ChatChange::Set { row, set, within } => {
-                    self.update(&mut rows, row, within, move |held| held.set(&set))
+                    self.update(&mut rows, row, within, move |held| held.set(&set), cx)
                 }
                 ChatChange::Keep { rows: kept } => rows.push(Change::Keep(
                     kept.into_iter().map(SharedString::from).collect(),
@@ -581,17 +632,19 @@ impl Chat {
         row: String,
         within: Option<String>,
         change: impl FnOnce(&mut ChatRow) + 'static,
+        cx: &mut App,
     ) {
         match within {
-            Some(session) => {
-                let mut subagents = self.subagents.borrow_mut();
-                let held = subagents
+            Some(session) => self.reader.update(cx, |reading, cx| {
+                let held = reading
+                    .subagents
                     .get_mut(&session)
                     .and_then(|held| held.iter_mut().find(|held| held.message.id == row));
                 if let Some(held) = held {
                     change(held);
+                    cx.notify();
                 }
-            }
+            }),
             None => rows.push(Change::Update(row.into(), Box::new(change))),
         }
     }
@@ -1982,12 +2035,7 @@ struct Looks {
     hover: Hsla,
     rule: Hsla,
     provider: String,
-    /// The finished turns the reader opened, by their first row.
-    opened: Rc<RefCell<HashSet<String>>>,
-    tools: Rc<RefCell<tools::Opened>>,
-    subagents: Subagents,
-    /// A turn is running, so the last row's run of calls stays open.
-    running: Rc<Cell<bool>>,
+    reader: Entity<Reading>,
     tints: Tints,
     bench: WeakEntity<Workbench>,
     agent: String,
@@ -2053,7 +2101,13 @@ impl Tints {
 }
 
 impl Looks {
-    fn new(t: &Tokens, provider: &str, bench: WeakEntity<Workbench>, agent: String) -> Looks {
+    fn new(
+        t: &Tokens,
+        provider: &str,
+        reader: Entity<Reading>,
+        bench: WeakEntity<Workbench>,
+        agent: String,
+    ) -> Looks {
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
             theme::MONO_ICONS.into()
@@ -2106,14 +2160,25 @@ impl Looks {
                 ..t.text_primary
             },
             provider: provider.to_owned(),
-            opened: Rc::default(),
-            tools: Rc::default(),
-            subagents: Rc::default(),
-            running: Rc::default(),
+            reader,
             tints: Tints::new(t),
             bench,
             agent,
         }
+    }
+}
+
+/// The chat's looks with what the reader has open, for drawing its rows once.
+struct Drawn<'a> {
+    looks: &'a Looks,
+    reading: &'a Reading,
+}
+
+impl std::ops::Deref for Drawn<'_> {
+    type Target = Looks;
+
+    fn deref(&self) -> &Looks {
+        self.looks
     }
 }
 
@@ -2124,7 +2189,7 @@ fn row(
     rows: &[ChatRow],
     ix: usize,
     pen: &Pen,
-    looks: &Looks,
+    looks: &Drawn,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
@@ -2134,7 +2199,7 @@ fn row(
     let message = &row.message;
     let user = message.role == ChatRole::User;
     let fold = message.fold.as_ref();
-    let folded = fold.is_some_and(|fold| !looks.opened.borrow().contains(&fold.id));
+    let folded = fold.is_some_and(|fold| !looks.reading.opened.contains(&fold.id));
     let opens = fold.filter(|fold| {
         ix == 0
             || rows[ix - 1]
@@ -2153,7 +2218,7 @@ fn row(
         from == 0 || outlives(part) || *index >= from && reply
     });
     let groups = runs(shown.map(|(_, part)| part));
-    let (count, live) = (groups.len(), ix + 1 == rows.len() && looks.running.get());
+    let (count, live) = (groups.len(), ix + 1 == rows.len() && looks.reading.running);
     let parts: Vec<AnyElement> = groups
         .into_iter()
         .enumerate()
@@ -2217,7 +2282,7 @@ fn row(
 fn letters(
     row: &ChatRow,
     pen: &Pen,
-    looks: &Looks,
+    looks: &Drawn,
     window: &mut Window,
     cx: &mut App,
 ) -> gpui_kit::Div {
@@ -2348,7 +2413,7 @@ fn outlives(part: &ChatPart) -> bool {
 }
 
 /// The line a finished turn folds behind: who worked, for how long, with how many tool calls.
-fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
+fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
     let verb = if fold.thought { "Thought" } else { "Worked" };
     let worked = fold.took.map_or_else(
         || verb.to_owned(),
@@ -2361,7 +2426,7 @@ fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
             if fold.calls == 1 { "call" } else { "calls" }
         )
     });
-    let (opened, id) = (looks.opened.clone(), fold.id.clone());
+    let (reader, id) = (looks.reader.clone(), fold.id.clone());
     let (hover, ink) = (looks.hover, looks.ink);
     let toggle = div()
         .id(SharedString::from(format!("work:{}", fold.id)))
@@ -2389,12 +2454,11 @@ fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
                     )))
                 }),
         )
-        .on_click(move |_, window, _| {
-            let mut opened = opened.borrow_mut();
-            if !opened.remove(&id) {
-                opened.insert(id.clone());
-            }
-            window.refresh();
+        .on_click(move |_, _, cx| {
+            reader.update(cx, |reading, cx| {
+                reading.toggle(&id);
+                cx.notify();
+            })
         });
     div()
         .mt(px(3.))
@@ -2411,13 +2475,13 @@ fn work(fold: &WorkFold, open: bool, looks: &Looks) -> AnyElement {
 fn subagent(
     card: &SubagentCard,
     pen: &Pen,
-    looks: &Looks,
+    looks: &Drawn,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let key = format!("subagent:{}", card.session_id);
-    let open = looks.opened.borrow().contains(&key);
+    let open = looks.reading.opened.contains(&key);
     let (tint, mark, word) = match card.state {
         SubagentState::Running => (
             theme::mix(t.accent, t.text_disabled, 0.62),
@@ -2455,8 +2519,8 @@ fn subagent(
         .unwrap_or_default()
         .trim()
         .to_owned();
-    let (opened, toggled, hover) = (
-        looks.opened.clone(),
+    let (reader, toggled, hover) = (
+        looks.reader.clone(),
         key.clone(),
         theme::mix(t.text_primary, t.surface_raised, 0.05),
     );
@@ -2477,12 +2541,11 @@ fn subagent(
         .text_size(px(11.))
         .cursor_pointer()
         .hover(move |summary| summary.bg(hover))
-        .on_click(move |_, window, _| {
-            let mut opened = opened.borrow_mut();
-            if !opened.remove(&toggled) {
-                opened.insert(toggled.clone());
-            }
-            window.refresh();
+        .on_click(move |_, _, cx| {
+            reader.update(cx, |reading, cx| {
+                reading.toggle(&toggled);
+                cx.notify();
+            })
         })
         .child(
             div()
@@ -2535,8 +2598,9 @@ fn subagent(
                 ),
         );
     let body = open.then(|| {
-        let subagents = looks.subagents.borrow();
-        let rows = subagents
+        let rows = looks
+            .reading
+            .subagents
             .get(&card.session_id)
             .map_or(&[][..], Vec::as_slice);
         let live = card.state == SubagentState::Running;
@@ -2611,7 +2675,7 @@ fn part(
     part: &ChatPart,
     user: bool,
     pen: &Pen,
-    looks: &Looks,
+    looks: &Drawn,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {

@@ -15,7 +15,7 @@ use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
 };
 
-use super::{duration, Looks};
+use super::{duration, Drawn};
 use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::theme;
@@ -186,7 +186,7 @@ fn icon(call: &Call) -> Icon {
 }
 
 /// A call takes the colour of what it did, mixed back toward the row's text so a run reads as a column.
-fn tint(call: &Call, looks: &Looks) -> Hsla {
+fn tint(call: &Call, looks: &Drawn) -> Hsla {
     let tints = &looks.tints;
     if call.status() == "failed" {
         return tints.failed;
@@ -211,7 +211,7 @@ fn chevron(open: bool, tint: Hsla) -> gpui_kit::Svg {
 
 /// A run of calls: a line counting them and how long they took, and while the
 /// agent is still adding to it, or the reader opened it, each call's row.
-pub fn run(parts: &[&ChatPart], live: bool, looks: &Looks) -> AnyElement {
+pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
     let calls: Vec<Call> = parts.iter().filter_map(|part| Call::of(part)).collect();
     let Some(first) = parts.first() else {
         return div().into_any_element();
@@ -220,8 +220,8 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Looks) -> AnyElement {
     let spent: u64 = calls.iter().map(Call::took).sum();
     let key = first.id().to_owned();
     let open = looks
+        .reading
         .tools
-        .borrow()
         .runs
         .get(&key)
         .copied()
@@ -250,7 +250,7 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Looks) -> AnyElement {
         )),
         None => (spent > 0).then(|| duration(spent)),
     };
-    let (tools, hover, ink) = (looks.tools.clone(), looks.hover, looks.ink);
+    let (reader, hover, ink) = (looks.reader.clone(), looks.hover, looks.ink);
     let sum = div()
         .id(SharedString::from(format!("run:{key}")))
         .h(px(22.))
@@ -279,9 +279,11 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Looks) -> AnyElement {
                 .opacity(0.7)
                 .child(chevron(open, looks.quiet)),
         )
-        .on_click(move |_, window, _| {
-            tools.borrow_mut().runs.insert(key.clone(), !open);
-            window.refresh();
+        .on_click(move |_, _, cx| {
+            reader.update(cx, |reading, cx| {
+                reading.tools.runs.insert(key.clone(), !open);
+                cx.notify();
+            })
         });
     let kind = calls
         .iter()
@@ -306,12 +308,12 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Looks) -> AnyElement {
 
 /// One call: a tick off the run's spine, its icon and word in the colour of what
 /// it did, what it was about, and how long it took, opening onto its detail.
-fn row(call: &Call, last: bool, kind: usize, looks: &Looks) -> AnyElement {
+fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     let id = call.tool.tool_call_id.clone();
     let row = &call.tool.row;
     let running = call.running();
     let opens = call.opens();
-    let open = opens && looks.tools.borrow().calls.contains(&id);
+    let open = opens && looks.reading.tools.calls.contains(&id);
     let tint = tint(call, looks);
     let target = (!row.target.is_empty()).then(|| {
         div()
@@ -412,11 +414,12 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Looks) -> AnyElement {
         )
         .children(target)
         .child(end);
-    let tools = looks.tools.clone();
+    let reader = looks.reader.clone();
     let (bench, agent, ended) = (looks.bench.clone(), looks.agent.clone(), call.ended);
-    let toggle = move |_: &gpui_kit::ClickEvent, window: &mut gpui_kit::Window, cx: &mut App| {
-        let ask = {
-            let mut tools = tools.borrow_mut();
+    let toggle = move |_: &gpui_kit::ClickEvent, _: &mut gpui_kit::Window, cx: &mut App| {
+        let ask = reader.update(cx, |reading, cx| {
+            cx.notify();
+            let tools = &mut reading.tools;
             if !tools.calls.remove(&id) {
                 tools.calls.insert(id.clone());
             }
@@ -435,7 +438,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Looks) -> AnyElement {
                 );
             }
             ask
-        };
+        });
         if ask {
             let tool = id.clone();
             bench
@@ -447,7 +450,6 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Looks) -> AnyElement {
                 })
                 .ok();
         }
-        window.refresh();
     };
     let node = div()
         .id(group.clone())
@@ -464,7 +466,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Looks) -> AnyElement {
 
 /// The run's spine down the left of a row, and the tick that joins the row to it;
 /// the last row's turns the corner instead.
-fn spine(last: bool, looks: &Looks) -> Div {
+fn spine(last: bool, looks: &Drawn) -> Div {
     let (spine, tick) = (looks.tints.spine, looks.tints.tick);
     if last {
         return div()
@@ -505,11 +507,11 @@ fn spine(last: bool, looks: &Looks) -> Div {
 }
 
 /// What an opened call did: its change, the command and what it printed, or why it failed.
-fn detail(call: &Call, looks: &Looks) -> AnyElement {
+fn detail(call: &Call, looks: &Drawn) -> AnyElement {
     let id = &call.tool.tool_call_id;
     let held = looks
+        .reading
         .tools
-        .borrow()
         .details
         .get(id)
         .and_then(|asked| asked.detail.clone());
@@ -537,7 +539,7 @@ fn detail(call: &Call, looks: &Looks) -> AnyElement {
         .into_any_element()
 }
 
-fn boxed(looks: &Looks) -> Div {
+fn boxed(looks: &Drawn) -> Div {
     div()
         .flex()
         .flex_col()
@@ -551,10 +553,10 @@ fn boxed(looks: &Looks) -> Div {
 }
 
 /// A command and what it printed, the way a terminal would have shown them.
-fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Looks) -> Div {
+fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Drawn) -> Div {
     let id = call.tool.tool_call_id.clone();
     let output = held.and_then(|held| held.output.as_ref());
-    let whole = looks.tools.borrow().whole.contains(&id);
+    let whole = looks.reading.tools.whole.contains(&id);
     let text = output.map_or("", |output| output.text.as_str());
     let lines: Vec<&str> = if text.is_empty() {
         Vec::new()
@@ -602,7 +604,7 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Looks) -> Div {
             .child(shown)
     });
     let more = folds.then(|| {
-        let (tools, hover) = (looks.tools.clone(), looks.hover);
+        let (reader, hover) = (looks.reader.clone(), looks.hover);
         let label = if whole {
             "Show fewer lines".to_owned()
         } else {
@@ -618,13 +620,14 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Looks) -> Div {
             .text_color(looks.faint)
             .cursor_pointer()
             .hover(move |more| more.bg(hover))
-            .on_click(move |_, window, cx| {
+            .on_click(move |_, _, cx| {
                 cx.stop_propagation();
-                let mut tools = tools.borrow_mut();
-                if !tools.whole.remove(&id) {
-                    tools.whole.insert(id.clone());
-                }
-                window.refresh();
+                reader.update(cx, |reading, cx| {
+                    if !reading.tools.whole.remove(&id) {
+                        reading.tools.whole.insert(id.clone());
+                    }
+                    cx.notify();
+                });
             })
             .child(label)
     });
@@ -666,8 +669,8 @@ fn terminal(call: &Call, held: Option<&ToolDetail>, looks: &Looks) -> Div {
 }
 
 /// The lines a change made, numbered, with the lines around it and a gap for the rest.
-fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], looks: &Looks) -> Div {
-    let whole = looks.tools.borrow().whole.contains(id);
+fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], looks: &Drawn) -> Div {
+    let whole = looks.reading.tools.whole.contains(id);
     let head = div()
         .h(px(22.))
         .px(px(9.))
@@ -733,8 +736,8 @@ fn kept(lines: &[DiffLine], context: usize) -> Vec<bool> {
     keep
 }
 
-fn diff_gap(id: &str, gap: usize, looks: &Looks) -> AnyElement {
-    let (tools, id, hover) = (looks.tools.clone(), id.to_owned(), looks.hover);
+fn diff_gap(id: &str, gap: usize, looks: &Drawn) -> AnyElement {
+    let (reader, id, hover) = (looks.reader.clone(), id.to_owned(), looks.hover);
     div()
         .id(SharedString::from(format!("gap:{id}:{gap}")))
         .h(px(20.))
@@ -745,10 +748,12 @@ fn diff_gap(id: &str, gap: usize, looks: &Looks) -> AnyElement {
         .text_color(looks.faint)
         .cursor_pointer()
         .hover(move |gap| gap.bg(hover))
-        .on_click(move |_, window, cx| {
+        .on_click(move |_, _, cx| {
             cx.stop_propagation();
-            tools.borrow_mut().whole.insert(id.clone());
-            window.refresh();
+            reader.update(cx, |reading, cx| {
+                reading.tools.whole.insert(id.clone());
+                cx.notify();
+            });
         })
         .child(format!(
             "{gap} unchanged {}",
@@ -757,7 +762,7 @@ fn diff_gap(id: &str, gap: usize, looks: &Looks) -> AnyElement {
         .into_any_element()
 }
 
-fn diff_line(line: &DiffLine, looks: &Looks) -> AnyElement {
+fn diff_line(line: &DiffLine, looks: &Drawn) -> AnyElement {
     let tints = &looks.tints;
     let (ground, sign, mark) = match line.sign.as_str() {
         "+" => (Some(tints.added_ground), tints.added, tints.added_mark),
