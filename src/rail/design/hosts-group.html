@@ -47,9 +47,9 @@
   .scope span { display:flex; align-items:center; justify-content:center; gap: 6px; height: 22px; border-radius: 5px; color: var(--low); }
   .scope span.on { background: var(--lift); color: var(--ink); }
   .scope svg.i { width: 13px; height: 13px; }
-  .row.here { color: var(--ink); }
+  .row.chosen { color: var(--ink); }
   .row .tag { color: var(--low); font-size: 11px; }
-  .row:not(.here) { color: var(--mid); }
+  .row:not(.chosen) { color: var(--mid); }
   .trow { display:flex; align-items:center; gap: 9px; padding: 4px 8px; border-radius: 6px; color: var(--ink); font-size: 12.5px; min-width: 0; }
   .trow.chosen { background: var(--lift); }
   .trow .txt { display:grid; min-width: 0; }
@@ -182,18 +182,18 @@
       <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">infra</span></div>
       <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
       <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
-      <div class="row chosen here"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="tag">here</span><span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
+      <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>nginx<span class="end"><span class="dot"></span></span></div>
     </div>
     <div class="cap new" style="margin-top:14px">Side rail · sikemux chosen, a chat on this host in front</div>
     <div class="rail">
       <div class="glabel">PROJECTS<span class="rule"></span></div>
-      <div class="row chosen here"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
+      <div class="row chosen"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
       <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
     </div>
-    <div class="note">The host where ⌘N and ⌘T start says <b>here</b>: its name in full ink and a small tag, never the chosen lift. Focus a chat on test-ec2 and the tag moves to test-ec2.</div>
+    <div class="note">No row marks where ⌘N and ⌘T start; the new-item menu names that host when it is not this one.</div>
   </div>
   <div>
     <div class="cap new">Tab rail · agents page</div>
@@ -217,7 +217,7 @@
     <div class="cap">Before · test-ec2 counted twice</div>
     <div class="rail">
       <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i core"><use href="#server"/></svg>ip-10-0-16-158<span class="end">out of reach<span class="dot off"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>test-ec2<span class="end"><span class="dot"></span></span></div>
     </div>
@@ -226,7 +226,7 @@
     <div class="cap new">After · one row, signed out, ⋯ open</div>
     <div class="rail" style="height: 250px;">
       <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="end">not signed in<span class="dot off"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>build-box<span class="end">on another account<span class="dot off"></span></span></div>
       <div class="menu float" style="left: 118px; top: 74px;">

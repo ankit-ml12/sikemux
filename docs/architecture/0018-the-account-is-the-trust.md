@@ -49,9 +49,8 @@ for whoever is signed in to the GitHub account.
 - **A host is chosen as a project is.** Choosing a host's row shows, in the tab rail, every chat
   and terminal running on it, from every project; choosing a project shows the project's from
   every host. One row in the side rail is chosen at a time. Work starts on a host the person can
-  see: the chosen host, else the host of the focused chat or terminal, else this host. That host's
-  row says "here", so with a project chosen the person still sees where ⌘N and ⌘T will start, and
-  the new-item menu, which keeps three rows, names it when it is not this host. A row's menu
+  see: the chosen host, else the host of the focused chat or terminal, else this host. The
+  new-item menu, which keeps three rows, names it when it is not this host. A row's menu
   starts a chat or terminal there, through the core on a Sikemux host and over SSH on any other,
   opens its files, renames or removes it. An SSH host's menu offers **Install Sikemux here**,
   which runs the installer over that SSH connection and signs the host in to the account by

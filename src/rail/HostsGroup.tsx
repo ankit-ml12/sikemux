@@ -6,7 +6,6 @@ import {
     chooseHost,
     chosenHostOf,
     installHere,
-    newWorkHost,
     openHostTerminal,
     projectCopyOn,
     sameHost,
@@ -116,7 +115,6 @@ function HostRow({
     onMenu: OpenMenu;
 }) {
     const chosen = useStore((s) => !s.settingsOpen && sameHost(chosenHostOf(s), choice));
-    const here = useStore((s) => sameHost(newWorkHost(s), choice));
     const show = (event: MouseEvent) => {
         event.preventDefault();
         void menu().then((items) => onMenu(event, items));
@@ -124,12 +122,11 @@ function HostRow({
     const icon = kind === "this" ? <IconLaptop size={14} /> : <IconServer size={14} />;
     return (
         <div className="session-row-shell host-row" onContextMenu={show}>
-            <button type="button" className={`sess-row${chosen ? " active" : ""}${here ? " is-here" : ""}`} onClick={() => chooseHost(choice)}>
+            <button type="button" className={`sess-row${chosen ? " active" : ""}`} onClick={() => chooseHost(choice)}>
                 <span className={`sess-icon host-${kind}`}>
                     <span className="sess-icon-glyph">{icon}</span>
                 </span>
                 <span className="sess-name">{name}</span>
-                {here && <span className="host-row-here">here</span>}
                 {load && <span className="host-row-load">{load}</span>}
                 {detail && <span className="host-row-detail">{detail}</span>}
             </button>

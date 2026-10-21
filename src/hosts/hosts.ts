@@ -199,7 +199,6 @@ const THIS_HOST: HostChoice = { kind: "core" };
 
 /**
  * Where new chats and terminals start: the chosen host, else the host of the chat or terminal in front, else this one.
- * Its row under Hosts says "here".
  */
 export function newWorkHost(state: Pick<StoreState, "chosenHost" | "sessions" | "activeSessionId" | "windows" | "agents">): HostChoice {
     const chosen = chosenHostOf(state);
