@@ -34,7 +34,7 @@ use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::git::{FocusGit, GitPane};
-use crate::search::{FocusSearch, SearchPane};
+use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
 use crate::{agents, home, rail, tabs, terminal};
@@ -2554,6 +2554,11 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, open: &OpenArea, _, cx| bench.open_area(open.area, cx)))
             .on_action(
                 cx.listener(|bench, _: &FocusSearch, window, cx| bench.open_search(window, cx)),
+            )
+            .on_action(
+                cx.listener(|bench, _: &FocusSearchWindow, window, cx| {
+                    bench.open_search(window, cx)
+                }),
             )
             .on_action(
                 cx.listener(|bench, _: &crate::settings::ToggleSettings, window, cx| {
