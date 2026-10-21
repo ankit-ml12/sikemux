@@ -1963,9 +1963,14 @@ pub(crate) fn prompt(
     paths: Vec<String>,
     mut context: Vec<ChatContext>,
 ) -> CoreResult<()> {
-    if let Some(message_id) = message_id.as_deref() {
-        bounded_text("message id", message_id, 256)?;
-    }
+    // A sent message is edited later by its id, so one the client did not name gets one here.
+    let message_id = match message_id {
+        Some(message_id) => {
+            bounded_text("message id", &message_id, 256)?;
+            message_id
+        }
+        None => uuid::Uuid::now_v7().to_string(),
+    };
     mentions::fill(core, agent_id, &mut context);
     super::messages::worked(core, agent_id);
     let words = context.first().map(|context| context.title.as_str());
@@ -1976,7 +1981,7 @@ pub(crate) fn prompt(
     });
     super::workspace::retitle(core, agent_id, title, true);
     core.chats.running(agent_id)?.send(ChatCommand::Prompt {
-        message_id,
+        message_id: Some(message_id),
         text,
         paths,
         context,
