@@ -102,14 +102,24 @@
     flex: 0 0 auto;
 }
 
-.tb-center {
+/* The empty middle of the bar, which drags the window. */
+.tb-grow {
     flex: 1 1 0;
-    padding-right: var(--space-3);
+    align-self: stretch;
+    min-width: 0;
+}
+
+/* The tabs, on a row of their own under the bar, from the window's left edge to its right. */
+.tab-row {
     display: flex;
-    justify-content: flex-start;
+    flex: 0 0 auto;
     align-items: center;
     min-width: 0;
-    padding-left: 16px;
+    padding: 0 var(--shell-gap);
+}
+
+.tab-row:empty {
+    display: none;
 }
 
 .tb-right {

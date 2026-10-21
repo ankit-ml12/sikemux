@@ -166,10 +166,7 @@ export const TopBar = memo(function TopBar() {
     return (
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
-
-            <div className="tb-center" {...LEAVES_SETTINGS}>
-                <WorkspaceTabs />
-            </div>
+            <div className="tb-grow" />
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
                 <VoicePill />
@@ -190,5 +187,16 @@ export const TopBar = memo(function TopBar() {
                 </div>
             </div>
         </header>
+    );
+});
+
+/** The project's tabs on a row of their own under the top bar, edge to edge; its empty stretch drags the window like the bar does. */
+export const TabRow = memo(function TabRow() {
+    const hasSession = useStore((s) => !!s.sessions[s.activeSessionId]);
+    if (!hasSession) return null;
+    return (
+        <div className="tab-row" onMouseDown={startWindowDragFromTopBar} {...LEAVES_SETTINGS}>
+            <WorkspaceTabs />
+        </div>
     );
 });

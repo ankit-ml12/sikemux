@@ -6,7 +6,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
 import { reportActive } from "./api/usage";
-import { TopBar } from "./shell/TopBar";
+import { TabRow, TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
 import { TabRail } from "./rail/TabRail";
 import { RailPeek } from "./rail/RailPeek";
@@ -894,6 +894,7 @@ export default function App() {
             <NetworkBridge />
             <ProjectBridge />
             <TopBar />
+            <TabRow />
             <div className="body">
                 <SideRail />
                 {sideRailVisible && <RailResizer edge="start" />}

@@ -66,10 +66,6 @@ textarea:focus,
     height: 34px;
 }
 
-.tb-center {
-    padding-left: 20px;
-}
-
 .tb-right {
     gap: 8px;
     padding-right: 16px;
