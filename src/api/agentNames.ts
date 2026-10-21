@@ -37,9 +37,14 @@ export interface NameRequest {
     readonly title?: string;
 }
 
+/** The list of words new agents are named from. */
+export type AgentNameTheme = "nature" | "anime";
+
 export const agentNamesApi = {
     /** The agent's name, given now when it has none. */
     name: (request: NameRequest) => coreCall<GivenName>("nameAgent", request),
     rename: (agentId: string, name: string) => coreCall<AgentName>("renameAgent", { agentId, name }),
     closed: (cwd: string) => coreCall<ClosedAgent[]>("closedAgents", { cwd }),
+    theme: () => coreCall<{ theme: AgentNameTheme }>("agentNameTheme").then(({ theme }) => theme),
+    setTheme: (theme: AgentNameTheme) => coreCall<{ theme: AgentNameTheme }>("setAgentNameTheme", { theme }).then((answer) => answer.theme),
 };

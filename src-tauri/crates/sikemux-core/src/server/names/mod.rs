@@ -17,7 +17,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use super::kept::Kept;
-use words::WORDS;
+use words::{ANIME, NATURE};
 
 const FILE: &str = "agent-names.json";
 /// How long a name given to an agent that has not yet been seen open is kept,
@@ -96,6 +96,27 @@ struct Book {
     /// still lead back to a session that can be resumed.
     #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
     closed_sessions: VecDeque<ClosedSession>,
+    /// The list new agents' names are taken from.
+    #[serde(default)]
+    theme: NameTheme,
+}
+
+/// The list of words new agents are named from, picked in settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum NameTheme {
+    #[default]
+    Nature,
+    Anime,
+}
+
+impl NameTheme {
+    fn words(self) -> &'static [&'static str] {
+        match self {
+            Self::Nature => NATURE,
+            Self::Anime => ANIME,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -630,6 +651,20 @@ impl Names {
             .collect()
     }
 
+    pub(crate) fn theme(&self) -> NameTheme {
+        self.book.locked().theme
+    }
+
+    /// Names agents that start from now on from `theme`'s words. Open
+    /// agents keep the names they have.
+    pub(crate) fn set_theme(&self, theme: NameTheme) {
+        let mut book = self.book.locked();
+        if book.theme != theme {
+            book.theme = theme;
+            self.save(&book);
+        }
+    }
+
     fn save(&self, book: &Book) {
         self.file.save(book);
     }
@@ -814,7 +849,8 @@ impl Book {
             .filter(|entry| open.contains(&entry.agent_id))
             .map(|entry| start(&entry.name))
             .collect();
-        let unused: Vec<&str> = WORDS
+        let words = self.theme.words();
+        let unused: Vec<&str> = words
             .iter()
             .copied()
             .filter(|word| !used.contains(&word.to_lowercase()))
@@ -845,7 +881,7 @@ impl Book {
             self.remove(|entry| entry.agent_id == gone);
             return name;
         }
-        let word = pick(WORDS).unwrap_or("Agent");
+        let word = pick(words).unwrap_or("Agent");
         (2..)
             .map(|number| format!("{word}{number}"))
             .find(|name| !used.contains(&name.to_lowercase()))

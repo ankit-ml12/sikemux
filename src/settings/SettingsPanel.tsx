@@ -18,6 +18,7 @@ import {
     type KeybindingOverrides,
 } from "../commands/keybindings";
 import { settingsApi } from "../api/settings";
+import { agentNamesApi, type AgentNameTheme } from "../api/agentNames";
 import { openUrl } from "../api/system";
 import { isUpdateBusy, RELEASES_URL, updateCheckLabel, UPDATES_IN_APP } from "../api/updater";
 import { prettyPath } from "../lib/paths";
@@ -701,6 +702,7 @@ function AgentsPage() {
                             onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
                         />
                     </SettingsRow>
+                    <AgentNamesRow />
                     <SettingsRow label="Idle chats" desc="Put every idle chat to sleep now, freeing its process.">
                         <button className="settings-btn" type="button" onClick={() => void cmd.sleepIdleAgents()}>
                             Sleep now
@@ -1674,6 +1676,33 @@ function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
         default:
             return "Ready. Speech never leaves this Mac.";
     }
+}
+
+function AgentNamesRow() {
+    const [theme, setTheme] = useState<AgentNameTheme | null>(null);
+    useEffect(() => {
+        agentNamesApi.theme().then(setTheme).catch(reportError("Agent names"));
+    }, []);
+    const choose = (next: AgentNameTheme) => {
+        setTheme(next);
+        agentNamesApi.setTheme(next).then(setTheme).catch(reportError("Agent names"));
+    };
+    return (
+        <SettingsRow label="Agent names" desc="What new agents are called. Open agents keep their names." wide>
+            {theme && (
+                <Dropdown
+                    className="settings-dd"
+                    label="agent names"
+                    value={theme}
+                    options={[
+                        { value: "nature", label: "Nature", detail: "Otter, Maple, Flint" },
+                        { value: "anime", label: "Anime", detail: "Luffy, Gojo, Frieren" },
+                    ]}
+                    onChange={(value) => choose(value as AgentNameTheme)}
+                />
+            )}
+        </SettingsRow>
+    );
 }
 
 function VoiceSection() {
