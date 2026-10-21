@@ -129,6 +129,7 @@ impl Workbench {
         crate::finder::install(cx);
         crate::keymap::install(cx);
         crate::chat::install(cx);
+        crate::terminal::install(cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());

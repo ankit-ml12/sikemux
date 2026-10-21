@@ -6,14 +6,14 @@ use std::sync::Arc;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{Copy, InputEvent, InputState, Paste, SelectAll};
 use gpui_kit::{
-    anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds, ClickEvent,
-    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
-    InputHandler, InteractiveElement, IntoElement, KeyDownEvent, Keystroke, Modifiers,
-    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled, Subscription, Task,
-    UTF16Selection, Window,
+    actions, anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds,
+    ClickEvent, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle,
+    FontFallbacks, Hsla, InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent,
+    Keystroke, Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled,
+    Subscription, Task, UTF16Selection, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -40,6 +40,30 @@ const LINE_HEIGHT: f32 = 1.32;
 #[derive(Clone, Default, PartialEq, gpui::Action)]
 #[action(name = "terminal.new")]
 pub struct NewTerminal;
+
+/// The key context a terminal's keys are bound in.
+const CONTEXT: &str = "Terminal";
+
+actions!(terminal, [OpenFind, ResetModes, PageUp, PageDown]);
+
+/// Binds a terminal's own keys. Copy, paste and select all are the Edit
+/// menu's actions, so the menu works on a terminal too.
+pub fn install(cx: &mut App) {
+    let mac = cfg!(target_os = "macos");
+    let keys = |mac_keys: &'static str, other: &'static str| if mac { mac_keys } else { other };
+    let context = Some(CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new(keys("cmd-c", "ctrl-shift-c"), Copy, context),
+        KeyBinding::new(keys("cmd-v", "ctrl-shift-v"), Paste, context),
+        KeyBinding::new(keys("cmd-a", "ctrl-shift-a"), SelectAll, context),
+        KeyBinding::new(keys("cmd-f", "ctrl-f"), OpenFind, context),
+        KeyBinding::new("shift-pageup", PageUp, context),
+        KeyBinding::new("shift-pagedown", PageDown, context),
+    ]);
+    if mac {
+        cx.bind_keys([KeyBinding::new("cmd-alt-r", ResetModes, context)]);
+    }
+}
 
 /// How long a blinking cursor stays shown, and then hidden.
 const BLINK: Duration = Duration::from_millis(600);
@@ -403,11 +427,43 @@ pub fn pane(
     let this = this.clone();
     let mut pane = div()
         .id(("terminal", id))
+        .key_context(CONTEXT)
         .size_full()
         .p(px(8.))
+        .on_action(window.listener_for(&this, move |bench, _: &Copy, _, _| copy(bench, id)))
+        .on_action(window.listener_for(&this, move |bench, _: &Paste, _, cx| paste(bench, id, cx)))
+        .on_action(
+            window.listener_for(&this, move |bench, _: &SelectAll, _, cx| {
+                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+                    terminal.select_all();
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }
+            }),
+        )
+        .on_action(
+            window.listener_for(&this, move |bench, _: &OpenFind, window, cx| {
+                open_find(bench, id, window, cx);
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }),
+        )
+        .on_action(window.listener_for(&this, move |bench, _: &PageUp, _, cx| {
+            page(bench, id, true);
+            bench.parts.redraw(&bench.parts.stage, cx);
+        }))
+        .on_action(
+            window.listener_for(&this, move |bench, _: &PageDown, _, cx| {
+                page(bench, id, false);
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }),
+        )
+        .on_action(
+            window.listener_for(&this, move |bench, _: &ResetModes, _, _| {
+                let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::ResetModes));
+            }),
+        )
         .on_key_down(
             window.listener_for(&this, move |bench, event: &KeyDownEvent, window, cx| {
-                if key(bench, id, &event.keystroke, window, cx) {
+                if key(bench, id, &event.keystroke, window) {
                     cx.stop_propagation();
                     bench.parts.redraw(&bench.parts.stage, cx);
                 }
@@ -858,52 +914,19 @@ fn named_key(key: &str) -> Option<String> {
 }
 
 /// Handles a key, answering whether the terminal took it.
-fn key(
-    bench: &mut Workbench,
-    id: SessionId,
-    keystroke: &Keystroke,
-    window: &mut Window,
-    cx: &mut Context<Workbench>,
-) -> bool {
-    let Some(terminal) = bench
+fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, window: &Window) -> bool {
+    let focused = bench
         .terminals
         .open
-        .get_mut(&id)
-        .filter(|terminal| terminal.focus.is_focused(window))
-    else {
+        .get(&id)
+        .is_some_and(|terminal| terminal.focus.is_focused(window));
+    if !focused {
         return false;
-    };
+    }
     let modifiers = &keystroke.modifiers;
     let key = keystroke.key.as_str();
-    let header = &terminal.screen.header;
-    if modifiers.platform {
-        match key {
-            "c" if terminal.selection.is_some() => {
-                let _ = bench
-                    .asks
-                    .send(Ask::Terminal(id, TerminalAsk::Copy(terminal.selection)));
-            }
-            "a" => terminal.select_all(),
-            "v" => paste(bench, id, cx),
-            "f" => open_find(bench, id, window, cx),
-            "left" | "right" | "backspace" => {
-                let input = TerminalInput::Key {
-                    key: named_key(key).unwrap_or_default(),
-                    mods: mods(modifiers),
-                };
-                send(bench, id, input);
-            }
-            _ => return false,
-        }
-        return true;
-    }
-    if modifiers.shift
-        && matches!(key, "pageup" | "pagedown")
-        && header.modes & wire::MODE_ALT_SCREEN == 0
-    {
-        let rows = i64::from(header.rows);
-        scroll(terminal, if key == "pageup" { -rows } else { rows });
-        return true;
+    if modifiers.platform && !matches!(key, "left" | "right" | "backspace") {
+        return false;
     }
     let input = if let Some(name) = named_key(key) {
         TerminalInput::Key {
@@ -1196,6 +1219,9 @@ fn wheel(bench: &mut Workbench, id: SessionId, event: &ScrollWheelEvent) -> bool
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return false;
     };
+    if event.touch_phase == gpui::TouchPhase::Started {
+        terminal.wheel = 0.;
+    }
     terminal.wheel += event.delta.pixel_delta(metrics.cell.height).y / metrics.cell.height;
     let lines = terminal.wheel.trunc();
     terminal.wheel -= lines;
@@ -1331,6 +1357,46 @@ fn find(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workb
         inclusive: step == Step::Typed || current.is_none(),
     };
     let _ = bench.asks.send(Ask::Terminal(id, ask));
+}
+
+fn copy(bench: &mut Workbench, id: SessionId) {
+    if let Some(selection) = bench
+        .terminals
+        .open
+        .get(&id)
+        .and_then(|terminal| terminal.selection)
+    {
+        let _ = bench
+            .asks
+            .send(Ask::Terminal(id, TerminalAsk::Copy(Some(selection))));
+    }
+}
+
+/// A page of history up or down, or the key itself to a program on the
+/// alternate screen, which scrolls its own way.
+fn page(bench: &mut Workbench, id: SessionId, up: bool) {
+    let Some(terminal) = bench.terminals.open.get_mut(&id) else {
+        return;
+    };
+    let header = &terminal.screen.header;
+    if header.modes & wire::MODE_ALT_SCREEN != 0 {
+        let key = if up { "PageUp" } else { "PageDown" };
+        let mods = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        send(
+            bench,
+            id,
+            TerminalInput::Key {
+                key: key.into(),
+                mods,
+            },
+        );
+        return;
+    }
+    let rows = i64::from(header.rows);
+    scroll(terminal, if up { -rows } else { rows });
 }
 
 fn paste(bench: &mut Workbench, id: SessionId, cx: &mut App) {
@@ -1491,16 +1557,7 @@ impl RenderOnce for TerminalMenu {
                 Menu::new()
                     .child(
                         item("terminal-copy", "Copy", Icon::Copy, |bench, id, _, _| {
-                            if let Some(selection) = bench
-                                .terminals
-                                .open
-                                .get(&id)
-                                .and_then(|terminal| terminal.selection)
-                            {
-                                let _ = bench
-                                    .asks
-                                    .send(Ask::Terminal(id, TerminalAsk::Copy(Some(selection))));
-                            }
+                            copy(bench, id)
                         })
                         .hint("⌘C")
                         .disabled(self.selection.is_none()),

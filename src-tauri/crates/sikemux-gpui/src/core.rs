@@ -87,6 +87,9 @@ pub enum TerminalAsk {
         inclusive: bool,
     },
     Clear,
+    /// Turns off the modes a program left on, such as mouse reporting, after
+    /// it exits without doing so.
+    ResetModes,
 }
 
 /// One of the core's `Watch` calls, read again whenever the core says one of
@@ -695,6 +698,11 @@ impl Streams {
                 });
             }
             TerminalAsk::Clear => drop(tokio::spawn(async move { client.clear(session).await })),
+            TerminalAsk::ResetModes => {
+                drop(tokio::spawn(
+                    async move { client.reset_modes(session).await },
+                ))
+            }
         }
     }
 }
