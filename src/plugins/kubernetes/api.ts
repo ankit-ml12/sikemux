@@ -1,10 +1,9 @@
 import { createPluginBackend, type PluginStream, type PluginStreamHandlers } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { KUBERNETES_PLUGIN_ID } from "./kinds";
+import { KUBERNETES_PLUGIN } from "./kinds";
 
-export { failureMessage, isPluginFailure } from "../../plugin-api/backend";
+export { isPluginFailure } from "../../plugin-api/backend";
 
-const backend = createPluginBackend(KUBERNETES_PLUGIN_ID);
+const backend = createPluginBackend(KUBERNETES_PLUGIN.id);
 
 /** Which cluster and namespace a call is for; none leaves kubectl's current ones. */
 export interface Scope {
@@ -148,8 +147,6 @@ export interface Store {
 }
 
 export type KubeAction = "restart" | "scale" | "deletePod" | "runNow" | "suspend" | "resume";
-
-export const refreshKubernetes = () => invalidate((kind) => kind.startsWith("kubernetes."));
 
 export const kubeApi = {
     status: () => backend.call<KubeStatus>("status"),

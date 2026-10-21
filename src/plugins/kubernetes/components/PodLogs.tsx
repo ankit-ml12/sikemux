@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { VirtualLogList } from "../../../plugin-api/ui";
-import { failureMessage, kubeApi, type LogLine, type Scope } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { kubeApi, type LogLine, type Scope } from "../api";
 import { Toggle } from "./parts";
 
 /** The most lines kept while following, so a chatty pod can't grow the pane without end. */
@@ -50,14 +51,14 @@ export function PodLogs({
                     setLines((held) => [...(held ?? []), ...batch.lines].slice(-KEEP_LINES));
                     if (batch.ended) setEnded(true);
                 },
-                onError: (failure) => setError(failureMessage(failure)),
+                onError: (failure) => setError(errorText(failure)),
             });
             return () => stream.stop();
         }
         let current = true;
         kubeApi.logs(scope, pod, container, previous).then(
             (read) => current && setLines(read.lines),
-            (failure: unknown) => current && setError(failureMessage(failure)),
+            (failure: unknown) => current && setError(errorText(failure)),
         );
         return () => {
             current = false;

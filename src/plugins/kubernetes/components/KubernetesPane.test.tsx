@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), kubeApi: api }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { kubernetes } from "../resources";
 import { KubernetesPane } from "./KubernetesPane";
 
 let pane = 0;
@@ -22,7 +22,7 @@ const renderPane = () => render(<KubernetesPane paneId={`k8s-${++pane}`} active 
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("kubernetes."));
+    kubernetes.refresh();
 });
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
@@ -163,5 +163,13 @@ describe("the Kubernetes pane", () => {
         api.pod.mockResolvedValue(null);
         fireEvent.click(within(list).getByRole("button", { name: "Pod/worker-1" }));
         await waitFor(() => expect(api.pod).toHaveBeenCalledWith({ context: "kind-dev", namespace: "shop" }, "worker-1"));
+    });
+
+    it("reads the cluster again when Refresh is pressed", async () => {
+        renderPane();
+        await screen.findByRole("table", { name: "Workloads" });
+        const before = api.workloads.mock.calls.length;
+        fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+        await waitFor(() => expect(api.workloads.mock.calls.length).toBeGreaterThan(before));
     });
 });

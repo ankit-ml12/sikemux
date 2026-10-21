@@ -3,10 +3,11 @@ import { confirmDialog, copyWithNotice, notify, runInTerminal } from "../../../p
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { SendToAgentMenu, Seg, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
 import { podBrief } from "../brief";
-import { failureMessage, kubeApi, refreshKubernetes, type Container, type KubeEvent, type PodDetail, type Scope } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { kubeApi, type Container, type KubeEvent, type PodDetail, type Scope } from "../api";
 import { age, podTone, shortImage, type Tone } from "../format";
 import { usePoll } from "../hooks";
-import { kubePodR } from "../resources";
+import { kubePodR, kubernetes } from "../resources";
 import { Dot } from "./parts";
 import { PodLogs } from "./PodLogs";
 
@@ -55,10 +56,10 @@ export function PodView({ scope, name, active, onBack }: { scope: Scope; name: s
         try {
             const done = await kubeApi.act(scope, "deletePod", name);
             notify("success", done.message || `Deleted ${name}`);
-            refreshKubernetes();
+            kubernetes.refresh();
             onBack();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         }
     };
 

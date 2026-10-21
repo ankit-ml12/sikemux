@@ -1,9 +1,9 @@
 import { useRef, type ReactNode } from "react";
 import { useResourceEnabled, type ResourceHandle } from "../../../plugin-api/resources";
 import { Dropdown, EmptyState, ResizeHandle, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
-import { refreshKubernetes, type KubeStatus, type Scope } from "../api";
+import type { KubeStatus, Scope } from "../api";
 import { usePoll } from "../hooks";
-import { kubeConfigR, kubeEventsR, kubeNamespacesR, kubeNetworkR, kubePodsR, kubeStatusR, kubeWorkloadsR } from "../resources";
+import { kubeConfigR, kubeEventsR, kubeNamespacesR, kubeNetworkR, kubePodsR, kubeStatusR, kubeWorkloadsR, kubernetes } from "../resources";
 import { ALL_NAMESPACES, updateKubeView, useKubeView, type KubeSection } from "../state";
 import { KubernetesMark } from "./KubernetesMark";
 import { Config } from "./Config";
@@ -153,7 +153,7 @@ function Cluster({ paneId, active, status }: { paneId: string; active: boolean; 
                 <header className="k8s-topbar">
                     <span className="k8s-topbar-title">{SECTIONS.find((each) => each.value === view.section)?.label}</span>
                     <span className="k8s-muted">{all ? "All namespaces" : namespace}</span>
-                    <button type="button" className="k8s-button" onClick={() => refreshKubernetes()}>
+                    <button type="button" className="k8s-button" onClick={() => kubernetes.refresh()}>
                         Refresh
                     </button>
                 </header>

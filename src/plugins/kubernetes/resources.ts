@@ -1,71 +1,25 @@
-import { resource } from "../../plugin-api/resources";
-import {
-    kubeApi,
-    type Ingress,
-    type KubeEvent,
-    type KubeStatus,
-    type Namespace,
-    type Pod,
-    type PodDetail,
-    type Scope,
-    type Service,
-    type Store,
-    type Workload,
-} from "./api";
+import { pluginResources } from "../../plugin-api/service";
+import { kubeApi, type Scope } from "./api";
+import { KUBERNETES_PLUGIN } from "./kinds";
 
-/** One key per cluster and namespace, so switching back shows what was read there. */
-const keyOf = ([scope, all]: unknown[]) => `${(scope as Scope).context ?? ""}|${all ? "*" : ((scope as Scope).namespace ?? "")}`;
+export const kubernetes = pluginResources(KUBERNETES_PLUGIN);
 
-export const kubeStatusR = resource({
-    kind: "kubernetes.status",
-    fetch: (): Promise<KubeStatus> => kubeApi.status(),
-    staleAfterMs: 30_000,
-});
+export const kubeStatusR = kubernetes.resource("status", () => kubeApi.status(), 30_000);
 
-export const kubeNamespacesR = resource({
-    kind: "kubernetes.namespaces",
-    fetch: (context: string): Promise<Namespace[]> => kubeApi.namespaces({ context }),
-    staleAfterMs: 60_000,
-});
+export const kubeNamespacesR = kubernetes.resource("namespaces", (context: string) => kubeApi.namespaces({ context }), 60_000);
 
-export const kubePodsR = resource({
-    kind: "kubernetes.pods",
-    fetch: (scope: Scope, all: boolean, selector: string | null): Promise<Pod[]> => kubeApi.pods(scope, all, selector),
-    staleAfterMs: 5_000,
-    keyFn: (args) => `${keyOf(args)}|${(args[2] as string | null) ?? ""}`,
-});
+export const kubePodsR = kubernetes.resource(
+    "pods",
+    (scope: Scope, all: boolean, selector: string | null) => kubeApi.pods(scope, all, selector),
+    5_000,
+);
 
-export const kubeWorkloadsR = resource({
-    kind: "kubernetes.workloads",
-    fetch: (scope: Scope, all: boolean): Promise<Workload[]> => kubeApi.workloads(scope, all),
-    staleAfterMs: 5_000,
-    keyFn: keyOf,
-});
+export const kubeWorkloadsR = kubernetes.resource("workloads", (scope: Scope, all: boolean) => kubeApi.workloads(scope, all), 5_000);
 
-export const kubeEventsR = resource({
-    kind: "kubernetes.events",
-    fetch: (scope: Scope, all: boolean): Promise<KubeEvent[]> => kubeApi.events(scope, all),
-    staleAfterMs: 10_000,
-    keyFn: keyOf,
-});
+export const kubeEventsR = kubernetes.resource("events", (scope: Scope, all: boolean) => kubeApi.events(scope, all), 10_000);
 
-export const kubePodR = resource({
-    kind: "kubernetes.pod",
-    fetch: (scope: Scope, name: string): Promise<PodDetail | null> => kubeApi.pod(scope, name),
-    staleAfterMs: 5_000,
-    keyFn: ([scope, name]) => `${(scope as Scope).context ?? ""}|${(scope as Scope).namespace ?? ""}|${name as string}`,
-});
+export const kubePodR = kubernetes.resource("pod", (scope: Scope, name: string) => kubeApi.pod(scope, name), 5_000);
 
-export const kubeNetworkR = resource({
-    kind: "kubernetes.network",
-    fetch: (scope: Scope, all: boolean): Promise<{ services: Service[]; ingresses: Ingress[] }> => kubeApi.network(scope, all),
-    staleAfterMs: 15_000,
-    keyFn: keyOf,
-});
+export const kubeNetworkR = kubernetes.resource("network", (scope: Scope, all: boolean) => kubeApi.network(scope, all), 15_000);
 
-export const kubeConfigR = resource({
-    kind: "kubernetes.config",
-    fetch: (scope: Scope, all: boolean): Promise<{ configMaps: Store[]; secrets: Store[] }> => kubeApi.config(scope, all),
-    staleAfterMs: 30_000,
-    keyFn: keyOf,
-});
+export const kubeConfigR = kubernetes.resource("config", (scope: Scope, all: boolean) => kubeApi.config(scope, all), 30_000);

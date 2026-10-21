@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { confirmDialog, notify, promptDialog } from "../../../plugin-api/host";
-import { failureMessage, kubeApi, refreshKubernetes, type KubeAction, type Scope, type Workload } from "../api";
+import { errorText } from "../../../plugin-api/format";
+import { kubeApi, type KubeAction, type Scope, type Workload } from "../api";
+import { kubernetes } from "../resources";
 import { kubectlScope } from "./PodView";
 
 export interface WorkloadAction {
@@ -111,9 +113,9 @@ export function WorkloadActions({ workload, scope }: { workload: Workload; scope
         try {
             const done = await kubeApi.act(scope, action, workload.name, workload.kind, answer ?? undefined);
             notify("success", done.message || `${workload.name}: done`);
-            refreshKubernetes();
+            kubernetes.refresh();
         } catch (failure) {
-            notify("error", failureMessage(failure));
+            notify("error", errorText(failure));
         } finally {
             setBusy(null);
         }

@@ -1,13 +1,13 @@
 import { lazy } from "react";
 import { registerFrontendPlugin } from "../../plugin-api";
 import { KubernetesMark } from "./components/KubernetesMark";
-import { KUBERNETES_CLUSTER, KUBERNETES_PLUGIN_ID } from "./kinds";
+import { KUBERNETES_CLUSTER, KUBERNETES_PLUGIN } from "./kinds";
 import { openKubernetes } from "./state";
 
 const KubernetesPane = lazy(() => import("./components/KubernetesPane").then((module) => ({ default: module.KubernetesPane })));
 
 registerFrontendPlugin({
-    id: KUBERNETES_PLUGIN_ID,
+    id: KUBERNETES_PLUGIN.id,
     surfaces: [
         {
             kind: KUBERNETES_CLUSTER,

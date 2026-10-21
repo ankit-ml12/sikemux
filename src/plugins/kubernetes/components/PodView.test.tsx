@@ -11,7 +11,7 @@ vi.mock("../../../plugin-api/ui", async (importOriginal) => ({
     ),
 }));
 
-import { invalidate } from "../../../plugin-api/resources";
+import { kubernetes } from "../resources";
 import { levelOf } from "./PodLogs";
 import { containerTone, kubectlScope, PodView, stateLine } from "./PodView";
 
@@ -20,7 +20,7 @@ const renderView = (onBack = vi.fn()) => render(<PodView scope={scope} name={WOR
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("kubernetes."));
+    kubernetes.refresh();
 });
 beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
