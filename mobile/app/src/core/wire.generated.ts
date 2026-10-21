@@ -15,6 +15,8 @@ export interface DeviceView {
    * JSON so a change to its shape reaches phones over the air.
    */
   inbox?: Inbox;
+  /** Which project is in front, and each project's tabs. */
+  layout?: Layout;
 }
 
 export interface Workspace {
@@ -537,6 +539,50 @@ export interface BuddyLook {
   shape: string;
   color: string;
 }
+
+/** The tabs every desktop client draws, kept by the core. */
+export interface Layout {
+  /** The project in front, by id. */
+  activeProject?: string;
+  /** Each project's tabs, by project id. */
+  projects?: Record<string, ProjectLayout>;
+}
+
+export interface ProjectLayout {
+  /** The tab in front, by id. */
+  active?: string;
+  /** In the order the tab strip shows them. */
+  tabs?: Tab[];
+}
+
+export interface Tab {
+  id: string;
+  /** What the person named it; clients name an unnamed tab from its pane. */
+  title?: string;
+  pane: Pane;
+}
+
+/** What a tab shows: one view, or several side by side. */
+export type Pane =
+  | {
+      type: 'view';
+      id: string;
+      kind: PaneKind;
+      /**
+       * What it shows: an agent's id, a session's id, a path, a URL or a
+       * plugin's id, by `kind`.
+       */
+      target: string;
+    }
+  | {
+      type: 'split';
+      dir: SplitDir;
+      panes: Pane[];
+    };
+
+export type PaneKind = 'agent' | 'terminal' | 'files' | 'git' | 'search' | 'board' | 'browser' | 'plugin';
+
+export type SplitDir = 'row' | 'column';
 
 /**
  * A chat as a client opening it is sent: how it stands, its latest rows, and

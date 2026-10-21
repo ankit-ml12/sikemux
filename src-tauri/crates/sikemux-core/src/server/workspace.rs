@@ -1859,8 +1859,12 @@ pub(crate) struct CloseAgentsParams {
 
 /// Takes agents out of the workspace.
 pub(crate) fn close_agents(core: &Core, params: CloseAgentsParams) -> CoreResult<()> {
+    close(core, &params.agent_ids)
+}
+
+pub(crate) fn close(core: &Core, agent_ids: &[String]) -> CoreResult<()> {
     let before = core.workspaces.agent_ids();
-    core.workspaces.close_agents(&params.agent_ids)?;
+    core.workspaces.close_agents(agent_ids)?;
     agents_closed(core, before);
     core.view_changed();
     Ok(())

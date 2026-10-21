@@ -1530,6 +1530,83 @@ pub struct DeviceView {
     /// JSON so a change to its shape reaches phones over the air.
     #[serde(default)]
     pub inbox: Value,
+    /// Which project is in front, and each project's tabs.
+    #[serde(default)]
+    pub layout: Box<Layout>,
+}
+
+/// The tabs every desktop client draws, kept by the core.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Layout {
+    /// The project in front, by id.
+    #[serde(default)]
+    pub active_project: Option<String>,
+    /// Each project's tabs, by project id.
+    #[serde(default)]
+    pub projects: BTreeMap<String, ProjectLayout>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectLayout {
+    /// The tab in front, by id.
+    #[serde(default)]
+    pub active: Option<String>,
+    /// In the order the tab strip shows them.
+    #[serde(default)]
+    pub tabs: Vec<Tab>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tab {
+    pub id: String,
+    /// What the person named it; clients name an unnamed tab from its pane.
+    #[serde(default)]
+    pub title: Option<String>,
+    pub pane: Pane,
+}
+
+/// What a tab shows: one view, or several side by side.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Pane {
+    View {
+        id: String,
+        kind: PaneKind,
+        /// What it shows: an agent's id, a session's id, a path, a URL or a
+        /// plugin's id, by `kind`.
+        target: String,
+    },
+    Split {
+        dir: SplitDir,
+        panes: Vec<Pane>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PaneKind {
+    Agent,
+    Terminal,
+    Files,
+    Git,
+    Search,
+    Board,
+    Browser,
+    Plugin,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SplitDir {
+    Row,
+    Column,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1804,6 +1881,7 @@ mod tests {
             attentions: Vec::new(),
             recent: Vec::new(),
             inbox: Value::Null,
+            layout: Box::default(),
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");

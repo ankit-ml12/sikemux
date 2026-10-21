@@ -29,6 +29,7 @@ mod inbox;
 mod join;
 mod kept;
 mod launching;
+mod layout;
 mod lifecycle;
 mod local_peer;
 mod messages;
@@ -347,6 +348,7 @@ pub(crate) struct Core {
     /// Each project's branch chip, by project folder.
     pub(crate) git_chips: Mutex<HashMap<String, crate::protocol::ProjectGit>>,
     pub(crate) usage: agent_accounts::UsageWatch,
+    pub(crate) layouts: layout::Layouts,
     /// Watches the SSH config once a client has listed its hosts.
     pub(crate) ssh_watch: OnceLock<Option<::notify::RecommendedWatcher>>,
     pub(crate) ci: ci::Ci,
@@ -429,6 +431,7 @@ impl Core {
             git_watches: Default::default(),
             git_chips: Default::default(),
             usage: Default::default(),
+            layouts: layout::Layouts::new(data_dir),
             ssh_watch: OnceLock::new(),
             ci: Default::default(),
             edits: edits::Edits::new(data_dir, me.clone()),
@@ -782,13 +785,16 @@ impl Core {
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
         let recent = self.workspaces.recent(&chats);
         let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
+        let workspace = self.workspace_view();
+        let layout = Box::new(layout::view(self, &workspace, &sessions));
         let view = DeviceView {
-            workspace: self.workspace_view(),
+            workspace,
             sessions,
             chats,
             attentions,
             recent,
             inbox,
+            layout,
         };
         let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
