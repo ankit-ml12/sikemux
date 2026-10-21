@@ -200,11 +200,13 @@ fn repo_root(dir: &Path) -> Option<PathBuf> {
 
 /// Flags what git ignores, asking each repository once for all its folders.
 fn mark_ignored(listings: &mut [Listing]) {
-    let joined = |listing: &Listing, entry: &Entry| {
-        Path::new(&listing.dir)
-            .join(&entry.name)
-            .to_string_lossy()
-            .into_owned()
+    let joined = |dir: &Path, entry: &Entry| {
+        let path = dir.join(&entry.name).to_string_lossy().into_owned();
+        if entry.dir {
+            path + "/"
+        } else {
+            path
+        }
     };
     let mut by_repo: HashMap<PathBuf, Vec<String>> = HashMap::new();
     for listing in listings.iter() {
@@ -213,7 +215,8 @@ fn mark_ignored(listings: &mut [Listing]) {
         }
         if let Some(root) = repo_root(Path::new(&listing.dir)) {
             let paths = by_repo.entry(root).or_default();
-            paths.extend(listing.entries.iter().map(|entry| joined(listing, entry)));
+            let dir = Path::new(&listing.dir);
+            paths.extend(listing.entries.iter().map(|entry| joined(dir, entry)));
         }
     }
     let ignored: HashSet<String> = by_repo
@@ -226,7 +229,7 @@ fn mark_ignored(listings: &mut [Listing]) {
     for listing in listings.iter_mut() {
         let dir = Path::new(&listing.dir).to_owned();
         for entry in &mut listing.entries {
-            entry.ignored = ignored.contains(dir.join(&entry.name).to_string_lossy().as_ref());
+            entry.ignored = ignored.contains(&joined(&dir, entry));
         }
     }
 }
