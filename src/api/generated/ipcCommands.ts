@@ -15,6 +15,8 @@ export const IPC_COMMANDS = [
     "hosts_list",
     "host_install",
     "host_sign_in",
+    "host_update",
+    "host_start",
     "host_probe",
     "account_remove_device",
     "account_rename_device",

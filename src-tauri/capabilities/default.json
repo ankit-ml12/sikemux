@@ -32,6 +32,8 @@
     "allow-hosts-list",
     "allow-host-install",
     "allow-host-sign-in",
+    "allow-host-update",
+    "allow-host-start",
     "allow-host-probe",
     "allow-account-remove-device",
     "allow-account-rename-device",

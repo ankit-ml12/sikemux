@@ -8,7 +8,11 @@ import {
     projectOnHost,
     sameHost,
     THIS_HOST,
+    setUpFor,
     setUpOverSsh,
+    SSH_WORK,
+    sshFoundLabel,
+    type SshWork,
     startRemoteChat,
     type HostChoice,
     type HostEntry,
@@ -27,6 +31,7 @@ import {
     IconLogIn,
     IconMore,
     IconPencil,
+    IconPower,
     IconPlus,
     IconServer,
     IconTerminal,
@@ -70,18 +75,11 @@ function useHostLoad(host: string, connected: boolean): string | null {
     return connected ? load : null;
 }
 
-/** Installing Sikemux on an SSH host, or signing in one that has it, and which of them runs now. */
-function useOverSsh(alias: string | null) {
-    const busy = useStore((s) => (alias ? s.sshWork[alias] : undefined)) ?? null;
-    return {
-        busy,
-        install: () => alias && setUpOverSsh(alias, "installing"),
-        signIn: () => alias && setUpOverSsh(alias, "signing in"),
-    };
+/** The action that sets the SSH host `alias` up as `work`, while nothing runs for it. */
+function setUpItem(alias: string, work: SshWork, busy: boolean, label = SSH_WORK[work].offer): CtxItem {
+    const icon = work === "signing in" ? <IconLogIn size={13} /> : work === "starting" ? <IconPower size={13} /> : <IconDownload size={13} />;
+    return { label, icon, run: () => setUpOverSsh(alias, work), disabled: busy };
 }
-
-/** What a row says of a host that runs Sikemux but is not on this host's account. */
-const OFF_ACCOUNT = { signedOut: "not signed in", other: "on another account" } as const;
 
 function agentsLabel(count: number): string | null {
     return count === 0 ? null : `${count} ${count === 1 ? "agent" : "agents"}`;
@@ -181,18 +179,21 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
     };
     const hasProject = useStore((s) => !!projectOnHost(s, host.id, undefined));
-    const account = useStore((s) => (host.ssh ? s.sshProbes[host.ssh]?.account : undefined));
-    const off = account === "signedOut" || account === "other" ? OFF_ACCOUNT[account] : null;
-    const { busy, signIn } = useOverSsh(host.ssh);
+    const probe = useStore((s) => (host.ssh ? s.sshProbes[host.ssh] : undefined));
+    const off = sshFoundLabel(probe);
+    const work = host.ssh && probe ? setUpFor(probe) : null;
+    const busy = useStore((s) => (host.ssh ? s.sshWork[host.ssh] : undefined));
     return (
         <HostRow
             kind="sikemux"
             name={host.name}
             load={load}
-            detail={busy ?? off ?? (connected ? agentsLabel(agents) : host.reach === "away" ? "out of reach" : "connecting")}
+            detail={
+                (busy && SSH_WORK[busy].running) ?? off ?? (connected ? agentsLabel(agents) : host.reach === "away" ? "out of reach" : "connecting")
+            }
             status={
                 busy ? (
-                    <StatusDot tone="pending" label="Signing in" />
+                    <StatusDot tone="pending" label={SSH_WORK[busy].running} />
                 ) : off ? (
                     <StatusDot tone="idle" label={off} />
                 ) : (
@@ -204,9 +205,7 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
             }
             choice={choice}
             menu={async () => [
-                ...(account === "signedOut"
-                    ? [{ label: "Sign in", icon: <IconLogIn size={13} />, run: signIn, disabled: !!busy }, { sep: true as const }]
-                    : []),
+                ...(host.ssh && work ? [setUpItem(host.ssh, work, !!busy), { sep: true as const }] : []),
                 { label: "New chat here", icon: <IconPlus size={13} />, run: chat, disabled: !hasProject },
                 { label: "New terminal here", icon: <IconTerminal size={13} />, run: () => openHostTerminal(host.id) },
                 { label: "Files", icon: <IconFolder size={13} />, run: files, disabled: !hasProject },
@@ -223,20 +222,22 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
 function SshHostRow({ alias, session, onMenu }: { alias: string; session: Session | undefined; onMenu: OpenMenu }) {
     const tone = useSshTone(session?.id ?? "");
     const choice = useMemo<HostChoice>(() => ({ kind: "ssh", alias }), [alias]);
-    const account = useStore((s) => s.sshProbes[alias]?.account);
-    const off = account === "signedOut" || account === "other" ? OFF_ACCOUNT[account] : null;
-    const { busy, install, signIn } = useOverSsh(alias);
-    const setUp = account
-        ? account === "signedOut"
-            ? [{ label: "Sign in", icon: <IconLogIn size={13} />, run: signIn, disabled: !!busy }]
-            : []
-        : [{ label: "Install Sikemux here", icon: <IconDownload size={13} />, run: install, disabled: !!busy }];
+    const probe = useStore((s) => s.sshProbes[alias]);
+    const off = sshFoundLabel(probe);
+    const work = setUpFor(probe);
+    const busy = useStore((s) => s.sshWork[alias]);
+    const setUp = work ? [setUpItem(alias, work, !!busy, work === "installing" ? "Install Sikemux here" : undefined)] : [];
     return (
         <HostRow
             kind="ssh"
             name={alias}
-            detail={busy ?? off}
-            status={<StatusDot tone={busy ? "pending" : session ? tone : "idle"} label={busy ?? (session ? tone : "Not connected")} />}
+            detail={(busy && SSH_WORK[busy].running) ?? off}
+            status={
+                <StatusDot
+                    tone={busy ? "pending" : session ? tone : "idle"}
+                    label={busy ? SSH_WORK[busy].running : session ? tone : "Not connected"}
+                />
+            }
             choice={choice}
             menu={async () => [
                 {

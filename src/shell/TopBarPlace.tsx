@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { chooseHost, setUpOverSsh, sshSetUp, THIS_HOST, type HostChoice } from "../hosts/hosts";
+import { chooseHost, setUpOverSsh, SSH_WORK, sshSetUp, THIS_HOST, type HostChoice } from "../hosts/hosts";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconChevron, IconDownload, IconFolder, IconLaptop, IconLogIn, IconServer } from "../ui/Icons";
+import { IconChevron, IconDownload, IconFolder, IconLaptop, IconLogIn, IconPower, IconServer } from "../ui/Icons";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const keyOf = (choice: HostChoice) => (choice.kind === "core" ? `core:${choice.host ?? ""}` : `ssh:${choice.alias}`);
@@ -30,16 +30,18 @@ const PROJECT_MARK = (
     </span>
 );
 
-/** Where an SSH host without Sikemux has no projects: the offer to install it, or to sign in the Sikemux it has (ADR 0019). */
+/** Where an SSH host without a running Sikemux has no projects: the one thing that sets it up (ADR 0019). */
 function SetUpOffer({ alias }: { alias: string }) {
     const setUp = useStore((s) => sshSetUp(s, alias));
     const work = useStore((s) => s.sshWork[alias]);
     if (!setUp) return null;
+    const { offer, running } = SSH_WORK[work ?? setUp];
     const label = work
-        ? `${work === "installing" ? "Installing Sikemux on" : "Signing in"} ${alias}…`
-        : setUp === "installing"
-          ? `Install Sikemux on ${alias}`
-          : `Sign in ${alias}`;
+        ? `${running[0].toUpperCase()}${running.slice(1)} ${alias}…`
+        : setUp === "signing in"
+          ? `Sign in ${alias}`
+          : `${offer} on ${alias}`;
+    const icon = setUp === "signing in" ? <IconLogIn size={13} /> : setUp === "starting" ? <IconPower size={13} /> : <IconDownload size={13} />;
     return (
         <>
             <span className="tb-place-sep" aria-hidden="true">
@@ -47,7 +49,7 @@ function SetUpOffer({ alias }: { alias: string }) {
             </span>
             <button type="button" className="dd-btn tb-place-btn" disabled={!!work} onClick={() => setUpOverSsh(alias, setUp)}>
                 <span className="dd-icon" aria-hidden="true">
-                    {setUp === "installing" ? <IconDownload size={13} /> : <IconLogIn size={13} />}
+                    {icon}
                 </span>
                 <span className="dd-val">{label}</span>
             </button>
@@ -72,6 +74,13 @@ export function TopBarPlace() {
         ),
     );
     const activeId = useStore((s) => s.activeSessionId);
+    // An SSH host has only its set-up to offer; a host on the account offers it while its Sikemux needs it.
+    const setUpAlias = useStore((s) => {
+        const host = s.chosenHost;
+        if (host.kind === "ssh") return host.alias;
+        const alias = s.hosts.find((candidate) => candidate.id === host.host)?.ssh;
+        return alias && s.sshProbes[alias] && sshSetUp(s, alias) ? alias : null;
+    });
 
     const hostOptions = useMemo<DropdownOption[]>(() => {
         const installed = new Set(hosts.flatMap((host) => host.ssh ?? []));
@@ -108,8 +117,8 @@ export function TopBarPlace() {
                 icon={hostMark(chosen)}
                 onChange={(key) => chooseHost(choiceOf(key))}
             />
-            {chosen.kind === "ssh" ? (
-                <SetUpOffer alias={chosen.alias} />
+            {setUpAlias ? (
+                <SetUpOffer alias={setUpAlias} />
             ) : (
                 inProject && (
                     <>

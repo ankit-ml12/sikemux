@@ -25,6 +25,8 @@ use super::Hosts;
 
 /// Long enough to type a password, download the core and sign in.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// Long enough to connect and start a core.
+const START_TIMEOUT: Duration = Duration::from_secs(90);
 /// The letters a sign-in code is made of, which the accounts server chooses.
 const CODE_LETTERS: &str = "BCDFGHJKLMNPQRSTVWXZ";
 /// What `sikemux login` prints in front of the code.
@@ -140,14 +142,74 @@ pub async fn host_install(
     cols: u16,
     rows: u16,
 ) -> AppResult<SessionId> {
+    sign_in_over_ssh(app, manager, alias, installer(), Code::Needed, cols, rows).await
+}
+
+/// The installer for this app's channel, as an SSH host runs it.
+fn installer() -> String {
     let channel = match BuildChannel::of_release(env!("CARGO_PKG_VERSION")) {
         BuildChannel::Stable => "stable",
         _ => "nightly",
     };
-    let remote = format!(
-        "curl -fsSL https://sikemux.com/install | NO_COLOR=1 SIKEMUX_CHANNEL={channel} sh -s -- --host --yes"
-    );
-    sign_in_over_ssh(app, manager, alias, remote, cols, rows).await
+    format!("curl -fsSL https://sikemux.com/install | NO_COLOR=1 SIKEMUX_CHANNEL={channel} sh -s -- --host --yes")
+}
+
+/// Opens a terminal on this host that updates Sikemux on the SSH host
+/// `alias`, which runs an older release, with the installer, then restarts
+/// its core, and answers with its session for the page to show.
+/// `host_installed` says when it is done; a host signed out signs in there.
+#[tauri::command]
+pub async fn host_update(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+    alias: String,
+    cols: u16,
+    rows: u16,
+) -> AppResult<SessionId> {
+    let remote = format!("{} && {}", installer(), sikemux_over_ssh("restart"));
+    sign_in_over_ssh(app, manager, alias, remote, Code::IfPrinted, cols, rows).await
+}
+
+/// Starts the stopped core on the SSH host `alias`, over the person's own SSH
+/// and never prompting, as the probe asks.
+#[tauri::command]
+pub async fn host_start(alias: String) -> AppResult<()> {
+    let alias = checked_alias(&alias)?.to_owned();
+    let mut ssh = tokio::process::Command::from(sikemux_process::user_environment::command("ssh"));
+    ssh.args([
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ConnectTimeout=10",
+        "--",
+        &alias,
+    ])
+    .arg(sikemux_over_ssh("start"))
+    .stdin(std::process::Stdio::null())
+    .kill_on_drop(true);
+    let output = tokio::time::timeout(START_TIMEOUT, ssh.output())
+        .await
+        .map_err(|_| AppError::Other(format!("{alias} did not start its core in time")))??;
+    if output.status.success() {
+        return Ok(());
+    }
+    let said = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(AppError::Other(if said.is_empty() {
+        format!("{alias} could not start its core")
+    } else {
+        said
+    }))
+}
+
+/// Whether the run must end in a sign-in code, or may end without one, as an
+/// update of a host already signed in does.
+#[derive(Clone, Copy)]
+enum Code {
+    Needed,
+    IfPrinted,
 }
 
 /// Opens a terminal on this host that runs `sikemux login` on the SSH host
@@ -161,7 +223,16 @@ pub async fn host_sign_in(
     cols: u16,
     rows: u16,
 ) -> AppResult<SessionId> {
-    sign_in_over_ssh(app, manager, alias, sikemux_over_ssh("login"), cols, rows).await
+    sign_in_over_ssh(
+        app,
+        manager,
+        alias,
+        sikemux_over_ssh("login"),
+        Code::Needed,
+        cols,
+        rows,
+    )
+    .await
 }
 
 /// Runs `remote` on the SSH host `alias` in a terminal the page shows, and
@@ -171,6 +242,7 @@ async fn sign_in_over_ssh(
     manager: State<'_, PtyManager>,
     alias: String,
     remote: String,
+    expected: Code,
     cols: u16,
     rows: u16,
 ) -> AppResult<SessionId> {
@@ -209,12 +281,14 @@ async fn sign_in_over_ssh(
     let app_for_task = app.clone();
     tauri::async_runtime::spawn(async move {
         let finished = async {
-            let code = tokio::time::timeout(INSTALL_TIMEOUT, code)
+            let code = match tokio::time::timeout(INSTALL_TIMEOUT, code)
                 .await
                 .map_err(|_| AppError::Other("installing took too long".into()))?
-                .map_err(|_| {
-                    AppError::Other("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
-                })?;
+            {
+                Ok(code) => code,
+                Err(_) if matches!(expected, Code::IfPrinted) => return AppResult::Ok(()),
+                Err(_) => return Err(AppError::Other("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())),
+            };
             let host = crate::account::approve_host_code(&core_for_approval, &code).await?;
             if let Some(hosts) = app_for_task.try_state::<Hosts>() {
                 hosts.reached_by(&host.key, &alias);

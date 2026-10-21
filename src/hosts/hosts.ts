@@ -34,17 +34,20 @@ export const hostsApi = {
     list: () => invoke<HostEntry[]>("hosts_list"),
 };
 
-/** What asking an SSH host found: which host it is, and whether it is on this host's account, signed out, or another's. */
+/**
+ * What asking an SSH host found of the Sikemux there: on this host's account, signed out, on another account, its core
+ * stopped, or a release too old to say which host it is; and the host's key when it said.
+ */
 export interface SshProbe {
-    readonly key: string;
-    readonly account: "same" | "signedOut" | "other";
+    readonly key: string | null;
+    readonly found: "same" | "signedOut" | "other" | "stopped" | "outdated";
 }
 
 /**
  * Runs `command` on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
  * password ssh or sudo asks for is typed, and resolves once the host is on the account.
  */
-async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in", title: string): Promise<void> {
+async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in" | "host_update", title: string): Promise<void> {
     const controller = new AbortController();
     const done = new Promise<void>((resolve, reject) => {
         void getIpcTransport()
@@ -80,28 +83,52 @@ async function signInOverSsh(alias: string, command: "host_install" | "host_sign
     await done;
 }
 
-/** Setting an SSH host up: installing Sikemux there, or signing in the Sikemux it has. */
-export type SshWork = "installing" | "signing in";
+/** Setting an SSH host up: installing Sikemux, signing in, starting or updating the Sikemux it has. */
+export type SshWork = "installing" | "signing in" | "starting" | "updating";
 
-/** What setting up the SSH host `alias` takes, from what asking it found; nothing for a host on another account. */
-export function sshSetUp(state: Pick<StoreState, "sshProbes">, alias: string): SshWork | null {
-    const probe = state.sshProbes[alias];
+/** How each way of setting an SSH host up is offered, and what a row says while it runs. */
+export const SSH_WORK: Readonly<Record<SshWork, { offer: string; running: string }>> = {
+    installing: { offer: "Install Sikemux", running: "installing" },
+    "signing in": { offer: "Sign in", running: "signing in" },
+    starting: { offer: "Start Sikemux", running: "starting" },
+    updating: { offer: "Update Sikemux", running: "updating" },
+};
+
+/** What setting up an SSH host takes, from what asking it found: installing only where there is no Sikemux at all. */
+export function setUpFor(probe: SshProbe | undefined): SshWork | null {
     if (!probe) return "installing";
-    return probe.account === "signedOut" ? "signing in" : null;
+    return ({ signedOut: "signing in", stopped: "starting", outdated: "updating", same: null, other: null } as const)[probe.found];
 }
 
-/** Installs Sikemux on the SSH host `alias`, or signs in the one it has, once at a time, for every place that offers it. */
+export function sshSetUp(state: Pick<StoreState, "sshProbes">, alias: string): SshWork | null {
+    return setUpFor(state.sshProbes[alias]);
+}
+
+/** What a host row says of the Sikemux found on its SSH host, when that is not running on this host's account. */
+export function sshFoundLabel(probe: SshProbe | undefined): string | null {
+    if (!probe) return null;
+    return ({ signedOut: "not signed in", other: "on another account", stopped: "stopped", outdated: "older release", same: null } as const)[
+        probe.found
+    ];
+}
+
+/** Sets the SSH host `alias` up, once at a time for every place that offers it, then asks it again what it is. */
 export function setUpOverSsh(alias: string, work: SshWork): void {
     if (getState().sshWork[alias]) return;
     setState({ sshWork: { ...getState().sshWork, [alias]: work } });
-    const done =
-        work === "installing"
-            ? signInOverSsh(alias, "host_install", "Install Sikemux")
-            : signInOverSsh(alias, "host_sign_in", "Sign in").then(() => probeSshHost(alias));
-    void done.catch(reportError(work === "installing" ? `Install Sikemux on ${alias}` : `Sign in ${alias}`)).finally(() => {
-        const { [alias]: _, ...others } = getState().sshWork;
-        setState({ sshWork: others });
-    });
+    const run: Record<SshWork, () => Promise<unknown>> = {
+        installing: () => signInOverSsh(alias, "host_install", "Install Sikemux"),
+        "signing in": () => signInOverSsh(alias, "host_sign_in", "Sign in"),
+        starting: () => invoke("host_start", { alias }),
+        updating: () => signInOverSsh(alias, "host_update", "Update Sikemux"),
+    };
+    void run[work]()
+        .then(() => probeSshHost(alias))
+        .catch(reportError(`${SSH_WORK[work].offer} on ${alias}`))
+        .finally(() => {
+            const { [alias]: _, ...others } = getState().sshWork;
+            setState({ sshWork: others });
+        });
 }
 
 /** The Install Sikemux pane for the SSH host `alias`, a tab of its SSH session (ADR 0019). */
