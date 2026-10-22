@@ -11,8 +11,7 @@ use gpui_kit::{
     Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
-use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab, TerminalSpawn};
-use tokio::sync::oneshot;
+use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab};
 
 use crate::drag::DraggedTab;
 use crate::workbench::{Strip, Workbench};
@@ -505,15 +504,13 @@ impl Workbench {
             .or_else(|| first_view(&tab.pane).map(str::to_owned))
     }
 
-    /// A fresh shell in the project's folder beside the view in focus: to its right for a
-    /// row, below it for a column. It takes the shell the core started ahead when it can.
+    /// A fresh shell beside the view in focus: to its right for a row, below it for a column.
+    /// The core picks the shell for the strip, taking one it started ahead when it can.
     pub fn split_front(&mut self, dir: SplitDir, cx: &mut Context<Self>) {
-        let (Some(strip), Some(tab), Some(pane), Some(project)) = (
+        let (Some(strip), Some(tab), Some(pane)) = (
             self.strip(),
             self.tab().map(|tab| tab.id.clone()),
             self.focused_view(),
-            self.project()
-                .map(|project| (project.id.clone(), project.path.clone())),
         ) else {
             return;
         };
@@ -521,38 +518,15 @@ impl Workbench {
             SplitDir::Row => "right",
             SplitDir::Column => "bottom",
         };
-        let asks = self.asks.clone();
+        let shell = crate::core::request(&self.asks, "stripShell", strip.with(json!({})));
         cx.spawn(async move |bench, cx| {
-            let (project, path) = project;
-            let spare =
-                crate::core::request(&asks, "takeSpareShell", json!({ "project": project }))
-                    .await
-                    .ok()
-                    .and_then(|taken| {
-                        serde_json::from_value::<SessionId>(taken["id"].clone()).ok()
-                    });
-            let session = match spare {
-                Some(session) => session,
-                None => {
-                    let (started, session) = oneshot::channel();
-                    let spawn = TerminalSpawn {
-                        cols: 80,
-                        rows: 24,
-                        cwd: Some(path.to_string_lossy().into_owned()),
-                        ..TerminalSpawn::default()
-                    };
-                    let _ = asks.send(crate::core::Ask::Spawn {
-                        spawn: Box::new(spawn),
-                        started,
-                    });
-                    match session.await {
-                        Ok(Ok(session)) => session,
-                        Ok(Err(error)) => {
-                            eprintln!("sikemux: no shell for the split: {error}");
-                            return;
-                        }
-                        Err(_) => return,
-                    }
+            let session = match shell.await.and_then(|shell| {
+                serde_json::from_value::<SessionId>(shell).map_err(|error| error.to_string())
+            }) {
+                Ok(session) => session,
+                Err(error) => {
+                    eprintln!("sikemux: no shell for the split: {error}");
+                    return;
                 }
             };
             let _ = bench.update(cx, |bench, _| {
