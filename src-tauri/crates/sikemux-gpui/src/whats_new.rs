@@ -293,7 +293,9 @@ pub fn render(
     div()
         .id("whats-new-backdrop")
         .key_context("WhatsNew Modal")
-        .when_some(news.focus.as_ref(), |backdrop, focus| backdrop.track_focus(focus))
+        .when_some(news.focus.as_ref(), |backdrop, focus| {
+            backdrop.track_focus(focus)
+        })
         .absolute()
         .inset_0()
         .p(px(24.))

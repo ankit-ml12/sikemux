@@ -9,8 +9,8 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Duration;
 
-use gpui_kit::component::input::{DefinitionProvider, Rope, RopeExt};
 use gpui_kit::component::button::Button;
+use gpui_kit::component::input::{DefinitionProvider, Rope, RopeExt};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, AppContext, Context, Task, Window};
 use lsp_types::{LocationLink, Position, Range, ShowDocumentParams, Uri};
@@ -240,13 +240,16 @@ fn report(
         "{label} needs {bin}. Install it to enable go-to-definition and references."
     ))
     .action(move |_, _, cx| {
-        let (this, language, path, note) = (this.clone(), language.clone(), path.clone(), cx.entity());
+        let (this, language, path, note) =
+            (this.clone(), language.clone(), path.clone(), cx.entity());
         Button::new("lsp-install")
             .label(format!("Install {bin}"))
             .on_click(move |_, window, cx| {
                 note.update(cx, |note, cx| note.dismiss(window, cx));
                 let (language, path) = (language.clone(), path.clone());
-                let _ = this.update(cx, |bench, cx| install(bench, language, bin, path, window, cx));
+                let _ = this.update(cx, |bench, cx| {
+                    install(bench, language, bin, path, window, cx)
+                });
             })
     });
     bench.notify(note, cx);
@@ -262,7 +265,10 @@ fn install(
     cx: &mut Context<Workbench>,
 ) {
     if !bench.editors.lsp_installing.insert(language.clone()) {
-        bench.notify(Notification::info(format!("{bin} install already running")), cx);
+        bench.notify(
+            Notification::info(format!("{bin} install already running")),
+            cx,
+        );
         return;
     }
     bench.notify(Notification::info(format!("Installing {bin}…")), cx);
@@ -274,7 +280,10 @@ fn install(
             match installed {
                 Ok(at) => {
                     bench.editors.lsp_said.clear();
-                    let at = at.as_str().map(|at| format!(" at {at}")).unwrap_or_default();
+                    let at = at
+                        .as_str()
+                        .map(|at| format!(" at {at}"))
+                        .unwrap_or_default();
                     bench.notify(Notification::success(format!("Installed {bin}{at}")), cx);
                     attach(bench, path, window, cx);
                 }
@@ -509,7 +518,11 @@ pub(super) fn navigate(
     let Some(position) = served.hovered.get() else {
         return false;
     };
-    let kind = if references { "references" } else { "implementation" };
+    let kind = if references {
+        "references"
+    } else {
+        "implementation"
+    };
     let mut params = served.document();
     params["line"] = position.line.into();
     params["character"] = position.character.into();

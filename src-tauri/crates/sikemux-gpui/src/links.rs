@@ -28,7 +28,11 @@ fn parse(link: &str) -> Option<Resume> {
     let mut parts = url
         .path_segments()?
         .filter(|part| !part.is_empty())
-        .map(|part| percent_encoding::percent_decode_str(part).decode_utf8_lossy().into_owned());
+        .map(|part| {
+            percent_encoding::percent_decode_str(part)
+                .decode_utf8_lossy()
+                .into_owned()
+        });
     let (provider, session) = (parts.next()?, parts.next()?);
     let project = url
         .query_pairs()
@@ -126,7 +130,8 @@ fn take_up(bench: &mut Workbench, resume: Resume, add: bool, cx: &mut Context<Wo
     cx.spawn(async move |bench, cx| {
         if add {
             if let Err(error) = core::request(&asks, "addProject", json!({ "path": path })).await {
-                let note = Notification::error(format!("The folder did not open as a project: {error}"));
+                let note =
+                    Notification::error(format!("The folder did not open as a project: {error}"));
                 let _ = bench.update(cx, |bench, cx| bench.notify(note, cx));
                 return;
             }

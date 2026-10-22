@@ -1624,7 +1624,11 @@ fn text_size<A: gpui_kit::Action>(
 /// Makes the chats' text bigger or smaller a step, or back to the default size without either.
 pub(crate) fn resize_text(bench: &Workbench, grow: Option<bool>) {
     let scale = grow.map_or(DEFAULT_TEXT_SCALE, |grow| {
-        let step = if grow { TEXT_SCALE_STEP } else { -TEXT_SCALE_STEP };
+        let step = if grow {
+            TEXT_SCALE_STEP
+        } else {
+            -TEXT_SCALE_STEP
+        };
         ((bench.preferences().chat_text_scale + step) * 100.).round() / 100.
     });
     crate::settings::set(

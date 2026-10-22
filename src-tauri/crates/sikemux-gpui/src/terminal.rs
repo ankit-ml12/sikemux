@@ -33,9 +33,9 @@ use crate::core::{Ask, Screenful, TerminalAsk};
 use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
+use crate::send_to::{self, Choice, Recipient};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Menu, MenuItem};
-use crate::send_to::{self, Choice, Recipient};
 use crate::workbench::Workbench;
 
 const PAGE: u64 = 256;
@@ -1714,7 +1714,6 @@ fn send_selection(
     };
     send_to::send(bench, to, text, window, cx);
 }
-
 
 impl RenderOnce for TerminalMenu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {

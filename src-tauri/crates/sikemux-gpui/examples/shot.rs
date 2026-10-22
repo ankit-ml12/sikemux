@@ -386,7 +386,11 @@ fn state(bench: &workbench::Workbench, stack: &[gpui::KeyContext]) -> String {
         .and_then(|context| names(context).into_iter().next());
     let tab = bench.focused_kind().map(|kind| format!("{kind:?}"));
     let tabs = bench.strip().map_or(0, |strip| bench.tabs(&strip).len());
-    let settings = if bench.settings.is_some() { "open" } else { "closed" };
+    let settings = if bench.settings.is_some() {
+        "open"
+    } else {
+        "closed"
+    };
     let shown = |name: Option<String>| name.map_or_else(|| "none".to_owned(), |name| kebab(&name));
     let host = bench.chosen_host().key();
     let asking = ["trust", "host-trust"].iter().any(|key| {
