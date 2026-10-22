@@ -1,7 +1,8 @@
 //! Asks over the whole window whether a phone waiting to connect may, or another host on the
 //! account asking to link, the one that has waited longest first, since each gives up after two
 //! minutes. One that starts waiting while Sikemux is in the background is announced with a
-//! notification and a bounce.
+//! notification and a bounce. Right after signing in, it first asks once about every phone
+//! already on the account, as the Mac does.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -13,7 +14,8 @@ use gpui_kit::{
     Window,
 };
 use serde_json::json;
-use sikemux_wire::protocol::{DeviceAccess, PendingDevice};
+use serde_json::Value;
+use sikemux_wire::protocol::{AllowedDevice, DeviceAccess, PendingDevice};
 
 use crate::core::{Ask, RemoteAsk};
 use crate::icons::Icon;
@@ -39,6 +41,8 @@ pub fn install(cx: &mut App) {
 pub struct Pairing {
     access: DeviceAccess,
     links: Vec<PendingDevice>,
+    /// The phones on the account this host has not paired, asked about once after signing in.
+    phones: Vec<AllowedDevice>,
     announced: HashSet<String>,
     ticking: bool,
     focus: FocusHandle,
@@ -49,6 +53,7 @@ impl Pairing {
         Self {
             access: DeviceAccess::Full,
             links: Vec::new(),
+            phones: Vec::new(),
             announced: HashSet::new(),
             ticking: false,
             focus: cx.focus_handle(),
@@ -75,7 +80,7 @@ impl Asker {
     /// What the question says, on two lines.
     fn lines(self, name: &str) -> (String, &'static str) {
         match self {
-            Asker::Phone => (format!("{name} wants to connect"), "to this computer"),
+            Asker::Phone => (format!("{name} wants to connect"), "to this host"),
             Asker::Host => (format!("{name} wants to link"), "with this host"),
         }
     }
@@ -84,7 +89,7 @@ impl Asker {
     fn notice(self, name: &str) -> (String, &'static str) {
         match self {
             Asker::Phone => (
-                format!("{name} wants to connect to this computer"),
+                format!("{name} wants to connect to this host"),
                 "It is signed in to your Sikemux account. Allow or decline it in Sikemux.",
             ),
             Asker::Host => (
@@ -111,9 +116,9 @@ const ACCESS: [(DeviceAccess, Icon, &str, &str); 2] = [
 ];
 
 impl Workbench {
-    /// Whether a phone or host waits on the person's answer.
+    /// Whether a phone or host waits on the person's answer, or the account's phones do.
     pub(crate) fn someone_waits(&self) -> bool {
-        self.waiting().is_some()
+        !self.pairing.phones.is_empty() || self.waiting().is_some()
     }
 
     /// Every phone and host waiting, as the person would be asked about them.
@@ -139,6 +144,9 @@ impl Workbench {
     }
 
     fn answer_pairing(&mut self, allow: bool, cx: &mut Context<Self>) {
+        if !self.pairing.phones.is_empty() {
+            return self.answer_account_phones(allow, cx);
+        }
         let Some((asker, id)) = self
             .waiting()
             .map(|(asker, request)| (asker, request.id.clone()))
@@ -156,6 +164,69 @@ impl Workbench {
             .send(Ask::Remote(RemoteAsk::Answer { id, allow, access }));
         self.parts.redraw(&self.parts.over, cx);
     }
+}
+
+impl Workbench {
+    /// Lets every phone on the account connect, or declines only those already waiting, as the
+    /// Mac does: the others can still ask later.
+    fn answer_account_phones(&mut self, allow: bool, cx: &mut Context<Self>) {
+        let access = std::mem::replace(&mut self.pairing.access, DeviceAccess::Full);
+        let mut phones = std::mem::take(&mut self.pairing.phones);
+        if allow {
+            for phone in &mut phones {
+                phone.access = access;
+            }
+            let _ = self.asks.send(Ask::Remote(RemoteAsk::Allow(phones)));
+        } else {
+            let waiting: Vec<String> = self
+                .remote
+                .iter()
+                .flat_map(|remote| &remote.pending)
+                .filter(|request| phones.iter().any(|phone| phone.id == request.device_id))
+                .map(|request| request.id.clone())
+                .collect();
+            for id in waiting {
+                let answer = RemoteAsk::Answer {
+                    id,
+                    allow: false,
+                    access,
+                };
+                let _ = self.asks.send(Ask::Remote(answer));
+            }
+        }
+        self.parts.redraw(&self.parts.over, cx);
+        cx.notify();
+    }
+}
+
+/// Right after signing in, reads the phones already on the account that this host has not
+/// paired, to ask about them all at once.
+pub fn offer_account_phones(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let asked = crate::core::request(&bench.asks, "accountPhones", json!({}));
+    cx.spawn(async move |bench, cx| {
+        let Ok(found) = asked.await else {
+            return;
+        };
+        let text = |phone: &Value, key: &str| phone[key].as_str().unwrap_or_default().to_owned();
+        let phones: Vec<AllowedDevice> = found
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|phone| AllowedDevice {
+                id: text(phone, "key"),
+                name: text(phone, "name"),
+                platform: text(phone, "platform"),
+                access: DeviceAccess::Full,
+            })
+            .filter(|phone| !phone.id.is_empty())
+            .collect();
+        let _ = bench.update(cx, |bench, cx| {
+            bench.pairing.phones = phones;
+            bench.parts.redraw(&bench.parts.over, cx);
+            cx.notify();
+        });
+    })
+    .detach();
 }
 
 /// Hears what the core says of phones waiting, and reads again which hosts ask to link.
@@ -234,15 +305,44 @@ pub fn overlay(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let (asker, request) = bench.waiting()?;
-    let host = asker == Asker::Host;
+    let phones = &bench.pairing.phones;
+    let waiting = bench.waiting();
+    if phones.is_empty() && waiting.is_none() {
+        return None;
+    }
+    let host = phones.is_empty() && waiting.is_some_and(|(asker, _)| asker == Asker::Host);
     let t = Tokens::get(cx).clone();
     if !bench.pairing.focus.is_focused(window) {
         cx.defer_in(window, |bench, window, cx| {
             bench.pairing.focus.focus(window, cx)
         });
     }
-    let (first, second) = asker.lines(&asker.name(request));
+    let (first, second) = match (phones.as_slice(), waiting) {
+        ([], Some((asker, request))) => asker.lines(&asker.name(request)),
+        (phones, _) => {
+            let who = match phones {
+                [one] if !one.name.is_empty() => one.name.clone(),
+                [_] => "your phone".to_owned(),
+                many => format!("your {} phones", many.len()),
+            };
+            (format!("Let {who} connect"), "to this host?")
+        }
+    };
+    let names = (phones.len() > 1).then(|| {
+        phones
+            .iter()
+            .map(|phone| phone.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" · ")
+    });
+    let waits_for = waiting
+        .filter(|_| phones.is_empty())
+        .map(|(_, request)| waits(request.expires_at));
+    let decline = if phones.is_empty() {
+        "Decline"
+    } else {
+        "Not now"
+    };
     let account = bench
         .view
         .as_ref()
@@ -319,6 +419,12 @@ pub fn overlay(
                 .child(first)
                 .child(div().child(second)),
         )
+        .children(names.map(|names| {
+            div()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_secondary)
+                .child(names)
+        }))
         .when(host, |column| {
             column.child(
                 div()
@@ -341,13 +447,9 @@ pub fn overlay(
                 .flex()
                 .items_center()
                 .gap(px(10.))
-                .child(ui::mono(
-                    format!("waits {}", waits(request.expires_at)),
-                    11.,
-                    cx,
-                ))
+                .children(waits_for.map(|left| ui::mono(format!("waits {left}"), 11., cx)))
                 .child(
-                    Button::new("pairing-decline", "Decline", Variant::Outline)
+                    Button::new("pairing-decline", decline, Variant::Outline)
                         .on_click(cx.listener(|bench, _, _, cx| bench.answer_pairing(false, cx))),
                 )
                 .child(
@@ -359,7 +461,7 @@ pub fn overlay(
             div()
                 .flex()
                 .gap(px(16.))
-                .child(hint("esc", "Decline"))
+                .child(hint("esc", decline))
                 .when(!host, |hints| hints.child(hint("↑↓", "Choose access")))
                 .child(hint("↵", "Allow")),
         );

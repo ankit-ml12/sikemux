@@ -798,7 +798,10 @@ impl Workbench {
                 }
                 None => self.signing_in = false,
             },
-            Update::Read("sign-in-finished", _) => self.signing_in = false,
+            Update::Read("sign-in-finished", _) => {
+                self.signing_in = false;
+                crate::pairing::offer_account_phones(self, cx);
+            }
             Update::Failed(error) => {
                 return self.notify(Notification::error(error).autohide(false), cx);
             }

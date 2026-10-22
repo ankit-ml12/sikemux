@@ -280,6 +280,8 @@ pub enum RemoteAsk {
         allow: bool,
         access: DeviceAccess,
     },
+    /// Lets the account's phones connect before they ask.
+    Allow(Vec<sikemux_wire::protocol::AllowedDevice>),
 }
 
 pub enum ChatAsk {
@@ -1230,6 +1232,7 @@ async fn run(
                                         RemoteAsk::Access { device, access } => client.set_device_access(device, access).await,
                                         RemoteAsk::Revoke(device) => client.revoke_device(device).await,
                                         RemoteAsk::Answer { id, allow, access } => client.answer_pairing(id, allow, access).await,
+                                        RemoteAsk::Allow(devices) => client.allow_devices(devices).await,
                                     };
                                     let _ = updates.send(match status {
                                         Ok(status) => Update::Remote(Box::new(status)),
