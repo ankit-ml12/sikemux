@@ -1,7 +1,7 @@
 //! The editor's tab: a file read and saved through the core, edited on Kit's
 //! code editor, and opened from anywhere at a line.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -132,6 +132,10 @@ pub struct Editors {
     insights: insights::Insights,
     /// Files that are not text, shown for what they are.
     viewers: HashMap<FileKey, viewer::Viewer>,
+    /// What language servers failed with that the person was told, so each is said once.
+    lsp_said: HashSet<String>,
+    /// Languages whose server the core is installing.
+    lsp_installing: HashSet<String>,
     copies: copies::Copies,
 }
 

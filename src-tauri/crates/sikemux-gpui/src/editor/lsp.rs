@@ -10,6 +10,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use gpui_kit::component::input::{DefinitionProvider, Rope, RopeExt};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, AppContext, Context, Task, Window};
 use lsp_types::{LocationLink, Position, Range, ShowDocumentParams, Uri};
@@ -31,6 +32,10 @@ const KINDS: [&str; 4] = [
     "typeDefinition",
     "implementation",
 ];
+
+/// Language servers the core installs with Homebrew: the language, its program and its name.
+const INSTALLABLE: [(&str, &str, &str); 2] =
+    [("go", "gopls", "Go LSP"), ("java", "jdtls", "Java LSP")];
 
 /// A file open with a language server, named as the core keeps it.
 pub(super) struct Served {
@@ -129,7 +134,7 @@ fn attach_trusted(
         }
         let started = json!({ "project": project, "language": language });
         if let Err(error) = core::request(&asks, "lsp.start", started).await {
-            eprintln!("sikemux: the {language} language server did not start: {error}");
+            let _ = bench.update(cx, |bench, cx| report(bench, &language, error, path, cx));
             return;
         }
         let Ok(Some(content)) = bench.update(cx, |bench, cx| {
@@ -150,7 +155,7 @@ fn attach_trusted(
             "languageId": language_id,
         });
         if let Err(error) = core::request(&asks, "lsp.open", opened).await {
-            eprintln!("sikemux: {name} did not open with its language server: {error}");
+            let _ = bench.update(cx, |bench, cx| report(bench, &language, error, path, cx));
             return;
         }
         let _ = bench.update(cx, |bench, cx| {
@@ -201,6 +206,83 @@ fn attach_trusted(
                 ));
             });
             document.served = Some(served);
+        });
+    })
+    .detach();
+}
+
+/// Says once why the file at `path` did not open with its language server, as the Mac does,
+/// offering to install a missing server the core knows how to.
+fn report(
+    bench: &mut Workbench,
+    language: &str,
+    error: String,
+    path: PathBuf,
+    cx: &mut Context<Workbench>,
+) {
+    if !bench.editors.lsp_said.insert(format!("{language}:{error}")) {
+        return;
+    }
+    let missing = INSTALLABLE.into_iter().find(|(name, bin, _)| {
+        *name == language
+            && error.starts_with("lsp-server-missing:")
+            && error.contains(&format!("`{bin}`"))
+    });
+    let Some((_, bin, label)) = missing else {
+        bench.notify(
+            Notification::error(format!("LSP {language} open: {error}")),
+            cx,
+        );
+        return;
+    };
+    let (this, language) = (cx.weak_entity(), language.to_owned());
+    let note = Notification::error(format!(
+        "{label} needs {bin}. Install it to enable go-to-definition and references."
+    ))
+    .action(move |_, _, cx| {
+        let (this, language, path, note) = (this.clone(), language.clone(), path.clone(), cx.entity());
+        Button::new("lsp-install")
+            .label(format!("Install {bin}"))
+            .on_click(move |_, window, cx| {
+                note.update(cx, |note, cx| note.dismiss(window, cx));
+                let (language, path) = (language.clone(), path.clone());
+                let _ = this.update(cx, |bench, cx| install(bench, language, bin, path, window, cx));
+            })
+    });
+    bench.notify(note, cx);
+}
+
+/// Has the core install the language's server, then opens the file with it again.
+fn install(
+    bench: &mut Workbench,
+    language: String,
+    bin: &'static str,
+    path: PathBuf,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    if !bench.editors.lsp_installing.insert(language.clone()) {
+        bench.notify(Notification::info(format!("{bin} install already running")), cx);
+        return;
+    }
+    bench.notify(Notification::info(format!("Installing {bin}…")), cx);
+    let asked = core::request(&bench.asks, "lsp.install", json!({ "language": language }));
+    cx.spawn_in(window, async move |bench, cx| {
+        let installed = asked.await;
+        let _ = bench.update_in(cx, |bench, window, cx| {
+            bench.editors.lsp_installing.remove(&language);
+            match installed {
+                Ok(at) => {
+                    bench.editors.lsp_said.clear();
+                    let at = at.as_str().map(|at| format!(" at {at}")).unwrap_or_default();
+                    bench.notify(Notification::success(format!("Installed {bin}{at}")), cx);
+                    attach(bench, path, window, cx);
+                }
+                Err(error) => bench.notify(
+                    Notification::error(format!("{bin} install failed: {error}")),
+                    cx,
+                ),
+            }
         });
     })
     .detach();
