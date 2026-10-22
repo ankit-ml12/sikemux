@@ -67,7 +67,7 @@ const ACCESS: [(DeviceAccess, Icon, &str, &str); 2] = [
 ];
 
 impl Workbench {
-    fn waiting_phone(&self) -> Option<&PendingDevice> {
+    pub(crate) fn waiting_phone(&self) -> Option<&PendingDevice> {
         self.remote
             .as_ref()?
             .pending

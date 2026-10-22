@@ -104,8 +104,9 @@ fn close_shown(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     }
 }
 
-fn redraw(bench: &Workbench, cx: &mut Context<Workbench>) {
-    bench.parts.redraw(&bench.parts.over, cx);
+/// Opening or closing one mounts or drops the part over the shell, which only the shell decides.
+fn redraw(_: &Workbench, cx: &mut Context<Workbench>) {
+    cx.notify();
 }
 
 /// What the part over the shell draws.

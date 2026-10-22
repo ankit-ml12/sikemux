@@ -118,7 +118,10 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
                     sikemux_browser::page_view::PageEvent::Wheel(delta) => {
                         let _ = bench.update(cx, |bench, cx| {
                             if let Some(chat) = bench.chats.get(&agent) {
-                                chat.transcript.read(cx).list().scroll_by(px(delta as f32));
+                                chat.transcript.update(cx, |transcript, cx| {
+                                    transcript.list().scroll_by(px(delta as f32));
+                                    cx.notify();
+                                });
                             }
                         });
                     }

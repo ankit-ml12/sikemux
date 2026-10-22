@@ -13,8 +13,8 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, DragMoveEvent, Entity,
-    EventEmitter, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
+    FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
     WeakEntity, Window,
 };
 use serde_json::{json, Value};
@@ -662,7 +662,7 @@ impl Workbench {
                 let already = self.read("update").is_some_and(ready);
                 let now = ready(&value);
                 self.reads.insert("update", value);
-                if self.experience.is_some() {
+                if self.over_shown() {
                     self.parts.redraw(&self.parts.over, cx);
                 }
                 if now && !already {
@@ -844,7 +844,6 @@ impl Workbench {
                 }
                 if topic == "git" {
                     crate::editor::git_changed(self, paths.as_deref(), cx);
-                    cx.emit(crate::git::Changed { project, paths });
                 }
                 return;
             }
@@ -1417,6 +1416,12 @@ impl Workbench {
             ));
         }
         self.picture_hash = hash;
+    }
+
+    /// Whether anything is over the whole window: a phone waiting to pair, a command's terminal,
+    /// or the welcome, the release notes or runtime diagnostics.
+    fn over_shown(&self) -> bool {
+        self.experience.is_some() || self.command_popup.is_some() || self.waiting_phone().is_some()
     }
 
     /// The clock moves each minute, and a run's time each second while it goes.
@@ -2677,8 +2682,6 @@ impl Workbench {
     }
 }
 
-impl EventEmitter<crate::git::Changed> for Workbench {}
-
 /// The picture `accountPicture` answers with: its type, and its bytes in base64.
 fn decode_picture(value: &Value) -> Option<Arc<Image>> {
     crate::picture::decode(value["mime"].as_str()?, value["data"].as_str()?)
@@ -3118,7 +3121,7 @@ impl Render for Workbench {
                     )
                 },
             )
-            .when(self.experience.is_some(), |shell| {
+            .when(self.over_shown(), |shell| {
                 shell.child(
                     parts
                         .over

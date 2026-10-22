@@ -88,14 +88,6 @@ pub fn file_at(
     }
 }
 
-/// Something in a repository moved: in `project`, or anywhere when none, and in `paths`
-/// from its root, or anything when none. `.git` in `paths` stands for the repository's
-/// own state, such as its HEAD and index.
-pub struct Changed {
-    pub project: Option<String>,
-    pub paths: Option<Vec<String>>,
-}
-
 /// Which file a diff compares, and between what.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Compared {
