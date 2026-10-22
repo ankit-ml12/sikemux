@@ -27,20 +27,51 @@ pub const TAB_RAIL: RailWidth = RailWidth {
 };
 
 pub fn tab_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let width = bench.rail_width(Edge::End);
-    crate::track::rail(bench, width, |page, cx| page_panel(bench, page, cx), cx)
+    let frame = bench.rail_frame.clone();
+    ui::panel(cx)
+        .relative()
+        .w(px(bench.rail_width(Edge::End)))
+        .flex_none()
+        .child(
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, _, _| {
+                    frame.set(
+                        [
+                            bounds.left(),
+                            bounds.top(),
+                            bounds.size.width,
+                            bounds.size.height,
+                        ]
+                        .map(f32::from),
+                    )
+                },
+            )
+            .absolute()
+            .size_full(),
+        )
+        .child(crate::track::rail(
+            bench,
+            |page, cx| page_panel(bench, page, cx),
+            cx,
+        ))
+        .child(pages(bench, cx))
+        .into_any_element()
+}
+
+/// What one of the rail's pages holds; the rail's frame and its page switch stay put while
+/// the pages slide inside it.
+fn page_body() -> gpui_kit::Div {
+    div().size_full().flex().flex_col().overflow_hidden()
 }
 
 /// One of the tab rail's pages, whole.
 fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) -> AnyElement {
     match page {
         RailPage::Files => {
-            return ui::panel(cx)
-                .w(px(bench.rail_width(Edge::End)))
-                .flex_none()
+            return page_body()
                 .child(page_header("Files", cx))
                 .child(crate::files::page(bench, cx))
-                .child(pages(bench, cx))
                 .into_any_element();
         }
         RailPage::Terminals => return terminals_page(bench, cx),
@@ -111,9 +142,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
             )
         }
     });
-    ui::panel(cx)
-        .w(px(bench.rail_width(Edge::End)))
-        .flex_none()
+    page_body()
         .child(header(bench, cx))
         .children(bench.filter.as_ref().map(|filter| {
             div()
@@ -175,7 +204,6 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 }),
         )
         .children(limits(bench, cx))
-        .child(pages(bench, cx))
         .into_any_element()
 }
 
@@ -1275,9 +1303,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
             )
         }
     });
-    ui::panel(cx)
-        .w(px(bench.rail_width(Edge::End)))
-        .flex_none()
+    page_body()
         .child(page_header("Terminals", cx))
         .child(
             div()
@@ -1308,7 +1334,6 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
         )
-        .child(pages(bench, cx))
         .into_any_element()
 }
 
@@ -1372,9 +1397,7 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
             cx,
         )
     });
-    ui::panel(cx)
-        .w(px(bench.rail_width(Edge::End)))
-        .flex_none()
+    page_body()
         .child(page_header(alias.clone(), cx))
         .child(
             div()
@@ -1414,7 +1437,6 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
         )
-        .child(pages(bench, cx))
         .into_any_element()
 }
 

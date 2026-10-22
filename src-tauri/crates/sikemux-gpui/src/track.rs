@@ -329,7 +329,6 @@ pub fn stage(
 /// The tab rail's pages: the one shown, with the one beside it while they move.
 pub fn rail(
     bench: &Workbench,
-    width: f32,
     page: impl Fn(RailPage, &mut Context<Workbench>) -> AnyElement,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
@@ -350,9 +349,9 @@ pub fn rail(
     div()
         .id(SharedString::from("rail-track"))
         .relative()
-        .flex_none()
-        .w(gpui_kit::px(width))
-        .h_full()
+        .flex_1()
+        .min_h_0()
+        .w_full()
         .overflow_hidden()
         .child(listener(&bench.rail_slide.width, move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_rail(event, cx))
