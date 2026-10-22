@@ -100,6 +100,7 @@ pub struct Style {
     pub image: Option<DrawImage>,
     /// Level-two headings lead with their number, `01` and on, in the accent's mono face.
     pub numbered_sections: bool,
+    pub italic: bool,
 }
 
 impl Style {
@@ -149,6 +150,7 @@ impl Default for Style {
             code: None,
             image: None,
             numbered_sections: false,
+            italic: false,
         }
     }
 }
@@ -235,6 +237,7 @@ impl Pen {
             .gap(style.gap)
             .min_w_0()
             .font_family(style.font.clone())
+            .when(style.italic, |root| root.italic())
             .text_size(style.text_size)
             .line_height(relative(style.line_height))
             .text_color(style.ink);

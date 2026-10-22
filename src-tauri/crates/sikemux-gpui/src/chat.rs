@@ -3353,6 +3353,7 @@ impl Looks {
         let thought = Style {
             text_size: px(12.5),
             ink: t.text_disabled,
+            italic: true,
             ..text.clone()
         };
         let user = Style {
