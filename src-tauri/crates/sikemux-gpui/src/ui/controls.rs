@@ -347,6 +347,7 @@ pub struct Segmented {
     options: Vec<(Option<Icon>, SharedString, Option<u64>)>,
     selected: usize,
     pill: bool,
+    fill: bool,
     on_select: Option<OnSelect>,
     /// Why it cannot be changed now, shown over it; none while it can.
     disabled: Option<SharedString>,
@@ -367,6 +368,7 @@ impl Segmented {
             options,
             selected,
             pill: false,
+            fill: false,
             on_select: None,
             disabled: None,
         }
@@ -387,9 +389,16 @@ impl Segmented {
             options,
             selected,
             pill: false,
+            fill: false,
             on_select: None,
             disabled: None,
         }
+    }
+
+    /// Spans the width it is given, its choices sharing it, as a side panel's segment does.
+    pub fn fill(mut self) -> Self {
+        self.fill = true;
+        self
     }
 
     /// The round, borderless switch in a pane's header, as GUI and TUI.
@@ -413,10 +422,11 @@ impl RenderOnce for Segmented {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let on_select = self.on_select.filter(|_| self.disabled.is_none());
-        let pill = self.pill;
+        let (pill, fill) = (self.pill, self.fill);
         div()
             .id(self.id)
             .flex()
+            .when(fill, |track| track.w_full())
             .when_some(self.disabled, |track, reason| {
                 track.opacity(0.5).tooltip(super::tooltip(reason))
             })
@@ -443,7 +453,7 @@ impl RenderOnce for Segmented {
                             .group(GROUP)
                             .selected(chosen)
                             .accessibility_label(label.clone())
-                            .when(!pill && glyph.is_some(), |segment| {
+                            .when(fill || (!pill && glyph.is_some()), |segment| {
                                 segment.flex_1().min_w_0()
                             })
                             .h_full()

@@ -196,7 +196,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                 .child(super::shell::account(area, cx)),
         )
         .child(
-            div().px(px(10.)).pb(px(8.)).child(
+            div().px(px(8.)).pb(px(8.)).child(
                 Segmented::words(
                     "release-kinds",
                     KINDS
@@ -205,6 +205,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                         .collect(),
                     releases.kind,
                 )
+                .fill()
                 .on_select(cx.listener(|area, index: &usize, _, cx| {
                     area.releases.kind = *index;
                     cx.notify();

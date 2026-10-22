@@ -700,7 +700,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
     let attempts = (ci.attempts && found.attempts > 1).then(|| {
         let latest = found.attempts;
         let shown = opened.attempt.unwrap_or(latest);
-        div().px(px(10.)).pb(px(8.)).child(
+        div().px(px(8.)).pb(px(8.)).child(
             Segmented::words(
                 "run-attempts",
                 (1..=latest)
@@ -708,6 +708,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                     .collect(),
                 (shown - 1) as usize,
             )
+            .fill()
             .on_select(cx.listener(move |area, index: &usize, _, cx| {
                 let attempt = *index as u64 + 1;
                 if let Some(opened) = &mut area.runs.open {
