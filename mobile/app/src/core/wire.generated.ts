@@ -672,6 +672,11 @@ export interface Layout {
   terminals?: ProjectLayout;
   /** Whether the terminals' strip is in front instead of a project or host. */
   terminalsInFront?: boolean;
+  /**
+   * The account's other host the person is on, by its key, whose own projects and tabs
+   * are shown instead of this host's; none while they are on this host or an SSH host.
+   */
+  chosenHost?: string;
 }
 
 export interface ProjectLayout {
