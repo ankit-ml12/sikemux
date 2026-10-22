@@ -2949,6 +2949,14 @@ fn row(
         .into_iter()
         .enumerate()
         .map(|(at, group)| match group {
+            Shown::Part(ChatPart::Notice { notice, .. })
+                if let Some(card) = notice
+                    .subagent
+                    .as_deref()
+                    .and_then(|session| card_of(rows, session)) =>
+            {
+                self::subagent(card, pen, looks, window, cx)
+            }
             Shown::Part(part) => self::part(row, part, user, pen, looks, window, cx),
             Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks),
         })
@@ -3273,6 +3281,17 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
         .child(div().flex().child(toggle))
         .child(div().h(px(1.)).bg(looks.rule))
         .into_any_element()
+}
+
+/// The card of the subagent running in `session`, as the chat last showed it; a subagent's
+/// notice shows its card rather than a notice of its own.
+fn card_of<'a>(rows: &'a [ChatRow], session: &str) -> Option<&'a SubagentCard> {
+    rows.iter().rev().find_map(|row| {
+        row.message.parts.iter().find_map(|part| match part {
+            ChatPart::Subagent { subagent, .. } if subagent.session_id == session => Some(subagent),
+            _ => None,
+        })
+    })
 }
 
 /// The box something said beside the reply sits in: a background task that ended, a notice
