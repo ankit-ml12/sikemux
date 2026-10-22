@@ -3468,6 +3468,13 @@ impl Render for Workbench {
                 cx.notify();
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
+            .on_action(cx.listener(|bench, _: &TextSizeIncrease, _, _| {
+                bench.resize_front_text(Some(true))
+            }))
+            .on_action(cx.listener(|bench, _: &TextSizeDecrease, _, _| {
+                bench.resize_front_text(Some(false))
+            }))
+            .on_action(cx.listener(|bench, _: &TextSizeReset, _, _| bench.resize_front_text(None)))
             .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
             .on_action(cx.listener(|bench, open: &OpenArea, _, cx| bench.open_area(open.area, cx)))
             .on_action(

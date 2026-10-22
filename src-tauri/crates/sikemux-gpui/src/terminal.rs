@@ -582,12 +582,12 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         )
         .on_action(
             window.listener_for(&this, |bench, _: &TextSizeIncrease, _, _| {
-                resize_text(bench, Some(1))
+                resize_text(bench, Some(true))
             }),
         )
         .on_action(
             window.listener_for(&this, |bench, _: &TextSizeDecrease, _, _| {
-                resize_text(bench, Some(-1))
+                resize_text(bench, Some(false))
             }),
         )
         .on_action(
@@ -1590,12 +1590,12 @@ fn font_size(bench: &Workbench) -> u32 {
         .map_or(DEFAULT_TERMINAL_FONT_SIZE, |size| size as u32)
 }
 
-/// Makes the terminals' text bigger or smaller by `step`, or back to the
-/// default size without one.
-fn resize_text(bench: &Workbench, step: Option<i32>) {
-    let size = step.map_or(DEFAULT_TERMINAL_FONT_SIZE, |step| {
+/// Makes the terminals' text bigger or smaller a step, or back to the default size without
+/// either.
+pub(crate) fn resize_text(bench: &Workbench, grow: Option<bool>) {
+    let size = grow.map_or(DEFAULT_TERMINAL_FONT_SIZE, |grow| {
         font_size(bench)
-            .saturating_add_signed(step)
+            .saturating_add_signed(if grow { 1 } else { -1 })
             .clamp(MIN_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE)
     });
     let _ = bench.asks.send(Ask::Call {

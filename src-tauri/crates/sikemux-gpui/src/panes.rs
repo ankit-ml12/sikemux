@@ -612,6 +612,25 @@ impl Workbench {
             .or_else(|| first_view(&tab.pane).map(str::to_owned))
     }
 
+    /// What the view in focus in the tab in front shows, else its first.
+    pub(crate) fn focused_kind(&self) -> Option<PaneKind> {
+        let tab = self.tab()?;
+        match view_in(&tab.pane, &self.focused_view()?)? {
+            Pane::View { kind, .. } => Some(*kind),
+            Pane::Split { .. } => None,
+        }
+    }
+
+    /// A text size key that no chat, editor or terminal in focus took sizes the text of the
+    /// view in front, as on the Mac, and the terminals' when that is neither a chat nor an editor.
+    pub(crate) fn resize_front_text(&self, grow: Option<bool>) {
+        match self.focused_kind() {
+            Some(PaneKind::Agent) => crate::chat::resize_text(self, grow),
+            Some(PaneKind::Files) => crate::editor::resize_text(self, grow),
+            _ => crate::terminal::resize_text(self, grow),
+        }
+    }
+
     /// A fresh shell beside the view in focus, which takes the focus: to its right for a row,
     /// below it for a column, or behind it for a stack, where it comes in front.
     /// The core picks the shell for the strip, taking one it started ahead when it can.

@@ -1600,8 +1600,8 @@ pub fn pane(
                     .ok();
             }
         })
-        .on_action(text_size::<TextSizeIncrease>(&this, Some(TEXT_SCALE_STEP)))
-        .on_action(text_size::<TextSizeDecrease>(&this, Some(-TEXT_SCALE_STEP)))
+        .on_action(text_size::<TextSizeIncrease>(&this, Some(true)))
+        .on_action(text_size::<TextSizeDecrease>(&this, Some(false)))
         .on_action(text_size::<TextSizeReset>(&this, None))
         .child(pane)
 }
@@ -1613,22 +1613,25 @@ const TEXT_SCALE_STEP: f64 = 0.1;
 /// one, for every chat.
 fn text_size<A: gpui_kit::Action>(
     this: &WeakEntity<Workbench>,
-    step: Option<f64>,
+    grow: Option<bool>,
 ) -> impl Fn(&A, &mut Window, &mut App) + use<A> {
     let this = this.clone();
     move |_, _, cx| {
-        this.update(cx, |bench, _| {
-            let scale = step.map_or(DEFAULT_TEXT_SCALE, |step| {
-                ((bench.preferences().chat_text_scale + step) * 100.).round() / 100.
-            });
-            crate::settings::set(
-                bench,
-                "chatTextScale",
-                scale.clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE),
-            );
-        })
-        .ok();
+        this.update(cx, |bench, _| resize_text(bench, grow)).ok();
     }
+}
+
+/// Makes the chats' text bigger or smaller a step, or back to the default size without either.
+pub(crate) fn resize_text(bench: &Workbench, grow: Option<bool>) {
+    let scale = grow.map_or(DEFAULT_TEXT_SCALE, |grow| {
+        let step = if grow { TEXT_SCALE_STEP } else { -TEXT_SCALE_STEP };
+        ((bench.preferences().chat_text_scale + step) * 100.).round() / 100.
+    });
+    crate::settings::set(
+        bench,
+        "chatTextScale",
+        scale.clamp(MIN_TEXT_SCALE, MAX_TEXT_SCALE),
+    );
 }
 
 /// The composer's mic: it listens and then types what was said, and the first click turns

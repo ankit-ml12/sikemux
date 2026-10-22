@@ -1275,6 +1275,14 @@ fn text_scale(bench: &Workbench) -> f64 {
 }
 
 /// Makes the editors' text bigger or smaller by `step`, or back to its size without one.
+/// Makes the editors' text bigger or smaller a step, or back to the default size without either.
+pub(crate) fn resize_text(bench: &Workbench, grow: Option<bool>) {
+    rescale(
+        bench,
+        grow.map(|grow| if grow { TEXT_SCALE_STEP } else { -TEXT_SCALE_STEP }),
+    );
+}
+
 fn rescale(bench: &Workbench, step: Option<f64>) {
     let scale = step.map_or(DEFAULT_TEXT_SCALE, |step| {
         ((text_scale(bench) + step) * 10.).round() / 10.
