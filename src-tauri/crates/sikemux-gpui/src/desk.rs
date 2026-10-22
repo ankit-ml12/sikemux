@@ -1175,7 +1175,7 @@ pub fn pane(
                 } else {
                     t.text_secondary
                 })
-                .children(ui::spot(|| format!("desk-page-{}", page.title)))
+                .children(ui::spot(|| format!("desk-page-{agent}-{}", page.title)))
                 .on_click(cx.listener(move |bench, _, _, cx| {
                     bench.desks.front.remove(&switch_agent);
                     bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
@@ -1247,7 +1247,7 @@ pub fn pane(
                 } else {
                     t.text_secondary
                 })
-                .children(ui::spot(|| format!("desk-item-{label}")))
+                .children(ui::spot(|| format!("desk-item-{agent}-{label}")))
                 .on_click(cx.listener(move |bench, _, _, cx| {
                     bench
                         .desks

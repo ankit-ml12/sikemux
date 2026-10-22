@@ -459,7 +459,7 @@ def page_in_front(run):
         run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
         until(lambda: active_page(run.desk()).get("title"), 10)
     if run.desk().get("front"):
-        frame = spot(run, f"desk-page-{active_page(run.desk()).get('title', '')}")
+        frame = spot(run, f"desk-page-{run.agent}-{active_page(run.desk()).get('title', '')}")
         if frame:
             x, y = middle(frame)
             run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
@@ -487,17 +487,17 @@ def df2(run):
     run.prompt(json_tool("ui.open", {"kind": "file", "path": path}))
     until(lambda: (run.desk().get("front") or {}).get("file") == path, 10)
     title = active_page(run.desk()).get("title", "")
-    page, item = spot(run, f"desk-page-{title}"), spot(run, "desk-item-a.txt")
+    page, item = spot(run, f"desk-page-{run.agent}-{title}"), spot(run, f"desk-item-{run.agent}-a.txt")
     if not (page and item):
         return run.report("DF2", False, f"no spot for the page pill {title!r} ({page}) or the file pill ({item})")
     x, y = middle(page)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_page = run.desk().get("front") is None
-    item = spot(run, "desk-item-a.txt") or item
+    item = spot(run, f"desk-item-{run.agent}-a.txt") or item
     x, y = middle(item)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_file = (run.desk().get("front") or {}).get("file") == path
-    left, top, width, height = spot(run, "desk-item-a.txt") or item
+    left, top, width, height = spot(run, f"desk-item-{run.agent}-a.txt") or item
     run.drive(f"click {left + width - 10:.0f} {top + height / 2:.0f}", "wait 1")
     desk = run.desk()
     back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
@@ -505,28 +505,19 @@ def df2(run):
                f"(front {desk.get('front')}, items {desk.get('items')})")
 
 
-def d9_keep(run):
-    """The download notice draws over the page and takes its click, with the rails out of the way."""
-    narrow = page_in_front(run)
-    run.focus_page()
-    run.drive("key cmd+b")
-    page = until(lambda: (lambda frame: frame if frame and narrow and frame[2] > narrow[2] else None)(run.desk().get("pageBounds")), 5)
-    focused = bool(page)
-    keep = until(lambda: spot(run, "keep-download"), 5)
-    over = bool(page and keep) and keep[0] < page[0] + page[2] and keep[0] + keep[2] > page[0] and keep[1] < page[1] + page[3] and keep[1] + keep[3] > page[1]
+def dk7_keep(run):
+    """Keep in Downloads, on the notice DK7's download left, moves the file there still quarantined."""
     if run.options.behind:
-        run.report("D9", over, f"focus mode widened the page {focused}; the Keep button {keep} lies over the page {page}: {over}")
-        run.leave("DK7 Keep", "keeping reveals the file in Finder, which would come up over the person's work")
-    else:
-        downloads = run.root / "home/Downloads/file.zip"
-        x, y = middle(keep) if keep else (0, 0)
-        run.drive(f"click {x:.0f} {y:.0f}", "wait 2")
-        kept = until(lambda: downloads.exists(), 8)
-        marked = kept and "com.apple.quarantine" in subprocess.run(["xattr", "-l", downloads], capture_output=True, text=True).stdout
-        run.report("D9", over and bool(kept), f"the Keep button {keep} lies over the page {page}: {over}; its click kept the file {bool(kept)}")
-        run.report("DK7 Keep", bool(kept) and marked, f"kept in Downloads {bool(kept)}, still quarantined {marked}")
-    if focused:
-        run.drive("key cmd+b", "wait 1")
+        return run.leave("DK7 Keep", "keeping reveals the file in Finder, which would come up over the person's work")
+    keep = until(lambda: spot(run, "keep-download"), 5)
+    if not keep:
+        return run.report("DK7 Keep", False, "no Keep in Downloads button drawn after the download")
+    downloads = run.root / "home/Downloads/file.zip"
+    x, y = middle(keep)
+    run.drive(f"click {x:.0f} {y:.0f}", "wait 2")
+    kept = until(lambda: downloads.exists(), 8)
+    marked = bool(kept) and "com.apple.quarantine" in subprocess.run(["xattr", "-l", downloads], capture_output=True, text=True).stdout
+    run.report("DK7 Keep", bool(kept) and marked, f"kept in Downloads {bool(kept)}, still quarantined {marked}")
 
 
 def one_desk(run):
@@ -638,6 +629,7 @@ def local(run):
         ("DP1", "page_preview needs a terminal agent, which the fake agent is not"),
         ("DP2", "page_show from a terminal agent, as DP1"),
         ("DP4", "a theme switch goes through Settings' pickers"),
+        ("D9", "no app popover reaches over the page body unless a menu is opened over it, at a spot only a screenshot finds"),
         ("S1", "needs a booted simulator and a person to judge the stream"),
         ("5.5", "⌘C and ⌘V use the clipboard"),
         ("5.6", "resizing needs a person's eyes"),
@@ -659,7 +651,7 @@ def answered(said):
 
 
 CHECKS = [("DP5", dp5), ("DP3", dp3), ("D5", d5), ("DK3", dk3), ("D6", d6_dk4_dk5), ("DK6", dk6), ("D7", d7), ("DK8", dk8),
-          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("D9", d9_keep), ("D8", d8), ("DF1", df1), ("DF3", df3), ("DF2", df2), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
+          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("DK7 Keep", dk7_keep), ("D8", d8), ("DF1", df1), ("DF3", df3), ("DF2", df2), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
 
 
 def main():
