@@ -179,6 +179,9 @@ pub enum Ask {
         params: Value,
         reply: oneshot::Sender<Result<Value, String>>,
     },
+    /// A watch, stream, call or answer for another host's core, by the host's key, as this
+    /// host's would be. A key is watched in one place at a time.
+    On(String, Box<Ask>),
     /// A call to another host's core, by the host's key, whose answer goes back to the one asking.
     HostRequest {
         host: String,
@@ -473,6 +476,62 @@ fn follow_links(linked: &Option<Arc<Linked>>, client: &Arc<CoreClient>) {
 }
 
 /// What another host said next, or never while this app reaches none.
+/// The generation the next watch of `key` is made under, wherever it is watched.
+fn next_generation(current: &Arc<Mutex<HashMap<&'static str, u64>>>, key: &'static str) -> u64 {
+    let mut current = current.lock().expect("watch generations");
+    let next = current.get(key).map_or(0, |generation| generation + 1);
+    current.insert(key, next);
+    next
+}
+
+/// One of another host's core methods, waiting a while for a host that is reconnecting.
+async fn call_on(
+    linked: &Option<Arc<Linked>>,
+    host: &str,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    let linked = linked
+        .as_ref()
+        .ok_or("this app does not reach other hosts")?;
+    let client = linked
+        .client(host)
+        .await
+        .map_err(|error| error.to_string())?;
+    client
+        .call(method, params)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Answers `key` from another host's core, as `read` does from this host's.
+fn read_on(
+    linked: &Option<Arc<Linked>>,
+    host: &str,
+    key: &'static str,
+    watch: &Watch,
+    current: &Arc<Mutex<HashMap<&'static str, u64>>>,
+    updates: &mpsc::UnboundedSender<Update>,
+) {
+    let (linked, host, watch, current, updates) = (
+        linked.clone(),
+        host.to_owned(),
+        watch.clone(),
+        current.clone(),
+        updates.clone(),
+    );
+    tokio::spawn(async move {
+        let answer = call_on(&linked, &host, watch.method, watch.params).await;
+        if current.lock().expect("watch generations").get(key) != Some(&watch.generation) {
+            return;
+        }
+        let _ = updates.send(match answer {
+            Ok(value) => Update::Read(key, value),
+            Err(error) => Update::Refused(key, error),
+        });
+    });
+}
+
 async fn heard_from(heard: &mut Option<mpsc::UnboundedReceiver<Happened>>) -> Option<Happened> {
     match heard {
         Some(heard) => heard.recv().await,
@@ -574,6 +633,7 @@ async fn run(
     mut asks: mpsc::UnboundedReceiver<Ask>,
 ) {
     let mut watches: HashMap<&'static str, Watch> = HashMap::new();
+    let mut host_watches: HashMap<String, HashMap<&'static str, Watch>> = HashMap::new();
     let mut followed: Vec<&'static str> = Vec::new();
     let mut linked: Option<Arc<Linked>> = None;
     let mut heard: Option<mpsc::UnboundedReceiver<Happened>> = None;
@@ -662,22 +722,48 @@ async fn run(
                         },
                         happened = heard_from(&mut heard) => match happened {
                             Some(Happened::Connected(host)) => {
+                                for (key, watch) in host_watches.get(&host).into_iter().flatten() {
+                                    read_on(&linked, &host, key, watch, &current, &updates);
+                                }
                                 let _ = updates.send(Update::HostReach(host, true));
                             }
                             Some(Happened::Lost(host)) => {
+                                for key in host_watches.get(&host).into_iter().flat_map(HashMap::keys) {
+                                    let _ = updates.send(Update::Refused(key, format!("{host} is out of reach")));
+                                }
                                 let _ = updates.send(Update::HostReach(host, false));
                             }
-                            Some(Happened::Event(host, event)) => {
-                                if let ClientEvent::Event(Event::DeviceView { view }) = *event {
+                            Some(Happened::Event(host, event)) => match *event {
+                                ClientEvent::Event(Event::DeviceView { view }) => {
                                     let _ = updates.send(Update::HostView(host, Box::new(view)));
                                 }
-                            }
+                                ClientEvent::Event(Event::Changed { topic, .. }) => {
+                                    let changed = host_watches
+                                        .get(&host)
+                                        .into_iter()
+                                        .flatten()
+                                        .filter(|(_, watch)| watch.topics.contains(&topic.as_str()));
+                                    for (key, watch) in changed {
+                                        read_on(&linked, &host, key, watch, &current, &updates);
+                                    }
+                                }
+                                ClientEvent::Event(Event::Stream { stream, items, done, error }) => {
+                                    if let Some(parts) = streamed.get(&stream) {
+                                        if parts.send(Part { items, done, error }).is_err() || done {
+                                            streamed.remove(&stream);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            },
                             None => heard = None,
                         },
                         ask = asks.recv() => match ask {
                             Some(Ask::Watch(key, mut watch)) => {
-                                watch.generation = watches.get(key).map_or(0, |old| old.generation + 1);
-                                current.lock().expect("watch generations").insert(key, watch.generation);
+                                watch.generation = next_generation(&current, key);
+                                for table in host_watches.values_mut() {
+                                    table.remove(key);
+                                }
                                 read(&client, key, &watch, &current, &updates);
                                 watches.insert(key, watch);
                             }
@@ -704,6 +790,45 @@ async fn run(
                                     });
                                 });
                             }
+                            Some(Ask::On(host, ask)) => match *ask {
+                                Ask::Watch(key, mut watch) => {
+                                    watch.generation = next_generation(&current, key);
+                                    watches.remove(key);
+                                    for table in host_watches.values_mut() {
+                                        table.remove(key);
+                                    }
+                                    read_on(&linked, &host, key, &watch, &current, &updates);
+                                    host_watches.entry(host).or_default().insert(key, watch);
+                                }
+                                Ask::Stream { stream, method, params, parts } => {
+                                    streamed.insert(stream, parts.clone());
+                                    let linked = linked.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(error) = call_on(&linked, &host, method, params).await {
+                                            let error = json!({ "category": "call", "message": error });
+                                            let _ = parts.send(Part { items: Vec::new(), done: true, error: Some(error) });
+                                        }
+                                    });
+                                }
+                                Ask::Call { method, params } => {
+                                    let (linked, updates) = (linked.clone(), updates.clone());
+                                    tokio::spawn(async move {
+                                        if let Err(error) = call_on(&linked, &host, method, params).await {
+                                            let _ = updates.send(Update::Failed(error));
+                                        }
+                                    });
+                                }
+                                Ask::Answer { key, method, params } => {
+                                    let (linked, updates) = (linked.clone(), updates.clone());
+                                    tokio::spawn(async move {
+                                        let _ = updates.send(match call_on(&linked, &host, method, params).await {
+                                            Ok(value) => Update::Read(key, value),
+                                            Err(error) => Update::Refused(key, error),
+                                        });
+                                    });
+                                }
+                                _ => eprintln!("sikemux: that is not asked of another host"),
+                            },
                             Some(Ask::HostRequest { host, method, params, reply }) => {
                                 let linked = linked.clone();
                                 tokio::spawn(async move {

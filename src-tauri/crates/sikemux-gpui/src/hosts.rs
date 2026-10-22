@@ -36,6 +36,15 @@ impl HostChoice {
     }
 }
 
+/// Whose core a pane talks to: this host's, or another host's on the account. An SSH host
+/// without Sikemux has no core, so its strip is this host's.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub enum Place {
+    #[default]
+    This,
+    Account(String),
+}
+
 pub struct HostOption {
     pub choice: HostChoice,
     pub label: SharedString,
@@ -72,9 +81,24 @@ impl Workbench {
 
     /// The host in front, as the core's layout says.
     pub fn chosen_host(&self) -> HostChoice {
+        if let Some(key) = self
+            .view
+            .as_ref()
+            .and_then(|view| view.layout.chosen_host.clone())
+        {
+            return HostChoice::Account(key);
+        }
         match self.strip() {
             Some(Strip::Host(alias)) => HostChoice::Ssh(alias),
             _ => HostChoice::This,
+        }
+    }
+
+    /// Whose core the panes in front talk to.
+    pub fn place(&self) -> Place {
+        match self.chosen_host() {
+            HostChoice::Account(key) => Place::Account(key),
+            _ => Place::This,
         }
     }
 
@@ -125,21 +149,7 @@ impl Workbench {
 
     /// Puts the person on `choice`, which the rail and the tab list then follow.
     pub fn choose_host(&mut self, choice: HostChoice, cx: &mut Context<Self>) {
-        match choice {
-            HostChoice::This => {
-                if let Some(project) = self.project().map(|project| project.id.clone()) {
-                    self.activate_project(&project);
-                }
-            }
-            HostChoice::Ssh(alias) => {
-                let strip = Strip::Host(alias.clone());
-                match self.front_tab_of(&strip) {
-                    Some(tab) => self.activate_tab(&strip, &tab),
-                    None => self.open_ssh_terminal(&alias),
-                }
-            }
-            HostChoice::Account(_) => {}
-        }
+        self.call("chooseHost", json!({ "host": choice.key() }));
         cx.notify();
     }
 }
