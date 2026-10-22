@@ -14,6 +14,11 @@ members = ["crates/*"]
 name = "sikemux"
 path = "src/main.rs"
 
+[features]
+# Drives the window from step files for the test bundle's real-window checks; never on in the
+# try-out or a release.
+drive = []
+
 [dependencies]
 anyhow = "1"
 base64 = "0.22"

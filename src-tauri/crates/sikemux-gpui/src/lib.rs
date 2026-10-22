@@ -18,6 +18,8 @@ pub mod composer;
 pub mod core;
 mod desk;
 mod drag;
+#[cfg(feature = "drive")]
+pub mod drive;
 pub mod editor;
 mod experience;
 mod faces;
