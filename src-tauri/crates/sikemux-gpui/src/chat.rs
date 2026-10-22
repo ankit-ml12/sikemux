@@ -1576,7 +1576,7 @@ pub fn pane(
         .children(file_menu)
         .child(chat.activity_line.clone())
         .children(status::plan(agent, chat, cx))
-        .children(status::trouble(agent, chat, cx))
+        .children(status::trouble(bench, agent, chat, cx))
         .children(permissions)
         .children(answered)
         .children(assumed)

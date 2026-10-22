@@ -18,7 +18,7 @@ use crate::ui::{self, Menu, MenuItem};
 use crate::workbench::Workbench;
 
 /// Carries the chat `agent` on to `profile`; a turn at work stops and carries on there.
-fn move_chat(bench: &Workbench, agent: &str, profile: &Profile) {
+pub(crate) fn move_chat(bench: &Workbench, agent: &str, profile: &Profile) {
     let account = chat_account(
         &profile.provider,
         &profile.id,

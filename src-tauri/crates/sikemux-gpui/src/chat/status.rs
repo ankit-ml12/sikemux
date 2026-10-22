@@ -199,6 +199,38 @@ impl Workbench {
         }
     }
 
+    /// Signs the chat's agent in the way it offered, then sends its failed turn again.
+    fn authenticate_chat(&self, agent: &str, method: &str) {
+        let target = self.chat_target(agent);
+        let signed = target.request(
+            "authenticateChat",
+            json!({ "agentId": agent, "methodId": method }),
+        );
+        let agent = agent.to_owned();
+        crate::desk::spawn(async move {
+            match signed.await {
+                Ok(_) => target.call("retryFailed", json!({ "agentId": agent })),
+                Err(error) => eprintln!("sikemux: the agent did not sign in: {error}"),
+            }
+        });
+    }
+
+    /// Runs the agent's own sign-in in a terminal sheet when it has one, else opens Settings
+    /// to add an account for it.
+    fn sign_in_agent(&mut self, provider: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let sheet = self
+            .agent_setup
+            .found
+            .iter()
+            .flatten()
+            .find(|found| found.kind == provider)
+            .and_then(|found| crate::agent_setup::signing_in(found, None));
+        match sheet {
+            Some(sheet) => crate::agent_setup::run(self, sheet, cx),
+            None => crate::accounts::open_sign_in(self, provider, None, window, cx),
+        }
+    }
+
     fn account_call(&self, method: &'static str, agent: &str) {
         self.chat_target(agent)
             .call(method, json!({ "agentId": agent }));
@@ -208,6 +240,7 @@ impl Workbench {
 /// What stands at the end of the rows when something went wrong: why the last turn
 /// failed with what can be done about it, or that the session dropped.
 pub(super) fn trouble(
+    bench: &Workbench,
     agent: &AgentRow,
     chat: &Chat,
     cx: &mut Context<Workbench>,
@@ -287,6 +320,16 @@ pub(super) fn trouble(
         row = row.child(act("Don't resume", "chat-cancel-resume", |bench, agent| {
             bench.account_call("cancelResume", agent)
         }));
+    }
+    let kind = failure.map(|failure| failure.kind);
+    if matches!(kind, Some(FailureKind::SignIn | FailureKind::Limit)) {
+        row = row.children(account_ways(
+            bench,
+            agent,
+            failure,
+            &head.capabilities,
+            &this,
+        ));
     }
     let details = failure
         .and_then(|failure| failure.details.clone())
@@ -376,6 +419,132 @@ fn action(
         })
         .ok();
     })
+}
+
+/// What the account the chat runs on can do about a turn it failed: sign in to it, or to the
+/// agent when the chat has no account of its own, or carry the chat on in another account that
+/// is signed in and keeps chats where this one does, once this one is at its limit.
+fn account_ways(
+    bench: &Workbench,
+    agent: &AgentRow,
+    failure: Option<&sikemux_wire::chat::ChatFailure>,
+    capabilities: &serde_json::Value,
+    this: &WeakEntity<Workbench>,
+) -> Vec<Button> {
+    let limit = failure.is_some_and(|failure| failure.kind == FailureKind::Limit);
+    // The accounts listed are this host's, and moving a chat to one is this host's to do.
+    if !matches!(
+        bench.chat_target(&agent.id).place(),
+        crate::hosts::Place::This
+    ) {
+        return Vec::new();
+    }
+    let saved = bench.shown().and_then(|view| {
+        view.workspace
+            .agents
+            .iter()
+            .find(|saved| saved.id == agent.id)
+    });
+    let on = failure
+        .and_then(|failure| failure.account.as_deref())
+        .or_else(|| saved.and_then(|saved| saved.profile_id.as_deref()))
+        .and_then(|id| bench.accounts.profile(id))
+        .or_else(|| bench.accounts.current(&agent.provider))
+        .cloned();
+    let signed_in = |profile: &sikemux_core::agent_accounts::Profile| {
+        crate::accounts::status(bench, profile)
+            .and_then(|status| status.as_ref().ok())
+            .filter(|status| status.signed_in)
+            .cloned()
+    };
+    if limit {
+        let Some(on) = on else {
+            return Vec::new();
+        };
+        let Some(sessions) = signed_in(&on).and_then(|status| status.sessions) else {
+            return Vec::new();
+        };
+        return bench
+            .accounts
+            .of(&agent.provider)
+            .into_iter()
+            .filter(|other| other.id != on.id)
+            .filter_map(|other| Some((other.clone(), signed_in(other)?)))
+            .filter(|(_, status)| status.sessions.as_ref() == Some(&sessions))
+            .map(|(other, status)| {
+                let name = crate::accounts::name(bench, &other, Some(&status));
+                let (this, chat) = (this.clone(), agent.id.clone());
+                Button::new(
+                    SharedString::from(format!("chat-continue-{}", other.id)),
+                    format!("Continue on {name}"),
+                    Variant::Outline,
+                )
+                .on_click(move |_, _, cx| {
+                    this.update(cx, |bench, _| {
+                        crate::account_picker::move_chat(bench, &chat, &other)
+                    })
+                    .ok();
+                })
+            })
+            .collect();
+    }
+    let name = match &on {
+        Some(profile) => profile.name.clone(),
+        None => bench
+            .launchers()
+            .iter()
+            .find(|launcher| launcher.provider == agent.provider)
+            .map_or_else(|| agent.provider.clone(), |launcher| launcher.label.clone()),
+    };
+    let retry = action(
+        this,
+        &agent.id,
+        "Retry",
+        "chat-retry-signed-in",
+        |bench, agent| bench.account_call("retryFailed", agent),
+    );
+    if on.is_none() {
+        let methods: Vec<Button> = capabilities["signInMethods"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|method| method["kind"] == "agent")
+            .filter_map(|method| {
+                let (id, label) = (method["id"].as_str()?, method["name"].as_str()?);
+                let (this, chat, method) = (this.clone(), agent.id.clone(), id.to_owned());
+                Some(
+                    Button::new(
+                        SharedString::from(format!("chat-sign-in-{id}")),
+                        label.to_owned(),
+                        Variant::Outline,
+                    )
+                    .on_click(move |_, _, cx| {
+                        this.update(cx, |bench, _| bench.authenticate_chat(&chat, &method))
+                            .ok();
+                    }),
+                )
+            })
+            .collect();
+        if !methods.is_empty() {
+            return methods;
+        }
+    }
+    let (this, provider, account) = (this.clone(), agent.provider.clone(), on.map(|on| on.id));
+    let sign_in = Button::new(
+        "chat-sign-in",
+        format!("Sign in to {name}"),
+        Variant::Outline,
+    )
+    .on_click(move |_, window, cx| {
+        this.update(cx, |bench, cx| match &account {
+            Some(account) => {
+                crate::accounts::open_sign_in(bench, &provider, Some(account), window, cx)
+            }
+            None => bench.sign_in_agent(&provider, window, cx),
+        })
+        .ok();
+    });
+    vec![sign_in, retry]
 }
 
 /// A line at the end of the rows, in the column the rows are read in.
