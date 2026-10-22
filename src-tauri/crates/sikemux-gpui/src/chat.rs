@@ -433,6 +433,8 @@ pub struct Chat {
     replying: Option<String>,
     /// The background tasks asked to stop, until the core took each ask.
     stopping: HashSet<String>,
+    /// The questions whose answers went to the core, until it took them.
+    answering: HashSet<String>,
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -653,6 +655,7 @@ impl Chat {
             recalled: None,
             replying: None,
             stopping: HashSet::new(),
+            answering: HashSet::new(),
         }
     }
 
@@ -773,6 +776,26 @@ impl Chat {
             self.replying = None;
         }
         self.failed(error.filter(|error| !error.contains("no longer pending")));
+    }
+
+    /// The core took the answers to `ids`, or says why not, leaving them picked for another go.
+    fn took_answers(&mut self, ids: &[String], error: Option<String>) {
+        for id in ids {
+            self.answering.remove(id);
+        }
+        if error.is_none() {
+            self.picks.retain(|id, _| !ids.contains(id));
+            if self.shown.as_ref().is_some_and(|shown| ids.contains(shown)) {
+                self.shown = None;
+            }
+            self.cursor = None;
+        }
+        self.failed(error);
+    }
+
+    /// Answers on their way to the core keep the questions from being answered again.
+    pub fn sending_answers(&self) -> bool {
+        !self.answering.is_empty()
     }
 
     /// The core took the ask to stop `task`, or says why not.
@@ -1143,7 +1166,10 @@ impl Chat {
     /// A key the question on show takes while nothing is written: a number picks, the
     /// arrows move, Space ticks, Enter picks, moves on or sends. Says whether it took it.
     pub fn press(&mut self, press: Press, open: &[&Question]) -> (bool, Option<Ask>) {
-        let Some(current) = self.current(open).filter(|_| !self.is_folded(open)) else {
+        let Some(current) = self
+            .current(open)
+            .filter(|_| !self.is_folded(open) && !self.sending_answers())
+        else {
             return (false, None);
         };
         let (id, count, multi, cursor) = (
@@ -1276,15 +1302,13 @@ impl Chat {
             .iter()
             .filter_map(|question| {
                 let id = &question.id;
-                Some(match self.picks.remove(id)?.answer {
+                Some(match &self.picks.get(id)?.answer {
                     Answer::Choice(choice) => json!({ "id": id, "choice": choice }),
                     Answer::Choices(choices) => json!({ "id": id, "choices": choices }),
                     Answer::Text(answer) => json!({ "id": id, "answer": answer }),
                 })
             })
             .collect();
-        self.picks.clear();
-        self.shown = None;
         Some(Ask::Call {
             method: "answerQuestions",
             params: json!({ "answers": answers }),
@@ -1479,7 +1503,7 @@ pub fn pane(
         .questions
         .iter()
         .filter(|question| question.of(&agent.id, "assumed"))
-        .map(|question| assumption(question, cx))
+        .map(|question| assumption(question, chat.answering.contains(&question.id), cx))
         .collect();
     let answered: Vec<_> = bench
         .questions
@@ -1658,7 +1682,7 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
             let chat = bench.chats.get_mut(&agent)?;
             let (taken, ask) = chat.press(press(action), &open);
             if let Some(ask) = ask {
-                bench.chat_target(&agent).ask(ask);
+                bench.ask_answering(&agent, ask, cx);
             }
             taken.then(|| cx.notify())
         });
@@ -1856,7 +1880,7 @@ fn word(id: impl Into<SharedString>, label: &'static str, t: &Tokens) -> BaseBut
 }
 
 /// A question the agent went on without, on the assumption it stated.
-fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElement {
+fn assumption(question: &Question, busy: bool, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let (fine, change) = (question.id.clone(), question.id.clone());
     let (agent, assumed) = (
@@ -1893,26 +1917,31 @@ fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElem
             )
             .child("·")
             .child(
-                word(format!("fine-{fine}"), "Fine", &t).on_click(cx.listener({
-                    let agent = agent.clone();
-                    move |bench, _, _, _| {
-                        bench
-                            .chat_target(&agent)
-                            .call("answerQuestion", json!({ "id": fine, "fine": true }));
-                    }
-                })),
+                word(format!("fine-{fine}"), "Fine", &t)
+                    .disabled(busy)
+                    .on_click(cx.listener({
+                        let agent = agent.clone();
+                        move |bench, _, _, cx| {
+                            let params = json!({ "id": fine, "fine": true });
+                            let ask = Ask::Call {
+                                method: "answerQuestion",
+                                params,
+                            };
+                            bench.ask_answering(&agent, ask, cx);
+                        }
+                    })),
             )
             .child(
-                word(format!("change-{change}"), "Change", &t).on_click(cx.listener(
-                    move |bench, _, window, cx| {
+                word(format!("change-{change}"), "Change", &t)
+                    .disabled(busy)
+                    .on_click(cx.listener(move |bench, _, window, cx| {
                         if let Some(chat) = bench.chats.get_mut(&agent) {
                             chat.write(&change);
                             if let Some(composing) = &chat.composer {
                                 window.focus(&composing.draft.focus_handle(cx), cx);
                             }
                         }
-                    },
-                )),
+                    })),
             ),
     )
 }
@@ -1946,10 +1975,14 @@ fn questions(
             .text_size(crate::theme::ui_text(10.))
             .text_color(t.text_disabled)
             .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.answer(&agent, |chat, open| {
-                    chat.fold(open, false);
-                    None
-                });
+                bench.answer(
+                    &agent,
+                    |chat, open| {
+                        chat.fold(open, false);
+                        None
+                    },
+                    cx,
+                );
                 cx.notify();
             }))
             .child(if count == 1 { "QUESTION" } else { "QUESTIONS" })
@@ -2027,10 +2060,14 @@ fn asking(
                 })
                 .hover(move |style| style.bg(hover))
                 .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench.answer(&agent, |chat, _| {
-                        chat.show_question(&id);
-                        None
-                    });
+                    bench.answer(
+                        &agent,
+                        |chat, _| {
+                            chat.show_question(&id);
+                            None
+                        },
+                        cx,
+                    );
                     cx.notify();
                 }))
                 .child(mark)
@@ -2040,10 +2077,11 @@ fn asking(
     let ready = open
         .iter()
         .all(|question| chat.picks.contains_key(&question.id));
+    let sending = chat.sending_answers();
     let send = (count > 1 || current.multi).then(|| {
         let agent = agent.to_owned();
         BaseButton::new("questions-send")
-            .disabled(!ready)
+            .disabled(!ready || sending)
             .h(px(22.))
             .px(px(8.))
             .flex()
@@ -2061,7 +2099,7 @@ fn asking(
                 }
             })
             .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.answer(&agent, |chat, open| chat.send_answers(open));
+                bench.answer(&agent, |chat, open| chat.send_answers(open), cx);
                 cx.notify();
             }))
             .child("Send")
@@ -2087,10 +2125,14 @@ fn asking(
             .rounded(theme::RADIUS_2)
             .hover(move |style| style.bg(hover))
             .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.answer(&agent, |chat, open| {
-                    chat.fold(open, true);
-                    None
-                });
+                bench.answer(
+                    &agent,
+                    |chat, open| {
+                        chat.fold(open, true);
+                        None
+                    },
+                    cx,
+                );
                 cx.notify();
             }))
             .child(
@@ -2194,8 +2236,9 @@ fn asking(
                 div().child(label).children(detail),
                 t,
             )
+            .disabled(chat.sending_answers())
             .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.answer(&agent, |chat, open| chat.choose(&id, ix, open));
+                bench.answer(&agent, |chat, open| chat.choose(&id, ix, open), cx);
                 cx.notify();
             }))
             .into_any_element()
@@ -2351,6 +2394,7 @@ fn secret(
     let field = chat.composer.as_ref()?.secret.clone();
     let agent = agent.to_owned();
     let done = Button::new("secret-done", "Done", Variant::Outline)
+        .disabled(chat.sending_answers())
         .on_click(cx.listener(move |bench, _, window, cx| bench.keep_secret(&agent, window, cx)));
     Some(
         div()
@@ -2632,6 +2676,58 @@ fn strip(
         }),
         worktree,
         account,
+    }
+}
+
+impl Workbench {
+    /// Asks what a change to `agent`'s questions asks. Answers wait on the core, the questions
+    /// they answer held as sending, then leave the open ones without waiting for its next list.
+    pub fn ask_answering(&mut self, agent: &str, ask: Ask, cx: &mut Context<Self>) {
+        let (method, params) = match ask {
+            Ask::Call {
+                method: method @ ("answerQuestion" | "answerQuestions"),
+                params,
+            } => (method, params),
+            ask => return self.chat_target(agent).ask(ask),
+        };
+        let ids: Vec<String> = params["id"]
+            .as_str()
+            .into_iter()
+            .chain(
+                params["answers"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|answer| answer["id"].as_str()),
+            )
+            .map(str::to_owned)
+            .collect();
+        if let Some(chat) = self.chats.get_mut(agent) {
+            chat.answering.extend(ids.iter().cloned());
+            if let Some(composing) = chat.composer.as_mut() {
+                composing.refusal = None;
+            }
+        }
+        self.parts.redraw(&self.parts.stage, cx);
+        let answered = self.chat_target(agent).request(method, params);
+        let agent = agent.to_owned();
+        cx.spawn(async move |bench, cx| {
+            let error = answered.await.err();
+            bench
+                .update(cx, |bench, cx| {
+                    if error.is_none() {
+                        bench.keep_questions(|question| {
+                            question.state == "answered" || !ids.contains(&question.id)
+                        });
+                    }
+                    if let Some(chat) = bench.chats.get_mut(&agent) {
+                        chat.took_answers(&ids, error);
+                    }
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                })
+                .ok();
+        })
+        .detach();
     }
 }
 

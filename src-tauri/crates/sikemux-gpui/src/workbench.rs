@@ -1274,10 +1274,14 @@ impl Workbench {
         let text = draft.read(cx).value().trim().to_owned();
         if text.is_empty() && outgoing.0.is_empty() {
             if primary {
-                self.answer(agent, |chat, open| {
-                    chat.send_answers(open)
-                        .or_else(|| chat.steer_waiting(agent))
-                });
+                self.answer(
+                    agent,
+                    |chat, open| {
+                        chat.send_answers(open)
+                            .or_else(|| chat.steer_waiting(agent))
+                    },
+                    cx,
+                );
                 cx.notify();
             }
             return;
@@ -1289,12 +1293,16 @@ impl Workbench {
             tracked_context: composing.tracked_context.clone(),
         };
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
-        self.answer(agent, |chat, open| {
-            if let Some(composing) = chat.composer.as_mut() {
-                composing.sent = Some(sent);
-            }
-            chat.sent(agent, text, outgoing, primary == steers, open)
-        });
+        self.answer(
+            agent,
+            |chat, open| {
+                if let Some(composing) = chat.composer.as_mut() {
+                    composing.sent = Some(sent);
+                }
+                chat.sent(agent, text, outgoing, primary == steers, open)
+            },
+            cx,
+        );
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         self.keep_draft(agent, cx);
         cx.notify();
@@ -1309,10 +1317,11 @@ impl Workbench {
             return;
         };
         let text = field.read(cx).value().to_string();
-        if text.is_empty() {
+        let sending = self.chats.get(agent).is_some_and(Chat::sending_answers);
+        if text.is_empty() || sending {
             return;
         }
-        self.answer(agent, |chat, open| chat.keep_secret(text, open));
+        self.answer(agent, |chat, open| chat.keep_secret(text, open), cx);
         field.update(cx, |field, cx| field.set_value("", window, cx));
         cx.notify();
     }
@@ -1322,6 +1331,7 @@ impl Workbench {
         &mut self,
         agent: &str,
         change: impl FnOnce(&mut Chat, &[&Question]) -> Option<Ask>,
+        cx: &mut Context<Self>,
     ) {
         let open: Vec<&Question> = self
             .questions
@@ -1333,8 +1343,14 @@ impl Workbench {
             .get_mut(agent)
             .and_then(|chat| change(chat, &open))
         {
-            self.chat_target(agent).ask(ask);
+            self.ask_answering(agent, ask, cx);
         }
+    }
+
+    /// Lets go of the questions `keep` turns down, of this host and of the host in front.
+    pub fn keep_questions(&mut self, keep: impl Fn(&Question) -> bool) {
+        self.questions.retain(&keep);
+        self.host_questions.retain(keep);
     }
 
     /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
