@@ -3,6 +3,7 @@
 
 use gpui_kit::{Context, Window};
 
+use crate::hosts::HostChoice;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::{Mark, Row, Spec};
@@ -80,8 +81,15 @@ const CHOICES: [Choice; 8] = [
     },
 ];
 
+/// The row that sets Sikemux up on the SSH host in front.
+const INSTALL: &str = "host.install";
+
 impl Workbench {
     pub fn toggle_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // An SSH host without Sikemux is a shell: a login there, or installing Sikemux (ADR 0019).
+        if let HostChoice::Ssh(alias) = self.chosen_host() {
+            return self.toggle_ssh_new_tab(alias, window, cx);
+        }
         let in_project = matches!(self.strip(), Some(Strip::Project(_)));
         let rows = CHOICES
             .iter()
@@ -105,6 +113,30 @@ impl Workbench {
             rows,
             |row, _, window, cx| {
                 keymap::dispatch(&row.key, window, cx);
+            },
+        )
+        .width(440.);
+        self.toggle_palette(spec, window, cx);
+    }
+
+    fn toggle_ssh_new_tab(&mut self, alias: String, window: &mut Window, cx: &mut Context<Self>) {
+        let rows = vec![
+            Row::new("terminal.new", "SSH terminal")
+                .meta(format!("A new login on {alias}"))
+                .keys(keymap::hint("terminal.new", cx))
+                .mark(Mark::Icon(Icon::Terminal)),
+            Row::new(INSTALL, "Install Sikemux")
+                .meta(format!("What Sikemux adds on {alias}, and the installer"))
+                .keys(keymap::hint("agent.new", cx))
+                .mark(Mark::Icon(Icon::Download)),
+        ];
+        let spec = Spec::new(
+            "palette.newTab",
+            "open a new tab…",
+            rows,
+            move |row, bench, window, cx| match row.key.as_ref() {
+                INSTALL => bench.install_host(&alias, cx),
+                command => keymap::dispatch(command, window, cx),
             },
         )
         .width(440.);

@@ -2783,7 +2783,10 @@ impl Workbench {
     pub fn new_terminal(&self) {
         match (self.strip(), self.project()) {
             (Some(Strip::Terminals), _) => self.new_loose_terminal(),
-            (_, Some(project)) => self.call("newTerminal", json!({ "project": project.id })),
+            (Some(Strip::Host(alias)), _) => self.open_ssh_terminal(&alias),
+            (_, Some(project)) => {
+                self.call_in_front("newTerminal", json!({ "project": project.id }))
+            }
             _ => {}
         }
     }
@@ -3295,9 +3298,14 @@ impl Render for Workbench {
                 }),
             )
             .on_action(
-                cx.listener(|bench, _: &crate::agent_palette::ChooseAgent, window, cx| {
-                    bench.toggle_agent_palette(window, cx);
-                }),
+                cx.listener(
+                    |bench, _: &crate::agent_palette::ChooseAgent, window, cx| match bench
+                        .chosen_host()
+                    {
+                        crate::hosts::HostChoice::Ssh(alias) => bench.install_host(&alias, cx),
+                        _ => bench.toggle_agent_palette(window, cx),
+                    },
+                ),
             )
             .on_action(
                 cx.listener(|bench, _: &crate::picker::OpenProject, window, cx| {
@@ -3350,7 +3358,12 @@ impl Render for Workbench {
                     crate::settings::toggle(bench, window, cx)
                 }),
             )
-            .on_action(cx.listener(|bench, _: &NewChat, _, _| bench.new_chat()))
+            .on_action(
+                cx.listener(|bench, _: &NewChat, _, cx| match bench.chosen_host() {
+                    crate::hosts::HostChoice::Ssh(alias) => bench.install_host(&alias, cx),
+                    _ => bench.new_chat(),
+                }),
+            )
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, _| bench.toggle_front_desk()))
             .on_action(cx.listener(|bench, _: &NewPage, _, _| bench.new_front_page()))

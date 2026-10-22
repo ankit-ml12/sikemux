@@ -45,6 +45,9 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         RailPage::Terminals => return terminals_page(bench, cx),
         RailPage::Agents => {}
     }
+    if let crate::hosts::HostChoice::Ssh(alias) = bench.chosen_host() {
+        return ssh_page(bench, alias, cx);
+    }
     let project = bench.project();
     let agents = bench.listed_agents();
     let rows = team_rows(bench, &agents, cx);
@@ -862,7 +865,7 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
 }
 
 /// A rail page's title bar.
-fn page_header(title: &'static str, cx: &App) -> impl IntoElement {
+fn page_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     div()
         .flex_none()
@@ -912,8 +915,6 @@ fn rail_empty(
 
 /// The project's terminal tabs, or every project's, to bring forward or start.
 fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    let front = bench.tab().map(|tab| tab.id.clone());
     let strips: Vec<Strip> = if bench.all_projects {
         bench
             .projects()
@@ -923,43 +924,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
     } else {
         bench.strip().into_iter().collect()
     };
-    let mut rows = Vec::new();
-    for strip in &strips {
-        let project = match strip {
-            Strip::Project(id) if bench.all_projects => bench
-                .projects()
-                .iter()
-                .find(|project| &project.id == id)
-                .map(|project| project.name.clone()),
-            _ => None,
-        };
-        for tab in bench.tabs(strip) {
-            if !matches!(
-                crate::tabs::first_view(&tab.pane),
-                Some((PaneKind::Terminal, _))
-            ) {
-                continue;
-            }
-            let (shown, id) = (strip.clone(), tab.id.clone());
-            let row = Row::new(
-                SharedString::from(format!("terminal-{}", tab.id)),
-                crate::tabs::label(bench, tab),
-            )
-            .mark(22., ui::icon(Icon::Terminal, 15.).text_color(t.live))
-            .chosen(front.as_deref() == Some(tab.id.as_str()))
-            .when_some(project.clone(), |row, project| {
-                row.subtitle(ui::meta(project, cx))
-            })
-            .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&shown, &id)));
-            rows.push(
-                div()
-                    .id(SharedString::from(format!("terminal-menu-{}", tab.id)))
-                    .child(row)
-                    .context_menu(crate::tabs::tab_menu(bench, strip, tab, cx))
-                    .into_any_element(),
-            );
-        }
-    }
+    let rows = terminal_rows(bench, &strips, cx);
     let empty = rows.is_empty().then(|| {
         if strips.is_empty() {
             rail_empty(
@@ -1001,6 +966,112 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
         .child(
             div()
                 .id("terminals-scroll")
+                .flex_1()
+                .min_h_0()
+                .pt(px(8.))
+                .px(px(10.))
+                .pb(px(16.))
+                .overflow_y_scrollbar()
+                .children(empty)
+                .child(div().flex().flex_col().gap(px(2.)).children(rows)),
+        )
+        .child(pages(bench, cx))
+        .into_any_element()
+}
+
+/// A row for each terminal tab of `strips`, which brings it to the front.
+fn terminal_rows(
+    bench: &Workbench,
+    strips: &[Strip],
+    cx: &mut Context<Workbench>,
+) -> Vec<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let front = bench.tab().map(|tab| tab.id.clone());
+    let mut rows = Vec::new();
+    for strip in strips {
+        let project = match strip {
+            Strip::Project(id) if bench.all_projects => bench
+                .projects()
+                .iter()
+                .find(|project| &project.id == id)
+                .map(|project| project.name.clone()),
+            _ => None,
+        };
+        for tab in bench.tabs(strip) {
+            if !matches!(
+                crate::tabs::first_view(&tab.pane),
+                Some((PaneKind::Terminal, _))
+            ) {
+                continue;
+            }
+            let (shown, id) = (strip.clone(), tab.id.clone());
+            let row = Row::new(
+                SharedString::from(format!("terminal-{}", tab.id)),
+                crate::tabs::label(bench, tab),
+            )
+            .mark(22., ui::icon(Icon::Terminal, 15.).text_color(t.live))
+            .chosen(front.as_deref() == Some(tab.id.as_str()))
+            .when_some(project.clone(), |row, project| {
+                row.subtitle(ui::meta(project, cx))
+            })
+            .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&shown, &id)));
+            rows.push(
+                div()
+                    .id(SharedString::from(format!("terminal-menu-{}", tab.id)))
+                    .child(row)
+                    .context_menu(crate::tabs::tab_menu(bench, strip, tab, cx))
+                    .into_any_element(),
+            );
+        }
+    }
+    rows
+}
+
+/// What an SSH host without Sikemux offers: a login there, or installing Sikemux, over its
+/// terminals (ADR 0019).
+fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> AnyElement {
+    let rows = terminal_rows(bench, &[Strip::Host(alias.clone())], cx);
+    let empty = rows.is_empty().then(|| {
+        rail_empty(
+            Icon::Terminal,
+            "No terminals open",
+            Some(("terminal.new", "start one")),
+            cx,
+        )
+    });
+    ui::panel(cx)
+        .w(px(bench.rail_width(Edge::End)))
+        .flex_none()
+        .child(page_header(alias.clone(), cx))
+        .child(
+            div()
+                .flex_none()
+                .pt(px(4.))
+                .px(px(10.))
+                .child(
+                    new_row(
+                        "new-terminal",
+                        Icon::Terminal,
+                        "New terminal",
+                        "terminal.new",
+                        cx,
+                    )
+                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                )
+                .child(
+                    new_row(
+                        "install-sikemux",
+                        Icon::Download,
+                        "Install Sikemux",
+                        "agent.new",
+                        cx,
+                    )
+                    .on_click(cx.listener(move |bench, _, _, cx| bench.install_host(&alias, cx))),
+                ),
+        )
+        .child(
+            div()
+                .id("ssh-terminals-scroll")
                 .flex_1()
                 .min_h_0()
                 .pt(px(8.))

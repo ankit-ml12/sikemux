@@ -95,18 +95,25 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         _ => None,
     };
     let this = cx.entity().downgrade();
-    let project = front.map(|front| {
-        let find = (projects.len() > FIND_PAST).then_some("Find a project");
-        picker(
-            "place-project",
-            front,
-            projects,
-            find,
-            move |key, cx| {
-                this.update(cx, |bench, _| bench.activate_project(key)).ok();
-            },
-            cx,
-        )
+    // An SSH host without Sikemux has no projects, only the one thing that sets it up (ADR 0019).
+    let project = match &chosen {
+        HostChoice::Ssh(alias) => Some(set_up_offer(bench, alias, cx)),
+        _ => None,
+    };
+    let project = project.or_else(|| {
+        front.map(|front| {
+            let find = (projects.len() > FIND_PAST).then_some("Find a project");
+            picker(
+                "place-project",
+                front,
+                projects,
+                find,
+                move |key, cx| {
+                    this.update(cx, |bench, _| bench.activate_project(key)).ok();
+                },
+                cx,
+            )
+        })
     });
     div()
         .absolute()
@@ -130,6 +137,45 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .into_iter()
                 .flatten(),
         )
+        .into_any_element()
+}
+
+/// The button that installs Sikemux on the SSH host `alias`, saying so while it runs.
+fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let running = bench
+        .read("hosts")
+        .and_then(|hosts| hosts.as_array())
+        .into_iter()
+        .flatten()
+        .find(|host| host["ssh"] == alias && host["id"].is_null())
+        .is_some_and(|host| host["setup"].is_object() && host["setup"]["problem"].is_null());
+    let label = match running {
+        true => format!("Installing {alias}…"),
+        false => format!("Install Sikemux on {alias}"),
+    };
+    let alias = alias.to_owned();
+    BaseButton::new("place-set-up")
+        .accessibility_label(label.clone())
+        .disabled(running)
+        .h(px(26.))
+        .max_w(px(260.))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded_full()
+        .text_size(crate::theme::ui_text(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(if running {
+            t.text_tertiary
+        } else {
+            t.text_primary
+        })
+        .hover(move |style| style.bg(t.surface_chosen))
+        .child(mark((Icon::Download, t.text_secondary)))
+        .child(div().min_w_0().truncate().child(label))
+        .on_click(cx.listener(move |bench, _, _, cx| bench.install_host(&alias, cx)))
         .into_any_element()
 }
 
