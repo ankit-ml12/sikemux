@@ -705,7 +705,7 @@ export type Pane =
           sizes: number[];
       };
 
-export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk";
+export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings";
 
 export type SplitDir = "row" | "column";
 
