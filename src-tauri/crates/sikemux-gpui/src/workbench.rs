@@ -761,10 +761,13 @@ impl Workbench {
                 crate::notifications::introduce(self, cx);
                 crate::notifications::kept_running(self, cx);
             }
-            Update::Read("drafts", value) => {
+            Update::Read("git-draft", value) => {
                 if let Some(pane) = &self.git {
                     pane.update(cx, |pane, cx| pane.drafts(&value, cx));
                 }
+                self.reads.insert("git-draft", value);
+            }
+            Update::Read("drafts", value) => {
                 self.drafts(&value, cx);
                 self.reads.insert("drafts", value);
             }
@@ -1323,9 +1326,15 @@ impl Workbench {
             .as_ref()
             .filter(|repo| Some(*repo) != was.as_ref() || self.read("git-overview").is_none())
         {
-            self.target().watch(
+            let target = self.target();
+            target.watch(
                 "git-overview",
                 Watch::new("git.overview", json!({ "repo": repo }), &["git"]),
+            );
+            let draft = format!("git:{repo}");
+            target.watch(
+                "git-draft",
+                Watch::new("drafts", json!({ "keys": [draft] }), &["drafts"]),
             );
         }
         self.parts.redraw(&self.parts.stage, cx);
@@ -1364,6 +1373,7 @@ impl Workbench {
                 &["git", "preferences"],
             ),
         );
+        self.reads.remove("git-draft");
         self.files.show(path.clone().map(PathBuf::from), &target);
         self.watched_project = path;
         self.watched_place = place;
@@ -1373,16 +1383,12 @@ impl Workbench {
     /// Keeps the core answering the drafts on show: the commit message of the project in
     /// front, and every open chat's.
     fn watch_drafts(&self) {
-        let git = self
-            .watched_project
-            .iter()
-            .map(|path| format!("git:{path}"));
-        let chats = self
+        let keys: Vec<String> = self
             .chats
             .iter()
             .filter(|(_, chat)| chat.composer.is_some())
-            .map(|(agent, _)| crate::chat::draft_key(agent));
-        let keys: Vec<String> = git.chain(chats).collect();
+            .map(|(agent, _)| crate::chat::draft_key(agent))
+            .collect();
         let _ = self.asks.send(Ask::Watch(
             "drafts",
             Watch::new("drafts", json!({ "keys": keys }), &["drafts"]),
@@ -2315,7 +2321,7 @@ impl Workbench {
         if let Some(catalog) = self.reads.get("catalog") {
             pane.update(cx, |pane, cx| pane.catalog(catalog, cx));
         }
-        if let Some(drafts) = self.reads.get("drafts") {
+        if let Some(drafts) = self.reads.get("git-draft") {
             pane.update(cx, |pane, cx| pane.drafts(drafts, cx));
         }
         self.git = Some(pane);
