@@ -645,13 +645,14 @@ impl Workbench {
                 let Some(context) = context else {
                     return;
                 };
-                this.update(cx, |bench, _| {
+                this.update(cx, |bench, cx| {
                     if let Some(composing) = bench
                         .chats
                         .get_mut(&agent)
                         .and_then(|chat| chat.composer.as_mut())
                     {
                         composing.tracked_context.insert(id, context);
+                        bench.typed_draft(&agent, cx);
                     }
                 })
                 .ok();

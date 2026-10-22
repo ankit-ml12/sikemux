@@ -457,6 +457,7 @@ pub struct Sent {
     pub content: gpui_kit::base::input::InputContent,
     pub attachments: Vec<PathBuf>,
     pub context: Vec<ChatContext>,
+    pub tracked_context: HashMap<String, ChatContext>,
 }
 
 /// A question an agent put to the person, as the core's `questions` call lists it.

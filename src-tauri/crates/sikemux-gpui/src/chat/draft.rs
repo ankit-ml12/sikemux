@@ -47,6 +47,20 @@ fn kept(composing: &Composing, cx: &App) -> Value {
     if !composing.context.is_empty() {
         extra.insert("context".into(), json!(composing.context));
     }
+    let held: Vec<&str> = content
+        .tokens()
+        .iter()
+        .map(|span| span.token().id().as_ref())
+        .collect();
+    let tracked: serde_json::Map<String, Value> = composing
+        .tracked_context
+        .iter()
+        .filter(|(id, _)| held.contains(&id.as_str()))
+        .map(|(id, context)| (id.clone(), json!(context)))
+        .collect();
+    if !tracked.is_empty() {
+        extra.insert("tracked".into(), tracked.into());
+    }
     let mut draft = json!({ "text": content.text() });
     if !extra.is_empty() {
         draft["extra"] = extra.into();
@@ -87,10 +101,12 @@ fn restored(draft: &Value) -> Sent {
         .filter_map(|path| path.as_str().map(PathBuf::from))
         .collect();
     let context = serde_json::from_value(extra["context"].clone()).unwrap_or_default();
+    let tracked_context = serde_json::from_value(extra["tracked"].clone()).unwrap_or_default();
     Sent {
         content,
         attachments,
         context,
+        tracked_context,
     }
 }
 
@@ -206,5 +222,6 @@ impl Composing {
             .update(cx, |input, cx| input.set_value(draft.content, window, cx));
         self.attachments = draft.attachments;
         self.context = draft.context;
+        self.tracked_context = draft.tracked_context;
     }
 }

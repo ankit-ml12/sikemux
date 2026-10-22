@@ -676,6 +676,7 @@ impl Workbench {
                                 content: text.into(),
                                 attachments: Vec::new(),
                                 context: Vec::new(),
+                                tracked_context: HashMap::new(),
                             }));
                         }
                         return self.parts.redraw(&self.parts.stage, cx);
@@ -1133,6 +1134,7 @@ impl Workbench {
                 });
                 composing.attachments = returned.attachments;
                 composing.context = returned.context;
+                composing.tracked_context = returned.tracked_context;
             }
             composing.take_arrived(window, cx);
         }
@@ -1207,6 +1209,7 @@ impl Workbench {
             content: draft.read(cx).content(),
             attachments: composing.attachments.clone(),
             context: composing.context.clone(),
+            tracked_context: composing.tracked_context.clone(),
         };
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
         self.answer(agent, |chat, open| {
