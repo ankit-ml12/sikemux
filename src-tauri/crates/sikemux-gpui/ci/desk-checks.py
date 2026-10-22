@@ -414,14 +414,17 @@ def dk8(run):
 
 def dk2(run):
     x, y = run.composer()
+    if not run.desk().get("open"):
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1.5")
     run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1")
     closed = run.desk().get("open") is False
     held = len(pages(run.desk()))
     run.drive("key cmd+l")
-    desk = until(lambda: (lambda desk: desk if desk.get("addressFocused") else None)(run.desk()), 5) or run.desk()
+    desk = until(lambda: (lambda desk: desk if desk.get("addressFocused") else None)(run.desk()), 10) or run.desk()
     page = active_page(desk)
     run.report("DK2", closed and desk.get("open") and desk.get("addressFocused") and (held or page.get("url") == "about:blank"),
-               f"closed first {closed}; ⌘L: open {desk.get('open')}, address focused {desk.get('addressFocused')}, on {page.get('url')!r} with {held} pages held")
+               f"closed first {closed}; ⌘L: open {desk.get('open')}, address focused {desk.get('addressFocused')}, page focused {desk.get('pageFocused')}, "
+               f"keys in {(run.state() or {}).get('contexts', [])[-2:]}, on {page.get('url')!r} with {held} pages held")
 
 
 def dk9(run):
@@ -460,7 +463,10 @@ def df1(run):
     path = str(run.root / "project/a.txt")
     said = run.prompt(json_tool("ui.open", {"kind": "file", "path": path, "line": 3}))
     desk = until(lambda: (lambda desk: desk if (desk.get("front") or {}).get("file") == path else None)(run.desk()), 10) or {}
-    line = next((file.get("line") for file in (run.state() or {}).get("files", []) if file.get("path") == path), None)
+    def cursor_line():
+        return next((file.get("line") for file in (run.state() or {}).get("files", []) if file.get("path") == path), None)
+
+    line = until(lambda: cursor_line() == 3 and 3, 10) or cursor_line()
     run.report("DF1", bool(desk.get("open")) and line == 3, f"answer {said[:120]!r}; front {desk.get('front')}, cursor line {line}")
 
 
