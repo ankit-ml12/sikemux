@@ -36,6 +36,11 @@ pub trait Row: 'static {
     fn docs(&self) -> Vec<&Markdown> {
         Vec::new()
     }
+
+    /// Whether find looks in the markdown `docs` gives at `doc`.
+    fn findable(&self, _doc: usize) -> bool {
+        true
+    }
 }
 
 /// One change to a transcript's rows, as a host maps its own feed onto them.
@@ -642,6 +647,9 @@ impl<R: Row> Render for Transcript<R> {
 fn hits_in<R: Row>(row: &R, ix: usize, query: &Query) -> Vec<Hit> {
     let mut hits = Vec::new();
     for (doc, markdown) in row.docs().into_iter().enumerate() {
+        if !row.findable(doc) {
+            continue;
+        }
         for block in 0..markdown.blocks().len() {
             for (n, text) in (1..).zip(markdown.texts(block)) {
                 hits.extend(ranges_in(&text, query).into_iter().map(|range| Hit {

@@ -229,6 +229,19 @@ impl Row for ChatRow {
             .map(|doc| &doc.markdown)
             .collect()
     }
+
+    /// Find reads the chat's prose, as on the Mac: not the agent's thinking, nor a message
+    /// another agent sent.
+    fn findable(&self, doc: usize) -> bool {
+        self.message.letters.is_empty()
+            && self
+                .message
+                .parts
+                .iter()
+                .filter(|part| self.doc(part.id()).is_some())
+                .nth(doc)
+                .is_some_and(|part| matches!(part, ChatPart::Text { .. }))
+    }
 }
 
 fn letter_doc(ix: usize) -> String {

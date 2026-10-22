@@ -29,7 +29,7 @@ pub(crate) fn ranges_in(text: &str, query: &Query) -> Vec<Range<usize>> {
     } else {
         (text.to_ascii_lowercase(), query.text.to_ascii_lowercase())
     };
-    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
     hay.match_indices(&needle)
         .map(|(at, found)| at..at + found.len())
         .filter(|range| {
