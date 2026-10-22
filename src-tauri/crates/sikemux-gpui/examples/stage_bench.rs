@@ -3,7 +3,8 @@
 //! and a terminal flooding. The core must have a
 //! chat in its tab in front, as `fake_chat`'s `remote` leaves it:
 //!   SIKEMUX_CORE_SOCKET=/tmp/gb/core.sock HOME=/tmp/gb/home cargo run --release --example stage_bench
-//! `STAGE_BENCH_LOOP=N` only draws the stage again N times, for a profiler to watch.
+//! `STAGE_BENCH_LOOP=N` only draws the stage again N times, for a profiler to watch, and
+//! `STAGE_BENCH_FLOOD=S` only floods a terminal with an endless `yes` for S seconds.
 //! It runs offscreen on a simulated clock at 120 Hz and prints, for each phase, the main
 //! thread's CPU for each frame: the window's work and, when something changed, its draw.
 
@@ -20,6 +21,7 @@ use sikemux_gpui::{core, icons, terminal, theme, WINDOW_SIZE};
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId};
 
 const FRAME: Duration = Duration::from_micros(8_333);
+const FLOOD_LINE: &str = "yes 'the quick brown fox jumps over the lazy dog'";
 const FLOOD: &str = "yes 'the quick brown fox jumps over the lazy dog' | head -n 400000";
 
 struct Bench {
@@ -225,6 +227,41 @@ fn main() -> anyhow::Result<()> {
     run.frames.clear();
     if let Ok(path) = std::env::var("STAGE_BENCH_SHOT") {
         run.cx.capture_screenshot(run.window)?.save(path)?;
+    }
+    if let Some(seconds) = std::env::var("STAGE_BENCH_FLOOD")
+        .ok()
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+    {
+        let flood = match std::env::var("STAGE_BENCH_LINES") {
+            Ok(lines) => format!("{FLOOD_LINE} | head -n {lines}"),
+            Err(_) => FLOOD_LINE.to_owned(),
+        };
+        run.bench.update(&mut run.cx, |bench, _| {
+            terminal::type_text(bench, id, flood);
+        });
+        run.cx
+            .update_window(run.window, |_, window, cx| {
+                if let Ok(enter) = Keystroke::parse("enter") {
+                    window.dispatch_keystroke(enter, cx);
+                }
+            })
+            .ok();
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(seconds) {
+            run.frame();
+            if let Some(slow) = run.frames.last().filter(|frame| **frame > 50.) {
+                println!(
+                    "frame {} at {:.2} s took {slow:.1} ms",
+                    run.frames.len(),
+                    started.elapsed().as_secs_f64()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        run.report(&format!(
+            "flooding the terminal for {seconds} s of wall time"
+        ));
+        return Ok(());
     }
     if let Some(times) = std::env::var("STAGE_BENCH_LOOP")
         .ok()
