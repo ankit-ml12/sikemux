@@ -2519,8 +2519,12 @@ fn strip(
             .current(&agent.provider)
             .map(|profile| profile.id.clone())
     });
+    let host = match bench.chat_target(&agent.id).place() {
+        crate::hosts::Place::Account(host) => Some(bench.host_name(host)),
+        crate::hosts::Place::This => None,
+    };
     // The accounts listed are this host's, and moving a chat to one is this host's to do.
-    let here = *bench.chat_target(&agent.id).place() == crate::hosts::Place::This;
+    let here = host.is_none();
     let account = on.filter(|_| here).and_then(|on| {
         let chat = crate::account_picker::Chat {
             agent: &agent.id,
@@ -2534,6 +2538,7 @@ fn strip(
         crate::account_picker::picker(bench, chat, running, !ready, &this, cx)
     });
     Strip {
+        host,
         project: folder
             .file_name()
             .map_or_else(|| folder.to_string_lossy(), |name| name.to_string_lossy())

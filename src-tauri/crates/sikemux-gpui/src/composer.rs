@@ -28,6 +28,8 @@ type Chip = Rc<dyn Fn(&InlineTokenContext, &mut Window, &mut App) -> AnyElement>
 /// Where the chat runs, docked on its composer: the host, the project and its branch or
 /// worktree on the left, the account on the right.
 pub struct Strip {
+    /// The account host the chat runs on, or none for this one.
+    pub host: Option<SharedString>,
     pub project: SharedString,
     /// The project's folder, which its name's tooltip gives.
     pub path: SharedString,
@@ -407,8 +409,18 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .child(ui::icon(Icon::Laptop, 12.).text_color(t.text_secondary))
-                .child(ui::text("This host", 12., FontWeight::NORMAL).text_color(t.text_secondary)),
+                .child(match strip.host {
+                    Some(_) => ui::icon(Icon::Server, 12.).text_color(t.host),
+                    None => ui::icon(Icon::Laptop, 12.).text_color(t.text_secondary),
+                })
+                .child(
+                    ui::text(
+                        strip.host.clone().unwrap_or_else(|| "This host".into()),
+                        12.,
+                        FontWeight::NORMAL,
+                    )
+                    .text_color(t.text_secondary),
+                ),
         )
         .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary))
         .child(project)

@@ -79,6 +79,14 @@ impl Workbench {
         .collect()
     }
 
+    /// The name of the account host `host`, as the core lists it.
+    pub fn host_name(&self, host: &str) -> SharedString {
+        self.host_choices()
+            .into_iter()
+            .find(|option| option.choice == HostChoice::Account(host.to_owned()))
+            .map_or_else(|| "another host".into(), |option| option.label)
+    }
+
     /// The host in front, as the core's layout says.
     pub fn chosen_host(&self) -> HostChoice {
         if let Some(key) = self

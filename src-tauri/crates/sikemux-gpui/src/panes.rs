@@ -369,11 +369,7 @@ fn preview(side: Side, cx: &App) -> impl IntoElement {
 
 /// A desk of another host, which this app does not show yet.
 fn elsewhere(bench: &Workbench, host: &str, cx: &mut Context<Workbench>) -> AnyElement {
-    let name = bench
-        .host_choices()
-        .into_iter()
-        .find(|option| option.choice == crate::hosts::HostChoice::Account(host.to_owned()))
-        .map_or_else(|| "another host".into(), |option| option.label);
+    let name = bench.host_name(host);
     ui::pane(cx)
         .flex()
         .items_center()
