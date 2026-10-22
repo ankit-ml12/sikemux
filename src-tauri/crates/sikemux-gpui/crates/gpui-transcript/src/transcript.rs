@@ -525,6 +525,14 @@ impl<R: Row> Transcript<R> {
         }
     }
 
+    /// The text selected here while the keyboard is in the transcript.
+    pub fn focused_selection(&self, window: &Window) -> Option<String> {
+        self.focus
+            .is_focused(window)
+            .then(|| self.selected_text())
+            .flatten()
+    }
+
     /// The selected text, read from the rows themselves, so rows out of view copy too.
     fn selected_text(&self) -> Option<String> {
         let span = self.span()?;

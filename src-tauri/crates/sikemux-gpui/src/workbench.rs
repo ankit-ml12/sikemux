@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::Timelike;
 
-use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
+use gpui_kit::component::input::{AnyInputState, InputEvent, InputState, TextareaState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
@@ -2674,8 +2674,8 @@ impl Workbench {
     }
 
     /// Brings the project's Search tab to the front with the keyboard in its find field,
-    /// opening one when it has none.
-    fn open_search(&self, window: &mut Window, cx: &mut Context<Self>) {
+    /// opening one when it has none, and searching for what is selected, as on the Mac.
+    fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(project) = self.project() else {
             return;
         };
@@ -2683,14 +2683,41 @@ impl Workbench {
             "openTab",
             json!({ "project": project.id, "kind": "search", "target": project.path.to_string_lossy() }),
         );
-        let path = project.path.to_string_lossy();
-        if let Some(search) = self
-            .search
-            .as_ref()
-            .filter(|search| search.read(cx).project == path)
-        {
-            search.update(cx, |search, cx| search.focus_find(window, cx));
-        }
+        let path = project.path.to_string_lossy().into_owned();
+        let seed = self.selection(window, cx);
+        let target = self.target();
+        let search = match self.search.as_ref().filter(|search| {
+            let search = search.read(cx);
+            search.project == path && search.place() == target.place()
+        }) {
+            Some(search) => search.clone(),
+            None => {
+                let search = cx.new(|cx| SearchPane::new(target, path, cx));
+                self.search = Some(search.clone());
+                search
+            }
+        };
+        search.update(cx, |search, cx| search.focus_find(seed, window, cx));
+    }
+
+    /// The first line of the text selected where the keyboard is: a field or file, or a chat.
+    fn selection(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<String> {
+        let selected = match window.focused_input(cx) {
+            Some(AnyInputState::Input(state)) => Some(state.read(cx).selected_text().to_string()),
+            Some(AnyInputState::Textarea(state)) => {
+                Some(state.read(cx).selected_text().to_string())
+            }
+            Some(AnyInputState::Editor(state)) => Some(state.read(cx).selected_text().to_string()),
+            _ => self
+                .chats
+                .values()
+                .find_map(|chat| chat.transcript.read(cx).focused_selection(window))
+                .or_else(|| Some(gpui_kit::base::TextSelection::selected_text(window, cx))),
+        }?;
+        selected
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(str::to_owned)
     }
 
     /// Makes the code host's areas when the Git tab in front shows one, and keeps them

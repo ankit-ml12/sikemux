@@ -195,10 +195,23 @@ impl SearchPane {
         self.fields.as_ref().expect("made above")
     }
 
-    /// Puts the keyboard in the find field, as ⌘⇧F does.
-    pub fn focus_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Puts the keyboard in the find field, searching for `seed` when there is one, as ⌘⇧F does.
+    pub fn focus_find(
+        &mut self,
+        seed: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let find = self.fields(window, cx).find.clone();
-        find.update(cx, |find, cx| find.focus(window, cx));
+        find.update(cx, |find, cx| {
+            if let Some(seed) = &seed {
+                find.set_value(seed.clone(), window, cx);
+            }
+            find.focus(window, cx);
+        });
+        if seed.is_some() {
+            self.typed(cx);
+        }
     }
 
     /// Reads what was typed, searching again once typing pauses when the search changed.
