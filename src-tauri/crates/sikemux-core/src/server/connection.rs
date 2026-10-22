@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, Notify};
 use crate::protocol::{
     decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
     LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget,
-    OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
+    TerminalSpawn, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
@@ -403,6 +403,7 @@ async fn read_requests(
                     core,
                     &target,
                     bytes.to_vec(),
+                    typist(client),
                     Box::new(move |result| {
                         reply_to.respond(
                             request_id,
@@ -416,13 +417,29 @@ async fn read_requests(
     }
 }
 
+/// Who `client` types as: the app on its own connection, or anyone else.
+pub(crate) fn typist(client: &ClientConn) -> session::Typist {
+    if client.peer == Peer::App {
+        session::Typist::App(client.id)
+    } else {
+        session::Typist::Other
+    }
+}
+
 /// Types `bytes` into `target` as the person's own input.
 pub(crate) fn type_input(
     core: &Core,
     target: &session::Session,
     bytes: Vec<u8>,
+    typist: session::Typist,
     reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
 ) {
+    if !target.may_type(typist) {
+        return reply(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            session::SETUP_LOCKED,
+        )));
+    }
     agent::note_input(core, target, &bytes);
     if let Some(agent) = target
         .agent
@@ -432,7 +449,46 @@ pub(crate) fn type_input(
         core.harness.questions.typed(agent.agent_id());
         messages::worked(core, agent.agent_id());
     }
-    session::queue_input(target, bytes, reply);
+    session::queue_input(target, bytes, typist, reply);
+}
+
+/// Opens, for the app connection `client`, a terminal that runs `startup` to
+/// set a host up over SSH, locked to that connection from the start
+/// (`SetupLock`), and answers with its id.
+pub(crate) async fn spawn_setup(
+    core: &Arc<Core>,
+    client: &ClientConn,
+    cols: u16,
+    rows: u16,
+    startup: String,
+) -> CoreResult<SessionId> {
+    if client.peer != Peer::App {
+        return Err(access::APP_ONLY.into());
+    }
+    let launch = core.launch_identity();
+    let owner = client.id;
+    let spawning = core.clone();
+    let pending = blocking(move || {
+        let mut prepared = prepare_terminal(
+            &launch,
+            TerminalSpawn {
+                cols,
+                rows,
+                cwd: None,
+                startup: Some(startup),
+                direct_command: None,
+                context: None,
+                env: HashMap::new(),
+                continues: None,
+            },
+        )?;
+        prepared.setup = Some(session::SetupLock::By(owner));
+        session::spawn_session(&spawning, prepared)
+    })
+    .await?;
+    let id = pending.id();
+    pending.start(core);
+    Ok(id)
 }
 
 pub(crate) async fn blocking<T: Send + 'static>(

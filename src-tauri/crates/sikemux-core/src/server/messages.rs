@@ -1667,7 +1667,7 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Qu
         );
     });
     agent::note_input(core, &terminal, b"\r");
-    session::queue_input(&terminal, typed, Box::new(drop));
+    session::queue_input(&terminal, typed, session::Typist::Other, Box::new(drop));
     let (core, agent_id) = (core.clone(), agent_id.to_owned());
     tokio::spawn(async move {
         tokio::time::sleep(ENTER_AFTER_PASTE).await;
@@ -1675,7 +1675,12 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Qu
             unpasted(&core, &agent_id);
             return;
         }
-        session::queue_input(&terminal, b"\r".to_vec(), Box::new(drop));
+        session::queue_input(
+            &terminal,
+            b"\r".to_vec(),
+            session::Typist::Other,
+            Box::new(drop),
+        );
         if let Some(pasted) = core
             .harness
             .mailbox

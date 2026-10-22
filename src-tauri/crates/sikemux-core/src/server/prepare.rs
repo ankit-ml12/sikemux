@@ -67,6 +67,7 @@ pub(crate) struct PreparedLaunch {
     pub ssh: bool,
     pub initial_prompt_submitted: bool,
     pub continues: Option<Continuation>,
+    pub setup: Option<super::session::SetupLock>,
 }
 
 /// The command the app's `pty_spawn` builds, minus the parts only the app can
@@ -179,6 +180,7 @@ pub(crate) fn prepare_terminal(
             .as_ref()
             .is_some_and(|context| context.initial_prompt_submitted),
         continues,
+        setup: None,
     })
 }
 
@@ -262,5 +264,6 @@ pub(crate) fn prepare_task(
         ssh: false,
         initial_prompt_submitted: false,
         continues: None,
+        setup: None,
     })
 }

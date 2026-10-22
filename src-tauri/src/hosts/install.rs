@@ -6,13 +6,13 @@
 //! (ADR 0018). Only a code read from that session's own output, on the line
 //! login prints it on, is approved.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use sikemux_core::protocol::{BuildChannel, SessionId, SpawnTarget, TerminalSpawn};
+use sikemux_core::protocol::{BuildChannel, SessionId};
 use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
@@ -42,6 +42,29 @@ struct Watch {
 
 static WATCHING: AtomicBool = AtomicBool::new(false);
 static WATCHES: LazyLock<Mutex<HashMap<SessionId, Watch>>> = LazyLock::new(Mutex::default);
+/// The SSH hosts being set up now, one run each.
+static SETTING_UP: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+
+/// One SSH host's set-up, held from its start until it is done.
+struct Reserved(String);
+
+impl Reserved {
+    fn take(alias: &str) -> AppResult<Self> {
+        if SETTING_UP.locked().insert(alias.to_owned()) {
+            Ok(Self(alias.to_owned()))
+        } else {
+            Err(AppError::Other(format!(
+                "{alias} is being set up already; wait for that to finish"
+            )))
+        }
+    }
+}
+
+impl Drop for Reserved {
+    fn drop(&mut self) {
+        SETTING_UP.locked().remove(&self.0);
+    }
+}
 
 /// Reads an install terminal's output for its sign-in code. Every terminal's
 /// output passes here, so anything else returns at once.
@@ -265,22 +288,21 @@ async fn sign_in_over_ssh(
             "this app is not signed in to your Sikemux account, so it cannot add {alias} to it; sign in at the bottom of the side rail first"
         )));
     }
-    let id = core
-        .spawn(
-            crate::pty::commands::launch_identity(&app),
-            SpawnTarget::Terminal(TerminalSpawn {
-                cols,
-                rows,
-                cwd: None,
-                startup: Some(format!("ssh -t -- {alias} {}", single_quoted(&remote))),
-                direct_command: None,
-                context: None,
-                env: Default::default(),
-                continues: None,
+    let reserved = Reserved::take(&alias)?;
+    // The core locks the terminal to this app connection from its start: only
+    // it types there, so nothing else can print a sign-in code of its own.
+    let opened = core
+        .call(
+            "hostSetupTerminal",
+            serde_json::json!({
+                "cols": cols,
+                "rows": rows,
+                "startup": format!("ssh -t -- {alias} {}", single_quoted(&remote)),
             }),
         )
         .await
         .map_err(core_error)?;
+    let id: SessionId = serde_json::from_value(opened["id"].clone())?;
     let (found, code) = oneshot::channel();
     WATCHES.locked().insert(
         id,
@@ -293,11 +315,16 @@ async fn sign_in_over_ssh(
     let core_for_approval = core.clone();
     let app_for_task = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _reserved = reserved;
         let finished = async {
-            let code = match tokio::time::timeout(INSTALL_TIMEOUT, code)
+            let waited = tokio::time::timeout(INSTALL_TIMEOUT, code).await;
+            if let Err(error) = core_for_approval
+                .call("hostSetupDone", serde_json::json!({ "id": id }))
                 .await
-                .map_err(|_| AppError::Other("installing took too long".into()))?
             {
+                eprintln!("Sikemux could not end the set-up lock on its terminal: {error}");
+            }
+            let code = match waited.map_err(|_| AppError::Other("installing took too long".into()))? {
                 Ok(code) => code,
                 Err(_) if matches!(expected, Code::IfPrinted) => return AppResult::Ok(()),
                 Err(_) => return Err(AppError::Other("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())),

@@ -38,7 +38,7 @@ use super::agent::{self, AgentActivity, AgentRecord};
 use super::chat::{self, ChatRecord, HandOver, LiveChat};
 use super::harness::HarnessRecord;
 use super::prepare::Owner;
-use super::session::{self, Session, SessionParts};
+use super::session::{self, Session, SessionParts, SetupLock};
 use super::{
     continue_clock, lock_path, run_core, tools, uptime_ms, Core, CoreError, CoreResult,
     ServerConfig, ServerError,
@@ -110,6 +110,9 @@ struct SessionRecord {
     task_output_end: Option<u64>,
     agent: Option<AgentRecord>,
     shell_files: Option<PathBuf>,
+    /// The terminal was setting a host up, which the next core keeps locked.
+    #[serde(default)]
+    setup: bool,
 }
 
 fn blob_path(directory: &Path, id: SessionId, kind: &str) -> PathBuf {
@@ -184,6 +187,7 @@ fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
         task_output_end,
         agent: session.agent.as_ref().map(AgentActivity::record),
         shell_files: session.shell_files().map(Path::to_path_buf),
+        setup: session.in_setup(),
     })
 }
 
@@ -710,6 +714,7 @@ fn adopt_session(
             shell_integration: record
                 .shell_files
                 .map(|files| ShellLaunchIntegration::adopt(Some(files))),
+            setup: record.setup.then_some(SetupLock::AnyApp),
         },
         io,
         Box::new(child),
@@ -751,6 +756,7 @@ fn adopt_bare(
             task_log: None,
             agent: None,
             shell_integration: None,
+            setup: None,
         },
         io,
         Box::new(AdoptedChild::new(pid, None)),

@@ -79,7 +79,16 @@ calls! { core, client, params;
     "chatFile": Watch, any_program => answer(chat_file(&core, &client.peer, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
-    "pasteIntoTerminal": Full => answer(paste_into_terminal(&core, parse(params)?).await?),
+    "pasteIntoTerminal": Full => answer(paste_into_terminal(&core, client, parse(params)?).await?),
+    "hostSetupTerminal": Local => {
+        let params: SetupTerminalParams = parse(params)?;
+        let id = super::connection::spawn_setup(&core, client, params.cols, params.rows, params.startup).await?;
+        answer(json!({ "id": id }))
+    },
+    "hostSetupDone": Local => {
+        let params: SetupDoneParams = parse(params)?;
+        answer(setup_done(&core, client, params.id)?)
+    },
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
     "publishBuddies": Local => answer(core.workspaces.publish_buddies(parse(params)?)?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
@@ -397,7 +406,11 @@ const STARTING_PASTE_WAIT: std::time::Duration = std::time::Duration::from_secs(
 
 /// Types `text` into a terminal as one paste, then Enter when it is to be
 /// sent, answering once the terminal has taken it.
-async fn paste_into_terminal(core: &Core, params: PasteParams) -> CoreResult<()> {
+async fn paste_into_terminal(
+    core: &Core,
+    client: &ClientConn,
+    params: PasteParams,
+) -> CoreResult<()> {
     let session = core
         .session(params.id)
         .ok_or("that terminal is not on this host")?;
@@ -413,12 +426,37 @@ async fn paste_into_terminal(core: &Core, params: PasteParams) -> CoreResult<()>
         core,
         &session,
         bytes,
+        super::connection::typist(client),
         Box::new(move |result| {
             let _ = done.send(result);
         }),
     );
     typed.await.map_err(|_| "that terminal closed")??;
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct SetupTerminalParams {
+    cols: u16,
+    rows: u16,
+    startup: String,
+}
+
+#[derive(Deserialize)]
+struct SetupDoneParams {
+    id: SessionId,
+}
+
+/// The app has its sign-in code from the set-up terminal `id`, or gave up:
+/// its lock ends, if this app connection holds it.
+fn setup_done(core: &Core, client: &ClientConn, id: SessionId) -> CoreResult<()> {
+    if client.peer != Peer::App {
+        return Err(super::access::APP_ONLY.into());
+    }
+    match core.session(id) {
+        Some(session) => session.end_setup(client.id).map_err(Into::into),
+        None => Ok(()),
+    }
 }
 
 #[derive(Debug, Deserialize)]

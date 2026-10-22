@@ -109,8 +109,31 @@ pub(crate) struct Session {
     shell_integration: Option<ShellLaunchIntegration>,
     /// A title change waits to be sent, with any that follow it soon after.
     title_pending: AtomicBool,
+    setup: Mutex<Option<SetupLock>>,
     _capacity_permit: CapacityPermit,
 }
+
+/// A terminal setting a host up over SSH, whose output carries the sign-in code
+/// the app approves for the account. Its terminal echoes what is typed, so only
+/// the app connection that opened it may type into it, or end the lock, until
+/// it is done or its process ends: nothing else can print a code of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetupLock {
+    By(ClientId),
+    /// Any app connection, once a core update dropped the one that opened it.
+    AnyApp,
+}
+
+/// Who types into a terminal: the app over one of its connections, or anyone
+/// else, the core's own typing included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Typist {
+    App(ClientId),
+    Other,
+}
+
+pub(crate) const SETUP_LOCKED: &str =
+    "this terminal is setting a host up, and only the app that opened it types into it";
 
 /// Programs that animate their title, such as a spinner, send at most one
 /// change per this long.
@@ -133,6 +156,7 @@ pub(crate) struct SessionParts {
     pub task_log: Option<OutputLog>,
     pub agent: Option<AgentActivity>,
     pub shell_integration: Option<ShellLaunchIntegration>,
+    pub setup: Option<SetupLock>,
 }
 
 impl Session {
@@ -176,9 +200,37 @@ impl Session {
             reader_frozen: AtomicBool::new(false),
             shell_integration: parts.shell_integration,
             title_pending: AtomicBool::new(false),
+            setup: Mutex::new(parts.setup),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
+    }
+
+    pub(crate) fn may_type(&self, typist: Typist) -> bool {
+        match (*self.setup.locked(), typist) {
+            (None, _) | (Some(SetupLock::AnyApp), Typist::App(_)) => true,
+            (Some(SetupLock::By(owner)), Typist::App(client)) => owner == client,
+            (Some(_), Typist::Other) => false,
+        }
+    }
+
+    pub(crate) fn in_setup(&self) -> bool {
+        self.setup.locked().is_some()
+    }
+
+    /// Ends the set-up lock the app connection `client` holds. Another
+    /// connection's lock stays.
+    pub(crate) fn end_setup(&self, client: ClientId) -> Result<(), &'static str> {
+        let mut setup = self.setup.locked();
+        match *setup {
+            Some(SetupLock::By(owner)) if owner != client => {
+                Err("another app connection is setting this host up")
+            }
+            _ => {
+                *setup = None;
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn owner(&self) -> &Owner {
@@ -356,6 +408,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         ssh,
         initial_prompt_submitted,
         continues,
+        setup,
     } = launch;
     let carried = continues
         .as_ref()
@@ -434,6 +487,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             task_log: (kind == SessionKind::Task).then(OutputLog::default),
             agent,
             shell_integration,
+            setup,
         },
         io,
         child.into_inner(),
@@ -564,8 +618,15 @@ pub(crate) async fn until_pastes(session: &Session, limit: Duration) {
 pub(crate) fn queue_input(
     session: &Session,
     bytes: Vec<u8>,
+    typist: Typist,
     reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
 ) {
+    if !session.may_type(typist) {
+        return reply(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            SETUP_LOCKED,
+        )));
+    }
     if let Err(mpsc::error::SendError(job)) = session.input.send(InputJob { bytes, reply }) {
         (job.reply)(Err(std::io::Error::other("session closed")));
     }
@@ -763,6 +824,7 @@ pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
 /// parser lock, so an attach knows whether its snapshot came after it.
 pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitStatus>) {
     let exited_at = stamp_exited(session);
+    *session.setup.locked() = None;
     let (code, signal) = match status {
         Some(status) => {
             let exit = TaskProcessExit::from_status(Some(status));

@@ -265,6 +265,78 @@ async fn a_paired_device_drives_a_terminal_over_the_network() {
     assert!(seen > 0);
 }
 
+/// A host's set-up terminal prints the sign-in code the app approves for the
+/// account, and echoes what is typed into it, so a device that could type
+/// there could print a code of its own and get its host onto the account.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_app_that_opened_a_setup_terminal_types_into_it() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (device, _device_events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let setup = || async {
+        let opened = app
+            .call(
+                "hostSetupTerminal",
+                json!({ "cols": 80, "rows": 24, "startup": "cat" }),
+            )
+            .await
+            .expect("the app opens a set-up terminal");
+        opened["id"].as_u64().expect("its id")
+    };
+    let locked = |result: Result<(), ClientError>| {
+        result.is_err_and(|error| error.to_string().contains("setting a host up"))
+    };
+
+    let id = setup().await;
+    let fake = b"  and enter the code BCDF-GHJK, or enter it in Sikemux\n";
+    assert!(
+        locked(device.write(id, fake).await),
+        "a device types into it"
+    );
+    let pasted = device
+        .call(
+            "pasteIntoTerminal",
+            json!({ "id": id, "text": "enter the code BCDF-GHJK", "submit": true }),
+        )
+        .await;
+    assert!(pasted.is_err_and(|error| error.to_string().contains("setting a host up")));
+    assert!(
+        device
+            .call("hostSetupDone", json!({ "id": id }))
+            .await
+            .is_err(),
+        "a device ends the lock"
+    );
+    assert!(
+        locked(device.write(id, fake).await),
+        "the lock outlives a device's done"
+    );
+    app.write(id, b"yes\n")
+        .await
+        .expect("the app types into it");
+    app.call("hostSetupDone", json!({ "id": id }))
+        .await
+        .expect("the app ends the lock");
+    device
+        .write(id, b"x")
+        .await
+        .expect("a device types once it is done");
+
+    let id = setup().await;
+    app.kill(id).await.expect("the set-up terminal ends");
+    let after = device.write(id, fake).await;
+    assert!(
+        !locked(after),
+        "an ended set-up terminal still reads as locked"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_watching_device_reads_but_cannot_drive_or_reach_the_core() {
     let core_key = SecretKey::generate();
