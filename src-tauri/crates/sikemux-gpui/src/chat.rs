@@ -41,6 +41,7 @@ use crate::syntax;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
+use gpui_kit::component::Sizable;
 use tokio::sync::mpsc::UnboundedSender;
 
 mod attach;
@@ -2333,6 +2334,7 @@ fn composer(
     )
     .map(IntoElement::into_any_element);
     let mut composer = Composer::new(&composing.draft, &agent.provider, label, on_send, on_stop)
+        .answering(answering(bench, &agent.id, chat, cx))
         .refusal(composing.refusal.clone())
         .text_scale(chat.scale)
         .attachments(
@@ -2445,6 +2447,56 @@ impl Workbench {
             self.switch_mode(agent, if on { "workspace-write" } else { "bypass" });
         }
     }
+}
+
+/// The chip over a draft that answers a question in the person's own words: who asked and
+/// what, and a way back to writing a message.
+fn answering(
+    bench: &Workbench,
+    agent: &str,
+    chat: &Chat,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    let id = chat.writing.as_ref()?;
+    let question = bench.questions.iter().find(|question| &question.id == id)?;
+    let provider = bench.view.as_ref().and_then(|view| {
+        view.workspace
+            .agents
+            .iter()
+            .find(|saved| saved.id == question.agent_id)
+            .map(|saved| saved.provider.clone())
+    });
+    let t = Tokens::get(cx).clone();
+    let (this, agent) = (cx.weak_entity(), agent.to_owned());
+    let label = format!("Answering {} · {}", question.name, question.text);
+    Some(
+        gpui_kit::component::attachment::Attachment::new()
+            .id("composer-answering")
+            .with_size(gpui_kit::component::Size::Small)
+            .tooltip(question.text.clone())
+            .media(
+                gpui_kit::component::attachment::AttachmentMedia::new().child(match provider {
+                    Some(provider) => ui::mark(&provider, 14.),
+                    None => ui::icon(Icon::Agent, 13.)
+                        .text_color(t.text_tertiary)
+                        .into_any_element(),
+                }),
+            )
+            .content(
+                gpui_kit::component::attachment::AttachmentContent::new()
+                    .title(gpui_kit::component::attachment::AttachmentTitle::new(label)),
+            )
+            .on_remove(move |_, _, cx| {
+                this.update(cx, |bench, cx| {
+                    if let Some(chat) = bench.chats.get_mut(&agent) {
+                        chat.writing = None;
+                    }
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                })
+                .ok();
+            })
+            .into_any_element(),
+    )
 }
 
 pub(crate) fn tilde(path: &std::path::Path) -> String {
