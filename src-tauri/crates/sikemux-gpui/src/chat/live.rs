@@ -366,7 +366,10 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                 } else {
                     tints.task
                 };
-                let stop = task.can_stop.then(|| stop(&agent.id, task, &t, cx));
+                let stopping = chat.stopping.contains(&task.async_task_id);
+                let stop = task
+                    .can_stop
+                    .then(|| stop(&agent.id, task, stopping, &t, cx));
                 let finished = task
                     .agents
                     .iter()
@@ -420,7 +423,13 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
         .collect()
 }
 
-fn stop(agent: &str, task: &AsyncTask, t: &Tokens, cx: &mut Context<Workbench>) -> AnyElement {
+fn stop(
+    agent: &str,
+    task: &AsyncTask,
+    stopping: bool,
+    t: &Tokens,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     let (agent, id, danger) = (agent.to_owned(), task.async_task_id.clone(), t.danger);
     BaseButton::new(SharedString::from(format!("stop:{id}")))
         .accessibility_label(format!("Stop {}", task.name))
@@ -430,8 +439,15 @@ fn stop(agent: &str, task: &AsyncTask, t: &Tokens, cx: &mut Context<Workbench>) 
         .justify_center()
         .rounded(theme::RADIUS_1)
         .text_color(t.text_disabled)
-        .hover(move |stop| stop.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
-        .on_click(cx.listener(move |bench, _, _, _| {
+        .when(!stopping, |stop| {
+            stop.hover(move |stop| stop.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
+        })
+        .disabled(stopping)
+        .on_click(cx.listener(move |bench, _, _, cx| {
+            if let Some(chat) = bench.chats.get_mut(&agent) {
+                chat.stopping.insert(id.clone());
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
             bench.ask_chat(ChatAsk::StopTask {
                 agent: agent.clone(),
                 task: id.clone(),

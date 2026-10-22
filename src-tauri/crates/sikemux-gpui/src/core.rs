@@ -88,6 +88,16 @@ pub enum ChatNews {
         error: String,
         text: String,
     },
+    /// The core took the reply to the permission request `request`, or failed to.
+    Replied {
+        request: String,
+        error: Option<String>,
+    },
+    /// The core took the ask to stop the background task `task`, or failed to.
+    TaskStopped {
+        task: String,
+        error: Option<String>,
+    },
 }
 
 /// What an attached terminal sends, decoded on the core's thread.
@@ -1272,10 +1282,11 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             request,
             option,
         } => {
-            return report(
-                "answer",
-                client.acp_permission_reply(agent, request, option).await,
-            )
+            let replied = client
+                .acp_permission_reply(agent.clone(), request.clone(), option)
+                .await;
+            let error = replied.err().map(|error| error.to_string());
+            (agent, ChatNews::Replied { request, error })
         }
         ChatAsk::Config {
             agent,
@@ -1288,7 +1299,9 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             )
         }
         ChatAsk::StopTask { agent, task } => {
-            return report("stop a task of", client.acp_stop_task(agent, task).await)
+            let stopped = client.acp_stop_task(agent.clone(), task.clone()).await;
+            let error = stopped.err().map(|error| error.to_string());
+            (agent, ChatNews::TaskStopped { task, error })
         }
         ChatAsk::Detail { agent, tool } => {
             let asked = json!({ "agentId": agent, "toolCallId": tool });

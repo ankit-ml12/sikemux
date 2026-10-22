@@ -680,6 +680,8 @@ impl Workbench {
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
                     ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
+                    ChatNews::Replied { request, error } => chat.replied(&request, error),
+                    ChatNews::TaskStopped { task, error } => chat.task_stopped(&task, error),
                     ChatNews::Refused { error, text } => {
                         if let Some(composing) = chat.composer.as_mut() {
                             composing.refusal = Some(error.into());

@@ -416,6 +416,10 @@ pub struct Chat {
     cursor: Option<(String, usize)>,
     /// The sent prompt the arrows brought back into the draft, and what was typed before.
     recalled: Option<(usize, String)>,
+    /// The permission request a reply went to, until the core took it.
+    replying: Option<String>,
+    /// The background tasks asked to stop, until the core took each ask.
+    stopping: HashSet<String>,
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -632,6 +636,8 @@ impl Chat {
             groups_folded: HashSet::new(),
             cursor: None,
             recalled: None,
+            replying: None,
+            stopping: HashSet::new(),
         }
     }
 
@@ -743,6 +749,28 @@ impl Chat {
             cx.notify();
         });
         self.transcript.read(cx).list().remeasure();
+    }
+
+    /// The core took the reply to `request`, or says why not; a request that went
+    /// meanwhile needs no telling.
+    pub fn replied(&mut self, request: &str, error: Option<String>) {
+        if self.replying.as_deref() == Some(request) {
+            self.replying = None;
+        }
+        self.failed(error.filter(|error| !error.contains("no longer pending")));
+    }
+
+    /// The core took the ask to stop `task`, or says why not.
+    pub fn task_stopped(&mut self, task: &str, error: Option<String>) {
+        self.stopping.remove(task);
+        self.failed(error);
+    }
+
+    fn failed(&mut self, error: Option<String>) {
+        if let (Some(error), Some(composing)) = (error, self.composer.as_mut()) {
+            composing.refusal = Some(error.into());
+        }
+        self.head_moved = true;
     }
 
     /// Whether the head changed since this was last asked.
@@ -1430,7 +1458,7 @@ pub fn pane(
         .map_or(&[][..], |head| head.permissions.as_slice());
     let permissions: Vec<_> = permissions
         .iter()
-        .map(|ask| permission(&agent.id, ask, cx))
+        .map(|ask| permission(&agent.id, ask, chat.replying.is_some(), cx))
         .collect();
     let assumed: Vec<_> = bench
         .questions
@@ -1669,7 +1697,12 @@ fn column() -> gpui_kit::Div {
     div().w_full().px(px(22.)).flex().justify_center()
 }
 
-fn permission(agent: &str, ask: &PermissionAsk, cx: &mut Context<Workbench>) -> impl IntoElement {
+fn permission(
+    agent: &str,
+    ask: &PermissionAsk,
+    busy: bool,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let rejects = |kind: &str| kind.starts_with("reject");
     let mut answers: Vec<(String, Option<String>, bool)> = ask
@@ -1707,14 +1740,21 @@ fn permission(agent: &str, ask: &PermissionAsk, cx: &mut Context<Workbench>) -> 
                 })
                 .rounded(theme::RADIUS_2)
                 .bg(t.line_soft)
-                .hover(move |style| style.bg(t.surface_chosen))
+                .when(!busy, |button| {
+                    button.hover(move |style| style.bg(t.surface_chosen))
+                })
                 .text_size(crate::theme::ui_text(10.5))
                 .text_color(if allow {
                     t.text_primary
                 } else {
                     t.text_tertiary
                 })
-                .on_click(cx.listener(move |bench, _, _, _| {
+                .disabled(busy)
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    if let Some(chat) = bench.chats.get_mut(&agent) {
+                        chat.replying = Some(request.clone());
+                    }
+                    bench.parts.redraw(&bench.parts.stage, cx);
                     bench.ask_chat(ChatAsk::Permission {
                         agent: agent.clone(),
                         request: request.clone(),
