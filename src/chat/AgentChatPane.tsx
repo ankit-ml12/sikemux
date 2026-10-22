@@ -446,6 +446,7 @@ export const AgentChatPane = memo(function AgentChatPane({
                                 <ProjectStrip
                                     agentId={agent.id}
                                     host={agent.host}
+                                    project={agent.worktree?.repo ?? cwd}
                                     cwd={cwd}
                                     started={started}
                                     worktree={worktree}

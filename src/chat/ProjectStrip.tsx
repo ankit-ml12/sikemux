@@ -132,6 +132,7 @@ function ProjectSwitcher({ agentId, cwd, onClose }: { agentId: string; cwd: stri
 export function ProjectStrip({
     agentId,
     host,
+    project,
     cwd,
     started,
     worktree,
@@ -140,6 +141,8 @@ export function ProjectStrip({
 }: {
     agentId: string;
     host: string | undefined;
+    /** The project's own folder, which a chat in a worktree does not run in. */
+    project: string;
     cwd: string;
     started: boolean;
     worktree: { state: WorktreeSwitchState; toggle: () => void };
@@ -163,7 +166,7 @@ export function ProjectStrip({
         return () => document.removeEventListener("pointerdown", outside);
     }, [open]);
 
-    const name = basename(cwd) || cwd;
+    const name = basename(project) || project;
     const where = worktree.state.kind === "hidden" || worktree.state.kind === "choosing" ? null : worktree.state;
     return (
         <div className="chat-project-strip">
@@ -173,7 +176,7 @@ export function ProjectStrip({
             </span>
             <IconChevron size={10} className="chat-project-sep" />
             {started ? (
-                <span className="chat-project-trigger static" title={prettyPath(cwd, home)}>
+                <span className="chat-project-trigger static" title={prettyPath(project, home)}>
                     {projectMark(12)}
                     <span>{name}</span>
                 </span>
@@ -193,7 +196,7 @@ export function ProjectStrip({
                         aria-label="Project"
                         aria-haspopup="listbox"
                         aria-expanded={open}
-                        title={prettyPath(cwd, home)}
+                        title={prettyPath(project, home)}
                         onClick={() => setOpen(!open)}>
                         {projectMark(12)}
                         <span>{name}</span>
