@@ -1337,6 +1337,16 @@ fn rows_by_session(
 
 /// The chat in the stage: its rows, with a scrollbar over their right edge, or before its
 /// first message `welcome`; under them what waits on the person, then the composer.
+/// What `agent`'s empty chat says in place of the welcome while its session is not ready.
+pub fn connection_note(
+    agent: &AgentRow,
+    chat: &Chat,
+    resumes: bool,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    status::connection_note(agent, chat, resumes, cx)
+}
+
 pub fn pane(
     bench: &Workbench,
     agent: &AgentRow,

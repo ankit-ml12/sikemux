@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity,
+    Window,
 };
 use serde_json::json;
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
@@ -213,14 +214,7 @@ pub(super) fn trouble(
     let t = Tokens::get(cx).clone();
     let this = cx.weak_entity();
     let act = |label: &'static str, id: &'static str, run: fn(&mut Workbench, &str)| {
-        let (this, agent) = (this.clone(), agent.id.clone());
-        Button::new(id, label, Variant::Outline).on_click(move |_, _, cx| {
-            this.update(cx, |bench, cx| {
-                run(bench, &agent);
-                cx.notify();
-            })
-            .ok();
-        })
+        action(&this, &agent.id, label, id, run)
     };
     let line = |icon: Icon, said: String| {
         div()
@@ -303,6 +297,83 @@ pub(super) fn trouble(
         )
     });
     Some(centred(div().flex().flex_col().child(row).children(details)).into_any_element())
+}
+
+/// What an empty chat says while its session is not ready, in the welcome's place: that it
+/// is starting or connecting, or that it stopped or failed with a way back. None while the
+/// welcome belongs there: the session is ready, or a new chat is on its way to being.
+pub(super) fn connection_note(
+    agent: &AgentRow,
+    chat: &Chat,
+    resumes: bool,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    let connection = chat
+        .state
+        .as_ref()
+        .map_or(ChatConnection::Connecting, |head| head.connection);
+    let dropped = matches!(connection, ChatConnection::Error | ChatConnection::Stopped);
+    if connection == ChatConnection::Ready || (!resumes && !dropped) {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    let (icon, said) = match connection {
+        ChatConnection::Starting => (Icon::Hourglass, "Starting agent…"),
+        ChatConnection::Error => (Icon::Plug, "Structured session unavailable."),
+        ChatConnection::Stopped => (Icon::Plug, "Agent session stopped."),
+        _ => (Icon::Hourglass, "Connecting to agent session…"),
+    };
+    let this = cx.weak_entity();
+    let row = div()
+        .px(px(22.))
+        .pt(px(44.))
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_center()
+        .gap(px(8.))
+        .child(ui::icon(icon, 14.).text_color(t.text_tertiary))
+        .child(
+            div()
+                .text_size(crate::theme::ui_text(13.))
+                .text_color(t.text_secondary)
+                .child(said),
+        )
+        .when(dropped, |row| {
+            row.child(action(
+                &this,
+                &agent.id,
+                "Reconnect",
+                "chat-reconnect",
+                |bench, agent| bench.reconnect(agent),
+            ))
+            .child(action(
+                &this,
+                &agent.id,
+                "Start new chat",
+                "chat-start-over",
+                |bench, agent| bench.start_over(agent),
+            ))
+        });
+    Some(centred(row).into_any_element())
+}
+
+/// A button that does `run` for `agent`'s chat.
+fn action(
+    this: &WeakEntity<Workbench>,
+    agent: &str,
+    label: &'static str,
+    id: &'static str,
+    run: fn(&mut Workbench, &str),
+) -> Button {
+    let (this, agent) = (this.clone(), agent.to_owned());
+    Button::new(id, label, Variant::Outline).on_click(move |_, _, cx| {
+        this.update(cx, |bench, cx| {
+            run(bench, &agent);
+            cx.notify();
+        })
+        .ok();
+    })
 }
 
 /// A line at the end of the rows, in the column the rows are read in.
