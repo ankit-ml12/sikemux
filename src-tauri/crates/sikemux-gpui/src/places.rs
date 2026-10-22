@@ -170,7 +170,7 @@ impl Workbench {
 
     pub fn focus_board(&self) {
         if let Some(project) = self.project() {
-            self.call(
+            self.call_in_front(
                 "openTab",
                 json!({ "project": project.id, "kind": "board", "target": project.path.to_string_lossy() }),
             );

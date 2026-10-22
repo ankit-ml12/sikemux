@@ -589,7 +589,15 @@ impl Workbench {
                 self.apply(*update, cx)
             }
             Update::HostView(host, view) => {
+                let in_front = self.place() == crate::hosts::Place::Account(host.clone());
                 self.host_views.insert(host, *view);
+                if in_front {
+                    self.watch_project();
+                    self.watch_worktree();
+                    self.close_chats();
+                    self.open_chat(cx);
+                    self.front_moved(cx);
+                }
             }
             Update::HostReach(host, reached) => {
                 if reached {
@@ -1318,7 +1326,7 @@ impl Workbench {
 
     /// Lets go of the chats whose agents no longer have a tab.
     fn close_chats(&mut self) {
-        let Some(view) = &self.view else {
+        let Some(view) = self.shown() else {
             return;
         };
         let tabs = view
@@ -1761,7 +1769,7 @@ impl Workbench {
         if let Some(project) = self.project() {
             let tab =
                 json!({ "project": project.id, "kind": kind, "target": target, "title": title });
-            self.call("openTab", tab);
+            self.call_in_front("openTab", tab);
         }
     }
 
@@ -1896,7 +1904,7 @@ impl Workbench {
 
     fn show_file(&self, path: &Path, preview: bool) {
         if let Some(project) = self.project() {
-            self.call(
+            self.call_in_front(
                 "openTab",
                 json!({
                     "project": project.id,
@@ -1985,7 +1993,7 @@ impl Workbench {
             .take(72)
             .collect();
         if save && !title.is_empty() && title != retitling.title {
-            self.call(
+            self.call_in_front(
                 "updateAgent",
                 json!({ "agentId": retitling.agent, "patch": { "title": title, "renamed": true } }),
             );
@@ -2615,7 +2623,7 @@ impl Workbench {
         let Some(project) = self.project() else {
             return;
         };
-        self.call(
+        self.call_in_front(
             "openTab",
             json!({ "project": project.id, "kind": "search", "target": project.path.to_string_lossy() }),
         );
@@ -2707,7 +2715,7 @@ impl Workbench {
     /// Brings the project's Git tab to the front, opening one when it has none.
     fn open_git(&self) {
         if let Some(project) = self.project() {
-            self.call(
+            self.call_in_front(
                 "openTab",
                 json!({ "project": project.id, "kind": "git", "target": project.path.to_string_lossy() }),
             );
