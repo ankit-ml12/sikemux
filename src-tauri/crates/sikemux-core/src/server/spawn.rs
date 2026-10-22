@@ -283,13 +283,13 @@ fn start(
     }
     let (lead, lead_cwd) = lead_of(core, &lead_id, &request.project)?;
     let cwd = resume.map_or(lead_cwd, |saved| saved.project.clone());
-    let (checkout, cwd) = if own {
+    let (mut checkout, cwd) = if own {
         let name = text_param(params, "prompt", MAX_PROMPT_BYTES)?.unwrap_or("teammate");
         let name: String = name.chars().take(48).collect();
         let (checkout, tree_cwd) = sandbox::cut_for(&cwd, &cwd, &name)?;
-        (Some(Box::new(checkout)), tree_cwd)
+        (Unclaimed(Some(checkout)), tree_cwd)
     } else {
-        (None, cwd)
+        (Unclaimed(None), cwd)
     };
     let helper = core.workspaces.helper().filter(|helper| {
         resume.is_none()
@@ -355,7 +355,7 @@ fn start(
         core.names.forget(&agent_id);
         error.to_string()
     })?;
-    if let Some(checkout) = &checkout {
+    if let Some(checkout) = &checkout.0 {
         let mut patch = serde_json::Map::new();
         patch.insert(
             "worktree".into(),
@@ -382,8 +382,20 @@ fn start(
         },
         reports,
         chat,
-        checkout,
+        checkout: checkout.0.take().map(Box::new),
     }))
+}
+
+/// A worktree cut for a teammate that has not started yet, removed again if
+/// starting it fails, so no branch or folder is left behind.
+struct Unclaimed(Option<AgentWorktree>);
+
+impl Drop for Unclaimed {
+    fn drop(&mut self) {
+        if let Some(tree) = self.0.take() {
+            sandbox::remove(&tree.repo, &tree.path, &tree.branch);
+        }
+    }
 }
 
 pub(crate) async fn spawn(core: &Arc<Core>, request: &HarnessRequest) -> Result<Value, String> {
