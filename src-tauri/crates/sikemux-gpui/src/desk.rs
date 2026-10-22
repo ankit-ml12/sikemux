@@ -995,6 +995,12 @@ impl Workbench {
             "contexts": window.context_stack().iter().map(|context| format!("{context:?}")).collect::<Vec<_>>(),
             "desks": agents.into_iter().map(|agent| (agent.clone(), desk(agent))).collect::<serde_json::Map<_, _>>(),
             "files": files,
+            "rail": match self.rail_page {
+                crate::workbench::RailPage::Agents => "agents",
+                crate::workbench::RailPage::Terminals => "terminals",
+                crate::workbench::RailPage::Files => "files",
+            },
+            "railBounds": self.rail_frame.get(),
         })
     }
 }

@@ -493,6 +493,26 @@ def dk1(run):
                f"terminal tab {terminal}; ⌘⇧T brought {after} forward, desk open {desk.get('open')}, pages {len(pages(desk))}")
 
 
+def rs1(run):
+    # A two-finger swipe over the tab rail turns its page; the rail's frame stays where it was.
+    before = run.state() or {}
+    x, y, width, height = before.get("railBounds") or [0, 0, 0, 0]
+    if not width:
+        return run.report("RS1", False, f"the state gave no rail bounds: {before.get('railBounds')!r}")
+    centre = (x + width / 2, y + height / 2)
+    turned = None
+    for dx in (-300, 300):
+        run.drive(f"scroll {centre[0]:.0f} {centre[1]:.0f} {dx} 0 20 momentum", "wait 1")
+        after = run.state() or {}
+        if after.get("rail") != before.get("rail"):
+            turned = after
+            break
+    if turned is None:
+        return run.report("RS1", False, f"neither swipe turned the rail's page from {before.get('rail')!r}")
+    same = all(abs(a - b) < 0.5 for a, b in zip(before["railBounds"], turned.get("railBounds") or []))
+    run.report("RS1", same, f"page {before.get('rail')} -> {turned.get('rail')}; frame {before['railBounds']} -> {turned.get('railBounds')}")
+
+
 def local(run):
     for name, why in [
         ("DP1", "page_preview needs a terminal agent, which the fake agent is not"),
@@ -523,7 +543,7 @@ def answered(said):
 
 
 CHECKS = [("DP5", dp5), ("DP3", dp3), ("D5", d5), ("DK3", dk3), ("D6", d6_dk4_dk5), ("DK6", dk6), ("D7", d7), ("DK8", dk8),
-          ("DK2", dk2), ("ONE-DESK", one_desk), ("DK7", dk7), ("DF1", df1), ("DF3", df3), ("DF4", df4), ("DF5", df5), ("DK1", dk1)]
+          ("DK2", dk2), ("ONE-DESK", one_desk), ("DK7", dk7), ("DF1", df1), ("DF3", df3), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
 
 
 def main():
