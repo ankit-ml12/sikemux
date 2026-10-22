@@ -13,8 +13,8 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, uniform_list, AnyElement, AppContext, ClickEvent, ClipboardItem, Context,
-    Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, SharedString,
-    Styled, Subscription, Transformation, WeakEntity, Window,
+    Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, SharedString, Styled, Subscription, Transformation, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::PaneKind;
@@ -62,6 +62,9 @@ pub struct FileTree {
     rows: RefCell<Option<Rc<Vec<Row>>>>,
     /// The name being typed for a new file or folder.
     pub naming: Option<Naming>,
+    /// The row a right click last landed on, which the tree's one menu is about; none when
+    /// it landed on the tree's empty space.
+    menu_row: Option<(PathBuf, bool)>,
 }
 
 /// A new file or folder in `parent`, or `from` renamed, while the person types its name in the tree.
@@ -451,15 +454,27 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                         .collect::<Vec<_>>()
                 }),
             )
-            .size_full()
+            .flex_1()
+            .min_h_0()
             .px(px(6.))
             .pb(px(4.));
-            let tree = div().id("file-tree").flex_1().min_h_0();
+            let tree = div().id("file-tree").flex_1().min_h_0().flex().flex_col();
             match bench.files.root.clone() {
                 Some(root) => {
                     let (this, here) = (cx.weak_entity(), matches!(bench.files.place, Place::This));
-                    tree.context_menu(move |popup, _, _| {
-                        row_menu(popup, &this, &root, true, Some(&root), here)
+                    tree.capture_any_mouse_down(
+                        cx.listener(|bench, _: &MouseDownEvent, _, _| bench.files.menu_row = None),
+                    )
+                    .context_menu(move |popup, _, cx| {
+                        let row = this
+                            .upgrade()
+                            .and_then(|bench| bench.read(cx).files.menu_row.clone());
+                        match row {
+                            Some((path, dir)) => {
+                                row_menu(popup, &this, &path, dir, Some(&root), here)
+                            }
+                            None => row_menu(popup, &this, &root, true, Some(&root), here),
+                        }
                     })
                     .child(rows)
                     .into_any_element()
@@ -571,7 +586,7 @@ fn row_view(
     front: Option<&Path>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let (marks, root, place) = (&tree.marks, tree.root.as_deref(), &tree.place);
+    let marks = &tree.marks;
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
     let colour = |mark: Mark| match mark {
@@ -667,17 +682,14 @@ fn row_view(
         )
         .children(tail)
         .into_any_element();
-    let (bench, menu_path, dir) = (cx.weak_entity(), row.path.clone(), row.entry.dir);
-    let root = root.map(Path::to_path_buf);
-    let here = matches!(place, Place::This);
+    let pressed = (row.path.clone(), row.entry.dir);
     let drawn = div()
-        .id(SharedString::from(format!(
-            "file-menu-{}",
-            row.path.display()
-        )))
-        .context_menu(move |popup, _, _| {
-            row_menu(popup, &bench, &menu_path, dir, root.as_deref(), here)
-        })
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |bench, _: &MouseDownEvent, _, _| {
+                bench.files.menu_row = Some(pressed.clone())
+            }),
+        )
         .child(drawn)
         .into_any_element();
     crate::drag::tree_row(drawn, &row.path, row.entry.dir, &cx.entity(), cx)
