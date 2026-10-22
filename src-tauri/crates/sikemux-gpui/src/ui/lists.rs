@@ -31,6 +31,7 @@ pub struct Row {
     chosen: bool,
     compact: bool,
     subtitle: Option<AnyElement>,
+    detail: Option<SharedString>,
     status: Option<AnyElement>,
     right: f32,
     trailing: SmallVec<[AnyElement; 2]>,
@@ -50,6 +51,7 @@ impl Row {
             chosen: false,
             compact: false,
             subtitle: None,
+            detail: None,
             status: None,
             right: 8.,
             trailing: SmallVec::new(),
@@ -68,6 +70,12 @@ impl Row {
     /// A word right after the title, such as the host new work starts on.
     pub fn tag(mut self, tag: impl Into<SharedString>) -> Self {
         self.tag = Some(tag.into());
+        self
+    }
+
+    /// A note after the title that gives way first when the row is narrow.
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
         self
     }
 
@@ -186,6 +194,7 @@ impl RenderOnce for Row {
             .child(
                 div()
                     .flex_1()
+                    .when(self.detail.is_some(), |title| title.flex_auto())
                     .min_w_0()
                     .flex()
                     .flex_col()
@@ -213,6 +222,15 @@ impl RenderOnce for Row {
                     )
                     .children(self.subtitle),
             )
+            .children(self.detail.map(|detail| {
+                let mut detail = meta(detail, cx)
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis();
+                detail.style().flex_shrink = Some(100.);
+                detail
+            }))
             .children(self.trailing)
             .children(
                 self.status

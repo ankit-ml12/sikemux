@@ -117,9 +117,9 @@ fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
         .quiet()
         .tag("here")
         .when(agents > 0, |row| {
-            row.child(ui::meta(
-                format!("{agents} {}", if agents == 1 { "agent" } else { "agents" }),
-                cx,
+            row.detail(format!(
+                "{agents} {}",
+                if agents == 1 { "agent" } else { "agents" }
             ))
         })
         .status(Some(ui::dot(Tone::Ok, cx)))
@@ -167,7 +167,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                     ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }),
                 )
                 .quiet()
-                .children(detail.map(|detail| ui::meta(detail, cx)))
+                .when_some(detail, |row, detail| row.detail(detail))
                 .status(Some(ui::dot(tone, cx)))
                 .into_any_element()
         })
