@@ -51,6 +51,9 @@ const PEEK_REACH: f32 = 28.;
 const PICTURE_BUDGET: usize = 256 * 1024 * 1024;
 
 /// The one store: what the core last said, and what only this window decides.
+/// The longest a space's name may be, as on the Mac.
+const MAX_SPACE_NAME: usize = 40;
+
 pub struct Workbench {
     pub version: String,
     pub view: Option<DeviceView>,
@@ -2617,6 +2620,44 @@ impl Workbench {
         spaces
             .iter()
             .find(|space| Some(&space.id) == self.space.as_ref())
+    }
+
+    /// Asks for a name and makes a space with it, as the Mac does, then shows it, or moves the
+    /// project `into` it when one asked.
+    pub fn new_space(&mut self, into: Option<String>, cx: &mut Context<Self>) {
+        self.prompt(
+            "Create space",
+            "",
+            move |bench, name, _, cx| {
+                let name: String = name.trim().chars().take(MAX_SPACE_NAME).collect();
+                if name.is_empty() {
+                    return;
+                }
+                let made = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |since| since.as_nanos());
+                let id = format!("space-{made:x}");
+                let mut spaces = bench
+                    .view
+                    .as_ref()
+                    .map_or_else(Vec::new, |view| view.workspace.spaces.clone());
+                spaces.push(SpaceInfo {
+                    id: id.clone(),
+                    name,
+                    icon: "folder".into(),
+                });
+                bench.call("setSpaces", json!({ "spaces": spaces }));
+                match &into {
+                    Some(project) => bench.call(
+                        "updateProject",
+                        json!({ "id": project, "patch": { "space": id } }),
+                    ),
+                    None => bench.show_space(Some(id), cx),
+                }
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     /// Shows one space's projects, or every project, and leaves a project the space hides

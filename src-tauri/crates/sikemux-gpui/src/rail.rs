@@ -676,6 +676,17 @@ fn project_menu(
             }
             popup = popup.item(item);
         }
+        let new_space = {
+            let (bench, id) = (bench_entity.clone(), id.clone());
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                let _ = bench.update(cx, |bench, cx| bench.new_space(Some(id.clone()), cx));
+            }
+        };
+        popup = popup.item(
+            PopupMenuItem::new("New Space…")
+                .icon(Icon::Plus)
+                .on_click(new_space),
+        );
         popup.separator().item(
             PopupMenuItem::new("No Space")
                 .icon(Icon::Move)
@@ -857,7 +868,11 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     if spaces.is_empty() {
         return div()
             .mb(px(6.))
-            .child(Button::new("new-space", "New space", Variant::Dashed).icon(Icon::Plus))
+            .child(
+                Button::new("new-space", "New space", Variant::Dashed)
+                    .icon(Icon::Plus)
+                    .on_click(cx.listener(|bench, _, _, cx| bench.new_space(None, cx))),
+            )
             .into_any_element();
     }
     let chosen = bench.space.clone();
@@ -904,6 +919,17 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .border_1()
         .border_color(t.border)
         .rounded(RADIUS_2 + px(3.))
+        .context_menu({
+            let bench = cx.entity();
+            move |popup, _, _| {
+                let bench = bench.clone();
+                popup.item(PopupMenuItem::new("New Space…").icon(Icon::Plus).on_click(
+                    move |_, _, cx| {
+                        let _ = bench.update(cx, |bench, cx| bench.new_space(None, cx));
+                    },
+                ))
+            }
+        })
         .child(chip(None, Some(Icon::Stack), "All".into()))
         .children(spaces.iter().map(|space| {
             chip(
