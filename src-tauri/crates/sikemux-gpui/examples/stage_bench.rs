@@ -3,9 +3,9 @@
 //! and a terminal flooding. The core must have a
 //! chat in its tab in front, as `fake_chat`'s `remote` leaves it:
 //!   SIKEMUX_CORE_SOCKET=/tmp/gb/core.sock HOME=/tmp/gb/home cargo run --release --example stage_bench
-//! It draws offscreen on a simulated clock at 120 Hz and prints, for each phase, the
-//! main thread's CPU for each frame: the window's work and its draw, which headless mode
-//! does as the work is flushed.
+//! `STAGE_BENCH_LOOP=N` only draws the stage again N times, for a profiler to watch.
+//! It runs offscreen on a simulated clock at 120 Hz and prints, for each phase, the main
+//! thread's CPU for each frame: the window's work and, when something changed, its draw.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -34,16 +34,13 @@ impl Bench {
         self.after(|_| {});
     }
 
-    /// One frame that first does `change`, timed with it, since headless mode draws as each
-    /// change is flushed.
+    /// One frame that first does `change`, timed with it. Headless mode draws a window when
+    /// its changes are flushed, and only when something in it changed, as the app does.
     fn after(&mut self, change: impl FnOnce(&mut Self)) {
         let cpu = thread_cpu_ms();
         change(self);
         self.cx.advance_clock(FRAME);
         self.cx.run_until_parked();
-        self.cx
-            .update_window(self.window, |_, window, cx| window.draw(cx).clear(cx))
-            .ok();
         self.frames.push(thread_cpu_ms() - cpu);
     }
 
@@ -228,6 +225,22 @@ fn main() -> anyhow::Result<()> {
     run.frames.clear();
     if let Ok(path) = std::env::var("STAGE_BENCH_SHOT") {
         run.cx.capture_screenshot(run.window)?.save(path)?;
+    }
+    if let Some(times) = std::env::var("STAGE_BENCH_LOOP")
+        .ok()
+        .and_then(|times| times.parse::<usize>().ok())
+    {
+        for _ in 0..times {
+            run.after(|run| {
+                run.bench.update(&mut run.cx, |bench, cx| {
+                    bench.parts.redraw(&bench.parts.stage, cx)
+                })
+            });
+        }
+        run.report(&format!(
+            "the stage drawn again {times} times, for a profiler"
+        ));
+        return Ok(());
     }
     for _ in 0..600 {
         run.frame();
