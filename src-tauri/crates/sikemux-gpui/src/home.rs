@@ -1,4 +1,6 @@
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use chrono::{Datelike, NaiveDate};
 use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
@@ -6,8 +8,9 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, div, point, px, quad, relative, size, Anchor, AnyElement, App, BorderStyle, Bounds,
+    Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement,
+    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::AgentStatus;
@@ -467,46 +470,68 @@ pub(crate) fn calendar(
         },
         _ => t.accent,
     };
-    let weeks = (0..WEEKS).map(|week| {
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(px(CELL_GAP))
-            .children((0..7).map(|weekday| {
-                let day = start + week * 7 + weekday;
-                div()
-                    .id(("activity-day", day as usize))
-                    .w_full()
-                    .aspect_ratio(1.)
-                    .rounded(px(2.))
-                    .when(day <= today, |cell| {
-                        cell.bg(colour(level(day)))
-                            .when(hovered == Some(day), |cell| {
-                                cell.border_1().border_color(t.text_primary)
-                            })
-                            .on_hover(cx.listener(move |bench, over: &bool, _, cx| {
-                                match (*over, bench.metric_day == Some(day)) {
-                                    (true, _) => bench.metric_day = Some(day),
-                                    (false, true) => bench.metric_day = None,
-                                    (false, false) => return,
-                                }
-                                bench.parts.redraw(&bench.parts.stage, cx);
-                            }))
-                    })
-            }))
-    });
+    let fills: Vec<Option<Hsla>> = (0..WEEKS * 7)
+        .map(|at| (start + at <= today).then(|| colour(level(start + at))))
+        .collect();
+    let lit = hovered.map(|day| day - start);
+    let ring = t.text_primary;
+    let placed = Rc::new(Cell::new(Bounds::default()));
+    let grid = {
+        let placed = placed.clone();
+        canvas(
+            move |bounds, _, _| placed.set(bounds),
+            move |bounds, _, window, _| {
+                let side = day_side(bounds);
+                for (at, fill) in fills.iter().enumerate() {
+                    let Some(fill) = fill else {
+                        continue;
+                    };
+                    let border = if lit == Some(at as i64) { 1. } else { 0. };
+                    window.paint_quad(quad(
+                        day_bounds(bounds, side, at as i64),
+                        px(2.),
+                        *fill,
+                        px(border),
+                        ring,
+                        BorderStyle::Solid,
+                    ));
+                }
+            },
+        )
+        .size_full()
+    };
+    let grid = div()
+        .id("activity-days")
+        .w_full()
+        .aspect_ratio(GRID_RATIO)
+        .on_mouse_move(cx.listener(move |bench, event: &MouseMoveEvent, _, cx| {
+            let day = day_at(placed.get(), event.position)
+                .map(|at| start + at)
+                .filter(|day| *day <= today);
+            if bench.metric_day != day {
+                bench.metric_day = day;
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }
+        }))
+        .on_hover(cx.listener(|bench, over: &bool, _, cx| {
+            if !*over && bench.metric_day.take().is_some() {
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }
+        }))
+        .child(grid);
     let mut last_month = None;
     let months: Vec<Div> = (0..WEEKS)
-        .map(|week| {
+        .filter_map(|week| {
             let first = epoch() + chrono::Duration::days(start + week * 7);
             let label = (last_month != Some(first.month()) && week <= WEEKS - 3)
                 .then(|| first.format("%b").to_string());
             last_month = Some(first.month());
-            div()
-                .flex_1()
-                .relative()
-                .children(label.map(|label| small(label, &t).absolute().bottom_0().left_0()))
+            label.map(|label| {
+                small(label, &t)
+                    .absolute()
+                    .bottom_0()
+                    .left(relative(week as f32 / WEEKS as f32))
+            })
         })
         .collect();
     let streaks = &summary["streaks"];
@@ -558,18 +583,23 @@ pub(crate) fn calendar(
                 .flex()
                 .gap(px(8.))
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .pt(px(14. + CELL_GAP))
-                        .gap(px(CELL_GAP))
-                        .children(["Mon", "", "Wed", "", "Fri", "", ""].map(|label| {
-                            div()
-                                .flex_1()
-                                .flex()
-                                .items_center()
-                                .child(small(label.into(), &t))
-                        })),
+                    div().relative().w(px(22.)).flex_none().child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .flex()
+                            .flex_col()
+                            .pt(px(14. + CELL_GAP))
+                            .gap(px(CELL_GAP))
+                            .children(["Mon", "", "Wed", "", "Fri", "", ""].map(|label| {
+                                div()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .flex()
+                                    .items_center()
+                                    .child(small(label.into(), &t))
+                            })),
+                    ),
                 )
                 .child(
                     div()
@@ -578,8 +608,8 @@ pub(crate) fn calendar(
                         .flex()
                         .flex_col()
                         .gap(px(CELL_GAP))
-                        .child(div().h(px(14.)).flex().gap(px(CELL_GAP)).children(months))
-                        .child(div().flex().gap(px(CELL_GAP)).children(weeks)),
+                        .child(div().h(px(14.)).relative().children(months))
+                        .child(grid),
                 ),
         )
         .child(
@@ -592,6 +622,39 @@ pub(crate) fn calendar(
                 .children((0..5).map(|level| div().size(px(10.)).rounded(px(2.)).bg(colour(level))))
                 .child(small("More".into(), &t).ml(px(4.))),
         )
+}
+
+/// How wide the calendar is for its height, with square days of about 11px.
+const GRID_RATIO: f32 =
+    (WEEKS as f32 * 11. + (WEEKS - 1) as f32 * CELL_GAP) / (7. * 11. + 6. * CELL_GAP);
+
+/// The side of one day's square in a calendar drawn in `bounds`.
+fn day_side(bounds: Bounds<Pixels>) -> Pixels {
+    let gap = px(CELL_GAP);
+    let across = (bounds.size.width - gap * (WEEKS - 1) as f32) / WEEKS as f32;
+    let down = (bounds.size.height - gap * 6.) / 7.;
+    across.min(down)
+}
+
+/// Where the day `at`, counted down each week's column from the first, is drawn.
+fn day_bounds(bounds: Bounds<Pixels>, side: Pixels, at: i64) -> Bounds<Pixels> {
+    let step = side + px(CELL_GAP);
+    let origin = point(
+        bounds.left() + step * (at / 7) as f32,
+        bounds.top() + step * (at % 7) as f32,
+    );
+    Bounds::new(origin, size(side, side))
+}
+
+/// The day under `position`, counted as [`day_bounds`] counts them.
+fn day_at(bounds: Bounds<Pixels>, position: Point<Pixels>) -> Option<i64> {
+    if !bounds.contains(&position) {
+        return None;
+    }
+    let step = day_side(bounds) + px(CELL_GAP);
+    let week = ((position.x - bounds.left()) / step).floor() as i64;
+    let weekday = ((position.y - bounds.top()) / step).floor() as i64;
+    (week < WEEKS && weekday < 7).then_some(week * 7 + weekday)
 }
 
 fn small(label: String, t: &Tokens) -> Div {
