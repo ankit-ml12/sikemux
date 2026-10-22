@@ -2,7 +2,7 @@
 // Writes the icons the GPUI screens draw as SVG files, by rendering the app's own
 // React icon components, so each file is exactly what the app draws.
 
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -145,6 +145,30 @@ const PICTURES = {
   bruno: "src/assets/bruno.svg",
   signoz: "src/plugins/signoz/signoz.svg",
 };
+/** GPUI's SVG renderer has no oklch(), which WebKit draws, so a picture's oklch colours are
+ * written as the sRGB they come to. */
+const OKLCH = /oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/g;
+function oklchToHex(l, c, h) {
+  const radians = (h * Math.PI) / 180;
+  const [a, b] = [c * Math.cos(radians), c * Math.sin(radians)];
+  const cube = (value) => value ** 3;
+  const [lms1, lms2, lms3] = [
+    cube(l + 0.3963377774 * a + 0.2158037573 * b),
+    cube(l - 0.1055613458 * a - 0.0638541728 * b),
+    cube(l - 0.0894841775 * a - 1.291485548 * b),
+  ];
+  const linear = [
+    4.0767416621 * lms1 - 3.3077115913 * lms2 + 0.2309699292 * lms3,
+    -1.2684380046 * lms1 + 2.6097574011 * lms2 - 0.3413193965 * lms3,
+    -0.0041960863 * lms1 - 0.7034186147 * lms2 + 1.707614701 * lms3,
+  ];
+  const encoded = linear.map((value) => {
+    const clamped = Math.min(1, Math.max(0, value));
+    const srgb = clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055;
+    return Math.round(srgb * 255).toString(16).padStart(2, "0");
+  });
+  return `#${encoded.join("")}`;
+}
 /** Marks with colours of their own beside a part in the text's colour, which a
  * picture cannot follow, so that part takes the rail's body ink. */
 const MIXED = { aws: "#acabb4" };
@@ -166,7 +190,8 @@ try {
       .replaceAll("currentColor", MIXED[file] ?? "currentColor");
     await writeFile(resolve(out, `${file}.svg`), `${markup}\n`);
   }
-  for (const [file, path] of Object.entries(PICTURES)) await copyFile(resolve(root, path), resolve(out, `${file}.svg`));
+  for (const [file, path] of Object.entries(PICTURES))
+    await writeFile(resolve(out, `${file}.svg`), (await readFile(resolve(root, path), "utf8")).replace(OKLCH, (_, l, c, h) => oklchToHex(+l, +c, +h)));
   const { BATTERY_BOLT } = await server.ssrLoadModule(ICONS);
   const bolt = (extra) =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="7 -3 12 19" fill="currentColor"><path d="${BATTERY_BOLT}"${extra}></path></svg>\n`;
