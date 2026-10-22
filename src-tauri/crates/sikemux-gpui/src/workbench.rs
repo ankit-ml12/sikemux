@@ -3299,13 +3299,9 @@ impl Workbench {
     /// The project's agents in the order the core ranks them for the person.
     /// The agent `id` as the rails draw it, in whichever project it is.
     pub fn agent_by_id(&self, id: &str) -> Option<AgentRow> {
-        let project = (self.shown()?.workspace.agents.iter())
-            .find(|agent| agent.id == id)?
-            .project
-            .clone();
-        self.agents_of(&project)
-            .into_iter()
-            .find(|agent| agent.id == id)
+        let view = self.shown()?;
+        let agent = view.workspace.agents.iter().find(|agent| agent.id == id)?;
+        Some(self.agent_row(view, agent))
     }
 
     pub fn agents_of(&self, project: &str) -> Vec<AgentRow> {
@@ -3323,47 +3319,7 @@ impl Workbench {
             .agents
             .iter()
             .filter(|agent| agent.project == project)
-            .map(|agent| {
-                let chat = view.chats.iter().find(|chat| chat.agent_id == agent.id);
-                let session = view
-                    .sessions
-                    .iter()
-                    .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
-                let shown = view.inbox["agents"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .find(|row| row["agentId"] == agent.id.as_str());
-                AgentRow {
-                    active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
-                    team: shown.and_then(|row| match row["team"].as_str()? {
-                        "head" => Some(TeamLink::Head),
-                        "member" => Some(TeamLink::Member),
-                        "last" => Some(TeamLink::Last),
-                        _ => None,
-                    }),
-                    id: agent.id.clone(),
-                    provider: agent.provider.clone(),
-                    title: self.title_of(agent),
-                    name: agent.name.clone().filter(|_| self.titled(agent)),
-                    status: chat
-                        .map(|chat| chat.status)
-                        .or_else(|| session.and_then(|session| session.status))
-                        .unwrap_or(if agent.asleep {
-                            AgentStatus::Asleep
-                        } else {
-                            AgentStatus::Idle
-                        }),
-                    subagents: chat.map_or(0, |chat| chat.subagents),
-                    tasks: chat.map_or(0, |chat| chat.tasks),
-                    project: agent.project.clone(),
-                    face: agent.face.clone(),
-                    group: chat
-                        .map(|chat| chat.group)
-                        .or_else(|| session.and_then(|session| session.group))
-                        .unwrap_or_default(),
-                }
-            })
+            .map(|agent| self.agent_row(view, agent))
             .collect();
         rows.sort_by_key(|row| {
             ranked
@@ -3372,6 +3328,53 @@ impl Workbench {
                 .unwrap_or(usize::MAX)
         });
         rows
+    }
+
+    /// One agent as the rails and tabs show it, from what the view says of it.
+    fn agent_row(
+        &self,
+        view: &DeviceView,
+        agent: &sikemux_wire::protocol::WorkspaceAgent,
+    ) -> AgentRow {
+        let chat = view.chats.iter().find(|chat| chat.agent_id == agent.id);
+        let session = view
+            .sessions
+            .iter()
+            .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
+        let shown = view.inbox["agents"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|row| row["agentId"] == agent.id.as_str());
+        AgentRow {
+            active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
+            team: shown.and_then(|row| match row["team"].as_str()? {
+                "head" => Some(TeamLink::Head),
+                "member" => Some(TeamLink::Member),
+                "last" => Some(TeamLink::Last),
+                _ => None,
+            }),
+            id: agent.id.clone(),
+            provider: agent.provider.clone(),
+            title: self.title_of(agent),
+            name: agent.name.clone().filter(|_| self.titled(agent)),
+            status: chat
+                .map(|chat| chat.status)
+                .or_else(|| session.and_then(|session| session.status))
+                .unwrap_or(if agent.asleep {
+                    AgentStatus::Asleep
+                } else {
+                    AgentStatus::Idle
+                }),
+            subagents: chat.map_or(0, |chat| chat.subagents),
+            tasks: chat.map_or(0, |chat| chat.tasks),
+            project: agent.project.clone(),
+            face: agent.face.clone(),
+            group: chat
+                .map(|chat| chat.group)
+                .or_else(|| session.and_then(|session| session.group))
+                .unwrap_or_default(),
+        }
     }
 
     /// The rows the agent rail lists: this project's, or every project's.
