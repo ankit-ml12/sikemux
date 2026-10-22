@@ -2620,6 +2620,7 @@ struct Looks {
     ink: Hsla,
     hover: Hsla,
     rule: Hsla,
+    accent: Hsla,
     provider: String,
     reader: Entity<Reading>,
     tints: Tints,
@@ -2836,6 +2837,7 @@ impl Looks {
                 a: 0.14,
                 ..t.text_primary
             },
+            accent: t.accent,
             provider: provider.to_owned(),
             reader,
             tints: Tints::new(t),
@@ -3024,7 +3026,6 @@ fn letters(
     window: &mut Window,
     cx: &mut App,
 ) -> gpui_kit::Div {
-    let rule = || div().flex_1().h(px(1.)).bg(looks.line);
     let bold = HighlightStyle {
         color: Some(looks.ink),
         font_weight: Some(FontWeight::SEMIBOLD),
@@ -3088,20 +3089,39 @@ fn letters(
                     .into_any_element()
             }
             LetterKind::Message => {
+                let (bench, agent) = (looks.bench.clone(), letter.agent_id.clone());
+                let name = div()
+                    .id(SharedString::from(format!(
+                        "{}:{}:from",
+                        row.message.id,
+                        letter_doc(ix)
+                    )))
+                    .text_color(looks.accent)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .cursor_pointer()
+                    .hover(|name| name.underline())
+                    .child(letter.name.clone())
+                    .on_click(move |_, _, cx| {
+                        bench.update(cx, |bench, _| bench.open_agent(&agent)).ok();
+                    });
                 let from = div()
-                    .mb(px(4.))
+                    .mb(px(8.))
                     .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .text_size(px(11.))
-                    .text_color(looks.quiet)
-                    .child(rule())
-                    .child(ui::mark(&letter.cli, 16.))
+                    .flex_col()
+                    .gap(px(4.))
                     .child(
-                        StyledText::new(format!("Message from {}", letter.name))
-                            .with_highlights([(13..13 + letter.name.len(), bold)]),
+                        div()
+                            .h(px(22.))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .text_size(px(12.5))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(looks.quiet)
+                            .child(ui::mark(&letter.cli, 17.))
+                            .child(div().flex().gap(px(4.)).child("Message from").child(name)),
                     )
-                    .child(rule());
+                    .child(div().h(px(1.)).bg(looks.rule));
                 let id = SharedString::from(format!("{}:{}", row.message.id, letter_doc(ix)));
                 let text = row.doc(&letter_doc(ix)).map(|doc| {
                     let look = looks.styles.borrow().text.clone();
