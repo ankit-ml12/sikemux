@@ -77,6 +77,8 @@ pub struct Transcript<R: Row> {
     focus: FocusHandle,
     ends: Option<(Spot, Spot)>,
     dragging: bool,
+    /// The reader scrolled up from the latest rows.
+    away: bool,
     shown: Rc<RefCell<Vec<Shown>>>,
     /// What the reader looks for, every place it is found in reading order, and the one
     /// they are on. The places are found again in the rows that change.
@@ -118,8 +120,11 @@ impl<R: Row> Transcript<R> {
         list.set_follow_mode(FollowMode::Tail);
         let this = cx.weak_entity();
         list.set_scroll_handler(move |event, window, cx| {
-            let near_top = event.visible_range.start < NEAR_TOP;
-            this.update(cx, |this, cx| this.scrolled(near_top, window, cx))
+            let (near_top, away) = (
+                event.visible_range.start < NEAR_TOP,
+                !event.is_following_tail,
+            );
+            this.update(cx, |this, cx| this.scrolled(near_top, away, window, cx))
                 .ok();
         });
         Transcript {
@@ -133,6 +138,7 @@ impl<R: Row> Transcript<R> {
             focus: cx.focus_handle(),
             ends: None,
             dragging: false,
+            away: false,
             shown: Rc::default(),
             query: None,
             hits: Vec::new(),
@@ -164,6 +170,19 @@ impl<R: Row> Transcript<R> {
         };
         self.reveal();
         cx.emit(FoundChanged);
+        cx.notify();
+    }
+
+    /// The reader scrolled up from the latest rows, so they no longer follow as rows arrive.
+    pub fn away(&self) -> bool {
+        self.away && !self.rows.is_empty()
+    }
+
+    /// Brings the latest rows into view, and follows them again as rows arrive.
+    pub fn to_latest(&mut self, cx: &mut Context<Self>) {
+        self.list.set_follow_mode(FollowMode::Tail);
+        self.away = false;
+        cx.emit(AwayChanged(false));
         cx.notify();
     }
 
@@ -328,7 +347,17 @@ impl<R: Row> Transcript<R> {
         }
     }
 
-    fn scrolled(&mut self, near_top: bool, window: &mut Window, cx: &mut App) {
+    fn scrolled(
+        &mut self,
+        near_top: bool,
+        away: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if away != self.away {
+            self.away = away;
+            cx.emit(AwayChanged(away));
+        }
         if !near_top {
             self.asked_earlier = false;
             return;
@@ -423,6 +452,11 @@ pub struct EmptyChanged(pub bool);
 impl<R: Row> EventEmitter<EmptyChanged> for Transcript<R> {}
 
 impl<R: Row> EventEmitter<FoundChanged> for Transcript<R> {}
+
+/// The reader scrolled away from the latest rows, or came back to them.
+pub struct AwayChanged(pub bool);
+
+impl<R: Row> EventEmitter<AwayChanged> for Transcript<R> {}
 
 impl<R: Row> Render for Transcript<R> {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

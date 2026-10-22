@@ -18,8 +18,8 @@ use gpui_kit::{
     Subscription, Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
-    Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row, Style,
-    Transcript,
+    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row,
+    Style, Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -39,7 +39,7 @@ use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset, ToggleYol
 use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Button, Variant};
+use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -359,8 +359,9 @@ pub struct Chat {
     scale: f32,
     /// The stage draws the welcome in an empty chat's place, so it hears when that changes.
     _emptied: Subscription,
-    /// The stage draws the find bar's count, so it hears when what was found changes.
-    _found: Subscription,
+    /// The stage draws the find bar's count and the way back to the latest rows, so it hears
+    /// when what was found changes and when the reader scrolls away from the end.
+    _found: [Subscription; 2],
     /// The find bar over the transcript, while it is open.
     pub finding: Option<find::Finding>,
     /// The line under the last row saying what the agent is doing.
@@ -536,14 +537,25 @@ impl Chat {
                 bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
             })
         });
-        let found = {
-            let stage = stage.clone();
-            cx.subscribe(&transcript, move |_, _: &FoundChanged, cx| {
-                stage
-                    .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
-                    .ok();
-            })
+        let redraw = |stage: &WeakEntity<Workbench>, cx: &mut App| {
+            stage
+                .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
+                .ok();
         };
+        let found = [
+            {
+                let stage = stage.clone();
+                cx.subscribe(&transcript, move |_, _: &FoundChanged, cx| {
+                    redraw(&stage, cx)
+                })
+            },
+            {
+                let stage = stage.clone();
+                cx.subscribe(&transcript, move |_, _: &AwayChanged, cx| {
+                    redraw(&stage, cx)
+                })
+            },
+        ];
         let emptied = cx.subscribe(&transcript, move |_, _: &EmptyChanged, cx| {
             stage
                 .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
@@ -1276,6 +1288,35 @@ pub fn pane(
                 .as_ref()
                 .map(|finding| find::bar(&agent.id, finding, chat.transcript.read(cx).found(), cx)),
         )
+        .children(chat.transcript.read(cx).away().then(|| {
+            let transcript = chat.transcript.clone();
+            div()
+                .absolute()
+                .bottom(px(8.))
+                .left_0()
+                .right_0()
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .rounded(theme::RADIUS_2)
+                        .border_1()
+                        .border_color(Tokens::get(cx).line)
+                        .bg(Tokens::get(cx).surface_composer)
+                        .shadow_md()
+                        .child(
+                            IconButton::new(
+                                "chat-latest",
+                                Icon::ArrowDown,
+                                "Jump to latest message",
+                            )
+                            .glyph(14.)
+                            .on_click(move |_, _, cx| {
+                                transcript.update(cx, |transcript, cx| transcript.to_latest(cx));
+                            }),
+                        ),
+                )
+        }))
         .children(welcome.map(|welcome| {
             div()
                 .absolute()

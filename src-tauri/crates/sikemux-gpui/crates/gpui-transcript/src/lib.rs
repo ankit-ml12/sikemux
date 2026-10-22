@@ -17,4 +17,4 @@ mod transcript;
 pub use draw::{CodeColours, CodeRuns, DrawFence, DrawImage, Fence, OnLink, Pen, Style};
 pub use find::{FoundChanged, Query};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
-pub use transcript::{init, Change, Copy, EmptyChanged, Row, Transcript};
+pub use transcript::{init, AwayChanged, Change, Copy, EmptyChanged, Row, Transcript};
