@@ -378,13 +378,15 @@ pub fn request_on(
 const DEVICE_KEY: &str = "sikemux-gpui-device";
 
 /// What the account calls this app, before " on <host>".
-const DEVICE_NAME: &str = "Sikemux GPUI";
+const DEVICE_NAME: &str = "Sikemux GPUI try-out";
 
 /// This app's key on the network, made the first time it is needed and kept where
 /// `sikemux_keychain` keeps secrets; a build that keeps none cannot have one.
 fn device_key() -> Result<SecretKey, String> {
     let account = if cfg!(debug_assertions) {
         "dev"
+    } else if sikemux_keychain::TRYOUT {
+        "tryout"
     } else {
         "default"
     };
