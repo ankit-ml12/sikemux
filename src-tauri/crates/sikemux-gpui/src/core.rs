@@ -1197,6 +1197,8 @@ fn read(
             Err(error) => return eprintln!("sikemux: the core refused {}: {error}", watch.method),
         };
         if current.lock().expect("watch generations").get(key) == Some(&watch.generation) {
+            #[cfg(feature = "drive")]
+            crate::drive::trace(format_args!("link read {key}"));
             let _ = updates.send(Update::Read(key, value));
         }
     });

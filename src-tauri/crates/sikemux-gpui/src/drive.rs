@@ -240,3 +240,12 @@ fn send(
         .update(cx, |_, window, cx| act(window, cx))
         .map_err(|_| "the window is gone")
 }
+
+/// Writes when something happened, in milliseconds since the epoch, to the test bundle's log,
+/// so a real-window run can tell when a core answer reached each thread.
+pub fn trace(what: std::fmt::Arguments) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    eprintln!("sikemux trace {now} {what}");
+}

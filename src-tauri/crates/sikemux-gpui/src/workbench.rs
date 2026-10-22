@@ -540,6 +540,10 @@ impl Workbench {
     }
 
     fn apply(&mut self, update: Update, cx: &mut Context<Self>) {
+        #[cfg(feature = "drive")]
+        if let Update::Read(key, _) = &update {
+            crate::drive::trace(format_args!("main read {key}"));
+        }
         match update {
             Update::Connected(version) => {
                 self.version = version;
@@ -1893,6 +1897,8 @@ impl Workbench {
             .into_iter()
             .filter(|part| !part.is_empty())
             .collect();
+        #[cfg(feature = "drive")]
+        crate::drive::trace(format_args!("trust question set"));
         self.confirm(
             text(&ask["title"]),
             body.join("\n\n"),
@@ -2845,6 +2851,10 @@ impl Render for Workbench {
         use crate::panes::Towards;
         use sikemux_wire::protocol::SplitDir;
         let asked = self.asked(window, cx);
+        #[cfg(feature = "drive")]
+        if asked.is_some() {
+            crate::drive::trace(format_args!("question drawn"));
+        }
         if window.focused(cx).is_none() {
             self.focus.focus(window, cx);
         }
