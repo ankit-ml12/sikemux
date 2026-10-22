@@ -31,6 +31,7 @@ mod finder;
 mod fuzzy;
 pub mod git;
 mod home;
+pub mod hosts;
 pub mod icons;
 mod keymap;
 pub mod model_picker;

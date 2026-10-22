@@ -2253,6 +2253,16 @@ impl Workbench {
         }
     }
 
+    /// The tab `strip` shows in front, or its first one.
+    pub fn front_tab_of(&self, strip: &Strip) -> Option<String> {
+        let layout = self.layout_of(strip)?;
+        layout
+            .active
+            .clone()
+            .filter(|id| layout.tabs.iter().any(|tab| &tab.id == id))
+            .or_else(|| layout.tabs.first().map(|tab| tab.id.clone()))
+    }
+
     pub fn tabs(&self, strip: &Strip) -> &[Tab] {
         self.layout_of(strip)
             .map_or(&[], |layout| layout.tabs.as_slice())
