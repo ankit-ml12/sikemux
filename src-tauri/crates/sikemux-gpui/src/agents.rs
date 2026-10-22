@@ -1435,6 +1435,7 @@ fn scope_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
     Segmented::new("scope", scope, usize::from(bench.all_projects)).on_select(cx.listener(
         |bench, all: &usize, _, cx| {
             bench.all_projects = *all == 1;
+            bench.keep_rails(cx);
             cx.notify();
         },
     ))

@@ -133,6 +133,20 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
     preferences.pane_strength = ((preferences.pane_strength * 20.0).round() / 20.0).clamp(0.0, 2.0);
     preferences.window_opacity = preferences.window_opacity.clamp(0.0, 1.0);
     preferences.window_blur = preferences.window_blur.round();
+    preferences.side_rail_width = preferences
+        .side_rail_width
+        .clamp(SIDE_RAIL_WIDTH.0, SIDE_RAIL_WIDTH.1)
+        .round();
+    preferences.tab_rail_width = preferences
+        .tab_rail_width
+        .clamp(TAB_RAIL_WIDTH.0, TAB_RAIL_WIDTH.1)
+        .round();
+    preferences
+        .recent_command_keys
+        .retain(|key| !key.is_empty() && key.len() <= 200);
+    preferences
+        .recent_command_keys
+        .truncate(REMEMBERED_COMMANDS);
     preferences.keybinding_overrides = preferences
         .keybinding_overrides
         .into_iter()
@@ -148,6 +162,12 @@ fn within_limits(mut preferences: Preferences) -> Preferences {
         .filter(|agent| crate::agent_catalog::agent(agent).is_some());
     preferences
 }
+
+/// The narrowest and widest each rail can be, in points, as the Mac's rails are.
+const SIDE_RAIL_WIDTH: (f64, f64) = (180.0, 480.0);
+const TAB_RAIL_WIDTH: (f64, f64) = (240.0, 560.0);
+/// How many commands the command deck remembers having run.
+const REMEMBERED_COMMANDS: usize = 20;
 
 const MAX_CUSTOM_COMMANDS: usize = 100;
 const MAX_KEYBINDING_OVERRIDES: usize = 1_000;

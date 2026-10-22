@@ -1259,6 +1259,39 @@ pub struct Preferences {
     /// The keys the person bound to actions in place of their defaults, by
     /// the action's id; none unbinds an action.
     pub keybinding_overrides: BTreeMap<String, Option<String>>,
+    /// The side rail is shown.
+    pub side_rail_open: bool,
+    /// The side rail's width, in points.
+    pub side_rail_width: f64,
+    /// The tab rail is shown.
+    pub tab_rail_open: bool,
+    /// The tab rail's width, in points.
+    pub tab_rail_width: f64,
+    pub tab_rail_page: TabRailPage,
+    pub tab_rail_scope: TabRailScope,
+    /// The tab rail lists every agent's chats rather than one agent's.
+    pub tab_rail_all_agents: bool,
+    /// The commands the person ran from the command deck, the last first.
+    pub recent_command_keys: Vec<String>,
+}
+
+/// The page the tab rail shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TabRailPage {
+    #[default]
+    Agents,
+    Terminals,
+    Files,
+}
+
+/// Whose agents the tab rail lists: the project in front's, or every project's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TabRailScope {
+    #[default]
+    Project,
+    All,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1315,6 +1348,14 @@ impl Default for Preferences {
             rail_density: RailDensity::default(),
             simulator_frame: true,
             keybinding_overrides: BTreeMap::new(),
+            side_rail_open: true,
+            side_rail_width: 258.0,
+            tab_rail_open: true,
+            tab_rail_width: 288.0,
+            tab_rail_page: TabRailPage::default(),
+            tab_rail_scope: TabRailScope::default(),
+            tab_rail_all_agents: false,
+            recent_command_keys: Vec::new(),
         }
     }
 }

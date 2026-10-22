@@ -278,7 +278,7 @@ impl Workbench {
             "type a command…",
             rows,
             |row, bench, window, cx| {
-                bench.remember_command(row.key.clone());
+                bench.remember_command(row.key.clone(), cx);
                 if let Some(id) = row.key.strip_prefix(BUILTIN) {
                     keymap::dispatch(id, window, cx);
                 } else if let Some(id) = row.key.strip_prefix(CUSTOM) {
@@ -527,10 +527,11 @@ impl Workbench {
         .detach();
     }
 
-    fn remember_command(&mut self, key: SharedString) {
+    fn remember_command(&mut self, key: SharedString, cx: &mut Context<Self>) {
         self.recent_commands.retain(|known| *known != key);
         self.recent_commands.insert(0, key);
         self.recent_commands.truncate(REMEMBERED);
+        self.keep_rails(cx);
     }
 
     /// Starts the project's checked-in preview in a terminal of its own; the core asks the

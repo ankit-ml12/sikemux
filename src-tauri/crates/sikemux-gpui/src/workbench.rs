@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
     Preferences, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionId, SessionInfo,
-    SpaceInfo, Tab,
+    SpaceInfo, Tab, TabRailPage, TabRailScope,
 };
 use tokio::sync::mpsc;
 
@@ -133,6 +133,8 @@ pub struct Workbench {
     pub switcher: Option<crate::switcher::Switcher>,
     /// The command deck's keys, the last used first.
     pub recent_commands: Vec<SharedString>,
+    /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
+    keeping_rails: Option<Task<()>>,
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
@@ -554,6 +556,7 @@ impl Workbench {
             palette: None,
             switcher: None,
             recent_commands: Vec::new(),
+            keeping_rails: None,
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
@@ -853,6 +856,9 @@ impl Workbench {
             Update::Read("preferences", value) => {
                 if let Ok(preferences) = serde_json::from_value::<Preferences>(value.clone()) {
                     crate::keymap::bind(&preferences.keybinding_overrides, cx);
+                    if self.keeping_rails.is_none() {
+                        self.follow_rails(&preferences);
+                    }
                     self.sims.offer_to_agents(preferences.ios_simulator);
                     let on = preferences.voice_dictation;
                     self.voice.update(cx, |voice, cx| voice.follow(on, cx));
@@ -2109,6 +2115,7 @@ impl Workbench {
         };
         *open = !*open;
         self.peeking = None;
+        self.keep_rails(cx);
         cx.notify();
     }
 
@@ -2548,7 +2555,7 @@ impl Workbench {
     }
 
     /// Sets a rail's width, within what that rail allows, and draws it at once.
-    fn resize_rail(&mut self, edge: Edge, width: f32, window: &mut Window) {
+    fn resize_rail(&mut self, edge: Edge, width: f32, window: &mut Window, cx: &mut Context<Self>) {
         let (kept, range) = match edge {
             Edge::Start => (&mut self.side_rail_width, rail::SIDE_RAIL),
             Edge::End => (&mut self.tab_rail_width, agents::TAB_RAIL),
@@ -2557,16 +2564,17 @@ impl Workbench {
         if *kept != width {
             *kept = width;
             window.refresh();
+            self.keep_rails(cx);
         }
     }
 
     /// Moves the edge between a rail and the stage `by` points to the right.
-    fn nudge_rail(&mut self, edge: Edge, by: f32, window: &mut Window) {
+    fn nudge_rail(&mut self, edge: Edge, by: f32, window: &mut Window, cx: &mut Context<Self>) {
         let outward = match edge {
             Edge::Start => by,
             Edge::End => -by,
         };
-        self.resize_rail(edge, self.rail_width(edge) + outward, window);
+        self.resize_rail(edge, self.rail_width(edge) + outward, window, cx);
     }
 
     /// The handle between a rail and the stage, dragged or moved by arrow keys to resize the rail.
@@ -2587,21 +2595,89 @@ impl Workbench {
             .on_click(cx.listener(move |bench, _, window, cx| {
                 bench.resizers[edge as usize].focus(window, cx)
             }))
-            .on_action(cx.listener(move |bench, _: &EdgeLeft, window, _| {
-                bench.nudge_rail(edge, -16., window)
+            .on_action(cx.listener(move |bench, _: &EdgeLeft, window, cx| {
+                bench.nudge_rail(edge, -16., window, cx)
             }))
-            .on_action(cx.listener(move |bench, _: &EdgeRight, window, _| {
-                bench.nudge_rail(edge, 16., window)
+            .on_action(cx.listener(move |bench, _: &EdgeRight, window, cx| {
+                bench.nudge_rail(edge, 16., window, cx)
             }))
-            .on_action(cx.listener(move |bench, _: &EdgeFarLeft, window, _| {
-                bench.nudge_rail(edge, -40., window)
+            .on_action(cx.listener(move |bench, _: &EdgeFarLeft, window, cx| {
+                bench.nudge_rail(edge, -40., window, cx)
             }))
-            .on_action(cx.listener(move |bench, _: &EdgeFarRight, window, _| {
-                bench.nudge_rail(edge, 40., window)
+            .on_action(cx.listener(move |bench, _: &EdgeFarRight, window, cx| {
+                bench.nudge_rail(edge, 40., window, cx)
             }))
             .on_drag(DraggedRail(edge), |rail, _, _, cx| {
                 cx.new(|_| DraggedRail(rail.0))
             })
+    }
+
+    /// Takes the rails as the person last left them, from the core's preferences.
+    fn follow_rails(&mut self, preferences: &Preferences) {
+        self.side_rail_open = preferences.side_rail_open;
+        self.tab_rail_open = preferences.tab_rail_open;
+        let width =
+            |width: f64, range: RailWidth| (width as f32).clamp(range.min, range.max).round();
+        self.side_rail_width = width(preferences.side_rail_width, rail::SIDE_RAIL);
+        self.tab_rail_width = width(preferences.tab_rail_width, agents::TAB_RAIL);
+        self.rail_page = match preferences.tab_rail_page {
+            TabRailPage::Agents => RailPage::Agents,
+            TabRailPage::Terminals => RailPage::Terminals,
+            TabRailPage::Files => RailPage::Files,
+        };
+        self.all_projects = preferences.tab_rail_scope == TabRailScope::All;
+        self.recent_commands = preferences
+            .recent_command_keys
+            .iter()
+            .map(|key| SharedString::from(key.clone()))
+            .collect();
+    }
+
+    /// Keeps the rails and the commands run lately in the core's preferences once changes
+    /// settle, so a drag is written once, and the rails come back as they were.
+    pub fn keep_rails(&mut self, cx: &mut Context<Self>) {
+        self.keeping_rails = Some(cx.spawn(async move |bench, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(400))
+                .await;
+            let _ = bench.update(cx, |bench, _| {
+                bench.keeping_rails = None;
+                bench.write_rails();
+            });
+        }));
+    }
+
+    fn write_rails(&self) {
+        let page = match self.rail_page {
+            RailPage::Agents => TabRailPage::Agents,
+            RailPage::Terminals => TabRailPage::Terminals,
+            RailPage::Files => TabRailPage::Files,
+        };
+        let scope = if self.all_projects {
+            TabRailScope::All
+        } else {
+            TabRailScope::Project
+        };
+        let recent: Vec<&str> = self
+            .recent_commands
+            .iter()
+            .map(|key| key.as_ref())
+            .collect();
+        let now = [
+            ("sideRailOpen", json!(self.side_rail_open)),
+            ("sideRailWidth", json!(self.side_rail_width)),
+            ("tabRailOpen", json!(self.tab_rail_open)),
+            ("tabRailWidth", json!(self.tab_rail_width)),
+            ("tabRailPage", json!(page)),
+            ("tabRailScope", json!(scope)),
+            ("recentCommandKeys", json!(recent)),
+        ];
+        let kept = self.read("preferences");
+        for (key, value) in now {
+            if kept.and_then(|kept| kept.get(key)) != Some(&value) {
+                crate::settings::set(self, key, value);
+            }
+        }
     }
 
     /// Opens both rails when either is closed, else closes both.
@@ -2610,6 +2686,7 @@ impl Workbench {
         self.side_rail_open = open;
         self.tab_rail_open = open;
         self.peeking = None;
+        self.keep_rails(cx);
         cx.notify();
     }
 
@@ -3794,7 +3871,7 @@ impl Render for Workbench {
                                 Edge::Start => x - bounds.left(),
                                 Edge::End => bounds.right() - x,
                             };
-                            bench.resize_rail(edge, f32::from(width) - 15., window);
+                            bench.resize_rail(edge, f32::from(width) - 15., window, cx);
                         },
                     ))
                     .when(self.side_rail_open, |row| {

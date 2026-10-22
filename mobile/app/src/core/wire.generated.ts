@@ -1380,6 +1380,20 @@ export interface Preferences {
    * the action's id; none unbinds an action.
    */
   keybindingOverrides: Record<string, string>;
+  /** The side rail is shown. */
+  sideRailOpen: boolean;
+  /** The side rail's width, in points. */
+  sideRailWidth: number;
+  /** The tab rail is shown. */
+  tabRailOpen: boolean;
+  /** The tab rail's width, in points. */
+  tabRailWidth: number;
+  tabRailPage: TabRailPage;
+  tabRailScope: TabRailScope;
+  /** The tab rail lists every agent's chats rather than one agent's. */
+  tabRailAllAgents: boolean;
+  /** The commands the person ran from the command deck, the last first. */
+  recentCommandKeys: string[];
 }
 
 export type MidTurnSend = 'steer' | 'queue';
@@ -1510,6 +1524,12 @@ export type NotchPeeks = 'all' | 'needsYou' | 'never';
 export type UpdateChannel = 'stable' | 'nightly';
 
 export type RailDensity = 'comfortable' | 'compact';
+
+/** The page the tab rail shows. */
+export type TabRailPage = 'agents' | 'terminals' | 'files';
+
+/** Whose agents the tab rail lists: the project in front's, or every project's. */
+export type TabRailScope = 'project' | 'all';
 
 /** The picked theme with the colours every app draws with, worked out from it. */
 export interface Palette {

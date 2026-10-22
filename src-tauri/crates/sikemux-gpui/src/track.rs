@@ -199,6 +199,9 @@ impl Workbench {
 
     /// Shows another of the tab rail's pages, springing over to it.
     pub fn show_rail_page(&mut self, page: RailPage, cx: &mut Context<Self>) {
+        if self.rail_page != page {
+            self.keep_rails(cx);
+        }
         self.rail_page = page;
         let Some((was, now)) = self.rail_slide.moved_to(Some(page)) else {
             return cx.notify();
