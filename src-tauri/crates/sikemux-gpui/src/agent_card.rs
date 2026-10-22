@@ -82,16 +82,17 @@ impl Workbench {
             ..Card::default()
         };
         cx.notify();
-        let Some((project, branch)) = known(self, &agent).and_then(|known| {
-            let branch = known.worktree.as_ref()?["branch"].as_str()?.to_owned();
-            Some((known.project.clone(), branch))
+        let Some((folder, branch)) = known(self, &agent).and_then(|known| {
+            let worktree = known.worktree.as_ref()?;
+            let folder = worktree["path"].as_str()?.to_owned();
+            Some((folder, worktree["branch"].as_str()?.to_owned()))
         }) else {
             return;
         };
         let asked = crate::core::request(
             &self.asks,
             "codeHostPulls",
-            json!({ "project": project, "state": "open" }),
+            json!({ "project": folder, "state": "all" }),
         );
         cx.spawn(async move |bench, cx| {
             let Ok(list) = asked.await else {
@@ -101,6 +102,7 @@ impl Workbench {
                 .as_array()
                 .into_iter()
                 .flatten()
+                .filter(|listed| listed["ownBranch"] == true)
                 .map(|listed| &listed["pull"])
                 .filter(|pull| pull["head"] == branch.as_str())
                 .filter_map(|pull| {
