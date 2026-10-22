@@ -111,7 +111,6 @@ struct SessionRecord {
     agent: Option<AgentRecord>,
     shell_files: Option<PathBuf>,
     /// The terminal was setting a host up, which the next core keeps locked.
-    #[serde(default)]
     setup: bool,
 }
 
@@ -493,7 +492,29 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 }
                 state["format"] = Value::from(7);
             }
-            7 => return Ok(state),
+            7 => {
+                // Format 7 cores wrote whether a terminal was setting a host up
+                // only once they could lock one. A plain terminal from before
+                // that may be one, so it stays locked to the app; an agent's
+                // or a task's never is.
+                let sessions = state.get_mut("sessions").and_then(Value::as_array_mut);
+                for session in sessions.into_iter().flatten() {
+                    let Some(record) = session.as_object_mut() else {
+                        continue;
+                    };
+                    if !record.contains_key("setup") {
+                        let plain = record.get("kind") == Some(&json!("terminal"))
+                            && record.get("agent").is_none_or(Value::is_null)
+                            && record
+                                .get("owner")
+                                .and_then(|owner| owner.get("agentId"))
+                                .is_none_or(Value::is_null);
+                        record.insert("setup".into(), json!(plain));
+                    }
+                }
+                state["format"] = Value::from(8);
+            }
+            8 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -756,7 +777,8 @@ fn adopt_bare(
             task_log: None,
             agent: None,
             shell_integration: None,
-            setup: None,
+            // Nothing says whether it was setting a host up, so it stays locked to the app.
+            setup: Some(SetupLock::AnyApp),
         },
         io,
         Box::new(AdoptedChild::new(pid, None)),
@@ -1058,7 +1080,7 @@ mod tests {
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
-            "format": 7,
+            "format": 8,
             "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
             "liveChats": [],
             "harness": { "mailbox": { "waiting": {} }, "questions": { "open": [] } },
@@ -1067,5 +1089,34 @@ mod tests {
         assert!(migrate(json!({ "format": 3 })).is_err());
         assert!(migrate(json!({ "format": 9 })).is_err());
         assert!(migrate(json!({})).is_err());
+    }
+
+    /// A terminal setting a host up must come back locked: a record that cannot
+    /// say whether it was one is taken to be one, unless it is an agent's or a task's.
+    #[test]
+    fn a_terminal_from_before_the_setup_lock_comes_back_locked() {
+        let older = json!({
+            "format": 7,
+            "chats": [],
+            "liveChats": [],
+            "sessions": [
+                { "kind": "terminal", "agent": null, "owner": { "agentId": null } },
+                { "kind": "terminal", "agent": { "agentId": "agent-1" }, "owner": { "agentId": "agent-1" } },
+                { "kind": "task", "agent": null, "owner": {} },
+                { "kind": "terminal", "agent": null, "owner": {}, "setup": false },
+            ],
+        });
+        let migrated = migrate(older).expect("migrate");
+        let setup: Vec<_> = migrated["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|session| session["setup"].clone())
+            .collect();
+        assert_eq!(
+            setup,
+            vec![json!(true), json!(false), json!(false), json!(false)]
+        );
+        assert_eq!(migrated["format"], json!(8));
     }
 }
