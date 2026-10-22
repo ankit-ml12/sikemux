@@ -325,9 +325,15 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         }
         cx.notify();
     }));
+    let this = cx.entity();
     Popover::new("agent-picker")
         .anchor(Anchor::TopLeft)
         .offset(px(4.))
+        .on_open_change(move |open, _, cx| {
+            if *open {
+                this.update(cx, |bench, _| bench.read_usage());
+            }
+        })
         .trigger(
             BaseButton::new("agent-picker-button")
                 .accessibility_label("Agent provider")

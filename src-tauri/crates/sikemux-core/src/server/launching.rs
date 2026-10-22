@@ -361,8 +361,13 @@ async fn start_new(
         .to_owned();
     let started = start(core, client, chosen).await?;
     remember_kind(core, &kind);
-    let start = chat::until_started(core, started).await?;
-    Ok((agent_id, start))
+    match chat::until_started(core, started).await {
+        Ok(start) => Ok((agent_id, start)),
+        Err(error) => {
+            super::workspace::close_gone(core, &[agent_id]);
+            Err(error)
+        }
+    }
 }
 
 /// Keeps the kind of agent a chat was started as, so a project with no agent of its own

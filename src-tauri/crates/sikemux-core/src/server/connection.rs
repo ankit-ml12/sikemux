@@ -829,7 +829,7 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                if chat::asleep(&core, &agent_id) || chat::mentions::wakes(&context) {
+                if chat::stopped(&core, &agent_id) || chat::mentions::wakes(&context) {
                     tokio::spawn(async move {
                         let mut context = context;
                         let result =

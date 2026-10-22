@@ -1374,6 +1374,7 @@ impl Chat {
             text,
             paths,
             context,
+            attach: self.mark.is_none(),
         }))
     }
 

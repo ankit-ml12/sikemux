@@ -215,6 +215,9 @@ pub struct Workbench {
     trust_asked: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
     trust_host: Option<String>,
+    /// Plan limits have been asked for. Each lookup runs the agent's CLI, so none runs before
+    /// the person looks for them or sends a message.
+    usage_asked: bool,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     /// The window the store draws, for what is said in it from outside a draw.
@@ -565,6 +568,7 @@ impl Workbench {
             watched_worktree: None,
             trust_asked: HashSet::new(),
             trust_host: None,
+            usage_asked: false,
             peeking: None,
             unpeek: None,
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
@@ -608,13 +612,13 @@ impl Workbench {
             _filtering: None,
         };
         bench.focus.focus(window, cx);
-        bench.read_usage();
         bench.wait_patiently(cx);
         bench
     }
 
     /// Reads every account's plan limits again, as they are whenever usage changes.
-    pub fn read_usage(&self) {
+    pub fn read_usage(&mut self) {
+        self.usage_asked = true;
         let _ = self.asks.send(Ask::Watch(
             "usage",
             Watch::new("agentUsages", json!({}), &["usage"]),
@@ -1380,6 +1384,9 @@ impl Workbench {
             },
             cx,
         );
+        if !self.usage_asked {
+            self.read_usage();
+        }
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         self.keep_draft(agent, cx);
         cx.notify();

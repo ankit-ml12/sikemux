@@ -312,11 +312,14 @@ pub enum ChatAsk {
         before: u64,
         turns: u32,
     },
+    /// Words for the agent. The core starts a stopped chat on its own session to take them,
+    /// and `attach` then attaches the window that was not attached yet.
     Prompt {
         agent: String,
         text: String,
         paths: Vec<String>,
         context: Vec<ChatContext>,
+        attach: bool,
     },
     /// A file the person handed the chat that lives nowhere the agent can read, such as a
     /// pasted picture, for the core to keep; answers where it keeps it.
@@ -1301,11 +1304,18 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             text,
             paths,
             context,
+            attach: attaching,
         } => match client
             .acp_prompt(agent.clone(), None, text.clone(), paths, context)
             .await
         {
-            Ok(()) => return,
+            Ok(()) if !attaching => return,
+            Ok(()) => match attach(client, &agent, None).await {
+                Ok(attachment) => (agent, ChatNews::Attached(attachment)),
+                Err(error) => {
+                    return eprintln!("sikemux: the core refused to attach chat {agent}: {error}")
+                }
+            },
             Err(error) => (
                 agent,
                 ChatNews::Refused {
@@ -1393,7 +1403,6 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
     let _ = updates.send(Update::Chat(agent, news));
 }
 
-/// Attaches to a chat, starting it again first when its agent has gone to sleep.
 /// Starts `agent`'s session again and attaches to it.
 async fn restarted(client: &CoreClient, agent: String) -> Option<(String, ChatNews)> {
     let started = client.call("startChat", json!({ "agentId": agent })).await;
@@ -1410,23 +1419,14 @@ async fn restarted(client: &CoreClient, agent: String) -> Option<(String, ChatNe
     }
 }
 
+/// Attaches to a chat. One that isn't running answers `Missing` and stays stopped until
+/// the person sends to it.
 async fn attach(
     client: &CoreClient,
     agent: &str,
     since: Option<ChatMark>,
 ) -> Result<ChatAttachment, ClientError> {
-    let attached = client.acp_attach_since(agent.to_owned(), since).await?;
-    if !matches!(attached, ChatAttachment::Missing) {
-        return Ok(attached);
-    }
-    client
-        .call("startChat", json!({ "agentId": agent }))
-        .await?;
-    let attached = client.acp_attach_since(agent.to_owned(), None).await?;
-    if matches!(attached, ChatAttachment::Missing) {
-        eprintln!("sikemux: chat {agent} stopped as soon as it started");
-    }
-    Ok(attached)
+    client.acp_attach_since(agent.to_owned(), since).await
 }
 
 fn report(what: &str, done: Result<(), ClientError>) {

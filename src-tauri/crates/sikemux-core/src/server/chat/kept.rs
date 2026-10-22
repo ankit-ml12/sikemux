@@ -80,6 +80,14 @@ impl KeptChat {
         }
     }
 
+    /// Whether the chat holds anything to take up: a session, or a turn to send again.
+    pub(crate) fn begun(&self) -> bool {
+        self.launch.resume_id.is_some()
+            || self.working
+            || self.prompt.is_some()
+            || self.offline.is_some()
+    }
+
     /// The launch as it ran, its keys read again from the Keychain and its
     /// shell variables from the person's shell. Blocks.
     pub(crate) fn unsealed(&self, core: &Core) -> Result<ChatLaunch, String> {

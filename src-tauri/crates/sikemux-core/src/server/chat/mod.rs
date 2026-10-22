@@ -1718,6 +1718,12 @@ pub(crate) fn restore(core: &Arc<Core>) {
         match core.chats.get(&agent_id) {
             Some(chat) if chat.feed.id() == kept.feed => {}
             Some(_) => kept::forget(&dir, &kept.feed),
+            None if !kept.begun() => {
+                if let Some(agent) = kept.agent {
+                    agent.stop();
+                }
+                kept::forget(&dir, &kept.feed);
+            }
             None => {
                 if let Err(error) = take_up(core, &dir, kept) {
                     eprintln!("sikemux core: chat {agent_id} was not taken up again: {error}");
@@ -1959,24 +1965,20 @@ pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
     }
 }
 
-/// Whether the core put `agent_id`'s chat to sleep while idle, so a message to it must
-/// start it again first.
-pub(crate) fn asleep(core: &Core, agent_id: &str) -> bool {
-    core.chats.get(agent_id).is_none()
-        && core
-            .workspaces
-            .agent(agent_id)
-            .is_some_and(|agent| agent.asleep)
+/// Whether `agent_id` is an agent of the workspace whose chat isn't running, asleep or
+/// stopped, so a message to it must start it first on its saved conversation.
+pub(crate) fn stopped(core: &Core, agent_id: &str) -> bool {
+    core.chats.get(agent_id).is_none() && core.workspaces.agent(agent_id).is_some()
 }
 
-/// Readies `agent_id`'s chat for a message from any client: wakes it when it sleeps, and
-/// opens again the earlier chats `context` names.
+/// Readies `agent_id`'s chat for a message from any client: starts it when it isn't
+/// running, and opens again the earlier chats `context` names.
 pub(crate) async fn wake_for_message(
     core: &Arc<Core>,
     agent_id: &str,
     context: &mut [ChatContext],
 ) -> CoreResult<()> {
-    if asleep(core, agent_id) {
+    if stopped(core, agent_id) {
         super::launching::wake_chat(core, agent_id.to_owned()).await?;
     }
     mentions::wake(core, agent_id, context).await
