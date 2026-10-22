@@ -375,11 +375,14 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
         .into_any_element()
 }
 
+/// Something a click on the rail does.
+type Click = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// What a menu item of the rail does to the workbench.
+type BenchAction = Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>;
+
 /// "Pin" or "Unpin" for the saved chat, and what does it.
-fn pin_chat(
-    this: &Entity<Workbench>,
-    recent: &RecentInfo,
-) -> (&'static str, Rc<dyn Fn(&mut Window, &mut App)>) {
+fn pin_chat(this: &Entity<Workbench>, recent: &RecentInfo) -> (&'static str, Click) {
     let (this, id, pinned) = (this.clone(), recent.id.clone(), recent.pinned);
     let label = if pinned { "Unpin" } else { "Pin" };
     let pin = move |_: &mut Window, cx: &mut App| {
@@ -969,9 +972,7 @@ fn account_menu(
         )
         .content(move |_, _, cx| {
             let popover = cx.entity();
-            let act = |id: SharedString,
-                       label: String,
-                       run: Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>| {
+            let act = |id: SharedString, label: String, run: BenchAction| {
                 let (this, popover) = (this.clone(), popover.clone());
                 MenuItem::new(id, label).on_click(move |_, window, cx| {
                     popover.update(cx, |popover, cx| popover.dismiss(window, cx));
