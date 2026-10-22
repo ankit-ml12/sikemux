@@ -76,6 +76,7 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> An
             .into_any_element();
     }
     let (uri, ink) = (field("uri").map(str::to_owned), looks.ink);
+    let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
     let label = field("title")
         .or(field("name"))
         .or(uri.as_deref())
@@ -92,7 +93,7 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> An
         .when_some(uri, |row, uri| {
             row.cursor_pointer()
                 .hover(move |row| row.text_color(ink))
-                .on_click(move |_, _, cx| link::open(&uri, cx))
+                .on_click(move |_, window, cx| link::open(&uri, &agent, &bench, window, cx))
         })
         .child(ui::icon(Icon::File, 13.).text_color(looks.quiet))
         .child(div().min_w_0().truncate().child(label))

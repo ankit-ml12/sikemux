@@ -2831,8 +2831,11 @@ impl Looks {
                 ..t.surface_sunken
             },
             code: Some(code_colours(reader.clone(), theme::color(&t.editor.fg))),
-            on_link: Some(Rc::new(|href: &str, _: &mut Window, cx: &mut App| {
-                link::open(href, cx)
+            on_link: Some(Rc::new({
+                let (bench, agent) = (bench.clone(), agent.clone());
+                move |href: &str, window: &mut Window, cx: &mut App| {
+                    link::open(href, &agent, &bench, window, cx)
+                }
             })),
             image: Some(Rc::new({
                 let (bench, quiet) = (bench.clone(), t.text_tertiary);
