@@ -1047,12 +1047,25 @@ pub fn focused(bench: &Workbench) -> Option<TermKey> {
     bench.terminals.focused
 }
 
-/// Types `text` into terminal `id` as a paste, as dictation does; whether it is still open.
+/// Types `text` into terminal `id` as one paste, as dictation does: between paste markers
+/// when its program has turned bracketed paste on, else on one line, since a bare newline
+/// would send it. Says whether the terminal is still open.
 pub fn type_text(bench: &mut Workbench, id: TermKey, text: String, cx: &mut App) -> bool {
-    if !bench.terminals.open.contains_key(&id) {
+    let Some(terminal) = bench.terminals.open.get(&id) else {
         return false;
-    }
-    send(bench, id, TerminalInput::Paste { text });
+    };
+    let text: String = text
+        .chars()
+        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
+        .collect();
+    let input = if terminal.screen.header.modes & wire::MODE_BRACKETED_PASTE != 0 {
+        TerminalInput::Paste { text }
+    } else {
+        TerminalInput::Text {
+            text: text.replace('\n', " "),
+        }
+    };
+    send(bench, id, input);
     bench.terminals.redraw(id, cx);
     true
 }
