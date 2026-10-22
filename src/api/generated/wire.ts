@@ -707,7 +707,7 @@ export type Pane =
 
 export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings";
 
-export type SplitDir = "row" | "column";
+export type SplitDir = "row" | "column" | "stack";
 
 /** The Sikemux account this host is signed in to, as clients show it. */
 export interface AccountInfo {

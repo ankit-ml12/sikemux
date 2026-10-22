@@ -980,10 +980,15 @@ fn on_bench(
 
 /// A tab's name: the person's, else what its first view shows.
 pub fn label(bench: &Workbench, tab: &LayoutTab) -> SharedString {
-    if let Some(title) = &tab.title {
-        return title.clone().into();
+    match &tab.title {
+        Some(title) => title.clone().into(),
+        None => view_label(bench, &tab.pane),
     }
-    match first_view(&tab.pane) {
+}
+
+/// What a pane is called by the first view in it: its agent's task, its shell's title or its kind.
+pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
+    match first_view(pane) {
         Some((PaneKind::Agent, target)) => bench
             .view
             .as_ref()

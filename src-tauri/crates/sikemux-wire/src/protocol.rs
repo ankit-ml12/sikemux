@@ -2021,6 +2021,8 @@ pub enum PaneKind {
 pub enum SplitDir {
     Row,
     Column,
+    /// In the same place, one in front and the rest reached by a strip of tabs over them.
+    Stack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -19,6 +19,8 @@ use crate::{desk, home, terminal, ui};
 
 /// The room between two panes, which is also where a divider is dragged.
 pub const GAP: f32 = 10.;
+/// How tall the strip of tabs over a stack is.
+const STACK_STRIP: f32 = 32.;
 /// The least a pane is squeezed to by a divider.
 const MIN_PANE: f32 = 160.;
 /// How far one press of a resize key moves a divider, and the least it leaves the pane beside,
@@ -263,12 +265,82 @@ fn pane(
                 .into_any_element()
         }
         Pane::Split {
+            dir: SplitDir::Stack,
+            panes,
+            ..
+        } => stack(bench, tab, panes, window, cx),
+        Pane::Split {
             id,
             dir,
             panes,
             sizes,
         } => split(bench, tab, id, *dir, panes, sizes, window, cx),
     }
+}
+
+/// Views in one place: a strip of tabs over the one in front, which holds the view in focus,
+/// else the first. The views behind are not drawn, so a terminal keeps the size it last had.
+fn stack(
+    bench: &Workbench,
+    tab: &str,
+    panes: &[Pane],
+    window: &Window,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = crate::theme::Tokens::get(cx).clone();
+    let focused = bench.panes.focused.as_deref();
+    let front = panes
+        .iter()
+        .position(|child| focused.is_some_and(|view| view_in(child, view).is_some()))
+        .unwrap_or(0);
+    let pills = panes.iter().enumerate().filter_map(|(at, child)| {
+        let lead = first_view(child)?.to_owned();
+        let (kind, _) = crate::tabs::first_view(child)?;
+        let mark = ui::icon(crate::tabs::kind_icon(kind), 13.).text_color(match kind {
+            PaneKind::Terminal => t.live,
+            _ => t.text_tertiary,
+        });
+        Some(
+            ui::Tab::new(
+                SharedString::from(format!("stack-{lead}")),
+                crate::tabs::view_label(bench, child),
+            )
+            .active(at == front)
+            .mark(mark)
+            .on_click(cx.listener(move |bench, _, window, cx| {
+                bench.panes.focused = Some(lead.clone());
+                bench.focus_view(&lead, window, cx);
+                bench.parts.redraw(&bench.parts.stage, cx);
+            })),
+        )
+    });
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(GAP))
+        .size_full()
+        .min_w_0()
+        .min_h_0()
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(4.))
+                .h(px(STACK_STRIP))
+                .px(px(4.))
+                .overflow_hidden()
+                .children(pills),
+        )
+        .children(panes.get(front).map(|child| {
+            div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .child(pane(bench, tab, child, window, cx))
+        }))
+        .into_any_element()
 }
 
 /// The part of a view a dropped tab would take, lit while the tab is over it.
@@ -504,7 +576,8 @@ impl Workbench {
             .or_else(|| first_view(&tab.pane).map(str::to_owned))
     }
 
-    /// A fresh shell beside the view in focus: to its right for a row, below it for a column.
+    /// A fresh shell beside the view in focus, which takes the focus: to its right for a row,
+    /// below it for a column, or behind it for a stack, where it comes in front.
     /// The core picks the shell for the strip, taking one it started ahead when it can.
     pub fn split_front(&mut self, dir: SplitDir, cx: &mut Context<Self>) {
         let (Some(strip), Some(tab), Some(pane)) = (
@@ -517,7 +590,9 @@ impl Workbench {
         let side = match dir {
             SplitDir::Row => "right",
             SplitDir::Column => "bottom",
+            SplitDir::Stack => "stack",
         };
+        let asks = self.asks.clone();
         let shell = crate::core::request(&self.asks, "stripShell", strip.with(json!({})));
         cx.spawn(async move |bench, cx| {
             let session = match shell.await.and_then(|shell| {
@@ -529,16 +604,23 @@ impl Workbench {
                     return;
                 }
             };
-            let _ = bench.update(cx, |bench, _| {
+            let params = json!({
+                "tab": tab,
+                "pane": pane,
+                "side": side,
+                "kind": PaneKind::Terminal,
+                "target": session.to_string(),
+            });
+            let added = crate::core::request(&asks, "splitPane", strip.with(params)).await;
+            let _ = bench.update(cx, |bench, cx| {
                 bench.panes.zoomed = None;
-                bench.split_pane(
-                    &strip,
-                    &tab,
-                    &pane,
-                    side,
-                    PaneKind::Terminal,
-                    &session.to_string(),
-                );
+                if let Some(added) = added
+                    .ok()
+                    .and_then(|added| added.as_str().map(str::to_owned))
+                {
+                    bench.panes.focused = Some(added);
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
             });
         })
         .detach();
@@ -600,7 +682,9 @@ impl Workbench {
             return;
         }
         let along = path.iter().rev().find_map(|(split, at)| match split {
-            Pane::Split { id, dir, sizes, .. } if (*dir == SplitDir::Row) == across => {
+            Pane::Split { id, dir, sizes, .. }
+                if *dir != SplitDir::Stack && (*dir == SplitDir::Row) == across =>
+            {
                 Some((id.clone(), sizes.clone(), *at))
             }
             _ => None,

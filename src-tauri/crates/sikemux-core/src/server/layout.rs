@@ -777,6 +777,8 @@ pub(crate) enum Side {
     Right,
     Top,
     Bottom,
+    /// Behind the view, as one more tab of a stack.
+    Stack,
 }
 
 #[derive(Deserialize)]
@@ -826,6 +828,7 @@ pub(crate) fn split_pane(core: &Core, params: SplitPane) -> CoreResult<String> {
             Side::Right => (SplitDir::Row, true),
             Side::Top => (SplitDir::Column, false),
             Side::Bottom => (SplitDir::Column, true),
+            Side::Stack => (SplitDir::Stack, true),
         };
         let mut new = Some(new);
         if !insert_beside(&mut tab.pane, &params.pane, dir, after, &mut new) {

@@ -2831,6 +2831,9 @@ impl Render for Workbench {
                     bench.split_front(SplitDir::Column, cx)
                 }),
             )
+            .on_action(
+                cx.listener(|bench, _: &SplitStack, _, cx| bench.split_front(SplitDir::Stack, cx)),
+            )
             .on_action(cx.listener(|bench, _: &FocusLeft, window, cx| {
                 bench.focus_towards(Towards::Left, window, cx)
             }))
