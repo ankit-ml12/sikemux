@@ -1550,14 +1550,21 @@ impl Workbench {
         let away = self.out_of_reach();
         if let Some(pane) = &self.git {
             let host = self.code_host_of(&pane.read(cx).repo);
+            let signed_in = self.host_signed_in(cx);
             pane.update(cx, |pane, cx| {
                 pane.set_out_of_reach(away.clone(), cx);
-                pane.set_code_host(host, cx);
+                pane.set_code_host(host, signed_in, cx);
             });
         }
         if let Some(area) = &self.host {
             area.update(cx, |area, cx| area.set_out_of_reach(away, cx));
         }
+    }
+
+    fn host_signed_in(&self, cx: &App) -> bool {
+        self.host
+            .as_ref()
+            .is_some_and(|area| area.read(cx).signed_in())
     }
 
     /// The code host of the project holding `repo`, with the account chosen for it there.
@@ -3037,11 +3044,11 @@ impl Workbench {
         }
         let bench = cx.entity().downgrade();
         let away = self.out_of_reach();
-        let host = self.code_host_of(&repo);
+        let (host, signed_in) = (self.code_host_of(&repo), self.host_signed_in(cx));
         let pane = cx.new(|cx| GitPane::new(target, repo, bench, window, cx));
         pane.update(cx, |pane, cx| {
             pane.set_out_of_reach(away, cx);
-            pane.set_code_host(host, cx);
+            pane.set_code_host(host, signed_in, cx);
         });
         if let Some(overview) = self.reads.get("git-overview") {
             pane.update(cx, |pane, cx| pane.overview(overview, cx));

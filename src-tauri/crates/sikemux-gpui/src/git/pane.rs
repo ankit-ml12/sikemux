@@ -310,6 +310,8 @@ pub struct GitPane {
     pub repo: String,
     /// The repository's code host and the account chosen for it, as the workbench last said.
     code_host: Option<(ProjectCodeHost, Option<String>)>,
+    /// Someone is signed in to that host, which the inbox needs.
+    signed_in: bool,
     overview: Option<Result<GitOverview, String>>,
     /// Files moved to a group before git says so, by path.
     moving: HashMap<String, Side>,
@@ -397,14 +399,19 @@ impl GitPane {
     pub fn set_code_host(
         &mut self,
         host: Option<(ProjectCodeHost, Option<String>)>,
+        signed_in: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.code_host == host {
+        if self.code_host == host && self.signed_in == signed_in {
             return;
         }
         self.code_host = host;
+        self.signed_in = signed_in;
         if self.page == Page::Branches {
             self.read_branch_pulls(cx);
+        }
+        if self.page == Page::Inbox && !self.has_inbox() {
+            self.show_page(Page::Changes, cx);
         }
         cx.notify();
     }
@@ -432,6 +439,7 @@ impl GitPane {
             out_of_reach: None,
             repo,
             code_host: None,
+            signed_in: false,
             overview: None,
             moving: HashMap::new(),
             moved: Vec::new(),
@@ -695,9 +703,14 @@ impl GitPane {
         self.code_host.clone()
     }
 
+    /// The host's inbox is a page while someone is signed in to it, as on main.
+    fn has_inbox(&self) -> bool {
+        self.code_host.is_some() && self.signed_in
+    }
+
     /// Lists the code host's notifications, or says there is no host to list them from.
     fn open_inbox(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((host, account)) = self.host_of() else {
+        let Some((host, account)) = self.host_of().filter(|_| self.signed_in) else {
             self.inbox = None;
             return false;
         };
@@ -717,7 +730,7 @@ impl GitPane {
     /// has one.
     fn page_order(&self) -> Vec<Page> {
         let mut order = vec![Page::Changes, Page::History, Page::Branches];
-        if self.host_of().is_some() {
+        if self.has_inbox() {
             order.push(Page::Inbox);
         }
         order
@@ -2458,7 +2471,7 @@ fn pages(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             "Branches — 3",
             Page::Branches,
         ))
-        .when(pane.host_of().is_some(), |pages| {
+        .when(pane.has_inbox(), |pages| {
             pages.child(page(
                 "git-page-inbox",
                 Icon::Inbox,

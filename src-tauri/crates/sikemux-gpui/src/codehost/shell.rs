@@ -274,7 +274,7 @@ impl HostArea {
         .detach();
     }
 
-    pub(super) fn signed_in(&self) -> bool {
+    pub(crate) fn signed_in(&self) -> bool {
         matches!(&self.status, Some(Ok(status)) if status.ok)
     }
 
