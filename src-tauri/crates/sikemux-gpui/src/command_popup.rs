@@ -2,7 +2,7 @@
 
 use gpui_kit::{
     actions, div, hsla, px, AnyElement, App, Context, InteractiveElement, IntoElement, KeyBinding,
-    MouseButton, ParentElement, SharedString, Styled, Window,
+    MouseButton, ParentElement, SharedString, Styled,
 };
 use sikemux_wire::protocol::SessionId;
 
@@ -50,15 +50,11 @@ impl Workbench {
     }
 }
 
-pub fn overlay(
-    bench: &Workbench,
-    window: &mut Window,
-    cx: &mut Context<Workbench>,
-) -> Option<AnyElement> {
+pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let popup = bench.command_popup.as_ref()?;
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
-    let terminal = crate::terminal::pane(bench, &this, &popup.session.to_string(), window);
+    let terminal = crate::terminal::pane(bench, &this, &popup.session.to_string(), cx);
     let close = cx.listener(|bench, _: &ClosePopup, _, cx| bench.close_command_popup(cx));
     let card = div()
         .id("command-popup")

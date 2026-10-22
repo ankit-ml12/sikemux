@@ -36,9 +36,18 @@ struct Panes {
 }
 
 impl Render for Panes {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         DRAWS.with_borrow_mut(|draws| draws.push(0.));
-        let bench = self.bench.read(cx);
+        let entity = self.bench.clone();
+        let panes: Vec<AnyElement> = self
+            .shown
+            .iter()
+            .map(|id| {
+                self.bench.update(cx, |bench, cx| {
+                    terminal::pane(bench, &entity, &id.to_string(), cx)
+                })
+            })
+            .collect();
         let columns = self.shown.len().clamp(1, 3);
         let rows = self.shown.len().div_ceil(columns).max(1);
         div()
@@ -47,16 +56,11 @@ impl Render for Panes {
             .flex_wrap()
             .bg(gpui::rgb(0x0f0f13))
             .font_family(theme::MONO)
-            .children(self.shown.iter().map(|id| {
+            .children(panes.into_iter().map(|pane| {
                 div()
                     .w(relative(1. / columns as f32))
                     .h(relative(1. / rows as f32))
-                    .child(Timed(terminal::pane(
-                        bench,
-                        &self.bench,
-                        &id.to_string(),
-                        window,
-                    )))
+                    .child(Timed(pane))
             }))
     }
 }

@@ -57,7 +57,7 @@ pub struct Workbench {
     pub slow_start: bool,
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
-    _voice_heard: [Subscription; 3],
+    _voice_heard: [Subscription; 4],
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     /// The host whose core those watches went to.
@@ -434,6 +434,10 @@ impl Workbench {
                 if !window.is_window_active() {
                     bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx));
                 }
+                crate::terminal::keep_blinking(bench, cx);
+            }),
+            cx.observe_window_visibility(window, |bench, _, _, cx| {
+                crate::terminal::keep_blinking(bench, cx)
             }),
             cx.observe(&voice, |bench, _, cx| {
                 if bench.settings.is_some() {
@@ -758,6 +762,7 @@ impl Workbench {
                     crate::experience::preferences_read(self, &preferences, cx);
                 }
                 self.reads.insert("preferences", value);
+                self.terminals.redraw_all(cx);
                 crate::notifications::introduce(self, cx);
                 crate::notifications::kept_running(self, cx);
             }
@@ -799,7 +804,7 @@ impl Workbench {
             }
             Update::Terminal(session, screenful) => {
                 self.terminals.apply(session, screenful, cx);
-                return self.parts.redraw(&self.parts.stage, cx);
+                return self.terminals.redraw(session, cx);
             }
             Update::Lost(reason) => self.lost = Some(reason),
             Update::ShutDown => return cx.quit(),
@@ -1576,6 +1581,10 @@ impl Workbench {
     pub fn rail_compact(&self) -> bool {
         self.read("preferences")
             .is_some_and(|preferences| preferences["railDensity"] == "compact")
+    }
+
+    pub fn window_handle(&self) -> AnyWindowHandle {
+        self.window
     }
 
     pub fn watched_project(&self) -> Option<&str> {
@@ -2870,7 +2879,7 @@ impl Parts {
             over: part(
                 |bench, window, cx| {
                     crate::pairing::overlay(bench, window, cx)
-                        .or_else(|| crate::command_popup::overlay(bench, window, cx))
+                        .or_else(|| crate::command_popup::overlay(bench, cx))
                         .unwrap_or_else(|| crate::experience::draw(bench, window, cx))
                 },
                 true,

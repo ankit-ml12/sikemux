@@ -400,7 +400,7 @@ fn view(
     }
     match kind {
         PaneKind::Terminal => ui::pane(cx)
-            .child(terminal::pane(bench, &cx.entity(), target, window))
+            .child(terminal::pane(bench, &cx.entity(), target, cx))
             .into_any_element(),
         PaneKind::Files => ui::pane(cx)
             .child(crate::editor::pane(bench, &cx.entity(), target, window, cx))
@@ -426,10 +426,10 @@ fn view(
             Some(pane) => ui::pane(cx).child(pane.clone()).into_any_element(),
             None => ui::pane(cx).into_any_element(),
         },
-        PaneKind::Agent => home::agent_view(bench, tab, id, target, window, cx),
+        PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
         PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
         PaneKind::ProjectSettings => crate::project_settings::pane(bench, target, window, cx),
-        _ => home::agent_view(bench, tab, id, "", window, cx),
+        _ => home::agent_view(bench, tab, id, "", cx),
     }
 }
 

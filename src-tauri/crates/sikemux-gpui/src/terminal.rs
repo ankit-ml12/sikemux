@@ -1,6 +1,7 @@
 //! A terminal pane: the screen the core sends, drawn by gpui-terminal-grid.
 
-use std::collections::{BTreeMap, HashSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use std::ops::Range;
@@ -9,12 +10,12 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::input::{Copy, InputEvent, InputState, Paste, SelectAll};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, anchored, canvas, deferred, div, font, px, AnyElement, App, AppContext, Bounds,
-    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
-    InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Modifiers,
-    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, RenderOnce, Rgba, ScrollWheelEvent, SharedString, Styled, Subscription, Task,
-    UTF16Selection, Window,
+    actions, anchored, canvas, deferred, div, font, px, AnyElement, AnyView, App, AppContext,
+    Bounds, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks,
+    Hsla, InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke,
+    Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Pixels, Point, Render, RenderOnce, Rgba, ScrollWheelEvent, SharedString, StyleRefinement,
+    Styled, Subscription, Task, UTF16Selection, WeakEntity, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -84,6 +85,23 @@ pub struct Terminals {
     focused: Option<SessionId>,
     /// Redraws while the focused terminal's cursor blinks.
     blinking: Option<Task<()>>,
+    /// Each terminal drawn on its own, so its output and cursor redraw only it.
+    views: RefCell<HashMap<SessionId, Entity<TerminalView>>>,
+}
+
+/// One terminal as a view of its own, which the stage keeps as last drawn until it changes.
+pub struct TerminalView {
+    bench: WeakEntity<Workbench>,
+    id: SessionId,
+}
+
+impl Render for TerminalView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(bench) = self.bench.upgrade() else {
+            return div().into_any_element();
+        };
+        draw(bench.read(cx), &bench, self.id, window)
+    }
 }
 
 struct Terminal {
@@ -350,6 +368,22 @@ impl Terminals {
         self.metrics.as_ref().map(|metrics| metrics.cell)
     }
 
+    /// Redraws the terminal `session` alone.
+    pub fn redraw(&self, session: SessionId, cx: &mut App) {
+        let view = self.views.borrow().get(&session).cloned();
+        if let Some(view) = view {
+            view.update(cx, |_, cx| cx.notify());
+        }
+    }
+
+    /// Redraws every terminal, as when their font changes.
+    pub fn redraw_all(&self, cx: &mut App) {
+        let views: Vec<Entity<TerminalView>> = self.views.borrow().values().cloned().collect();
+        for view in views {
+            view.update(cx, |_, cx| cx.notify());
+        }
+    }
+
     pub fn screen(&self, session: SessionId) -> Option<&Screen> {
         self.open.get(&session).map(|terminal| &terminal.screen)
     }
@@ -414,6 +448,7 @@ impl Terminals {
 
     /// Lets go of terminals whose sessions are gone.
     pub fn keep(&mut self, live: impl Fn(SessionId) -> bool, asks: &mpsc::UnboundedSender<Ask>) {
+        self.views.get_mut().retain(|session, _| live(*session));
         self.open.retain(|session, _| {
             let keep = live(*session);
             if !keep {
@@ -424,16 +459,34 @@ impl Terminals {
     }
 }
 
-/// The terminal a pane shows, attaching it the first time it is drawn.
+/// The terminal a pane shows, as a view of its own that attaches it the first time it is drawn.
 pub fn pane(
     bench: &Workbench,
     this: &Entity<Workbench>,
     session: &str,
-    window: &Window,
+    cx: &mut App,
 ) -> AnyElement {
     let Ok(id) = session.parse::<SessionId>() else {
         return div().into_any_element();
     };
+    let view = bench
+        .terminals
+        .views
+        .borrow_mut()
+        .entry(id)
+        .or_insert_with(|| {
+            cx.new(|_| TerminalView {
+                bench: this.downgrade(),
+                id,
+            })
+        })
+        .clone();
+    AnyView::from(view)
+        .cached(StyleRefinement::default().size_full())
+        .into_any_element()
+}
+
+fn draw(bench: &Workbench, this: &Entity<Workbench>, id: SessionId, window: &Window) -> AnyElement {
     let this = this.clone();
     let mut pane = div()
         .id(("terminal", id))
@@ -446,24 +499,24 @@ pub fn pane(
             window.listener_for(&this, move |bench, _: &SelectAll, _, cx| {
                 if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                     terminal.select_all();
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             }),
         )
         .on_action(
             window.listener_for(&this, move |bench, _: &OpenFind, window, cx| {
                 open_find(bench, id, window, cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.terminals.redraw(id, cx);
             }),
         )
         .on_action(window.listener_for(&this, move |bench, _: &PageUp, _, cx| {
             page(bench, id, true);
-            bench.parts.redraw(&bench.parts.stage, cx);
+            bench.terminals.redraw(id, cx);
         }))
         .on_action(
             window.listener_for(&this, move |bench, _: &PageDown, _, cx| {
                 page(bench, id, false);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.terminals.redraw(id, cx);
             }),
         )
         .on_action(
@@ -490,7 +543,7 @@ pub fn pane(
             window.listener_for(&this, move |bench, event: &KeyDownEvent, window, cx| {
                 if key(bench, id, &event.keystroke, window) {
                     cx.stop_propagation();
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             }),
         )
@@ -498,13 +551,13 @@ pub fn pane(
             Button::Left,
             window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
                 mouse_down(bench, id, event, window, cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.terminals.redraw(id, cx);
             }),
         )
         .on_mouse_move(
             window.listener_for(&this, move |bench, event: &MouseMoveEvent, _, cx| {
                 if mouse_move(bench, id, event) {
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             }),
         )
@@ -515,7 +568,7 @@ pub fn pane(
                     window.focus(&terminal.focus, cx);
                     terminal.menu = Some(event.position);
                     terminal.menu_agents = false;
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             }),
         )
@@ -523,14 +576,14 @@ pub fn pane(
             Button::Left,
             window.listener_for(&this, move |bench, event: &MouseUpEvent, _, cx| {
                 mouse_up(bench, id, event, cx);
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.terminals.redraw(id, cx);
             }),
         )
         .on_scroll_wheel(window.listener_for(
             &this,
             move |bench, event: &ScrollWheelEvent, _, cx| {
                 if wheel(bench, id, event) {
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             },
         ))
@@ -630,7 +683,6 @@ fn layout(
     let asks = bench.asks.clone();
     let terminal = bench.terminals.open.entry(id).or_insert_with(|| {
         let _ = asks.send(Ask::Terminal(id, TerminalAsk::Attach));
-        bench.parts.redraw(&bench.parts.stage, cx);
         let focus = cx.focus_handle();
         Terminal {
             screen: Screen::default(),
@@ -697,6 +749,7 @@ fn layout(
         top,
         tokens,
         focused: terminal.focus.is_focused(window),
+        in_front: window.is_window_active() && window.is_visible(),
     };
     (
         Layout::new(&view, bounds.origin, &metrics, window),
@@ -710,6 +763,8 @@ struct View<'a> {
     top: u64,
     tokens: &'a Tokens,
     focused: bool,
+    /// The window is active and shown, so a blinking cursor blinks.
+    in_front: bool,
 }
 
 impl View<'_> {
@@ -834,6 +889,7 @@ impl Grid for View<'_> {
             .ok()
             .filter(|row| *row < header.rows)?;
         if self.focused
+            && self.in_front
             && header.cursor.shape & wire::CURSOR_BLINKS != 0
             && blinked_off(self.terminal.blink_from)
         {
@@ -1030,7 +1086,7 @@ impl Typing {
         self.bench.update(cx, |bench, cx| {
             if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                 terminal.marked = marked.filter(|text| !text.is_empty());
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.terminals.redraw(id, cx);
             }
         });
     }
@@ -1386,7 +1442,7 @@ fn find_in(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Wo
     let query = find.input.read(cx).value().to_string();
     if query.is_empty() {
         find.found = FindResult::default();
-        return bench.parts.redraw(&bench.parts.stage, cx);
+        return bench.terminals.redraw(id, cx);
     }
     let current = find
         .found
@@ -1647,7 +1703,7 @@ impl RenderOnce for TerminalMenu {
             closer.update(cx, |bench, cx| {
                 if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                     terminal.menu = None;
-                    bench.parts.redraw(&bench.parts.stage, cx);
+                    bench.terminals.redraw(id, cx);
                 }
             })
         };
@@ -1663,7 +1719,7 @@ impl RenderOnce for TerminalMenu {
                                 terminal.menu = None;
                             }
                             send_selection(bench, id, to, window, cx);
-                            bench.parts.redraw(&bench.parts.stage, cx);
+                            bench.terminals.redraw(id, cx);
                         })
                     })
             });
@@ -1695,7 +1751,7 @@ impl RenderOnce for TerminalMenu {
                             terminal.menu = None;
                         }
                         run(bench, id, window, cx);
-                        bench.parts.redraw(&bench.parts.stage, cx);
+                        bench.terminals.redraw(id, cx);
                     })
                 })
         };
@@ -1739,7 +1795,7 @@ impl RenderOnce for TerminalMenu {
                                     bench.update(cx, |bench, cx| {
                                         if let Some(terminal) = bench.terminals.open.get_mut(&id) {
                                             terminal.menu_agents = true;
-                                            bench.parts.redraw(&bench.parts.stage, cx);
+                                            bench.terminals.redraw(id, cx);
                                         }
                                     })
                                 }),
@@ -1766,6 +1822,16 @@ impl RenderOnce for TerminalMenu {
                     )),
             )
             .into_any_element()
+    }
+}
+
+impl Workbench {
+    /// Draws the terminal's cursor as one tick of its blink timer would.
+    pub fn blink_now(&mut self, id: SessionId, cx: &mut Context<Self>) {
+        if let Some(terminal) = self.terminals.open.get_mut(&id) {
+            terminal.blink_from -= BLINK;
+        }
+        self.terminals.redraw(id, cx);
     }
 }
 
@@ -1804,30 +1870,44 @@ fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut C
     } else if bench.terminals.focused == Some(id) {
         bench.terminals.focused = None;
     }
-    if bench.terminals.focused.is_some() && bench.terminals.blinking.is_none() {
-        bench.terminals.blinking = Some(cx.spawn(async move |this, cx| loop {
-            let Ok(wait) = this.update(cx, |bench, cx| {
-                let terminal = bench
-                    .terminals
-                    .focused
-                    .and_then(|id| bench.terminals.open.get(&id));
-                let blinking = terminal.filter(|terminal| {
-                    terminal.screen.header.cursor.shape & wire::CURSOR_BLINKS != 0
-                });
-                let wait = blinking.map(|terminal| BLINK - phase(terminal) + BLINK_MARGIN);
-                if wait.is_none() {
-                    bench.terminals.blinking = None;
-                }
-                bench.parts.redraw(&bench.parts.stage, cx);
-                wait
-            }) else {
-                return;
-            };
-            match wait {
-                Some(wait) => cx.background_executor().timer(wait).await,
-                None => return,
-            }
-        }));
+    keep_blinking(bench, cx);
+    bench.terminals.redraw(id, cx);
+}
+
+/// Keeps a timer redrawing the focused terminal's blinking cursor while the window is active
+/// and shown; it rests otherwise, and starts again when the window comes back.
+pub fn keep_blinking(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    if bench.terminals.focused.is_none() || bench.terminals.blinking.is_some() {
+        return;
     }
-    bench.parts.redraw(&bench.parts.stage, cx);
+    let window = bench.window_handle();
+    bench.terminals.blinking = Some(cx.spawn(async move |this, cx| loop {
+        let in_front = window
+            .update(cx, |_, window, _| {
+                window.is_window_active() && window.is_visible()
+            })
+            .unwrap_or(false);
+        let Ok(wait) = this.update(cx, |bench, cx| {
+            let focused = bench.terminals.focused;
+            let blinking = focused
+                .and_then(|id| bench.terminals.open.get(&id))
+                .filter(|terminal| terminal.screen.header.cursor.shape & wire::CURSOR_BLINKS != 0);
+            let wait = blinking
+                .filter(|_| in_front)
+                .map(|terminal| BLINK - phase(terminal) + BLINK_MARGIN);
+            if wait.is_none() {
+                bench.terminals.blinking = None;
+            }
+            if let Some(id) = focused {
+                bench.terminals.redraw(id, cx);
+            }
+            wait
+        }) else {
+            return;
+        };
+        match wait {
+            Some(wait) => cx.background_executor().timer(wait).await,
+            None => return,
+        }
+    }));
 }

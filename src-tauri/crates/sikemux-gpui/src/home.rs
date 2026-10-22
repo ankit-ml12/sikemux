@@ -74,7 +74,6 @@ pub fn agent_view(
     tab: &str,
     view: &str,
     agent: &str,
-    window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let project = bench.project();
@@ -97,7 +96,7 @@ pub fn agent_view(
                 bench,
                 &cx.entity(),
                 &session.to_string(),
-                window,
+                cx,
             )))
             .children(header)
             .into_any_element();
