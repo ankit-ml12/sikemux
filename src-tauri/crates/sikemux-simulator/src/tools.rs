@@ -193,13 +193,27 @@ pub(super) async fn run(
             let device = attached(manager, agent_id)?;
             let before = read_screen(manager, &device).await?;
             let typed: Vec<char> = text("text").ok_or("text is required")?.chars().collect();
+            // The first key from a hardware keyboard sends iOS's own keyboard away, and keys
+            // that arrive while it goes are lost, so a lone Shift sends it away first.
+            let shift = json!({ "udid": device.udid, "key": "Shift" });
+            let fields = if manager.request("key", shift).await.is_ok() {
+                steady(manager, &device).await?
+            } else {
+                before.clone()
+            };
             for chunk in typed.chunks(TEXT_CHUNK) {
                 let chunk: String = chunk.iter().collect();
                 manager
                     .request("text", json!({ "udid": device.udid, "text": chunk }))
                     .await?;
             }
-            settled_state(manager, agent_id, Some(before), report(params)?).await
+            let state = settled_state(manager, agent_id, Some(before), report(params)?).await?;
+            let after = read_screen(manager, &device).await?;
+            let printable = typed.iter().any(|typed| !typed.is_control());
+            if printable && !landed(&fields.elements, &after.elements) {
+                return Err(NOT_TYPED.into());
+            }
+            Ok(state)
         }
         "sim.button" => {
             let device = attached(manager, agent_id)?;
@@ -949,6 +963,48 @@ async fn turned(manager: &SimulatorManager, device: &Device) -> Result<(), Strin
         pause(TURN_STEP).await?;
     }
     Ok(())
+}
+
+const NOT_TYPED: &str = "The text did not reach a field: no text field's value changed. Tap the field to focus it, then type again.";
+
+const TEXT_ROLES: [&str; 4] = ["TextField", "SecureTextField", "SearchField", "TextView"];
+
+/// Whether typing changed a text field's value, as it does in the field that has the keys.
+/// A screen without one, such as a game drawing its own, cannot tell and counts as typed.
+fn landed(before: &[Element], after: &[Element]) -> bool {
+    let values = |elements: &[Element]| -> Vec<(String, String, String)> {
+        elements
+            .iter()
+            .filter(|element| TEXT_ROLES.contains(&element.role.as_str()))
+            .map(|element| {
+                (
+                    element.identifier.clone(),
+                    element.label.clone(),
+                    element.value.clone(),
+                )
+            })
+            .collect()
+    };
+    let (was, now) = (values(before), values(after));
+    was.is_empty() && now.is_empty() || was != now
+}
+
+/// The screen once two reads a moment apart agree.
+async fn steady(manager: &SimulatorManager, device: &Device) -> Result<Read, String> {
+    let mut latest = read_screen(manager, device).await?;
+    for _ in 1..SETTLE_READS {
+        if near_deadline() {
+            break;
+        }
+        pause(SETTLE_STEP).await?;
+        let next = read_screen(manager, device).await?;
+        let settled = next == latest;
+        latest = next;
+        if settled {
+            break;
+        }
+    }
+    Ok(latest)
 }
 
 /// Reads the screen until two reads agree, so an animation has finished before
