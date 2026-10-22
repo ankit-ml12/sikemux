@@ -16,6 +16,7 @@ use crate::theme::Tokens;
 use crate::ui;
 
 /// Where the chat stands with a worktree.
+#[derive(Clone, PartialEq)]
 pub enum Switch {
     /// It has not started, in a repository: the first message starts it in a worktree when `on`.
     Choosing { on: bool },
@@ -102,4 +103,76 @@ pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App
                 .child(label),
         )
         .into_any_element()
+}
+
+/// The line above a chat's first message saying the worktree is being made, or which
+/// worktree the chat works in: its branch, then its folder more quietly.
+pub fn note(switch: &Switch, cx: &App) -> Option<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let note = div()
+        .w_full()
+        .max_w(px(800.))
+        .px(px(22.))
+        .pt(px(12.))
+        .text_size(crate::theme::ui_text(11.))
+        .text_color(t.text_tertiary);
+    match switch {
+        Switch::Choosing { .. } => None,
+        Switch::Preparing { step } => Some(note.child(format!("{step}…")).into_any_element()),
+        Switch::In { branch, path } => {
+            let path = crate::chat::tilde(std::path::Path::new(path));
+            let tile = div()
+                .flex_none()
+                .size(px(30.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(crate::theme::RADIUS_2)
+                .bg(Hsla {
+                    a: 0.16,
+                    ..t.accent
+                })
+                .child(ui::icon(Icon::Git, 14.).text_color(t.accent));
+            let lines = div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .id("worktree-note-branch")
+                        .min_w_0()
+                        .flex()
+                        .tooltip(ui::tooltip(branch.clone()))
+                        .child(
+                            div()
+                                .flex_none()
+                                .whitespace_nowrap()
+                                .child("Working in a worktree on\u{a0}"),
+                        )
+                        .child(
+                            ui::mono(branch.clone(), 11., cx)
+                                .min_w_0()
+                                .truncate()
+                                .font_weight(gpui_kit::FontWeight::MEDIUM)
+                                .text_color(t.text_primary),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("worktree-note-path")
+                        .min_w_0()
+                        .tooltip(ui::tooltip(path.clone()))
+                        .child(ui::mono(path, 11., cx).truncate()),
+                );
+            Some(
+                note.flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(tile)
+                    .child(lines)
+                    .into_any_element(),
+            )
+        }
+    }
 }

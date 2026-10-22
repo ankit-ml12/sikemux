@@ -373,6 +373,8 @@ struct Reading {
     unfolded: HashSet<SharedString>,
     /// The find bar is looking for something, so every long text shows all of itself.
     finding: bool,
+    /// Where the chat stands with a worktree, said above its first message.
+    worktree: Option<crate::worktree_switch::Switch>,
 }
 
 impl Reading {
@@ -1452,6 +1454,34 @@ pub fn pane(
         )
         .with_priority(1)
     });
+    let worktree = bench
+        .worktree_switch(&agent.id, cx)
+        .map(|(switch, _)| switch)
+        .filter(|switch| !matches!(switch, crate::worktree_switch::Switch::Choosing { .. }));
+    let empty_note = worktree
+        .as_ref()
+        .filter(|_| chat.is_empty(cx))
+        .and_then(|switch| crate::worktree_switch::note(switch, cx));
+    chat.reader.update(cx, |reading, cx| {
+        if reading.worktree != worktree {
+            reading.worktree = worktree;
+            cx.notify();
+        }
+    });
+    let welcome = match (empty_note, welcome) {
+        (None, welcome) => welcome,
+        (Some(note), welcome) => Some(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .pt(px(44.))
+                .child(note)
+                .children(welcome)
+                .into_any_element(),
+        ),
+    };
     let list = chat.transcript.read(cx).list().clone();
     let rows = div()
         .flex_1()
@@ -3437,8 +3467,21 @@ fn row(
                 .text_color(Tokens::get(cx).text_tertiary),
             )
     });
+    let worktree = (ix == 0)
+        .then_some(looks.reading.worktree.as_ref())
+        .flatten()
+        .and_then(|switch| crate::worktree_switch::note(switch, cx))
+        .map(|note| {
+            div()
+                .w_full()
+                .flex()
+                .justify_center()
+                .when(!looks.reading.earlier_lost, |row| row.pt(px(44.)))
+                .child(note)
+        });
+    let noted = worktree.is_some();
     if parts.is_empty() && message.letters.is_empty() && summary.is_none() && !carried {
-        return div().children(lost).into_any_element();
+        return div().children(lost).children(worktree).into_any_element();
     }
     let lettered = !message.letters.is_empty();
     let content = if lettered {
@@ -3508,6 +3551,7 @@ fn row(
         .flex_col()
         .items_center()
         .children(lost)
+        .children(worktree)
         .child(
             div()
                 .w_full()
@@ -3520,7 +3564,7 @@ fn row(
                         row.py(px(5.))
                     }
                 })
-                .when(ix == 0 && !looks.reading.earlier_lost, |row| {
+                .when(ix == 0 && !looks.reading.earlier_lost && !noted, |row| {
                     row.pt(px(56.))
                 })
                 .when(ix + 1 == rows.len(), |row| row.pb(px(32.)))
