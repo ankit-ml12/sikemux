@@ -1,12 +1,12 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use gpui::{
     actions, div, list, px, AnyElement, App, ClipboardItem, Context, EventEmitter, FocusHandle,
     FollowMode, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Point, Render, SharedString,
-    Styled, Window,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render,
+    SharedString, Styled, Window,
 };
 
 use crate::draw::{Pen, Style};
@@ -86,7 +86,24 @@ pub struct Transcript<R: Row> {
     hits: Vec<Hit>,
     current: usize,
     stale: Stale,
+    /// The place found the reader stepped to, while it is brought into view.
+    chasing: Option<Chase>,
+    /// Where each row was last placed in the window, as its texts were.
+    row_tops: Rc<RefCell<HashMap<SharedString, Pixels>>>,
 }
+
+/// Bringing a place found into view, over the frames it takes its row to be laid out and
+/// its block drawn.
+struct Chase {
+    hit: usize,
+    steps: u8,
+}
+
+/// The most frames spent bringing a place found into view.
+const MOST_CHASE_STEPS: u8 = 8;
+/// Room kept above a place brought into view, under the find bar drawn over the rows, and below.
+const ROOM_ABOVE: Pixels = px(96.);
+const ROOM_BELOW: Pixels = px(40.);
 
 /// The rows whose places found are out of date.
 enum Stale {
@@ -144,6 +161,8 @@ impl<R: Row> Transcript<R> {
             hits: Vec::new(),
             current: 0,
             stale: Stale::None,
+            chasing: None,
+            row_tops: Rc::default(),
         }
     }
 
@@ -191,21 +210,89 @@ impl<R: Row> Transcript<R> {
         (self.current, self.hits.len())
     }
 
-    /// Brings the row of the place the reader is on into view: from its top when it is
-    /// above, so a header drawn over the list does not cover it.
-    fn reveal(&self) {
-        let Some(hit) = self.hits.get(self.current) else {
+    /// Brings the place the reader is on into view as the transcript next draws.
+    fn reveal(&mut self) {
+        if self.hits.get(self.current).is_some() {
+            self.chasing = Some(Chase {
+                hit: self.current,
+                steps: 0,
+            });
+        }
+    }
+
+    /// Puts the line of the place being brought into view under the find bar, leaving it where
+    /// it is when the last frame drew it in view. It is aimed from where layout put it in its
+    /// row: how far down the row its message starts, the heights of the blocks before its own,
+    /// and its line in that block once a frame has drawn the block. Scrolling to that place in
+    /// the row keeps rows measured again elsewhere from moving the aim, and it aims again from
+    /// each frame's layout until a frame shows the line in view, as a message can be laid out
+    /// anew at another width once it is drawn.
+    fn chase(&mut self, window: &mut Window) {
+        let Some(mut chase) = self.chasing.take() else {
             return;
         };
-        let row = hit.at.0;
-        if row <= self.list.logical_scroll_top().item_ix {
+        if chase.steps >= MOST_CHASE_STEPS {
+            return;
+        }
+        chase.steps += 1;
+        let Some(hit) = self.hits.get(chase.hit) else {
+            return;
+        };
+        let (row, doc, block, n) = hit.at;
+        let Some(found) = self.rows.get(row) else {
+            return;
+        };
+        let id = found.id().to_owned();
+        let docs = found.docs();
+        let Some(markdown) = docs.get(doc) else {
+            return;
+        };
+        let before = markdown.blocks().get(..block).and_then(|blocks| {
+            blocks.iter().try_fold(px(0.), |sum, node| {
+                Some(sum + node.size.get()?.height + self.style.gap)
+            })
+        });
+        let in_row = markdown
+            .top
+            .get()
+            .zip(self.row_tops.borrow().get(id.as_str()).copied())
+            .map(|(top, row)| (top, top - row));
+        let (Some((top, in_row)), Some(before)) = (in_row, before) else {
             self.list.scroll_to(ListOffset {
                 item_ix: row,
                 offset_in_item: px(0.),
             });
-        } else {
-            self.list.scroll_to_reveal_item(row);
+            self.chasing = Some(chase);
+            return window.request_animation_frame();
+        };
+        let line = self
+            .shown
+            .borrow()
+            .iter()
+            .find(|text| {
+                text.key.0.as_ref() == id && (text.key.1, text.key.2, text.key.3) == (doc, block, n)
+            })
+            .and_then(|text| {
+                let at = text.layout.position_for_index(hit.range.start)?;
+                Some((at.y, text.layout.line_height()))
+            });
+        if let Some((top, height)) = line {
+            let view = self.list.viewport_bounds();
+            if top >= view.top() + ROOM_ABOVE && top + height <= view.bottom() - ROOM_BELOW {
+                return;
+            }
         }
+        let in_block = line.map_or(px(0.), |(line, _)| line - (top + before));
+        let offset = in_row + before + in_block - ROOM_ABOVE;
+        self.list.scroll_to(ListOffset {
+            item_ix: row,
+            offset_in_item: offset.max(px(0.)),
+        });
+        if offset < px(0.) {
+            self.list.scroll_by(offset);
+        }
+        self.chasing = Some(chase);
+        window.request_animation_frame();
     }
 
     /// Finds the query again in the rows that changed.
@@ -347,6 +434,12 @@ impl<R: Row> Transcript<R> {
         if self.rows.is_empty() != was_empty {
             cx.emit(EmptyChanged(self.rows.is_empty()));
         }
+        if self.row_tops.borrow().len() > self.rows.len() {
+            let held: HashSet<&str> = self.rows.iter().map(Row::id).collect();
+            self.row_tops
+                .borrow_mut()
+                .retain(|id, _| held.contains(id.as_ref()));
+        }
         if changed {
             cx.emit(RowsChanged);
         }
@@ -469,13 +562,14 @@ pub struct AwayChanged(pub bool);
 impl<R: Row> EventEmitter<AwayChanged> for Transcript<R> {}
 
 impl<R: Row> Render for Transcript<R> {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply(cx);
         if self.query.is_some() {
             self.find_again(cx);
         } else {
             self.stale = Stale::None;
         }
+        self.chase(window);
         self.shown.borrow_mut().clear();
         let span = self.span();
         let this = cx.entity();
@@ -508,7 +602,21 @@ impl<R: Row> Render for Transcript<R> {
                 });
                 let pen = Pen::selecting(this.style.clone(), selecting);
                 let draw_row = this.draw_row.clone();
-                draw_row(&this.rows, ix, &pen, window, cx)
+                let drawn = draw_row(&this.rows, ix, &pen, window, cx);
+                let (Some(row), tops) = (this.rows.get(ix), this.row_tops.clone()) else {
+                    return drawn;
+                };
+                let id: SharedString = row.id().to_owned().into();
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(drawn)
+                    .on_children_prepainted(move |bounds, _, _| {
+                        if let Some(row) = bounds.first() {
+                            tops.borrow_mut().insert(id.clone(), row.top());
+                        }
+                    })
+                    .into_any_element()
             })
         });
         div()

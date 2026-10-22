@@ -189,6 +189,7 @@ impl Pen {
                 .map_or(0, |selecting| selecting.place_of(doc)),
             width: doc.width.clone(),
             turned: doc.turned.clone(),
+            top: doc.top.clone(),
         };
         let root = div()
             .flex()
@@ -212,6 +213,7 @@ impl Pen {
                 }
                 if let Some(first) = bounds.first() {
                     blocks.width.set(Some(first.size.width));
+                    blocks.top.set(Some(first.top()));
                 }
             })
             .id(id)
@@ -228,6 +230,7 @@ struct Blocks {
     doc: usize,
     width: Rc<Cell<Option<Pixels>>>,
     turned: Rc<RefCell<HashSet<(usize, u32)>>>,
+    top: Rc<Cell<Option<Pixels>>>,
 }
 
 impl Blocks {
@@ -329,6 +332,7 @@ impl Element for Tall {
         if blocks.width.replace(Some(width)) != Some(width) {
             window.refresh();
         }
+        blocks.top.set(Some(bounds.top()));
         let view = window.content_mask().bounds;
         let mut top = bounds.top();
         let mut shown = Vec::new();

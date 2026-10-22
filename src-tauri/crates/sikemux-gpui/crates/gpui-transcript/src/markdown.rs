@@ -442,6 +442,8 @@ pub struct Markdown {
     pub(crate) width: Rc<Cell<Option<Pixels>>>,
     /// Each fold the reader turned from how it was written, by block and its place in the block.
     pub(crate) turned: Rc<RefCell<HashSet<(usize, u32)>>>,
+    /// Where its first block was placed in the window when last drawn.
+    pub(crate) top: Rc<Cell<Option<Pixels>>>,
 }
 
 impl Markdown {
