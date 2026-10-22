@@ -17,18 +17,6 @@ use crate::theme::Tokens;
 use crate::ui::{self, Menu, MenuItem};
 use crate::workbench::Workbench;
 
-/// The most of any window of its plan the account has used, as the core last read it.
-fn used(bench: &Workbench, profile: &Profile) -> Option<f64> {
-    let launcher = format!("{}:{}", profile.provider, profile.id);
-    bench.usage_peak(&launcher).or_else(|| {
-        profile
-            .id
-            .starts_with("builtin-")
-            .then(|| bench.usage_peak(&profile.provider))
-            .flatten()
-    })
-}
-
 /// Carries the chat `agent` on to `profile`; a turn at work stops and carries on there.
 fn move_chat(bench: &Workbench, agent: &str, profile: &Profile) {
     let account = chat_account(
@@ -87,23 +75,7 @@ pub fn picker(
         return None;
     }
     let name = |profile: &Profile, status: Option<&accounts::Status>| {
-        let unnamed = profile.id.starts_with("builtin-")
-            && bench
-                .read("catalog")
-                .and_then(|kinds| {
-                    kinds
-                        .as_array()?
-                        .iter()
-                        .find(|kind| kind["type"] == profile.provider.as_str())?["label"]
-                        .as_str()
-                        .map(str::to_owned)
-                })
-                .as_deref()
-                == Some(profile.name.as_str());
-        status
-            .and_then(|status| status.name.clone())
-            .filter(|_| unnamed)
-            .unwrap_or_else(|| profile.name.clone())
+        accounts::name(bench, profile, status)
     };
     let label = name(&current, signed_in(&current).as_ref());
     let about = match running {
@@ -152,7 +124,7 @@ pub fn picker(
                 profile.clone(),
                 name(profile, Some(status)),
                 detail,
-                used(bench, profile),
+                accounts::used(bench, profile),
             )
         })
         .collect();

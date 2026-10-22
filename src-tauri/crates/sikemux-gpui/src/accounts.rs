@@ -231,6 +231,56 @@ pub fn set_auto_switch(bench: &Workbench, provider: &str, on: bool, cx: &mut Con
     change(bench, "setAccountAutoSwitch", params, cx);
 }
 
+/// What the account is called: who it is signed in as while it still has its agent's own
+/// name, else the name the person gave it.
+pub fn name(bench: &Workbench, profile: &Profile, status: Option<&Status>) -> String {
+    let unnamed = profile.id.starts_with("builtin-")
+        && bench
+            .read("catalog")
+            .and_then(|kinds| {
+                kinds
+                    .as_array()?
+                    .iter()
+                    .find(|kind| kind["type"] == profile.provider.as_str())?["label"]
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .as_deref()
+            == Some(profile.name.as_str());
+    status
+        .and_then(|status| status.name.clone())
+        .filter(|_| unnamed)
+        .unwrap_or_else(|| profile.name.clone())
+}
+
+/// The most of any window of its plan the account has used, as the core last read it.
+pub fn used(bench: &Workbench, profile: &Profile) -> Option<f64> {
+    let launcher = format!("{}:{}", profile.provider, profile.id);
+    bench.usage_peak(&launcher).or_else(|| {
+        profile
+            .id
+            .starts_with("builtin-")
+            .then(|| bench.usage_peak(&profile.provider))
+            .flatten()
+    })
+}
+
+/// Opens Settings on its agents with the add-account dialog for `provider`, signing in
+/// the account `id` there when there is one.
+pub fn open_sign_in(
+    bench: &mut Workbench,
+    provider: &str,
+    id: Option<&str>,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    bench.open_settings(crate::settings::Page::Agents, window, cx);
+    open_dialog(bench, provider, window, cx);
+    if let Some(id) = id {
+        sign_in_again(bench, id, cx);
+    }
+}
+
 /// Who the account is signed in as, once its agent has said.
 pub fn status<'a>(bench: &'a Workbench, profile: &Profile) -> Option<&'a Result<Status, String>> {
     bench.accounts.status.get(&key(profile))

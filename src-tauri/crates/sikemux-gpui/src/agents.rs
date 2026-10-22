@@ -8,9 +8,10 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, Context,
     FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Transformation,
+    StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use serde_json::Value;
+use sikemux_core::agent_accounts::Profile;
 use sikemux_wire::protocol::{PaneKind, RecentInfo};
 
 use crate::agent_menu::AgentMenu;
@@ -721,15 +722,35 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             .text_color(t.text_tertiary)
             .px(px(8.))
     };
+    let provider = launcher.provider.clone();
+    let current = bench
+        .accounts
+        .current(&provider)
+        .map(|profile| profile.id.clone());
     let body = if account["signedIn"] == false {
+        let (provider, current) = (provider.clone(), current.clone());
         div()
             .flex()
             .gap(px(4.))
             .child(quiet(format!("{name} is signed out.")).pr_0())
             .child(
-                ui::text("Sign in", 10.5, FontWeight::NORMAL)
-                    .text_color(t.text_secondary)
-                    .underline(),
+                div()
+                    .id("limits-sign-in")
+                    .cursor_pointer()
+                    .child(
+                        ui::text("Sign in", 10.5, FontWeight::NORMAL)
+                            .text_color(t.text_secondary)
+                            .underline(),
+                    )
+                    .on_click(cx.listener(move |bench, _, window, cx| {
+                        crate::accounts::open_sign_in(
+                            bench,
+                            &provider,
+                            current.as_deref(),
+                            window,
+                            cx,
+                        )
+                    })),
             )
             .into_any_element()
     } else if !account["problem"].is_null() {
@@ -767,24 +788,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                             .text_color(t.text_tertiary),
                     )
                     .child(div().flex_1().h(px(1.)).bg(t.border))
-                    .child(
-                        div()
-                            .h(px(20.))
-                            .pl(px(3.))
-                            .pr(px(5.))
-                            .flex()
-                            .items_center()
-                            .gap(px(5.))
-                            .rounded(theme::RADIUS_2)
-                            .child(
-                                ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary),
-                            )
-                            .child(
-                                ui::icon(Icon::Chevron, 9.)
-                                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                                    .text_color(t.text_tertiary),
-                            ),
-                    )
+                    .child(account_menu(bench, &provider, name, cx))
                     .child(
                         IconButton::new("refresh-limits", Icon::Refresh, refresh)
                             .small()
@@ -793,6 +797,139 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
             )
             .child(body),
     )
+}
+
+/// The account new chats start on, opening the person's other accounts with the agent: which
+/// to start on, signing out or in, and adding one. Accounts signed out of wait in Settings.
+fn account_menu(
+    bench: &Workbench,
+    provider: &str,
+    name: String,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let this = cx.entity();
+    let status = |profile: &Profile| {
+        crate::accounts::status(bench, profile).and_then(|status| status.as_ref().ok())
+    };
+    let current = bench
+        .accounts
+        .current(provider)
+        .map(|profile| profile.id.clone());
+    let rows: Vec<(Profile, String, Option<String>, bool)> = bench
+        .accounts
+        .of(provider)
+        .into_iter()
+        .filter(|profile| {
+            Some(&profile.id) == current.as_ref()
+                || status(profile).is_none_or(|status| status.signed_in)
+        })
+        .map(|profile| {
+            let status = status(profile);
+            let signed_out = status.is_some_and(|status| !status.signed_in);
+            let hint = if signed_out {
+                vec!["Signed out".to_owned()]
+            } else {
+                status
+                    .and_then(|status| status.email.clone().or_else(|| status.organization.clone()))
+                    .into_iter()
+                    .chain(
+                        crate::accounts::used(bench, profile)
+                            .map(|used| format!("{}%", used.round())),
+                    )
+                    .collect()
+            };
+            let hint = (!hint.is_empty()).then(|| hint.join(" · "));
+            let name = crate::accounts::name(bench, profile, status);
+            (profile.clone(), name, hint, signed_out)
+        })
+        .collect();
+    let chosen = rows
+        .iter()
+        .find(|(profile, ..)| Some(&profile.id) == current.as_ref())
+        .map(|(profile, name, _, signed_out)| (profile.id.clone(), name.clone(), *signed_out));
+    let provider = provider.to_owned();
+    Popover::new("limits-account-menu")
+        .anchor(Anchor::BottomRight)
+        .offset(px(4.))
+        .trigger(
+            BaseButton::new("limits-account")
+                .accessibility_label("Account")
+                .h(px(20.))
+                .pl(px(3.))
+                .pr(px(5.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .rounded(theme::RADIUS_2)
+                .hover(move |style| style.bg(t.surface_hover))
+                .child(ui::text(name, 11., FontWeight::MEDIUM).text_color(t.text_primary))
+                .child(
+                    ui::icon(Icon::Chevron, 9.)
+                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                        .text_color(t.text_tertiary),
+                ),
+        )
+        .content(move |_, _, cx| {
+            let popover = cx.entity();
+            let act = |id: SharedString,
+                       label: String,
+                       run: Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>| {
+                let (this, popover) = (this.clone(), popover.clone());
+                MenuItem::new(id, label).on_click(move |_, window, cx| {
+                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                    this.update(cx, |bench, cx| run(bench, window, cx));
+                })
+            };
+            let mut menu = Menu::new().children(rows.iter().map(|(profile, name, hint, _)| {
+                let here = Some(&profile.id) == current.as_ref();
+                let chosen = profile.clone();
+                act(
+                    SharedString::from(format!("limits-account-{}", profile.id)),
+                    name.clone(),
+                    Rc::new(move |bench, _, cx| {
+                        if !here {
+                            crate::accounts::select(bench, &chosen, cx);
+                        }
+                    }),
+                )
+                .mark(crate::accounts::avatar(profile, name, 16.))
+                .checked(here)
+                .when_some(hint.clone(), MenuItem::hint)
+            }));
+            menu = menu.separator(cx);
+            if let Some((id, name, signed_out)) = chosen.clone() {
+                let provider = provider.clone();
+                menu = menu.child(match signed_out {
+                    true => act(
+                        "limits-sign-in-account".into(),
+                        format!("Sign in to {name}"),
+                        Rc::new(move |bench, window, cx| {
+                            crate::accounts::open_sign_in(bench, &provider, Some(&id), window, cx)
+                        }),
+                    )
+                    .icon(Icon::User),
+                    false => act(
+                        "limits-sign-out".into(),
+                        format!("Sign out of {name}"),
+                        Rc::new(move |bench, _, cx| crate::accounts::sign_out(bench, &id, cx)),
+                    )
+                    .icon(Icon::LogOut),
+                });
+            }
+            let provider = provider.clone();
+            menu.child(
+                act(
+                    "limits-add-account".into(),
+                    "Add account…".into(),
+                    Rc::new(move |bench, window, cx| {
+                        crate::accounts::open_sign_in(bench, &provider, None, window, cx)
+                    }),
+                )
+                .icon(Icon::Plus),
+            )
+        })
+        .into_any_element()
 }
 
 /// One of a plan's rolling windows: how much of it is used, and when it starts again.
