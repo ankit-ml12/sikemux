@@ -64,17 +64,22 @@ mod owner {
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
     use std::os::unix::fs::OpenOptionsExt;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::time::Duration;
+
+    use crate::memory_pressure::{self, Pressure};
 
     const TOKEN: u8 = b'+';
     const CHECK_EVERY: Duration = Duration::from_secs(30);
+    const TAKE_BACK_EVERY: Duration = Duration::from_secs(1);
 
     static OWNED: AtomicBool = AtomicBool::new(false);
 
     pub(super) fn run() -> std::io::Result<()> {
-        let pool = super::pool().ok_or_else(|| std::io::Error::other("no home folder"))?;
-        if let Some(dir) = pool.parent() {
+        let path = super::pool().ok_or_else(|| std::io::Error::other("no home folder"))?;
+        if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let lock = OpenOptions::new()
@@ -83,15 +88,15 @@ mod owner {
             .create(true)
             .truncate(false)
             .mode(0o600)
-            .open(pool.with_extension("lock"))?;
+            .open(path.with_extension("lock"))?;
         // SAFETY: `lock` is an open file for as long as this call runs.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
             return Err(std::io::Error::last_os_error());
         }
-        let _ = std::fs::remove_file(&pool);
-        let path = std::ffi::CString::new(pool.as_os_str().as_encoded_bytes())?;
-        // SAFETY: `path` is a NUL-terminated string that outlives the call.
-        if unsafe { libc::mkfifo(path.as_ptr(), 0o600) } != 0 {
+        let _ = std::fs::remove_file(&path);
+        let name = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
+        // SAFETY: `name` is a NUL-terminated string that outlives the call.
+        if unsafe { libc::mkfifo(name.as_ptr(), 0o600) } != 0 {
             return Err(std::io::Error::last_os_error());
         }
         OWNED.store(true, Ordering::Release);
@@ -99,17 +104,38 @@ mod owner {
             .read(true)
             .write(true)
             .custom_flags(libc::O_NONBLOCK)
-            .open(&pool)?;
+            .open(&path)?;
         let reader = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NONBLOCK)
-            .open(&pool)?;
+            .open(&path)?;
         let tokens = std::thread::available_parallelism()
             .map_or(1, |cores| cores.get().saturating_sub(1).max(1));
         (&writer).write_all(&vec![TOKEN; tokens])?;
+        let mut pool = Pool {
+            path,
+            reader,
+            writer,
+            tokens,
+            held_back: 0,
+            hold_back: 0,
+        };
+        let (tell, told) = mpsc::channel();
+        memory_pressure::watch(move |pressure| {
+            let _ = tell.send(pressure);
+        });
         loop {
-            std::thread::sleep(CHECK_EVERY);
-            refill(&reader, &writer, &pool, tokens);
+            let wait = if pool.held_back < pool.hold_back {
+                TAKE_BACK_EVERY
+            } else {
+                CHECK_EVERY
+            };
+            match told.recv_timeout(wait) {
+                Ok(pressure) => pool.press(pressure),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => std::thread::sleep(wait),
+            }
+            pool.settle();
         }
     }
 
@@ -121,31 +147,86 @@ mod owner {
         }
     }
 
-    /// Puts back the jobs a build took and never returned, as one killed
-    /// mid-build does. A job is lost when more are out than the processes
-    /// still holding the pool could account for.
-    fn refill(reader: &File, writer: &File, pool: &std::path::Path, tokens: usize) {
-        let waiting = waiting(reader);
-        if waiting > tokens {
-            let mut excess = vec![0; waiting - tokens];
-            let _ = (&*reader).read(&mut excess);
-            return;
+    struct Pool {
+        path: PathBuf,
+        reader: File,
+        writer: File,
+        tokens: usize,
+        /// Jobs taken out of the pool while memory is short, so fewer
+        /// compilers run at once.
+        held_back: usize,
+        hold_back: usize,
+    }
+
+    impl Pool {
+        fn press(&mut self, pressure: Pressure) {
+            let hold_back = match pressure {
+                Pressure::Normal => 0,
+                Pressure::Warn => self.tokens / 2,
+                Pressure::Critical => self.tokens - 1,
+            };
+            if hold_back == self.hold_back {
+                return;
+            }
+            self.hold_back = hold_back;
+            eprintln!(
+                "sikemux: memory pressure is {pressure:?}, builds share {} jobs",
+                self.tokens - self.hold_back
+            );
         }
-        let out = tokens - waiting;
-        if out == 0 {
-            return;
+
+        fn settle(&mut self) {
+            let waiting = self.waiting();
+            if self.held_back > self.hold_back {
+                self.put(self.held_back - self.hold_back);
+                self.held_back = self.hold_back;
+            } else if self.held_back < self.hold_back {
+                self.held_back += self.take(waiting.min(self.hold_back - self.held_back));
+            } else if waiting + self.held_back > self.tokens {
+                self.take(waiting + self.held_back - self.tokens);
+            } else if self.hold_back == 0 {
+                self.refill(self.tokens - waiting);
+            }
         }
-        let Some(holders) = super::platform::holders(pool) else {
-            return;
-        };
-        let accounted: usize = holders
-            .into_iter()
-            .filter(|pid| *pid != std::process::id())
-            .map(held_by)
-            .sum();
-        let lost = out.saturating_sub(accounted);
-        if lost > 0 {
-            let _ = (&*writer).write(&vec![TOKEN; lost]);
+
+        /// Puts back the jobs a build took and never returned, as one killed
+        /// mid-build does. A job is lost when more are out than the processes
+        /// still holding the pool could account for.
+        fn refill(&self, out: usize) {
+            if out == 0 {
+                return;
+            }
+            let Some(holders) = super::platform::holders(&self.path) else {
+                return;
+            };
+            let accounted: usize = holders
+                .into_iter()
+                .filter(|pid| *pid != std::process::id())
+                .map(held_by)
+                .sum();
+            self.put(out.saturating_sub(accounted));
+        }
+
+        fn put(&self, count: usize) {
+            if count > 0 {
+                let _ = (&self.writer).write(&vec![TOKEN; count]);
+            }
+        }
+
+        fn take(&self, count: usize) -> usize {
+            let mut taken = vec![0; count];
+            (&self.reader).read(&mut taken).unwrap_or(0)
+        }
+
+        fn waiting(&self) -> usize {
+            let mut count: libc::c_int = 0;
+            // SAFETY: FIONREAD writes one int through the pointer, which is valid.
+            let read = unsafe { libc::ioctl(self.reader.as_raw_fd(), libc::FIONREAD, &mut count) };
+            if read == 0 {
+                count.max(0) as usize
+            } else {
+                0
+            }
         }
     }
 
@@ -157,17 +238,6 @@ mod owner {
         match super::platform::children(pid) {
             0 => super::platform::threads(pid).saturating_sub(COMPILER_THREADS_AT_REST),
             children => children - 1,
-        }
-    }
-
-    fn waiting(reader: &File) -> usize {
-        let mut count: libc::c_int = 0;
-        // SAFETY: FIONREAD writes one int through the pointer, which is valid.
-        let read = unsafe { libc::ioctl(reader.as_raw_fd(), libc::FIONREAD, &mut count) };
-        if read == 0 {
-            count.max(0) as usize
-        } else {
-            0
         }
     }
 }

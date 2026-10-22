@@ -60,7 +60,7 @@ When an agent starts a Spring Boot, Next.js, FastAPI or Flask app and its port i
 
 ## Builds take turns
 
-When several agents build at once, their Rust builds share one pool of jobs, one fewer than the computer has cores, instead of each starting a job per core. Cargo, rustc and the C compilers that build scripts start draw from it, so builds take turns rather than slowing each other down.
+When several agents build at once, their Rust builds share one pool of jobs, one fewer than the host has cores, instead of each starting a job per core. Cargo, rustc and the C compilers that build scripts start draw from it, so builds take turns rather than slowing each other down. When the host runs short of memory, the pool shrinks to half, or to a single job, until memory frees up.
 
 ## A check on every commit
 
