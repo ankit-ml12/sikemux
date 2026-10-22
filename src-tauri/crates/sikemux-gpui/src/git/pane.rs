@@ -25,7 +25,7 @@ use sikemux_core::git::status::GitFile;
 use sikemux_wire::protocol::ProjectCodeHost;
 
 use branches::{branch_card, branches_page, Branches};
-use history::{commit_card, commit_row, graph, Graph, Inks};
+use history::{commit_card, commit_row, graph, CommitOwner, Graph, Inks};
 
 mod branches;
 mod history;
@@ -357,6 +357,9 @@ pub struct GitPane {
     staged_owners: Value,
     /// Who wrote the lines of the commit shown, as its note says.
     commit_lines: Value,
+    /// The agents each commit's signed footer names, and the commits last asked about.
+    commit_owners: HashMap<String, Vec<CommitOwner>>,
+    owners_asked: Vec<String>,
     /// The commit message as the core last kept it.
     synced: String,
     _keeping: Task<()>,
@@ -437,6 +440,8 @@ impl GitPane {
             owners: Value::Null,
             staged_owners: Value::Null,
             commit_lines: Value::Null,
+            commit_owners: HashMap::new(),
+            owners_asked: Vec::new(),
             commands: VecDeque::new(),
             commands_open: false,
             synced: String::new(),
@@ -466,6 +471,7 @@ impl GitPane {
         }
         self.read_stashes(cx);
         self.read_owners(cx);
+        self.read_commit_owners(cx);
         self.list(cx);
     }
 
@@ -1459,6 +1465,42 @@ impl GitPane {
         .detach();
     }
 
+    /// Asks the core which agents the footers of the log's commits name, when those
+    /// commits changed.
+    fn read_commit_owners(&mut self, cx: &mut Context<Self>) {
+        let footered: Vec<String> = self
+            .log()
+            .iter()
+            .filter(|commit| commit.footer)
+            .map(|commit| commit.full_hash.clone())
+            .collect();
+        if footered == self.owners_asked {
+            return;
+        }
+        self.owners_asked = footered.clone();
+        if footered.is_empty() {
+            self.commit_owners.clear();
+            return;
+        }
+        let params = json!({ "dir": self.repo, "commits": footered });
+        let answer = self.core.request("commitOwners", params);
+        cx.spawn(async move |pane, cx| {
+            let owners = answer
+                .await
+                .ok()
+                .and_then(|owners| serde_json::from_value(owners).ok())
+                .unwrap_or_default();
+            pane.update(cx, |pane, cx| {
+                if pane.owners_asked == footered {
+                    pane.commit_owners = owners;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     /// Who wrote the lines a diff of `side` shows, as the core last said.
     pub(super) fn owners_of(&self, side: Option<Side>) -> &Value {
         if self.review.commit().is_some() {
@@ -2079,7 +2121,7 @@ impl Render for GitPane {
         } else {
             self.review.commit().and_then(|hash| {
                 let commit = self.log().iter().find(|commit| commit.full_hash == hash)?;
-                Some(commit_card(commit, pushed, cx))
+                Some(commit_card(self, commit, pushed, cx))
             })
         }
         .map(|card| card.mx(px(-8.)).mt(px(-8.)).mb(px(8.)));
