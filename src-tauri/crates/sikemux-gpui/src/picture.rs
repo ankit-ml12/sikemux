@@ -103,7 +103,7 @@ enum Shrunk {
     Sent(Arc<Image>),
 }
 
-/// GPUI's loader for a thumbnail, which decodes the picture whole once and keeps only its
+/// GPUI's loader for a thumbnail, which decodes the picture once and keeps only its
 /// shrunk copy.
 enum Thumbnail {}
 
@@ -135,7 +135,10 @@ fn shrink(thumb: &Thumb) -> Result<Arc<RenderImage>, String> {
         }
         Shrunk::Sent(image) => image.bytes.as_slice(),
     };
-    let decoded = image::load_from_memory(bytes).map_err(|error| error.to_string())?;
+    let decoded = match jpeg_near(bytes, thumb.longest) {
+        Some(decoded) => decoded,
+        None => image::load_from_memory(bytes).map_err(|error| error.to_string())?,
+    };
     let fitted = match decoded.width().max(decoded.height()) > thumb.longest {
         true => decoded.thumbnail(thumb.longest, thumb.longest),
         false => decoded,
@@ -145,6 +148,29 @@ fn shrink(thumb: &Thumb) -> Result<Arc<RenderImage>, String> {
         pixel.0.swap(0, 2);
     }
     Ok(Arc::new(RenderImage::new([image::Frame::new(pixels)])))
+}
+
+/// A JPEG decoded at an eighth, a quarter or half its size, the smallest still at least
+/// `longest` along one side, so its whole picture is never held; none for other pictures.
+fn jpeg_near(bytes: &[u8], longest: u32) -> Option<image::DynamicImage> {
+    if image::guess_format(bytes).ok()? != image::ImageFormat::Jpeg {
+        return None;
+    }
+    let mut decoder = jpeg_decoder::Decoder::new(bytes);
+    let side = longest.min(u32::from(u16::MAX)) as u16;
+    let (width, height) = decoder.scale(side, side).ok()?;
+    let format = decoder.info()?.pixel_format;
+    let pixels = decoder.decode().ok()?;
+    let (width, height) = (u32::from(width), u32::from(height));
+    match format {
+        jpeg_decoder::PixelFormat::RGB24 => {
+            image::RgbImage::from_raw(width, height, pixels).map(Into::into)
+        }
+        jpeg_decoder::PixelFormat::L8 => {
+            image::GrayImage::from_raw(width, height, pixels).map(Into::into)
+        }
+        _ => None,
+    }
 }
 
 /// Whether a picture of this kind is shown from a shrunk copy when drawn small. Animations and
