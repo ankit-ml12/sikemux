@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, AppContext, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    div, px, App, AppContext, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
+    KeyDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    WeakEntity, Window,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -46,6 +47,10 @@ pub struct AgentReview {
     agent: String,
     found: Option<Result<Found, SharedString>>,
     close: Dismiss,
+    /// Takes the keyboard while the review shows, so Escape closes it.
+    focus: FocusHandle,
+    /// What had the keyboard before, once the review took it.
+    before: Option<Option<FocusHandle>>,
 }
 
 impl AgentReview {
@@ -74,17 +79,27 @@ impl AgentReview {
             agent,
             found: None,
             close,
+            focus: cx.focus_handle(),
+            before: None,
+        }
+    }
+
+    /// Closes the review and gives the keyboard back to what had it.
+    fn leave(&mut self, window: &mut Window, cx: &mut App) {
+        (self.close)(window, cx);
+        if let Some(Some(before)) = self.before.take() {
+            window.focus(&before, cx);
         }
     }
 
     /// Closes the review, then does `then` on the workbench.
     fn then(
-        &self,
+        &mut self,
         window: &mut Window,
         cx: &mut App,
         then: impl FnOnce(&mut Workbench, &mut Window, &mut Context<Workbench>),
     ) {
-        (self.close)(window, cx);
+        self.leave(window, cx);
         self.bench
             .update(cx, |bench, cx| then(bench, window, cx))
             .ok();
@@ -92,7 +107,11 @@ impl AgentReview {
 }
 
 impl Render for AgentReview {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.before.is_none() {
+            self.before = Some(window.focused(cx));
+            window.focus(&self.focus, cx);
+        }
         let t = Tokens::get(cx).clone();
         let row = |label: &'static str| {
             div()
@@ -175,7 +194,7 @@ impl Render for AgentReview {
                                     line: 1,
                                     column: None,
                                 };
-                                (review.close)(window, cx);
+                                review.leave(window, cx);
                                 window.dispatch_action(Box::new(at), cx);
                             }))
                             .child(file.clone())
@@ -246,6 +265,13 @@ impl Render for AgentReview {
             }
         }
         div()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|review, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "escape" {
+                    cx.stop_propagation();
+                    review.leave(window, cx);
+                }
+            }))
             .w(px(360.))
             .p(px(12.))
             .flex()
