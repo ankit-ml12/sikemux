@@ -1,6 +1,7 @@
 //! Files that are not text, shown for what they are: a picture to zoom, a document
 //! in macOS's own viewer, and anything else as the first of its bytes. A bar over
-//! each names the file and opens or reveals it.
+//! each names the file and opens or reveals it. Another host's pictures and documents
+//! are shown from a read-only copy brought over to this disk.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use gpui_kit::{
 };
 use serde_json::json;
 
-use super::FileKey;
+use super::{copies, FileKey};
 use crate::core::Target;
 use crate::hosts::Place as Host;
 use crate::icons::Icon;
@@ -49,6 +50,9 @@ pub(super) struct Viewer {
     about: Option<About>,
     zoom: Zoom,
     bytes: Option<Vec<u8>>,
+    /// Where a picture or document is read from on this disk: the file itself, or
+    /// the copy of another host's.
+    local: Option<PathBuf>,
     failed: Option<SharedString>,
     /// A document's viewer, which macOS draws under the window's overlays; none inside
     /// once macOS would not make one.
@@ -166,7 +170,29 @@ pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workben
                 return;
             }
         };
-        let bytes = match kind_of(&about.mime) {
+        let kind = kind_of(&about.mime);
+        let shown_here = matches!(kind, Kind::Image | Kind::Document);
+        let local = match &key.place {
+            _ if !shown_here => None,
+            Host::This => Some(key.path.clone()),
+            Host::Account(_) => {
+                match copies::bring(bench.clone(), target.clone(), key.clone(), about.size, cx)
+                    .await
+                {
+                    Ok(copy) => Some(copy),
+                    Err(error) => {
+                        let _ = bench.update(cx, |bench, cx| {
+                            if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
+                                viewer.failed = Some(error.into());
+                            }
+                            bench.parts.redraw(&bench.parts.stage, cx);
+                        });
+                        return;
+                    }
+                }
+            }
+        };
+        let bytes = match kind {
             Kind::Bytes => {
                 let read = json!({ "path": name, "at": 0, "length": SHOWN_BYTES });
                 target
@@ -181,11 +207,12 @@ pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workben
             }
             _ => None,
         };
-        let document = kind_of(&about.mime) == Kind::Document && key.place == Host::This;
+        let document = kind == Kind::Document;
         let _ = bench.update(cx, |bench, cx| {
             if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                 viewer.about = Some(about);
                 viewer.bytes = bytes;
+                viewer.local = local;
                 viewer.failed = None;
             }
             if document {
@@ -210,7 +237,10 @@ fn show_document(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench
                     let Some(viewer) = bench.editors.viewers.get_mut(&key) else {
                         return;
                     };
-                    let document = gpui_native_view::document::Document::new(&key.path, window)
+                    let Some(local) = viewer.local.as_deref() else {
+                        return;
+                    };
+                    let document = gpui_native_view::document::Document::new(local, window)
                         .map(std::rc::Rc::new);
                     let focus = cx.focus_handle();
                     viewer.document = Some(document.map(|document| {
@@ -227,10 +257,21 @@ fn show_document(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench
     let _ = (bench, key, cx);
 }
 
-/// Shows a document's viewer again after its file changed on disk.
-pub(super) fn reopen(bench: &Workbench, keys: &[FileKey]) {
-    #[cfg(target_os = "macos")]
+/// Shows a picture or document again after its file changed on its host's disk,
+/// bringing another host's over again.
+pub(super) fn reopen(bench: &mut Workbench, keys: &[FileKey], cx: &mut Context<Workbench>) {
     for key in keys {
+        let shown_here = bench
+            .editors
+            .viewers
+            .get(key)
+            .is_some_and(|viewer| viewer.local.is_some());
+        if shown_here && key.place != Host::This {
+            load(bench, key.clone(), cx);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for key in keys.iter().filter(|key| key.place == Host::This) {
         if let Some((document, _, _)) = bench
             .editors
             .viewers
@@ -240,8 +281,6 @@ pub(super) fn reopen(bench: &Workbench, keys: &[FileKey]) {
             document.open(&key.path);
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (bench, keys);
 }
 
 /// A document's viewer, and the surface its element places.
@@ -280,17 +319,12 @@ pub(super) fn pane(
         return div().size_full().into_any_element();
     };
     let kind = viewer.about.as_ref().map(|about| kind_of(&about.mime));
-    let elsewhere = key.place != Host::This && matches!(kind, Some(Kind::Image | Kind::Document));
     let body: AnyElement = match (&viewer.failed, kind) {
         (Some(error), _) => message(error.clone(), &t),
         (None, None) => message("Reading…".into(), &t),
-        _ if elsewhere => message(
-            "This file is on another host, so it shows there for now.".into(),
-            &t,
-        ),
         (None, Some(Kind::Image)) => {
             let picture = Picture {
-                path: path.to_owned(),
+                path: viewer.local.clone().unwrap_or_else(|| path.to_owned()),
                 zoom: viewer.zoom,
             };
             div()
@@ -433,7 +467,12 @@ fn bar(
             .child(label)
     };
     let image = about.is_some_and(|about| kind_of(&about.mime) == Kind::Image);
-    let (reload, open, reveal) = (key.clone(), path.to_owned(), path.to_owned());
+    let reload = key.clone();
+    let open = viewer
+        .local
+        .clone()
+        .or_else(|| (key.place == Host::This).then(|| path.to_owned()));
+    let reveal = (key.place == Host::This).then(|| path.to_owned());
     let this_reload = this.clone();
     div()
         .flex()
@@ -469,16 +508,16 @@ fn bar(
                     this_reload.update(cx, |bench, cx| load(bench, path, cx))
                 }),
         )
-        .child(
+        .children(open.map(|open| {
             ui::IconButton::new("viewer-open", Icon::Share, "Open in its own app")
                 .small()
-                .on_click(move |_, _, cx| cx.open_with_system(&open)),
-        )
-        .child(
+                .on_click(move |_, _, cx| cx.open_with_system(&open))
+        }))
+        .children(reveal.map(|reveal| {
             ui::IconButton::new("viewer-reveal", Icon::Folder, "Show in Finder")
                 .small()
-                .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
-        )
+                .on_click(move |_, _, cx| cx.reveal_path(&reveal))
+        }))
 }
 
 /// A size in bytes as people read it.

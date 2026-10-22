@@ -25,6 +25,7 @@ use crate::ui;
 use crate::workbench::Workbench;
 
 mod blame;
+mod copies;
 mod gutter;
 mod insights;
 mod lsp;
@@ -124,6 +125,7 @@ pub struct Editors {
     insights: insights::Insights,
     /// Files that are not text, shown for what they are.
     viewers: HashMap<FileKey, viewer::Viewer>,
+    copies: copies::Copies,
 }
 
 struct Document {
@@ -1084,7 +1086,17 @@ pub fn keep(bench: &mut Workbench) {
             files_in(&place, &tab.pane, &mut shown);
         }
     }
-    bench.editors.viewers.retain(|key, _| shown.contains(key));
+    let closed: Vec<FileKey> = bench
+        .editors
+        .viewers
+        .keys()
+        .filter(|key| !shown.contains(*key))
+        .cloned()
+        .collect();
+    for key in closed {
+        bench.editors.viewers.remove(&key);
+        bench.editors.copies.forget(&key);
+    }
     let gone: Vec<FileKey> = bench
         .editors
         .open
@@ -1153,7 +1165,7 @@ pub fn changed(bench: &mut Workbench, place: &Host, paths: &[String], cx: &mut C
         .iter()
         .map(|path| FileKey::new(place.clone(), path))
         .collect();
-    viewer::reopen(bench, &shown);
+    viewer::reopen(bench, &shown, cx);
     let Some(window) = bench.editors.window else {
         return;
     };
