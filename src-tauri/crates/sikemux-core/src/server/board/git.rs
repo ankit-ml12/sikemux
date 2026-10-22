@@ -5,7 +5,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use crate::git::Git;
-use crate::server::{edits, sandbox, Core};
+use crate::server::{edits, sandbox, warm, Core};
 
 const QUICK: Duration = Duration::from_secs(60);
 /// Pushing and fetching wait on the network.
@@ -189,6 +189,7 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
     let start_sha = git(&repo, &["rev-parse", &start])?;
     let (branch, path) = sandbox::cut(&repo, slug, &start_sha)?;
     sandbox::copy_included(&repo, &path);
+    warm::seed_in_background(&repo, &path);
     Ok(Tree {
         cwd: path.join(&inside),
         repo,
