@@ -9,6 +9,7 @@ mod floats;
 pub mod grain;
 mod lists;
 mod pane;
+mod select;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
@@ -17,6 +18,7 @@ pub use find_bar::FindBar;
 pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};
+pub use select::{select, Pick};
 
 use gpui_kit::{
     div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla, IntoElement,

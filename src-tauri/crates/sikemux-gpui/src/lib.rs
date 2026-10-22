@@ -8,6 +8,8 @@ mod agent_palette;
 mod agent_setup;
 mod agents;
 mod battery;
+mod board;
+mod board_panels;
 mod boot;
 mod chat;
 pub mod codehost;
