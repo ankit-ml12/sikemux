@@ -617,7 +617,11 @@ fn long(run: &mut Run, driver: &Arc<Driver>) {
     let chat = driver.chat();
     run.until(30, |run| run.front_chat().is_some());
     let filled = Instant::now();
-    for index in 0..1_400 {
+    let rows: usize = std::env::var("STRESS_LONG_ROWS")
+        .ok()
+        .and_then(|rows| rows.parse().ok())
+        .unwrap_or(2_800);
+    for index in 0..rows / 2 {
         driver.prompt(&chat, long_chat_prompt(index));
         std::thread::sleep(Duration::from_millis(match index % 20 {
             0 | 3 => 400,
@@ -627,9 +631,10 @@ fn long(run: &mut Run, driver: &Arc<Driver>) {
             run.frames(2);
         }
     }
-    run.until(120, |run| run.rows(&chat) >= 2_800);
+    run.until(600, |run| run.rows(&chat) >= rows);
+    let (app, core) = run.memory();
     println!(
-        "long chat: {} rows in {:.0}s",
+        "long chat: {} rows in {:.0}s · app {app:.0} MB, core {core:.0} MB",
         run.rows(&chat),
         filled.elapsed().as_secs_f64()
     );

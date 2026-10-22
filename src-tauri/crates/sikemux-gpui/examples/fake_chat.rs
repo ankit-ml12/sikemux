@@ -17,6 +17,7 @@
 //! opens the chat in that folder's project rather than the temporary folder's.
 //! `FAKE_NAME=<name>` names the agent as the person would, and `FAKE_CLOSE=1` closes
 //! its tab once the prompts are sent, so it is listed among the closed agents.
+//! `FAKE_PAUSE_MS=<ms>` waits that long between prompts rather than two seconds.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -78,11 +79,15 @@ async fn run() -> anyhow::Result<()> {
             text: String::new(),
         })
         .collect();
+    let pause = std::env::var("FAKE_PAUSE_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+        .map_or(Duration::from_secs(2), Duration::from_millis);
     for prompt in args {
         client
             .acp_prompt(chat.clone(), None, prompt, Vec::new(), mentions.clone())
             .await?;
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(pause);
     }
     if std::env::var_os("FAKE_CLOSE").is_some() {
         client
