@@ -4,7 +4,11 @@
 //! chat in its tab in front, as `fake_chat`'s `remote` leaves it:
 //!   SIKEMUX_CORE_SOCKET=/tmp/gb/core.sock HOME=/tmp/gb/home cargo run --release --example stage_bench
 //! `STAGE_BENCH_LOOP=N` only draws the stage again N times, for a profiler to watch, and
-//! `STAGE_BENCH_FLOOD=S` only floods a terminal with an endless `yes` for S seconds.
+//! `STAGE_BENCH_FLOOD=S` only floods a terminal with an endless `yes` for S seconds, and
+//! `STAGE_BENCH_RUN=1` only starts the project's first task and idles while its Run chip counts.
+//! `STAGE_BENCH_STRESS=S` floods a terminal while the chat streams for S seconds, timing keys
+//! typed into the other terminal until they show there. `STAGE_BENCH_FLOOD_CMD` floods with
+//! that command instead of `yes`.
 //! It runs offscreen on a simulated clock at 120 Hz and prints, for each phase, the main
 //! thread's CPU for each frame: the window's work and, when something changed, its draw.
 
@@ -252,13 +256,161 @@ fn main() -> anyhow::Result<()> {
     if let Ok(path) = std::env::var("STAGE_BENCH_SHOT") {
         run.cx.capture_screenshot(run.window)?.save(path)?;
     }
+    if let Some(seconds) = std::env::var("STAGE_BENCH_STRESS")
+        .ok()
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+    {
+        let echo = run.bench.read_with(&run.cx, |bench, _| shown(bench)[1]);
+        run.bench.update(&mut run.cx, |bench, cx| {
+            terminal::type_text(bench, id, flood_command(), cx);
+        });
+        press(&mut run, &["enter"]);
+        let agent = run
+            .bench
+            .read_with(&run.cx, |bench, _| bench.agent().map(|agent| agent.id))
+            .expect("the chat");
+        run.cx
+            .update_window(run.window, |_, window, cx| {
+                let draft = run
+                    .bench
+                    .read(cx)
+                    .chats
+                    .get(&agent)
+                    .and_then(|chat| chat.composer.as_ref())
+                    .map(|composing| composing.draft.clone());
+                if let Some(draft) = draft {
+                    let focus = draft.read(cx).focus_handle(cx);
+                    window.focus(&focus, cx);
+                }
+            })
+            .ok();
+        let prompt: Vec<String> = STREAM
+            .chars()
+            .map(|c| {
+                if c == ' ' {
+                    "space".to_owned()
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
+        let prompt: Vec<&str> = prompt.iter().map(String::as_str).collect();
+        press(&mut run, &prompt);
+        press(&mut run, &["enter"]);
+        let echoed = |run: &Bench| {
+            run.bench.read_with(&run.cx, |bench, _| {
+                bench
+                    .terminals
+                    .screen(echo)
+                    .map_or(0, |screen| screen.text().matches('x').count())
+            })
+        };
+        let mut echoes = Vec::new();
+        let mut waiting: Option<(Instant, usize)> = None;
+        let mut next_key = Instant::now() + Duration::from_millis(500);
+        let started = Instant::now();
+        let cpu = thread_cpu_ms();
+        while started.elapsed() < Duration::from_secs(seconds) {
+            run.frame();
+            match waiting {
+                Some((sent, before)) if echoed(&run) > before => {
+                    echoes.push(sent.elapsed().as_secs_f64() * 1e3);
+                    waiting = None;
+                    next_key = Instant::now() + Duration::from_millis(250);
+                }
+                None if Instant::now() >= next_key => {
+                    let before = echoed(&run);
+                    run.bench.update(&mut run.cx, |bench, cx| {
+                        terminal::type_text(bench, echo, "x".into(), cx);
+                    });
+                    waiting = Some((Instant::now(), before));
+                }
+                _ => {}
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let busy = (thread_cpu_ms() - cpu) / (started.elapsed().as_secs_f64() * 1e3) * 100.;
+        if let Ok(path) = std::env::var("STAGE_BENCH_SHOT") {
+            run.cx
+                .capture_screenshot(run.window)?
+                .save(path.replace(".png", "-stress.png"))?;
+        }
+        run.report(&format!(
+            "a terminal flooding beside the chat streaming for {seconds} s of wall time"
+        ));
+        echoes.sort_by(f64::total_cmp);
+        let at = |q: f64| {
+            echoes
+                .get(((echoes.len() as f64 - 1.) * q).round() as usize)
+                .copied()
+                .unwrap_or(0.)
+        };
+        println!(
+            "window thread busy {busy:.1}% of wall time · key to echo in the other terminal: {} keys, p50/p90/max {:.1}/{:.1}/{:.1} ms",
+            echoes.len(),
+            at(0.5),
+            at(0.9),
+            at(1.),
+        );
+        return Ok(());
+    }
+    if std::env::var_os("STAGE_BENCH_RUN").is_some() {
+        let task = run
+            .bench
+            .read_with(&run.cx, |bench, _| {
+                let tasks = bench.read("tasks")?["tasks"].as_array()?;
+                tasks.first()?["id"].as_str().map(str::to_owned)
+            })
+            .ok_or_else(|| anyhow::anyhow!("the project lists no task"))?;
+        run.bench
+            .update(&mut run.cx, |bench, _| bench.start_task(&task));
+        let running = |bench: &Workbench| {
+            bench
+                .person_runs()
+                .0
+                .is_some_and(|run| run["status"] == "running")
+        };
+        for _ in 0..600 {
+            let waiting = runtime
+                .block_on(core::request(&asks, "trustAsks", json!({})))
+                .unwrap_or_default();
+            for ask in waiting.as_array().into_iter().flatten() {
+                if let Some(ask) = ask["id"].as_str() {
+                    let answer = json!({ "id": ask, "trust": true });
+                    let _ = runtime.block_on(core::request(&asks, "answerTrust", answer));
+                }
+            }
+            run.frame();
+            if run.bench.read_with(&run.cx, |bench, _| running(bench)) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !run.bench.read_with(&run.cx, |bench, _| running(bench)) {
+            anyhow::bail!("the task {task} did not start running");
+        }
+        for _ in 0..120 {
+            run.frame();
+        }
+        run.frames.clear();
+        for _ in 0..1200 {
+            run.frame();
+        }
+        let mut ticks = run.frames.clone();
+        run.report("idle for 10 s with the person's task running");
+        ticks.sort_by(|a, b| b.total_cmp(a));
+        ticks.truncate(10);
+        run.frames = ticks;
+        run.report("one second counted on the Run chip, the frame it is drawn in");
+        return Ok(());
+    }
     if let Some(seconds) = std::env::var("STAGE_BENCH_FLOOD")
         .ok()
         .and_then(|seconds| seconds.parse::<u64>().ok())
     {
         let flood = match std::env::var("STAGE_BENCH_LINES") {
-            Ok(lines) => format!("{FLOOD_LINE} | head -n {lines}"),
-            Err(_) => FLOOD_LINE.to_owned(),
+            Ok(lines) => format!("{} | head -n {lines}", flood_command()),
+            Err(_) => flood_command(),
         };
         run.bench.update(&mut run.cx, |bench, cx| {
             terminal::type_text(bench, id, flood, cx);
@@ -455,6 +607,23 @@ fn main() -> anyhow::Result<()> {
         started.elapsed().as_secs_f64()
     ));
     Ok(())
+}
+
+/// What floods a terminal: `STAGE_BENCH_FLOOD_CMD`, or the same line over and over.
+fn flood_command() -> String {
+    std::env::var("STAGE_BENCH_FLOOD_CMD").unwrap_or_else(|_| FLOOD_LINE.to_owned())
+}
+
+fn press(run: &mut Bench, keys: &[&str]) {
+    run.cx
+        .update_window(run.window, |_, window, cx| {
+            for key in keys {
+                if let Ok(key) = Keystroke::parse(key) {
+                    window.dispatch_keystroke(key, cx);
+                }
+            }
+        })
+        .ok();
 }
 
 fn thread_cpu_ms() -> f64 {
