@@ -40,6 +40,7 @@ use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
+use crate::ui::shimmer::shimmer;
 use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
 use crate::worktree_switch::Switch;
@@ -3797,7 +3798,10 @@ fn subagent(
                 .truncate()
                 .text_size(crate::theme::ui_text(10.5))
                 .text_color(looks.faint)
-                .child(task),
+                .map(|line| match card.state {
+                    SubagentState::Running => line.child(shimmer(format!("{key}:task"), task)),
+                    _ => line.child(task),
+                }),
         )
         .child(
             div()

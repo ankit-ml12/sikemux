@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, Action, AnyElement, App, ClipboardItem, Div, HighlightStyle, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Radians, SharedString,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Radians, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Transformation,
 };
 use sikemux_wire::chat::{
@@ -23,6 +23,7 @@ use crate::icons::Icon;
 use crate::picture::{self, Picture};
 use crate::theme;
 use crate::ui;
+use crate::ui::shimmer::shimmer;
 
 /// An output longer than this opens on its first lines, and the reader asks for the rest.
 const OUTPUT_FOLD_LINES: usize = 12;
@@ -238,21 +239,20 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
         .unwrap_or(live || current.is_some());
     let count = calls.len();
     let said = current.and_then(|call| call.tool.description.clone());
-    let label = match &said {
-        Some(said) => div()
+    let calls_said = format!("{count} tool {}", if count == 1 { "call" } else { "calls" });
+    let label = match (&said, current.is_some()) {
+        (Some(said), _) => div()
             .min_w_0()
-            .truncate()
             .text_size(crate::theme::ui_text(12.))
-            .text_color(looks.quiet)
-            .child(said.clone()),
-        None => div()
+            .child(shimmer(format!("run:{key}:said"), said.clone())),
+        (None, true) => div()
+            .min_w_0()
+            .child(shimmer(format!("run:{key}:calls"), calls_said)),
+        (None, false) => div()
             .min_w_0()
             .truncate()
             .text_color(looks.quiet)
-            .child(format!(
-                "{count} tool {}",
-                if count == 1 { "call" } else { "calls" }
-            )),
+            .child(calls_said),
     };
     let time = match current {
         Some(call) => Some(seconds(
@@ -467,6 +467,12 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
 fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
     let ink = if running { looks.quiet } else { looks.ink };
     let text = row.target.as_str();
+    if running && !text.is_empty() {
+        return div()
+            .min_w_0()
+            .flex()
+            .child(shimmer(format!("target:{id}:live"), text.to_owned()));
+    }
     let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
     let opens: Option<(std::ops::Range<usize>, Opens)> = match &row.path {
         Some(path) => {
@@ -694,7 +700,15 @@ fn terminal(
                 .pt(px(6.))
                 .pb(px(7.))
                 .text_color(looks.quiet)
-                .child(shown)
+                .child(
+                    div()
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(crate::ui::selectable::selectable(
+                            SharedString::from(format!("output:{id}")),
+                            shown,
+                            [],
+                        )),
+                )
                 .child(div().absolute().top(px(2.)).right(px(4.)).child(copy(
                     format!("copy-output:{id}"),
                     "output",

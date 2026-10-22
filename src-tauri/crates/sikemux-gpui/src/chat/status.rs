@@ -6,9 +6,8 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity,
-    Window,
+    div, px, AnyElement, App, Context, Div, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
 };
 use serde_json::json;
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
@@ -75,7 +74,9 @@ impl Render for Activity {
                 .items_center()
                 .gap(px(8.))
                 .child(ui::mark(&self.provider, 17.))
-                .child(ui::text(label, 13., FontWeight::NORMAL).text_color(t.text_tertiary))
+                .child(div().min_w_0().text_size(crate::theme::ui_text(13.)).child(
+                    crate::ui::shimmer::shimmer(format!("activity:{}", cx.entity_id()), label),
+                ))
                 .when(seconds > 0, |line| {
                     line.child(ui::mono(elapsed(seconds), 10.5, cx).text_color(t.text_disabled))
                 }),
