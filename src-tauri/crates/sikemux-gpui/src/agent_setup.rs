@@ -174,16 +174,20 @@ fn quoted(word: &str) -> String {
 
 /// The installer as the shell runs it.
 pub fn installing(agent: &Found) -> Option<Sheet> {
-    let command = agent.install.clone()?;
-    Some(Sheet {
+    Some(installer(&agent.kind, &agent.label, agent.install.clone()?))
+}
+
+/// The installer `command` of the agent `kind`, as the shell runs it.
+pub fn installer(kind: &str, label: &str, command: String) -> Sheet {
+    Sheet {
         install: true,
-        kind: agent.kind.clone(),
-        label: agent.label.clone(),
+        kind: kind.to_owned(),
+        label: label.to_owned(),
         shown: command.clone(),
         command: format!("{command}\nexit $?"),
         session: None,
         phase: Phase::Running,
-    })
+    }
 }
 
 /// The agent's own sign-in, on the account folder it runs on now.

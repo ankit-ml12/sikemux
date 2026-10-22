@@ -12,9 +12,9 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, DragMoveEvent, Entity,
-    FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
+    canvas, div, px, AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DragMoveEvent,
+    Entity, FocusHandle, Focusable, Image, InteractiveElement, IntoElement, ParentElement, Pixels,
+    Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task,
     WeakEntity, Window,
 };
 use serde_json::{json, Value};
@@ -122,6 +122,8 @@ pub struct Workbench {
     pub picked_tasks: HashMap<String, String>,
     /// Where the tab rail's frame was last drawn, left, top, width and height, for the driver.
     pub rail_frame: Rc<Cell<[f32; 4]>>,
+    /// Where the stage was last drawn, for what rises over the stage alone.
+    pub stage_frame: Rc<Cell<Bounds<Pixels>>>,
     /// The run whose failed tests the person closed the card of, by execution.
     pub tests_closed: Option<String>,
     /// The run whose "Why?" card is open, by execution.
@@ -551,6 +553,7 @@ impl Workbench {
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
             rail_frame: Rc::default(),
+            stage_frame: Rc::default(),
             tests_closed: None,
             failure_shown: None,
             space: None,
@@ -3731,7 +3734,18 @@ impl Parts {
                     bench.board_pane(cx);
                     crate::desk::prepare(bench, window, cx);
                     bench.settle_takes_keys();
-                    home::stage(bench, window, cx)
+                    let frame = bench.stage_frame.clone();
+                    div()
+                        .relative()
+                        .size_full()
+                        .flex()
+                        .child(
+                            canvas(|_, _, _| {}, move |bounds, _, _, _| frame.set(bounds))
+                                .absolute()
+                                .size_full(),
+                        )
+                        .child(home::stage(bench, window, cx))
+                        .into_any_element()
                 },
                 false,
             ),

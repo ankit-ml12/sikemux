@@ -543,17 +543,6 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
     } else {
         format!("Safe mode — {agent} asks before it acts. {press} goes YOLO.")
     };
-    let letters: Vec<(char, Hsla)> = if on {
-        "YOLO"
-            .chars()
-            .zip([t.accent, t.cmd, t.danger, t.warn])
-            .collect()
-    } else {
-        "SAFE"
-            .chars()
-            .map(|letter| (letter, t.text_tertiary))
-            .collect()
-    };
     BaseButton::new("composer-yolo")
         .accessibility_label(if on { "YOLO" } else { "SAFE" })
         .selected(on)
@@ -582,15 +571,12 @@ fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl In
                 t.text_tertiary
             }),
         )
-        .child(
-            div()
-                .flex()
-                .children(letters.into_iter().map(|(letter, color)| {
-                    ui::text(letter.to_string(), 10.5, FontWeight::SEMIBOLD)
-                        .letter_spacing(0.08)
-                        .text_color(color)
-                })),
-        )
+        .child(match on {
+            true => ui::rainbow("YOLO", 10.5, cx),
+            false => ui::text("SAFE", 10.5, FontWeight::SEMIBOLD)
+                .letter_spacing(0.08)
+                .text_color(t.text_tertiary),
+        })
 }
 
 /// One of the session's settings, such as its model, with a menu of the values it takes.

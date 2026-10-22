@@ -3,16 +3,14 @@
 //! rows; the person types to narrow it, moves through it and picks one.
 
 use std::cell::Cell;
-use std::ops::Range;
 use std::rc::Rc;
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, uniform_list, AnyElement, App, AppContext, Context, Entity, FocusHandle,
-    FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement,
-    ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    UniformListScrollHandle, Window,
+    actions, div, list, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, FontWeight,
+    Hsla, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 
 use crate::icons::Icon;
@@ -23,6 +21,8 @@ use crate::workbench::Workbench;
 actions!(palette, [Next, Previous, PageDown, PageUp, Choose, Close]);
 
 const ROW_HEIGHT: f32 = 30.;
+/// A hairline between groups, with the room around it.
+const RULE_HEIGHT: f32 = 17.;
 const SHOWN: usize = 200;
 const PAGE: isize = 8;
 
@@ -67,6 +67,8 @@ pub struct Row {
     /// The heading the row sits under while nothing is typed.
     pub group: Option<SharedString>,
     pub disabled: bool,
+    /// The palette's armed choice does not reach this row, which says so while it is chosen.
+    pub unarmed: bool,
     /// Everything typing matches against.
     pub search: String,
 }
@@ -85,7 +87,13 @@ impl Row {
             mark: None,
             group: None,
             disabled: false,
+            unarmed: false,
         }
+    }
+
+    pub fn unarmed(mut self, unarmed: bool) -> Self {
+        self.unarmed = unarmed;
+        self
     }
 
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
@@ -159,6 +167,10 @@ pub struct Spec {
     /// Drawn as the command deck: wider and taller, its rows' words in tracked capitals and
     /// their keys in keycaps.
     deck: bool,
+    /// Rises over the stage alone, leaving the rails as they are.
+    on_stage: bool,
+    /// Its groups are parted by hairlines rather than headed by their names.
+    ruled: bool,
 }
 
 /// A few words to choose between beside the palette's field, and which is chosen now.
@@ -166,6 +178,14 @@ pub struct Spec {
 pub struct Choice {
     pub options: Vec<(Icon, SharedString)>,
     pub chosen: Rc<Cell<usize>>,
+    /// The option that lets go of a safeguard, drawn loud while chosen.
+    pub armed: Option<usize>,
+}
+
+impl Choice {
+    fn armed_now(&self) -> bool {
+        self.armed == Some(self.chosen.get())
+    }
 }
 
 impl Spec {
@@ -188,7 +208,19 @@ impl Spec {
             typed: None,
             choice: None,
             deck: false,
+            on_stage: false,
+            ruled: false,
         }
+    }
+
+    pub fn on_stage(mut self) -> Self {
+        self.on_stage = true;
+        self
+    }
+
+    pub fn ruled(mut self) -> Self {
+        self.ruled = true;
+        self
     }
 
     pub fn deck(mut self) -> Self {
@@ -243,6 +275,16 @@ impl Spec {
 enum Line {
     Heading(usize),
     Row(usize),
+    Rule,
+}
+
+impl Line {
+    fn height(self) -> f32 {
+        match self {
+            Line::Rule => RULE_HEIGHT,
+            _ => ROW_HEIGHT,
+        }
+    }
 }
 
 /// The open palette: what it offers, what the person typed, and the lines
@@ -252,7 +294,7 @@ pub struct Palette {
     input: Entity<InputState>,
     lines: Vec<Line>,
     selected: Option<usize>,
-    scroll: UniformListScrollHandle,
+    list: ListState,
     /// What had focus before the palette took it, to hand it back.
     before: Option<FocusHandle>,
     /// The last row is the one made of what was typed.
@@ -277,7 +319,9 @@ impl Palette {
             .and_then(|typed| typed(query.trim()))
             .filter(|row| !self.spec.rows.iter().any(|kept| kept.key == row.key));
         let rows = &self.spec.rows;
-        self.lines = if query.trim().is_empty() {
+        self.lines = if self.spec.ruled {
+            ruled(rows, query.trim())
+        } else if query.trim().is_empty() {
             let mut lines = Vec::with_capacity(rows.len() + 4);
             let mut group = None;
             for (place, row) in rows.iter().enumerate() {
@@ -299,6 +343,7 @@ impl Palette {
             self.lines.insert(0, Line::Row(self.spec.rows.len() - 1));
             self.typed_shown = true;
         }
+        self.list.reset(self.lines.len());
         let start = self
             .spec
             .start
@@ -359,16 +404,48 @@ impl Palette {
     fn select(&mut self, line: Option<usize>) {
         self.selected = line;
         if let Some(line) = line {
-            self.scroll.scroll_to_item(line, ScrollStrategy::Nearest);
+            self.list.scroll_to_reveal_item(line);
         }
     }
 
     fn row(&self, line: usize) -> Option<&Row> {
         match self.lines.get(line)? {
             Line::Row(place) => self.spec.rows.get(*place),
-            Line::Heading(_) => None,
+            Line::Heading(_) | Line::Rule => None,
         }
     }
+}
+
+/// The lines of a palette whose groups are parted by hairlines: each group in its order,
+/// narrowed to what `query` finds in it and best first, a rule between groups that show.
+fn ruled(rows: &[Row], query: &str) -> Vec<Line> {
+    let mut lines = Vec::with_capacity(rows.len() + 2);
+    let mut start = 0;
+    while start < rows.len() {
+        let group = &rows[start].group;
+        let end = rows[start..]
+            .iter()
+            .position(|row| row.group != *group)
+            .map_or(rows.len(), |length| start + length);
+        let found: Vec<usize> = if query.is_empty() {
+            (start..end).collect()
+        } else {
+            crate::fuzzy::rank(
+                query,
+                rows[start..end].iter().map(|row| row.search.as_str()),
+                SHOWN,
+            )
+            .into_iter()
+            .map(|place| start + place)
+            .collect()
+        };
+        if !found.is_empty() && !lines.is_empty() {
+            lines.push(Line::Rule);
+        }
+        lines.extend(found.into_iter().map(Line::Row));
+        start = end;
+    }
+    lines
 }
 
 impl Workbench {
@@ -406,7 +483,7 @@ impl Workbench {
             input,
             lines: Vec::new(),
             selected: None,
-            scroll: UniformListScrollHandle::new(),
+            list: ListState::new(0, ListAlignment::Top, px(ROW_HEIGHT * 8.)),
             before,
             typed_shown: false,
             _typing: typing,
@@ -488,16 +565,30 @@ pub fn overlay(
     let count = palette.lines.len();
     let deck = palette.spec.deck;
     let list_pad = if deck { 6. } else { 4. };
+    let lines_height: f32 = palette.lines.iter().map(|line| line.height()).sum();
+    let viewport = window.viewport_size();
+    let stage = palette
+        .spec
+        .on_stage
+        .then(|| bench.stage_frame.get())
+        .filter(|stage| stage.size.width > px(0.));
     let close = cx.listener(|bench: &mut Workbench, _, window, cx| bench.close_palette(window, cx));
     Some(
         div()
             .id("palette")
             .absolute()
-            .inset_0()
+            .map(|backdrop| match stage {
+                Some(stage) => backdrop
+                    .left(stage.origin.x)
+                    .top(stage.origin.y)
+                    .w(stage.size.width)
+                    .h(stage.size.height),
+                None => backdrop.inset_0(),
+            })
             .flex()
             .justify_center()
             .items_start()
-            .pt(window.viewport_size().height * 0.13)
+            .pt(viewport.height * 0.13)
             .bg(Hsla {
                 a: 0.68,
                 ..t.surface_sunken
@@ -508,13 +599,16 @@ pub fn overlay(
                 ui::float(cx)
                     .key_context("Palette Modal")
                     .w(px(palette.spec.width))
-                    .map(|panel| match deck {
-                        true => panel
-                            .max_w(gpui_kit::relative(0.9))
-                            .max_h(px(680.).min(window.viewport_size().height * 0.72)),
-                        false => panel
-                            .max_w(gpui_kit::relative(0.86))
-                            .max_h(gpui_kit::relative(0.62)),
+                    .map(|panel| match (deck, stage) {
+                        (true, _) => panel
+                            .max_w(viewport.width * 0.9)
+                            .max_h(px(680.).min(viewport.height * 0.72)),
+                        (false, Some(stage)) => panel
+                            .max_w(stage.size.width - px(32.))
+                            .max_h(viewport.height * 0.62),
+                        (false, None) => panel
+                            .max_w(viewport.width * 0.86)
+                            .max_h(viewport.height * 0.62),
                     })
                     .flex()
                     .flex_col()
@@ -566,23 +660,13 @@ pub fn overlay(
                                             .text_color(t.text_primary),
                                     ),
                             )
-                            .children(palette.spec.choice.clone().map(|choice| {
-                                let chosen = choice.chosen.clone();
-                                ui::Segmented::new("palette-choice", choice.options, chosen.get())
-                                    .pill()
-                                    .on_select(cx.listener(
-                                        move |bench, picked: &usize, window, cx| {
-                                            chosen.set(*picked);
-                                            if let Some(palette) = &bench.palette {
-                                                let input = palette.input.clone();
-                                                input.update(cx, |input, cx| {
-                                                    input.focus(window, cx)
-                                                });
-                                            }
-                                            bench.parts.redraw(&bench.parts.finder, cx);
-                                        },
-                                    ))
-                            })),
+                            .children(
+                                palette
+                                    .spec
+                                    .choice
+                                    .clone()
+                                    .map(|choice| mode_switch(choice, cx)),
+                            ),
                     )
                     .map(|panel| {
                         if count == 0 {
@@ -594,20 +678,12 @@ pub fn overlay(
                                     .child(palette.spec.empty.clone()),
                             );
                         }
+                        let bench = cx.entity();
                         panel.child(
-                            uniform_list(
-                                "palette-lines",
-                                count,
-                                cx.processor(
-                                    |bench: &mut Workbench, range: Range<usize>, _window, cx| {
-                                        range
-                                            .map(|line| line_of(bench, line, cx))
-                                            .collect::<Vec<_>>()
-                                    },
-                                ),
-                            )
-                            .track_scroll(&palette.scroll)
-                            .h(px(ROW_HEIGHT * count as f32 + 2. * list_pad))
+                            list(palette.list.clone(), move |line, _, cx| {
+                                bench.update(cx, |bench, cx| line_of(bench, line, cx))
+                            })
+                            .h(px(lines_height + 2. * list_pad))
                             .min_h_0()
                             .flex_shrink(1.)
                             .py(px(list_pad))
@@ -637,7 +713,22 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .into_any_element();
         }
         Some(Line::Row(place)) => &palette.spec.rows[*place],
+        Some(Line::Rule) => {
+            return div()
+                .w_full()
+                .h(px(RULE_HEIGHT))
+                .px(px(12.))
+                .flex()
+                .items_center()
+                .child(div().h(px(1.)).flex_1().bg(t.border))
+                .into_any_element();
+        }
         None => return div().into_any_element(),
+    };
+    let armed = palette.spec.choice.as_ref().is_some_and(Choice::armed_now);
+    let meta: SharedString = match row.unarmed && armed {
+        true => "opens safe".into(),
+        false => row.meta.clone(),
     };
     let selected = palette.selected == Some(line);
     let ink = if row.disabled {
@@ -708,14 +799,14 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .and_then(|state| ui::status_mark(&row.key, state, cx))
             {
                 Some(state) => element.child(div().flex_none().child(state)),
-                None if row.meta.is_empty() => element,
+                None if meta.is_empty() => element,
                 None if palette.spec.deck => element.child(
-                    ui::text(row.meta.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                    ui::text(meta.to_uppercase(), 10., FontWeight::SEMIBOLD)
                         .letter_spacing(0.08)
                         .text_color(t.text_tertiary)
                         .flex_none(),
                 ),
-                None => element.child(ui::meta(row.meta.clone(), cx).flex_none()),
+                None => element.child(ui::meta(meta, cx).flex_none()),
             }
         })
         .when_some(row.keys.clone(), |element, keys| {
@@ -743,4 +834,71 @@ fn keycap(keys: SharedString, selected: bool, cx: &App) -> gpui_kit::Div {
         .bg(t.surface_sunken)
         .rounded(theme::RADIUS_1)
         .when(selected, |keycap| keycap.text_color(t.text_primary))
+}
+
+/// The choice beside the field as main's safety switch draws it: a sunken box of tracked mono
+/// capitals, the chosen one raised, the armed one in the rainbow while chosen.
+fn mode_switch(choice: Choice, cx: &mut Context<Workbench>) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    let picked = choice.chosen.get();
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(2.))
+        .p(px(2.))
+        .border_1()
+        .border_color(t.border)
+        .rounded(theme::RADIUS_2)
+        .bg(Hsla {
+            a: t.surface_sunken.a * 0.46,
+            ..t.surface_sunken
+        })
+        .children(
+            choice
+                .options
+                .iter()
+                .enumerate()
+                .map(|(at, (glyph, word))| {
+                    let on = at == picked;
+                    let armed = on && choice.armed == Some(at);
+                    let chosen = choice.chosen.clone();
+                    let ink = if on { t.text_primary } else { t.text_secondary };
+                    div()
+                        .id(("palette-choice", at))
+                        .h(px(23.))
+                        .px(px(10.))
+                        .flex()
+                        .items_center()
+                        .gap(px(5.))
+                        .rounded(theme::RADIUS_2)
+                        .text_color(ink)
+                        .when(on, |option| {
+                            option
+                                .bg(t.surface_raised)
+                                .border_1()
+                                .border_color(t.border)
+                        })
+                        .when(!on, |option| {
+                            option.hover(move |style| style.text_color(t.text_primary))
+                        })
+                        .on_click(cx.listener(move |bench, _, window, cx| {
+                            chosen.set(at);
+                            if let Some(palette) = &bench.palette {
+                                let input = palette.input.clone();
+                                input.update(cx, |input, cx| input.focus(window, cx));
+                            }
+                            bench.parts.redraw(&bench.parts.finder, cx);
+                        }))
+                        .child(ui::icon(*glyph, 12.).text_color(if armed { t.accent } else { ink }))
+                        .child(
+                            match armed {
+                                true => ui::rainbow(&word.to_uppercase(), 10., cx),
+                                false => ui::text(word.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                                    .letter_spacing(0.08),
+                            }
+                            .font_family(theme::MONO),
+                        )
+                }),
+        )
 }

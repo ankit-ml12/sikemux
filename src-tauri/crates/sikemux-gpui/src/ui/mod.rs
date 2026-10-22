@@ -178,6 +178,21 @@ pub fn mono(value: impl Into<SharedString>, size: f32, cx: &App) -> Div {
     mono
 }
 
+/// YOLO's letters, each in the next colour of the rainbow the app paints it with.
+pub fn rainbow(word: &str, size: f32, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    let colors = [t.accent, t.cmd, t.danger, t.warn, t.live];
+    div().flex().children(
+        word.chars()
+            .zip(colors.iter().cycle())
+            .map(|(letter, color)| {
+                text(letter.to_string(), size, FontWeight::SEMIBOLD)
+                    .letter_spacing(0.08)
+                    .text_color(*color)
+            }),
+    )
+}
+
 /// A group's spaced capitals.
 pub fn caps(value: &str, cx: &App) -> Div {
     text(value.to_uppercase(), 11., FontWeight::MEDIUM)
