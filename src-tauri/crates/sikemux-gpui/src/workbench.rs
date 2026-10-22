@@ -890,6 +890,10 @@ impl Workbench {
                 self.reads.insert(key, value);
                 self.ask_trust(cx);
             }
+            Update::Read("project-config", value) => {
+                crate::keymap::bind_project_actions(&crate::commands::action_keys(&value), cx);
+                self.reads.insert("project-config", value);
+            }
             Update::Read(key @ ("runs" | "ports"), value) => {
                 self.reads.insert(key, value);
                 if key == "runs" {
@@ -1632,6 +1636,10 @@ impl Workbench {
                 );
                 target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
                 target.watch(
+                    "project-config",
+                    Watch::new("projectConfig", json!({ "project": path }), &["tasks"]),
+                );
+                target.watch(
                     "ports",
                     Watch::new("ports", json!({ "project": path }), &["ports"]),
                 );
@@ -1645,7 +1653,13 @@ impl Workbench {
                 );
             }
             None => {
-                for key in ["tasks", "runs", "ports", "git-project-repo"] {
+                for key in [
+                    "tasks",
+                    "runs",
+                    "project-config",
+                    "ports",
+                    "git-project-repo",
+                ] {
                     target.unwatch(key);
                     self.reads.remove(key);
                 }
@@ -3550,6 +3564,9 @@ impl Render for Workbench {
                 cx.notify();
             }))
             .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
+            .on_action(cx.listener(|bench, action: &RunProjectAction, _, cx| {
+                bench.run_command(json!({ "action": action.id }), action.label.clone(), cx)
+            }))
             .on_action(
                 cx.listener(|bench, _: &TextSizeIncrease, _, _| {
                     bench.resize_front_text(Some(true))

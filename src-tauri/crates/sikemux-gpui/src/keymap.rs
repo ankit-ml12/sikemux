@@ -169,9 +169,61 @@ pub fn shortcuts() -> &'static [Shortcut] {
     &SHORTCUTS
 }
 
-/// The keys each command is bound to now in the table's own spelling, such as `Meta+Shift+KeyP`.
+/// The keys each command is bound to now in the table's own spelling, such as `Meta+Shift+KeyP`,
+/// and the keys the project in front's own actions are bound to, by action id.
 pub struct Keymap {
     bound: BTreeMap<String, String>,
+    actions: BTreeMap<String, String>,
+}
+
+/// One of the project in front's sikemux.json actions, run by the shortcut it gives itself.
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(name = "project.runAction", no_json)]
+pub struct RunProjectAction {
+    pub id: String,
+    pub label: String,
+}
+
+/// Binds the project in front's actions to their own shortcuts, as its sikemux.json gives them
+/// in the table's spelling: `(id, label, keys)`. Keys one of the app's commands uses stay the
+/// command's, as on the Mac, and keys an action no longer uses stop doing anything.
+pub fn bind_project_actions(actions: &[(String, String, String)], cx: &mut App) {
+    let keymap = cx.global::<Keymap>();
+    let taken = |keys: &str| keymap.bound.values().any(|bound| bound == keys);
+    let mut bound = BTreeMap::new();
+    let mut bindings = Vec::new();
+    for (id, label, keys) in actions {
+        if taken(keys) || bound.values().any(|kept: &String| kept == keys) {
+            continue;
+        }
+        let Some(gpui_keys) = keystroke(keys) else {
+            continue;
+        };
+        let action = RunProjectAction {
+            id: id.clone(),
+            label: label.clone(),
+        };
+        bindings.push(KeyBinding::new(&gpui_keys, action, Some(context(id))));
+        bound.insert(id.clone(), keys.clone());
+    }
+    if bound == keymap.actions {
+        return;
+    }
+    let released: Vec<KeyBinding> = keymap
+        .actions
+        .values()
+        .filter(|keys| !bound.values().any(|now| now == *keys))
+        .filter_map(|keys| keystroke(keys))
+        .map(|keys| KeyBinding::new(&keys, gpui::NoAction, Some(SHELL)))
+        .collect();
+    cx.bind_keys(released);
+    cx.bind_keys(bindings);
+    cx.global_mut::<Keymap>().actions = bound;
+}
+
+/// The keys the project in front's action `id` runs by, as the deck shows them.
+pub fn action_hint(id: &str, cx: &App) -> Option<SharedString> {
+    label(cx.try_global::<Keymap>()?.actions.get(id)?)
 }
 
 impl Global for Keymap {}
@@ -179,6 +231,7 @@ impl Global for Keymap {}
 pub fn install(cx: &mut App) {
     cx.set_global(Keymap {
         bound: BTreeMap::new(),
+        actions: BTreeMap::new(),
     });
     cx.on_action(|_: &About, _| show_about());
     cx.on_action(|_: &Quit, cx| cx.quit());

@@ -2,7 +2,7 @@
 //! commands, the ones used last first.
 
 use gpui_kit::component::notification::Notification;
-use gpui_kit::{Context, SharedString, Window};
+use gpui_kit::{App, Context, SharedString, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{PaneKind, SessionId};
 use tokio::sync::oneshot;
@@ -70,7 +70,25 @@ fn preview_rows(config: &Value, project: &str) -> Vec<Row> {
 
 /// The deck's rows for the project's `sikemux.json` actions, each run once the person trusts
 /// the file.
-fn action_rows(config: &Value) -> Vec<Row> {
+/// The project's sikemux.json actions that give themselves a shortcut, as `(id, label, keys)`.
+pub(crate) fn action_keys(config: &Value) -> Vec<(String, String, String)> {
+    if config["status"] != "valid" {
+        return Vec::new();
+    }
+    config["config"]["actions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|action| {
+            let id = action["id"].as_str()?;
+            let keys = action["keybinding"].as_str()?;
+            let label = action["label"].as_str().unwrap_or(id);
+            Some((id.to_owned(), label.to_owned(), keys.to_owned()))
+        })
+        .collect()
+}
+
+fn action_rows(config: &Value, cx: &App) -> Vec<Row> {
     if config["status"] != "valid" {
         return Vec::new();
     }
@@ -89,6 +107,7 @@ fn action_rows(config: &Value) -> Vec<Row> {
                 .map_or_else(|| format!("Run from {path}"), str::to_owned);
             Some(
                 Row::new(format!("{ACTION}{id}"), label)
+                    .keys(keymap::action_hint(id, cx))
                     .meta("Project · sikemux.json")
                     .also(&detail)
                     .also("Project · sikemux.json"),
@@ -327,7 +346,7 @@ impl Workbench {
             let _ = this.update(cx, |bench, cx| {
                 let mut rows = base;
                 rows.extend(config.iter().flat_map(|config| preview_rows(config, &id)));
-                rows.extend(config.iter().flat_map(action_rows));
+                rows.extend(config.iter().flat_map(|config| action_rows(config, cx)));
                 rows.extend(worktrees.iter().flat_map(worktree_rows));
                 if let Some(palette) = bench
                     .palette
@@ -548,7 +567,7 @@ impl Workbench {
 
     /// Runs `which`, a custom command's id or a `sikemux.json` action's, in the project in
     /// front, telling the person what one in the background printed.
-    fn run_command(&self, which: Value, title: String, cx: &mut Context<Self>) {
+    pub(crate) fn run_command(&self, which: Value, title: String, cx: &mut Context<Self>) {
         let Some(Strip::Project(project)) = self.strip() else {
             return;
         };
