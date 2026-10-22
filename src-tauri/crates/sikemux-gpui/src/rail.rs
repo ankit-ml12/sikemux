@@ -1046,7 +1046,19 @@ fn space_menu(
 /// Who the host is signed in as, or the card that signs it in.
 fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let Some(account) = bench.view.as_ref().and_then(|view| view.account.as_deref()) else {
+    let Some(view) = bench.view.as_ref() else {
+        return div()
+            .flex_none()
+            .flex()
+            .justify_end()
+            .px(px(10.))
+            .py(px(6.))
+            .border_t_1()
+            .border_color(t.border)
+            .child(settings_button())
+            .into_any_element();
+    };
+    let Some(account) = view.account.as_deref() else {
         return sign_in(bench, cx).into_any_element();
     };
     let who = account
@@ -1087,13 +1099,16 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .border_t_1()
         .border_color(t.border)
         .child(div().flex_1().min_w_0().child(menu))
-        .child(
-            IconButton::new("settings", Icon::Settings, "Settings")
-                .glyph(14.)
-                .width(28.)
-                .on_click(|_, window, cx| keymap::dispatch("settings.toggle", window, cx)),
-        )
+        .child(settings_button())
         .into_any_element()
+}
+
+/// Settings, kept in the rail's foot whether or not the person is signed in.
+fn settings_button() -> IconButton {
+    IconButton::new("settings", Icon::Settings, "Settings")
+        .glyph(14.)
+        .width(28.)
+        .on_click(|_, window, cx| keymap::dispatch("settings.toggle", window, cx))
 }
 
 /// The account's picture in a circle, else its initials.
@@ -1174,5 +1189,12 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                 .text_color(t.text_secondary)
                 .child(copy),
         )
-        .child(button)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .child(div().flex_1().min_w_0().flex().flex_col().child(button))
+                .child(settings_button()),
+        )
 }
