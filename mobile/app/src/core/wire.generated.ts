@@ -751,6 +751,8 @@ export interface ChatHead {
   /** A turn has run in this session, so the provider keeps it. */
   turned: boolean;
   permissionMode: string;
+  /** A change of the permission mode is on its way to the agent. */
+  changingMode?: boolean;
   /** A turn has begun and its first row has not arrived yet. */
   turnOpening?: TurnStart;
   /** The agent is retrying a request the network or its service failed. */

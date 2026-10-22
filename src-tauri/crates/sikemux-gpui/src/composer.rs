@@ -48,7 +48,7 @@ pub struct Composer {
     ready: bool,
     running: bool,
     steers: bool,
-    yolo: Option<(bool, Act)>,
+    yolo: Option<(bool, bool, Act)>,
     pickers: Option<(Option<ConfigPicker>, Option<ConfigPicker>, Pick)>,
     /// The model menu, which before the chat starts also moves it to another agent, account
     /// or paying provider.
@@ -127,8 +127,10 @@ impl Composer {
     }
 
     /// Whether the agent runs without asking, for one that can switch, and how to switch it.
-    pub fn yolo(mut self, on: bool, toggle: Act) -> Self {
-        self.yolo = Some((on, toggle));
+    /// The switch between asking before acting and not; `held` while a change of it is
+    /// still on its way or the agent waits on a permission.
+    pub fn yolo(mut self, on: bool, held: bool, toggle: Act) -> Self {
+        self.yolo = Some((on, held, toggle));
         self
     }
 
@@ -220,8 +222,8 @@ impl RenderOnce for Composer {
                         button.on_click(move |_, window, cx| on_add(window, cx))
                     }),
             );
-        if let Some((on, toggle)) = self.yolo {
-            bar = bar.child(yolo(on, settable, &self.agent_label, toggle, cx));
+        if let Some((on, held, toggle)) = self.yolo {
+            bar = bar.child(yolo(on, settable && !held, &self.agent_label, toggle, cx));
         }
         let model_menu = self.model_menu.map(|(picked, bench)| {
             let enabled = settable || !picked.locked;
@@ -411,10 +413,11 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
 /// rainbow the app paints it with.
 fn yolo(on: bool, settable: bool, agent: &str, toggle: Act, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let press = crate::keymap::hint("agent.permissions", cx).unwrap_or("Click".into());
     let about = if on {
-        format!("YOLO mode on — {agent} runs without approvals. Click turns it off.")
+        format!("YOLO mode on — {agent} runs without approvals. {press} turns it off.")
     } else {
-        format!("Safe mode — {agent} asks before it acts. Click goes YOLO.")
+        format!("Safe mode — {agent} asks before it acts. {press} goes YOLO.")
     };
     let letters: Vec<(char, Hsla)> = if on {
         "YOLO"

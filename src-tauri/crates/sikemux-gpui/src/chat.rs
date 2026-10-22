@@ -2449,9 +2449,11 @@ fn composer(
     }
     if kind.is_some_and(|kind| kind["bypass"] == true) {
         let on = head.is_some_and(|head| head.permission_mode == "bypass");
+        let held = head.is_some_and(|head| head.changing_mode || !head.permissions.is_empty());
         let agent = agent.id.clone();
         composer = composer.yolo(
             on,
+            held,
             Rc::new(move |_, cx| {
                 this.update(cx, |bench, _| bench.toggle_yolo(&agent)).ok();
             }),

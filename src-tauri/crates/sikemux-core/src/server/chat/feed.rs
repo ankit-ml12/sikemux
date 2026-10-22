@@ -1830,6 +1830,14 @@ impl Feed {
         self.flush_locked(&mut inner);
     }
 
+    pub(crate) fn set_changing_mode(&self, changing: bool) {
+        let mut inner = self.inner.locked();
+        if let Some(fold) = inner.fold.as_mut() {
+            fold.set_changing_mode(changing);
+        }
+        self.flush_locked(&mut inner);
+    }
+
     pub(crate) fn permission_mode(&self) -> String {
         self.inner.locked().permission_mode.clone()
     }

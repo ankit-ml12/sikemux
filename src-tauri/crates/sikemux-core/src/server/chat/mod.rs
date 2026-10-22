@@ -2091,12 +2091,13 @@ pub(crate) async fn set_permission_mode(
     mode: String,
 ) -> CoreResult<()> {
     let mode = PermissionMode::parse(&mode)?;
+    let chat = core.chats.running(agent_id)?;
     let (reply, answer) = oneshot::channel();
-    core.chats
-        .running(agent_id)?
-        .send(ChatCommand::SetPermissionMode { mode, reply })?;
-    tokio::time::timeout(REPLY_TIMEOUT, answer)
-        .await
+    chat.send(ChatCommand::SetPermissionMode { mode, reply })?;
+    chat.feed.set_changing_mode(true);
+    let answered = tokio::time::timeout(REPLY_TIMEOUT, answer).await;
+    chat.feed.set_changing_mode(false);
+    answered
         .map_err(|_| CoreError::from("Permission update timed out"))?
         .map_err(|_| CoreError::from(STOPPED))?
         .map_err(CoreError::from)

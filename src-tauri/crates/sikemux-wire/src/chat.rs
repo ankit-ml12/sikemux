@@ -103,6 +103,9 @@ pub struct ChatHead {
     /// A turn has run in this session, so the provider keeps it.
     pub turned: bool,
     pub permission_mode: String,
+    /// A change of the permission mode is on its way to the agent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub changing_mode: bool,
     /// A turn has begun and its first row has not arrived yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_opening: Option<TurnStart>,

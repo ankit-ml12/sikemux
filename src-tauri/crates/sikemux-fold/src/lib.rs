@@ -589,6 +589,13 @@ impl Fold {
         }
     }
 
+    pub fn set_changing_mode(&mut self, changing: bool) {
+        if self.head.changing_mode != changing {
+            self.head.changing_mode = changing;
+            self.set_head("changingMode");
+        }
+    }
+
     pub fn set_turned(&mut self, turned: bool) {
         if self.head.turned != turned {
             self.head.turned = turned;
