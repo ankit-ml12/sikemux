@@ -755,7 +755,7 @@ fn tally_summary(tally: &CheckTally) -> String {
     .join(", ")
 }
 
-fn host_label(host: &str) -> &str {
+pub(crate) fn host_label(host: &str) -> &str {
     match host {
         "github" => "GitHub",
         "gitlab" => "GitLab",

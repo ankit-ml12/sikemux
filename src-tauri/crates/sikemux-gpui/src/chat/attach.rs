@@ -63,6 +63,14 @@ fn mark(id: &str, tint: Hsla, cx: &App) -> gpui_kit::AnyElement {
             .text_color(tint)
             .into_any_element();
     }
+    if let Some(kind) = id.strip_prefix("tracked:") {
+        let icon = if kind.starts_with("pull") {
+            Icon::PullRequest
+        } else {
+            Icon::Issue
+        };
+        return ui::icon(icon, 12.).text_color(tint).into_any_element();
+    }
     if id.starts_with("folder:") {
         return ui::icon(Icon::Folder, 12.)
             .text_color(tint)

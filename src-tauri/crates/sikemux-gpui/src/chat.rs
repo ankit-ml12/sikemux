@@ -430,6 +430,10 @@ pub struct Composing {
     /// What the message carries besides its files: earlier chats it names, and issues and
     /// pages put with it, such as a code host's issue to work on.
     pub context: Vec<ChatContext>,
+    /// The code host's open issues and pull requests, read the first time `#` or `!` is typed.
+    pub tracked: Option<mention::Tracked>,
+    /// What each `#12` or `!34` in the draft tells the agent, read once it was picked.
+    pub tracked_context: HashMap<String, ChatContext>,
     /// Why the core turned down the last message, until the next is sent.
     pub refusal: Option<SharedString>,
     /// What the core is doing to start the chat in a worktree, while it does.
@@ -1268,6 +1272,7 @@ impl Chat {
         if let Some(composing) = self.composer.as_mut() {
             composing.attachments.clear();
             composing.context.clear();
+            composing.tracked_context.clear();
         }
         if self.steers() && !queue {
             let message = json!({ "text": text, "paths": paths, "context": context });

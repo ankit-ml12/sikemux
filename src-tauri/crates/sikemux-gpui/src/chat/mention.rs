@@ -14,7 +14,7 @@ use gpui_kit::component::input::TextareaState;
 use gpui_kit::{px, App, AppContext, Context, IntoElement, SharedString, Styled, Task, Window};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sikemux_wire::protocol::ChatContext;
+use sikemux_wire::protocol::{ChatContext, ProjectInfo};
 
 use super::Composing;
 use crate::finder::ProjectFiles;
@@ -27,6 +27,7 @@ const AGENT: &str = "agent:";
 const FILE: &str = "file:";
 const FOLDER: &str = "folder:";
 const EARLIER: &str = "earlier:";
+const TRACKED: &str = "tracked:";
 /// Earlier chats the core is asked for, and how long it may read transcripts for them.
 const EARLIER_SHOWN: usize = 4;
 const EARLIER_BUDGET_MS: u64 = 600;
@@ -48,7 +49,7 @@ fn typed(text: &str, caret: usize) -> Option<Typed> {
     let mut word = before[start..].chars();
     let trigger = word
         .next()
-        .filter(|first| matches!(first, '@' | '+' | '/'))?;
+        .filter(|first| matches!(first, '@' | '+' | '/' | '#' | '!'))?;
     Some(Typed {
         trigger,
         start,
@@ -83,6 +84,72 @@ enum Choice {
         name: Option<String>,
         title: String,
     },
+    Tracked(Item),
+}
+
+/// The code host's open issues and pull requests, as `codeHostTracked` answers.
+pub enum Tracked {
+    Reading,
+    Failed(SharedString),
+    Listed(Rc<[Item]>),
+}
+
+/// An open issue or pull request.
+#[derive(Clone, Deserialize)]
+pub struct Item {
+    kind: String,
+    number: u64,
+    title: String,
+    url: String,
+}
+
+/// What `#` lists issues and `!` pull requests by: the start of the number when the
+/// needle is all digits, else every word of it in the title.
+fn tracked_choices(tracked: Option<&Tracked>, trigger: char, needle: &str) -> Vec<Choice> {
+    let Some(Tracked::Listed(items)) = tracked else {
+        return Vec::new();
+    };
+    let kind = if trigger == '!' { "pull" } else { "issue" };
+    let query = needle.trim().to_lowercase();
+    let digits = !query.is_empty() && query.bytes().all(|byte| byte.is_ascii_digit());
+    let words: Vec<&str> = query.split_whitespace().collect();
+    items
+        .iter()
+        .filter(|item| item.kind == kind)
+        .filter(|item| match digits {
+            true => item.number.to_string().starts_with(&query),
+            false => {
+                let title = item.title.to_lowercase();
+                words.iter().all(|word| title.contains(word))
+            }
+        })
+        .take(SHOWN)
+        .cloned()
+        .map(Choice::Tracked)
+        .collect()
+}
+
+/// What `#` or `!` says while it lists nothing.
+fn tracked_empty(
+    project: Option<&ProjectInfo>,
+    tracked: Option<&Tracked>,
+    trigger: char,
+) -> String {
+    let (things, matches) = match trigger {
+        '!' => ("pull requests", "No open pull request matches"),
+        _ => ("issues", "No open issue matches"),
+    };
+    let Some(project) = project else {
+        return format!("Open a project to pick its {things}");
+    };
+    if project.code_host.is_none() {
+        return "This project has no remote on a code host".into();
+    }
+    match tracked {
+        Some(Tracked::Failed(why)) => why.to_string(),
+        Some(Tracked::Listed(_)) => matches.into(),
+        _ => format!("Reading the project's {things}…"),
+    }
 }
 
 /// A closed agent the person named, as the core's `closedAgents` lists it.
@@ -109,6 +176,8 @@ pub struct Menu {
     typed: Typed,
     choices: Rc<[Choice]>,
     selected: usize,
+    /// What the menu says while it has no choices, where that depends on more than the trigger.
+    empty: Option<SharedString>,
     _ranking: Option<Task<()>>,
 }
 
@@ -131,7 +200,14 @@ impl Composing {
         let mut context = Vec::new();
         for span in self.draft.read(cx).tokens() {
             let token = span.token();
-            if let Some(path) = token
+            if let Some(item) = self.tracked_context.get(token.id().as_ref()) {
+                if !context
+                    .iter()
+                    .any(|held: &ChatContext| held.uri == item.uri)
+                {
+                    context.push(item.clone());
+                }
+            } else if let Some(path) = token
                 .id()
                 .strip_prefix(FILE)
                 .or_else(|| token.id().strip_prefix(FOLDER))
@@ -218,19 +294,96 @@ impl Workbench {
                         .collect()
                 })
                 .into(),
+            '#' | '!' => {
+                let tracked = self.tracked_of(agent);
+                tracked_choices(tracked, typed.trigger, &typed.needle).into()
+            }
             _ => Rc::from(Vec::new()),
         };
         let ranking = match typed.trigger {
             '+' => Some(self.rank_entries(agent, typed.needle.clone(), cx)),
             '@' => self.look_back(agent, typed.needle.clone(), cx),
+            '#' | '!' => self.read_tracked(agent, cx),
             _ => None,
         };
+        let empty = matches!(typed.trigger, '#' | '!')
+            .then(|| tracked_empty(self.project(), self.tracked_of(agent), typed.trigger).into());
         Menu {
             typed,
             choices,
             selected: 0,
+            empty,
             _ranking: ranking,
         }
+    }
+
+    fn tracked_of(&self, agent: &str) -> Option<&Tracked> {
+        self.chats.get(agent)?.composer.as_ref()?.tracked.as_ref()
+    }
+
+    /// Asks the chat's core for its project's open issues and pull requests, the first time
+    /// `#` or `!` is typed, and lists them in the menu once they are in.
+    fn read_tracked(&mut self, agent: &str, cx: &mut Context<Self>) -> Option<Task<()>> {
+        if self.tracked_of(agent).is_some() {
+            return None;
+        }
+        let project = self.project()?;
+        let host = crate::codehost::host_label(&project.code_host.as_ref()?.host).to_owned();
+        let path = project.path.to_string_lossy().into_owned();
+        let answer = self
+            .chat_target(agent)
+            .request("codeHostTracked", json!({ "project": path }));
+        let composing = self.chats.get_mut(agent)?.composer.as_mut()?;
+        composing.tracked = Some(Tracked::Reading);
+        let agent = agent.to_owned();
+        Some(cx.spawn(async move |this, cx| {
+            let tracked = match answer.await {
+                Ok(answer) if answer["failed"]["category"] == "auth" => Tracked::Failed(
+                    format!("Sign in to {host} in the Git pane to pick from its issues").into(),
+                ),
+                Ok(answer) if answer.get("failed").is_some() => Tracked::Failed(
+                    answer["failed"]["message"]
+                        .as_str()
+                        .unwrap_or("The code host did not answer")
+                        .to_owned()
+                        .into(),
+                ),
+                Ok(answer) => {
+                    let items = answer.get("value").cloned().unwrap_or(answer);
+                    Tracked::Listed(
+                        serde_json::from_value::<Vec<Item>>(items)
+                            .unwrap_or_default()
+                            .into(),
+                    )
+                }
+                Err(error) => Tracked::Failed(error.into()),
+            };
+            this.update(cx, |bench, cx| {
+                let project = bench.project().cloned();
+                let Some(composing) = bench
+                    .chats
+                    .get_mut(&agent)
+                    .and_then(|chat| chat.composer.as_mut())
+                else {
+                    return;
+                };
+                if let Some(menu) = composing
+                    .menu
+                    .as_mut()
+                    .filter(|menu| matches!(menu.typed.trigger, '#' | '!'))
+                {
+                    let trigger = menu.typed.trigger;
+                    menu.choices =
+                        tracked_choices(Some(&tracked), trigger, &menu.typed.needle).into();
+                    menu.empty =
+                        Some(tracked_empty(project.as_ref(), Some(&tracked), trigger).into());
+                    menu.selected = 0;
+                }
+                composing.tracked = Some(tracked);
+                cx.notify();
+            })
+            .ok();
+        }))
     }
 
     /// The other named agents whose name starts with `needle`: the chat's own project's
@@ -463,6 +616,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let project = self.project().map(|project| project.path.clone());
+        let target = self.chat_target(agent);
         let Some(composing) = self
             .chats
             .get_mut(agent)
@@ -476,6 +630,34 @@ impl Workbench {
         let Some(choice) = menu.choices.get(index.unwrap_or(menu.selected)).cloned() else {
             return;
         };
+        if let (Choice::Tracked(item), Some(project)) = (&choice, &project) {
+            let id = tracked_id(item);
+            let answer = target.request(
+                "codeHostTrackedContext",
+                json!({ "project": project, "kind": item.kind, "number": item.number }),
+            );
+            let agent = agent.to_owned();
+            cx.spawn(async move |this, cx| {
+                let context = answer.await.ok().and_then(|answer| {
+                    let context = answer.get("value").cloned().unwrap_or(answer);
+                    serde_json::from_value::<ChatContext>(context).ok()
+                });
+                let Some(context) = context else {
+                    return;
+                };
+                this.update(cx, |bench, _| {
+                    if let Some(composing) = bench
+                        .chats
+                        .get_mut(&agent)
+                        .and_then(|chat| chat.composer.as_mut())
+                    {
+                        composing.tracked_context.insert(id, context);
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
         if let Choice::Earlier {
             cli,
             session,
@@ -536,6 +718,13 @@ impl Workbench {
                     draft.replace("", window, cx);
                     None
                 }
+                Choice::Tracked(item) => {
+                    let sign = if item.kind == "pull" { '!' } else { '#' };
+                    Some(
+                        InlineToken::new(tracked_id(item), format!("{sign}{}", item.number))
+                            .with_label(format!("#{} {}", item.number, item.title)),
+                    )
+                }
             };
             if let Some(token) = token {
                 if let Err(error) = draft.replace_with_token(token, window, cx) {
@@ -546,6 +735,11 @@ impl Workbench {
         });
         cx.notify();
     }
+}
+
+/// The draft's token for an issue or pull request, by which its context goes with the message.
+fn tracked_id(item: &Item) -> String {
+    format!("{TRACKED}{}:{}:{}", item.kind, item.number, item.url)
 }
 
 fn leaf(path: &str) -> &str {
@@ -591,7 +785,7 @@ pub fn dock(
             }
             '+' if files.files.is_empty() => Some(DockMenu::empty("Reading the project's files…")),
             '+' => Some(DockMenu::empty("Nothing in the project matches")),
-            _ => None,
+            _ => menu.empty.clone().map(DockMenu::empty),
         };
     }
     let this = cx.weak_entity();
@@ -665,6 +859,15 @@ pub fn dock(
                     None => DockRow::new(title.clone(), choose),
                 };
                 row.mark(ui::mark(cli, 13.)).group(group)
+            }
+            Choice::Tracked(item) => {
+                let (sign, icon) = match item.kind.as_str() {
+                    "pull" => ('!', Icon::PullRequest),
+                    _ => ('#', Icon::Issue),
+                };
+                DockRow::new(format!("{sign}{}", item.number), choose)
+                    .mark(ui::icon(icon, 13.).text_color(tint).into_any_element())
+                    .detail(item.title.clone())
             }
         }
     });

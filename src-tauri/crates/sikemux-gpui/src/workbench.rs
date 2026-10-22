@@ -1032,6 +1032,8 @@ impl Workbench {
             attachments: Vec::new(),
             menu: None,
             context: Vec::new(),
+            tracked: None,
+            tracked_context: HashMap::new(),
             refusal: None,
             preparing: None,
             send_when_ready: false,
