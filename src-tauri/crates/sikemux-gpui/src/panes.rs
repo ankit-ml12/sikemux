@@ -413,7 +413,16 @@ fn view(
             .child(crate::git::repos::picker(bench, cx))
             .into_any_element(),
         PaneKind::Git => match &bench.git {
-            Some(pane) => pane.clone().into_any_element(),
+            Some(pane) => {
+                if bench.focus_git {
+                    let focused = pane.clone();
+                    cx.defer_in(window, move |bench, window, cx| {
+                        bench.focus_git = false;
+                        focused.update(cx, |pane, cx| pane.take_keys(window, cx));
+                    });
+                }
+                pane.clone().into_any_element()
+            }
             None => ui::pane(cx).into_any_element(),
         },
         PaneKind::Search => match &bench.search {

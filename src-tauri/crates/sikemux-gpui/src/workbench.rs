@@ -137,6 +137,8 @@ pub struct Workbench {
     pub recent_commands: Vec<SharedString>,
     /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
     keeping_rails: Option<Task<()>>,
+    /// The Git pane takes the keyboard once it shows, as when ⌘⌥3 opens it.
+    pub focus_git: bool,
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
@@ -560,6 +562,7 @@ impl Workbench {
             switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,
+            focus_git: false,
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
@@ -3105,7 +3108,8 @@ impl Workbench {
     }
 
     /// Brings the project's Git tab to the front, opening one when it has none.
-    fn open_git(&self) {
+    fn open_git(&mut self) {
+        self.focus_git = true;
         if let Some(project) = self.project() {
             self.call_in_front(
                 "openTab",

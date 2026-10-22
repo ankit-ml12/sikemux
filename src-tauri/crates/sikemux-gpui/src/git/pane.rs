@@ -640,6 +640,11 @@ impl GitPane {
         }
     }
 
+    /// Gives the pane the keyboard, so its single keys work at once.
+    pub fn take_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+    }
+
     pub(super) fn choose_commit(
         &mut self,
         index: usize,
