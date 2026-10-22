@@ -30,8 +30,8 @@ CASES = [
     ("see-through", {"paneShader": True, "paneStrength": 1.0, "windowOpacity": 0.7, "windowBlur": 0}, False),
     ("blurred", {"paneShader": True, "paneStrength": 1.0, "windowOpacity": 0.7, "windowBlur": 20}, None),
 ]
-# The top of the chat pane, as parts of the window, where the grain is densest.
-PATCH = (0.25, 0.14, 0.45, 0.26)
+# Where in the chat pane to look, from its top left: below its header, where the grain is densest.
+BELOW_HEADER = 44
 SPREAD = 2.0
 
 
@@ -82,9 +82,14 @@ def pixels(path):
     return width, height, channels, rows
 
 
-def measure(path):
+def measure(path, frame, window):
+    """The light's spread and the mean alpha in the top band of `frame`, a pane's left, top,
+    width and height in the window's points, read from the capture at its own scale."""
     width, height, channels, rows = pixels(path)
-    left, top, right, bottom = (int(part * size) for part, size in zip(PATCH, (width, height, width, height)))
+    scale = width / window[0]
+    pane_left, pane_top, pane_width, pane_height = frame
+    left, right = int((pane_left + pane_width * 0.1) * scale), int((pane_left + pane_width * 0.5) * scale)
+    top, bottom = int((pane_top + BELOW_HEADER) * scale), int((pane_top + pane_height * 0.2) * scale)
     lights, alphas = [], []
     for y in range(top, bottom):
         row = rows[y]
@@ -98,11 +103,16 @@ def measure(path):
 
 
 def window_number(pid):
-    """The app's window, on the screen or on another Space."""
+    """The app's largest window, on the screen or on another Space: not its menu bar strip,
+    which on a small screen is as wide as the window."""
     script = f"""import CoreGraphics
 let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
 let mine = windows.filter {{ $0[kCGWindowOwnerPID as String] as? Int == {pid} && $0[kCGWindowLayer as String] as? Int == 0 }}
-let biggest = mine.max {{ (($0[kCGWindowBounds as String] as? [String: Double])?["Width"] ?? 0) < (($1[kCGWindowBounds as String] as? [String: Double])?["Width"] ?? 0) }}
+let area = {{ (window: [String: Any]) -> Double in
+    let bounds = window[kCGWindowBounds as String] as? [String: Double] ?? [:]
+    return (bounds["Width"] ?? 0) * (bounds["Height"] ?? 0)
+}}
+let biggest = mine.max {{ area($0) < area($1) }}
 if let number = biggest?[kCGWindowNumber as String] as? Int {{ print(number) }}"""
     return subprocess.run(["swift", "-"], input=script, capture_output=True, text=True).stdout.strip()
 
@@ -125,6 +135,11 @@ def main():
         try:
             run.set_up()
             time.sleep(4)
+            state = run.state() or {}
+            frame = (state.get("spots") or {}).get(f"pane-Agent-{run.agent}")
+            if not frame:
+                results.append((name, False, f"the app named no chat pane for {run.agent}"))
+                continue
             shot = out / f"{name}.png"
             number = window_number(run.app.pid)
             if number:
@@ -132,7 +147,7 @@ def main():
             if not shot.exists():
                 results.append((name, False, "no capture of the window"))
                 continue
-            spread, alpha = measure(shot)
+            spread, alpha = measure(shot, frame, state.get("window", [1340, 881]))
             shows = spread > SPREAD
             seen_through = alpha < 250
             ok = shows and (opaque is None or seen_through != opaque)

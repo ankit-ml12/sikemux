@@ -240,6 +240,7 @@ fn pane(
                 .capture_any_mouse_down(
                     cx.listener(move |bench, _, _, _| bench.panes.focused = Some(focused.clone())),
                 )
+                .children(ui::spot(|| format!("pane-{kind:?}-{target}")))
                 .on_drag_move(cx.listener(
                     move |bench, event: &DragMoveEvent<DraggedTab>, _, cx| {
                         let (tab, pane) = &aiming;
