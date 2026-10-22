@@ -14,6 +14,7 @@ use gpui_kit::{
 };
 use serde_json::Value;
 use sikemux_voice::Voice;
+use sikemux_wire::protocol::NetworkChange;
 use tokio::sync::mpsc;
 
 /// What clicking a chat's mic does.
@@ -65,6 +66,10 @@ pub struct Dictation {
     phase: Phase,
     /// How much of the model is down, while it downloads.
     downloading: Option<f64>,
+    /// Why dictation cannot run here, or why it last stopped.
+    reason: Option<SharedString>,
+    /// Going offline paused the model's download, which starts again once it is back.
+    waiting_for_network: bool,
     target: Option<Target>,
     partial: SharedString,
     recording: bool,
@@ -85,6 +90,18 @@ impl Dictation {
     /// How much of the speech model is down, while it downloads.
     pub fn downloading(&self) -> Option<f64> {
         self.downloading
+    }
+
+    pub fn reason(&self) -> Option<&SharedString> {
+        self.reason.as_ref()
+    }
+
+    pub fn network_changed(&mut self, change: NetworkChange, cx: &mut Context<Self>) {
+        if change == NetworkChange::Offline || !self.waiting_for_network {
+            return;
+        }
+        self.waiting_for_network = false;
+        self.prepare(cx);
     }
 
     /// Turns dictation on or off as the person's preference says.
@@ -123,13 +140,13 @@ impl Dictation {
         let status = voice.status();
         if !status.supported {
             self.phase = Phase::Unsupported;
+            self.reason = status.reason.map(SharedString::from);
             return cx.notify();
         }
-        self.phase = Phase::Preparing;
+        (self.phase, self.reason) = (Phase::Preparing, None);
         self.downloading = (!status.installed).then_some(0.);
         if let Err(error) = voice.prepare() {
-            self.phase = Phase::Off;
-            cx.emit(Heard::Say(error.into()));
+            (self.phase, self.reason) = (Phase::Off, Some(error.into()));
         }
         cx.notify();
     }
@@ -142,7 +159,7 @@ impl Dictation {
                 self.downloading = (event["stage"] == "download")
                     .then(|| event["fraction"].as_f64().unwrap_or(0.));
             }
-            "ready" => (self.phase, self.downloading) = (Phase::Ready, None),
+            "ready" => (self.phase, self.downloading, self.reason) = (Phase::Ready, None, None),
             "listening" if self.phase == Phase::Ready => {
                 (self.phase, self.partial) = (Phase::Listening, SharedString::default());
             }
@@ -156,16 +173,24 @@ impl Dictation {
             "cancelled" => self.settle(Phase::Ready),
             "exited" => {
                 self.settle(Phase::Off);
-                cx.emit(Heard::Say(
-                    "The voice helper stopped. Hold the key again to restart it.".into(),
-                ));
+                self.reason =
+                    Some("The voice helper stopped. Hold the key again to restart it.".into());
             }
             "error" => {
-                let message = event["message"].as_str().unwrap_or_default().to_owned();
+                let message: SharedString = event["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+                    .into();
                 let lost = matches!(event["reason"].as_str(), Some("offline" | "models"));
                 self.settle(if lost { Phase::Off } else { Phase::Ready });
-                self.downloading = None;
-                cx.emit(Heard::Say(message.into()));
+                if lost {
+                    (self.downloading, self.reason) = (None, Some(message.clone()));
+                }
+                if event["reason"] == "offline" {
+                    self.waiting_for_network = true;
+                }
+                cx.emit(Heard::Say(message));
             }
             _ => return,
         }

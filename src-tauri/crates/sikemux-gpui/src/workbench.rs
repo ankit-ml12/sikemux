@@ -878,6 +878,11 @@ impl Workbench {
             Update::Notice { title, body, agent } => {
                 return crate::notifications::notice(self, title, body, agent, cx);
             }
+            Update::Network(change) => {
+                return self
+                    .voice
+                    .update(cx, |voice, cx| voice.network_changed(change, cx));
+            }
             Update::Remote(status) => {
                 self.remote = Some(*status);
                 crate::settings::remote_moved(self, cx);

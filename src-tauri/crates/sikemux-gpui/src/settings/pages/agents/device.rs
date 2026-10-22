@@ -238,21 +238,24 @@ pub fn render(
 ) -> Vec<AnyElement> {
     let preferences = bench.preferences();
     let dictating = preferences.voice_dictation;
-    let (phase, downloading) = {
+    let (phase, downloading, reason) = {
         let voice = bench.voice.read(cx);
-        (voice.phase(), voice.downloading())
+        (voice.phase(), voice.downloading(), voice.reason().cloned())
     };
-    let model: SharedString = match (dictating, phase, downloading) {
-        (_, Phase::Unsupported, _) => "Not available on this host.".into(),
-        (false, _, _) => "Parakeet by NVIDIA, run on the Neural Engine. About 600 MB, downloaded when you turn dictation on.".into(),
-        (true, Phase::Preparing, Some(fraction)) => {
+    let model: SharedString = match (dictating, phase, downloading, reason) {
+        (_, Phase::Unsupported, _, reason) => {
+            reason.unwrap_or_else(|| "Not available on this host.".into())
+        }
+        (_, _, _, Some(reason)) => reason,
+        (false, _, _, _) => "Parakeet by NVIDIA, run on the Neural Engine. About 600 MB, downloaded when you turn dictation on.".into(),
+        (true, Phase::Preparing, Some(fraction), _) => {
             format!("Downloading… {}%", (fraction * 100.).round()).into()
         }
-        (true, Phase::Preparing, None) => {
+        (true, Phase::Preparing, None, _) => {
             "Preparing for the Neural Engine. The first time takes about half a minute.".into()
         }
-        (true, Phase::Off, _) => "Not loaded.".into(),
-        (true, _, _) => "Ready. Speech never leaves this host.".into(),
+        (true, Phase::Off, _, _) => "Not loaded.".into(),
+        (true, _, _, _) => "Ready. Speech never leaves this host.".into(),
     };
     let voice = div()
         .child(rows::row(

@@ -18,8 +18,8 @@ use sikemux_wire::grid::{
 };
 use sikemux_wire::protocol::{
     CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event,
-    LaunchIdentity, RemoteStatus, Request, SessionId, SpawnTarget, StreamId, TerminalSpawn,
-    WindowAnswer, WindowCall,
+    LaunchIdentity, NetworkChange, RemoteStatus, Request, SessionId, SpawnTarget, StreamId,
+    TerminalSpawn, WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -65,6 +65,8 @@ pub enum Update {
     HostReach(String, bool),
     /// Why this app cannot reach the account's other hosts at all.
     HostsUnavailable(String),
+    /// This host went offline, came back, or woke.
+    Network(NetworkChange),
 }
 
 pub enum ChatNews {
@@ -829,6 +831,9 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Notice { title, body, agent_id })) => {
                                 let _ = updates.send(Update::Notice { title, body, agent: agent_id });
+                            }
+                            Some(ClientEvent::Event(Event::Network { change })) => {
+                                let _ = updates.send(Update::Network(change));
                             }
                             Some(ClientEvent::Event(Event::Remote { status })) => {
                                 follow_links(&linked, &client);
