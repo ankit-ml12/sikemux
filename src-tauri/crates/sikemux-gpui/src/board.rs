@@ -87,6 +87,11 @@ pub(crate) struct Settings {
     pub auto: bool,
     pub slots: u32,
     pub launcher: Option<String>,
+    /// The connected provider Auto's agents run on in place of their own accounts.
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
     pub finish: String,
     pub reviewer: Option<Reviewer>,
 }
@@ -94,6 +99,10 @@ pub(crate) struct Settings {
 #[derive(Clone, Deserialize)]
 pub(crate) struct Reviewer {
     pub launcher: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]

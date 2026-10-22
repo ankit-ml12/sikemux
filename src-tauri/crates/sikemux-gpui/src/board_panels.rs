@@ -1,6 +1,8 @@
 //! What opens beside a board: one card to read and change or a new one to add,
 //! Auto's settings, and the messages between the project's agents.
 
+use std::rc::Rc;
+
 use gpui_kit::component::input::{Input, Textarea};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -11,6 +13,7 @@ use serde_json::{json, Value};
 
 use crate::board::{owner, short_title, waits_on_person, BoardPane, Card, MessageRow, Open};
 use crate::icons::Icon;
+use crate::model_picker;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, select, Button, IconButton, Pick, Toggle, Variant};
 
@@ -562,18 +565,108 @@ fn new_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         .into_any_element()
 }
 
-fn launcher_picks(pane: &BoardPane, any: &'static str, cx: &mut Context<BoardPane>) -> Vec<Pick> {
-    let mut picks = vec![Pick::new("", any)];
-    if let Some(bench) = pane.bench.upgrade() {
-        picks.extend(
-            bench
-                .read(cx)
-                .launchers()
-                .iter()
-                .map(|launcher| Pick::new(launcher.id.clone(), launcher.label.clone())),
-        );
+/// Which of Auto's agents a picker chooses: the one that works the cards, or its reviewer.
+#[derive(Clone, Copy, PartialEq)]
+enum Role {
+    Agent,
+    Reviewer,
+}
+
+/// Auto's agent or reviewer as the composer's own picker: the agent, its account, who pays
+/// and the model, in one popover.
+fn auto_picker(
+    pane: &BoardPane,
+    role: Role,
+    launcher: Option<&str>,
+    payer: Option<&str>,
+    model: Option<&str>,
+    cx: &mut Context<BoardPane>,
+) -> AnyElement {
+    let Some(bench) = pane.bench.upgrade() else {
+        return div().into_any_element();
+    };
+    let launchers = bench.read(cx).launchers().to_vec();
+    let Some(shown) = launcher
+        .and_then(|id| launchers.iter().find(|known| known.id == id))
+        .or(launchers.first())
+        .cloned()
+    else {
+        return ui::meta("No agents", cx).into_any_element();
+    };
+    let profile_of = |id: &str| id.split_once(':').map(|(_, profile)| profile.to_owned());
+    let mut models = shown.model.clone();
+    if let (Some(models), Some(model)) = (models.as_mut(), model) {
+        models.current = model.to_owned();
     }
-    picks
+    let pane_entity = cx.entity();
+    let save: Rc<dyn Fn(Value, &mut gpui_kit::App)> = Rc::new(move |chosen, cx| {
+        let changes = match role {
+            Role::Agent => chosen,
+            Role::Reviewer => json!({ "reviewer": chosen }),
+        };
+        pane_entity.update(cx, |pane, cx| {
+            pane.ask("boardSettings", changes, |_, _| {}, cx)
+        });
+    });
+    let set: model_picker::Set = {
+        let (save, launcher, payer) = (save.clone(), shown.id.clone(), payer.map(str::to_owned));
+        Rc::new(move |id, value, _, cx| {
+            if id == "model" {
+                save(
+                    json!({ "launcher": launcher, "provider": payer, "model": value }),
+                    cx,
+                );
+            }
+        })
+    };
+    let moving: model_picker::Move = {
+        let save = save.clone();
+        Rc::new(move |to: model_picker::Moving, _, cx| {
+            let launcher = launchers
+                .iter()
+                .find(|known| {
+                    known.provider == to.provider
+                        && to
+                            .profile
+                            .as_deref()
+                            .is_none_or(|profile| profile_of(&known.id).as_deref() == Some(profile))
+                })
+                .map(|known| known.id.clone());
+            save(
+                json!({ "launcher": launcher, "provider": to.model_provider, "model": to.model }),
+                cx,
+            );
+        })
+    };
+    let model_label = models.as_ref().and_then(|models| {
+        models
+            .choices
+            .iter()
+            .find(|choice| choice.value == models.current)
+            .map(|choice| choice.label.clone())
+    });
+    let label = match (launcher, model_label) {
+        (None, _) if role == Role::Agent => "The first that works".to_owned(),
+        (None, _) => "Any other agent".to_owned(),
+        (Some(_), Some(model)) => format!("{} · {model}", shown.label),
+        (Some(_), None) => shown.label.clone(),
+    };
+    let picked = model_picker::Picked {
+        provider: shown.provider.clone(),
+        profile: profile_of(&shown.id),
+        model: models,
+        model_provider: payer.map(str::to_owned),
+        locked: false,
+        set,
+        moving,
+        target: bench.read(cx).target(),
+    };
+    let key = match role {
+        Role::Agent => "board-auto-agent",
+        Role::Reviewer => "board-auto-reviewer",
+    };
+    let trigger = Button::new(key, label, Variant::Outline).lead(ui::mark(&shown.provider, 14.));
+    model_picker::around(trigger, key, picked, &bench).into_any_element()
 }
 
 fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
@@ -587,12 +680,6 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                 pane.ask("boardSettings", changes, |_, _| {}, cx)
             });
         };
-    let label_of = |picks: &[Pick], key: &str| {
-        picks
-            .iter()
-            .find(|pick| pick.key.as_ref() == key)
-            .map_or_else(|| key.to_owned(), |pick| pick.label.to_string())
-    };
     let slots = (1..=MAX_SLOTS)
         .map(|slots| {
             Pick::new(
@@ -609,23 +696,14 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         Pick::new("merge", "Merge it").hint("Once CI, or the check command, passes"),
         Pick::new("pr", "Stop at the pull request").hint("You review and merge it"),
     ];
-    let agents = launcher_picks(pane, "The first that works", cx);
-    let reviewers = launcher_picks(pane, "Any other agent", cx);
-    let agent = settings.launcher.clone().unwrap_or_default();
-    let reviewer = settings
-        .reviewer
-        .as_ref()
-        .and_then(|reviewer| reviewer.launcher.clone())
-        .unwrap_or_default();
-    let (agent_shown, reviewer_shown) =
-        (label_of(&agents, &agent), label_of(&reviewers, &reviewer));
     let finish_shown = if settings.finish == "pr" {
         "Stop at the pull request"
     } else {
         "Merge it"
     };
     let entity = || cx.entity();
-    let (on_slots, on_finish, on_agent, on_reviewer) = (entity(), entity(), entity(), entity());
+    let (on_slots, on_finish) = (entity(), entity());
+    let reviewer = settings.reviewer.clone();
     let auto_on = settings.auto;
     let mut view = div()
         .flex()
@@ -667,7 +745,11 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                 "At once",
                 select(
                     "board-slots",
-                    if settings.slots == 1 { "1 agent".to_owned() } else { format!("{} agents", settings.slots) },
+                    if settings.slots == 1 {
+                        "1 agent".to_owned()
+                    } else {
+                        format!("{} agents", settings.slots)
+                    },
                     slots,
                     Some(settings.slots.to_string().into()),
                     busy,
@@ -692,43 +774,44 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                 ),
                 cx,
             ))
-            .child(fact(
-                "Agent",
-                select(
-                    "board-agent",
-                    agent_shown,
-                    agents,
-                    Some(agent.into()),
-                    busy,
-                    move |launcher, _, cx| {
-                        let launcher = (!launcher.is_empty()).then(|| launcher.to_string());
-                        save(json!({ "launcher": launcher, "provider": null, "model": null }), cx, &on_agent)
-                    },
+            .child({
+                let picker = auto_picker(
+                    pane,
+                    Role::Agent,
+                    settings.launcher.as_deref(),
+                    settings.provider.as_deref(),
+                    settings.model.as_deref(),
                     cx,
-                ),
-                cx,
-            ))
+                );
+                fact("Agent", picker, cx)
+            }),
     )
     .child(
         settings_group("Reviewer", cx)
-            .child(fact(
-                "Reviewer",
-                select(
-                    "board-reviewer",
-                    reviewer_shown,
-                    reviewers,
-                    Some(reviewer.into()),
-                    busy,
-                    move |launcher, _, cx| {
-                        let reviewer = (!launcher.is_empty())
-                            .then(|| json!({ "launcher": launcher.as_ref(), "provider": null, "model": null }));
-                        save(json!({ "reviewer": reviewer }), cx, &on_reviewer)
-                    },
+            .child({
+                let picker = auto_picker(
+                    pane,
+                    Role::Reviewer,
+                    reviewer
+                        .as_ref()
+                        .and_then(|reviewer| reviewer.launcher.as_deref()),
+                    reviewer
+                        .as_ref()
+                        .and_then(|reviewer| reviewer.provider.as_deref()),
+                    reviewer
+                        .as_ref()
+                        .and_then(|reviewer| reviewer.model.as_deref()),
                     cx,
-                ),
-                cx,
-            ))
-            .child(ui::meta("The reviewer checks each change against its card before it merges.", cx).whitespace_normal()),
+                );
+                fact("Reviewer", picker, cx)
+            })
+            .child(
+                ui::meta(
+                    "The reviewer checks each change against its card before it merges.",
+                    cx,
+                )
+                .whitespace_normal(),
+            ),
     )
     .into_any_element()
 }
