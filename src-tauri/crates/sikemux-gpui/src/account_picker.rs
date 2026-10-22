@@ -87,7 +87,7 @@ pub fn picker(
         .disabled(disabled)
         .h(px(26.))
         .max_w(px(200.))
-        .px(px(10.))
+        .px(px(8.))
         .flex()
         .items_center()
         .gap(px(6.))

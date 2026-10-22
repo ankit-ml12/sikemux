@@ -75,7 +75,7 @@ pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App
         .disabled(!settable)
         .h(px(26.))
         .max_w(px(220.))
-        .px(px(11.))
+        .px(px(8.))
         .flex()
         .items_center()
         .gap(px(5.))

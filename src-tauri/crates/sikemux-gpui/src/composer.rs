@@ -348,8 +348,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
     let name = |chevron: bool| {
         div()
             .h(px(26.))
-            .pl(px(8.))
-            .pr(px(9.))
+            .px(px(8.))
             .max_w(px(240.))
             .flex()
             .items_center()
@@ -403,7 +402,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         .overflow_hidden()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(px(2.))
         .py(px(4.))
         .px(px(6.))
         .border_t_1()
@@ -416,8 +415,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
             div()
                 .min_w_0()
                 .max_w(px(180.))
-                .pl(px(8.))
-                .pr(px(6.))
+                .px(px(8.))
                 .flex()
                 .items_center()
                 .gap(px(6.))
@@ -444,6 +442,16 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                 .text_color(t.text_tertiary),
         )
         .child(project)
+        .when(strip.branch.is_some() || strip.worktree.is_some(), |row| {
+            row.child(
+                div()
+                    .flex_none()
+                    .w(px(1.))
+                    .h(px(14.))
+                    .mx(px(6.))
+                    .bg(t.border),
+            )
+        })
         .children(strip.branch.map(|branch| {
             div()
                 .min_w_0()
