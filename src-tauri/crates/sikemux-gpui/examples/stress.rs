@@ -11,9 +11,9 @@
 //! Scenarios: `agents` (ten chats streaming, one in front, then the front one
 //! changing), `long` (a chat of thousands of rows scrolled, searched and streamed
 //! into), `flood` (a terminal flooding beside a streaming chat), `repo <folder>` (a
-//! large repository's Git tab, files, search and finder), and `soak` (`agents` for
-//! `minutes`, ten by default, watching memory). Each ends by typing in the front
-//! chat's composer while its load runs. `make-repo <folder> [files]` writes a
+//! large repository's Git tab, files, search and finder), `newchat` (⌘N beside three
+//! open chats), and `soak` (`agents` for `minutes`, ten by default, watching memory).
+//! Each ends by typing in the front chat's composer while its load runs. `make-repo <folder> [files]` writes a
 //! generated repository to stress `repo` with.
 
 use std::cell::RefCell;
@@ -449,6 +449,22 @@ impl Run {
             .unwrap_or(false)
     }
 
+    fn draft_focused(&mut self) -> bool {
+        let bench = self.bench.clone();
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                let bench = bench.read(cx);
+                bench
+                    .agent()
+                    .and_then(|agent| bench.chats.get(&agent.id))
+                    .and_then(|chat| chat.composer.as_ref())
+                    .is_some_and(|composing| {
+                        composing.draft.read(cx).focus_handle(cx).is_focused(window)
+                    })
+            })
+            .unwrap_or(false)
+    }
+
     /// Types `count` letters into the front chat's composer a few frames apart, each
     /// timed from the key to the end of the first frame that shows it.
     fn typing(&mut self, count: usize) -> Option<Vec<f64>> {
@@ -595,6 +611,73 @@ fn agents(run: &mut Run, driver: &Arc<Driver>, minutes: Option<f64>) {
         soak(run, minutes);
     }
     stop.store(true, Ordering::Relaxed);
+}
+
+/// Opens new chats with ⌘N beside three already open, timing from the key to the new chat in
+/// front, to its composer holding the keys, and the frames of the switch. With
+/// FAKE_ACP_START_GATE set, the fake agent's start is held `STRESS_START_MS` (1500 by default),
+/// as long as a real agent's program takes to start.
+fn new_chats(run: &mut Run, driver: &Arc<Driver>) {
+    for _ in 0..3 {
+        driver.chat();
+    }
+    run.until(30, |run| run.front_chat().is_some());
+    run.frames(240);
+    let gate = std::env::var_os("FAKE_ACP_START_GATE").map(PathBuf::from);
+    let hold: u64 = std::env::var("STRESS_START_MS")
+        .ok()
+        .and_then(|ms| ms.parse().ok())
+        .unwrap_or(1_500);
+    let (mut fronts, mut keys, mut switching) = (Vec::new(), Vec::new(), Vec::new());
+    for _ in 0..6 {
+        let before = run.front_chat();
+        if let Some(gate) = gate.clone() {
+            std::fs::write(&gate, b"").ok();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(hold));
+                std::fs::remove_file(gate).ok();
+            });
+        }
+        let began = Instant::now();
+        run.act("agent.new");
+        if !run.until(15, |run| run.front_chat() != before) {
+            println!("new chat: none came to the front in 15 s");
+            return;
+        }
+        fronts.push(began.elapsed().as_secs_f64() * 1e3);
+        let mut focused = None;
+        let switch = run.measure(0.4, |run, _| {
+            if focused.is_none() && run.draft_focused() {
+                focused = Some(began.elapsed());
+            }
+        });
+        switching.extend(switch.frames);
+        if focused.is_none() && run.until(15, |run| run.draft_focused()) {
+            focused = Some(began.elapsed());
+        }
+        match focused {
+            Some(focused) => keys.push(focused.as_secs_f64() * 1e3),
+            None => println!("new chat: its composer never held the keys"),
+        }
+        run.frames(120);
+    }
+    println!(
+        "new chat, key to the chat in front: {} [headless, in-app]",
+        spread(fronts)
+    );
+    println!(
+        "new chat, key to its composer holding the keys: {} [headless, in-app]",
+        spread(keys)
+    );
+    println!(
+        "new chat, frames of the switch's first 400 ms: {} [headless, in-app]",
+        spread(switching)
+    );
+    let newest = run.front_chat().unwrap_or_default();
+    driver.prompt(&newest, "stream 40".into());
+    if !run.until(15, |run| run.rows(&newest) > 1) {
+        println!("new chat: its reply never showed");
+    }
 }
 
 /// Keeps drawing for `minutes`, printing the app's and the core's memory each
@@ -933,6 +1016,7 @@ fn main() -> anyhow::Result<()> {
         "agents" => agents(&mut run, &driver, None),
         "soak" => agents(&mut run, &driver, Some(minutes.unwrap_or(10.))),
         "long" => long(&mut run, &driver),
+        "newchat" => new_chats(&mut run, &driver),
         "flood" => {
             let log = base.join("flood.log");
             if !log.exists() {
