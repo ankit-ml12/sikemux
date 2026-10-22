@@ -116,6 +116,8 @@ pub struct Workbench {
     pub all_projects: bool,
     /// The leads whose teams the agent rail folds away.
     pub folded_teams: HashSet<String>,
+    /// The agent rows the rail drew last, for telling the rows that have just arrived.
+    pub(crate) rail_seen: std::cell::RefCell<crate::agents::RailSeen>,
     /// The card beside the agent row the pointer rests on.
     pub agent_card: crate::agent_card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
@@ -550,6 +552,7 @@ impl Workbench {
             last_place: None,
             all_projects: false,
             folded_teams: HashSet::new(),
+            rail_seen: Default::default(),
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
             rail_frame: Rc::default(),

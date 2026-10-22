@@ -109,6 +109,11 @@ pub fn entrance(ease: Ease) -> Animation {
     Animation::new(ease.duration).with_easing(move |t| ease.at(t))
 }
 
+/// An agent's row arriving in the rail: its slot opens and it fades in, and it slides in a
+/// touch longer.
+pub const ARRIVE: Ease = Ease::new(170, Curve::OUT);
+pub const ARRIVE_SLIDE: Ease = Ease::new(190, Curve::OUT);
+
 /// A run of tool calls opening onto its calls, and folding them away.
 pub const UNFOLD: Ease = Ease::new(180, Curve::OUT);
 pub const FOLD_AWAY: Ease = Ease::new(140, Curve::Bezier(0.4, 0., 1., 1.));
@@ -422,6 +427,99 @@ pub fn folded(
             }
         })
         .into_any_element()
+}
+
+/// A row that has just come into a list, growing its slot to its own height and sliding in
+/// from the left as the Mac's agent rows arrive. It plays once, from when it first draws.
+pub fn arriving(id: impl Into<ElementId>, body: impl IntoElement + 'static) -> WithWindow {
+    let id: ElementId = id.into();
+    with_window(move |window, cx| {
+        let born = *window
+            .use_keyed_state(id.clone(), cx, |_, _| Instant::now())
+            .read(cx);
+        let age = born.elapsed();
+        let share = |ease: Ease| (age.as_secs_f32() / ease.duration.as_secs_f32()).min(1.);
+        if cx.reduce_motion() || age >= ARRIVE_SLIDE.duration {
+            return body.into_any_element();
+        }
+        window.request_animation_frame();
+        let grown = ARRIVE.at(share(ARRIVE));
+        let slid = ARRIVE_SLIDE.at(share(ARRIVE_SLIDE));
+        let body = div().relative().left(px(-6. * (1. - slid))).child(body);
+        let slot = ElementId::NamedChild(Arc::new(id), "slot".into());
+        folded(slot, grown, body, window, cx)
+    })
+}
+
+/// What `build` draws, given the window to draw it in; for drawing that has none to hand.
+pub fn with_window(
+    build: impl FnOnce(&mut Window, &mut App) -> AnyElement + 'static,
+) -> WithWindow {
+    WithWindow {
+        build: Some(Box::new(build)),
+    }
+}
+
+pub struct WithWindow {
+    build: Option<Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>>,
+}
+
+impl IntoElement for WithWindow {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for WithWindow {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let build = self.build.take().expect("drawn once a frame");
+        let mut element = build(window, cx);
+        (element.request_layout(window, cx), element)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        element: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        element: &mut AnyElement,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.paint(window, cx);
+    }
 }
 
 /// Whether the pointer was over the element `id` when it last moved, and what keeps that

@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
@@ -451,6 +453,33 @@ fn new_row(id: &'static str, glyph: Icon, label: &'static str, command: &str, cx
         .children(crate::keymap::hint(command, cx).map(|keys| ui::kbd(keys, cx)))
 }
 
+/// The agent rows the rail drew last and in which view of it, and the rows that arrived since.
+#[derive(Default)]
+pub struct RailSeen {
+    view: String,
+    shown: HashSet<String>,
+    arrived: Vec<(String, Instant)>,
+}
+
+impl RailSeen {
+    /// Which of `shown` have just come into the rail. A view drawn first, or another view,
+    /// has none: its rows just show.
+    fn arrivals(&mut self, view: String, shown: HashSet<String>) -> HashSet<String> {
+        let longest = crate::motion::ARRIVE_SLIDE.duration;
+        self.arrived.retain(|(_, at)| at.elapsed() < longest);
+        if view == self.view {
+            let now = Instant::now();
+            let fresh = shown.difference(&self.shown).cloned();
+            self.arrived.extend(fresh.map(|id| (id, now)));
+        } else {
+            self.arrived.clear();
+        }
+        self.view = view;
+        self.shown = shown;
+        self.arrived.iter().map(|(id, _)| id.clone()).collect()
+    }
+}
+
 /// The rows, each lead's workers under it on a tree the lead folds, unless the list is
 /// filtered and a team may have lost its lead.
 fn team_rows(
@@ -477,7 +506,8 @@ fn team_rows(
     };
     let mut folded = false;
     let mut team_members: Vec<&AgentRow> = Vec::new();
-    let mut rows = Vec::with_capacity(agents.len());
+    let mut drawn: Vec<(String, AnyElement)> = Vec::with_capacity(agents.len());
+    let mut shown = HashSet::new();
     for (ix, agent) in agents.iter().enumerate() {
         let team = agent.team.filter(|_| teams);
         let continues = |at: usize| {
@@ -507,14 +537,30 @@ fn team_rows(
                 None
             }
         };
-        rows.push(agent_row(bench, agent, team, fold, cx).into_any_element());
+        shown.insert(agent.id.clone());
+        let row = agent_row(bench, agent, team, fold, cx);
+        drawn.push((agent.id.clone(), row.into_any_element()));
         if team.is_some() && !folded && !continues(ix + 1) {
             for worker in remote_of(&team_members) {
-                rows.push(remote_row(worker, cx));
+                drawn.push((String::new(), remote_row(worker, cx)));
             }
         }
     }
-    rows
+    let view = format!(
+        "{}:{}:{}",
+        bench.all_projects,
+        bench.project().map_or("", |project| project.id.as_str()),
+        bench.filter_text
+    );
+    let arriving = bench.rail_seen.borrow_mut().arrivals(view, shown);
+    drawn
+        .into_iter()
+        .map(|(id, row)| match arriving.contains(&id) {
+            true => crate::motion::arriving(SharedString::from(format!("arrive:{id}")), row)
+                .into_any_element(),
+            false => row,
+        })
+        .collect()
 }
 
 /// The spine and tick that hang a team's rows under its lead.
