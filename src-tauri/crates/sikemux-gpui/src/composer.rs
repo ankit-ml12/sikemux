@@ -221,6 +221,14 @@ impl RenderOnce for Composer {
             cx,
         );
         let focused = self.draft.focus_handle(cx).contains_focused(window, cx);
+        let edge = crate::motion::fade(
+            &ElementId::NamedInteger("composer-edge".into(), self.draft.entity_id().as_u64()),
+            "border",
+            if focused { t.border_selected } else { t.border },
+            FOCUS_EDGE,
+            window,
+            cx,
+        );
         let settable = self.ready && !self.running;
         let mut bar = div()
             .min_h(px(34.))
@@ -309,7 +317,7 @@ impl RenderOnce for Composer {
                     .flex()
                     .flex_col()
                     .border_1()
-                    .border_color(if focused { t.border_selected } else { t.border })
+                    .border_color(edge)
                     .rounded(theme::RADIUS_3)
                     .bg(fill)
                     .children(
@@ -769,8 +777,11 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
         )
 }
 
+/// How the composer's edge changes colour as it takes and loses the keys.
+const FOCUS_EDGE: Ease = Ease::new(140, Curve::OUT);
+
 /// How the send button's new mark turns in.
-const SEND_TURN: Ease = Ease::new(150, Curve::Out);
+const SEND_TURN: Ease = Ease::new(150, Curve::OUT);
 
 /// Send, or while a turn runs and nothing is written, Stop. While a turn runs, `steers` tells
 /// whether sending steers into it. `job` runs from 0 (send) to 1 (stop): when the button

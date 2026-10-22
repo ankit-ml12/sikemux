@@ -608,7 +608,8 @@ fn remote_row(worker: &serde_json::Value, cx: &mut Context<Workbench>) -> AnyEle
             )
             .quiet()
             .when_some(status, |row, status| {
-                row.status(ui::status_mark(status, cx))
+                let agent = worker["agentId"].as_str().unwrap_or_default();
+                row.status(ui::status_mark(agent, status, cx))
             }),
         )
         .children(team_lines(team, false, cx))
@@ -699,10 +700,11 @@ fn agent_row(
                 .child(ui::meta(project, cx)),
         )
     })
-    .status(
-        ui::status_mark(agent.status, cx)
-            .map(|mark| mark.group_hover(AGENT_ROW, |mark| mark.opacity(0.))),
-    )
+    .status(ui::status_mark(&agent.id, agent.status, cx).map(|mark| {
+        div()
+            .group_hover(AGENT_ROW, |mark| mark.opacity(0.))
+            .child(mark)
+    }))
     .on_click(cx.listener({
         let id = id.clone();
         move |bench, _, _, cx| {

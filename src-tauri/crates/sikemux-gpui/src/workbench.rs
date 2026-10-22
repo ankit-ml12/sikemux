@@ -37,6 +37,7 @@ use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::git::{FocusGit, GitPane};
 use crate::hosts::Place;
+use crate::motion;
 use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
@@ -46,6 +47,10 @@ use crate::{agents, home, rail, tabs, terminal};
 const PEEK_CLOSE: Duration = Duration::from_millis(180);
 /// How close to the window's edge the pointer brings out a closed rail.
 const PEEK_REACH: f32 = 28.;
+/// How far past its own width a peeking rail starts and ends, out of sight beyond the window.
+const PEEK_GAP: f32 = 10.;
+/// The handle between a docked rail and the stage.
+const RESIZER_WIDTH: f32 = 10.;
 
 /// The decoded pictures a long chat full of screenshots keeps loaded: about a dozen at full size.
 const PICTURE_BUDGET: usize = 256 * 1024 * 1024;
@@ -2657,7 +2662,7 @@ impl Workbench {
                 Edge::End => "resize-tab-rail",
             })
             .flex_none()
-            .w(px(10.))
+            .w(px(RESIZER_WIDTH))
             .h_full()
             .cursor_col_resize()
             .key_context("RailResizer")
@@ -3767,13 +3772,59 @@ impl Parts {
 }
 
 impl Workbench {
+    /// A docked rail and its handle, `tuck` of the way under the stage. It keeps its width as
+    /// it goes, so nothing in it wraps again; the stage takes the room it gives up.
+    fn docked_rail(&self, edge: Edge, tuck: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        let (part, width) = match edge {
+            Edge::Start => (&self.parts.rail, self.side_rail_width),
+            Edge::End => (&self.parts.tabs, self.tab_rail_width),
+        };
+        let rail = part
+            .clone()
+            .cached(StyleRefinement::default().w(px(width)).h_full().flex_none());
+        let drawer = div()
+            .flex_none()
+            .h_full()
+            .w(px((width + RESIZER_WIDTH) * (1. - tuck)))
+            .overflow_hidden()
+            .flex()
+            .opacity(1. - tuck);
+        match edge {
+            Edge::Start => drawer.child(rail).child(self.rail_resizer(edge, cx)),
+            Edge::End => drawer
+                .justify_end()
+                .child(self.rail_resizer(edge, cx))
+                .child(rail),
+        }
+    }
+
     /// A closed rail's edge of the window, which brings the rail out over the stage.
-    fn rail_edge(&self, edge: Edge, cx: &mut Context<Self>) -> impl IntoElement {
+    fn rail_edge(
+        &self,
+        edge: Edge,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (part, width) = match edge {
             Edge::Start => (&self.parts.rail, self.side_rail_width),
             Edge::End => (&self.parts.tabs, self.tab_rail_width),
         };
         let peeking = self.peeking == Some(edge);
+        let shown = motion::follow(
+            match edge {
+                Edge::Start => "peek-start-shown",
+                Edge::End => "peek-end-shown",
+            },
+            if peeking { 1. } else { 0. },
+            if peeking {
+                motion::PEEK_IN
+            } else {
+                motion::PEEK_OUT
+            },
+            window,
+            cx,
+        );
+        let away = (width + PEEK_GAP) * (1. - shown);
         let zone = div()
             .id(match edge {
                 Edge::Start => "peek-start",
@@ -3782,13 +3833,23 @@ impl Workbench {
             .absolute()
             .top(px(tabs::top_height(self) + 4.))
             .bottom(px(10.))
-            .w(px(if peeking { width + 20. } else { PEEK_REACH }))
+            .w(px(if shown > 0. { width + 20. } else { PEEK_REACH }))
             .px(px(10.))
             .on_hover(cx.listener(move |bench, inside: &bool, _, cx| bench.peek(edge, *inside, cx)))
-            .when(peeking, |zone| {
+            .when(shown > 0., |zone| {
                 zone.child(
-                    part.clone()
-                        .cached(StyleRefinement::default().w(px(width)).h_full()),
+                    div()
+                        .h_full()
+                        .relative()
+                        .left(px(match edge {
+                            Edge::Start => -away,
+                            Edge::End => away,
+                        }))
+                        .opacity(shown)
+                        .child(
+                            part.clone()
+                                .cached(StyleRefinement::default().w(px(width)).h_full()),
+                        ),
                 )
             });
         match edge {
@@ -3814,6 +3875,15 @@ impl Render for Workbench {
         let asking = self.asking_freely(window);
         let this = cx.weak_entity();
         crate::see_through::follow(window, cx);
+        let [side_tuck, tab_tuck] = [
+            ("side-rail-tuck", self.side_rail_open),
+            ("tab-rail-tuck", self.tab_rail_open),
+        ]
+        .map(|(id, open)| {
+            let tucked = if open { 0. } else { 1. };
+            let (ease, shortest) = (motion::RAIL_DRAWER, motion::RAIL_DRAWER_SHORTEST);
+            motion::follow_share(id, tucked, ease, shortest, window, cx)
+        });
         let t = Tokens::get(cx);
         window.set_ground(Some(crate::see_through::ground(t.surface_sunken, cx)));
         let parts = &self.parts;
@@ -4062,16 +4132,8 @@ impl Render for Workbench {
                             bench.resize_rail(edge, f32::from(width) - 15., window, cx);
                         },
                     ))
-                    .when(self.side_rail_open, |row| {
-                        row.child(
-                            parts.rail.clone().cached(
-                                StyleRefinement::default()
-                                    .w(px(self.side_rail_width))
-                                    .h_full()
-                                    .flex_none(),
-                            ),
-                        )
-                        .child(self.rail_resizer(Edge::Start, cx))
+                    .when(side_tuck < 1., |row| {
+                        row.child(self.docked_rail(Edge::Start, side_tuck, cx))
                     })
                     .child(
                         parts
@@ -4079,22 +4141,15 @@ impl Render for Workbench {
                             .clone()
                             .cached(StyleRefinement::default().flex_1().min_w_0().h_full()),
                     )
-                    .when(self.tab_rail_open, |row| {
-                        row.child(self.rail_resizer(Edge::End, cx)).child(
-                            parts.tabs.clone().cached(
-                                StyleRefinement::default()
-                                    .w(px(self.tab_rail_width))
-                                    .h_full()
-                                    .flex_none(),
-                            ),
-                        )
+                    .when(tab_tuck < 1., |row| {
+                        row.child(self.docked_rail(Edge::End, tab_tuck, cx))
                     }),
             )
             .when(!self.side_rail_open, |shell| {
-                shell.child(self.rail_edge(Edge::Start, cx))
+                shell.child(self.rail_edge(Edge::Start, window, cx))
             })
             .when(!self.tab_rail_open, |shell| {
-                shell.child(self.rail_edge(Edge::End, cx))
+                shell.child(self.rail_edge(Edge::End, window, cx))
             })
             .children(asked)
             .children(crate::add_task::view(self, cx))

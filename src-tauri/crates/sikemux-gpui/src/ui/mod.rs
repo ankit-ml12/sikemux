@@ -14,6 +14,7 @@ mod pane;
 mod select;
 pub mod selectable;
 pub mod shimmer;
+mod state_mark;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
@@ -23,14 +24,13 @@ pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader, AGENT_INSET};
 pub use select::{select, Pick};
+pub use state_mark::status_mark;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla, IntoElement,
     ParentElement, SharedString, Styled, Svg,
 };
-
-use sikemux_wire::protocol::AgentStatus;
 
 use crate::icons::{self, Icon};
 use crate::theme::{self, Tokens};
@@ -205,27 +205,6 @@ pub fn panel(cx: &App) -> Div {
         .border_1()
         .border_color(t.border)
         .rounded(theme::RADIUS_3)
-}
-
-/// What an agent is doing, in a 16px box: a grid while it works, a
-/// dot while it waits on the person or has finished unseen, nothing when idle.
-pub fn status_mark(status: AgentStatus, cx: &App) -> Option<Div> {
-    let t = Tokens::get(cx);
-    let dot = |color| Some(mark_box(16., div().size(px(7.)).rounded_full().bg(color)));
-    match status {
-        AgentStatus::Working => Some(mark_box(
-            16.,
-            div()
-                .w(px(10.5))
-                .flex()
-                .flex_wrap()
-                .gap(px(1.5))
-                .children((0..9).map(|_| div().size(px(2.5)).rounded(px(0.5)).bg(t.live))),
-        )),
-        AgentStatus::Blocked => dot(t.warn),
-        AgentStatus::Done => dot(t.accent),
-        _ => None,
-    }
 }
 
 /// How something reachable stands, as its 7px dot says.

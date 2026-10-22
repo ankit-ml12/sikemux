@@ -12,6 +12,7 @@ use gpui_kit::{
 
 use super::{icon, kbd, text};
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 
 pub(super) type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -120,7 +121,7 @@ impl IconButton {
 }
 
 impl RenderOnce for IconButton {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
         let enabled = if self.quiet {
             t.icon_quiet
@@ -148,9 +149,16 @@ impl RenderOnce for IconButton {
             None => (rest, hover, primary, chosen),
         };
         let on_click = self.on_click.filter(|_| !self.disabled);
-        let glyph = icon(self.icon, self.glyph)
-            .text_color(if self.pressed { primary } else { rest })
-            .group_hover(GROUP, move |style| style.text_color(primary));
+        let (over, keep_over) = motion::hovered(&self.id, window, cx);
+        let wash = match (over, self.pressed) {
+            (true, _) => hover,
+            (false, true) => chosen,
+            (false, false) => hover.opacity(0.),
+        };
+        let wash = motion::fade(&self.id, "wash", wash, motion::CONTROL_TINT, window, cx);
+        let ink = if over || self.pressed { primary } else { rest };
+        let ink = motion::fade(&self.id, "ink", ink, motion::CONTROL_TINT, window, cx);
+        let glyph = icon(self.icon, self.glyph).text_color(ink);
         BaseButton::new(self.id.clone())
             .group(GROUP)
             .tooltip(super::tooltip(self.label.clone()))
@@ -168,9 +176,9 @@ impl RenderOnce for IconButton {
                     button.rounded(RADIUS_2)
                 }
             })
-            .text_color(rest)
-            .when(self.pressed, |button| button.bg(chosen).text_color(primary))
-            .hover(move |style| style.bg(hover).text_color(primary))
+            .text_color(ink)
+            .bg(wash)
+            .on_hover(keep_over)
             .when_some(on_click, |button, handler| {
                 button.on_click(move |event, window, cx| handler(event, window, cx))
             })

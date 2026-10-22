@@ -677,15 +677,18 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
         .when_some(row.handle.clone(), |element, handle| {
             element.child(ui::meta(handle, cx).flex_none())
         })
-        .map(
-            |element| match row.state.and_then(|state| ui::status_mark(state, cx)) {
-                Some(state) => element.child(state.flex_none()),
+        .map(|element| {
+            match row
+                .state
+                .and_then(|state| ui::status_mark(&row.key, state, cx))
+            {
+                Some(state) => element.child(div().flex_none().child(state)),
                 None if !row.meta.is_empty() => {
                     element.child(ui::meta(row.meta.clone(), cx).flex_none())
                 }
                 None => element,
-            },
-        )
+            }
+        })
         .when_some(row.keys.clone(), |element, keys| {
             element.child(ui::kbd(keys, cx).flex_none().pl(px(6.)))
         })

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::base::animation::cubic_bezier;
 use gpui_kit::base::motion::Interpolate;
 use gpui_kit::{
-    radians, AnyElement, App, Bounds, Element, ElementId, GlobalElementId, Hsla,
+    radians, Animation, AnyElement, App, Bounds, Element, ElementId, GlobalElementId, Hsla,
     InspectorElementId, IntoElement, LayoutId, Pixels, Rgba, SharedString, Svg, Transformation,
     Window,
 };
@@ -26,12 +26,17 @@ pub struct Ease {
 #[derive(Clone, Copy)]
 pub enum Curve {
     Linear,
+    /// A CSS `cubic-bezier(x1, y1, x2, y2)`.
+    Bezier(f32, f32, f32, f32),
+}
+
+impl Curve {
     /// Most of the movement early, then a long settle.
-    Out,
+    pub const OUT: Curve = Curve::Bezier(0.16, 1., 0.3, 1.);
     /// CSS's plain `ease`.
-    Css,
+    pub const CSS: Curve = Curve::Bezier(0.25, 0.1, 0.25, 1.);
     /// CSS's `ease-out`.
-    CssOut,
+    pub const CSS_OUT: Curve = Curve::Bezier(0., 0., 0.58, 1.);
 }
 
 impl Ease {
@@ -48,29 +53,55 @@ impl Ease {
         self
     }
 
-    fn at(self, t: f32) -> f32 {
+    /// Where the curve is a share `t` of the way through.
+    pub fn at(self, t: f32) -> f32 {
         match self.curve {
             Curve::Linear => t,
-            Curve::Out => ease_out()(t),
-            Curve::Css => cubic_bezier(0.25, 0.1, 0.25, 1.)(t),
-            Curve::CssOut => cubic_bezier(0., 0., 0.58, 1.)(t),
+            Curve::Bezier(x1, y1, x2, y2) => cubic_bezier(x1, y1, x2, y2)(t),
         }
     }
 }
 
 /// A row's tint and text colour as it is chosen or hovered.
 pub const ROW_TINT: Ease = Ease::new(90, Curve::Linear);
+/// A control's wash and ink as it is hovered or pressed, as the rails' header actions.
+pub const CONTROL_TINT: Ease = Ease::new(90, Curve::CSS);
 /// A tab's or pill's tint as it is chosen or hovered.
-pub const PILL_TINT: Ease = Ease::new(200, Curve::Out);
+pub const PILL_TINT: Ease = Ease::new(200, Curve::OUT);
 /// A chevron turning as what it folds opens: in a chat or a review, where the Mac turns it
 /// even while macOS asks for less motion.
-pub const DETAIL_FOLD: Ease = Ease::new(120, Curve::Css).moves_when_reduced();
+pub const DETAIL_FOLD: Ease = Ease::new(120, Curve::CSS).moves_when_reduced();
 /// A file tree's chevron.
-pub const TREE_FOLD: Ease = Ease::new(140, Curve::Css);
+pub const TREE_FOLD: Ease = Ease::new(140, Curve::CSS);
 /// A list's group, a run's step or a release's assets.
-pub const LIST_FOLD: Ease = Ease::new(90, Curve::Css);
+pub const LIST_FOLD: Ease = Ease::new(90, Curve::CSS);
 /// A team in the agents rail, or a lane on the board.
-pub const LANE_FOLD: Ease = Ease::new(90, Curve::CssOut);
+pub const LANE_FOLD: Ease = Ease::new(90, Curve::CSS_OUT);
+
+/// A dialog's backdrop and the dialog rising over it, and a tooltip fading in.
+pub const SCRIM_IN: Ease = Ease::new(140, Curve::CSS_OUT);
+pub const DIALOG_IN: Ease = Ease::new(220, Curve::OUT);
+pub const TOOLTIP_IN: Ease = Ease::new(110, Curve::CSS_OUT);
+
+/// A docked rail tucking under the stage or coming out from under it, as a drawer does.
+pub const RAIL_DRAWER: Ease = Ease::new(400, Curve::Bezier(0.25, 1., 0.5, 1.));
+pub const RAIL_DRAWER_SHORTEST: Duration = Duration::from_millis(120);
+/// A closed rail brought out over the stage at its edge, and put away again.
+pub const PEEK_IN: Ease = Ease::new(180, Curve::Bezier(0.2, 0.8, 0.2, 1.));
+pub const PEEK_OUT: Ease = Ease::new(140, Curve::Bezier(0.4, 0., 0.8, 0.2));
+
+/// An agent's mark popping in as its state changes, and the two rings a mark that now needs
+/// the person sends out, the second a little after the first.
+pub const STATE_POP: Ease = Ease::new(200, Curve::OUT);
+pub const NEEDS_YOU: Ease = Ease::new(900, Curve::Linear);
+pub const RING: Ease = Ease::new(520, Curve::Bezier(0.2, 0.6, 0.3, 1.));
+pub const SECOND_RING: Duration = Duration::from_millis(380);
+
+/// An animation that plays once as its element first draws, on `ease`. It holds still while
+/// macOS asks for less motion, so it is only for what the Mac stills then too.
+pub fn entrance(ease: Ease) -> Animation {
+    Animation::new(ease.duration).with_easing(move |t| ease.at(t))
+}
 
 /// The angle of a fold's chevron, open or shut.
 pub fn fold_angle(open: bool) -> f32 {
@@ -94,30 +125,62 @@ pub fn follow<T: Interpolate + PartialEq + 'static>(
     window: &mut Window,
     cx: &mut App,
 ) -> T {
-    let state = window.use_keyed_state(id.into(), cx, |_, _| Following {
+    follow_over(id.into(), target, ease, |_, _| ease.duration, window, cx)
+}
+
+/// A share from 0 to 1, such as how far a rail is tucked away, following `target` as `follow`
+/// does; a move turned round part way takes the share of `ease`'s time its distance is, and
+/// never less than `shortest`.
+pub fn follow_share(
+    id: impl Into<ElementId>,
+    target: f32,
+    ease: Ease,
+    shortest: Duration,
+    window: &mut Window,
+    cx: &mut App,
+) -> f32 {
+    let over = |from: &f32, to: &f32| {
+        ease.duration
+            .mul_f32((to - from).abs().min(1.))
+            .max(shortest)
+    };
+    follow_over(id.into(), target, ease, over, window, cx)
+}
+
+fn follow_over<T: Interpolate + PartialEq + 'static>(
+    id: ElementId,
+    target: T,
+    ease: Ease,
+    over: impl Fn(&T, &T) -> Duration,
+    window: &mut Window,
+    cx: &mut App,
+) -> T {
+    let now = Instant::now();
+    let state = window.use_keyed_state(id, cx, |_, _| Following {
         from: target.clone(),
         to: target.clone(),
-        since: Instant::now(),
+        since: now,
+        over: Duration::ZERO,
     });
-    let still = cx.reduce_motion() && !ease.moves_when_reduced;
-    let now = Instant::now();
-    let shown = state.read(cx).at(now, ease);
     if state.read(cx).to != target {
-        let from = if still { target.clone() } else { shown.clone() };
+        let still = cx.reduce_motion() && !ease.moves_when_reduced;
+        let shown = state.read(cx).at(now, ease);
+        let from = if still { target.clone() } else { shown };
+        let over = over(&from, &target);
         state.update(cx, |following, _| {
             *following = Following {
                 from,
                 to: target.clone(),
                 since: now,
+                over,
             }
         });
     }
     let following = state.read(cx);
-    let value = following.at(now, ease);
-    if following.from != following.to && now - following.since < ease.duration {
+    if following.from != following.to && now - following.since < following.over {
         window.request_animation_frame();
     }
-    value
+    following.at(now, ease)
 }
 
 /// The colour `channel` of the element `id` draws now, fading to `target`.
@@ -225,6 +288,103 @@ impl<T: Interpolate + PartialEq + 'static> Element for Animated<T> {
     }
 }
 
+/// What `build` makes of how far it is through playing once since `key` last changed: from
+/// 0 to 1 over `ease`, and 1 when `key` was as it is when the element first drew.
+pub fn replay<K: PartialEq + Clone + 'static>(
+    id: impl Into<ElementId>,
+    key: K,
+    ease: Ease,
+    build: impl FnOnce(f32) -> AnyElement + 'static,
+) -> Replay<K> {
+    Replay {
+        id: id.into(),
+        key: Some(key),
+        ease,
+        build: Some(Box::new(build)),
+    }
+}
+
+pub struct Replay<K> {
+    id: ElementId,
+    key: Option<K>,
+    ease: Ease,
+    build: Option<Box<dyn FnOnce(f32) -> AnyElement>>,
+}
+
+impl<K: PartialEq + Clone + 'static> IntoElement for Replay<K> {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl<K: PartialEq + Clone + 'static> Element for Replay<K> {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let (Some(key), Some(build)) = (self.key.take(), self.build.take()) else {
+            unreachable!("a replaying element is laid out once");
+        };
+        let ease = self.ease;
+        let kept = key.clone();
+        let state = window.use_keyed_state(self.id.clone(), cx, |_, _| (kept, None::<Instant>));
+        if state.read(cx).0 != key {
+            let moves = !cx.reduce_motion() || ease.moves_when_reduced;
+            let since = moves.then(Instant::now);
+            state.update(cx, |state, _| *state = (key, since));
+        }
+        let through = state.read(cx).1.map_or(1., |since| {
+            (since.elapsed().as_secs_f32() / ease.duration.as_secs_f32()).min(1.)
+        });
+        if through < 1. {
+            window.request_animation_frame();
+        }
+        let mut element = build(through);
+        (element.request_layout(window, cx), element)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        element: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        element: &mut AnyElement,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.paint(window, cx);
+    }
+}
+
 /// Whether the pointer was over the element `id` when it last moved, and what keeps that
 /// up to date, to give the element's `on_hover`.
 pub fn hovered(
@@ -250,12 +410,16 @@ struct Following<T> {
     from: T,
     to: T,
     since: Instant,
+    over: Duration,
 }
 
 impl<T: Interpolate> Following<T> {
     fn at(&self, now: Instant, ease: Ease) -> T {
-        let t = (now - self.since).as_secs_f32() / ease.duration.as_secs_f32().max(f32::EPSILON);
-        self.from.interpolate(&self.to, ease.at(t.min(1.)))
+        let t = match self.over.is_zero() {
+            true => 1.,
+            false => ((now - self.since).as_secs_f32() / self.over.as_secs_f32()).min(1.),
+        };
+        self.from.interpolate(&self.to, ease.at(t))
     }
 }
 

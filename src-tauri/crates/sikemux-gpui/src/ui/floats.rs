@@ -3,15 +3,16 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div, ElementId, FontWeight,
-    Hsla, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
-    Window,
+    div, px, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
+    ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
+    RenderOnce, SharedString, Styled, Window,
 };
 use smallvec::SmallVec;
 
 use super::controls::OnClick;
 use super::{icon, text};
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{Tokens, RADIUS_2, RADIUS_4};
 
 /// What floats over everything else: menus, pickers, palettes.
@@ -220,6 +221,11 @@ impl Render for TooltipView {
             .line_height(crate::theme::ui_text(16.))
             .text_color(t.text_primary)
             .child(self.text.clone())
+            .with_animation(
+                "tooltip-in",
+                motion::entrance(motion::TOOLTIP_IN),
+                |tip, shown| tip.opacity(shown),
+            )
     }
 }
 

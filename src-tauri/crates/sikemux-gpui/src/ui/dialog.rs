@@ -4,12 +4,13 @@ use gpui_kit::base::{AlertDialog, Button as BaseButton};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement,
-    IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString,
+    div, px, AnimationExt, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 
 use super::text;
+use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
 
 pub(crate) type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -73,12 +74,21 @@ pub(crate) fn sheet_of(
     AlertDialog::new(cx)
         .open(true)
         .close_on_escape(true)
-        .backdrop(div().size_full().bg(Hsla {
-            h: 0.,
-            s: 0.,
-            l: 0.,
-            a: 0.55,
-        }))
+        .backdrop(
+            div()
+                .size_full()
+                .bg(Hsla {
+                    h: 0.,
+                    s: 0.,
+                    l: 0.,
+                    a: 0.55,
+                })
+                .with_animation(
+                    "dialog-scrim",
+                    motion::entrance(motion::SCRIM_IN),
+                    |scrim, shown| scrim.opacity(shown),
+                ),
+        )
         .on_cancel(move |_, window, cx| {
             no(window, cx);
             true
@@ -119,6 +129,11 @@ pub(crate) fn sheet_of(
                         .border_t_1()
                         .border_color(t.border)
                         .bg(t.surface_sunken),
+                )
+                .with_animation(
+                    "dialog-in",
+                    motion::entrance(motion::DIALOG_IN),
+                    |dialog, risen| dialog.opacity(risen).relative().top(px(8. * (1. - risen))),
                 ),
         )
 }

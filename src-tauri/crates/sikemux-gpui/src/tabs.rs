@@ -905,7 +905,7 @@ fn strip_tab(
                         .as_ref()
                         .map(|name| SharedString::from(format!("@{name}"))),
                 )
-                .tail(ui::status_mark(agent.status, cx)),
+                .tail(ui::status_mark(&agent.id, agent.status, cx)),
             None => base,
         },
         Some((kind, target)) => {
