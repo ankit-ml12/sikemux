@@ -175,6 +175,8 @@ pub struct Workbench {
     pub hosts_reached: HashSet<String>,
     /// How busy each reached host was when last read, as its row shows it.
     pub host_loads: HashMap<String, SharedString>,
+    /// Whether each host asks the person before a new device joins, by key, none for this one.
+    pub approvals: HashMap<Option<String>, bool>,
     /// Why this app reaches none of the account's other hosts, when it cannot.
     pub hosts_unavailable: Option<String>,
     /// The stage's tabs while they move between one another.
@@ -518,6 +520,7 @@ impl Workbench {
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
             host_loads: HashMap::new(),
+            approvals: HashMap::new(),
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
@@ -591,6 +594,10 @@ impl Workbench {
         }
         match update {
             Update::Connected(version) => {
+                // The app opens on this host, as the Mac's does, whichever host was last in front.
+                if self.version.is_empty() {
+                    self.call("chooseHost", json!({ "host": "this" }));
+                }
                 self.version = version;
                 self.lost = None;
                 for (agent, chat) in &self.chats {
@@ -619,6 +626,7 @@ impl Workbench {
             Update::HostReach(host, reached) => {
                 if reached {
                     self.hosts_reached.insert(host.clone());
+                    self.read_approval(Some(host.clone()), cx);
                     crate::hosts::read_load_now(host, cx);
                 } else {
                     self.hosts_reached.remove(&host);
@@ -638,6 +646,11 @@ impl Workbench {
                 self.host_views.retain(|id, _| linked(id));
                 self.hosts_reached.retain(linked);
                 self.host_loads.retain(|id, _| linked(id));
+                self.approvals
+                    .retain(|id, _| id.as_ref().is_none_or(linked));
+                if !self.approvals.contains_key(&None) {
+                    self.read_approval(None, cx);
+                }
                 self.reads.insert("hosts", value);
             }
             Update::View(view) => {
@@ -1892,6 +1905,22 @@ impl Workbench {
         });
     }
 
+    /// Shows `note` for `shown`, longer than a notification hides itself after, then takes it away.
+    pub fn notify_for<T: 'static>(
+        &self,
+        note: Notification,
+        shown: Duration,
+        cx: &mut Context<Self>,
+    ) {
+        let window = self.window;
+        self.notify(note.id::<T>().autohide(false), cx);
+        cx.spawn(async move |_, cx| {
+            cx.background_executor().timer(shown).await;
+            let _ = window.update(cx, |_, window, cx| window.remove_notification::<T>(cx));
+        })
+        .detach();
+    }
+
     pub fn call(&self, method: &'static str, params: Value) {
         let _ = self.asks.send(Ask::Call { method, params });
     }
@@ -2003,11 +2032,8 @@ impl Workbench {
     /// Starts a chat with the agent the rail is set to, in the project in front.
     pub fn new_chat(&self) {
         if let (Some(project), Some(launcher)) = (self.project(), self.launcher()) {
-            let _ = self.asks.send(Ask::StartChat {
-                launcher: launcher.id.clone(),
-                project: project.id.clone(),
-                started: None,
-            });
+            self.target()
+                .start_chat(launcher.id.clone(), project.id.clone(), None);
         }
     }
 
@@ -2570,10 +2596,8 @@ impl Workbench {
 
     /// Takes up a recent chat again, in the project it ran in.
     pub fn resume_chat(&self, recent: &RecentInfo) {
-        let _ = self.asks.send(Ask::ResumeChat {
-            recent: recent.id.clone(),
-            project: recent.project.clone(),
-        });
+        self.target()
+            .resume_chat(recent.id.clone(), recent.project.clone());
     }
 
     /// Brings forward the tab `by` places from the one in front, among those `same`
@@ -2930,13 +2954,32 @@ impl Workbench {
     /// Brings an agent's tab to the front.
     /// Brings the tab of the agent `id` to the front, in its project.
     pub fn open_agent(&self, id: &str) {
-        let Some(project) = self.shown().and_then(|view| {
+        let project_on = |view: &DeviceView| {
             view.workspace
                 .agents
                 .iter()
                 .find(|agent| agent.id == id)
                 .map(|agent| agent.project.clone())
-        }) else {
+        };
+        let Some(project) = self.shown().and_then(project_on) else {
+            let tab =
+                |project: String| json!({ "project": project, "kind": "agent", "target": id });
+            // Opening a tab on a host's layout brings that host forward there.
+            if let Some(project) = self.view.as_ref().and_then(project_on) {
+                return self.call("openTab", tab(project));
+            }
+            if let Some((host, project)) = self
+                .host_views
+                .iter()
+                .find_map(|(host, view)| Some((host.clone(), project_on(view)?)))
+            {
+                self.call("chooseHost", json!({ "host": format!("host:{host}") }));
+                let open = Ask::Call {
+                    method: "openTab",
+                    params: tab(project),
+                };
+                let _ = self.asks.send(Ask::On(host, Box::new(open)));
+            }
             return;
         };
         let strip = Strip::Project(project.clone());

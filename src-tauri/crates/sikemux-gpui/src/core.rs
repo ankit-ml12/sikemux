@@ -418,6 +418,33 @@ impl Default for Home {
     }
 }
 
+/// Starts or takes up again a chat on `client`'s core and brings its tab to the front there.
+async fn open_chat_on(client: Arc<CoreClient>, ask: Ask) {
+    let (opened, project, started) = match ask {
+        Ask::StartChat {
+            launcher,
+            project,
+            started,
+        } => (
+            client.start_chat(launcher, project.clone(), None).await,
+            project,
+            started,
+        ),
+        Ask::ResumeChat { recent, project } => (client.resume_chat(recent).await, project, None),
+        _ => return,
+    };
+    match opened {
+        Ok((agent, _)) => {
+            let tab = json!({ "project": project, "kind": "agent", "target": agent });
+            let _ = client.call("openTab", tab).await;
+            if let Some(started) = started {
+                let _ = started.send(agent);
+            }
+        }
+        Err(error) => eprintln!("sikemux: the core would not open the chat: {error}"),
+    }
+}
+
 /// Asks another host's core one of its methods, by the host's key, and waits for the answer.
 pub fn request_on(
     asks: &mpsc::UnboundedSender<Ask>,
@@ -705,6 +732,26 @@ impl Target {
     /// Tells the core something, with no answer waited for.
     pub fn call(&self, method: &'static str, params: Value) {
         self.send(Ask::Call { method, params });
+    }
+
+    /// Starts a chat with `launcher`'s agent in `project` there, answering the new agent's id
+    /// to `started` when it is there.
+    pub fn start_chat(
+        &self,
+        launcher: String,
+        project: String,
+        started: Option<oneshot::Sender<String>>,
+    ) {
+        self.send(Ask::StartChat {
+            launcher,
+            project,
+            started,
+        });
+    }
+
+    /// Takes up one of the place's recent chats again.
+    pub fn resume_chat(&self, recent: String, project: String) {
+        self.send(Ask::ResumeChat { recent, project });
     }
 
     /// Asks once, the answer arriving as a read under `key`.
@@ -1027,6 +1074,19 @@ async fn run(
                                         }
                                     }
                                 },
+                                ask @ (Ask::StartChat { .. } | Ask::ResumeChat { .. }) => {
+                                    let linked = linked.clone();
+                                    tokio::spawn(async move {
+                                        let client = match &linked {
+                                            Some(linked) => linked.client(&host).await.ok(),
+                                            None => None,
+                                        };
+                                        match client {
+                                            Some(client) => open_chat_on(client, ask).await,
+                                            None => eprintln!("sikemux: {host} is out of reach, so no chat started there"),
+                                        }
+                                    });
+                                }
                                 Ask::Chat(ask) => {
                                     let (linked, updates) = (linked.clone(), updates.clone());
                                     tokio::spawn(async move {
@@ -1111,32 +1171,8 @@ async fn run(
                                 });
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
-                            Some(Ask::StartChat { launcher, project, started }) => {
-                                let client = client.clone();
-                                tokio::spawn(async move {
-                                    match client.start_chat(launcher, project.clone(), None).await {
-                                        Ok((agent, _)) => {
-                                            let tab = json!({ "project": project, "kind": "agent", "target": agent });
-                                            let _ = client.call("openTab", tab).await;
-                                            if let Some(started) = started {
-                                                let _ = started.send(agent);
-                                            }
-                                        }
-                                        Err(error) => eprintln!("sikemux: the core would not start a chat: {error}"),
-                                    }
-                                });
-                            }
-                            Some(Ask::ResumeChat { recent, project }) => {
-                                let client = client.clone();
-                                tokio::spawn(async move {
-                                    match client.resume_chat(recent).await {
-                                        Ok((agent, _)) => {
-                                            let tab = json!({ "project": project, "kind": "agent", "target": agent });
-                                            let _ = client.call("openTab", tab).await;
-                                        }
-                                        Err(error) => eprintln!("sikemux: the core would not resume the chat: {error}"),
-                                    }
-                                });
+                            Some(ask @ (Ask::StartChat { .. } | Ask::ResumeChat { .. })) => {
+                                tokio::spawn(open_chat_on(client.clone(), ask));
                             }
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;

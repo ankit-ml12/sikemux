@@ -117,15 +117,17 @@ impl Workbench {
         path: &Path,
         host: &str,
         label: SharedString,
+        after: HostChoice,
         cx: &mut Context<Self>,
     ) {
-        let (asks, host) = (self.asks.clone(), host.to_owned());
         let params = json!({ "path": path, "host": host });
+        // The project's own host sends it, so the call goes to the host in front.
+        let opening = self.target().request("openOnHost", params);
         self.notify(Notification::info(format!("Opening on {label}…")), cx);
         cx.spawn(async move |bench, cx| {
-            let opened = core::request(&asks, "openOnHost", params).await;
+            let opened = opening.await;
             let _ = bench.update(cx, |bench, cx| match opened {
-                Ok(_) => bench.choose_host(HostChoice::Account(host), cx),
+                Ok(_) => bench.choose_host(after, cx),
                 Err(error) => bench.notify(
                     Notification::error(format!("It did not open on {label}: {error}")),
                     cx,
@@ -155,6 +157,157 @@ impl Workbench {
                     )
                 });
             }
+        })
+        .detach();
+    }
+
+    /// Reads whether `host`, this one when none, asks the person before a new device joins.
+    pub fn read_approval(&self, host: Option<String>, cx: &mut Context<Self>) {
+        let place = host.clone().map_or(Place::This, Place::Account);
+        let asked = core::Target::new(&self.asks, place).request("requireApproval", json!({}));
+        cx.spawn(async move |bench, cx| {
+            let Ok(read) = asked.await else {
+                return;
+            };
+            let _ = bench.update(cx, |bench, cx| {
+                if let Some(on) = read["requireApproval"].as_bool() {
+                    bench.approvals.insert(host, on);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Asks the person before a new device joins `host`, this one when none, or stops asking.
+    pub fn flip_approval(&self, host: Option<String>, cx: &mut Context<Self>) {
+        let Some(on) = self.approvals.get(&host).copied() else {
+            return;
+        };
+        let place = host.clone().map_or(Place::This, Place::Account);
+        let set = core::Target::new(&self.asks, place)
+            .request("setRequireApproval", json!({ "requireApproval": !on }));
+        cx.spawn(async move |bench, cx| {
+            let set = set.await;
+            let _ = bench.update(cx, |bench, cx| match set {
+                Ok(_) => bench.read_approval(host, cx),
+                Err(error) => bench.notify(
+                    Notification::error(format!("Require approval for new devices: {error}")),
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    /// A new chat on the account host `host`, in the project in front there, with the agent the
+    /// rail is set to, and the person moved there to see it.
+    pub fn new_chat_on(&mut self, host: &str, cx: &mut Context<Self>) {
+        let Some(view) = self.host_views.get(host) else {
+            return;
+        };
+        let projects = &view.workspace.projects;
+        let Some(project) = view
+            .layout
+            .active_project
+            .as_deref()
+            .and_then(|id| projects.iter().find(|project| project.id == id))
+            .or(projects.first())
+        else {
+            return;
+        };
+        let provider = self.launcher().map(|launcher| launcher.provider.clone());
+        let launchers = &view.workspace.launchers;
+        let Some(launcher) = launchers
+            .iter()
+            .find(|launcher| Some(&launcher.provider) == provider.as_ref())
+            .or(launchers.first())
+        else {
+            return;
+        };
+        let (launcher, project) = (launcher.id.clone(), project.id.clone());
+        core::Target::new(&self.asks, Place::Account(host.to_owned()))
+            .start_chat(launcher, project, None);
+        self.choose_host(HostChoice::Account(host.to_owned()), cx);
+    }
+
+    /// A terminal of no project on the account host `host`, and the person moved there.
+    pub fn new_terminal_on(&mut self, host: &str, cx: &mut Context<Self>) {
+        core::Target::new(&self.asks, Place::Account(host.to_owned())).call(
+            "newTerminal",
+            crate::workbench::Strip::Terminals.with(json!({})),
+        );
+        self.choose_host(HostChoice::Account(host.to_owned()), cx);
+    }
+
+    /// Renames the account host `host` for every device and host on the account.
+    pub fn rename_host(&mut self, host: &str, name: &str, cx: &mut Context<Self>) {
+        let key = host.to_owned();
+        self.prompt(
+            format!("Rename {name}"),
+            name.to_owned(),
+            move |bench, typed, _, _| {
+                if !typed.trim().is_empty() {
+                    bench.call(
+                        "renameAccountDevice",
+                        json!({ "key": key, "name": typed.trim() }),
+                    );
+                }
+            },
+            cx,
+        );
+    }
+
+    /// Takes the account host `host` off the account, once the person agrees.
+    pub fn remove_host(&mut self, host: &str, name: &str, cx: &mut Context<Self>) {
+        let key = host.to_owned();
+        self.confirm(
+            format!("Remove {name} from your account?"),
+            "Every device and host on your account stops reaching it at once. To add it again, sign it in again.",
+            "Remove",
+            true,
+            move |bench, yes, _, _| {
+                if yes {
+                    bench.call("removeAccountDevice", json!({ "key": key }));
+                }
+            },
+            cx,
+        );
+    }
+
+    /// Opens ~/.ssh/config on this host in the editor, at the `Host` line of `alias` when given.
+    pub fn edit_ssh_config(&mut self, alias: Option<String>, cx: &mut Context<Self>) {
+        let file = core::request(&self.asks, "sshConfigFile", json!({}));
+        let hosts = alias
+            .is_some()
+            .then(|| core::request(&self.asks, "sshHosts", json!({})));
+        cx.spawn(async move |bench, cx| {
+            let file = file.await;
+            let line = match hosts {
+                Some(hosts) => hosts.await.ok().and_then(|hosts| {
+                    let listed = hosts
+                        .as_array()?
+                        .iter()
+                        .find(|host| host["alias"].as_str() == alias.as_deref())?;
+                    u32::try_from(listed["line"].as_u64()?).ok()
+                }),
+                None => None,
+            };
+            let _ = bench.update(cx, |bench, cx| match file {
+                Ok(path) => {
+                    bench.choose_host(HostChoice::This, cx);
+                    let at = crate::editor::OpenAt {
+                        path: path.as_str().unwrap_or_default().into(),
+                        line: line.unwrap_or(0),
+                        column: None,
+                    };
+                    crate::editor::go_in(bench, at, &Strip::Terminals, "SSH config", cx);
+                }
+                Err(error) => bench.notify(
+                    Notification::error(format!("~/.ssh/config did not open: {error}")),
+                    cx,
+                ),
+            });
         })
         .detach();
     }

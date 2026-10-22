@@ -6,7 +6,8 @@ use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity,
+    Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
@@ -72,7 +73,10 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                         .actions(actions(
                             keymap::hint("ssh.open", cx),
                             [
-                                IconButton::new("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config"),
+                                IconButton::new("edit-ssh", Icon::Pencil, "Edit ~/.ssh/config")
+                                    .on_click(cx.listener(|bench, _, _, cx| {
+                                        bench.edit_ssh_config(None, cx)
+                                    })),
                                 IconButton::new("add-host", Icon::Plus, "Find a host").on_click(
                                     |_, window, cx| keymap::dispatch("ssh.open", window, cx),
                                 ),
@@ -102,13 +106,13 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
 }
 
 /// The host this window runs on, where new work starts.
-fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
+fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let agents = bench
         .view
         .as_ref()
         .map_or(0, |view| view.workspace.agents.len());
-    Row::new("this-host", "This host")
+    let row = Row::new("this-host", "This host")
         .mark(
             16.,
             ui::icon(Icon::Laptop, 14.)
@@ -116,6 +120,10 @@ fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
                 .group_hover(ui::ROW, move |style| style.text_color(t.text_primary)),
         )
         .quiet()
+        .chosen(bench.chosen_host() == crate::hosts::HostChoice::This)
+        .on_click(
+            cx.listener(|bench, _, _, cx| bench.choose_host(crate::hosts::HostChoice::This, cx)),
+        )
         .tag("here")
         .when(agents > 0, |row| {
             row.detail(format!(
@@ -123,7 +131,43 @@ fn this_host(bench: &Workbench, cx: &App) -> impl IntoElement {
                 if agents == 1 { "agent" } else { "agents" }
             ))
         })
-        .status(Some(ui::dot(Tone::Ok, cx)))
+        .status(Some(ui::dot(Tone::Ok, cx)));
+    let (bench_entity, approval) = (cx.weak_entity(), bench.approvals.get(&None).copied());
+    div()
+        .id("this-host-menu")
+        .context_menu(move |popup, _, _| {
+            let bench = bench_entity.clone();
+            popup
+                .item(
+                    PopupMenuItem::new("New terminal here")
+                        .icon(Icon::Terminal)
+                        .on_click(move |_, _, cx| {
+                            let _ = bench.update(cx, |bench, cx| {
+                                bench.choose_host(HostChoice::This, cx);
+                                bench.new_loose_terminal();
+                            });
+                        }),
+                )
+                .separator()
+                .item(approval_item(bench_entity.clone(), None, approval))
+        })
+        .child(row)
+}
+
+/// "Require approval for new devices" on `host`, this one when none, ticked while it does.
+fn approval_item(
+    bench: WeakEntity<Workbench>,
+    host: Option<String>,
+    approval: Option<bool>,
+) -> PopupMenuItem {
+    PopupMenuItem::new("Require approval for new devices")
+        .icon(Icon::Shield)
+        .checked(approval == Some(true))
+        .disabled(approval.is_none())
+        .on_click(move |_, _, cx| {
+            let host = host.clone();
+            let _ = bench.update(cx, |bench, cx| bench.flip_approval(host, cx));
+        })
 }
 
 /// The account's other hosts, then the SSH hosts a terminal is open to.
@@ -179,10 +223,20 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
             let setting_up = setup.is_object() && setup["problem"].is_null();
             let alias = host["ssh"].as_str().filter(|_| !linked).map(str::to_owned);
             let front = alias.is_some() && bench.strip() == alias.clone().map(Strip::Host);
+            let key = host["id"].as_str().map(str::to_owned);
+            let chosen = front
+                || key.as_ref().is_some_and(|key| {
+                    bench.chosen_host() == crate::hosts::HostChoice::Account(key.clone())
+                });
             let row = Row::new(SharedString::from(format!("host-{name}")), name.clone())
-                .chosen(front)
+                .chosen(chosen)
                 .when_some(alias.clone(), |row, alias| {
                     row.on_click(cx.listener(move |bench, _, _, _| bench.open_ssh_terminal(&alias)))
+                })
+                .when_some(key, |row, key| {
+                    row.on_click(cx.listener(move |bench, _, _, cx| {
+                        bench.choose_host(crate::hosts::HostChoice::Account(key.clone()), cx)
+                    }))
                 })
                 .mark(
                     16.,
@@ -198,25 +252,122 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                     |row, detail| row.detail(detail),
                 )
                 .status(Some(ui::dot(tone, cx)));
-            let Some((alias, set_up)) =
-                alias.and_then(|alias| Some((alias.clone(), bench.set_up_of(&alias)?)))
-            else {
-                return row.into_any_element();
-            };
             let bench_entity = cx.weak_entity();
+            let set_up_alias = host["ssh"].as_str().map(str::to_owned);
+            let set_up = set_up_alias
+                .as_deref()
+                .and_then(|alias| bench.set_up_of(alias))
+                .zip(set_up_alias);
+            let set_up_item = move |bench: WeakEntity<Workbench>| {
+                set_up.clone().map(|(set_up, alias)| {
+                    PopupMenuItem::new(set_up.offer(&alias))
+                        .icon(set_up.icon())
+                        .disabled(setting_up)
+                        .on_click(move |_, _, cx| {
+                            let _ =
+                                bench.update(cx, |bench, cx| bench.set_up_host(&alias, set_up, cx));
+                        })
+                })
+            };
+            let menu_id = SharedString::from(format!("host-menu-{name}"));
+            let Some(key) = host["id"].as_str().map(str::to_owned) else {
+                let Some(alias) = alias else {
+                    return row.into_any_element();
+                };
+                return div()
+                    .id(menu_id)
+                    .context_menu(move |popup, _, _| {
+                        let (bench, alias) = (bench_entity.clone(), alias.clone());
+                        let edited = (bench.clone(), alias.clone());
+                        let popup = popup
+                            .item(
+                                PopupMenuItem::new("New SSH terminal")
+                                    .icon(Icon::Terminal)
+                                    .on_click(move |_, _, cx| {
+                                        let _ = bench
+                                            .update(cx, |bench, _| bench.open_ssh_terminal(&alias));
+                                    }),
+                            )
+                            .item(
+                                PopupMenuItem::new("Edit in ~/.ssh/config")
+                                    .icon(Icon::Pencil)
+                                    .on_click(move |_, _, cx| {
+                                        let (bench, alias) = &edited;
+                                        let _ = bench.update(cx, |bench, cx| {
+                                            bench.edit_ssh_config(Some(alias.clone()), cx)
+                                        });
+                                    }),
+                            );
+                        match set_up_item(bench_entity.clone()) {
+                            Some(item) => popup.item(item),
+                            None => popup,
+                        }
+                    })
+                    .child(row)
+                    .into_any_element();
+            };
+            let has_project = bench
+                .host_views
+                .get(&key)
+                .is_some_and(|view| !view.workspace.projects.is_empty());
+            let approval = bench.approvals.get(&Some(key.clone())).copied();
             div()
-                .id(SharedString::from(format!("host-menu-{name}")))
+                .id(menu_id)
                 .context_menu(move |popup, _, _| {
-                    let (bench, alias) = (bench_entity.clone(), alias.clone());
-                    popup.item(
-                        PopupMenuItem::new(set_up.offer(&alias))
-                            .icon(set_up.icon())
-                            .disabled(setting_up)
-                            .on_click(move |_, _, cx| {
+                    let bench = bench_entity.clone();
+                    let mut popup = popup;
+                    if let Some(item) = set_up_item(bench.clone()) {
+                        popup = popup.item(item).separator();
+                    }
+                    let on = |run: fn(&mut Workbench, &str, &mut Context<Workbench>)| {
+                        let (bench, key) = (bench.clone(), key.clone());
+                        move |_: &gpui_kit::ClickEvent, _: &mut gpui_kit::Window, cx: &mut App| {
+                            let _ = bench.update(cx, |bench, cx| run(bench, &key, cx));
+                        }
+                    };
+                    let named = name.clone();
+                    popup
+                        .item(
+                            PopupMenuItem::new("New chat here")
+                                .icon(Icon::Plus)
+                                .disabled(!has_project)
+                                .on_click(on(|bench, key, cx| bench.new_chat_on(key, cx))),
+                        )
+                        .item(
+                            PopupMenuItem::new("New terminal here")
+                                .icon(Icon::Terminal)
+                                .on_click(on(|bench, key, cx| bench.new_terminal_on(key, cx))),
+                        )
+                        .item(
+                            PopupMenuItem::new("Files")
+                                .icon(Icon::Folder)
+                                .disabled(!has_project)
+                                .on_click(on(|bench, key, cx| {
+                                    bench.choose_host(HostChoice::Account(key.to_owned()), cx);
+                                    bench.show_rail_page(crate::workbench::RailPage::Files, cx);
+                                })),
+                        )
+                        .separator()
+                        .item(approval_item(bench.clone(), Some(key.clone()), approval))
+                        .item(PopupMenuItem::new("Rename").icon(Icon::Pencil).on_click({
+                            let (bench, key, named) = (bench.clone(), key.clone(), named.clone());
+                            move |_, _, cx| {
                                 let _ = bench
-                                    .update(cx, |bench, cx| bench.set_up_host(&alias, set_up, cx));
-                            }),
-                    )
+                                    .update(cx, |bench, cx| bench.rename_host(&key, &named, cx));
+                            }
+                        }))
+                        .item(
+                            PopupMenuItem::new("Remove from account")
+                                .icon(Icon::Trash)
+                                .on_click({
+                                    let (bench, key) = (bench.clone(), key.clone());
+                                    move |_, _, cx| {
+                                        let _ = bench.update(cx, |bench, cx| {
+                                            bench.remove_host(&key, &named, cx)
+                                        });
+                                    }
+                                }),
+                        )
                 })
                 .child(row)
                 .into_any_element()
@@ -432,12 +583,22 @@ fn project_menu(
     let bench_entity = cx.weak_entity();
     let (id, current) = (project.id.clone(), project.space.clone());
     let path = project.path.clone();
-    let others: Vec<(String, SharedString)> = bench
+    // Every other Sikemux host the project can open on: this one while another is in front.
+    let shown = bench.chosen_host();
+    let own_key = bench.remote.as_ref().map(|remote| remote.core_id.clone());
+    let others: Vec<(String, SharedString, bool, HostChoice)> = bench
         .host_choices()
         .into_iter()
+        .filter(|option| option.choice != shown)
         .filter_map(|option| match option.choice {
-            HostChoice::Account(key) => Some((key, option.label)),
-            _ => None,
+            HostChoice::This => Some((own_key.clone()?, option.label, true, HostChoice::This)),
+            HostChoice::Account(key) => Some((
+                key.clone(),
+                option.label,
+                bench.hosts_reached.contains(&key),
+                HostChoice::Account(key),
+            )),
+            HostChoice::Ssh(_) => None,
         })
         .collect();
     let spaces: Vec<(String, String, Option<Icon>)> =
@@ -484,19 +645,21 @@ fn project_menu(
         if !others.is_empty() {
             popup = popup.separator();
         }
-        for (host, label) in &others {
-            let (bench, path, host, label) = (
+        for (host, label, reached, after) in &others {
+            let (bench, path, host, label, after) = (
                 bench_entity.clone(),
                 path.clone(),
                 host.clone(),
                 label.clone(),
+                after.clone(),
             );
             popup = popup.item(
                 PopupMenuItem::new(format!("Open on {label}"))
                     .icon(Icon::Server)
+                    .disabled(!reached)
                     .on_click(move |_, _, cx| {
                         let _ = bench.update(cx, |bench, cx| {
-                            bench.open_on(&path, &host, label.clone(), cx)
+                            bench.open_on(&path, &host, label.clone(), after.clone(), cx)
                         });
                     }),
             );

@@ -5,7 +5,6 @@ use gpui_kit::{Context, Window};
 use serde_json::json;
 use sikemux_wire::protocol::AgentStatus;
 
-use crate::core::Ask;
 use crate::palette::{Mark, Row, Spec};
 use crate::workbench::Workbench;
 
@@ -94,11 +93,9 @@ impl Workbench {
             move |row, bench, _, _| {
                 let key: &str = &row.key;
                 if let Some(launcher) = key.strip_prefix(NEW) {
-                    let _ = bench.asks.send(Ask::StartChat {
-                        launcher: launcher.to_owned(),
-                        project: project.clone(),
-                        started: None,
-                    });
+                    bench
+                        .target()
+                        .start_chat(launcher.to_owned(), project.clone(), None);
                 } else if let Some(launcher) = key.strip_prefix(SIGN_IN) {
                     bench.call("signInLauncher", json!({ "launcher": launcher }));
                 } else if let Some(agent) = key.strip_prefix(OPEN) {

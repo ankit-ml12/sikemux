@@ -31,6 +31,8 @@ pub(crate) struct SshHost {
     hostname: Option<String>,
     user: Option<String>,
     port: Option<u16>,
+    /// The config's line, from 0, whose `Host` names it.
+    line: usize,
     status: Reach,
 }
 
@@ -60,19 +62,21 @@ pub(crate) fn hosts(core: &Core) -> Vec<SshHost> {
     };
     let mut hosts = Vec::new();
     let mut aliases: Vec<String> = Vec::new();
-    let (mut hostname, mut user, mut port) = (None, None, None);
-    let mut flush = |aliases: &[String], hostname: &Option<String>, user: &Option<String>, port| {
-        for alias in aliases.iter().filter(|alias| !alias.contains(['*', '?'])) {
-            hosts.push(SshHost {
-                alias: alias.clone(),
-                hostname: hostname.clone(),
-                user: user.clone(),
-                port,
-                status: reach(alias),
-            });
-        }
-    };
-    for line in content.lines() {
+    let (mut hostname, mut user, mut port, mut at) = (None, None, None, 0);
+    let mut flush =
+        |aliases: &[String], hostname: &Option<String>, user: &Option<String>, port, line| {
+            for alias in aliases.iter().filter(|alias| !alias.contains(['*', '?'])) {
+                hosts.push(SshHost {
+                    alias: alias.clone(),
+                    hostname: hostname.clone(),
+                    user: user.clone(),
+                    port,
+                    line,
+                    status: reach(alias),
+                });
+            }
+        };
+    for (number, line) in content.lines().enumerate() {
         let line = line.split('#').next().unwrap_or("").trim();
         let mut split = line.splitn(2, |c: char| c.is_whitespace() || c == '=');
         let key = split.next().unwrap_or("").to_ascii_lowercase();
@@ -86,9 +90,9 @@ pub(crate) fn hosts(core: &Core) -> Vec<SshHost> {
         }
         match key.as_str() {
             "host" => {
-                flush(&aliases, &hostname, &user, port);
+                flush(&aliases, &hostname, &user, port, at);
                 aliases = value.split_whitespace().map(String::from).collect();
-                (hostname, user, port) = (None, None, None);
+                (hostname, user, port, at) = (None, None, None, number);
             }
             "hostname" => hostname = Some(value.to_owned()),
             "user" => user = Some(value.to_owned()),
@@ -96,7 +100,7 @@ pub(crate) fn hosts(core: &Core) -> Vec<SshHost> {
             _ => {}
         }
     }
-    flush(&aliases, &hostname, &user, port);
+    flush(&aliases, &hostname, &user, port, at);
     hosts
 }
 

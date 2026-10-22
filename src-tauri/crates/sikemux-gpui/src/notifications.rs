@@ -3,6 +3,7 @@
 //! Dock icon's bounce and badge.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use gpui_kit::component::notification::Notification;
 use gpui_kit::Context;
@@ -10,6 +11,9 @@ use sikemux_wire::protocol::{AgentGroup, DeviceView, Pane, PaneKind, SessionKind
 use tokio::sync::oneshot;
 
 use crate::workbench::Workbench;
+
+/// As long as the Mac shows it.
+const KEPT_RUNNING_SHOWN: Duration = Duration::from_secs(12);
 
 /// What the test row and the first launch post, to show what a notice looks like.
 const TEST: (&str, &str) = (
@@ -134,14 +138,16 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         return;
     }
     crate::settings::set(bench, "keptRunningNoticeShown", true);
-    bench.notify(
+    bench.notify_for::<KeptRunning>(
         Notification::info(
             "Your terminals and agents kept running while Sikemux was closed. Use Quit and Stop Everything (⌥⌘Q) to stop them.",
-        )
-        .autohide(false),
+        ),
+        KEPT_RUNNING_SHOWN,
         cx,
     );
 }
+
+struct KeptRunning;
 
 fn terminals_in<'a>(pane: &'a Pane, found: &mut HashSet<&'a str>) {
     match pane {

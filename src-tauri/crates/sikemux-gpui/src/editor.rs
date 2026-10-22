@@ -22,7 +22,7 @@ use crate::hosts::Place as Host;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui;
-use crate::workbench::Workbench;
+use crate::workbench::{Strip, Workbench};
 
 mod blame;
 mod copies;
@@ -383,6 +383,29 @@ struct Spot {
 
 /// Opens `to`, remembering where the editor in front was so ⌘[ comes back.
 pub fn go(bench: &mut Workbench, to: OpenAt, cx: &mut Context<Workbench>) {
+    remember_here(bench, cx);
+    show(bench, to, cx);
+}
+
+/// Opens `to`, a file of no project, in a tab of `strip` called `title`.
+pub fn go_in(
+    bench: &mut Workbench,
+    to: OpenAt,
+    strip: &Strip,
+    title: &str,
+    cx: &mut Context<Workbench>,
+) {
+    remember_here(bench, cx);
+    let target = to.path.to_string_lossy().into_owned();
+    bench.editors.reveal = Some(to);
+    bench.call(
+        "openTab",
+        strip.with(json!({ "kind": "files", "target": target, "title": title })),
+    );
+    bench.parts.redraw(&bench.parts.stage, cx);
+}
+
+fn remember_here(bench: &mut Workbench, cx: &App) {
     if let Some(here) = here(bench, cx) {
         bench.editors.back.push(here);
         if bench.editors.back.len() > MAX_HISTORY {
@@ -390,7 +413,6 @@ pub fn go(bench: &mut Workbench, to: OpenAt, cx: &mut Context<Workbench>) {
         }
         bench.editors.forward.clear();
     }
-    show(bench, to, cx);
 }
 
 fn show(bench: &mut Workbench, at: OpenAt, cx: &mut Context<Workbench>) {

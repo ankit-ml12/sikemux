@@ -14,7 +14,7 @@ use serde_json::json;
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
 
 use super::Chat;
-use crate::core::{Ask, ChatAsk};
+use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui::{self, Button, Variant};
@@ -189,11 +189,8 @@ impl Workbench {
                     .is_none_or(|profile| launcher.id.ends_with(&format!(":{profile}")))
         });
         if let Some(launcher) = launcher {
-            let _ = self.asks.send(Ask::StartChat {
-                launcher: launcher.id.clone(),
-                project: saved.project.clone(),
-                started: None,
-            });
+            self.chat_target(agent)
+                .start_chat(launcher.id.clone(), saved.project.clone(), None);
         }
     }
 

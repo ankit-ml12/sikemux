@@ -1749,11 +1749,7 @@ fn send_selection(
         Recipient::Agent(agent) => Task::ready(Some(agent)),
         Recipient::NewChat { launcher, project } => {
             let (started, agent) = oneshot::channel();
-            let _ = bench.asks.send(Ask::StartChat {
-                launcher,
-                project,
-                started: Some(started),
-            });
+            bench.target().start_chat(launcher, project, Some(started));
             cx.background_spawn(async move { agent.await.ok() })
         }
     };
