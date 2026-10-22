@@ -46,6 +46,8 @@ pub enum Mark {
     Icon(Icon),
     /// An agent's CLI, in its brand colour.
     Agent(String),
+    /// An open agent: its face, or its CLI's mark when faces are off.
+    Open(Box<crate::workbench::AgentRow>),
 }
 
 #[derive(Clone)]
@@ -57,6 +59,10 @@ pub struct Row {
     pub meta: SharedString,
     /// The keys that do the same, drawn at the end.
     pub keys: Option<SharedString>,
+    /// An agent's @name, dimmed after its title.
+    pub handle: Option<SharedString>,
+    /// What an open agent is doing, drawn in place of the meta as the rail draws it.
+    pub state: Option<sikemux_wire::protocol::AgentStatus>,
     pub mark: Option<Mark>,
     /// The heading the row sits under while nothing is typed.
     pub group: Option<SharedString>,
@@ -74,6 +80,8 @@ impl Row {
             title,
             meta: SharedString::default(),
             keys: None,
+            handle: None,
+            state: None,
             mark: None,
             group: None,
             disabled: false,
@@ -82,6 +90,16 @@ impl Row {
 
     pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
         self.meta = meta.into();
+        self
+    }
+
+    pub fn handle(mut self, handle: Option<SharedString>) -> Self {
+        self.handle = handle;
+        self
+    }
+
+    pub fn state(mut self, state: sikemux_wire::protocol::AgentStatus) -> Self {
+        self.state = Some(state);
         self
     }
 
@@ -644,6 +662,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                     .child(match mark {
                         Mark::Icon(glyph) => ui::picture(glyph, 14., t.text_tertiary),
                         Mark::Agent(provider) => ui::mark(&provider, 14.),
+                        Mark::Open(agent) => ui::agent_mark(&agent, 14., cx),
                     }),
             )
         })
@@ -655,9 +674,18 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .font_weight(FontWeight::MEDIUM)
                 .child(row.title.clone()),
         )
-        .when(!row.meta.is_empty(), |element| {
-            element.child(ui::meta(row.meta.clone(), cx).flex_none())
+        .when_some(row.handle.clone(), |element, handle| {
+            element.child(ui::meta(handle, cx).flex_none())
         })
+        .map(
+            |element| match row.state.and_then(|state| ui::status_mark(state, cx)) {
+                Some(state) => element.child(state.flex_none()),
+                None if !row.meta.is_empty() => {
+                    element.child(ui::meta(row.meta.clone(), cx).flex_none())
+                }
+                None => element,
+            },
+        )
         .when_some(row.keys.clone(), |element, keys| {
             element.child(ui::kbd(keys, cx).flex_none().pl(px(6.)))
         })

@@ -4,7 +4,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{Context, SharedString, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::AgentStatus;
 
@@ -68,17 +68,23 @@ impl Workbench {
                     .also(&launcher.provider),
             );
         }
+        let mut pinned_open = Vec::new();
         for agent in self.agents_of(&project) {
-            let title = agent.name.clone().unwrap_or_else(|| agent.title.clone());
-            rows.push(
-                Row::new(format!("{OPEN}{}", agent.id), title)
-                    .meta(status_word(agent.status))
-                    .mark(Mark::Agent(agent.provider.clone()))
-                    .group("Open")
-                    .also(&agent.title)
-                    .also(&agent.provider),
-            );
+            let handle = agent.name.as_ref().map(|name| format!("@{name}"));
+            let pinned = self.chat_of(&agent.id).is_some_and(|chat| chat.pinned);
+            let row = Row::new(format!("{OPEN}{}", agent.id), agent.title.clone())
+                .handle(handle.clone().map(SharedString::from))
+                .meta(status_word(agent.status))
+                .state(agent.status)
+                .mark(Mark::Open(Box::new(agent.clone())))
+                .also(handle.as_deref().unwrap_or_default())
+                .also(&agent.provider);
+            match pinned {
+                true => pinned_open.push(row.group("Pinned")),
+                false => rows.push(row.group("Open")),
+            }
         }
+        rows.extend(pinned_open);
         let recent = self
             .view
             .as_ref()
