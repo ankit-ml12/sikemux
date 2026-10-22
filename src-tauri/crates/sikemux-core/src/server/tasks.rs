@@ -59,8 +59,18 @@ struct TrustedTask {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrustRecord {
-    configs: Vec<TrustedConfig>,
-    personal: Vec<TrustedTask>,
+    configs: Vec<Granted<TrustedConfig>>,
+    personal: Vec<Granted<TrustedTask>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Granted<T> {
+    #[serde(flatten)]
+    trusted: T,
+    /// The device the person answered from, when it was not this host's own window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    answered_by: Option<String>,
 }
 
 /// What a start asks the person before it runs commands someone else wrote.
@@ -127,24 +137,51 @@ impl Tasks {
     fn trusts(&self, grant: &Grant) -> bool {
         let state = self.state.locked();
         match grant {
-            Grant::Config(config) => state.trust.configs.contains(config),
-            Grant::Personal(task) => state.trust.personal.contains(task),
+            Grant::Config(config) => state
+                .trust
+                .configs
+                .iter()
+                .any(|known| known.trusted == *config),
+            Grant::Personal(task) => state
+                .trust
+                .personal
+                .iter()
+                .any(|known| known.trusted == *task),
         }
     }
 
-    fn grant(&self, grant: Grant) {
+    fn grant(&self, grant: Grant, answered_by: Option<String>) {
+        if let Some(device) = &answered_by {
+            match &grant {
+                Grant::Config(config) => {
+                    eprintln!("sikemux core: trusted {}, from {device}", config.path)
+                }
+                Grant::Personal(task) => eprintln!(
+                    "sikemux core: trusted {} in {}, from {device}",
+                    task.command, task.cwd
+                ),
+            }
+        }
         let mut state = self.state.locked();
         let trust = &mut state.trust;
         match grant {
             Grant::Config(config) => {
-                trust.configs.retain(|known| known.path != config.path);
-                trust.configs.push(config);
+                trust
+                    .configs
+                    .retain(|known| known.trusted.path != config.path);
+                trust.configs.push(Granted {
+                    trusted: config,
+                    answered_by,
+                });
                 let over = trust.configs.len().saturating_sub(MAX_TRUSTED);
                 trust.configs.drain(..over);
             }
             Grant::Personal(task) => {
-                trust.personal.retain(|known| *known != task);
-                trust.personal.push(task);
+                trust.personal.retain(|known| known.trusted != task);
+                trust.personal.push(Granted {
+                    trusted: task,
+                    answered_by,
+                });
                 let over = trust.personal.len().saturating_sub(MAX_TRUSTED);
                 trust.personal.drain(..over);
             }
@@ -414,6 +451,7 @@ pub(crate) async fn trust_project(
     core: &Arc<Core>,
     project: String,
     fingerprint: String,
+    answered_by: Option<String>,
 ) -> CoreResult<()> {
     let core = core.clone();
     blocking(move || {
@@ -429,8 +467,10 @@ pub(crate) async fn trust_project(
         if now != fingerprint {
             return Err("sikemux.json changed; look at it again".into());
         }
-        core.tasks
-            .grant(Grant::Config(TrustedConfig { path, fingerprint }));
+        core.tasks.grant(
+            Grant::Config(TrustedConfig { path, fingerprint }),
+            answered_by,
+        );
         core.harness.changed();
         core.changes.changed(Topic::Tasks, Some(&project), None);
         Ok(())
@@ -802,8 +842,13 @@ pub(crate) fn asks(core: &Core) -> Vec<Value> {
         .collect()
 }
 
-/// The person answers a trust question.
-pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()> {
+/// The person answers a trust question, from `answered_by` when it is another device.
+pub(crate) fn answer_trust(
+    core: &Core,
+    id: &str,
+    trust: bool,
+    answered_by: Option<String>,
+) -> CoreResult<()> {
     let asked = core
         .tasks
         .state
@@ -812,7 +857,7 @@ pub(crate) fn answer_trust(core: &Core, id: &str, trust: bool) -> CoreResult<()>
         .remove(id)
         .ok_or("Nothing waits on that answer any more")?;
     if trust {
-        core.tasks.grant(asked.ask.grant);
+        core.tasks.grant(asked.ask.grant, answered_by);
         core.changes
             .changed(Topic::Tasks, Some(&asked.project), None);
     } else if let Some(execution_id) = &asked.execution_id {
@@ -1071,7 +1116,11 @@ pub(crate) struct AddParams {
 }
 
 /// Saves a task the person wrote; answers its id.
-pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value> {
+pub(crate) async fn add(
+    core: &Arc<Core>,
+    params: AddParams,
+    answered_by: Option<String>,
+) -> CoreResult<Value> {
     let core = core.clone();
     blocking(move || {
         let project = PathBuf::from(&params.project);
@@ -1091,15 +1140,18 @@ pub(crate) async fn add(core: &Arc<Core>, params: AddParams) -> CoreResult<Value
             detect::save_team(&project, &task)?
         } else {
             let task_id = detect::save_personal(&project, &task)?;
-            core.tasks.grant(Grant::Personal(TrustedTask {
-                project: params.project.clone(),
-                cwd: if cwd == "." {
-                    params.project.clone()
-                } else {
-                    project.join(&cwd).to_string_lossy().into_owned()
-                },
-                command: task.command.clone(),
-            }));
+            core.tasks.grant(
+                Grant::Personal(TrustedTask {
+                    project: params.project.clone(),
+                    cwd: if cwd == "." {
+                        params.project.clone()
+                    } else {
+                        project.join(&cwd).to_string_lossy().into_owned()
+                    },
+                    command: task.command.clone(),
+                }),
+                answered_by,
+            );
             task_id
         };
         if let Some(old) = params.replaces.filter(|old| *old != task_id) {
@@ -1139,7 +1191,7 @@ pub(crate) async fn set_check(core: &Arc<Core>, params: CheckParams) -> CoreResu
         ) = (trusted, config::load(&project))
         {
             core.tasks
-                .grant(Grant::Config(TrustedConfig { path, fingerprint }));
+                .grant(Grant::Config(TrustedConfig { path, fingerprint }), None);
         }
         core.harness.changed();
         core.changes

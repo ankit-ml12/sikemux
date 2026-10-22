@@ -453,45 +453,50 @@ calls! { core, client, params;
     "commitLines": Watch, any_program => answer(who_wrote::lines(&core, parse(params)?).await?),
     "inbox": Watch, any_program => answer(inbox(&core).await?),
     "digest": Watch, any_program => answer(digest(&core, parse(params)?).await?),
-    "ports": Local => {
+    "ports": Person => {
         let params: PortsParams = parse(params)?;
         answer(super::ports::project_ports(&core, client.id, params.project).await?)
     },
-    "testResults": Local => {
+    "testResults": Person => {
         let params: ProjectParams = parse(params)?;
         answer(super::tasks::module_tests(&core, params.project).await?)
     },
-    "projectConfig": Local => {
+    "projectConfig": Person => {
         let params: ProjectParams = parse(params)?;
         answer(super::tasks::project_config(&core, params.project).await?)
     },
-    "trustProject": Local => {
+    "trustProject": Person => {
         let params: TrustProjectParams = parse(params)?;
-        answer(super::tasks::trust_project(&core, params.project, params.fingerprint).await?)
+        let answered_by = answered_by(&core, &client.peer);
+        answer(super::tasks::trust_project(&core, params.project, params.fingerprint, answered_by).await?)
     },
-    "tasks": Local => {
+    "tasks": Person => {
         let params: ProjectParams = parse(params)?;
         answer(super::tasks::list(&core, params.project).await?)
     },
-    "taskRuns": Local => answer(super::tasks::runs(&core)),
-    "taskStart": Local => answer(super::tasks::start(&core, parse(params)?).await?),
-    "taskRerunFailed": Local => answer(super::tasks::rerun_failed(&core, parse(params)?).await?),
-    "taskStop": Local => {
+    "taskRuns": Person => answer(super::tasks::runs(&core)),
+    "taskStart": Person => answer(super::tasks::start(&core, parse(params)?).await?),
+    "taskRerunFailed": Person => answer(super::tasks::rerun_failed(&core, parse(params)?).await?),
+    "taskStop": Person => {
         super::harness::stop_runs(&core, parse(params)?).await;
         answer(())
     },
-    "trustAsks": Local => answer(super::tasks::asks(&core)),
+    "trustAsks": Person => answer(super::tasks::asks(&core)),
     "showCi": Watch, any_program => {
         super::ci::show(&core, client.id, parse(params)?);
         answer(())
     },
-    "answerTrust": Local => {
+    "answerTrust": Person => {
         let params: TrustAnswerParams = parse(params)?;
-        answer(super::tasks::answer_trust(&core, &params.id, params.trust)?)
+        let answered_by = answered_by(&core, &client.peer);
+        answer(super::tasks::answer_trust(&core, &params.id, params.trust, answered_by)?)
     },
-    "addTask": Local => answer(super::tasks::add(&core, parse(params)?).await?),
-    "removeTask": Local => answer(super::tasks::remove(&core, parse(params)?).await?),
-    "setCheck": Local => answer(super::tasks::set_check(&core, parse(params)?).await?),
+    "addTask": Person => {
+        let answered_by = answered_by(&core, &client.peer);
+        answer(super::tasks::add(&core, parse(params)?, answered_by).await?)
+    },
+    "removeTask": Person => answer(super::tasks::remove(&core, parse(params)?).await?),
+    "setCheck": Person => answer(super::tasks::set_check(&core, parse(params)?).await?),
     "agentModels": Local => {
         let params: AgentModelsParams = parse(params)?;
         answer(super::chat::offered::models(&params.agent))
@@ -610,6 +615,12 @@ fn search_stream(
 pub(super) fn parse<T: for<'de> Deserialize<'de>>(params: Value) -> CoreResult<T> {
     serde_json::from_value(params)
         .map_err(|error| CoreError::from(format!("the call's params do not fit: {error}")))
+}
+
+/// The name of the device the person acted from, when it was not this host's own window.
+fn answered_by(core: &Core, peer: &Peer) -> Option<String> {
+    let device = peer.device_id()?;
+    Some(core.remote.device_name(&device).unwrap_or(device))
 }
 
 fn answer(result: impl Serialize) -> CoreResult<Value> {

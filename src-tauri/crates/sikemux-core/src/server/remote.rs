@@ -452,6 +452,12 @@ impl Remote {
         })
     }
 
+    pub(crate) fn device_name(&self, id: &str) -> Option<String> {
+        let inner = self.inner.locked();
+        let device = inner.stored.devices.iter().find(|device| device.id == id)?;
+        Some(device.name.clone())
+    }
+
     pub(crate) fn setup(&self) -> Setup {
         let inner = self.inner.locked();
         Setup {

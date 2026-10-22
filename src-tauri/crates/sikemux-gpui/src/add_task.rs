@@ -159,7 +159,7 @@ fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     }
     let (team, project) = (adding.team, adding.project.clone());
     let params = json!({ "project": project, "label": label, "command": command, "cwd": folder, "team": team });
-    let adding = crate::core::request(&bench.asks, "addTask", params);
+    let adding = bench.target().request("addTask", params);
     bench.adding_task = None;
     cx.notify();
     cx.spawn_in(window, async move |bench, cx| {

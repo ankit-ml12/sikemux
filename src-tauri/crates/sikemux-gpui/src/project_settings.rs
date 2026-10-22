@@ -16,7 +16,6 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{PaneKind, ProjectInfo};
 
-use crate::core;
 use crate::icons::Icon;
 use crate::settings::{self, rows};
 use crate::theme::{self, Tokens};
@@ -67,7 +66,7 @@ impl Workbench {
         let Some(project) = self.projects().iter().find(|project| project.id == id) else {
             return;
         };
-        self.call(
+        self.call_in_front(
             "openTab",
             json!({
                 "project": project.id,
@@ -88,7 +87,9 @@ impl Workbench {
     }
 
     fn reload_config(&self, folder: &str, cx: &mut Context<Self>) {
-        let asked = core::request(&self.asks, "projectConfig", json!({ "project": folder }));
+        let asked = self
+            .target()
+            .request("projectConfig", json!({ "project": folder }));
         let folder = folder.to_owned();
         cx.spawn(async move |bench, cx| {
             let Ok(config) = asked.await else {
@@ -115,11 +116,9 @@ impl Workbench {
         if typed == saved {
             return;
         }
-        let saving = core::request(
-            &self.asks,
-            "setCheck",
-            json!({ "project": folder, "command": typed }),
-        );
+        let saving = self
+            .target()
+            .request("setCheck", json!({ "project": folder, "command": typed }));
         let folder = folder.to_owned();
         cx.spawn(async move |bench, cx| {
             let saved = saving.await;
@@ -146,8 +145,7 @@ impl Workbench {
         else {
             return;
         };
-        let trusting = core::request(
-            &self.asks,
+        let trusting = self.target().request(
             "trustProject",
             json!({ "project": folder, "fingerprint": fingerprint }),
         );
@@ -176,7 +174,9 @@ impl Workbench {
             true,
             move |bench, yes, _, _| {
                 if yes {
-                    bench.call("removeTask", json!({ "project": folder, "taskId": id }));
+                    bench
+                        .target()
+                        .call("removeTask", json!({ "project": folder, "taskId": id }));
                 }
             },
             cx,
@@ -231,7 +231,9 @@ fn make(bench: &mut Workbench, folder: String, window: &mut Window, cx: &mut Con
         },
     );
     bench.reload_config(&folder, cx);
-    let finding = core::request(&bench.asks, "git.discoverRepos", json!({ "root": folder }));
+    let finding = bench
+        .target()
+        .request("git.discoverRepos", json!({ "root": folder }));
     cx.spawn(async move |bench, cx| {
         let repos = finding
             .await
@@ -290,7 +292,7 @@ fn space_choice(
                 return;
             };
             let space = at.checked_sub(1).and_then(|at| offered.get(at)).cloned();
-            bench.call(
+            bench.call_in_front(
                 "updateProject",
                 json!({ "id": project, "patch": { "space": space } }),
             );
@@ -542,7 +544,7 @@ fn run_button(
         .small()
         .on_click(move |_, _, cx| {
             this.update(cx, |bench, _| {
-                bench.call("taskStart", json!({ "project": folder, "taskId": task_id }))
+                bench.call_in_front("taskStart", json!({ "project": folder, "taskId": task_id }))
             })
         })
 }
