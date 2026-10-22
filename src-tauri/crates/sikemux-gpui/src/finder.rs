@@ -270,7 +270,7 @@ pub fn overlay(
             .on_mouse_down(MouseButton::Left, close)
             .child(
                 ui::float(cx)
-                    .key_context("Finder")
+                    .key_context("Finder Modal")
                     .w(px(560.))
                     .max_w(gpui_kit::relative(0.86))
                     .max_h(gpui_kit::relative(0.62))

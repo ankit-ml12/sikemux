@@ -303,6 +303,7 @@ pub fn render(
     let this = this.clone();
     div()
         .id("welcome")
+        .key_context("Modal Onboarding")
         .absolute()
         .inset_0()
         .flex()

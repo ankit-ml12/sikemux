@@ -124,6 +124,29 @@ pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     cx.notify();
 }
 
+/// What a shortcut does first while Settings covers the window, as on the Mac: most close
+/// it before they run, and closing a tab or project closes only Settings.
+pub fn before_shortcut(
+    bench: &mut Workbench,
+    keystroke: &gpui_kit::Keystroke,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    if bench.settings.is_none() {
+        return;
+    }
+    let Some(id) = crate::keymap::command_for(keystroke, cx) else {
+        return;
+    };
+    let (keeps, only_closes) = crate::keymap::over_settings(&id);
+    if !keeps {
+        close(bench, window, cx);
+    }
+    if only_closes {
+        cx.stop_propagation();
+    }
+}
+
 pub use pages::remote_moved;
 
 /// Sets one of the person's preferences in the core.

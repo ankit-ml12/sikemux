@@ -281,7 +281,7 @@ pub fn render(
         .child(main(news, pending(bench), this, window, cx));
     div()
         .id("whats-new-backdrop")
-        .key_context("WhatsNew")
+        .key_context("WhatsNew Modal")
         .absolute()
         .inset_0()
         .p(px(24.))

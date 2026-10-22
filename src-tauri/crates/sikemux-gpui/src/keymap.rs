@@ -3,8 +3,10 @@
 //! An id no part of the app has an action for yet stays unbound.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 use std::sync::LazyLock;
 
+use gpui::KeyBindingContextPredicate;
 use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::{
     actions, App, Global, KeyBinding, Keystroke, Menu, MenuItem, OsAction, SharedString,
@@ -13,6 +15,41 @@ use gpui_kit::{
 use serde::Deserialize;
 
 static TABLE: &str = include_str!("../../sikemux-core/src/assets/keybindings.json");
+
+/// The window's own context. The app's shortcuts work under it, so a view in focus with its
+/// own binding for the same keys, such as the editor's ⌘[, takes them first.
+pub const SHELL: &str = "Workbench";
+
+/// The shortcuts that still work while a palette, picker or other view with `Modal` in its
+/// context has the keys, as on the Mac: the ones that open another palette or Settings.
+const OVER_MODALS: [&str; 4] = [
+    "palette.commands",
+    "palette.files",
+    "search.global",
+    "settings.toggle",
+];
+
+/// Shortcuts that leave Settings open; any other closes it first.
+const KEEP_SETTINGS: [&str; 3] = ["text.sizeIncrease", "text.sizeDecrease", "text.sizeReset"];
+
+/// What closing means while Settings covers the window: closing Settings, not a tab or
+/// project hidden behind it.
+const CLOSE_SETTINGS: [&str; 2] = ["pane.close", "session.close"];
+
+/// Commands that act on a desk's page only while the keys are in it, leaving the same keys to
+/// the editor and everything else.
+const PAGE_ONLY: [&str; 3] = ["browser.reload", "browser.back", "browser.forward"];
+
+/// Where the shortcut of command `id` works: the welcome takes even the palettes' keys.
+fn context(id: &str) -> &'static str {
+    if PAGE_ONLY.contains(&id) {
+        "BrowserPage"
+    } else if OVER_MODALS.contains(&id) {
+        "Workbench && !Onboarding"
+    } else {
+        "Workbench && !Modal"
+    }
+}
 
 actions!(
     app,
@@ -167,10 +204,6 @@ pub fn install(cx: &mut App) {
 
 /// Binds every command to the person's keys, else its default. It runs again whenever the
 /// preferences change; keys a command no longer uses stop doing anything.
-/// Commands that act on a desk's page only while the keys are in it, leaving the same keys to
-/// the editor and everything else.
-const PAGE_ONLY: [&str; 3] = ["browser.reload", "browser.back", "browser.forward"];
-
 pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
     let keymap = cx.global::<Keymap>();
     let mut bound = BTreeMap::new();
@@ -185,11 +218,9 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
         let Ok(action) = cx.build_action(shortcut.id, None) else {
             continue;
         };
-        let context = PAGE_ONLY
-            .contains(&shortcut.id)
-            .then(|| gpui::KeyBindingContextPredicate::parse("BrowserPage").ok())
-            .flatten()
-            .map(std::rc::Rc::new);
+        let context = KeyBindingContextPredicate::parse(context(shortcut.id))
+            .ok()
+            .map(Rc::new);
         if let Ok(binding) = KeyBinding::load(
             &gpui_keys,
             action,
@@ -207,7 +238,7 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
         .values()
         .filter(|keys| !bound.values().any(|now| now == *keys))
         .filter_map(|keys| keystroke(keys))
-        .map(|keys| KeyBinding::new(&keys, gpui::NoAction, None))
+        .map(|keys| KeyBinding::new(&keys, gpui::NoAction, Some(SHELL)))
         .collect();
     cx.bind_keys(released);
     cx.bind_keys(bindings);
@@ -219,6 +250,23 @@ pub fn dispatch(id: &str, window: &mut Window, cx: &mut App) {
     if let Ok(action) = cx.build_action(id, None) {
         window.dispatch_action(action, cx);
     }
+}
+
+/// The command whose shortcut `keystroke` is now.
+pub fn command_for(keystroke: &Keystroke, cx: &App) -> Option<String> {
+    let keys = spelling(keystroke)?;
+    let keymap = cx.try_global::<Keymap>()?;
+    keymap
+        .bound
+        .iter()
+        .find(|(_, bound)| **bound == keys)
+        .map(|(id, _)| id.clone())
+}
+
+/// Whether running command `id` leaves Settings open, and whether all it does then is close it.
+pub fn over_settings(id: &str) -> (bool, bool) {
+    let keeps = OVER_MODALS.contains(&id) || KEEP_SETTINGS.contains(&id);
+    (keeps, CLOSE_SETTINGS.contains(&id))
 }
 
 /// Whether `keystroke` is the keys command `id` is bound to now.

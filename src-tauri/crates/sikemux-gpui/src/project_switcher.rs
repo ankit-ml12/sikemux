@@ -283,7 +283,7 @@ impl Render for Switcher {
         });
         let empty = choices.is_empty();
         div()
-            .key_context(CONTEXT)
+            .key_context(format!("{CONTEXT} Modal").as_str())
             .on_action(cx.listener(|switcher, _: &Up, _, cx| switcher.step(-1, cx)))
             .on_action(cx.listener(|switcher, _: &Down, _, cx| switcher.step(1, cx)))
             .on_action(cx.listener(|switcher, _: &Pick, window, cx| {

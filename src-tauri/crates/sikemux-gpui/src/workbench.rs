@@ -59,6 +59,7 @@ pub struct Workbench {
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
     _voice_heard: [Subscription; 4],
+    _shortcuts_over_settings: Subscription,
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     /// The host whose core those watches went to.
@@ -471,6 +472,14 @@ impl Workbench {
             slow_start: false,
             voice,
             _voice_heard: voice_heard,
+            _shortcuts_over_settings: {
+                let this = cx.weak_entity();
+                cx.intercept_keystrokes(move |event, window, cx| {
+                    let _ = this.update(cx, |bench, cx| {
+                        crate::settings::before_shortcut(bench, &event.keystroke, window, cx)
+                    });
+                })
+            },
             watched_project: None,
             watched_place: crate::hosts::Place::This,
             watched_ci: None,
@@ -3285,6 +3294,7 @@ impl Render for Workbench {
         let parts = &self.parts;
         div()
             .id("shell")
+            .key_context(SHELL)
             .track_focus(&self.focus)
             .relative()
             .size_full()

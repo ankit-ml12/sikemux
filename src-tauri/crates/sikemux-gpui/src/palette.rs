@@ -460,7 +460,7 @@ pub fn overlay(
             .on_mouse_down(MouseButton::Left, close)
             .child(
                 ui::float(cx)
-                    .key_context("Palette")
+                    .key_context("Palette Modal")
                     .w(px(palette.spec.width))
                     .max_w(gpui_kit::relative(0.86))
                     .max_h(gpui_kit::relative(0.62))

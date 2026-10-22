@@ -520,7 +520,7 @@ impl Render for Menu {
             .as_ref()
             .is_none_or(|model| model.choices.is_empty());
         div()
-            .key_context(CONTEXT)
+            .key_context(format!("{CONTEXT} Modal").as_str())
             .on_action(cx.listener(|menu, _: &Up, _, cx| menu.step(-1, cx)))
             .on_action(cx.listener(|menu, _: &Down, _, cx| menu.step(1, cx)))
             .on_action(cx.listener(|menu, _: &Pick, window, cx| {

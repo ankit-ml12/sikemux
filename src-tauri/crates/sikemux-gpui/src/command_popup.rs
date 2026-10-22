@@ -64,7 +64,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
     let close = cx.listener(|bench, _: &ClosePopup, _, cx| bench.close_command_popup(cx));
     let card = div()
         .id("command-popup")
-        .key_context(CONTEXT)
+        .key_context(format!("{CONTEXT} Modal").as_str())
         .on_action(close)
         .w(px(760.))
         .h(px(480.))
