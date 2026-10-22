@@ -412,7 +412,7 @@ def dk8(run):
     x, y = run.composer()
     if run.desk().get("open"):
         run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1")
-    closed = run.desk().get("open") is False
+    closed = not run.desk().get("open")
     run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
     opened = until(lambda: run.desk().get("open"), 10)
     run.report("DK8", closed and bool(opened), f"desk closed first {closed}; the agent's navigate brought it out {bool(opened)}")
