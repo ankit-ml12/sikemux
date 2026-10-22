@@ -55,7 +55,6 @@ mod tools;
 mod transcript;
 mod upgrade;
 mod wake;
-#[cfg(target_os = "macos")]
 mod warm;
 mod who_wrote;
 mod window;

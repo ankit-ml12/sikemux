@@ -229,7 +229,6 @@ pub(crate) fn cut_for(
     let base = git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
     let (branch, path) = cut(&repo, name, &start_sha)?;
     copy_included(&main, &path);
-    #[cfg(target_os = "macos")]
     super::warm::seed_in_background(&main, &path);
     let inside = if cwd.starts_with(&repo) {
         inside(cwd, &repo)
@@ -361,7 +360,6 @@ pub(crate) async fn integration(
                 SLOW,
             )?;
             copy_included(&top, &path);
-            #[cfg(target_os = "macos")]
             super::warm::seed(&top, &path);
         } else {
             git_in(
