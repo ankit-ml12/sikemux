@@ -330,8 +330,8 @@ async fn ask(files: Rc<RefCell<Files>>, cx: &mut gpui_kit::AsyncApp) {
     }
 }
 
-/// What reaching for the file `name` of `agent`'s chat does: a click opens it, two clicks open
-/// it in the editor, and the menu offers what the file tree's does.
+/// What reaching for the file `name` of `agent`'s chat does: a click opens it on the agent's
+/// desk, two clicks open it in the editor, and the menu offers what the file tree's does.
 pub fn pressed(
     agent: &str,
     files: &Rc<RefCell<Files>>,
@@ -356,9 +356,12 @@ pub fn pressed(
         return;
     };
     match press {
+        FilePress::Open if kind == FileKind::File && on.here => {
+            open_on_desk(agent, &found, bench, cx)
+        }
         FilePress::Open | FilePress::OpenTwice => open(&found, kind, &on, bench, cx),
         FilePress::Menu(at) => {
-            let menu = menu(found, kind, on, bench.clone(), window, cx);
+            let menu = menu(agent, found, kind, on, bench.clone(), window, cx);
             window.focus(&menu.focus_handle(cx), cx);
             bench
                 .update(cx, |bench, cx| bench.show_file_menu(agent, at, menu, cx))
@@ -401,6 +404,17 @@ fn open(found: &PathRef, kind: FileKind, on: &On, bench: &WeakEntity<Workbench>,
     }
 }
 
+/// Opens a file of this host's chat on its agent's desk, its cursor on the line the name gave.
+fn open_on_desk(agent: &str, found: &PathRef, bench: &WeakEntity<Workbench>, cx: &mut App) {
+    let path = std::path::PathBuf::from(&found.path);
+    bench
+        .update(cx, |bench, cx| {
+            bench.open_file_on_desk(agent, path, found.line, found.column);
+            bench.parts.redraw(&bench.parts.stage, cx);
+        })
+        .ok();
+}
+
 /// Where a chat's files are: its folder, its host, and whether that host is this one.
 #[derive(Clone)]
 struct On {
@@ -410,6 +424,7 @@ struct On {
 }
 
 fn menu(
+    agent: &str,
     found: PathRef,
     kind: FileKind,
     on: On,
@@ -430,13 +445,22 @@ fn menu(
         ("Copy Relative Path", relative, "Copied relative path"),
         ("Copy Name", name, "Copied name"),
     ];
+    let agent = agent.to_owned();
     PopupMenu::build(window, cx, move |mut popup, _, _| {
         let file = kind == FileKind::File;
+        if file && on.here {
+            let (found, bench, agent) = (found.clone(), bench.clone(), agent.clone());
+            popup = popup.item(
+                PopupMenuItem::new("Open on Desk")
+                    .icon(Icon::PanelRight)
+                    .on_click(move |_, _, cx| open_on_desk(&agent, &found, &bench, cx)),
+            );
+        }
         if file {
             let (found, bench, on) = (found.clone(), bench.clone(), on.clone());
             popup = popup
                 .item(
-                    PopupMenuItem::new("Open")
+                    PopupMenuItem::new("Open in Editor")
                         .icon(Icon::File)
                         .on_click(move |_, _, cx| open(&found, kind, &on, &bench, cx)),
                 )
