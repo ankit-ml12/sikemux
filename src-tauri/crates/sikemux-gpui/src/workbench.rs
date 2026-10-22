@@ -177,6 +177,8 @@ pub struct Workbench {
     pub adding_task: Option<crate::add_task::AddTask>,
     /// The core's trust questions already put to the person, by id.
     trust_asked: HashSet<String>,
+    /// The account host whose trust questions `host-trust` holds, asked beside this host's.
+    trust_host: Option<String>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     /// The window the store draws, for what is said in it from outside a draw.
@@ -490,6 +492,7 @@ impl Workbench {
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
             trust_asked: HashSet::new(),
+            trust_host: None,
             peeking: None,
             unpeek: None,
             run_clock: None,
@@ -784,8 +787,8 @@ impl Workbench {
                 }
                 self.reads.insert("catalog", value);
             }
-            Update::Read("trust", value) => {
-                self.reads.insert("trust", value);
+            Update::Read(key @ ("trust" | "host-trust"), value) => {
+                self.reads.insert(key, value);
                 self.ask_trust(cx);
             }
             Update::Read(key @ ("runs" | "ports"), value) => {
@@ -1376,6 +1379,13 @@ impl Workbench {
             Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
         );
         target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
+        if let crate::hosts::Place::Account(host) = &place {
+            if self.trust_host.as_ref() != Some(host) {
+                self.reads.remove("host-trust");
+                self.trust_host = Some(host.clone());
+                target.watch("host-trust", Watch::new("trustAsks", json!({}), &["trust"]));
+            }
+        }
         target.watch(
             "ports",
             Watch::new("ports", json!({ "project": path }), &["ports"]),
@@ -1969,26 +1979,48 @@ impl Workbench {
 
     /// Puts the core's next trust question to the person, each once, while nothing else is asked.
     fn ask_trust(&mut self, cx: &mut Context<Self>) {
-        let asks: Vec<Value> = self
-            .read("trust")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let listed = |key: &str| {
+            self.read(key)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        };
+        // This host's questions, then the chosen account host's, each under the host that asks.
+        let asks: Vec<(Option<String>, Value)> = listed("trust")
+            .into_iter()
+            .map(|ask| (None, ask))
+            .chain(
+                listed("host-trust")
+                    .into_iter()
+                    .map(|ask| (self.trust_host.clone(), ask)),
+            )
+            .collect();
+        let asked_as = |host: &Option<String>, ask: &Value| {
+            format!(
+                "{}:{}",
+                host.as_deref().unwrap_or_default(),
+                ask["id"].as_str().unwrap_or_default()
+            )
+        };
         self.trust_asked
-            .retain(|id| asks.iter().any(|ask| ask["id"] == id.as_str()));
+            .retain(|asked| asks.iter().any(|(host, ask)| &asked_as(host, ask) == asked));
         if self.asking.is_some() {
             return;
         }
-        let Some(ask) = asks.into_iter().find(|ask| {
-            ask["id"]
-                .as_str()
-                .is_some_and(|id| !self.trust_asked.contains(id))
+        let Some((host, ask)) = asks.into_iter().find(|(host, ask)| {
+            ask["id"].is_string() && !self.trust_asked.contains(&asked_as(host, ask))
         }) else {
             return;
         };
         let text = |value: &Value| value.as_str().unwrap_or_default().to_owned();
         let id = text(&ask["id"]);
-        self.trust_asked.insert(id.clone());
+        self.trust_asked.insert(asked_as(&host, &ask));
+        let on = host.as_ref().and_then(|host| {
+            self.host_choices()
+                .into_iter()
+                .find(|option| option.choice == crate::hosts::HostChoice::Account(host.clone()))
+                .map(|option| option.label)
+        });
         let commands: Vec<String> = ask["commands"]
             .as_array()
             .into_iter()
@@ -2001,13 +2033,24 @@ impl Workbench {
             .collect();
         #[cfg(feature = "drive")]
         crate::drive::trace(format_args!("trust question set"));
+        let title = match on {
+            Some(name) => format!("{} on {name}", text(&ask["title"])),
+            None => text(&ask["title"]),
+        };
         self.confirm(
-            text(&ask["title"]),
+            title,
             body.join("\n\n"),
             text(&ask["confirmLabel"]),
             false,
             move |bench, trust, _, _| {
-                bench.call("answerTrust", json!({ "id": id, "trust": trust }));
+                let answer = Ask::Call {
+                    method: "answerTrust",
+                    params: json!({ "id": id, "trust": trust }),
+                };
+                let _ = bench.asks.send(match &host {
+                    Some(host) => Ask::On(host.clone(), Box::new(answer)),
+                    None => answer,
+                });
             },
             cx,
         );
