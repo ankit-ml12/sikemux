@@ -282,11 +282,11 @@ impl RenderOnce for Composer {
             .flex_col()
             .items_center()
             .on_children_prepainted(move |bounds, _, cx| {
-                let drawn = cx.default_global::<Drawn>();
-                drawn.composer = bounds.last().map_or(0., |box_| box_.size.width.into());
-                if !has_strip {
-                    drawn.strip = 0.;
-                }
+                let composer = bounds.last().map_or(0., |box_| box_.size.width.into());
+                Drawn::keep(cx, |drawn| Drawn {
+                    composer,
+                    strip: if has_strip { drawn.strip } else { 0. },
+                });
             })
             .children(self.strip.map(|strip| project_strip(strip, fill, cx)))
             .child(
@@ -485,20 +485,31 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         .px(px(STRIP_STEP))
         .child(strip_row)
         .on_children_prepainted(|bounds, _, cx| {
-            cx.default_global::<Drawn>().strip =
-                bounds.first().map_or(0., |row| row.size.width.into());
+            let strip = bounds.first().map_or(0., |row| row.size.width.into());
+            Drawn::keep(cx, |drawn| Drawn { strip, ..drawn });
         })
 }
 
 /// The widths the composer and the strip over it were last drawn at, which the shot example
 /// reports so a check can hold the strip narrower than the composer.
-#[derive(Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub struct Drawn {
     pub strip: f32,
     pub composer: f32,
 }
 
 impl gpui_kit::Global for Drawn {}
+
+impl Drawn {
+    /// Sets the widths only when they changed, as setting a global wakes whatever watches it.
+    fn keep(cx: &mut App, next: impl FnOnce(Drawn) -> Drawn) {
+        let drawn = cx.try_global::<Drawn>().copied().unwrap_or_default();
+        let next = next(drawn);
+        if next != drawn {
+            cx.set_global(next);
+        }
+    }
+}
 
 /// How far the strip over the composer steps in from either side of it.
 const STRIP_STEP: f32 = 20.;
