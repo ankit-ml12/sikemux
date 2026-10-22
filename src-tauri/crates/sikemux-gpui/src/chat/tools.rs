@@ -8,9 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, Action, AnyElement, App, Div, HighlightStyle, Hsla, InteractiveElement,
-    IntoElement, ParentElement, Radians, SharedString, StatefulInteractiveElement, Styled,
-    StyledText, Transformation,
+    div, px, relative, Action, AnyElement, App, ClipboardItem, Div, HighlightStyle, Hsla,
+    InteractiveElement, IntoElement, ParentElement, Radians, SharedString,
+    StatefulInteractiveElement, Styled, StyledText, Transformation,
 };
 use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
@@ -325,20 +325,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     let opens = call.opens();
     let open = opens && looks.reading.tools.calls.contains(&id);
     let tint = tint(call, looks);
-    let target = (!row.target.is_empty()).then(|| {
-        div()
-            .min_w_0()
-            .truncate()
-            .text_color(if running { looks.quiet } else { looks.ink })
-            .child(row.target.clone())
-            .children(row.detail.clone().map(|detail| {
-                div()
-                    .ml(px(MONO_CHAR))
-                    .text_color(looks.quiet)
-                    .child(detail)
-            }))
-            .flex()
-    });
+    let target = (!row.target.is_empty()).then(|| target(row, running, &id, looks));
     let elapsed = if call.status() == "cancelled" {
         Some("stopped".to_owned())
     } else if running {
@@ -475,6 +462,81 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     node.into_any_element()
 }
 
+/// Where the call reached, in its row: a file it names opens in the editor and a page it
+/// names opens as a link does, without opening or closing the row.
+fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
+    let ink = if running { looks.quiet } else { looks.ink };
+    let text = row.target.as_str();
+    let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
+    let opens: Option<(std::ops::Range<usize>, Opens)> = match &row.path {
+        Some(path) => {
+            let path = PathBuf::from(path);
+            Some((
+                0..text.len(),
+                Box::new(move |_, cx| {
+                    bench.update(cx, |bench, _| bench.open_file(&path)).ok();
+                }),
+            ))
+        }
+        None => web_link(text).map(|range| {
+            let url = text[range.clone()].to_owned();
+            let open: Opens =
+                Box::new(move |window, cx| super::link::open(&url, &agent, &bench, window, cx));
+            (range, open)
+        }),
+    };
+    let line = div().min_w_0().truncate().flex().text_color(ink);
+    let line = match opens {
+        Some((range, open)) => line
+            .child(text[..range.start].to_owned())
+            .child(
+                div()
+                    .id(SharedString::from(format!("target:{id}")))
+                    .flex_none()
+                    .text_color(looks.accent)
+                    .cursor_pointer()
+                    .hover(|link| link.underline())
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        open(window, cx);
+                    })
+                    .child(text[range.clone()].to_owned()),
+            )
+            .child(text[range.end..].to_owned()),
+        None => line.child(text.to_owned()),
+    };
+    line.children(row.detail.clone().map(|detail| {
+        div()
+            .ml(px(MONO_CHAR))
+            .text_color(looks.quiet)
+            .child(detail)
+    }))
+}
+
+type Opens = Box<dyn Fn(&mut gpui_kit::Window, &mut App)>;
+
+/// Where a web address starts and ends in a row's target, its closing punctuation left out.
+fn web_link(text: &str) -> Option<std::ops::Range<usize>> {
+    let start = text.find("https://").or_else(|| text.find("http://"))?;
+    let rest = &text[start..];
+    let end = rest
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '\'' | '`'))
+        .unwrap_or(rest.len());
+    let link = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']']);
+    Some(start..start + link.len())
+}
+
+/// Copies `text`, without opening or closing the row it sits in.
+fn copy(id: String, what: &str, text: String) -> ui::IconButton {
+    ui::IconButton::new(SharedString::from(id), Icon::Copy, format!("Copy {what}"))
+        .glyph(12.)
+        .width(22.)
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        })
+}
+
 /// The run's spine down the left of a row, and the tick that joins the row to it;
 /// the last row's turns the corner instead.
 fn spine(last: bool, looks: &Drawn) -> Div {
@@ -598,6 +660,11 @@ fn terminal(
                     .text_color(looks.ink)
                     .child(command.to_owned()),
             )
+            .child(copy(
+                format!("copy-command:{id}"),
+                "command",
+                command.to_owned(),
+            ))
     });
     let shot = picture.map(|picture| {
         div().p(px(4.)).child(picture::thumb(
@@ -621,12 +688,18 @@ fn terminal(
                     .child("No output");
             }
             div()
+                .relative()
                 .pl(px(9.))
                 .pr(px(30.))
                 .pt(px(6.))
                 .pb(px(7.))
                 .text_color(looks.quiet)
                 .child(shown)
+                .child(div().absolute().top(px(2.)).right(px(4.)).child(copy(
+                    format!("copy-output:{id}"),
+                    "output",
+                    text.to_owned(),
+                )))
         });
     let more = folds.then(|| {
         let (reader, hover) = (looks.reader.clone(), looks.hover);
