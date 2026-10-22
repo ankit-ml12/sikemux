@@ -409,7 +409,7 @@ impl RenderOnce for Tab {
                 if self.active {
                     tab.bg(t.surface_chosen).text_color(t.text_primary)
                 } else {
-                    tab.bg(t.surface)
+                    tab.bg(crate::see_through::pill(t.surface, cx))
                         .border_1()
                         .border_color(edge)
                         .text_color(t.text_tertiary)

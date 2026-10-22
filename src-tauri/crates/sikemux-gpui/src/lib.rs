@@ -46,6 +46,7 @@ mod project_settings;
 pub mod project_switcher;
 mod rail;
 pub mod search;
+mod see_through;
 pub mod settings;
 mod share;
 mod sim_frame;

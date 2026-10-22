@@ -702,6 +702,7 @@ impl Workbench {
                         chat.rescale(scale, cx);
                     }
                     crate::ui::grain::set(&preferences, cx);
+                    crate::see_through::set(&preferences, cx);
                     crate::experience::preferences_read(self, &preferences, cx);
                 }
                 self.reads.insert("preferences", value);
@@ -2665,6 +2666,7 @@ impl Render for Workbench {
         if window.focused(cx).is_none() {
             self.focus.focus(window, cx);
         }
+        crate::see_through::follow(window, cx);
         let t = Tokens::get(cx);
         let parts = &self.parts;
         div()
@@ -2844,7 +2846,7 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .pt(px(6.))
-            .bg(t.surface_sunken)
+            .bg(crate::see_through::ground(t.surface_sunken, cx))
             .font_family(theme::UI)
             .text_size(px(13.))
             .line_height(px(13. * 1.45))

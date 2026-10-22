@@ -20,6 +20,7 @@ pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader};
 pub use select::{select, Pick};
 
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, img, px, svg, AnyElement, App, Div, FontFallbacks, FontWeight, Hsla, IntoElement,
     ParentElement, SharedString, Styled, Svg,
@@ -193,7 +194,7 @@ pub fn panel(cx: &App) -> Div {
         .flex()
         .flex_col()
         .overflow_hidden()
-        .bg(t.surface)
+        .when(!crate::see_through::clear(cx), |panel| panel.bg(t.surface))
         .border_1()
         .border_color(t.border)
         .rounded(theme::RADIUS_3)
