@@ -9,8 +9,9 @@ use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, point, px, quad, relative, size, Anchor, AnyElement, App, BorderStyle, Bounds,
-    Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement,
-    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
+    Context, Div, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, MouseMoveEvent,
+    ParentElement, Pixels, Point, Render, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::AgentStatus;
@@ -215,16 +216,52 @@ pub fn welcome(
                     .text_color(t.text_primary),
                 ),
         )
-        .children(bench.read("activity").map(|summary| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(24.))
-                .when(!is_empty(&summary["totals"]), |activity| {
-                    activity.child(overview(&summary["totals"], cx))
-                })
-                .child(calendar(summary, bench, cx))
-        }))
+        .child(
+            bench
+                .parts
+                .activity
+                .clone()
+                .cached(StyleRefinement::default().w_full()),
+        )
+}
+
+/// What the project's agents did, under a chat's welcome: a view of its own, drawn again
+/// when the workbench changes but not when a key is typed in the composer beside it.
+pub struct Activity {
+    bench: WeakEntity<Workbench>,
+    _bench: Subscription,
+}
+
+impl Activity {
+    pub fn new(bench: &Entity<Workbench>, cx: &mut Context<Self>) -> Self {
+        Self {
+            bench: bench.downgrade(),
+            _bench: cx.observe(bench, |_, _, cx| cx.notify()),
+        }
+    }
+}
+
+impl Render for Activity {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.bench
+            .update(cx, |bench, cx| activity(bench, cx))
+            .unwrap_or_else(|_| div().into_any_element())
+    }
+}
+
+fn activity(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let Some(summary) = bench.read("activity") else {
+        return div().into_any_element();
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(24.))
+        .when(!is_empty(&summary["totals"]), |activity| {
+            activity.child(overview(&summary["totals"], cx))
+        })
+        .child(calendar(summary, bench, cx))
+        .into_any_element()
 }
 
 fn pane_header(
@@ -535,12 +572,12 @@ pub(crate) fn calendar(
                 .filter(|day| *day <= today);
             if bench.metric_day != day {
                 bench.metric_day = day;
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.activity.update(cx, |_, cx| cx.notify());
             }
         }))
         .on_hover(cx.listener(|bench, over: &bool, _, cx| {
             if !*over && bench.metric_day.take().is_some() {
-                bench.parts.redraw(&bench.parts.stage, cx);
+                bench.parts.activity.update(cx, |_, cx| cx.notify());
             }
         }))
         .child(grid);
@@ -567,7 +604,7 @@ pub(crate) fn calendar(
             Toggle::new(("metric", index), *label, index == metric).on_click(cx.listener(
                 move |bench, _, _, cx| {
                     bench.metric = index;
-                    cx.notify();
+                    bench.parts.activity.update(cx, |_, cx| cx.notify());
                 },
             ))
         })
