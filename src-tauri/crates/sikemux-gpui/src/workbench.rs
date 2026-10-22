@@ -3271,6 +3271,7 @@ impl Render for Workbench {
                 cx.listener(|bench, _: &crate::places::LastPlace, _, _| bench.go_to_last_place()),
             )
             .on_action(cx.listener(|bench, _: &crate::places::NextGroup, _, _| bench.next_group()))
+            .on_action(cx.listener(|bench, _: &ToggleYolo, _, _| bench.toggle_yolo_in_front()))
             .on_action(
                 cx.listener(|bench, _: &crate::places::FocusTerminals, _, _| {
                     bench.call("showTerminals", json!({}))

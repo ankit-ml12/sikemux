@@ -36,7 +36,7 @@ use sikemux_wire::protocol::{
 use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
-use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset, ToggleYolo};
+use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
@@ -1605,12 +1605,6 @@ pub fn pane(
         .on_action(text_size::<TextSizeIncrease>(&this, Some(TEXT_SCALE_STEP)))
         .on_action(text_size::<TextSizeDecrease>(&this, Some(-TEXT_SCALE_STEP)))
         .on_action(text_size::<TextSizeReset>(&this, None))
-        .on_action({
-            let (this, agent) = (this.clone(), id.to_owned());
-            move |_: &ToggleYolo, _, cx| {
-                this.update(cx, |bench, _| bench.toggle_yolo(&agent)).ok();
-            }
-        })
         .child(pane)
 }
 
@@ -2792,6 +2786,19 @@ impl Workbench {
     }
 
     /// Lets `agent` run without asking, or has it ask again, when its kind of agent can.
+    /// Lets the agent of the tab in front, or of its desk, act without asking, or has it ask
+    /// again, wherever the keys are.
+    pub fn toggle_yolo_in_front(&self) {
+        let Some(tab) = self.tab() else {
+            return;
+        };
+        let agent = crate::workbench::shows(tab, sikemux_wire::protocol::PaneKind::Agent)
+            .or_else(|| crate::workbench::shows(tab, sikemux_wire::protocol::PaneKind::Desk));
+        if let Some(agent) = agent {
+            self.toggle_yolo(agent);
+        }
+    }
+
     pub fn toggle_yolo(&self, agent: &str) {
         let Some(saved) = self
             .shown()
