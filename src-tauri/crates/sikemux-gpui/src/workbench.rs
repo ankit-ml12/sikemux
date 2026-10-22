@@ -142,7 +142,6 @@ pub struct Workbench {
     /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
     keeping_rails: Option<Task<()>>,
     /// The Git pane takes the keyboard once it shows, as when ⌘⌥3 opens it.
-    pub focus_git: bool,
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
@@ -569,7 +568,6 @@ impl Workbench {
             switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,
-            focus_git: false,
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
@@ -2066,8 +2064,8 @@ impl Workbench {
     }
 
     /// Brings the file's editor tab to the front, opening one when none shows it.
-    pub fn open_file(&mut self, path: &Path) {
-        self.editors.focus_when_shown(path);
+    pub fn open_file(&mut self, path: &Path, cx: &mut App) {
+        self.take_keys_when_shown(TakesKeys::File(path.to_owned()), cx);
         self.show_file(path, false);
     }
 
@@ -3137,7 +3135,7 @@ impl Workbench {
     /// Brings the project's Git tab to the front showing `area`.
     pub(crate) fn open_area(&mut self, area: Area, cx: &mut Context<Self>) {
         self.area = area;
-        self.open_git();
+        self.open_git(cx);
         cx.notify();
     }
 
@@ -3155,8 +3153,8 @@ impl Workbench {
     }
 
     /// Brings the project's Git tab to the front, opening one when it has none.
-    fn open_git(&mut self) {
-        self.focus_git = true;
+    fn open_git(&mut self, cx: &mut App) {
+        self.take_keys_when_shown(TakesKeys::Git, cx);
         if let Some(project) = self.project() {
             self.call_in_front(
                 "openTab",
@@ -3588,15 +3586,19 @@ impl Render for Part {
 }
 
 /// A view that takes the keyboard once it shows, after the person opened it.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum TakesKeys {
     Terminal,
+    Git,
+    File(PathBuf),
 }
 
 impl TakesKeys {
-    fn shows_in(self, kind: PaneKind) -> bool {
+    fn shows_in(&self, kind: PaneKind) -> bool {
         match self {
             Self::Terminal => kind == PaneKind::Terminal,
+            Self::Git => kind == PaneKind::Git,
+            Self::File(_) => kind == PaneKind::Files,
         }
     }
 }
@@ -3856,7 +3858,7 @@ impl Render for Workbench {
                 }),
             )
             .on_action(cx.listener(|bench, _: &TextSizeReset, _, _| bench.resize_front_text(None)))
-            .on_action(cx.listener(|bench, _: &FocusGit, _, _| bench.open_git()))
+            .on_action(cx.listener(|bench, _: &FocusGit, _, cx| bench.open_git(cx)))
             .on_action(cx.listener(|bench, open: &OpenArea, _, cx| bench.open_area(open.area, cx)))
             .on_action(
                 cx.listener(|bench, _: &FocusSearch, window, cx| bench.open_search(window, cx)),

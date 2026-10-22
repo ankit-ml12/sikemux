@@ -14,7 +14,7 @@ use serde_json::json;
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab};
 
 use crate::drag::DraggedTab;
-use crate::workbench::{Strip, Workbench};
+use crate::workbench::{Strip, TakesKeys, Workbench};
 use crate::{desk, home, terminal, ui};
 
 /// The room between two panes, which is also where a divider is dragged.
@@ -414,10 +414,9 @@ fn view(
             .into_any_element(),
         PaneKind::Git => match &bench.git {
             Some(pane) => {
-                if bench.focus_git {
+                if bench.claims_keys(TakesKeys::Git) {
                     let focused = pane.clone();
-                    cx.defer_in(window, move |bench, window, cx| {
-                        bench.focus_git = false;
+                    cx.defer_in(window, move |_, window, cx| {
                         focused.update(cx, |pane, cx| pane.take_keys(window, cx));
                     });
                 }

@@ -1014,7 +1014,7 @@ fn config(
         .when(status != "absent", |controls| {
             controls.child(
                 Button::new("config-open", "Open", Variant::Outline).on_click(move |_, _, cx| {
-                    opening.update(cx, |bench, _| bench.open_file(&path))
+                    opening.update(cx, |bench, cx| bench.open_file(&path, cx))
                 }),
             )
         });

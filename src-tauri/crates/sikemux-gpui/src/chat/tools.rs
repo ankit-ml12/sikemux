@@ -493,7 +493,9 @@ fn target(row: &ToolRow, running: bool, id: &str, looks: &Drawn) -> Div {
             Some((
                 0..text.len(),
                 Box::new(move |_, cx| {
-                    bench.update(cx, |bench, _| bench.open_file(&path)).ok();
+                    bench
+                        .update(cx, |bench, cx| bench.open_file(&path, cx))
+                        .ok();
                 }),
             ))
         }

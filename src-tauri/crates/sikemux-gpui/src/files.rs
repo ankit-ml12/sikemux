@@ -650,7 +650,7 @@ fn row_view(
                     bench.files.toggle(&path, &bench.target());
                 }
             } else if event.click_count() == 2 {
-                bench.open_file(&path);
+                bench.open_file(&path, cx);
             } else {
                 bench.preview_file(&path);
             }
@@ -845,7 +845,7 @@ impl Workbench {
                             bench.files.reload(&parent, &bench.target());
                             match &from {
                                 Some(from) => bench.follow_rename(from, &path, cx),
-                                None if !dir => bench.open_file(&path),
+                                None if !dir => bench.open_file(&path, cx),
                                 None => {}
                             }
                         }
@@ -986,7 +986,7 @@ fn row_menu(
         popup.item(
             PopupMenuItem::new("Open")
                 .icon(Icon::File)
-                .on_click(on(|bench, path, _, _, _| bench.open_file(path))),
+                .on_click(on(|bench, path, _, _, cx| bench.open_file(path, cx))),
         )
     };
     if !whole {

@@ -31,7 +31,9 @@ pub fn open(href: &str, agent: &str, bench: &WeakEntity<Workbench>, window: &Win
             *bench.read(cx).chat_target(agent).place() != crate::hosts::Place::This
         });
         if elsewhere {
-            bench.update(cx, |bench, _| bench.open_file(&path)).ok();
+            bench
+                .update(cx, |bench, cx| bench.open_file(&path, cx))
+                .ok();
         } else {
             cx.reveal_path(&path);
         }

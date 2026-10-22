@@ -22,7 +22,7 @@ use crate::hosts::Place as Host;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui;
-use crate::workbench::{Strip, Workbench};
+use crate::workbench::{Strip, TakesKeys, Workbench};
 
 mod blame;
 mod copies;
@@ -122,11 +122,6 @@ impl Editors {
     pub fn reveal(&mut self, at: OpenAt) {
         self.reveal = Some(at);
     }
-
-    /// Gives `path`'s editor the keyboard once it shows.
-    pub fn focus_when_shown(&mut self, path: &Path) {
-        self.focus = Some(path.to_owned());
-    }
 }
 
 /// Every file open in an editor, by its host and path.
@@ -135,8 +130,6 @@ pub struct Editors {
     open: HashMap<FileKey, Document>,
     /// Where a file asked to open at a line puts its cursor once it is read.
     reveal: Option<OpenAt>,
-    /// The file opened to work in, whose editor takes the keyboard once it shows.
-    focus: Option<PathBuf>,
     /// The window the editors draw in, which reading and reloading update.
     window: Option<AnyWindowHandle>,
     /// Where the editor was before each jump, and where ⌘[ came back from.
@@ -264,10 +257,9 @@ pub fn pane(
         });
         return div().size_full().into_any_element();
     };
-    if bench.editors.focus.as_deref() == Some(path.as_path()) {
+    if bench.claims_keys(TakesKeys::File(path.clone())) {
         let focused = key.clone();
         cx.defer_in(window, move |bench, window, cx| {
-            bench.editors.focus = None;
             if let Some(document) = bench.editors.open.get(&focused) {
                 document
                     .state
@@ -487,8 +479,7 @@ fn remember_here(bench: &mut Workbench, cx: &App) {
 fn show(bench: &mut Workbench, at: OpenAt, cx: &mut Context<Workbench>) {
     let path = at.path.clone();
     bench.editors.reveal = Some(at);
-    bench.open_file(&path);
-    bench.parts.redraw(&bench.parts.stage, cx);
+    bench.open_file(&path, cx);
 }
 
 /// Where the cursor is in the editor in front.

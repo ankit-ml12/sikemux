@@ -228,7 +228,7 @@ impl Workbench {
             return;
         };
         if let Some(path) = finder.chosen(place) {
-            self.open_file(&project.path.join(path));
+            self.open_file(&project.path.join(path), cx);
             self.close_finder(window, cx);
         }
     }
