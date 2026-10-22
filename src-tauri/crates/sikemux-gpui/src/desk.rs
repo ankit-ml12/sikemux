@@ -998,6 +998,7 @@ impl Workbench {
             "contexts": window.context_stack().iter().map(|context| format!("{context:?}")).collect::<Vec<_>>(),
             "desks": agents.into_iter().map(|agent| (agent.clone(), desk(agent))).collect::<serde_json::Map<_, _>>(),
             "files": files,
+            "spots": crate::drive::spots(),
             "rail": match self.rail_page {
                 crate::workbench::RailPage::Agents => "agents",
                 crate::workbench::RailPage::Terminals => "terminals",
@@ -1025,6 +1026,7 @@ fn downloaded(download: &BrowserDownload) -> Notification {
                 let (note, held) = (cx.entity(), held.clone());
                 Button::new("keep-download")
                     .label("Keep in Downloads")
+                    .children(ui::spot(|| "keep-download".into()))
                     .on_click(move |_, window, cx| {
                         match keep_download(&held) {
                             Ok(kept) => cx.reveal_path(&kept),
@@ -1173,6 +1175,7 @@ pub fn pane(
                 } else {
                     t.text_secondary
                 })
+                .children(ui::spot(|| format!("desk-page-{}", page.title)))
                 .on_click(cx.listener(move |bench, _, _, cx| {
                     bench.desks.front.remove(&switch_agent);
                     bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
@@ -1195,7 +1198,8 @@ pub fn pane(
                         "Close page",
                     )
                     .glyph(10.)
-                    .on_click(cx.listener(move |bench, _, _, _| {
+                    .on_click(cx.listener(move |bench, _, _, cx| {
+                        cx.stop_propagation();
                         bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
                     })),
                 ),
@@ -1243,6 +1247,7 @@ pub fn pane(
                 } else {
                     t.text_secondary
                 })
+                .children(ui::spot(|| format!("desk-item-{label}")))
                 .on_click(cx.listener(move |bench, _, _, cx| {
                     bench
                         .desks
@@ -1266,6 +1271,7 @@ pub fn pane(
                     )
                     .glyph(10.)
                     .on_click(cx.listener(move |bench, _, _, cx| {
+                        cx.stop_propagation();
                         bench.take_off_desk(&close_agent, &close_item);
                         bench.parts.redraw(&bench.parts.stage, cx);
                     })),

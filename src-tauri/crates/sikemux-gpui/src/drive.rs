@@ -8,7 +8,10 @@
 //!   key cmd+shift+p | text some words | scroll x y dx dy [steps] [momentum] | wait seconds
 //!   state, answered with what the desks hold and where the keys are, as JSON on its line
 //!   register, which takes the core's window calls without activating the window
+//!   resize width height, in points
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::Duration;
@@ -107,6 +110,12 @@ async fn acted(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result
     let at = |from: usize| Some(point(px(number(from)?), px(number(from + 1)?)));
     match verb {
         "activate" => send(window, cx, |window, _| window.activate_window()),
+        "resize" => {
+            let to = at(0).ok_or("bad step")?;
+            send(window, cx, |window, _| {
+                window.resize(gpui_kit::size(to.x, to.y));
+            })
+        }
         "wait" => {
             let seconds = number(0).unwrap_or(1.);
             cx.background_executor()
@@ -274,6 +283,40 @@ fn send(
     window
         .update(cx, |_, window, cx| act(window, cx))
         .map_err(|_| "the window is gone")
+}
+
+thread_local! {
+    static SPOTS: RefCell<BTreeMap<String, [f32; 4]>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// An invisible mark over its parent that notes where the parent was last drawn, so a check
+/// can click a control it cannot otherwise find.
+pub fn spot(name: String) -> gpui_kit::AnyElement {
+    use gpui_kit::{IntoElement, Styled};
+    gpui_kit::canvas(
+        move |bounds, _, _| {
+            let frame = [
+                bounds.left(),
+                bounds.top(),
+                bounds.size.width,
+                bounds.size.height,
+            ];
+            SPOTS.with(|spots| {
+                spots
+                    .borrow_mut()
+                    .insert(name.clone(), frame.map(f32::from))
+            });
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+    .into_any_element()
+}
+
+/// Every spot's last frame, left, top, width and height, by name.
+pub fn spots() -> serde_json::Value {
+    SPOTS.with(|spots| serde_json::json!(*spots.borrow()))
 }
 
 /// Writes when something happened, in milliseconds since the epoch, to the test bundle's log,

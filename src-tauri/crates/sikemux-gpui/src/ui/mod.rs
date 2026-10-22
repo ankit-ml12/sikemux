@@ -258,3 +258,11 @@ pub fn dot(tone: Tone, cx: &App) -> Div {
         Tone::Failed => dot.bg(t.danger),
     }
 }
+
+/// Where the test bundle's driver can find this element to click it; nothing in other builds.
+pub fn spot(_name: impl FnOnce() -> String) -> Option<AnyElement> {
+    #[cfg(feature = "drive")]
+    return Some(crate::drive::spot(_name()));
+    #[cfg(not(feature = "drive"))]
+    None
+}

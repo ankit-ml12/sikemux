@@ -438,6 +438,88 @@ def dk9(run):
     run.report("DK9", bool(focused) and bool(reloaded), f"⌘L then Enter: page focused {bool(focused)}, fetched again {bool(reloaded)}")
 
 
+def spot(run, name):
+    return ((run.state() or {}).get("spots") or {}).get(name)
+
+
+def middle(frame):
+    left, top, width, height = frame
+    return left + width / 2, top + height / 2
+
+
+def page_in_front(run):
+    """Puts a page in front of the desk, past any file or terminal shown over its pages."""
+    if not pages(run.desk()):
+        run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
+        until(lambda: active_page(run.desk()).get("title"), 10)
+    if run.desk().get("front"):
+        frame = spot(run, f"desk-page-{active_page(run.desk()).get('title', '')}")
+        if frame:
+            x, y = middle(frame)
+            run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
+    return until(lambda: run.desk().get("pageBounds"), 5)
+
+
+def d8(run):
+    before = page_in_front(run)
+    width, height = (run.state() or {}).get("window", [1340, 881])
+    run.drive(f"resize {width - 160:.0f} {height - 80:.0f}", "wait 1.5")
+    state = run.state() or {}
+    small = state.get("window", [0, 0])
+    after = until(lambda: (lambda frame: frame if frame and frame != before else None)(run.desk().get("pageBounds")), 5) or run.desk().get("pageBounds")
+    inside = bool(after) and after[0] + after[2] <= small[0] + 1 and after[1] + after[3] <= small[1] + 1
+    run.drive(f"resize {width:.0f} {height:.0f}", "wait 1")
+    run.report("D8", bool(before) and inside and after != before,
+               f"window {width:.0f}x{height:.0f} → {small[0]:.0f}x{small[1]:.0f}; page {before} → {after}, inside the window {inside}")
+
+
+def df2(run):
+    path = str(run.root / "project/a.txt")
+    if not pages(run.desk()):
+        run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
+        until(lambda: active_page(run.desk()).get("title"), 10)
+    run.prompt(json_tool("ui.open", {"kind": "file", "path": path}))
+    until(lambda: (run.desk().get("front") or {}).get("file") == path, 10)
+    title = active_page(run.desk()).get("title", "")
+    page, item = spot(run, f"desk-page-{title}"), spot(run, "desk-item-a.txt")
+    if not (page and item):
+        return run.report("DF2", False, f"no spot for the page pill {title!r} ({page}) or the file pill ({item})")
+    x, y = middle(page)
+    run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
+    on_page = run.desk().get("front") is None
+    item = spot(run, "desk-item-a.txt") or item
+    x, y = middle(item)
+    run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
+    on_file = (run.desk().get("front") or {}).get("file") == path
+    left, top, width, height = spot(run, "desk-item-a.txt") or item
+    run.drive(f"click {left + width - 10:.0f} {top + height / 2:.0f}", "wait 1")
+    desk = run.desk()
+    back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
+    run.report("DF2", on_page and on_file and back, f"page pill showed the page {on_page}; file pill showed the file {on_file}; its × brought the page back {back} "
+               f"(front {desk.get('front')}, items {desk.get('items')})")
+
+
+def d9_keep(run):
+    """The download notice draws over the page and takes its click, with the rails out of the way."""
+    page_in_front(run)
+    run.drive("key cmd+b", "wait 1.5")
+    page = until(lambda: run.desk().get("pageBounds"), 5)
+    keep = until(lambda: spot(run, "keep-download"), 5)
+    over = bool(page and keep) and keep[0] < page[0] + page[2] and keep[0] + keep[2] > page[0] and keep[1] < page[1] + page[3] and keep[1] + keep[3] > page[1]
+    if run.options.behind:
+        run.report("D9", over, f"the Keep button {keep} lies over the page {page}: {over}")
+        run.leave("DK7 Keep", "keeping reveals the file in Finder, which would come up over the person's work")
+    else:
+        downloads = run.root / "home/Downloads/file.zip"
+        x, y = middle(keep) if keep else (0, 0)
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 2")
+        kept = until(lambda: downloads.exists(), 8)
+        marked = kept and "com.apple.quarantine" in subprocess.run(["xattr", "-l", downloads], capture_output=True, text=True).stdout
+        run.report("D9", over and bool(kept), f"the Keep button {keep} lies over the page {page}: {over}; its click kept the file {bool(kept)}")
+        run.report("DK7 Keep", bool(kept) and marked, f"kept in Downloads {bool(kept)}, still quarantined {marked}")
+    run.drive("key cmd+b", "wait 1")
+
+
 def one_desk(run):
     """Every way a desk opens, all at once with it closed, still leaves one desk."""
     x, y = run.composer()
@@ -547,13 +629,9 @@ def local(run):
         ("DP1", "page_preview needs a terminal agent, which the fake agent is not"),
         ("DP2", "page_show from a terminal agent, as DP1"),
         ("DP4", "a theme switch goes through Settings' pickers"),
-        ("D8", "the driver cannot resize the window"),
-        ("D9", "the More menu's spot is found from a screenshot"),
-        ("DF2", "the desk's tab pills are clicked at spots only a screenshot finds"),
         ("S1", "needs a booted simulator and a person to judge the stream"),
         ("5.5", "⌘C and ⌘V use the clipboard"),
         ("5.6", "resizing needs a person's eyes"),
-        ("DK7 Keep", "the notice's button is clicked at a spot only a screenshot finds"),
     ]:
         run.leave(name, why)
 
@@ -572,7 +650,7 @@ def answered(said):
 
 
 CHECKS = [("DP5", dp5), ("DP3", dp3), ("D5", d5), ("DK3", dk3), ("D6", d6_dk4_dk5), ("DK6", dk6), ("D7", d7), ("DK8", dk8),
-          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("DF1", df1), ("DF3", df3), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
+          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("D9", d9_keep), ("D8", d8), ("DF1", df1), ("DF3", df3), ("DF2", df2), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
 
 
 def main():
