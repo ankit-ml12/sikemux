@@ -1368,6 +1368,11 @@ impl Workbench {
         if path == self.watched_project && place == self.watched_place {
             return;
         }
+        if place != self.watched_place {
+            for key in ["activity", "tasks", "runs", "ports"] {
+                self.reads.remove(key);
+            }
+        }
         let target = Target::new(&self.asks, place.clone());
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
         target.watch(
