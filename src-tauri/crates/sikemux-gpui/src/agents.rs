@@ -17,7 +17,7 @@ use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
-use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, Workbench};
+use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
 
 pub const TAB_RAIL: RailWidth = RailWidth {
     min: 240.,
@@ -47,10 +47,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
     }
     let project = bench.project();
     let agents = bench.listed_agents();
-    let rows: Vec<_> = agents
-        .iter()
-        .map(|agent| agent_row(bench, agent, cx).into_any_element())
-        .collect();
+    let rows = team_rows(bench, &agents, cx);
     let (pinned, recent): (Vec<_>, Vec<_>) = project
         .map(|project| bench.recent_of(&project.id))
         .unwrap_or_default()
@@ -352,7 +349,67 @@ fn new_row(id: &'static str, glyph: Icon, label: &'static str, command: &str, cx
         .children(crate::keymap::hint(command, cx).map(|keys| ui::kbd(keys, cx)))
 }
 
-fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -> impl IntoElement {
+/// The rows, each lead's workers under it on a tree the lead folds, unless the list is
+/// filtered and a team may have lost its lead.
+fn team_rows(
+    bench: &Workbench,
+    agents: &[AgentRow],
+    cx: &mut Context<Workbench>,
+) -> Vec<AnyElement> {
+    let teams = bench.filter_text.is_empty();
+    let mut folded = false;
+    let mut rows = Vec::with_capacity(agents.len());
+    for (ix, agent) in agents.iter().enumerate() {
+        let team = agent.team.filter(|_| teams);
+        let fold = match team {
+            Some(TeamLink::Head) => {
+                let count = agents[ix + 1..]
+                    .iter()
+                    .take_while(|worker| {
+                        matches!(worker.team, Some(TeamLink::Member | TeamLink::Last))
+                    })
+                    .count();
+                folded = bench.folded_teams.contains(&agent.id);
+                Some(Fold {
+                    open: !folded,
+                    count,
+                })
+            }
+            Some(_) if folded => continue,
+            Some(_) => None,
+            None => {
+                folded = false;
+                None
+            }
+        };
+        rows.push(agent_row(bench, agent, team, fold, cx).into_any_element());
+    }
+    rows
+}
+
+impl Workbench {
+    /// Folds a lead's team away, or brings it back.
+    pub fn fold_team(&mut self, lead: &str, cx: &mut Context<Self>) {
+        if !self.folded_teams.remove(lead) {
+            self.folded_teams.insert(lead.to_owned());
+        }
+        cx.notify();
+    }
+}
+
+/// Whether a lead's team shows, and how many workers it has.
+struct Fold {
+    open: bool,
+    count: usize,
+}
+
+fn agent_row(
+    bench: &Workbench,
+    agent: &AgentRow,
+    team: Option<TeamLink>,
+    fold: Option<Fold>,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let project = bench
         .all_projects
@@ -367,14 +424,45 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
     let chosen = bench.agent().is_some_and(|front| front.id == agent.id);
     let id = agent.id.clone();
     let menu = AgentMenu::new(bench, &agent.id, cx);
+    let leads = fold.is_some();
+    let mark = match &fold {
+        Some(fold) => div()
+            .relative()
+            .size(px(20.))
+            .child(
+                div()
+                    .group_hover(ui::ROW, |mark| mark.opacity(0.))
+                    .child(ui::agent_mark(agent, 20., cx)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .opacity(0.)
+                    .group_hover(ui::ROW, |chevron| chevron.opacity(1.))
+                    .child(
+                        ui::icon(Icon::Chevron, 11.)
+                            .text_color(t.text_secondary)
+                            .when(fold.open, |chevron| {
+                                chevron
+                                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                            }),
+                    ),
+            )
+            .into_any_element(),
+        None => ui::agent_mark(agent, 20., cx),
+    };
     let row = Row::new(
         SharedString::from(format!("agent-{}", agent.id)),
         agent.title.clone(),
     )
-    .mark(22., ui::agent_mark(agent, 20., cx))
+    .mark(22., mark)
     .chosen(chosen)
     .compact(bench.rail_compact())
-    .when_some(project, |row, project| {
+    .when_some(project.clone(), |row, project| {
         row.subtitle(
             div()
                 .flex()
@@ -386,17 +474,81 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
         )
     })
     .status(ui::status_mark(agent.status, cx))
-    .on_click(cx.listener(move |bench, _, _, _| bench.open_agent(&id)))
+    .on_click(cx.listener({
+        let id = id.clone();
+        move |bench, _, _, cx| {
+            if leads {
+                bench.fold_team(&id, cx);
+            }
+            bench.open_agent(&id);
+        }
+    }))
     .children(
         agent
             .name
             .clone()
             .map(|name| ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.))),
     )
+    .children(fold.as_ref().filter(|fold| !fold.open).map(|fold| {
+        div()
+            .flex_none()
+            .px(px(5.))
+            .rounded_full()
+            .bg(t.surface_hover)
+            .text_color(t.text_tertiary)
+            .text_size(px(10.))
+            .line_height(px(15.))
+            .font_features(crate::theme::tabular())
+            .child(format!("+{}", fold.count))
+    }))
     .children(counts(agent, cx));
+    let spine = |line: gpui_kit::Div| line.absolute().left(px(14.)).w(px(1.)).bg(t.tree_spine);
+    let lines: Vec<AnyElement> = match (team, &fold) {
+        (Some(TeamLink::Head), Some(Fold { open: true, .. })) => {
+            vec![spine(div()).top(px(26.)).bottom(px(-2.)).into_any_element()]
+        }
+        (Some(TeamLink::Member), _) => vec![
+            spine(div()).top(px(-2.)).bottom(px(-2.)).into_any_element(),
+            div()
+                .absolute()
+                .top(px(14.))
+                .left(px(14.))
+                .w(px(7.))
+                .h(px(1.))
+                .bg(t.tree_tick)
+                .into_any_element(),
+        ],
+        (Some(TeamLink::Last), _) => vec![div()
+            .absolute()
+            .top(px(-2.))
+            .left(px(14.))
+            .w(px(8.))
+            .h(px(17.))
+            .border_l_1()
+            .border_b_1()
+            .border_color(t.tree_spine)
+            .rounded_bl(px(4.))
+            .into_any_element()],
+        _ => Vec::new(),
+    };
+    let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
     div()
         .id(SharedString::from(format!("agent-menu-{}", agent.id)))
+        .relative()
+        .when(
+            matches!(team, Some(TeamLink::Member | TeamLink::Last)),
+            |wrap| wrap.pl(px(18.)),
+        )
+        .on_hover(
+            cx.listener(move |bench, inside: &bool, _, cx| bench.rest_on_agent(&id, *inside, cx)),
+        )
+        .on_mouse_down(
+            gpui_kit::MouseButton::Left,
+            cx.listener(|bench, _, _, cx| bench.close_card(cx)),
+        )
         .child(row)
+        .children(lines)
+        .children(card)
         .context_menu(move |popup, window, cx| match &menu {
             Some(menu) => menu.build(popup, window, cx),
             None => popup,

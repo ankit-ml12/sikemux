@@ -3,6 +3,7 @@
 pub mod account_picker;
 mod accounts;
 mod add_task;
+mod agent_card;
 mod agent_menu;
 mod agent_palette;
 mod agent_setup;

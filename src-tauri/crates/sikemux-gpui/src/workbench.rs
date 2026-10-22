@@ -91,6 +91,10 @@ pub struct Workbench {
     pub place: Option<Strip>,
     pub last_place: Option<Strip>,
     pub all_projects: bool,
+    /// The leads whose teams the agent rail folds away.
+    pub folded_teams: HashSet<String>,
+    /// The card beside the agent row the pointer rests on.
+    pub agent_card: crate::agent_card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
     /// The space whose projects the rail shows, else every project.
@@ -287,6 +291,16 @@ pub struct AgentRow {
     pub group: AgentGroup,
     /// When it last worked, in Unix milliseconds; 0 when the core does not know.
     pub active_at: u64,
+    /// Its place on its lead's team, which the rows after a lead belong to.
+    pub team: Option<TeamLink>,
+}
+
+/// Where an agent sits on its team: the lead heads it, the last worker ends it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TeamLink {
+    Head,
+    Member,
+    Last,
 }
 
 impl Workbench {
@@ -448,6 +462,8 @@ impl Workbench {
             place: None,
             last_place: None,
             all_projects: false,
+            folded_teams: HashSet::new(),
+            agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
             space: None,
             side_rail_open: true,
@@ -2403,15 +2419,19 @@ impl Workbench {
                     .sessions
                     .iter()
                     .find(|session| session.agent_id.as_deref() == Some(agent.id.as_str()));
-                let active_at = view.inbox["agents"]
+                let shown = view.inbox["agents"]
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .find(|row| row["agentId"] == agent.id.as_str())
-                    .and_then(|row| row["activeAt"].as_u64())
-                    .unwrap_or(0);
+                    .find(|row| row["agentId"] == agent.id.as_str());
                 AgentRow {
-                    active_at,
+                    active_at: shown.and_then(|row| row["activeAt"].as_u64()).unwrap_or(0),
+                    team: shown.and_then(|row| match row["team"].as_str()? {
+                        "head" => Some(TeamLink::Head),
+                        "member" => Some(TeamLink::Member),
+                        "last" => Some(TeamLink::Last),
+                        _ => None,
+                    }),
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
                     title: agent.title.clone(),
