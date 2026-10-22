@@ -60,6 +60,9 @@ pub struct Accounts {
     asking: HashSet<(String, Option<String>)>,
     pub signing: HashMap<String, SignIn>,
     pub dialog: Option<Dialog>,
+    /// The chats that failed for want of an account's sign-in, by that account, to move onto
+    /// it once it signs in.
+    pub waiting_chats: HashMap<String, Vec<String>>,
 }
 
 /// An account's colour, which the person may have set as `#rrggbb`.
@@ -369,8 +372,15 @@ pub fn sign_in(bench: &mut Workbench, id: &str, cx: &mut Context<Workbench>) {
                         .signing
                         .insert(profile.id.clone(), SignIn::Failed(message));
                 }
-                _ => {
+                Err(_) => {
                     bench.accounts.signing.remove(&profile.id);
+                }
+                Ok(_) => {
+                    bench.accounts.signing.remove(&profile.id);
+                    let chats = bench.accounts.waiting_chats.remove(&profile.id);
+                    for chat in chats.into_iter().flatten() {
+                        crate::account_picker::move_chat(bench, &chat, &profile);
+                    }
                 }
             }
             forget(bench, &profile, cx);

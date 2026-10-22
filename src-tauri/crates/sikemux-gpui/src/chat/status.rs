@@ -529,7 +529,13 @@ fn account_ways(
             return methods;
         }
     }
-    let (this, provider, account) = (this.clone(), agent.provider.clone(), on.map(|on| on.id));
+    let moves_on_sign_in = on.is_some();
+    let (this, provider, account, chat) = (
+        this.clone(),
+        agent.provider.clone(),
+        on.map(|on| on.id),
+        agent.id.clone(),
+    );
     let sign_in = Button::new(
         "chat-sign-in",
         format!("Sign in to {name}"),
@@ -538,13 +544,24 @@ fn account_ways(
     .on_click(move |_, window, cx| {
         this.update(cx, |bench, cx| match &account {
             Some(account) => {
+                let waiting = bench
+                    .accounts
+                    .waiting_chats
+                    .entry(account.clone())
+                    .or_default();
+                if !waiting.contains(&chat) {
+                    waiting.push(chat.clone());
+                }
                 crate::accounts::open_sign_in(bench, &provider, Some(account), window, cx)
             }
             None => bench.sign_in_agent(&provider, window, cx),
         })
         .ok();
     });
-    vec![sign_in, retry]
+    match moves_on_sign_in {
+        true => vec![sign_in],
+        false => vec![sign_in, retry],
+    }
 }
 
 /// A line at the end of the rows, in the column the rows are read in.
