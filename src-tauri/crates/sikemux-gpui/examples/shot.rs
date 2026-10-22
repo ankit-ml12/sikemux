@@ -9,7 +9,9 @@
 //!                                 "swipe x,y pixels" or "swipe x,y pixels hold" for a sideways trackpad swipe,
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, "copy-image file.png", or "share" to open the
-//!                                 share dialog of the chat in front
+//!                                 share dialog of the chat in front; "press x,y", "hold x,y" and
+//!                                 "release x,y" drag the pointer with its button down, and
+//!                                 "clipboard" prints the text copied
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -185,6 +187,39 @@ fn main() -> anyhow::Result<()> {
                         }),
                         cx,
                     );
+                }
+                "press" | "hold" | "release" => {
+                    let (x, y) = rest
+                        .split_once(',')
+                        .ok_or_else(|| anyhow::anyhow!("{verb} x,y"))?;
+                    let position = point(px(x.trim().parse()?), px(y.trim().parse()?));
+                    let (button, modifiers) = (MouseButton::Left, Modifiers::default());
+                    let event = match verb {
+                        "press" => PlatformInput::MouseDown(MouseDownEvent {
+                            button,
+                            position,
+                            modifiers,
+                            click_count: 1,
+                            first_mouse: false,
+                        }),
+                        "hold" => PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            pressed_button: Some(button),
+                            modifiers,
+                        }),
+                        _ => PlatformInput::MouseUp(MouseUpEvent {
+                            button,
+                            position,
+                            modifiers,
+                            click_count: 1,
+                        }),
+                    };
+                    window.dispatch_event(event, cx);
+                    window.draw(cx).clear(cx);
+                }
+                "clipboard" => {
+                    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+                    println!("clipboard: {copied:?}");
                 }
                 "type" => {
                     for letter in rest.chars() {

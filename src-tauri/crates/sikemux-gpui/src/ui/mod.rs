@@ -12,6 +12,7 @@ mod lists;
 pub mod moving_face;
 mod pane;
 mod select;
+pub mod selectable;
 pub mod shimmer;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};

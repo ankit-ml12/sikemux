@@ -2196,7 +2196,11 @@ fn asking(
         .text_size(crate::theme::ui_text(13.5))
         .line_height(relative(1.5))
         .text_color(t.text_primary)
-        .child(StyledText::new(asked.clone()).with_highlights([(plain..asked.len(), faint)]));
+        .child(crate::ui::selectable::selectable(
+            SharedString::from(format!("question-text-{}", current.id)),
+            asked.clone(),
+            [(plain..asked.len(), faint)],
+        ));
     let picked = chat.picks.get(&current.id);
     let cursor = chat
         .cursor
