@@ -68,7 +68,7 @@ pub(super) fn changed(path: &Path, bench: &mut Workbench, cx: &mut Context<Workb
     };
     let Some(base) = document.gutter.base.clone() else {
         document.gutter.hunks = Rc::default();
-        return;
+        return bench.parts.redraw(&bench.parts.stage, cx);
     };
     let (state, path) = (document.state.clone(), path.to_owned());
     document.gutter.refresh = Some(cx.spawn(async move |bench, cx| {

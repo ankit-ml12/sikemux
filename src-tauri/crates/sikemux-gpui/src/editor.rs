@@ -1133,6 +1133,7 @@ fn place_cursor(
         });
         state.set_cursor_position(Position::new(at.line, column), window, cx);
     });
+    bench.parts.redraw(&bench.parts.stage, cx);
 }
 
 /// Shows the file's text, or how its markdown reads, rendered from what the

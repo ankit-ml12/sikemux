@@ -134,9 +134,10 @@ fn read_outline(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>)
         .and_then(|document| Some(document.served.as_ref()?.document()))
     else {
         bench.editors.insights.outline = Outline::Unavailable;
-        return;
+        return bench.parts.redraw(&bench.parts.stage, cx);
     };
     bench.editors.insights.outline = Outline::Loading(path.to_owned());
+    bench.parts.redraw(&bench.parts.stage, cx);
     let (asks, path) = (bench.asks.clone(), path.to_owned());
     cx.spawn(async move |bench, cx| {
         let read = core::request(&asks, "lsp.symbols", params).await;
