@@ -107,6 +107,10 @@ enum Shrunk {
 /// shrunk copy.
 enum Thumbnail {}
 
+/// How many thumbnails decode at once: each holds its whole picture until it is shrunk, so
+/// twenty pasted together would otherwise hold twenty screenshots at their full size.
+static DECODING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
 impl Asset for Thumbnail {
     type Source = Thumb;
     type Output = Result<Arc<RenderImage>, ImageCacheError>;
@@ -115,7 +119,10 @@ impl Asset for Thumbnail {
         thumb: Thumb,
         _: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        async move { shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into())) }
+        async move {
+            let _decoding = DECODING.acquire().await;
+            shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into()))
+        }
     }
 }
 
