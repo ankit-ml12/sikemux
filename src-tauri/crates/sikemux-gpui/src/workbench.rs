@@ -857,6 +857,9 @@ impl Workbench {
 
     /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
     fn open_chat(&mut self, cx: &mut Context<Self>) {
+        if self.place() != crate::hosts::Place::This {
+            return;
+        }
         let Some(AgentRow {
             id: agent,
             provider,
@@ -1558,15 +1561,32 @@ impl Workbench {
         let _ = self.asks.send(Ask::Call { method, params });
     }
 
+    /// The view of the host in front: another host's own, while one on the account is chosen,
+    /// else this host's.
+    pub fn shown(&self) -> Option<&DeviceView> {
+        match self.view.as_ref()?.layout.chosen_host.as_ref() {
+            Some(key) => self.host_views.get(key),
+            None => self.view.as_ref(),
+        }
+    }
+
+    /// One of the core's methods on the host in front, for what the person did there.
+    pub fn call_in_front(&self, method: &'static str, params: Value) {
+        let call = Ask::Call { method, params };
+        let _ = self.asks.send(match self.place() {
+            crate::hosts::Place::Account(host) => Ask::On(host, Box::new(call)),
+            crate::hosts::Place::This => call,
+        });
+    }
+
     pub fn projects(&self) -> &[ProjectInfo] {
-        self.view
-            .as_ref()
+        self.shown()
             .map_or(&[], |view| view.workspace.projects.as_slice())
     }
 
     /// The project in front, as the core's layout says.
     pub fn project(&self) -> Option<&ProjectInfo> {
-        let active = self.view.as_ref()?.layout.active_project.as_deref();
+        let active = self.shown()?.layout.active_project.as_deref();
         let projects = self.projects();
         active
             .and_then(|id| projects.iter().find(|project| project.id == id))
@@ -1574,8 +1594,7 @@ impl Workbench {
     }
 
     pub fn launchers(&self) -> &[LauncherInfo] {
-        self.view
-            .as_ref()
+        self.shown()
             .map_or(&[], |view| view.workspace.launchers.as_slice())
     }
 
@@ -2149,7 +2168,7 @@ impl Workbench {
 
     /// The space the rail shows, while it still exists.
     pub fn space(&self) -> Option<&SpaceInfo> {
-        let spaces = &self.view.as_ref()?.workspace.spaces;
+        let spaces = &self.shown()?.workspace.spaces;
         spaces
             .iter()
             .find(|space| Some(&space.id) == self.space.as_ref())
@@ -2407,13 +2426,13 @@ impl Workbench {
     }
 
     pub fn activate_project(&self, id: &str) {
-        self.call("activateProject", json!({ "project": id }));
+        self.call_in_front("activateProject", json!({ "project": id }));
     }
 
     /// The strip in front: the terminals or SSH host shown instead of a project, else the
     /// project in front.
     pub fn strip(&self) -> Option<Strip> {
-        let layout = &self.view.as_ref()?.layout;
+        let layout = &self.shown()?.layout;
         if layout.terminals_in_front {
             return Some(Strip::Terminals);
         }
@@ -2430,7 +2449,7 @@ impl Workbench {
     }
 
     fn layout_of(&self, strip: &Strip) -> Option<&ProjectLayout> {
-        let layout = &self.view.as_ref()?.layout;
+        let layout = &self.shown()?.layout;
         match strip {
             Strip::Project(id) => layout.projects.get(id),
             Strip::Host(alias) => layout.hosts.get(alias),
@@ -2455,30 +2474,30 @@ impl Workbench {
     }
 
     pub fn activate_tab(&self, strip: &Strip, tab: &str) {
-        self.call("activateTab", strip.with(json!({ "tab": tab })));
+        self.call_in_front("activateTab", strip.with(json!({ "tab": tab })));
     }
 
     pub fn close_tab(&self, strip: &Strip, tab: &str) {
-        self.call("closeTab", strip.with(json!({ "tab": tab })));
+        self.call_in_front("closeTab", strip.with(json!({ "tab": tab })));
     }
 
     /// Moves a tab to `to` in its strip, counted as the strip is now.
     pub fn move_tab(&self, strip: &Strip, tab: &str, to: usize) {
-        self.call("moveTab", strip.with(json!({ "tab": tab, "to": to })));
+        self.call_in_front("moveTab", strip.with(json!({ "tab": tab, "to": to })));
     }
 
     /// Keeps a tab opened to look at, so the next one opens beside it.
     pub fn keep_tab(&self, strip: &Strip, tab: &str) {
-        self.call("keepTab", strip.with(json!({ "tab": tab })));
+        self.call_in_front("keepTab", strip.with(json!({ "tab": tab })));
     }
 
     pub fn close_tabs(&self, strip: &Strip, tabs: &[String]) {
-        self.call("closeTabs", strip.with(json!({ "tabs": tabs })));
+        self.call_in_front("closeTabs", strip.with(json!({ "tabs": tabs })));
     }
 
     /// Names a tab; an empty name gives back the one its view gives it.
     pub fn rename_tab(&self, strip: &Strip, tab: &str, title: &str) {
-        self.call(
+        self.call_in_front(
             "renameTab",
             strip.with(json!({ "tab": tab, "title": title })),
         );
@@ -2486,7 +2505,7 @@ impl Workbench {
 
     /// Opens a copy of a tab beside it, with new shells for its terminals.
     pub fn duplicate_tab(&self, strip: &Strip, tab: &str) {
-        self.call("duplicateTab", strip.with(json!({ "tab": tab })));
+        self.call_in_front("duplicateTab", strip.with(json!({ "tab": tab })));
     }
 
     /// Opens a terminal to an SSH host, in that host's strip.
@@ -2497,7 +2516,7 @@ impl Workbench {
     /// Brings an agent's tab to the front.
     /// Brings the tab of the agent `id` to the front, in its project.
     pub fn open_agent(&self, id: &str) {
-        let Some(project) = self.view.as_ref().and_then(|view| {
+        let Some(project) = self.shown().and_then(|view| {
             view.workspace
                 .agents
                 .iter()
@@ -2536,7 +2555,7 @@ impl Workbench {
 
     /// Terminals started outside every project, which the core numbers.
     pub fn loose_terminals(&self) -> Vec<&SessionInfo> {
-        self.view.as_ref().map_or(Vec::new(), |view| {
+        self.shown().map_or(Vec::new(), |view| {
             view.sessions
                 .iter()
                 .filter(|session| session.rail_name.is_some() && session.exit.is_none())
@@ -2546,7 +2565,7 @@ impl Workbench {
 
     /// The project's agents in the order the core ranks them for the person.
     pub fn agents_of(&self, project: &str) -> Vec<AgentRow> {
-        let Some(view) = &self.view else {
+        let Some(view) = self.shown() else {
             return Vec::new();
         };
         let ranked: Vec<&str> = view.inbox["agents"]
@@ -2629,7 +2648,7 @@ impl Workbench {
 
     /// The project's saved chats no agent holds, which the agent list already shows.
     pub fn recent_of(&self, project: &str) -> Vec<&RecentInfo> {
-        self.view.as_ref().map_or(Vec::new(), |view| {
+        self.shown().map_or(Vec::new(), |view| {
             view.recent
                 .iter()
                 .filter(|recent| recent.project == project && recent.agent_id.is_none())

@@ -367,6 +367,21 @@ fn preview(side: Side, cx: &App) -> impl IntoElement {
         })
 }
 
+/// A chat or terminal of another host, which this app does not show yet.
+fn elsewhere(bench: &Workbench, host: &str, cx: &mut Context<Workbench>) -> AnyElement {
+    let name = bench
+        .host_choices()
+        .into_iter()
+        .find(|option| option.choice == crate::hosts::HostChoice::Account(host.to_owned()))
+        .map_or_else(|| "another host".into(), |option| option.label);
+    ui::pane(cx)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(ui::meta(format!("This runs on {name}"), cx))
+        .into_any_element()
+}
+
 fn view(
     bench: &Workbench,
     tab: &str,
@@ -376,6 +391,13 @@ fn view(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    if let (
+        crate::hosts::Place::Account(host),
+        PaneKind::Terminal | PaneKind::Agent | PaneKind::Desk,
+    ) = (bench.place(), kind)
+    {
+        return elsewhere(bench, &host, cx);
+    }
     match kind {
         PaneKind::Terminal => ui::pane(cx)
             .child(terminal::pane(bench, &cx.entity(), target, window))
@@ -644,6 +666,9 @@ impl Workbench {
 
     /// Puts the keys in the view `id` of the tab in front: a terminal's screen or a chat's draft.
     fn focus_view(&self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.place() != crate::hosts::Place::This {
+            return self.focus.focus(window, cx);
+        }
         let Some(Pane::View { kind, target, .. }) =
             self.tab().and_then(|tab| view_in(&tab.pane, id))
         else {
