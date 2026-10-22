@@ -305,7 +305,21 @@ fn pane_header(
         .on_title_double_click(
             cx.listener(move |bench, _, window, cx| bench.retitle(&id, window, cx)),
         )
-        .mark(ui::mark(&agent.provider, 16.))
+        .mark(match agent.face.is_some() {
+            true => {
+                let picked = agent.id.clone();
+                div()
+                    .id("agent-buddy")
+                    .cursor_pointer()
+                    .tooltip(ui::tooltip("Change buddy"))
+                    .child(ui::agent_mark(agent, 16., cx))
+                    .on_click(
+                        cx.listener(move |bench, _, _, cx| bench.open_buddy_picker(&picked, cx)),
+                    )
+                    .into_any_element()
+            }
+            false => ui::mark(&agent.provider, 16.).into_any_element(),
+        })
         .name(
             agent
                 .name

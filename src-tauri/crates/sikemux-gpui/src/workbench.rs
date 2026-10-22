@@ -175,6 +175,7 @@ pub struct Workbench {
     pub(crate) rail_slide: crate::track::Slide<RailPage>,
     /// The task the person is writing in the Add a task dialog, while it is open.
     pub adding_task: Option<crate::add_task::AddTask>,
+    pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
     /// The core's trust questions already put to the person, by id.
     trust_asked: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
@@ -501,6 +502,7 @@ impl Workbench {
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
+            buddy_picker: None,
             trust_asked: HashSet::new(),
             trust_host: None,
             peeking: None,
@@ -3293,6 +3295,7 @@ impl Render for Workbench {
             })
             .children(asked)
             .children(crate::add_task::view(self, cx))
+            .children(crate::buddy_picker::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::opening(self, cx))
             .when(

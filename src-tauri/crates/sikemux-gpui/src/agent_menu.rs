@@ -40,6 +40,8 @@ pub struct AgentMenu {
     link: Option<String>,
     /// Its header is on screen, where its title can be edited in place.
     in_front: bool,
+    /// Agents wear faces, which it can have one of its own of.
+    faces_on: bool,
 }
 
 impl AgentMenu {
@@ -93,6 +95,7 @@ impl AgentMenu {
             can_share: catalog.is_some_and(|kind| !kind["chat"].is_null()),
             link,
             in_front: bench.agent().is_some_and(|front| front.id == agent.id),
+            faces_on: bench.shown().is_some_and(|view| view.face_style.on),
             agent,
         })
     }
@@ -166,8 +169,18 @@ impl AgentMenu {
                             )
                         });
                     }),
-            )
-            .separator();
+            );
+        if self.faces_on {
+            let (bench, picked) = (self.bench.clone(), id.clone());
+            popup = popup.item(
+                PopupMenuItem::new("Change Buddy…")
+                    .icon(Icon::User)
+                    .on_click(move |_, _, cx| {
+                        let _ = bench.update(cx, |bench, cx| bench.open_buddy_picker(&picked, cx));
+                    }),
+            );
+        }
+        popup = popup.separator();
         if let Some(resume) = &agent.resume_id {
             let pin = PinnedChat {
                 provider: agent.provider.clone(),

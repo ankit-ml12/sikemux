@@ -13,6 +13,7 @@ mod battery;
 mod board;
 mod board_panels;
 mod boot;
+mod buddy_picker;
 mod chat;
 pub mod codehost;
 mod command_popup;

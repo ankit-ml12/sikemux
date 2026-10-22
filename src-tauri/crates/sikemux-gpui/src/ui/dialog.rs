@@ -60,7 +60,7 @@ fn hold_focus(window: &mut Window, cx: &mut App) -> Held {
     Held { focus, before }
 }
 
-fn sheet_of(
+pub(crate) fn sheet_of(
     width: Pixels,
     title: SharedString,
     body: AnyElement,
