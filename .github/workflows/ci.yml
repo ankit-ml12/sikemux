@@ -21,6 +21,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      window:
+        description: Also open GPUI in a real window and capture it
+        type: boolean
+        default: false
   workflow_call:
 
 permissions:
@@ -245,6 +250,60 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --all-targets
         working-directory: src-tauri/crates/sikemux-gpui
+
+  # Whether GPUI's Metal renderer draws on a runner: a window is opened in the runner's own
+  # session and captured. Only a run started by hand with `window` checked does it.
+  gpui-window:
+    name: GPUI in a real window
+    if: github.event_name == 'workflow_dispatch' && inputs.window
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Build dependencies with light optimisation
+        run: printf '[profile.dev.package."*"]\nopt-level = %s\n' "$DEPS_OPT_LEVEL" >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri/crates/sikemux-gpui
+          key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
+          save-if: false
+
+      - name: Build the window probe
+        run: cargo build --example window_probe
+        working-directory: src-tauri/crates/sikemux-gpui
+
+      - name: Draw a window and capture it
+        working-directory: src-tauri/crates/sikemux-gpui
+        run: |
+          mkdir -p window-run
+          system_profiler SPDisplaysDataType > window-run/displays.txt
+          ./target/debug/examples/window_probe 30 > window-run/probe.log 2>&1 &
+          probe=$!
+          for _ in $(seq 1 40); do
+            number=$(swift ci/window-number.swift "$probe" 2>/dev/null) && break
+            sleep 0.5
+          done
+          echo "window ${number:-none}" | tee -a window-run/probe.log
+          sleep 3
+          if [ -n "${number:-}" ]; then screencapture -x -o -l "$number" window-run/window.png; fi
+          screencapture -x window-run/screen.png
+          kill "$probe" 2>/dev/null || true
+          test -s window-run/window.png
+
+      - name: Upload the capture
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gpui-window
+          path: src-tauri/crates/sikemux-gpui/window-run
+          if-no-files-found: warn
 
   # Every release also ships Linux packages, so main must keep compiling there,
   # and the core must keep working as a Linux host.
