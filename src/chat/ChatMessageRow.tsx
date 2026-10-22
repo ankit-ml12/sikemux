@@ -289,7 +289,11 @@ function TeammateLetter({ id, letter }: { id: string; letter: AgentMessageLetter
                     </span>
                     <span>
                         Message from{" "}
-                        <button type="button" className="chat-letter-name" title={`Open ${letter.name}`} onClick={() => cmd.revealAgent(letter.agentId)}>
+                        <button
+                            type="button"
+                            className="chat-letter-name"
+                            title={`Open ${letter.name}`}
+                            onClick={() => cmd.revealAgent(letter.agentId)}>
                             {letter.name}
                         </button>
                     </span>

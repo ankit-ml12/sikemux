@@ -150,7 +150,9 @@ fn installer() -> String {
         BuildChannel::Stable => "stable",
         _ => "nightly",
     };
-    format!("curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL={channel} sh -s -- --host --yes")
+    format!(
+        "curl -fsSL https://sikemux.com/install | SIKEMUX_CHANNEL={channel} sh -s -- --host --yes"
+    )
 }
 
 /// Opens a terminal on this host that updates Sikemux on the SSH host

@@ -296,9 +296,7 @@ const TerminalAgentRow = memo(function TerminalAgentRow({
   const { group } = agentDisplay(shown);
   return (
     <Row
-      mark={
-        <AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />
-      }
+      mark={<AgentFace agentId={session.agentId} provider={session.agentType ?? 'agent'} group={group} size={20} />}
       name={session.agentName}
       title={shown.title}
       place={place}

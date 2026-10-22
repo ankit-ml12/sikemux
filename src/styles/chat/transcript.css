@@ -138,7 +138,6 @@
     flex: none;
 }
 
-
 .chat-ask-text {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -155,7 +154,6 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
-
 
 .chat-message-content {
     flex: 1 1 auto;
