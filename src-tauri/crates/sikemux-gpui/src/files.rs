@@ -7,12 +7,14 @@ use std::rc::Rc;
 
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, uniform_list, AnyElement, AppContext, ClickEvent, Context, Entity,
-    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, SharedString, Styled,
-    Subscription, Transformation, Window,
+    div, px, radians, uniform_list, AnyElement, AppContext, ClickEvent, ClipboardItem, Context,
+    Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, SharedString,
+    Styled, Subscription, Transformation, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 
@@ -61,10 +63,11 @@ pub struct FileTree {
     pub naming: Option<Naming>,
 }
 
-/// A new file or folder in `parent`, while the person types its name in the tree.
+/// A new file or folder in `parent`, or `from` renamed, while the person types its name in the tree.
 pub struct Naming {
     pub parent: PathBuf,
     pub dir: bool,
+    pub from: Option<PathBuf>,
     pub input: Entity<InputState>,
     _typing: Subscription,
 }
@@ -213,13 +216,18 @@ impl FileTree {
         self.relist(vec![dir.to_owned()], core);
     }
 
-    /// Where the row typing a new name goes: after its folder's row, and how deep.
-    fn naming_at(&self, rows: &[Row]) -> Option<(usize, usize)> {
+    /// Where the row typing a name goes, how deep, and whether it stands in for the row of
+    /// what is renamed rather than coming after its folder's.
+    fn naming_at(&self, rows: &[Row]) -> Option<(usize, usize, bool)> {
         let naming = self.naming.as_ref()?;
+        if let Some(from) = &naming.from {
+            let at = rows.iter().position(|row| &row.path == from)?;
+            return Some((at, rows[at].depth, true));
+        }
         Some(
             match rows.iter().position(|row| row.path == naming.parent) {
-                Some(at) => (at + 1, rows[at].depth + 1),
-                None => (0, 0),
+                Some(at) => (at + 1, rows[at].depth + 1, false),
+                None => (0, 0, false),
             },
         )
     }
@@ -359,7 +367,8 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             |name| name.to_string_lossy().into_owned(),
         );
     let rows = bench.files.rows();
-    let count = rows.len() + usize::from(bench.files.naming_at(&rows).is_some());
+    let count =
+        rows.len() + usize::from(matches!(bench.files.naming_at(&rows), Some((_, _, false))));
     let action = |id: &'static str, glyph: Icon, label: &'static str| {
         IconButton::new(id, glyph, label).small()
     };
@@ -428,14 +437,14 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                     range
                         .filter_map(|index| {
                             let row = match naming {
-                                Some((at, depth)) if index == at => {
+                                Some((at, depth, _)) if index == at => {
                                     let naming = bench.files.naming.as_ref()?;
                                     return Some(naming_row(naming, depth, cx));
                                 }
-                                Some((at, _)) if index > at => rows.get(index - 1)?,
+                                Some((at, _, false)) if index > at => rows.get(index - 1)?,
                                 _ => rows.get(index)?,
                             };
-                            Some(row_view(row, &bench.files.marks, front.as_deref(), cx))
+                            Some(row_view(row, &bench.files, front.as_deref(), cx))
                         })
                         .collect::<Vec<_>>()
                 }),
@@ -448,10 +457,11 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
 
 fn row_view(
     row: &Row,
-    marks: &HashMap<PathBuf, (Option<char>, Mark)>,
+    tree: &FileTree,
     front: Option<&Path>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    let (marks, root, place) = (&tree.marks, tree.root.as_deref(), &tree.place);
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
     let colour = |mark: Mark| match mark {
@@ -556,6 +566,19 @@ fn row_view(
         )
         .children(tail)
         .into_any_element();
+    let (bench, menu_path, dir) = (cx.weak_entity(), row.path.clone(), row.entry.dir);
+    let root = root.map(Path::to_path_buf);
+    let here = matches!(place, Place::This);
+    let drawn = div()
+        .id(SharedString::from(format!(
+            "file-menu-{}",
+            row.path.display()
+        )))
+        .context_menu(move |popup, _, _| {
+            row_menu(popup, &bench, &menu_path, dir, root.as_deref(), here)
+        })
+        .child(drawn)
+        .into_any_element();
     crate::drag::tree_row(drawn, &row.path, row.entry.dir, &cx.entity(), cx)
 }
 
@@ -620,10 +643,50 @@ impl Workbench {
         if parent != root && !self.files.expanded.contains(&parent) {
             self.files.toggle(&parent, &self.target());
         }
+        self.ask_name(parent, dir, None, window, cx);
+    }
+
+    /// Asks in the tree, in `path`'s own row, for the name to give it, with its name up to its
+    /// extension chosen.
+    pub fn rename_entry(
+        &mut self,
+        path: &Path,
+        dir: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(parent) = path.parent() else {
+            return;
+        };
+        self.ask_name(parent.to_owned(), dir, Some(path.to_owned()), window, cx);
+    }
+
+    fn ask_name(
+        &mut self,
+        parent: PathBuf,
+        dir: bool,
+        from: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = from
+            .as_ref()
+            .and_then(|from| from.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let stem = match name.rfind('.') {
+            Some(dot) if dot > 0 && !dir => dot,
+            _ => name.len(),
+        };
         let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if dir { "folder name" } else { "file name" })
+            InputState::new(window, cx)
+                .placeholder(if dir { "folder name" } else { "file name" })
+                .default_value(name.clone())
         });
-        input.update(cx, |input, cx| input.focus(window, cx));
+        input.update(cx, |input, cx| {
+            input.focus(window, cx);
+            input.set_selected_range(0..stem, cx);
+        });
         let typing = cx.subscribe_in(
             &input,
             window,
@@ -642,6 +705,7 @@ impl Workbench {
         self.files.naming = Some(Naming {
             parent,
             dir,
+            from,
             input,
             _typing: typing,
         });
@@ -657,9 +721,16 @@ impl Workbench {
             return;
         };
         let path = naming.parent.join(name);
-        let params = json!({ "path": path, "dir": naming.dir });
-        let made = self.target().request("files.create", params);
-        let (parent, dir) = (naming.parent, naming.dir);
+        let made = match &naming.from {
+            Some(from) if *from == path => return cx.notify(),
+            Some(from) => self
+                .target()
+                .request("files.rename", json!({ "from": from, "to": path })),
+            None => self
+                .target()
+                .request("files.create", json!({ "path": path, "dir": naming.dir })),
+        };
+        let (parent, dir) = (naming.parent, naming.dir || naming.from.is_some());
         cx.spawn_in(window, async move |bench, cx| {
             let made = made.await;
             bench
@@ -680,4 +751,130 @@ impl Workbench {
         .detach();
         cx.notify();
     }
+
+    /// Moves `path` to the Trash once the person confirms.
+    pub fn delete_entry(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        self.confirm(
+            format!("Delete {name}?"),
+            "It moves to the Trash.",
+            "Delete",
+            true,
+            move |bench, yes, _, cx| {
+                if !yes {
+                    return;
+                }
+                let deleted = bench
+                    .target()
+                    .request("files.delete", json!({ "path": path }));
+                let parent = path.parent().map(Path::to_path_buf);
+                cx.spawn(async move |bench, cx| {
+                    let deleted = deleted.await;
+                    bench
+                        .update(cx, |bench, cx| {
+                            match deleted {
+                                Ok(_) => {
+                                    if let Some(parent) = &parent {
+                                        bench.files.reload(parent, &bench.target());
+                                    }
+                                }
+                                Err(error) => bench.notify(Notification::error(error), cx),
+                            }
+                            cx.notify();
+                        })
+                        .ok();
+                })
+                .detach();
+            },
+            cx,
+        );
+    }
+}
+
+/// The menu of a row of the tree, or of the tree itself when `path` is the project's folder.
+fn row_menu(
+    popup: PopupMenu,
+    bench: &WeakEntity<Workbench>,
+    path: &Path,
+    dir: bool,
+    root: Option<&Path>,
+    here: bool,
+) -> PopupMenu {
+    let whole = root == Some(path);
+    let on = |work: fn(&mut Workbench, &Path, bool, &mut Window, &mut Context<Workbench>)| {
+        let (bench, path) = (bench.clone(), path.to_owned());
+        move |_: &ClickEvent, window: &mut Window, cx: &mut gpui_kit::App| {
+            let _ = bench.update(cx, |bench, cx| work(bench, &path, dir, window, cx));
+        }
+    };
+    let mut popup = if dir {
+        popup
+            .item(
+                PopupMenuItem::new("New File")
+                    .icon(Icon::FilePlus)
+                    .on_click(on(|bench, path, _, window, cx| {
+                        bench.files.selected_dir = Some(path.to_owned());
+                        bench.name_new_entry(false, window, cx);
+                    })),
+            )
+            .item(
+                PopupMenuItem::new("New Folder")
+                    .icon(Icon::FolderPlus)
+                    .on_click(on(|bench, path, _, window, cx| {
+                        bench.files.selected_dir = Some(path.to_owned());
+                        bench.name_new_entry(true, window, cx);
+                    })),
+            )
+    } else {
+        popup.item(
+            PopupMenuItem::new("Open")
+                .icon(Icon::File)
+                .on_click(on(|bench, path, _, _, _| bench.open_file(path))),
+        )
+    };
+    if !whole {
+        popup = popup
+            .separator()
+            .item(
+                PopupMenuItem::new("Rename…")
+                    .icon(Icon::Pencil)
+                    .on_click(on(|bench, path, dir, window, cx| {
+                        bench.rename_entry(path, dir, window, cx)
+                    })),
+            )
+            .item(PopupMenuItem::new("Delete").icon(Icon::Trash).on_click(on(
+                |bench, path, _, _, cx| bench.delete_entry(path.to_owned(), cx),
+            )));
+    }
+    popup = popup.separator();
+    if here {
+        let revealed = path.to_owned();
+        popup = popup.item(
+            PopupMenuItem::new("Reveal in Finder")
+                .icon(Icon::Folder)
+                .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
+        );
+    }
+    let relative = root
+        .and_then(|root| path.strip_prefix(root).ok())
+        .map(|relative| relative.to_string_lossy().into_owned());
+    let mut copies = vec![(
+        "Copy Path",
+        path.to_string_lossy().into_owned(),
+        "Copied path",
+    )];
+    if let Some(relative) = relative.filter(|_| !whole) {
+        copies.push(("Copy Relative Path", relative, "Copied relative path"));
+    }
+    for (label, copied, said) in copies {
+        popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
+            move |_, window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                window.push_notification(Notification::success(said), cx);
+            },
+        ));
+    }
+    popup
 }
