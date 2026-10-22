@@ -36,6 +36,7 @@ use crate::editor::OpenAt;
 use crate::files::FileTree;
 use crate::finder::{Finder, OpenFile, ProjectFiles};
 use crate::git::{FocusGit, GitPane};
+use crate::hosts::Place;
 use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
@@ -567,7 +568,6 @@ impl Workbench {
             Update::From(_, update) if matches!(*update, Update::Chat(..)) => {
                 self.apply(*update, cx)
             }
-            Update::From(..) => {}
             Update::HostView(host, view) => {
                 self.host_views.insert(host, *view);
             }
@@ -601,8 +601,14 @@ impl Workbench {
                     .view
                     .as_ref()
                     .map_or(&[][..], |view| view.sessions.as_slice());
+                let hosts = &self.host_views;
                 self.terminals.keep(
-                    |id| sessions.iter().any(|session| session.id == id),
+                    |place, id| match place {
+                        Place::This => sessions.iter().any(|session| session.id == id),
+                        Place::Account(host) => hosts.get(host).is_none_or(|view| {
+                            view.sessions.iter().any(|session| session.id == id)
+                        }),
+                    },
                     &self.asks,
                 );
                 crate::editor::keep(self);
@@ -803,9 +809,18 @@ impl Workbench {
                 }
             }
             Update::Terminal(session, screenful) => {
-                self.terminals.apply(session, screenful, cx);
-                return self.terminals.redraw(session, cx);
+                let key = self.terminals.key(&Place::This, session);
+                self.terminals.apply(key, screenful, cx);
+                return self.terminals.redraw(key, cx);
             }
+            Update::From(host, update) if matches!(*update, Update::Terminal(..)) => {
+                if let Update::Terminal(session, screenful) = *update {
+                    let key = self.terminals.key(&Place::Account(host), session);
+                    self.terminals.apply(key, screenful, cx);
+                    return self.terminals.redraw(key, cx);
+                }
+            }
+            Update::From(..) => {}
             Update::Lost(reason) => self.lost = Some(reason),
             Update::ShutDown => return cx.quit(),
             Update::Notice { title, body, agent } => {

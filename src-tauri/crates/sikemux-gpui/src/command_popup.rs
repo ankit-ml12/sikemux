@@ -54,7 +54,13 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
     let popup = bench.command_popup.as_ref()?;
     let t = Tokens::get(cx).clone();
     let this = cx.entity();
-    let terminal = crate::terminal::pane(bench, &this, &popup.session.to_string(), cx);
+    let terminal = crate::terminal::pane(
+        bench,
+        &this,
+        &crate::hosts::Place::This,
+        &popup.session.to_string(),
+        cx,
+    );
     let close = cx.listener(|bench, _: &ClosePopup, _, cx| bench.close_command_popup(cx));
     let card = div()
         .id("command-popup")

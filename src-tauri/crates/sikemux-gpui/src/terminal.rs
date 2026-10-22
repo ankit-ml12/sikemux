@@ -30,6 +30,7 @@ use sikemux_wire::protocol::{
 use tokio::sync::{mpsc, oneshot};
 
 use crate::core::{Ask, Screenful, TerminalAsk};
+use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
@@ -76,23 +77,43 @@ const BLINK_MARGIN: Duration = Duration::from_millis(5);
 /// Characters that end a word picked by a double click.
 const WORD_SEPARATORS: &str = " ()[]{}<>'\"`,;│|";
 
-/// Every terminal this window has attached, by session.
+/// A terminal by the host it runs on and its session there, since sessions on different
+/// hosts can share a number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TermKey {
+    /// The host, as numbered in [`Terminals::key`].
+    place: u16,
+    pub session: SessionId,
+}
+
+/// The ask `ask` for the terminal `key`, sent over its host's connection.
+fn routed(places: &RefCell<Vec<Place>>, key: TermKey, ask: TerminalAsk) -> Ask {
+    let ask = Ask::Terminal(key.session, ask);
+    match places.borrow().get(usize::from(key.place)) {
+        Some(Place::Account(host)) => Ask::On(host.clone(), Box::new(ask)),
+        _ => ask,
+    }
+}
+
+/// Every terminal this window has attached, by host and session.
 #[derive(Default)]
 pub struct Terminals {
-    open: std::collections::HashMap<SessionId, Terminal>,
+    /// The hosts terminals run on, numbered by where they are in the list.
+    places: RefCell<Vec<Place>>,
+    open: std::collections::HashMap<TermKey, Terminal>,
     metrics: Option<Metrics>,
     /// The terminal holding the keyboard, if one does.
-    focused: Option<SessionId>,
+    focused: Option<TermKey>,
     /// Redraws while the focused terminal's cursor blinks.
     blinking: Option<Task<()>>,
     /// Each terminal drawn on its own, so its output and cursor redraw only it.
-    views: RefCell<HashMap<SessionId, Entity<TerminalView>>>,
+    views: RefCell<HashMap<TermKey, Entity<TerminalView>>>,
 }
 
 /// One terminal as a view of its own, which the stage keeps as last drawn until it changes.
 pub struct TerminalView {
     bench: WeakEntity<Workbench>,
-    id: SessionId,
+    id: TermKey,
 }
 
 impl Render for TerminalView {
@@ -359,7 +380,7 @@ impl Terminals {
         self.open.len()
     }
 
-    pub fn focus(&self, session: SessionId) -> Option<&FocusHandle> {
+    pub fn focus(&self, session: TermKey) -> Option<&FocusHandle> {
         self.open.get(&session).map(|terminal| &terminal.focus)
     }
 
@@ -369,7 +390,7 @@ impl Terminals {
     }
 
     /// Redraws the terminal `session` alone.
-    pub fn redraw(&self, session: SessionId, cx: &mut App) {
+    pub fn redraw(&self, session: TermKey, cx: &mut App) {
         let view = self.views.borrow().get(&session).cloned();
         if let Some(view) = view {
             view.update(cx, |_, cx| cx.notify());
@@ -384,11 +405,11 @@ impl Terminals {
         }
     }
 
-    pub fn screen(&self, session: SessionId) -> Option<&Screen> {
+    pub fn screen(&self, session: TermKey) -> Option<&Screen> {
         self.open.get(&session).map(|terminal| &terminal.screen)
     }
 
-    pub fn apply(&mut self, session: SessionId, screenful: Screenful, cx: &mut App) {
+    pub fn apply(&mut self, session: TermKey, screenful: Screenful, cx: &mut App) {
         let Some(terminal) = self.open.get_mut(&session) else {
             return;
         };
@@ -438,21 +459,59 @@ impl Terminals {
         }
     }
 
+    /// The key of `session` on `place`.
+    pub fn key(&self, place: &Place, session: SessionId) -> TermKey {
+        let mut places = self.places.borrow_mut();
+        let at = places
+            .iter()
+            .position(|known| known == place)
+            .unwrap_or_else(|| {
+                places.push(place.clone());
+                places.len() - 1
+            });
+        TermKey {
+            place: at as u16,
+            session,
+        }
+    }
+
+    /// The host the terminal `key` runs on.
+    pub fn place(&self, key: TermKey) -> Place {
+        self.places
+            .borrow()
+            .get(usize::from(key.place))
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// Attaches again after the connection came back, from a blank screen.
     pub fn reattach(&mut self, asks: &mpsc::UnboundedSender<Ask>) {
         for (session, terminal) in &mut self.open {
             terminal.reset();
-            let _ = asks.send(Ask::Terminal(*session, TerminalAsk::Attach));
+            let _ = asks.send(routed(&self.places, *session, TerminalAsk::Attach));
         }
     }
 
-    /// Lets go of terminals whose sessions are gone.
-    pub fn keep(&mut self, live: impl Fn(SessionId) -> bool, asks: &mpsc::UnboundedSender<Ask>) {
-        self.views.get_mut().retain(|session, _| live(*session));
+    /// Lets go of terminals whose sessions are gone from their host.
+    pub fn keep(
+        &mut self,
+        live: impl Fn(&Place, SessionId) -> bool,
+        asks: &mpsc::UnboundedSender<Ask>,
+    ) {
+        let places = self.places.get_mut().clone();
+        let place = |key: &TermKey| {
+            places
+                .get(usize::from(key.place))
+                .cloned()
+                .unwrap_or_default()
+        };
+        self.views
+            .get_mut()
+            .retain(|key, _| live(&place(key), key.session));
         self.open.retain(|session, _| {
-            let keep = live(*session);
+            let keep = live(&place(session), session.session);
             if !keep {
-                let _ = asks.send(Ask::Terminal(*session, TerminalAsk::Detach));
+                let _ = asks.send(routed(&self.places, *session, TerminalAsk::Detach));
             }
             keep
         });
@@ -463,12 +522,14 @@ impl Terminals {
 pub fn pane(
     bench: &Workbench,
     this: &Entity<Workbench>,
+    place: &Place,
     session: &str,
     cx: &mut App,
 ) -> AnyElement {
-    let Ok(id) = session.parse::<SessionId>() else {
+    let Ok(session) = session.parse::<SessionId>() else {
         return div().into_any_element();
     };
+    let id = bench.terminals.key(place, session);
     let view = bench
         .terminals
         .views
@@ -486,10 +547,10 @@ pub fn pane(
         .into_any_element()
 }
 
-fn draw(bench: &Workbench, this: &Entity<Workbench>, id: SessionId, window: &Window) -> AnyElement {
+fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Window) -> AnyElement {
     let this = this.clone();
     let mut pane = div()
-        .id(("terminal", id))
+        .id(("terminal", id.session))
         .key_context(CONTEXT)
         .size_full()
         .p(px(8.))
@@ -536,7 +597,10 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: SessionId, window: &Win
         )
         .on_action(
             window.listener_for(&this, move |bench, _: &ResetModes, _, _| {
-                let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::ResetModes));
+                let _ =
+                    bench
+                        .asks
+                        .send(routed(&bench.terminals.places, id, TerminalAsk::ResetModes));
             }),
         )
         .on_key_down(
@@ -657,7 +721,7 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: SessionId, window: &Win
 /// and shapes the grid.
 fn layout(
     bench: &mut Workbench,
-    id: SessionId,
+    id: TermKey,
     bounds: gpui_kit::Bounds<Pixels>,
     window: &mut Window,
     cx: &mut Context<Workbench>,
@@ -682,7 +746,7 @@ fn layout(
         .clone();
     let asks = bench.asks.clone();
     let terminal = bench.terminals.open.entry(id).or_insert_with(|| {
-        let _ = asks.send(Ask::Terminal(id, TerminalAsk::Attach));
+        let _ = asks.send(routed(&bench.terminals.places, id, TerminalAsk::Attach));
         let focus = cx.focus_handle();
         Terminal {
             screen: Screen::default(),
@@ -717,12 +781,20 @@ fn layout(
     let size = metrics.fit(bounds.size);
     if size != terminal.asked_size {
         terminal.asked_size = size;
-        let _ = asks.send(Ask::Terminal(id, TerminalAsk::Resize(size.0, size.1)));
+        let _ = asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Resize(size.0, size.1),
+        ));
     }
     let header = &terminal.screen.header;
     if header.frame != terminal.acked && header.rows > 0 {
         terminal.acked = header.frame;
-        let _ = asks.send(Ask::Terminal(id, TerminalAsk::Ack(header.frame)));
+        let _ = asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Ack(header.frame),
+        ));
     }
     let top = terminal.top_line();
     let end = top + u64::from(header.rows);
@@ -733,7 +805,8 @@ fn layout(
             .any(|line| !terminal.history.contains_key(&line));
         if missing && terminal.pages_asked.insert(start) {
             let count = (page + PAGE).min(header.history_end) - start;
-            let _ = asks.send(Ask::Terminal(
+            let _ = asks.send(routed(
+                &bench.terminals.places,
                 id,
                 TerminalAsk::Lines {
                     start,
@@ -962,12 +1035,12 @@ impl Grid for View<'_> {
 }
 
 /// The terminal holding the keyboard, if one does.
-pub fn focused(bench: &Workbench) -> Option<SessionId> {
+pub fn focused(bench: &Workbench) -> Option<TermKey> {
     bench.terminals.focused
 }
 
 /// Types `text` into terminal `id` as a paste, as dictation does; whether it is still open.
-pub fn type_text(bench: &mut Workbench, id: SessionId, text: String) -> bool {
+pub fn type_text(bench: &mut Workbench, id: TermKey, text: String) -> bool {
     if !bench.terminals.open.contains_key(&id) {
         return false;
     }
@@ -975,14 +1048,16 @@ pub fn type_text(bench: &mut Workbench, id: SessionId, text: String) -> bool {
     true
 }
 
-fn send(bench: &mut Workbench, id: SessionId, input: TerminalInput) {
+fn send(bench: &mut Workbench, id: TermKey, input: TerminalInput) {
     if let Some(terminal) = bench.terminals.open.get_mut(&id) {
         terminal.top = None;
         terminal.blink_from = Instant::now();
     }
-    let _ = bench
-        .asks
-        .send(Ask::Terminal(id, TerminalAsk::Input(input)));
+    let _ = bench.asks.send(routed(
+        &bench.terminals.places,
+        id,
+        TerminalAsk::Input(input),
+    ));
 }
 
 fn mods(modifiers: &Modifiers) -> Mods {
@@ -1022,7 +1097,7 @@ fn named_key(key: &str) -> Option<String> {
 }
 
 /// Handles a key, answering whether the terminal took it.
-fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, window: &Window) -> bool {
+fn key(bench: &mut Workbench, id: TermKey, keystroke: &Keystroke, window: &Window) -> bool {
     let focused = bench
         .terminals
         .open
@@ -1066,7 +1141,7 @@ fn key(bench: &mut Workbench, id: SessionId, keystroke: &Keystroke, window: &Win
 /// composed characters arrive whole. What it is still composing shows at the cursor.
 struct Typing {
     bench: Entity<Workbench>,
-    id: SessionId,
+    id: TermKey,
     cursor: Option<Bounds<Pixels>>,
 }
 
@@ -1203,7 +1278,7 @@ fn reports_mouse(terminal: &Terminal, modifiers: &Modifiers) -> bool {
 
 fn mouse_down(
     bench: &mut Workbench,
-    id: SessionId,
+    id: TermKey,
     event: &MouseDownEvent,
     window: &mut Window,
     cx: &mut App,
@@ -1224,9 +1299,11 @@ fn mouse_down(
             row,
             mods: mods(&event.modifiers),
         };
-        let _ = bench
-            .asks
-            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let _ = bench.asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Input(input),
+        ));
         return;
     }
     terminal.dragged = false;
@@ -1238,7 +1315,7 @@ fn mouse_down(
     }
 }
 
-fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> bool {
+fn mouse_move(bench: &mut Workbench, id: TermKey, event: &MouseMoveEvent) -> bool {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return false;
     };
@@ -1262,9 +1339,11 @@ fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> b
                 row,
                 mods: mods(&event.modifiers),
             };
-            let _ = bench
-                .asks
-                .send(Ask::Terminal(id, TerminalAsk::Input(input)));
+            let _ = bench.asks.send(routed(
+                &bench.terminals.places,
+                id,
+                TerminalAsk::Input(input),
+            ));
         }
         return false;
     }
@@ -1289,7 +1368,7 @@ fn mouse_move(bench: &mut Workbench, id: SessionId, event: &MouseMoveEvent) -> b
     true
 }
 
-fn mouse_up(bench: &mut Workbench, id: SessionId, event: &MouseUpEvent, cx: &mut App) {
+fn mouse_up(bench: &mut Workbench, id: TermKey, event: &MouseUpEvent, cx: &mut App) {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return;
     };
@@ -1314,13 +1393,15 @@ fn mouse_up(bench: &mut Workbench, id: SessionId, event: &MouseUpEvent, cx: &mut
             row,
             mods: mods(&event.modifiers),
         };
-        let _ = bench
-            .asks
-            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let _ = bench.asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Input(input),
+        ));
     }
 }
 
-fn wheel(bench: &mut Workbench, id: SessionId, event: &ScrollWheelEvent) -> bool {
+fn wheel(bench: &mut Workbench, id: TermKey, event: &ScrollWheelEvent) -> bool {
     let Some(metrics) = bench.terminals.metrics.clone() else {
         return false;
     };
@@ -1346,9 +1427,11 @@ fn wheel(bench: &mut Workbench, id: SessionId, event: &ScrollWheelEvent) -> bool
             lines: -(lines as i32),
             mods: mods(&event.modifiers),
         };
-        let _ = bench
-            .asks
-            .send(Ask::Terminal(id, TerminalAsk::Input(input)));
+        let _ = bench.asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Input(input),
+        ));
         return false;
     }
     scroll(terminal, -(lines as i64));
@@ -1386,12 +1469,7 @@ enum Step {
     Previous,
 }
 
-fn open_find(
-    bench: &mut Workbench,
-    id: SessionId,
-    window: &mut Window,
-    cx: &mut Context<Workbench>,
-) {
+fn open_find(bench: &mut Workbench, id: TermKey, window: &mut Window, cx: &mut Context<Workbench>) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
@@ -1424,14 +1502,14 @@ fn open_find(
     find_in(bench, id, Step::Typed, cx);
 }
 
-fn close_find(bench: &mut Workbench, id: SessionId, window: &mut Window, cx: &mut App) {
+fn close_find(bench: &mut Workbench, id: TermKey, window: &mut Window, cx: &mut App) {
     if let Some(terminal) = bench.terminals.open.get_mut(&id) {
         terminal.find = None;
         window.focus(&terminal.focus, cx);
     }
 }
 
-fn find_in(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Workbench>) {
+fn find_in(bench: &mut Workbench, id: TermKey, step: Step, cx: &mut Context<Workbench>) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
@@ -1456,25 +1534,27 @@ fn find_in(bench: &mut Workbench, id: SessionId, step: Step, cx: &mut Context<Wo
         backwards: step == Step::Previous,
         inclusive: step == Step::Typed || current.is_none(),
     };
-    let _ = bench.asks.send(Ask::Terminal(id, ask));
+    let _ = bench.asks.send(routed(&bench.terminals.places, id, ask));
 }
 
-fn copy(bench: &mut Workbench, id: SessionId) {
+fn copy(bench: &mut Workbench, id: TermKey) {
     if let Some(selection) = bench
         .terminals
         .open
         .get(&id)
         .and_then(|terminal| terminal.selection)
     {
-        let _ = bench
-            .asks
-            .send(Ask::Terminal(id, TerminalAsk::Copy(Some(selection))));
+        let _ = bench.asks.send(routed(
+            &bench.terminals.places,
+            id,
+            TerminalAsk::Copy(Some(selection)),
+        ));
     }
 }
 
 /// A page of history up or down, or the key itself to a program on the
 /// alternate screen, which scrolls its own way.
-fn page(bench: &mut Workbench, id: SessionId, up: bool) {
+fn page(bench: &mut Workbench, id: TermKey, up: bool) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
@@ -1522,15 +1602,15 @@ fn resize_text(bench: &Workbench, step: Option<i32>) {
     });
 }
 
-fn paste(bench: &mut Workbench, id: SessionId, cx: &mut App) {
+fn paste(bench: &mut Workbench, id: TermKey, cx: &mut App) {
     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
         send(bench, id, TerminalInput::Paste { text });
     }
 }
 
 /// The find bar over the pane's top right corner.
-fn find_bar(bench: &Entity<Workbench>, id: SessionId, find: &Find) -> ui::FindBar {
-    let act = |change: fn(&mut Workbench, SessionId, &mut Window, &mut Context<Workbench>)| {
+fn find_bar(bench: &Entity<Workbench>, id: TermKey, find: &Find) -> ui::FindBar {
+    let act = |change: fn(&mut Workbench, TermKey, &mut Window, &mut Context<Workbench>)| {
         let bench = bench.clone();
         move |window: &mut Window, cx: &mut App| {
             bench.update(cx, |bench, cx| change(bench, id, window, cx))
@@ -1577,7 +1657,7 @@ fn find_bar(bench: &Entity<Workbench>, id: SessionId, find: &Find) -> ui::FindBa
 #[derive(IntoElement)]
 struct TerminalMenu {
     bench: Entity<Workbench>,
-    id: SessionId,
+    id: TermKey,
     selection: Option<(GridPoint, GridPoint)>,
     /// Who the selection can go to, when the menu lists them.
     choices: Option<Vec<Choice>>,
@@ -1625,7 +1705,7 @@ fn choices(bench: &Workbench) -> Vec<Choice> {
 /// terminal it came from, and brings the agent forward.
 fn send_selection(
     bench: &mut Workbench,
-    id: SessionId,
+    id: TermKey,
     to: Recipient,
     window: &mut Window,
     cx: &mut Context<Workbench>,
@@ -1638,7 +1718,7 @@ fn send_selection(
     else {
         return;
     };
-    let heading = bench.session(&id.to_string()).map_or_else(
+    let heading = bench.session(&id.session.to_string()).map_or_else(
         || "From a terminal:".to_owned(),
         |session| {
             let name = session
@@ -1653,7 +1733,8 @@ fn send_selection(
         },
     );
     let (reply, text) = oneshot::channel();
-    let _ = bench.asks.send(Ask::Terminal(
+    let _ = bench.asks.send(routed(
+        &bench.terminals.places,
         id,
         TerminalAsk::Text {
             range: Some(range),
@@ -1738,7 +1819,7 @@ impl RenderOnce for TerminalMenu {
                          glyph: Icon,
                          run: fn(
             &mut Workbench,
-            SessionId,
+            TermKey,
             &mut Window,
             &mut Context<Workbench>,
         )| {
@@ -1808,7 +1889,11 @@ impl RenderOnce for TerminalMenu {
                         "Copy Scrollback",
                         Icon::Copy,
                         |bench, id, _, _| {
-                            let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Copy(None)));
+                            let _ = bench.asks.send(routed(
+                                &bench.terminals.places,
+                                id,
+                                TerminalAsk::Copy(None),
+                            ));
                         },
                     ))
                     .separator(cx)
@@ -1817,7 +1902,11 @@ impl RenderOnce for TerminalMenu {
                         "Clear Terminal",
                         Icon::Discard,
                         |bench, id, _, _| {
-                            let _ = bench.asks.send(Ask::Terminal(id, TerminalAsk::Clear));
+                            let _ = bench.asks.send(routed(
+                                &bench.terminals.places,
+                                id,
+                                TerminalAsk::Clear,
+                            ));
                         },
                     )),
             )
@@ -1827,7 +1916,7 @@ impl RenderOnce for TerminalMenu {
 
 impl Workbench {
     /// Draws the terminal's cursor as one tick of its blink timer would.
-    pub fn blink_now(&mut self, id: SessionId, cx: &mut Context<Self>) {
+    pub fn blink_now(&mut self, id: TermKey, cx: &mut Context<Self>) {
         if let Some(terminal) = self.terminals.open.get_mut(&id) {
             terminal.blink_from -= BLINK;
         }
@@ -1845,24 +1934,25 @@ fn blinked_off(since: Instant) -> bool {
 }
 
 /// Tells the program, if it asked, and keeps a timer redrawing a blinking cursor while it is focused.
-fn focus_changed(bench: &mut Workbench, id: SessionId, focused: bool, cx: &mut Context<Workbench>) {
+fn focus_changed(bench: &mut Workbench, id: TermKey, focused: bool, cx: &mut Context<Workbench>) {
     let Some(terminal) = bench.terminals.open.get_mut(&id) else {
         return;
     };
     terminal.blink_from = Instant::now();
     if terminal.screen.header.modes & wire::MODE_FOCUS_REPORTS != 0 {
-        let _ = bench.asks.send(Ask::Terminal(
+        let _ = bench.asks.send(routed(
+            &bench.terminals.places,
             id,
             TerminalAsk::Input(TerminalInput::Focus { focused }),
         ));
     }
     let ssh = bench
-        .session(&id.to_string())
+        .session(&id.session.to_string())
         .is_some_and(|session| session.ssh_alias.is_some());
     if focused && ssh {
         let _ = bench.asks.send(Ask::Call {
             method: "reconnectSsh",
-            params: serde_json::json!({ "id": id }),
+            params: serde_json::json!({ "id": id.session }),
         });
     }
     if focused {

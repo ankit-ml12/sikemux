@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{point, px, size, AnyWindowHandle, AppContext, Entity, HeadlessAppContext, Keystroke};
 use serde_json::json;
+use sikemux_gpui::hosts::Place;
 use sikemux_gpui::workbench::Workbench;
 use sikemux_gpui::{core, icons, terminal, theme, WINDOW_SIZE};
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId};
@@ -158,6 +159,9 @@ fn main() -> anyhow::Result<()> {
             terminals_in(&tab.pane, &mut found);
         }
         found
+            .into_iter()
+            .map(|session| bench.terminals.key(&Place::This, session))
+            .collect::<Vec<_>>()
     };
     let (asks, project, tab, view) = run
         .bench

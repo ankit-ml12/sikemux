@@ -361,7 +361,13 @@ pub fn sheet(
         false => format!("Sign in to {}", sheet.label),
     };
     let terminal: AnyElement = match sheet.session {
-        Some(session) => crate::terminal::pane(bench, this, &session.to_string(), cx),
+        Some(session) => crate::terminal::pane(
+            bench,
+            this,
+            &crate::hosts::Place::This,
+            &session.to_string(),
+            cx,
+        ),
         None => div().into_any_element(),
     };
     let button = |id: &'static str,

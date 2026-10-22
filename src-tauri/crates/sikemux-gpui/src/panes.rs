@@ -391,16 +391,20 @@ fn view(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    if let (
-        crate::hosts::Place::Account(host),
-        PaneKind::Terminal | PaneKind::Agent | PaneKind::Desk,
-    ) = (bench.place(), kind)
+    if let (crate::hosts::Place::Account(host), PaneKind::Agent | PaneKind::Desk) =
+        (bench.place(), kind)
     {
         return elsewhere(bench, &host, cx);
     }
     match kind {
         PaneKind::Terminal => ui::pane(cx)
-            .child(terminal::pane(bench, &cx.entity(), target, cx))
+            .child(terminal::pane(
+                bench,
+                &cx.entity(),
+                &bench.place(),
+                target,
+                cx,
+            ))
             .into_any_element(),
         PaneKind::Files => ui::pane(cx)
             .child(crate::editor::pane(bench, &cx.entity(), target, window, cx))
@@ -676,10 +680,10 @@ impl Workbench {
         };
         match kind {
             PaneKind::Terminal => {
-                let focus = target
-                    .parse::<SessionId>()
-                    .ok()
-                    .and_then(|session| self.terminals.focus(session));
+                let focus = target.parse::<SessionId>().ok().and_then(|session| {
+                    let key = self.terminals.key(&self.place(), session);
+                    self.terminals.focus(key)
+                });
                 if let Some(focus) = focus {
                     window.focus(focus, cx);
                 }

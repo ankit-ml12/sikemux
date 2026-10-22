@@ -23,6 +23,7 @@ use gpui::{
     WindowBounds, WindowOptions,
 };
 use sikemux_client::client::CoreClient;
+use sikemux_gpui::hosts::Place;
 use sikemux_gpui::terminal;
 use sikemux_gpui::workbench::Workbench;
 use sikemux_gpui::{core, icons, theme, WINDOW_SIZE};
@@ -44,7 +45,7 @@ impl Render for Panes {
             .iter()
             .map(|id| {
                 self.bench.update(cx, |bench, cx| {
-                    terminal::pane(bench, &entity, &id.to_string(), cx)
+                    terminal::pane(bench, &entity, &Place::This, &id.to_string(), cx)
                 })
             })
             .collect();
@@ -196,14 +197,15 @@ impl Run {
         self.bench.read_with(&self.cx, |bench, _| {
             bench
                 .terminals
-                .screen(id)
+                .screen(bench.terminals.key(&Place::This, id))
                 .map_or(0, |screen| screen.header.frame)
         })
     }
 
     fn cursor(&mut self, id: SessionId) -> (u16, u16) {
         self.bench.read_with(&self.cx, |bench, _| {
-            bench.terminals.screen(id).map_or((0, 0), |screen| {
+            let key = bench.terminals.key(&Place::This, id);
+            bench.terminals.screen(key).map_or((0, 0), |screen| {
                 (screen.header.cursor.row, screen.header.cursor.col)
             })
         })
@@ -213,7 +215,9 @@ impl Run {
         let bench = self.bench.clone();
         self.cx
             .update_window(self.window, |_, window, cx| {
-                if let Some(focus) = bench.read(cx).terminals.focus(id).cloned() {
+                let terminals = &bench.read(cx).terminals;
+                let focus = terminals.focus(terminals.key(&Place::This, id)).cloned();
+                if let Some(focus) = focus {
                     window.focus(&focus, cx);
                 }
             })

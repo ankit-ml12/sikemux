@@ -14,7 +14,6 @@ use gpui_kit::{
 };
 use serde_json::Value;
 use sikemux_voice::Voice;
-use sikemux_wire::protocol::SessionId;
 use tokio::sync::mpsc;
 
 /// What clicking a chat's mic does.
@@ -41,7 +40,7 @@ pub enum Phase {
 #[derive(Clone, PartialEq)]
 pub enum Target {
     Chat(String),
-    Terminal(SessionId),
+    Terminal(crate::terminal::TermKey),
 }
 
 /// How a chat's mic looks.

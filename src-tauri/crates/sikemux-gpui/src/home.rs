@@ -95,6 +95,7 @@ pub fn agent_view(
             .child(div().size_full().pt(px(40.)).child(terminal::pane(
                 bench,
                 &cx.entity(),
+                &crate::hosts::Place::This,
                 &session.to_string(),
                 cx,
             )))
