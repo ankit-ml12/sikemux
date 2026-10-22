@@ -68,7 +68,7 @@ async function signInOverSsh(alias: string, command: "host_install" | "host_sign
             .catch(reject);
     });
     try {
-        const id = await invoke<number>(command, { alias, cols: 100, rows: 30 });
+        const id = await invoke<number>(command, { alias });
         offerResumableSessions([id]);
         createSshSession(alias);
         mutate((d) => {

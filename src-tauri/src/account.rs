@@ -16,19 +16,6 @@ pub(crate) struct HostSignature {
     pub signature: String,
 }
 
-/// Approves the sign-in code another host showed, for "Install Sikemux here",
-/// and answers with that host.
-pub(crate) async fn approve_host_code(
-    core: &CoreClient,
-    code: &str,
-) -> AppResult<sikemux_core::accounts::host::ApprovedHost> {
-    let approved = core
-        .call("approveHostSignIn", serde_json::json!({ "code": code }))
-        .await
-        .map_err(core_error)?;
-    Ok(serde_json::from_value(approved)?)
-}
-
 /// Adds this app to the account as a device of its own, added by this host, and asks the
 /// account through the core for a ticket that lets it join `host`.
 pub(crate) async fn app_join_ticket(

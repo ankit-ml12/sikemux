@@ -423,6 +423,8 @@ calls! { core, client, params;
     "codeHostJobLog": Watch => answer(super::codehost::job_log(&core, client.id, parse(params)?).await),
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
+    "installHost": Person => answer(super::hosts::install::install_host(&core, parse(params)?).await?),
+    "hostSetup": Person => answer(super::hosts::install::host_setup(&core, parse(params)?).await?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
     "openOnHost": Person => answer(super::hosts::open::open_on(&core, parse(params)?).await?),
     "requireApproval": Person => answer(json!({ "requireApproval": core.remote.requires_approval() })),

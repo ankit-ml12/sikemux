@@ -33,6 +33,9 @@ pub(crate) struct HostRow {
     reach: Reach,
     /// The SSH host it was installed on from here, or the row's own alias.
     ssh: Option<String>,
+    /// What is being done to an SSH host from here: installing, updating or signing in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setup: Option<super::install::Setup>,
 }
 
 /// Linked hosts in the order they were linked, then the SSH hosts a terminal
@@ -54,12 +57,18 @@ pub(crate) fn rows(core: &Core) -> Vec<HostRow> {
                 Reach::Away
             },
             ssh: installed.get(&link.id).cloned(),
+            setup: None,
             id: Some(link.id),
             name: link.name,
             platform: Some(link.platform),
         })
         .collect();
+    let mut setups: BTreeMap<String, super::install::Setup> =
+        super::install::setups(core).into_iter().collect();
     let mut open: BTreeMap<String, Reach> = BTreeMap::new();
+    for alias in setups.keys() {
+        open.insert(alias.clone(), Reach::Connecting);
+    }
     for (alias, link) in core.ssh_links() {
         if rows.iter().any(|row| row.ssh.as_deref() == Some(&alias)) {
             continue;
@@ -80,6 +89,7 @@ pub(crate) fn rows(core: &Core) -> Vec<HostRow> {
         name: alias.clone(),
         platform: None,
         reach,
+        setup: setups.remove(&alias),
         ssh: Some(alias),
     }));
     rows
@@ -107,10 +117,14 @@ pub(crate) fn installed_from(core: &Core, installed: InstalledFrom) -> CoreResul
     if installed.alias.is_empty() || installed.alias.starts_with('-') {
         return Err("that is not an SSH host".into());
     }
+    note_installed(core, installed.key, installed.alias);
+    Ok(())
+}
+
+pub(crate) fn note_installed(core: &Core, key: String, alias: String) {
     let mut map = core.hosts.installed.locked();
-    map.insert(installed.key, installed.alias);
+    map.insert(key, alias);
     core.hosts.installed_kept.save(&*map);
     drop(map);
     core.changes.changed(Topic::Hosts, None, None);
-    Ok(())
 }

@@ -125,6 +125,12 @@ pub(crate) struct SignInCodeParams {
     code: String,
 }
 
+impl SignInCodeParams {
+    pub(crate) fn new(code: String) -> Self {
+        Self { code }
+    }
+}
+
 /// Approves the sign-in code another host showed, as this host, for the person installing
 /// Sikemux there, and answers with that host.
 pub(crate) async fn approve_host_sign_in(

@@ -11,6 +11,7 @@
 pub(crate) mod account;
 mod calls;
 mod code;
+pub(crate) mod install;
 mod join;
 mod link;
 mod listed;
@@ -96,6 +97,8 @@ pub(crate) struct Hosts {
     /// The SSH host each host was installed on from here, by its key.
     installed: Mutex<BTreeMap<String, String>>,
     installed_kept: Kept,
+    /// What is being done to SSH hosts from here, by alias, until it ends well.
+    setups: Mutex<HashMap<String, install::Setup>>,
 }
 
 impl Hosts {
@@ -111,6 +114,7 @@ impl Hosts {
             listed: AtomicBool::new(false),
             installed: Mutex::new(installed_kept.load()),
             installed_kept,
+            setups: Mutex::default(),
         }
     }
 

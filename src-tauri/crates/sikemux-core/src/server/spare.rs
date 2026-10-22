@@ -398,6 +398,28 @@ pub(crate) async fn strip_shell(core: &Arc<Core>, at: At) -> CoreResult<SessionI
     }
 }
 
+/// A shell in the home folder for the SSH host `host`'s strip, running `startup`, which sets
+/// that host up over ssh. It is not one of the host's ssh terminals, so nothing reconnects it.
+pub(crate) async fn setup_shell(
+    core: &Arc<Core>,
+    host: &str,
+    startup: String,
+) -> CoreResult<SessionId> {
+    let context = PtyContext {
+        session_id: format!("ssh:{host}"),
+        session_name: host.to_owned(),
+        session_kind: "setup".into(),
+        project: None,
+        window_id: Some(format!("win-{}", uuid::Uuid::new_v4().simple())),
+        pane_id: Some(format!("pane-{}", uuid::Uuid::new_v4().simple())),
+        agent_id: None,
+        agent_type: None,
+        initial_prompt_submitted: false,
+        shell_integration: false,
+    };
+    terminal(core, opening_size(core), None, context, Some(startup)).await
+}
+
 async fn ssh_shell(core: &Arc<Core>, host: &str) -> CoreResult<SessionId> {
     let context = PtyContext {
         session_id: format!("ssh:{host}"),
