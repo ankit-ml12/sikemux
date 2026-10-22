@@ -189,8 +189,12 @@ impl Workbench {
                     .is_none_or(|profile| launcher.id.ends_with(&format!(":{profile}")))
         });
         if let Some(launcher) = launcher {
-            self.chat_target(agent)
-                .start_chat(launcher.id.clone(), saved.project.clone(), None);
+            self.chat_target(agent).start_chat(
+                launcher.id.clone(),
+                saved.project.clone(),
+                None,
+                None,
+            );
         }
     }
 

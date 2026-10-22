@@ -1,11 +1,15 @@
 //! ⌘⇧N, the agent palette: a new chat with any agent the host has, the agents
 //! open in the project, and its pinned and recent chats to take up again.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::{Context, Window};
-use serde_json::json;
+use serde_json::{json, Value};
 use sikemux_wire::protocol::AgentStatus;
 
-use crate::palette::{Mark, Row, Spec};
+use crate::icons::Icon;
+use crate::palette::{Choice, Mark, Row, Spec};
 use crate::workbench::Workbench;
 
 #[derive(Clone, Default, PartialEq, gpui::Action)]
@@ -17,18 +21,31 @@ const SIGN_IN: &str = "signin:";
 const OPEN: &str = "open:";
 const RESUME: &str = "resume:";
 
-/// Agents whose accounts the core signs in to itself.
+/// Agents whose accounts the core signs in to itself; the rest sign in with their own
+/// command, in the sheet Settings › Agents shows.
 const SIGNS_IN: [&str; 2] = ["claude", "codex"];
+const SAFE: &str = "workspace-write";
+const YOLO: &str = "bypass";
 
 impl Workbench {
     pub fn toggle_agent_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(project) = self.project().map(|project| project.id.clone()) else {
             return;
         };
+        let catalog = self.read("catalog").and_then(Value::as_array).cloned();
+        let kind_of = move |provider: &str| {
+            catalog
+                .iter()
+                .flatten()
+                .find(|kind| kind["type"] == provider)
+                .cloned()
+        };
         let mut rows = Vec::new();
         for launcher in self.launchers() {
+            let signs_in = SIGNS_IN.contains(&launcher.provider.as_str())
+                || kind_of(&launcher.provider).is_some_and(|kind| kind["login"].is_array());
             let row = match launcher.status.as_deref() {
-                Some("signedOut") if SIGNS_IN.contains(&launcher.provider.as_str()) => Row::new(
+                Some("signedOut") if signs_in => Row::new(
                     format!("{SIGN_IN}{}", launcher.id),
                     format!("Sign in to {}", launcher.label),
                 )
@@ -86,18 +103,42 @@ impl Workbench {
                 );
             }
         }
+        let yolo = self
+            .view
+            .as_ref()
+            .is_some_and(|view| view.workspace.permission_mode == YOLO);
+        let mode = Rc::new(Cell::new(usize::from(yolo)));
+        let choice = Choice {
+            options: vec![(Icon::Shield, "safe".into()), (Icon::Bolt, "yolo".into())],
+            chosen: mode.clone(),
+        };
         let spec = Spec::new(
             "agent.choose",
             "start or find an agent…",
             rows,
-            move |row, bench, _, _| {
+            move |row, bench, window, cx| {
                 let key: &str = &row.key;
                 if let Some(launcher) = key.strip_prefix(NEW) {
-                    bench
-                        .target()
-                        .start_chat(launcher.to_owned(), project.clone(), None);
+                    let provider = bench
+                        .launchers()
+                        .iter()
+                        .find(|known| known.id == launcher)
+                        .map(|known| known.provider.clone())
+                        .unwrap_or_default();
+                    let can_skip = kind_of(&provider).is_some_and(|kind| kind["bypass"] == true);
+                    let launch_mode = if mode.get() == 1 && can_skip {
+                        YOLO
+                    } else {
+                        SAFE
+                    };
+                    bench.target().start_chat(
+                        launcher.to_owned(),
+                        project.clone(),
+                        Some(launch_mode.to_owned()),
+                        None,
+                    );
                 } else if let Some(launcher) = key.strip_prefix(SIGN_IN) {
-                    bench.call("signInLauncher", json!({ "launcher": launcher }));
+                    sign_in(bench, launcher, window, cx);
                 } else if let Some(agent) = key.strip_prefix(OPEN) {
                     bench.open_agent(agent);
                 } else if let Some(id) = key.strip_prefix(RESUME) {
@@ -112,8 +153,46 @@ impl Workbench {
                 }
             },
         )
-        .empty("no agents or chats match");
+        .empty("no agents or chats match")
+        .choice(choice);
         self.toggle_palette(spec, window, cx);
+    }
+}
+
+/// Signs the launcher's agent in: the core does it for the agents whose accounts it keeps,
+/// and the agent's own command runs in Settings › Agents for the rest.
+fn sign_in(
+    bench: &mut Workbench,
+    launcher: &str,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(provider) = bench
+        .launchers()
+        .iter()
+        .find(|known| known.id == launcher)
+        .map(|known| known.provider.clone())
+    else {
+        return;
+    };
+    if SIGNS_IN.contains(&provider.as_str()) {
+        bench.call("signInLauncher", json!({ "launcher": launcher }));
+        return;
+    }
+    bench.open_settings(crate::settings::Page::Agents, window, cx);
+    let folder = bench
+        .accounts
+        .current(&provider)
+        .and_then(|profile| profile.config_path.clone());
+    let sheet = bench
+        .agent_setup
+        .found
+        .iter()
+        .flatten()
+        .find(|found| found.kind == provider)
+        .and_then(|found| crate::agent_setup::signing_in(found, folder.as_deref()));
+    if let Some(sheet) = sheet {
+        crate::agent_setup::run(bench, sheet, cx);
     }
 }
 

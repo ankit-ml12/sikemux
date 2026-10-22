@@ -2033,7 +2033,7 @@ impl Workbench {
     pub fn new_chat(&self) {
         if let (Some(project), Some(launcher)) = (self.project(), self.launcher()) {
             self.target()
-                .start_chat(launcher.id.clone(), project.id.clone(), None);
+                .start_chat(launcher.id.clone(), project.id.clone(), None, None);
         }
     }
 

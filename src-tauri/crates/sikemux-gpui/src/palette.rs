@@ -2,6 +2,7 @@
 //! agent palette, the project picker, New… and the themes. Each fills a list of
 //! rows; the person types to narrow it, moves through it and picks one.
 
+use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -135,6 +136,15 @@ pub struct Spec {
     pub start: Option<SharedString>,
     /// A row made of what is typed, offered first when no row has its key.
     pub typed: Option<Typed>,
+    /// A choice beside the field that the pick reads, such as the mode an agent starts in.
+    pub choice: Option<Choice>,
+}
+
+/// A few words to choose between beside the palette's field, and which is chosen now.
+#[derive(Clone)]
+pub struct Choice {
+    pub options: Vec<(Icon, SharedString)>,
+    pub chosen: Rc<Cell<usize>>,
 }
 
 impl Spec {
@@ -155,11 +165,17 @@ impl Spec {
             cancel: None,
             start: None,
             typed: None,
+            choice: None,
         }
     }
 
     pub fn typed(mut self, typed: impl Fn(&str) -> Option<Row> + 'static) -> Self {
         self.typed = Some(Rc::new(typed));
+        self
+    }
+
+    pub fn choice(mut self, choice: Choice) -> Self {
+        self.choice = Some(choice);
         self
     }
 
@@ -506,7 +522,24 @@ pub fn overlay(
                                     .p_0()
                                     .text_size(crate::theme::ui_text(14.))
                                     .text_color(t.text_primary),
-                            ),
+                            )
+                            .children(palette.spec.choice.clone().map(|choice| {
+                                let chosen = choice.chosen.clone();
+                                ui::Segmented::new("palette-choice", choice.options, chosen.get())
+                                    .pill()
+                                    .on_select(cx.listener(
+                                        move |bench, picked: &usize, window, cx| {
+                                            chosen.set(*picked);
+                                            if let Some(palette) = &bench.palette {
+                                                let input = palette.input.clone();
+                                                input.update(cx, |input, cx| {
+                                                    input.focus(window, cx)
+                                                });
+                                            }
+                                            bench.parts.redraw(&bench.parts.finder, cx);
+                                        },
+                                    ))
+                            })),
                     )
                     .map(|panel| {
                         if count == 0 {

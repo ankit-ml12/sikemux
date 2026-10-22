@@ -227,7 +227,7 @@ impl Workbench {
         };
         let (launcher, project) = (launcher.id.clone(), project.id.clone());
         core::Target::new(&self.asks, Place::Account(host.to_owned()))
-            .start_chat(launcher, project, None);
+            .start_chat(launcher, project, None, None);
         self.choose_host(HostChoice::Account(host.to_owned()), cx);
     }
 

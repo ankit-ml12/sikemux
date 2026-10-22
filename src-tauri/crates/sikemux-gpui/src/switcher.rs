@@ -90,14 +90,24 @@ impl Workbench {
             .collect()
     }
 
-    /// Steps `by` places on: in the switcher while a modifier is held, else at once.
+    /// Steps `by` places on among those of the kind in front, projects among projects and
+    /// hosts among hosts: in the switcher while a modifier is held, else at once.
     pub fn step_place(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(switcher) = self.switcher.as_mut() {
             let count = switcher.places.len() as isize;
             switcher.at = (switcher.at as isize + by).rem_euclid(count) as usize;
             return self.parts.redraw(&self.parts.finder, cx);
         }
-        let places = self.strips_in_order();
+        let front = self.strip();
+        let places: Vec<Strip> = self
+            .strips_in_order()
+            .into_iter()
+            .filter(|place| {
+                front.as_ref().is_none_or(|front| {
+                    std::mem::discriminant(place) == std::mem::discriminant(front)
+                })
+            })
+            .collect();
         if places.len() < 2 {
             return;
         }

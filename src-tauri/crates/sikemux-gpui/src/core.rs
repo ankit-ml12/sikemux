@@ -18,8 +18,8 @@ use sikemux_wire::grid::{
 };
 use sikemux_wire::protocol::{
     CallId, ChatAccount, ChatAttachment, ChatContext, ChatMark, DeviceAccess, DeviceView, Event,
-    LaunchIdentity, NetworkChange, RemoteStatus, Request, SessionId, SpawnTarget, StreamId,
-    TerminalSpawn, WindowAnswer, WindowCall,
+    LaunchIdentity, NetworkChange, RemoteStatus, Request, Response, SessionId, SpawnTarget,
+    StreamId, TerminalSpawn, WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -236,6 +236,8 @@ pub enum Ask {
     StartChat {
         launcher: String,
         project: String,
+        /// The permission mode it starts in, for this launch only; none starts in the launcher's.
+        mode: Option<String>,
         started: Option<oneshot::Sender<String>>,
     },
     /// Takes up one of the device view's recent chats again and brings its tab to the front.
@@ -424,12 +426,23 @@ async fn open_chat_on(client: Arc<CoreClient>, ask: Ask) {
         Ask::StartChat {
             launcher,
             project,
+            mode,
             started,
-        } => (
-            client.start_chat(launcher, project.clone(), None).await,
-            project,
-            started,
-        ),
+        } => {
+            let asked = Request::StartChat {
+                launcher,
+                project: project.clone(),
+                permission_mode: mode,
+                model: None,
+                effort: None,
+            };
+            let begun = match client.request(asked).await {
+                Ok(Response::ChatBegun { agent_id, start }) => Ok((agent_id, start)),
+                Ok(_) => Err(ClientError::UnexpectedReply),
+                Err(error) => Err(error),
+            };
+            (begun, project, started)
+        }
         Ask::ResumeChat { recent, project } => (client.resume_chat(recent).await, project, None),
         _ => return,
     };
@@ -734,17 +747,19 @@ impl Target {
         self.send(Ask::Call { method, params });
     }
 
-    /// Starts a chat with `launcher`'s agent in `project` there, answering the new agent's id
-    /// to `started` when it is there.
+    /// Starts a chat with `launcher`'s agent in `project` there, in `mode` for this launch or
+    /// else the launcher's, answering the new agent's id to `started` when it is there.
     pub fn start_chat(
         &self,
         launcher: String,
         project: String,
+        mode: Option<String>,
         started: Option<oneshot::Sender<String>>,
     ) {
         self.send(Ask::StartChat {
             launcher,
             project,
+            mode,
             started,
         });
     }
