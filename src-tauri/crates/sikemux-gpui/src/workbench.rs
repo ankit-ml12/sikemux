@@ -2663,8 +2663,12 @@ impl Workbench {
     }
 
     /// Keeps the rails and the commands run lately in the core's preferences once changes
-    /// settle, so a drag is written once, and the rails come back as they were.
+    /// settle, so a drag is written once, and the rails come back as they were. Nothing is
+    /// kept before the preferences are first read, when the rails hold only the window's defaults.
     pub fn keep_rails(&mut self, cx: &mut Context<Self>) {
+        if self.read("preferences").is_none() {
+            return;
+        }
         self.keeping_rails = Some(cx.spawn(async move |bench, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(400))
