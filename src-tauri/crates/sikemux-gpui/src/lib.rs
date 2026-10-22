@@ -41,6 +41,7 @@ pub mod install_pane;
 mod keymap;
 mod links;
 pub mod model_picker;
+mod motion;
 mod new_tab;
 pub mod notifications;
 mod opening;

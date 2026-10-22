@@ -12,6 +12,7 @@ use smallvec::SmallVec;
 use super::controls::OnClick;
 use super::{caps, icon, mark_box, meta, text};
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 
 /// The hover group a row puts itself in, for a glyph in it that follows its text.
@@ -134,8 +135,21 @@ impl ParentElement for Row {
 }
 
 impl RenderOnce for Row {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
+        let (over, keep_over) = motion::hovered(&self.id, window, cx);
+        let lit = self.chosen || over;
+        let tint = match (self.chosen, over) {
+            (true, _) => t.surface_chosen,
+            (false, true) => t.surface_hover,
+            (false, false) => t.surface_hover.opacity(0.),
+        };
+        let tint = motion::fade(&self.id, "tint", tint, motion::ROW_TINT, window, cx);
+        let ink = match lit {
+            true => t.text_primary,
+            false => t.text_secondary,
+        };
+        let ink = motion::fade(&self.id, "ink", ink, motion::ROW_TINT, window, cx);
         let two_lines = self.subtitle.is_some();
         let right = if self.status.is_some() {
             28.
@@ -167,15 +181,9 @@ impl RenderOnce for Row {
                 }
             })
             .rounded(RADIUS_2)
-            .text_color(if self.chosen {
-                t.text_primary
-            } else {
-                t.text_secondary
-            })
-            .when(self.chosen, |row| row.bg(t.surface_chosen))
-            .when(!self.chosen, |row| {
-                row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
-            })
+            .text_color(ink)
+            .bg(tint)
+            .on_hover(keep_over)
             .when_some(on_click, |row, handler| {
                 row.on_click(move |event, window, cx| handler(event, window, cx))
             })
@@ -397,12 +405,15 @@ impl Tab {
 impl RenderOnce for Tab {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let hovered = window.use_keyed_state(
-            ElementId::NamedChild(Arc::new(self.id.clone()), "hovered".into()),
-            cx,
-            |_, _| false,
-        );
-        let closing = self.on_close.clone().filter(|_| *hovered.read(cx));
+        let (over, keep_over) = motion::hovered(&self.id, window, cx);
+        let closing = self.on_close.clone().filter(|_| over);
+        let (tint, ink) = match (over, self.active) {
+            (true, _) => (t.surface_hover, t.text_secondary),
+            (false, true) => (t.surface_chosen, t.text_primary),
+            (false, false) => (crate::see_through::pill(t.surface, cx), t.text_tertiary),
+        };
+        let tint = motion::fade(&self.id, "tint", tint, motion::PILL_TINT, window, cx);
+        let ink = motion::fade(&self.id, "ink", ink, motion::PILL_TINT, window, cx);
         let close_id = ElementId::NamedChild(Arc::new(self.id.clone()), "close".into());
         let label = self.label.clone();
         let edge = gpui_kit::Hsla {
@@ -419,27 +430,10 @@ impl RenderOnce for Tab {
             .flex()
             .items_center()
             .rounded(RADIUS_2)
-            .map(|tab| {
-                if self.active {
-                    tab.bg(t.surface_chosen).text_color(t.text_primary)
-                } else {
-                    tab.bg(crate::see_through::pill(t.surface, cx))
-                        .border_1()
-                        .border_color(edge)
-                        .text_color(t.text_tertiary)
-                }
-            })
-            .hover(move |style| style.bg(t.surface_hover).text_color(t.text_secondary))
-            .when(self.on_close.is_some(), |tab| {
-                tab.on_hover(move |inside, _, cx| {
-                    hovered.update(cx, |hovered, cx| {
-                        if *hovered != *inside {
-                            *hovered = *inside;
-                            cx.notify();
-                        }
-                    })
-                })
-            })
+            .bg(tint)
+            .text_color(ink)
+            .when(!self.active, |tab| tab.border_1().border_color(edge))
+            .on_hover(keep_over)
             .child(
                 BaseButton::new(self.id)
                     .selected(self.active)

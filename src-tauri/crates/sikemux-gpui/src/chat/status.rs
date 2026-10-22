@@ -15,6 +15,7 @@ use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
 use super::Chat;
 use crate::core::ChatAsk;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::Tokens;
 use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
@@ -601,15 +602,12 @@ pub(super) fn plan(
         .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_disabled)
         .cursor_pointer()
-        .child(
-            ui::icon(Icon::Chevron, 10.)
-                .when(open, |chevron| {
-                    chevron.with_transformation(gpui_kit::Transformation::rotate(
-                        gpui_kit::radians(std::f32::consts::FRAC_PI_2),
-                    ))
-                })
-                .text_color(t.text_disabled),
-        )
+        .child(motion::turn(
+            format!("plan-chevron:{agent}"),
+            motion::fold_angle(open),
+            motion::DETAIL_FOLD,
+            ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled),
+        ))
         .child("Plan")
         .on_click(move |_, _, cx| {
             this.update(cx, |bench, cx| {

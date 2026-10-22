@@ -35,6 +35,7 @@ use crate::codehost::inbox::Inbox;
 use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::track::{self, Scrolled, Slide};
 use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
@@ -3532,12 +3533,11 @@ fn group_row(
                                 pane.list(cx);
                             })
                         })
-                        .child(ui::icon(Icon::Chevron, 13.).text_color(t.tree_spine).when(
-                            !folded,
-                            |chevron| {
-                                chevron
-                                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                            },
+                        .child(motion::turn(
+                            format!("{key}:chevron"),
+                            motion::fold_angle(!folded),
+                            motion::LIST_FOLD,
+                            ui::icon(Icon::Chevron, 13.).text_color(t.tree_spine),
                         ))
                         .child(
                             ui::icon(if staged { Icon::FilePlus } else { Icon::File }, 13.)

@@ -4,9 +4,9 @@
 use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, radians, Anchor, AnyElement, App, Context, Div, Entity, FontWeight, Hsla,
+    div, list, px, Anchor, AnyElement, App, Context, Div, Entity, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Transformation,
+    Styled,
 };
 use std::collections::HashMap;
 
@@ -18,6 +18,7 @@ use sikemux_wire::codehost::{PullList, PullState};
 use super::{row_button, tree_lines, GitPane, Pick, ROW_HEIGHT};
 use crate::codehost::Area;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Menu, MenuItem};
 
@@ -661,15 +662,12 @@ fn branch_row(
         base.gap(px(4.))
             .pl(px(2.))
             .pr(px(4.))
-            .child(
-                ui::icon(Icon::Chevron, 13.)
-                    .text_color(t.tree_spine)
-                    .when(open, |chevron| {
-                        chevron.with_transformation(Transformation::rotate(radians(
-                            std::f32::consts::FRAC_PI_2,
-                        )))
-                    }),
-            )
+            .child(motion::turn(
+                format!("branch-chevron:{index}"),
+                motion::fold_angle(open),
+                motion::LIST_FOLD,
+                ui::icon(Icon::Chevron, 13.).text_color(t.tree_spine),
+            ))
             .child(ui::icon(icon, 13.).text_color(t.text_tertiary))
             .child(
                 ui::text(name, 12., FontWeight::MEDIUM)

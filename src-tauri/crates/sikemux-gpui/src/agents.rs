@@ -15,6 +15,7 @@ use sikemux_wire::protocol::{PaneKind, RecentInfo};
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Field, Group, IconButton, Menu, MenuItem, Row, Segmented};
 use crate::workbench::{AgentRow, Edge, RailPage, RailWidth, Strip, TeamLink, Workbench};
@@ -670,14 +671,12 @@ fn agent_row(
                     .justify_center()
                     .opacity(0.)
                     .group_hover(ui::ROW, |chevron| chevron.opacity(1.))
-                    .child(
-                        ui::icon(Icon::Chevron, 11.)
-                            .text_color(t.text_secondary)
-                            .when(fold.open, |chevron| {
-                                chevron
-                                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                            }),
-                    ),
+                    .child(motion::turn(
+                        format!("team-chevron:{}", agent.id),
+                        motion::fold_angle(fold.open),
+                        motion::LANE_FOLD,
+                        ui::icon(Icon::Chevron, 11.).text_color(t.text_secondary),
+                    )),
             )
             .into_any_element(),
         None => ui::agent_mark(agent, 20., cx),

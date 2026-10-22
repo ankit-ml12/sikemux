@@ -2,21 +2,20 @@
 //! check command, the repository its Git views use, and its sikemux.json.
 
 use std::collections::{BTreeMap, HashSet};
-use std::f32::consts::FRAC_PI_2;
 use std::path::{Path, PathBuf};
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, AnyElement, AppContext, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription, Transformation,
-    Window,
+    div, px, AnyElement, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{PaneKind, ProjectInfo};
 
 use crate::icons::Icon;
+use crate::motion;
 use crate::settings::{self, rows};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, Field, IconButton, Variant};
@@ -700,9 +699,12 @@ fn tasks(
                 .text_size(crate::theme::ui_text(12.5))
                 .text_color(t.text_secondary)
                 .hover(|row| row.bg(t.surface_hover))
-                .child(ui::icon(Icon::Chevron, 11.).when(open, |icon| {
-                    icon.with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                }))
+                .child(motion::turn(
+                    format!("task-folder-chevron:{cwd}"),
+                    motion::fold_angle(open),
+                    motion::LIST_FOLD,
+                    ui::icon(Icon::Chevron, 11.),
+                ))
                 .child(div().flex_1().child(if cwd == "." {
                     "Project root".to_owned()
                 } else {

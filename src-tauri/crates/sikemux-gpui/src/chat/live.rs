@@ -6,7 +6,7 @@ use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement,
-    Radians, SharedString, StatefulInteractiveElement, Styled, Transformation,
+    SharedString, StatefulInteractiveElement, Styled,
 };
 use serde_json::json;
 use sikemux_wire::chat::{
@@ -17,6 +17,7 @@ use super::tools::word;
 use super::Chat;
 use crate::core::ChatAsk;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::ui::shimmer::shimmer;
@@ -74,12 +75,12 @@ impl Label {
         let t = Tokens::get(cx).clone();
         let (agent, key) = (agent.to_owned(), self.key.clone());
         let chevron = self.folds.then(|| {
-            let chevron = ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled);
-            let chevron = chevron.when(!self.folded, |chevron| {
-                chevron.with_transformation(Transformation::rotate(Radians(
-                    std::f32::consts::FRAC_PI_2,
-                )))
-            });
+            let chevron = motion::turn(
+                format!("live-chevron:{key}"),
+                motion::fold_angle(!self.folded),
+                motion::DETAIL_FOLD,
+                ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled),
+            );
             div()
                 .ml_auto()
                 .w(px(18.))

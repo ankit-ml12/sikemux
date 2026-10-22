@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::base::{Button as BaseButton, Selectable};
 use gpui_kit::component::input::{Input, InputState};
@@ -147,7 +148,10 @@ impl RenderOnce for IconButton {
             None => (rest, hover, primary, chosen),
         };
         let on_click = self.on_click.filter(|_| !self.disabled);
-        BaseButton::new(self.id)
+        let glyph = icon(self.icon, self.glyph)
+            .text_color(if self.pressed { primary } else { rest })
+            .group_hover(GROUP, move |style| style.text_color(primary));
+        BaseButton::new(self.id.clone())
             .group(GROUP)
             .tooltip(super::tooltip(self.label.clone()))
             .accessibility_label(self.label)
@@ -170,12 +174,16 @@ impl RenderOnce for IconButton {
             .when_some(on_click, |button, handler| {
                 button.on_click(move |event, window, cx| handler(event, window, cx))
             })
-            .child(
-                icon(self.icon, self.glyph)
-                    .with_transformation(Transformation::rotate(Radians(self.turned)))
-                    .text_color(if self.pressed { primary } else { rest })
-                    .group_hover(GROUP, move |style| style.text_color(primary)),
-            )
+            .child(crate::motion::animated(
+                ElementId::NamedChild(Arc::new(self.id), "turned".into()),
+                self.turned,
+                crate::motion::LANE_FOLD,
+                move |turned| {
+                    glyph
+                        .with_transformation(Transformation::rotate(Radians(turned)))
+                        .into_any_element()
+                },
+            ))
     }
 }
 

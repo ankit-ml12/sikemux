@@ -2,15 +2,14 @@
 //! and what the call changed or printed once the reader opens it.
 
 use std::collections::{HashMap, HashSet};
-use std::f32::consts::FRAC_PI_2;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, Action, AnyElement, App, ClipboardItem, Div, HighlightStyle, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Radians, SharedString,
-    StatefulInteractiveElement, Styled, StyledText, Transformation,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, StyledText,
 };
 use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
@@ -20,6 +19,7 @@ use super::{duration, Drawn};
 use crate::core::ChatAsk;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
+use crate::motion;
 use crate::picture::{self, Picture};
 use crate::theme;
 use crate::ui;
@@ -244,12 +244,13 @@ fn tint(call: &Call, looks: &Drawn) -> Hsla {
     }
 }
 
-fn chevron(open: bool, tint: Hsla) -> gpui_kit::Svg {
-    ui::icon(Icon::Chevron, 10.)
-        .text_color(tint)
-        .when(open, |chevron| {
-            chevron.with_transformation(Transformation::rotate(Radians(FRAC_PI_2)))
-        })
+fn chevron(id: impl Into<SharedString>, open: bool, tint: Hsla) -> impl IntoElement {
+    motion::turn(
+        id,
+        motion::fold_angle(open),
+        motion::DETAIL_FOLD,
+        ui::icon(Icon::Chevron, 10.).text_color(tint),
+    )
 }
 
 /// A run of calls: a line counting them and how long they took, and while the
@@ -315,12 +316,11 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
             )
         })
         .children(time.map(|time| div().flex_none().text_color(looks.quiet).child(time)))
-        .child(
-            div()
-                .flex_none()
-                .opacity(0.7)
-                .child(chevron(open, looks.quiet)),
-        )
+        .child(div().flex_none().opacity(0.7).child(chevron(
+            format!("run-chevron:{key}"),
+            open,
+            looks.quiet,
+        )))
         .on_click(move |_, _, cx| {
             reader.update(cx, |reading, cx| {
                 reading.tools.runs.insert(key.clone(), !open);
@@ -401,7 +401,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
                 } else {
                     0.55
                 })
-                .child(chevron(open, looks.quiet));
+                .child(chevron(format!("call-chevron:{id}"), open, looks.quiet));
             end.child(shown.group_hover(group.clone(), |chevron| chevron.opacity(0.55)))
         });
     let line = div()

@@ -6,9 +6,9 @@ use std::path::Path;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, radians, AnyElement, App, Context, Div, Entity, InteractiveElement, IntoElement,
+    div, list, px, AnyElement, App, Context, Div, Entity, InteractiveElement, IntoElement,
     ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement, Styled, Transformation, Window,
+    StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::git::diff::DiffRow;
@@ -19,6 +19,7 @@ use super::{row, Colours, Compared, Diff, Notes, RowLook};
 use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui;
 
@@ -642,15 +643,12 @@ fn header(view: &Entity<GitPane>, review: &Review, card: usize, cx: &App) -> Any
                         cx.notify();
                     })
                 })
-                .child(
-                    ui::icon(Icon::Chevron, 11.)
-                        .text_color(t.text_tertiary)
-                        .when(open, |chevron| {
-                            chevron.with_transformation(Transformation::rotate(radians(
-                                std::f32::consts::FRAC_PI_2,
-                            )))
-                        }),
-                )
+                .child(motion::turn(
+                    format!("{key}:chevron"),
+                    motion::fold_angle(open),
+                    motion::DETAIL_FOLD,
+                    ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
+                ))
                 .child(glyph)
                 .child(
                     div()

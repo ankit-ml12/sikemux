@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::f32::consts::FRAC_PI_2;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -12,9 +11,9 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, uniform_list, AnyElement, AppContext, ClickEvent, ClipboardItem, Context,
-    Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, Subscription, Transformation, WeakEntity, Window,
+    div, px, uniform_list, AnyElement, AppContext, ClickEvent, ClipboardItem, Context, Entity,
+    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, SharedString, Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::PaneKind;
@@ -22,6 +21,7 @@ use sikemux_wire::protocol::PaneKind;
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
+use crate::motion;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
 use crate::workbench::{Strip, Workbench};
@@ -611,13 +611,12 @@ fn row_view(
             .flex()
             .items_center()
             .gap(px(5.))
-            .child(
-                ui::icon(Icon::Chevron, 11.)
-                    .when(row.open, |chevron| {
-                        chevron.with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                    })
-                    .text_color(t.text_disabled),
-            )
+            .child(motion::turn(
+                format!("tree-chevron:{}", row.path.display()),
+                motion::fold_angle(row.open),
+                motion::TREE_FOLD,
+                ui::icon(Icon::Chevron, 11.).text_color(t.text_disabled),
+            ))
             .child(ui::icon(Icon::Folder, 17.).text_color(t.text_tertiary))
             .into_any_element()
     } else {

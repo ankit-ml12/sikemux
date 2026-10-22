@@ -37,6 +37,7 @@ use crate::composer::{Composer, Strip};
 use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
+use crate::motion;
 use crate::picture::Picture;
 use crate::syntax;
 use crate::theme::{self, Tokens};
@@ -602,6 +603,7 @@ impl Chat {
             .on_reach_top(move |_, cx| {
                 bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
             })
+            .rise_in(crate::motion::ease_out())
         });
         let redraw = |stage: &WeakEntity<Workbench>, cx: &mut App| {
             stage
@@ -3797,15 +3799,12 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn, cx: &App) -> AnyElement {
         .child(looks.mark_of(&looks.agent, &looks.provider, 17., cx))
         .child(worked)
         .children(calls)
-        .child(
-            ui::icon(Icon::Chevron, 10.)
-                .text_color(looks.quiet)
-                .when(open, |chevron| {
-                    chevron.with_transformation(Transformation::rotate(Radians(
-                        std::f32::consts::FRAC_PI_2,
-                    )))
-                }),
-        )
+        .child(motion::turn(
+            format!("work-chevron:{}", fold.id),
+            motion::fold_angle(open),
+            motion::DETAIL_FOLD,
+            ui::icon(Icon::Chevron, 10.).text_color(looks.quiet),
+        ))
         .on_click(move |_, _, cx| {
             reader.update(cx, |reading, cx| {
                 reading.toggle(&id);
@@ -3946,13 +3945,12 @@ fn subagent(
             div()
                 .flex_none()
                 .opacity(if open { 1. } else { 0.5 })
-                .child(
-                    ui::icon(Icon::Chevron, 9.)
-                        .text_color(looks.quiet)
-                        .when(open, |chevron| {
-                            chevron.with_transformation(Transformation::rotate(Radians(FRAC_PI_2)))
-                        }),
-                ),
+                .child(motion::turn(
+                    format!("{key}:chevron"),
+                    motion::fold_angle(open),
+                    motion::DETAIL_FOLD,
+                    ui::icon(Icon::Chevron, 9.).text_color(looks.quiet),
+                )),
         )
         .child(div().flex_none().child(ui::mark(&looks.provider, 18.)))
         .child(

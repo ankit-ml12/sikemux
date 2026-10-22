@@ -7,15 +7,17 @@ use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::input::{Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, radians, Anchor, AnyElement, AnyView, App, ClipboardItem, Entity, Focusable,
-    FontWeight, Hsla, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
+    div, img, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId,
+    Entity, Focusable, FontWeight, Hsla, Image, ImageFormat, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Transformation,
+    Window,
 };
 use sikemux_wire::chat::ContextUsage;
 use sikemux_wire::protocol::ConfigPicker;
 
 use crate::icons::Icon;
 use crate::model_picker::Picked;
+use crate::motion::{Curve, Ease};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, DockMenu, IconButton, Menu, MenuItem};
 use crate::workbench::Workbench;
@@ -210,6 +212,14 @@ impl RenderOnce for Composer {
             None => (None, None, None, None),
         };
         let drafted = tiles.is_some() || !self.draft.read(cx).value().trim().is_empty();
+        let stopping = self.running && !drafted;
+        let job = crate::motion::follow(
+            ElementId::NamedInteger("composer-send-job".into(), self.draft.entity_id().as_u64()),
+            if stopping { 1. } else { 0. },
+            SEND_TURN,
+            window,
+            cx,
+        );
         let focused = self.draft.focus_handle(cx).contains_focused(window, cx);
         let settable = self.ready && !self.running;
         let mut bar = div()
@@ -266,11 +276,12 @@ impl RenderOnce for Composer {
             .child(div().flex_1())
             .children(self.dictation)
             .child(send(
-                self.running && !drafted,
+                stopping,
                 drafted,
                 self.running.then_some(self.steers),
                 self.on_send,
                 self.on_stop,
+                job,
                 cx,
             ));
         let has_strip = self.strip.is_some();
@@ -758,17 +769,33 @@ fn context_meter(usage: ContextUsage, provider: &str, cx: &App) -> impl IntoElem
         )
 }
 
+/// How the send button's new mark turns in.
+const SEND_TURN: Ease = Ease::new(150, Curve::Out);
+
 /// Send, or while a turn runs and nothing is written, Stop. While a turn runs, `steers` tells
-/// whether sending steers into it.
+/// whether sending steers into it. `job` runs from 0 (send) to 1 (stop): when the button
+/// changes job, its new mark turns in.
 fn send(
     stopping: bool,
     drafted: bool,
     steers: Option<bool>,
     on_send: Act,
     on_stop: Act,
+    job: f32,
     cx: &App,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let (mark, turned, from) = match stopping {
+        true => (ui::icon(Icon::Stop, 18.), job, -FRAC_PI_2),
+        false => (ui::icon(Icon::ArrowUp, 15.), 1. - job, FRAC_PI_2),
+    };
+    let mark = mark
+        .text_color(t.surface_sunken)
+        .opacity(turned)
+        .with_transformation(
+            Transformation::rotate(radians(from * (1. - turned)))
+                .with_scaling(size(0.5 + 0.5 * turned, 0.5 + 0.5 * turned)),
+        );
     let about = steers.filter(|_| !stopping).map(|steers| {
         if steers {
             "Steers into this turn — ⌘↵ queues behind it"
@@ -800,15 +827,5 @@ fn send(
                 on_send(window, cx)
             }
         })
-        .child(if stopping {
-            div()
-                .size(px(9.))
-                .rounded(px(2.))
-                .bg(t.surface_sunken)
-                .into_any_element()
-        } else {
-            ui::icon(Icon::ArrowUp, 15.)
-                .text_color(t.surface_sunken)
-                .into_any_element()
-        })
+        .child(mark)
 }

@@ -1,12 +1,13 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::{
-    actions, div, list, px, AnyElement, App, ClipboardItem, Context, EventEmitter, FocusHandle,
-    FollowMode, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListOffset, ListState,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render,
-    SharedString, Styled, Window,
+    actions, div, list, px, Animation, AnimationExt, AnyElement, App, ClipboardItem, Context,
+    ElementId, EventEmitter, FocusHandle, FollowMode, InteractiveElement, IntoElement, KeyBinding,
+    ListAlignment, ListOffset, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
+    ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 
 use crate::draw::{Pen, Style};
@@ -95,7 +96,17 @@ pub struct Transcript<R: Row> {
     chasing: Option<Chase>,
     /// Where each row was last placed in the window, as its texts were.
     row_tops: Rc<RefCell<HashMap<SharedString, Pixels>>>,
+    /// How a row that just arrived rises into place, when rows do.
+    rise: Option<Rc<dyn Fn(f32) -> f32>>,
+    /// The rows that just arrived, and when.
+    arrived: Vec<(SharedString, Instant)>,
 }
+
+/// How long a row that just arrived takes to rise into place, and from how far below.
+const RISE: Duration = Duration::from_millis(200);
+const RISE_FROM: Pixels = px(10.);
+/// More rows than this arriving at once are a transcript filling in, which just shows.
+const MOST_RISING: usize = 2;
 
 /// Bringing a place found into view, over the frames it takes its row to be laid out and
 /// its block drawn.
@@ -168,6 +179,8 @@ impl<R: Row> Transcript<R> {
             stale: Stale::None,
             chasing: None,
             row_tops: Rc::default(),
+            rise: None,
+            arrived: Vec::new(),
         }
     }
 
@@ -333,6 +346,12 @@ impl<R: Row> Transcript<R> {
         }
     }
 
+    /// Has a row that just arrived, one or two at a time, fade and rise into place on `easing`.
+    pub fn rise_in(mut self, easing: impl Fn(f32) -> f32 + 'static) -> Self {
+        self.rise = Some(Rc::new(easing));
+        self
+    }
+
     /// Called once each time the reader scrolls near the first row held, to fetch an earlier page.
     pub fn on_reach_top(mut self, ask: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_reach_top = Some(Rc::new(ask));
@@ -376,6 +395,7 @@ impl<R: Row> Transcript<R> {
         let was_empty = self.rows.is_empty();
         let changes = std::mem::take(&mut self.queue);
         let changed = !changes.is_empty();
+        let mut fresh = Vec::new();
         for change in changes {
             let end = self.rows.len();
             match change {
@@ -386,6 +406,7 @@ impl<R: Row> Transcript<R> {
                         self.stale.row(ix);
                     }
                     None => {
+                        fresh.push(SharedString::from(row.id().to_owned()));
                         self.rows.push(row);
                         self.list.splice(end..end, 1);
                         self.stale.row(end);
@@ -435,6 +456,12 @@ impl<R: Row> Transcript<R> {
                     self.asked_earlier = false;
                 }
             }
+        }
+        self.arrived
+            .retain(|(_, at)| at.elapsed() < RISE && self.rise.is_some());
+        if self.rise.is_some() && fresh.len() <= MOST_RISING {
+            let now = Instant::now();
+            self.arrived.extend(fresh.into_iter().map(|id| (id, now)));
         }
         if self.rows.is_empty() != was_empty {
             cx.emit(EmptyChanged(self.rows.is_empty()));
@@ -620,7 +647,13 @@ impl<R: Row> Render for Transcript<R> {
                     return drawn;
                 };
                 let id: SharedString = row.id().to_owned().into();
-                div()
+                let rise = this
+                    .rise
+                    .clone()
+                    .filter(|_| this.arrived.iter().any(|(arrived, _)| *arrived == id));
+                let rising =
+                    ElementId::NamedChild(std::sync::Arc::new(id.clone().into()), "rise".into());
+                let row = div()
                     .w_full()
                     .flex()
                     .flex_col()
@@ -629,8 +662,19 @@ impl<R: Row> Render for Transcript<R> {
                         if let Some(row) = bounds.first() {
                             tops.borrow_mut().insert(id.clone(), row.top());
                         }
-                    })
-                    .into_any_element()
+                    });
+                match rise {
+                    Some(easing) => row
+                        .with_animation(
+                            rising,
+                            Animation::new(RISE).with_easing(move |t| easing(t)),
+                            |row, risen| {
+                                row.opacity(risen).relative().top(RISE_FROM * (1. - risen))
+                            },
+                        )
+                        .into_any_element(),
+                    None => row.into_any_element(),
+                }
             })
         });
         div()

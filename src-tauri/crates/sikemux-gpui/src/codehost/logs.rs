@@ -515,15 +515,12 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                         cx.notify();
                     })
                 })
-                .child(
-                    ui::icon(Icon::Chevron, 11.)
-                        .text_color(t.text_tertiary)
-                        .when(open, |chevron| {
-                            chevron.with_transformation(gpui_kit::Transformation::rotate(
-                                gpui_kit::radians(std::f32::consts::FRAC_PI_2),
-                            ))
-                        }),
-                )
+                .child(crate::motion::turn(
+                    format!("log-chevron:{}", section.key),
+                    crate::motion::fold_angle(open),
+                    crate::motion::LIST_FOLD,
+                    ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary),
+                ))
                 .children(outcome.map(|outcome| ui::status_of_run(outcome_word(outcome), 14., cx)))
                 .child(
                     div()
