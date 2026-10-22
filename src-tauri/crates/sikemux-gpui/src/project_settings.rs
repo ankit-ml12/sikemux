@@ -364,6 +364,7 @@ pub fn pane(
     let nav = PAGES.iter().map(|&(page, label, icon)| {
         let (this, folder) = (this.clone(), folder.to_owned());
         let on = settings.page == page;
+        let ink = if on { t.text_primary } else { t.text_secondary };
         div()
             .id(SharedString::from(format!("project-page-{label}")))
             .flex()
@@ -373,10 +374,10 @@ pub fn pane(
             .px(px(8.))
             .rounded(theme::RADIUS_2)
             .text_size(crate::theme::ui_text(13.))
-            .text_color(if on { t.text_primary } else { t.text_secondary })
+            .text_color(ink)
             .when(on, |row| row.bg(t.surface_chosen))
             .hover(|row| row.bg(t.surface_hover))
-            .child(ui::icon(icon, 13.))
+            .child(ui::icon(icon, 13.).text_color(ink))
             .child(div().flex_1().child(label))
             .when(page == Page::Config && invalid, |row| {
                 row.child(div().text_color(t.danger).child("!"))
