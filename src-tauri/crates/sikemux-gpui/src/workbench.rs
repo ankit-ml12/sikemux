@@ -413,13 +413,22 @@ impl Workbench {
         let _ = asks.send(Ask::Follow("boards"));
         let _ = asks.send(Ask::Follow("agentSignIn"));
         let _ = asks.send(Ask::Follow("agentAccounts"));
-        cx.spawn(async move |this, cx| loop {
-            let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
-                break;
-            };
-            cx.background_executor().timer(wait).await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
+        cx.spawn(async move |this, cx| {
+            let mut minute = chrono::Local::now().minute();
+            loop {
+                let Ok(wait) = this.update(cx, |bench, _| bench.until_next_tick()) else {
+                    break;
+                };
+                cx.background_executor().timer(wait).await;
+                let now = chrono::Local::now().minute();
+                let ticked = this.update(cx, |bench, cx| match now != minute {
+                    true => cx.notify(),
+                    false => bench.parts.redraw(&bench.parts.stage, cx),
+                });
+                minute = now;
+                if ticked.is_err() {
+                    break;
+                }
             }
         })
         .detach();
@@ -550,6 +559,9 @@ impl Workbench {
         #[cfg(feature = "drive")]
         if let Update::Read(key, _) = &update {
             crate::drive::trace(format_args!("main read {key}"));
+        }
+        if self.holds(&update) {
+            return;
         }
         match update {
             Update::Connected(version) => {
@@ -1510,11 +1522,28 @@ impl Workbench {
         self.experience.is_some() || self.command_popup.is_some() || self.waiting_phone().is_some()
     }
 
-    /// The clock moves each minute, and a run's time each second while it goes.
+    /// Whether a push from a watch carries what the window already holds, so nothing in it
+    /// moved and nothing need draw again. An answer to a request always counts, as what asked
+    /// waits for it.
+    fn holds(&self, update: &Update) -> bool {
+        match update {
+            Update::Read(
+                key @ ("hosts" | "plugins" | "catalog" | "preferences" | "tasks" | "usage" | "ci"
+                | "shares" | "update" | "runs" | "ports" | "trust" | "drafts"),
+                value,
+            ) => self.reads.get(key) == Some(value),
+            Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),
+            _ => false,
+        }
+    }
+
+    /// The clock and every "ago" move each minute, which draws the whole window again, and a
+    /// running tool call's seconds each second while a chat runs, which draws only the stage.
+    /// The Run chip counts its own seconds.
     fn until_next_tick(&self) -> Duration {
         let now = chrono::Local::now();
         let into_second = Duration::from_nanos(u64::from(now.timestamp_subsec_nanos()));
-        let counting = self.person_runs().0.is_some() || self.chats.values().any(Chat::running);
+        let counting = self.chats.values().any(Chat::running);
         let seconds = if counting {
             1
         } else {
