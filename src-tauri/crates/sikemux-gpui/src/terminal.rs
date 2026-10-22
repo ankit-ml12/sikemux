@@ -389,11 +389,11 @@ impl Terminals {
         self.metrics.as_ref().map(|metrics| metrics.cell)
     }
 
-    /// Redraws the terminal `session` alone.
+    /// Draws the terminal `session` again where it was, leaving the rest of the window as it was.
     pub fn redraw(&self, session: TermKey, cx: &mut App) {
         let view = self.views.borrow().get(&session).cloned();
         if let Some(view) = view {
-            view.update(cx, |_, cx| cx.notify());
+            view.update(cx, |_, cx| cx.repaint());
         }
     }
 
