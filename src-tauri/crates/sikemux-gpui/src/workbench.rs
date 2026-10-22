@@ -2661,7 +2661,7 @@ impl Workbench {
                 Edge::End => "peek-end",
             })
             .absolute()
-            .top(px(44.))
+            .top(px(tabs::top_height(self) + 4.))
             .bottom(px(10.))
             .w(px(if peeking { width + 20. } else { PEEK_REACH }))
             .px(px(10.))
@@ -2870,17 +2870,18 @@ impl Render for Workbench {
             )
             .flex()
             .flex_col()
-            .pt(px(6.))
             .bg(crate::see_through::ground(t.surface_sunken, cx))
             .font_family(theme::UI)
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
             .text_color(t.text_secondary)
             .child(
-                parts
-                    .top
-                    .clone()
-                    .cached(StyleRefinement::default().w_full().h(px(34.)).flex_none()),
+                parts.top.clone().cached(
+                    StyleRefinement::default()
+                        .w_full()
+                        .h(px(tabs::top_height(self)))
+                        .flex_none(),
+                ),
             )
             .child(
                 div()

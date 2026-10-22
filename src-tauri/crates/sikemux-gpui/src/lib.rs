@@ -65,6 +65,7 @@ mod tabs;
 pub mod terminal;
 pub mod theme;
 mod theme_palette;
+mod top_place;
 mod track;
 mod ui;
 pub mod voice;

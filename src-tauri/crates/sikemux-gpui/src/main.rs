@@ -26,7 +26,7 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("Sikemux".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(16.), px(19.))),
+                    traffic_light_position: Some(point(px(16.), px(20.))),
                 }),
                 ..Default::default()
             };

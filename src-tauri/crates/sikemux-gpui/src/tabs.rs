@@ -25,64 +25,55 @@ use crate::theme::Tokens;
 use crate::ui::{self, IconButton, Tab};
 use crate::workbench::{Strip, Workbench};
 
-/// The bar over the stage: the project's tabs, then the clock.
+/// The bar across the window's top, under the window buttons.
+const BAR_HEIGHT: f32 = 36.;
+/// The tabs' row under the bar, with the gutter above it and a little less below.
+const TAB_ROW_HEIGHT: f32 = 42.;
+
+/// How tall the bar and, when a place has tabs, the row of them under it stand.
+pub fn top_height(bench: &Workbench) -> f32 {
+    BAR_HEIGHT
+        + if bench.strip().is_some() {
+            TAB_ROW_HEIGHT
+        } else {
+            0.
+        }
+}
+
+/// The bar, holding the window buttons, where the window is and the chips, then the
+/// project's tabs on a row of their own from the window's left edge to its right.
 pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
-    let tabs: Vec<_> = bench
-        .strip()
-        .map(|strip| {
-            let front = bench.tab().map(|tab| tab.id.clone());
-            bench
-                .tabs(&strip)
-                .iter()
-                .map(|tab| {
-                    strip_tab(
-                        bench,
-                        &strip,
-                        tab,
-                        front.as_deref() == Some(tab.id.as_str()),
-                        cx,
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    div()
+    let t = Tokens::get(cx).clone();
+    let tabs: Option<Vec<_>> = bench.strip().map(|strip| {
+        let front = bench.tab().map(|tab| tab.id.clone());
+        bench
+            .tabs(&strip)
+            .iter()
+            .map(|tab| {
+                strip_tab(
+                    bench,
+                    &strip,
+                    tab,
+                    front.as_deref() == Some(tab.id.as_str()),
+                    cx,
+                )
+            })
+            .collect()
+    });
+    let bar = div()
         .id("top-bar")
+        .relative()
         .flex()
         .flex_none()
         .items_center()
-        .h(px(34.))
+        .h(px(BAR_HEIGHT))
+        .when(!crate::see_through::clear(cx), |bar| bar.bg(t.surface))
+        .border_b_1()
+        .border_color(t.border)
         .window_control_area(WindowControlArea::Drag)
         .child(div().w(px(80.)).flex_none())
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .pl(px(20.))
-                .pr(px(12.))
-                .flex()
-                .items_center()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .h_full()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .px(px(4.))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .children(tabs),
-                )
-                .child(
-                    IconButton::new("new-tab", Icon::Plus, "New tab")
-                        .glyph(13.)
-                        .on_click(|_, window, cx| {
-                            crate::keymap::dispatch("palette.newTab", window, cx)
-                        }),
-                ),
-        )
+        .child(div().flex_1())
+        .child(crate::top_place::view(bench, cx))
         .child(
             div()
                 .flex()
@@ -92,8 +83,9 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .pr(px(16.))
                 .children(
                     git_chip(bench, cx)
-                        .map(|chip| [chip, separator(cx)])
+                        .map(|chip| [Some(chip), ci_glyph(bench, cx), Some(separator(cx))])
                         .into_iter()
+                        .flatten()
                         .flatten(),
                 )
                 .children(
@@ -108,7 +100,6 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                         .into_iter()
                         .flatten(),
                 )
-                .children(ci_glyph(bench, cx))
                 .children(battery_chip(bench, cx))
                 .child(clock(cx))
                 .child(
@@ -124,7 +115,37 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                     .pressed(!bench.side_rail_open && !bench.tab_rail_open)
                     .on_click(cx.listener(|bench, _, _, cx| bench.toggle_focus_mode(cx))),
                 ),
-        )
+        );
+    let row = tabs.map(|tabs| {
+        div()
+            .id("tab-row")
+            .h(px(TAB_ROW_HEIGHT))
+            .flex()
+            .flex_none()
+            .items_center()
+            .pt(px(10.))
+            .pb(px(6.))
+            .px(px(10.))
+            .window_control_area(WindowControlArea::Drag)
+            .child(
+                div()
+                    .h_full()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .children(tabs),
+            )
+            .child(
+                IconButton::new("new-tab", Icon::Plus, "New tab")
+                    .glyph(13.)
+                    .on_click(|_, window, cx| {
+                        crate::keymap::dispatch("palette.newTab", window, cx)
+                    }),
+            )
+    });
+    div().flex().flex_col().w_full().child(bar).children(row)
 }
 
 fn separator(cx: &App) -> AnyElement {
@@ -453,10 +474,10 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     } else {
         format!("Run {label}")
     };
-    let (glyph, word, tint) = if running.is_some() {
-        (Icon::Stop, "Stop", t.danger)
+    let (glyph, tint) = if running.is_some() {
+        (Icon::Stop, t.danger)
     } else {
-        (Icon::Run, "Run", t.live)
+        (Icon::Run, t.live)
     };
     Some(
         div()
@@ -475,8 +496,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .child(
                 div()
                     .id("run-task")
-                    .pl(px(7.))
-                    .pr(px(9.))
+                    .px(px(8.))
                     .flex()
                     .items_center()
                     .gap(px(5.))
@@ -488,8 +508,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         Some(execution) => bench.stop_run(execution),
                         None => bench.start_task(&id),
                     }))
-                    .child(ui::icon(glyph, 11.).text_color(tint))
-                    .child(word),
+                    .child(ui::icon(glyph, 11.).text_color(tint)),
             )
             .child(
                 Button::new("choose-task")
