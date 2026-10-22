@@ -66,6 +66,8 @@ pub struct Workbench {
     pub experience: Option<crate::experience::Experience>,
     /// A custom command running in a terminal over the window.
     pub command_popup: Option<crate::command_popup::Popup>,
+    /// Each open project settings tab's state, by the project's folder.
+    pub project_settings: HashMap<String, crate::project_settings::ProjectSettings>,
     pub shown: crate::experience::Shown,
     /// The repository and branch whose latest CI run the top bar shows.
     pub watched_ci: Option<CiRepo>,
@@ -418,6 +420,7 @@ impl Workbench {
             agent_setup: Default::default(),
             experience: None,
             command_popup: None,
+            project_settings: HashMap::new(),
             shown: Default::default(),
             picture: None,
             picture_hash: None,

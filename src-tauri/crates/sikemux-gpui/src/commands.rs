@@ -95,6 +95,12 @@ impl Workbench {
         let mut commands = Vec::new();
         if let Some(project) = self.project() {
             let path = project.path.to_string_lossy();
+            commands.push((
+                "project.settings",
+                "Project settings",
+                "Tasks, the default git repository, worktrees and language servers",
+                "Project",
+            ));
             commands.push(match crate::editor::language_servers_allowed(self, &path) {
                 true => (
                     "project.language-servers.stop",
@@ -155,6 +161,11 @@ impl Workbench {
                 if let Some(project) = self.project() {
                     let path = project.path.to_string_lossy().into_owned();
                     crate::editor::allow_language_servers(self, path, id.ends_with("allow"));
+                }
+            }
+            "project.settings" => {
+                if let Some(project) = self.project().map(|project| project.id.clone()) {
+                    self.open_project_settings(&project);
                 }
             }
             "support.whats-new" => crate::experience::open_whats_new(self, cx),

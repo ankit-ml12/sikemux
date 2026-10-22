@@ -41,6 +41,7 @@ mod picker;
 mod picture;
 mod places;
 mod ports;
+mod project_settings;
 pub mod project_switcher;
 mod rail;
 pub mod search;

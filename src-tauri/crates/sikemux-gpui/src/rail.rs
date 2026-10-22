@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
 use gpui_kit::base::Popover;
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled,
+    div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
@@ -333,9 +334,12 @@ fn project_tree(
     let active = bench.strip() == Some(Strip::Project(project.id.clone()));
     let agents = bench.agents_of(&project.id);
     let id = project.id.clone();
+    let menu = project_menu(bench, project, cx);
     div()
         .flex()
         .flex_col()
+        .id(SharedString::from(format!("project-menu-{}", project.id)))
+        .context_menu(menu)
         .child(crate::drag::project(
             Row::new(
                 SharedString::from(format!("project-{}", project.id)),
@@ -367,6 +371,76 @@ fn project_tree(
                 cx,
             ))
         })
+}
+
+/// What right-clicking a project offers: its settings, and the space the rail lists it under.
+fn project_menu(
+    bench: &Workbench,
+    project: &ProjectInfo,
+    cx: &Context<Workbench>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    let bench_entity = cx.weak_entity();
+    let (id, current) = (project.id.clone(), project.space.clone());
+    let spaces: Vec<(String, String, Option<Icon>)> =
+        bench.view.as_ref().map_or(Vec::new(), |view| {
+            view.workspace
+                .spaces
+                .iter()
+                .map(|space| {
+                    (
+                        space.id.clone(),
+                        space.name.clone(),
+                        Icon::named(&space.icon),
+                    )
+                })
+                .collect()
+        });
+    move |popup, _, _| {
+        let act = |work: Rc<dyn Fn(&mut Workbench)>| {
+            let bench = bench_entity.clone();
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                let _ = bench.update(cx, |bench, _| work(bench));
+            }
+        };
+        let move_to = |space: Option<String>| {
+            let id = id.clone();
+            act(Rc::new(move |bench: &mut Workbench| {
+                bench.call(
+                    "updateProject",
+                    json!({ "id": id, "patch": { "space": space } }),
+                )
+            }))
+        };
+        let settings = {
+            let id = id.clone();
+            act(Rc::new(move |bench: &mut Workbench| {
+                bench.open_project_settings(&id)
+            }))
+        };
+        let mut popup = popup.item(
+            PopupMenuItem::new("Project settings")
+                .icon(Icon::Settings)
+                .on_click(settings),
+        );
+        if !spaces.is_empty() {
+            popup = popup.separator();
+        }
+        for (space, name, glyph) in &spaces {
+            let mut item = PopupMenuItem::new(name.clone())
+                .checked(current.as_ref() == Some(space))
+                .on_click(move_to(Some(space.clone())));
+            if let Some(glyph) = glyph {
+                item = item.icon(*glyph);
+            }
+            popup = popup.item(item);
+        }
+        popup.separator().item(
+            PopupMenuItem::new("No Space")
+                .icon(Icon::Move)
+                .checked(current.is_none())
+                .on_click(move_to(None)),
+        )
+    }
 }
 
 /// Up to five agents' faces, each overlapping the one before by 6px.

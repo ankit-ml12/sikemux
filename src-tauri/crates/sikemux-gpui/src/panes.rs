@@ -332,6 +332,7 @@ fn view(
         },
         PaneKind::Agent => home::agent_view(bench, tab, id, target, window, cx),
         PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
+        PaneKind::ProjectSettings => crate::project_settings::pane(bench, target, window, cx),
         _ => home::agent_view(bench, tab, id, "", window, cx),
     }
 }
