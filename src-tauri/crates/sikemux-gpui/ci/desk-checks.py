@@ -20,6 +20,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -47,6 +48,7 @@ class Run:
         self.processes = []
         self.preferences = {}
         self.desk_body = None
+        self.sockets = None
 
     # The world the app runs in.
 
@@ -96,8 +98,10 @@ class Run:
         self.env = {key: value for key, value in os.environ.items() if key not in TOKENS}
         self.env.update(HOME=str(home), CFFIXED_USER_HOME=str(home), SIKEMUX_CONFIG_DIR=str(home / ".config/sikemux-gpui"),
                         SIKEMUX_APP_EXECUTABLE="/usr/bin/true")
-        self.socket = self.root / "core.sock"
-        self.drive_socket = self.root / "drive.sock"
+        # A socket's path must fit in 104 bytes, which a deep --out can pass.
+        self.sockets = Path(tempfile.mkdtemp(prefix="desk-", dir="/tmp"))
+        self.socket = self.sockets / "core.sock"
+        self.drive_socket = self.sockets / "drive.sock"
         core = subprocess.Popen([self.core_exe, "--socket", self.socket, "--data-dir", self.root / "data"],
                                 env=self.env, stdout=open(self.root / "core.log", "w"), stderr=subprocess.STDOUT)
         self.processes.append(core)
@@ -129,6 +133,8 @@ class Run:
                     process.wait(5)
                 except subprocess.TimeoutExpired:
                     process.kill()
+        if self.sockets:
+            shutil.rmtree(self.sockets, ignore_errors=True)
 
     # Talking to the app.
 
