@@ -1122,6 +1122,12 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                 &view,
                 |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
                 area.elsewhere.is_none().then_some(area.project.as_str()),
+                Some(super::diffs::PullOf {
+                    number: pull.number,
+                    title: pull.title.clone(),
+                    url: pull.url.clone(),
+                    bench: area.bench.clone(),
+                }),
                 window,
             ),
         },

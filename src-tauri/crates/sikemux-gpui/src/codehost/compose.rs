@@ -787,6 +787,7 @@ fn main(area: &HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> Any
             &cx.entity(),
             |area| Some(&area.composing.as_ref()?.diffs),
             Some(&area.project),
+            None,
             window,
         )))
         .into_any_element()

@@ -164,6 +164,10 @@ impl Diff {
         }
     }
 
+    pub fn row(&self, index: usize) -> Option<&DiffRow> {
+        self.rows.get(index)
+    }
+
     pub fn len(&self) -> usize {
         self.rows.len()
     }

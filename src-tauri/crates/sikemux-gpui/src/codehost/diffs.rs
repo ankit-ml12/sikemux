@@ -3,16 +3,31 @@
 
 use std::path::Path;
 
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, AnyElement, App, Context, Div, Entity, IntoElement, ListAlignment, ListState,
-    ParentElement, Pixels, SharedString, Styled, Window,
+    div, list, px, AnyElement, App, ClipboardItem, Context, Div, Entity, InteractiveElement,
+    IntoElement, ListAlignment, ListState, ParentElement, Pixels, SharedString, Styled, WeakEntity,
+    Window,
 };
+use sikemux_core::git::diff::{DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
 use sikemux_wire::codehost::ChangedFile;
 
 use super::HostArea;
 use crate::git::{row, Colours, Diff, RowLook};
+use crate::icons::Icon;
+use crate::send_to;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::workbench::Workbench;
+
+/// The pull request a list of files belongs to, which a line handed to an agent is quoted from.
+#[derive(Clone)]
+pub struct PullOf {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub bench: WeakEntity<Workbench>,
+}
 
 pub struct Changed {
     pub file: ChangedFile,
@@ -109,6 +124,7 @@ impl Diffs {
         view: &Entity<HostArea>,
         find: impl Fn(&HostArea) -> Option<&Diffs> + 'static,
         folder: Option<&str>,
+        pull: Option<PullOf>,
         window: &mut Window,
     ) -> AnyElement {
         let advance = crate::git::advance(window);
@@ -118,7 +134,9 @@ impl Diffs {
             let found =
                 find(view.read(cx)).and_then(|diffs| Some((diffs, *diffs.items.get(index)?)));
             match found {
-                Some((diffs, item)) => item_of(diffs, item, folder.as_deref(), advance, cx),
+                Some((diffs, item)) => {
+                    item_of(diffs, item, folder.as_deref(), pull.as_ref(), advance, cx)
+                }
                 None => div().into_any_element(),
             }
         })
@@ -141,6 +159,7 @@ fn item_of(
     diffs: &Diffs,
     item: Item,
     folder: Option<&str>,
+    pull: Option<&PullOf>,
     advance: Pixels,
     cx: &App,
 ) -> AnyElement {
@@ -200,7 +219,13 @@ fn item_of(
             };
             let look = RowLook::new(&t, advance, px(0.));
             let path = folder.map(|folder| Path::new(folder).join(&changed.file.path));
-            frame(
+            let picked = diff
+                .row(index)
+                .filter(|picked| picked.0 != ROW_HIDDEN)
+                .map(|picked| DiffRow(picked.0, picked.1, picked.2.clone()))
+                .zip(pull.cloned());
+            let file = changed.file.path.clone();
+            let drawn = frame(
                 div()
                     .text_size(crate::theme::ui_text(12.))
                     .line_height(crate::theme::ui_text(19.))
@@ -215,8 +240,16 @@ fn item_of(
                         path.as_deref(),
                         |_, _| {},
                     )),
-            )
-            .into_any_element()
+            );
+            match picked {
+                Some((picked, pull)) => drawn
+                    .id(SharedString::from(format!("host-row-menu-{at}-{index}")))
+                    .context_menu(move |popup, window, cx| {
+                        line_menu(popup, &pull, &file, &picked, window, cx)
+                    })
+                    .into_any_element(),
+                None => drawn.into_any_element(),
+            }
         }
         Item::End(at) => {
             let changed = &diffs.files[at];
@@ -255,4 +288,64 @@ fn item_of(
                 .into_any_element()
         }
     }
+}
+
+/// A pull request line's menu: copy it, or hand it to one of the project's agents.
+fn line_menu(
+    popup: PopupMenu,
+    pull: &PullOf,
+    path: &str,
+    picked: &DiffRow,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let copied = picked.2.clone();
+    let choices = pull
+        .bench
+        .upgrade()
+        .map(|bench| send_to::choices(bench.read(cx)))
+        .unwrap_or_default();
+    let (bench, delivery) = (pull.bench.clone(), line_delivery(pull, path, picked));
+    popup
+        .item(
+            PopupMenuItem::new("Copy Line")
+                .icon(Icon::Copy)
+                .on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
+                }),
+        )
+        .submenu_with_icon(
+            Some(Icon::Message.into()),
+            "Send Line to Agent…",
+            window,
+            cx,
+            move |mut menu, _, _| {
+                for choice in &choices {
+                    let (bench, text, to) = (bench.clone(), delivery.clone(), choice.to.clone());
+                    menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
+                        move |_, window, cx| {
+                            let (to, text) = (to.clone(), text.clone());
+                            let _ = bench.update(cx, |bench, cx| {
+                                send_to::send(bench, to, async move { Some(text) }, window, cx)
+                            });
+                        },
+                    ));
+                }
+                menu
+            },
+        )
+}
+
+/// A line of a pull request as an agent is told it: where it is, then the line as a diff.
+fn line_delivery(pull: &PullOf, path: &str, picked: &DiffRow) -> String {
+    let (side, mark) = match picked.0 {
+        ROW_DELETED => ("old", "-"),
+        ROW_ADDED => ("new", "+"),
+        _ => ("new", " "),
+    };
+    let diff = send_to::code_fence(&format!("{mark}{}", picked.2)).replacen('\n', "diff\n", 1);
+    format!(
+        "From pull request #{} \"{}\" ({}), {path}, {side} line {}:\n\n{diff}\n",
+        pull.number, pull.title, pull.url, picked.1
+    )
 }
