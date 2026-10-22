@@ -9,8 +9,9 @@ use gpui_kit::component::switch::Switch;
 use gpui_kit::component::Disableable;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, AppContext, Context, Entity, IntoElement, ParentElement,
-    PromptLevel, SharedString, Styled, Subscription, Window,
+    div, px, Anchor, AnyElement, App, AppContext, Context, Entity, InteractiveElement, IntoElement,
+    ParentElement, PromptLevel, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::accounts::protocol::RevokeReason;
@@ -484,15 +485,25 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             .w(px(240.))
             .child(ui::Field::new(input))
             .into_any_element(),
-        _ => div()
-            .text_size(crate::theme::ui_text(13.))
-            .text_color(t.text_primary)
-            .child(if name.is_empty() {
-                "Unnamed host".to_owned()
-            } else {
-                name.clone()
-            })
-            .into_any_element(),
+        _ => {
+            let (this, id, named) = (this.clone(), id.clone(), name.clone());
+            div()
+                .id(SharedString::from(format!("host-name-{id}")))
+                .text_size(crate::theme::ui_text(13.))
+                .text_color(t.text_primary)
+                .child(if name.is_empty() {
+                    "Unnamed host".to_owned()
+                } else {
+                    name.clone()
+                })
+                .on_click(move |event, window, cx| {
+                    if event.click_count() == 2 {
+                        let (id, named) = (id.clone(), named.clone());
+                        this.update(cx, |bench, cx| rename(bench, id, named, window, cx));
+                    }
+                })
+                .into_any_element()
+        }
     };
     let (rename_this, remove_this, approve_this) = (this.clone(), this.clone(), this.clone());
     let approval = fields.approvals.get(&id).copied().flatten();
