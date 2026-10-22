@@ -14,6 +14,7 @@ use gpui_kit::{
 use serde_json::{json, Value};
 
 use crate::core::Target;
+use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
@@ -40,6 +41,7 @@ pub struct Row {
 #[derive(Default)]
 pub struct FileTree {
     pub root: Option<PathBuf>,
+    place: Place,
     listed: HashMap<PathBuf, Vec<Entry>>,
     /// The pages of each listing on its way, shown only once the whole folder is in.
     incoming: HashMap<PathBuf, Vec<Entry>>,
@@ -55,13 +57,14 @@ pub struct FileTree {
 }
 
 impl FileTree {
-    /// Starts over on `root`, the project in front, unless it already shows it.
+    /// Starts over on `root`, the project in front, unless it already shows it from that host.
     pub fn show(&mut self, root: Option<PathBuf>, core: &Target) {
-        if root == self.root {
+        if root == self.root && core.place() == &self.place {
             return;
         }
         *self = FileTree {
             root: root.clone(),
+            place: core.place().clone(),
             ..FileTree::default()
         };
         if let Some(root) = root {
