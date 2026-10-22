@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::component::input::{
-    Editor, EditorState, Input, InputEvent, InputState, Position, Replace,
+    Editor, EditorState, Input, InputEvent, InputState, Position, Replace, Search,
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -298,6 +298,12 @@ pub fn pane(
                     .relative()
                     .flex_1()
                     .min_h_0()
+                    .capture_action(cx.listener(|bench, _: &Search, _, cx| {
+                        bench.parts.redraw(&bench.parts.stage, cx)
+                    }))
+                    .capture_action(cx.listener(|bench, _: &Replace, _, cx| {
+                        bench.parts.redraw(&bench.parts.stage, cx)
+                    }))
                     .font_family(theme::MONO)
                     .text_size(size)
                     .text_color(t.text_primary)
