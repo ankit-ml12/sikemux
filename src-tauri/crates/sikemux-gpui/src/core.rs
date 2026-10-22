@@ -149,6 +149,13 @@ impl Watch {
     }
 }
 
+/// What the core is asked about how it detects agents.
+pub enum Detection {
+    List,
+    Reload,
+    Explain(String),
+}
+
 /// What the client asks of the core beyond the view it is sent.
 pub enum Ask {
     /// Keeps `key` answered by `watch`, in place of whatever it watched before.
@@ -188,6 +195,12 @@ pub enum Ask {
     },
     Terminal(SessionId, TerminalAsk),
     Chat(ChatAsk),
+    /// The core's agent detection manifests, read again or not, or why it reads one agent's
+    /// terminal as it does.
+    Detection {
+        detection: Detection,
+        reply: oneshot::Sender<Result<Value, String>>,
+    },
     /// Hands the window the core's changes under `topic`, with what moved.
     Follow(&'static str),
     /// Makes this window the one the core hands its calls to, as when it comes to the front.
@@ -213,8 +226,6 @@ pub enum Ask {
         agent: String,
         account: ChatAccount,
     },
-    /// Reads the agent detection rules from disk again, answering what went wrong.
-    ReloadManifests(oneshot::Sender<Result<(), String>>),
     /// Starts a terminal running `spawn` outside any tab, answering its id.
     Spawn {
         spawn: Box<TerminalSpawn>,
@@ -723,6 +734,25 @@ async fn run(
                                     let _ = reply.send(answer.map_err(|error| error.to_string()));
                                 });
                             }
+                            Some(Ask::Detection { detection, reply }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    let answer = match detection {
+                                        Detection::List => client.list_manifests().await.map(serde_json::to_value),
+                                        Detection::Reload => client.reload_manifests().await.map(serde_json::to_value),
+                                        Detection::Explain(agent) => client
+                                            .explain_agent_detection(agent)
+                                            .await
+                                            .map(serde_json::to_value),
+                                    };
+                                    let answer = match answer {
+                                        Ok(Ok(value)) => Ok(value),
+                                        Ok(Err(error)) => Err(error.to_string()),
+                                        Err(error) => Err(error.to_string()),
+                                    };
+                                    let _ = reply.send(answer);
+                                });
+                            }
                             Some(Ask::Chat(ask)) => {
                                 let (client, updates) = (client.clone(), updates.clone());
                                 tokio::spawn(async move { chat(&client, ask, &updates).await });
@@ -773,13 +803,6 @@ async fn run(
                                     if let Err(error) = client.acp_switch_account(agent, account).await {
                                         eprintln!("sikemux: the chat stayed on its account: {error}");
                                     }
-                                });
-                            }
-                            Some(Ask::ReloadManifests(reloaded)) => {
-                                let client = client.clone();
-                                tokio::spawn(async move {
-                                    let reload = client.reload_manifests().await;
-                                    let _ = reloaded.send(reload.map(|_| ()).map_err(|error| error.to_string()));
                                 });
                             }
                             Some(Ask::Spawn { spawn, started }) => {

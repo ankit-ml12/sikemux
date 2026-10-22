@@ -18,6 +18,7 @@ mod commands;
 pub mod composer;
 pub mod core;
 mod desk;
+mod diagnostics;
 mod drag;
 #[cfg(feature = "drive")]
 pub mod drive;

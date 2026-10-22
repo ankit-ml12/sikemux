@@ -336,6 +336,11 @@ impl Terminal {
 }
 
 impl Terminals {
+    /// How many terminals this window shows.
+    pub fn open_count(&self) -> usize {
+        self.open.len()
+    }
+
     pub fn focus(&self, session: SessionId) -> Option<&FocusHandle> {
         self.open.get(&session).map(|terminal| &terminal.focus)
     }

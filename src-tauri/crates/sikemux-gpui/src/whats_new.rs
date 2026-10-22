@@ -67,7 +67,7 @@ struct Contributor {
 fn news_of(bench: &mut Workbench) -> Option<&mut WhatsNew> {
     match bench.experience.as_mut()? {
         Experience::WhatsNew(news) => Some(news),
-        Experience::Welcome(_) => None,
+        _ => None,
     }
 }
 

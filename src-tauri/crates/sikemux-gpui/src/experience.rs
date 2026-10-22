@@ -1,16 +1,25 @@
-//! The screens over the whole window: the welcome on a first run, and the release
-//! notes once a new release runs. The core says when each is due.
+//! The screens over the whole window: the welcome on a first run, the release notes
+//! once a new release runs, and runtime diagnostics when asked for. The core says when
+//! the first two are due.
 
 use gpui_kit::{div, AnyElement, Context, IntoElement, Window};
 use serde_json::Value;
 use sikemux_wire::protocol::Preferences;
 
 use crate::workbench::Workbench;
-use crate::{welcome, whats_new};
+use crate::{diagnostics, welcome, whats_new};
 
 pub enum Experience {
     Welcome(welcome::Welcome),
     WhatsNew(whats_new::WhatsNew),
+    Diagnostics(diagnostics::Diagnostics),
+}
+
+impl Experience {
+    /// Whether the release sky is behind it, which keeps moving while it is up.
+    fn has_sky(&self) -> bool {
+        !matches!(self, Experience::Diagnostics(_))
+    }
 }
 
 /// Which screens this run has already shown on its own, so neither comes back once closed.
@@ -58,26 +67,39 @@ pub fn open_whats_new(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     redraw(bench, cx);
 }
 
+pub fn open_diagnostics(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    close_shown(bench, cx);
+    bench.experience = Some(Experience::Diagnostics(diagnostics::Diagnostics::default()));
+    diagnostics::opened(bench, cx);
+    redraw(bench, cx);
+}
+
 /// Closes the screen up, counting the welcome done or the release's notes read.
 pub fn close(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    match bench.experience.take() {
-        Some(Experience::Welcome(_)) => {
+    let Some(shown) = bench.experience.take() else {
+        return;
+    };
+    let sky = shown.has_sky();
+    match shown {
+        Experience::Welcome(_) => {
             crate::settings::set(bench, "onboardingComplete", true);
         }
-        Some(Experience::WhatsNew(news)) => {
+        Experience::WhatsNew(news) => {
             if let Some(version) = news.running() {
                 crate::settings::set(bench, "lastSeenVersion", version);
             }
         }
-        None => return,
+        Experience::Diagnostics(_) => {}
     }
-    crate::ui::grain::sky_shown(false, cx);
+    if sky {
+        crate::ui::grain::sky_shown(false, cx);
+    }
     redraw(bench, cx);
 }
 
 /// Swaps one screen for the other without counting the first as finished.
 fn close_shown(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    if bench.experience.take().is_some() {
+    if bench.experience.take().is_some_and(|shown| shown.has_sky()) {
         crate::ui::grain::sky_shown(false, cx);
     }
 }
@@ -92,6 +114,7 @@ pub fn draw(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workben
     match &bench.experience {
         Some(Experience::Welcome(_)) => welcome::render(bench, &this, window, cx),
         Some(Experience::WhatsNew(_)) => whats_new::render(bench, &this, window, cx),
+        Some(Experience::Diagnostics(_)) => diagnostics::render(bench, &this, cx),
         None => div().into_any_element(),
     }
 }

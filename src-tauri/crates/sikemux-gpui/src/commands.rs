@@ -118,6 +118,12 @@ impl Workbench {
         }
         commands.extend([
             (
+                "support.diagnostics",
+                "Open runtime diagnostics",
+                "Inspect redacted runtime and agent-detection health",
+                "Support",
+            ),
+            (
                 "support.whats-new",
                 "Open What’s New",
                 "Review the latest Sikemux release notes",
@@ -168,6 +174,7 @@ impl Workbench {
                     self.open_project_settings(&project);
                 }
             }
+            "support.diagnostics" => crate::experience::open_diagnostics(self, cx),
             "support.whats-new" => crate::experience::open_whats_new(self, cx),
             "support.onboarding" => crate::experience::open_welcome(self, cx),
             "window.duplicate" => {
@@ -195,7 +202,10 @@ impl Workbench {
 
     fn reload_manifests(&self, cx: &mut Context<Self>) {
         let (reloaded, reload) = oneshot::channel();
-        let _ = self.asks.send(core::Ask::ReloadManifests(reloaded));
+        let _ = self.asks.send(core::Ask::Detection {
+            detection: core::Detection::Reload,
+            reply: reloaded,
+        });
         cx.spawn(async move |this, cx| {
             if let Ok(Err(error)) = reload.await {
                 let _ = this.update(cx, |bench, cx| {

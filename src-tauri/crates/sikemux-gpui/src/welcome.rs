@@ -69,7 +69,7 @@ impl Welcome {
 fn welcome_of(bench: &mut Workbench) -> Option<&mut Welcome> {
     match bench.experience.as_mut()? {
         Experience::Welcome(welcome) => Some(welcome),
-        Experience::WhatsNew(_) => None,
+        _ => None,
     }
 }
 

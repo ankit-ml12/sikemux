@@ -112,7 +112,7 @@ pub fn render(
         cx,
     );
     let help = {
-        let (news, welcome) = (this.clone(), this.clone());
+        let (news, welcome, diagnostics) = (this.clone(), this.clone(), this.clone());
         div()
             .flex()
             .gap(px(8.))
@@ -137,6 +137,19 @@ pub fn render(
                     },
                 ),
             )
+            .child(
+                ui::Button::new(
+                    "help-diagnostics",
+                    "Runtime diagnostics",
+                    ui::Variant::Outline,
+                )
+                .on_click(move |_, window, cx| {
+                    diagnostics.update(cx, |bench, cx| {
+                        crate::settings::close(bench, window, cx);
+                        crate::experience::open_diagnostics(bench, cx);
+                    })
+                }),
+            )
     };
     vec![
         rows::section("Updates", None, None, lit("Updates"), updates, cx),
@@ -144,7 +157,7 @@ pub fn render(
         rows::section(
             "Help",
             None,
-            Some("Both are also searchable from the command deck.".into()),
+            Some("All three are also searchable from the command deck.".into()),
             lit("Help"),
             help,
             cx,
