@@ -20,8 +20,8 @@ use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 /// The line under the last row while a turn runs: what the agent is doing, and for how
-/// long. It keeps its own clock, and each second draws this line again in place, leaving the
-/// chat around it as it was.
+/// long. Each second it ticks re-renders the views it sits in as well, as GPUI redraws a
+/// view's parents with it; the rows are a view of their own and are not drawn again.
 pub struct Activity {
     provider: String,
     label: Option<SharedString>,
@@ -49,7 +49,7 @@ impl Activity {
         self._ticking = label.is_some().then(|| {
             cx.spawn(async move |this, cx| loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this.update(cx, |_, cx| cx.repaint()).is_err() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
                     break;
                 }
             })
