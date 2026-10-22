@@ -1,14 +1,16 @@
 //! Changed files' diffs in cards, one list drawn only as far as it shows: a pull
 //! request's files, or what a branch changes since its base.
 
+use std::cell::Cell;
 use std::path::Path;
+use std::rc::Rc;
 
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, list, px, AnyElement, App, ClipboardItem, Context, Div, Entity, InteractiveElement,
-    IntoElement, ListAlignment, ListState, ParentElement, Pixels, SharedString, Styled, WeakEntity,
-    Window,
+    IntoElement, ListAlignment, ListState, MouseButton, MouseMoveEvent, ParentElement, Pixels,
+    SharedString, Styled, WeakEntity, Window,
 };
 use sikemux_core::git::diff::{DiffRow, ROW_ADDED, ROW_DELETED, ROW_HIDDEN};
 use sikemux_wire::codehost::ChangedFile;
@@ -57,6 +59,8 @@ pub struct Diffs {
     pub files: Vec<Changed>,
     rows: ListState,
     items: Vec<Item>,
+    /// The rows a press and drag picked: the file, then where the drag began and where it is.
+    picked: Rc<Cell<Option<(usize, usize, usize)>>>,
 }
 
 impl Diffs {
@@ -65,6 +69,7 @@ impl Diffs {
             files,
             rows: ListState::new(0, ListAlignment::Top, px(600.)),
             items: Vec::new(),
+            picked: Rc::default(),
         };
         diffs.lay_out();
         diffs
@@ -134,9 +139,15 @@ impl Diffs {
             let found =
                 find(view.read(cx)).and_then(|diffs| Some((diffs, *diffs.items.get(index)?)));
             match found {
-                Some((diffs, item)) => {
-                    item_of(diffs, item, folder.as_deref(), pull.as_ref(), advance, cx)
-                }
+                Some((diffs, item)) => item_of(
+                    &view,
+                    diffs,
+                    item,
+                    folder.as_deref(),
+                    pull.as_ref(),
+                    advance,
+                    cx,
+                ),
                 None => div().into_any_element(),
             }
         })
@@ -156,6 +167,7 @@ fn stat(changed: &Changed) -> (u64, u64) {
 
 /// One item of the list; its rows open the file in the editor while it is in `folder`.
 fn item_of(
+    view: &Entity<HostArea>,
     diffs: &Diffs,
     item: Item,
     folder: Option<&str>,
@@ -219,14 +231,46 @@ fn item_of(
             };
             let look = RowLook::new(&t, advance, px(0.));
             let path = folder.map(|folder| Path::new(folder).join(&changed.file.path));
-            let picked = diff
-                .row(index)
-                .filter(|picked| picked.0 != ROW_HIDDEN)
-                .map(|picked| DiffRow(picked.0, picked.1, picked.2.clone()))
-                .zip(pull.cloned());
+            let range = match diffs.picked.get() {
+                Some((file, from, to)) if file == at && from != to => {
+                    Some(from.min(to)..=from.max(to))
+                }
+                _ => None,
+            };
+            let ranged = range.as_ref().is_some_and(|range| range.contains(&index));
+            let picked: Vec<DiffRow> = match &range {
+                Some(range) if ranged => range
+                    .clone()
+                    .filter_map(|at| diff.row(at))
+                    .collect::<Vec<_>>(),
+                _ => diff.row(index).into_iter().collect::<Vec<_>>(),
+            }
+            .into_iter()
+            .filter(|picked| picked.0 != ROW_HIDDEN)
+            .map(|picked| DiffRow(picked.0, picked.1, picked.2.clone()))
+            .collect();
             let file = changed.file.path.clone();
+            let (pressed, dragged) = (diffs.picked.clone(), diffs.picked.clone());
+            let (pressing, dragging) = (view.clone(), view.clone());
             let drawn = frame(
                 div()
+                    .when(ranged, |rows| rows.bg(t.surface_chosen))
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        if pressed.replace(Some((at, index, index))).is_some() {
+                            pressing.update(cx, |_, cx| cx.notify());
+                        }
+                    })
+                    .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
+                        if event.pressed_button != Some(MouseButton::Left) {
+                            return;
+                        }
+                        if let Some((file, from, to)) = dragged.get() {
+                            if file == at && to != index {
+                                dragged.set(Some((file, from, index)));
+                                dragging.update(cx, |_, cx| cx.notify());
+                            }
+                        }
+                    })
                     .text_size(crate::theme::ui_text(12.))
                     .line_height(crate::theme::ui_text(19.))
                     .when(index == 0, |rows| rows.pt(px(6.)))
@@ -241,8 +285,8 @@ fn item_of(
                         |_, _| {},
                     )),
             );
-            match picked {
-                Some((picked, pull)) => drawn
+            match pull.cloned().filter(|_| !picked.is_empty()) {
+                Some(pull) => drawn
                     .id(SharedString::from(format!("host-row-menu-{at}-{index}")))
                     .context_menu(move |popup, window, cx| {
                         line_menu(popup, &pull, &file, &picked, window, cx)
@@ -290,25 +334,30 @@ fn item_of(
     }
 }
 
-/// A pull request line's menu: copy it, or hand it to one of the project's agents.
+/// A pull request's picked lines' menu: copy them, or hand them to one of the project's agents.
 fn line_menu(
     popup: PopupMenu,
     pull: &PullOf,
     path: &str,
-    picked: &DiffRow,
+    picked: &[DiffRow],
     window: &mut Window,
     cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
-    let copied = picked.2.clone();
+    let copied = picked
+        .iter()
+        .map(|row| row.2.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
     let choices = pull
         .bench
         .upgrade()
         .map(|bench| send_to::choices(bench.read(cx)))
         .unwrap_or_default();
-    let (bench, delivery) = (pull.bench.clone(), line_delivery(pull, path, picked));
+    let (bench, delivery) = (pull.bench.clone(), lines_delivery(pull, path, picked));
+    let one = picked.len() == 1;
     popup
         .item(
-            PopupMenuItem::new("Copy Line")
+            PopupMenuItem::new(if one { "Copy Line" } else { "Copy Lines" })
                 .icon(Icon::Copy)
                 .on_click(move |_, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
@@ -316,7 +365,11 @@ fn line_menu(
         )
         .submenu_with_icon(
             Some(Icon::Message.into()),
-            "Send Line to Agent…",
+            if one {
+                "Send Line to Agent…"
+            } else {
+                "Send Lines to Agent…"
+            },
             window,
             cx,
             move |mut menu, _, _| {
@@ -336,16 +389,46 @@ fn line_menu(
         )
 }
 
-/// A line of a pull request as an agent is told it: where it is, then the line as a diff.
-fn line_delivery(pull: &PullOf, path: &str, picked: &DiffRow) -> String {
-    let (side, mark) = match picked.0 {
-        ROW_DELETED => ("old", "-"),
-        ROW_ADDED => ("new", "+"),
-        _ => ("new", " "),
+/// Lines of a pull request as an agent is told them: where they are, then the lines as a diff.
+fn lines_delivery(pull: &PullOf, path: &str, picked: &[DiffRow]) -> String {
+    let span = |numbers: Vec<u32>| -> Option<String> {
+        let (first, last) = (*numbers.iter().min()?, *numbers.iter().max()?);
+        Some(if first == last {
+            format!("line {first}")
+        } else {
+            format!("lines {first}–{last}")
+        })
     };
-    let diff = send_to::code_fence(&format!("{mark}{}", picked.2)).replacen('\n', "diff\n", 1);
+    let numbers = |deleted: bool| {
+        picked
+            .iter()
+            .filter(|row| (row.0 == ROW_DELETED) == deleted)
+            .map(|row| row.1)
+            .collect::<Vec<_>>()
+    };
+    let place = [
+        span(numbers(true)).map(|span| format!("old {span}")),
+        span(numbers(false)).map(|span| format!("new {span}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" and ");
+    let lines = picked
+        .iter()
+        .map(|row| {
+            let mark = match row.0 {
+                ROW_ADDED => "+",
+                ROW_DELETED => "-",
+                _ => " ",
+            };
+            format!("{mark}{}", row.2)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let diff = send_to::code_fence(&lines).replacen('\n', "diff\n", 1);
     format!(
-        "From pull request #{} \"{}\" ({}), {path}, {side} line {}:\n\n{diff}\n",
-        pull.number, pull.title, pull.url, picked.1
+        "From pull request #{} \"{}\" ({}), {path}, {place}:\n\n{diff}\n",
+        pull.number, pull.title, pull.url
     )
 }
