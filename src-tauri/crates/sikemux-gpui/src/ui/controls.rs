@@ -16,6 +16,10 @@ use crate::theme::{Tokens, RADIUS_2};
 pub(super) type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type OnSelect = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
+/// How much of its colour an icon button keeps while it can't be pressed, low enough to tell
+/// at a glyph's size from one that can.
+const DISABLED_STRENGTH: f32 = 0.4;
+
 /// A glyph you press: the rails' header actions at 26px, their add buttons at 18px.
 #[derive(IntoElement)]
 pub struct IconButton {
@@ -117,12 +121,17 @@ impl IconButton {
 impl RenderOnce for IconButton {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
-        let rest = if self.disabled {
-            t.text_disabled
-        } else if self.quiet {
+        let enabled = if self.quiet {
             t.icon_quiet
         } else {
             t.text_tertiary
+        };
+        let rest = match self.disabled {
+            true => Hsla {
+                a: enabled.a * DISABLED_STRENGTH,
+                ..enabled
+            },
+            false => enabled,
         };
         let (hover, primary, chosen) = (t.surface_hover, t.text_primary, t.surface_chosen);
         let (hover, primary) = if self.disabled {
