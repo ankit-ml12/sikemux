@@ -164,10 +164,23 @@ impl Pen {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
+        self.blocks_with(style, id, doc, doc.blocks().to_vec(), window, cx)
+    }
+
+    /// Draws only `blocks` of `doc`, such as the ones `Markdown::cut` keeps of a long text.
+    pub fn blocks_with(
+        &self,
+        style: &Rc<Style>,
+        id: impl Into<ElementId>,
+        doc: &Markdown,
+        blocks: Vec<Rc<Node>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
         let id = id.into();
         let blocks = Blocks {
             scope: Arc::new(id.clone()),
-            blocks: doc.blocks().to_vec(),
+            blocks,
             style: style.clone(),
             selecting: self.selecting.clone(),
             doc: self

@@ -63,6 +63,9 @@ pub use draft::key as draft_key;
 /// Turns asked for each time the reader nears the top of what is held.
 const PAGE_TURNS: u32 = 20;
 
+/// A text longer than this many characters shows its start, with a way to show the rest.
+const LONG_TEXT: usize = 20_000;
+
 /// One message as the core folded it, and the tree of each text it holds.
 pub struct ChatRow {
     message: ChatMessage,
@@ -343,9 +346,19 @@ struct Reading {
     editing: Option<edit::Editing>,
     /// The host no longer keeps the turns before the first row.
     earlier_lost: bool,
+    /// Rows whose text streamed in while the chat was open, which never fold.
+    streamed: HashSet<String>,
+    /// Long texts the reader asked to see the rest of, by row and part.
+    unfolded: HashSet<SharedString>,
+    /// The find bar is looking for something, so every long text shows all of itself.
+    finding: bool,
 }
 
 impl Reading {
+    fn folds(&self, row: &str, part: &SharedString) -> bool {
+        !self.finding && !self.streamed.contains(row) && !self.unfolded.contains(part)
+    }
+
     fn toggle(&mut self, id: &str) {
         if !self.opened.remove(id) {
             self.opened.insert(id.to_owned());
@@ -686,6 +699,19 @@ impl Chat {
             .update(cx, |activity, cx| activity.set(doing, cx));
     }
 
+    /// While the find bar looks for something, long texts show all of themselves so every
+    /// place it finds can be seen.
+    pub fn unfold_for_find(&self, on: bool, cx: &mut App) {
+        if self.reader.read(cx).finding == on {
+            return;
+        }
+        self.reader.update(cx, |reading, cx| {
+            reading.finding = on;
+            cx.notify();
+        });
+        self.transcript.read(cx).list().remeasure();
+    }
+
     /// Whether the head changed since this was last asked.
     pub fn take_head_moved(&mut self) -> bool {
         std::mem::take(&mut self.head_moved)
@@ -801,13 +827,20 @@ impl Chat {
                     text,
                     md,
                     within,
-                } => self.update(
-                    &mut rows,
-                    row,
-                    within,
-                    move |held| held.write(&part, &text, md.as_ref()),
-                    cx,
-                ),
+                } => {
+                    if within.is_none() && !self.reader.read(cx).streamed.contains(&row) {
+                        self.reader.update(cx, |reading, _| {
+                            reading.streamed.insert(row.clone());
+                        });
+                    }
+                    self.update(
+                        &mut rows,
+                        row,
+                        within,
+                        move |held| held.write(&part, &text, md.as_ref()),
+                        cx,
+                    )
+                }
                 ChatChange::Set { row, set, within } => {
                     self.update(&mut rows, row, within, move |held| held.set(&set), cx)
                 }
@@ -3350,7 +3383,36 @@ fn part(
                 _ => styles.text.clone(),
             };
             drop(styles);
-            pen.markdown_with(&look, id, &doc.markdown, window, cx)
+            let cut = (doc.units > LONG_TEXT && looks.reading.folds(&row.message.id, &id))
+                .then(|| doc.markdown.cut(LONG_TEXT))
+                .flatten();
+            let Some((blocks, hidden)) = cut else {
+                return pen.markdown_with(&look, id, &doc.markdown, window, cx);
+            };
+            let reader = looks.reader.clone();
+            let label = format!("Show the rest · {}k more characters", (hidden + 500) / 1000);
+            let more = Button::new(
+                SharedString::from(format!("rest:{id}")),
+                label,
+                Variant::Outline,
+            )
+            .on_click({
+                let id = id.clone();
+                move |_, _, cx| {
+                    reader.update(cx, |reading, cx| {
+                        reading.unfolded.insert(id.clone());
+                        cx.notify();
+                    })
+                }
+            });
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .min_w_0()
+                .child(pen.blocks_with(&look, id, &doc.markdown, blocks, window, cx))
+                .child(div().flex().child(more))
+                .into_any_element()
         }
         ChatPart::Tool {
             page: Some(page), ..

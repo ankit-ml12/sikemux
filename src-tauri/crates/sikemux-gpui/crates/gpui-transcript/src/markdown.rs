@@ -209,6 +209,35 @@ impl Node {
         }
     }
 
+    /// How many characters of the node a reader sees, its folds as they were written.
+    fn shown_len(&self) -> usize {
+        let mut texts = Vec::new();
+        self.walk(&mut texts, &mut |written| written);
+        texts.iter().map(|text| text.chars().count()).sum()
+    }
+
+    /// A code block's first lines up to `limit` characters, ending at a line break when
+    /// one comes in the second half.
+    fn code_head(&self, limit: usize) -> Option<Node> {
+        let Kind::Code(_) = self.kind else {
+            return None;
+        };
+        let end = self
+            .text
+            .char_indices()
+            .nth(limit)
+            .map_or(self.text.len(), |(at, _)| at);
+        let head = &self.text[..end];
+        let end = match head.rfind('\n') {
+            Some(at) if head[..at].chars().count() >= limit / 2 => at,
+            _ => end,
+        };
+        let mut head = self.clone();
+        head.text.truncate(end);
+        head.touched();
+        Some(head)
+    }
+
     fn touched(&mut self) {
         self.flow = OnceCell::new();
         self.size.set(None);
@@ -447,6 +476,31 @@ impl Markdown {
             });
         }
         texts
+    }
+
+    /// The first whole blocks of a text over `limit` characters and how many characters they
+    /// leave out, or the start of a first block of code longer than that; none when little
+    /// would be left out.
+    pub fn cut(&self, limit: usize) -> Option<(Vec<Rc<Node>>, usize)> {
+        let lens: Vec<usize> = self.blocks.iter().map(|block| block.shown_len()).collect();
+        let total: usize = lens.iter().sum();
+        if total <= limit {
+            return None;
+        }
+        let (mut kept, mut count) = (0, 0);
+        while count < lens.len() && kept + lens[count] <= limit {
+            kept += lens[count];
+            count += 1;
+        }
+        let blocks = if count > 0 {
+            self.blocks[..count].to_vec()
+        } else {
+            let head = self.blocks[0].code_head(limit)?;
+            kept = head.shown_len();
+            vec![Rc::new(head)]
+        };
+        let hidden = total - kept;
+        (hidden >= limit / 10).then_some((blocks, hidden))
     }
 
     /// Whether the tree matches the text; when it does not, draw the text as it is.

@@ -59,6 +59,7 @@ impl Workbench {
             whole_word: finding.whole_word,
         });
         let query = query.filter(|query| !query.text.is_empty());
+        chat.unfold_for_find(query.is_some(), cx);
         chat.transcript
             .update(cx, |transcript, cx| transcript.find(query, cx));
         self.parts.redraw(&self.parts.stage, cx);
@@ -88,6 +89,7 @@ impl Workbench {
             return;
         };
         chat.finding = None;
+        chat.unfold_for_find(false, cx);
         chat.transcript
             .update(cx, |transcript, cx| transcript.find(None, cx));
         if let Some(composing) = &chat.composer {
