@@ -382,10 +382,6 @@ impl Workbench {
             Watch::new("updateStatus", json!({}), &["update"]),
         ));
         let _ = asks.send(Ask::Watch(
-            "runs",
-            Watch::new("taskRuns", json!({}), &["runs"]),
-        ));
-        let _ = asks.send(Ask::Watch(
             "trust",
             Watch::new("trustAsks", json!({}), &["trust"]),
         ));
@@ -1369,22 +1365,23 @@ impl Workbench {
         if path == self.watched_project && place == self.watched_place {
             return;
         }
+        let target = Target::new(&self.asks, place.clone());
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
-        let _ = self.asks.send(Ask::Watch(
+        target.watch(
             "activity",
             Watch::new("activitySummary", activity, &["activity"]),
-        ));
-        let _ = self.asks.send(Ask::Watch(
+        );
+        target.watch(
             "tasks",
             Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
-        ));
-        let _ = self.asks.send(Ask::Watch(
+        );
+        target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
+        target.watch(
             "ports",
             Watch::new("ports", json!({ "project": path }), &["ports"]),
-        ));
+        );
         self.reads.remove("git-project-repo");
         self.git_listing = false;
-        let target = Target::new(&self.asks, place.clone());
         target.watch(
             "git-project-repo",
             Watch::new(
@@ -1562,7 +1559,7 @@ impl Workbench {
 
     pub fn start_task(&self, task: &str) {
         if let Some(project) = &self.watched_project {
-            self.call("taskStart", json!({ "project": project, "taskId": task }));
+            self.call_in_front("taskStart", json!({ "project": project, "taskId": task }));
         }
     }
 
@@ -1607,7 +1604,7 @@ impl Workbench {
     }
 
     pub fn stop_run(&self, execution: &str) {
-        self.call("taskStop", json!({ "executionId": execution }));
+        self.call_in_front("taskStop", json!({ "executionId": execution }));
     }
 
     pub fn picture(&self) -> Option<Arc<Image>> {
