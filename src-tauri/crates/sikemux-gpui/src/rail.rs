@@ -925,7 +925,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 let bench = bench.clone();
                 popup.item(PopupMenuItem::new("New Space…").icon(Icon::Plus).on_click(
                     move |_, _, cx| {
-                        let _ = bench.update(cx, |bench, cx| bench.new_space(None, cx));
+                        bench.update(cx, |bench, cx| bench.new_space(None, cx));
                     },
                 ))
             }
