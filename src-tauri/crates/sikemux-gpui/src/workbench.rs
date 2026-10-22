@@ -659,7 +659,7 @@ impl Workbench {
                 if in_front {
                     self.watch_project();
                     self.watch_worktree();
-                    self.close_chats();
+                    self.close_chats(cx);
                     self.open_chat(cx);
                     self.front_moved(cx);
                 }
@@ -720,7 +720,7 @@ impl Workbench {
                 self.watch_worktree();
                 self.watch_picture();
                 self.watch_ci();
-                self.close_chats();
+                self.close_chats(cx);
                 self.open_chat(cx);
                 self.front_moved(cx);
             }
@@ -1449,8 +1449,9 @@ impl Workbench {
         });
     }
 
-    /// Lets go of the chats whose agents no longer have a tab.
-    fn close_chats(&mut self) {
+    /// Lets go of the chats whose agents no longer have a tab. A draft let go of gives the
+    /// keyboard back to the workbench, and the chat takes it again if it comes back.
+    fn close_chats(&mut self, cx: &mut Context<Self>) {
         let Some(view) = self.shown() else {
             return;
         };
@@ -1468,7 +1469,10 @@ impl Workbench {
             .collect();
         let closed = !gone.is_empty();
         for agent in gone {
-            self.chats.remove(&agent);
+            if let Some(composing) = self.chats.remove(&agent).and_then(|chat| chat.composer) {
+                self.release_keys(composing.draft.read(cx).focus_handle(cx), cx);
+            }
+            self.focused_chat.take_if(|(shown, _)| *shown == agent);
             self.ask_chat(ChatAsk::Detach { agent });
         }
         if closed {
@@ -1963,6 +1967,18 @@ impl Workbench {
     /// Forgets what was read under `key`, so nothing shows the answer of what it watched before.
     pub(crate) fn forget_read(&mut self, key: &str) {
         self.reads.remove(key);
+    }
+
+    /// Gives the workbench the keyboard if `held`, which is going away, has it.
+    fn release_keys(&self, held: FocusHandle, cx: &mut Context<Self>) {
+        let (window, focus) = (self.window, self.focus.clone());
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                if held.is_focused(window) {
+                    window.focus(&focus, cx)
+                }
+            });
+        });
     }
 
     /// Shows `note` in the window's notifications.
