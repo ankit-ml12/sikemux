@@ -28,7 +28,8 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("Sikemux".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(16.), px(20.))),
+                    // The top of the 14 pt lights, which centres them in the 36 pt top bar.
+                    traffic_light_position: Some(point(px(16.), px(11.))),
                 }),
                 ..Default::default()
             };
