@@ -337,12 +337,95 @@ pub(crate) struct ChatChoice {
     pub resume_id: Option<String>,
 }
 
+/// An agent's session a client takes up again, named by its agent and the project it ran in.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionChoice {
+    pub provider: String,
+    pub session_id: String,
+    pub project: PathBuf,
+}
+
 /// What a device asked of a recent chat it takes up again.
 pub(crate) struct ResumeChoice {
     pub recent: String,
     pub permission_mode: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+}
+
+/// The recent chat named `recent`, or the pinned one when it left the recent ones.
+fn recent_or_pinned(published: &Published, recent: &str) -> Option<Recent> {
+    let saved = &published.saved;
+    let pinned = saved.pinned.iter().find_map(|pin| {
+        let chat = Recent {
+            launcher: String::new(),
+            provider: pin.provider.clone(),
+            session_id: pin.session_id.clone(),
+            title: pin.title.clone(),
+            cwd: pin.project.clone(),
+            active_at: 0,
+        };
+        (recent_id(&chat) == recent).then_some(chat)
+    });
+    published
+        .recent
+        .iter()
+        .find(|chat| recent_id(chat) == recent)
+        .cloned()
+        .or(pinned)
+}
+
+/// How to start `chat` again on the launcher it last ran on, or the account the person
+/// chose for its agent when it keeps none.
+fn choice_of(
+    published: &Published,
+    chat: &Recent,
+    choice: ResumeChoice,
+    open: &[ChatInfo],
+) -> CoreResult<ChatChoice> {
+    let saved = &published.saved;
+    if running_now(chat, open).is_some() {
+        return Err("that chat is already open on this host".into());
+    }
+    let project = saved
+        .projects
+        .iter()
+        .find(|project| project.path == chat.cwd)
+        .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
+    // A chat that left the recent ones keeps no launcher, so it starts on
+    // the account the person chose for its agent.
+    let chosen = saved
+        .accounts
+        .as_ref()
+        .map(|book| format!("{}:{}", chat.provider, book.chosen(&chat.provider)));
+    let launcher = published
+        .launchers
+        .iter()
+        .filter(|launcher| launcher.agent.provider == chat.provider)
+        .find(|launcher| {
+            launcher.id == chat.launcher
+                || (chat.launcher.is_empty() && Some(&launcher.id) == chosen.as_ref())
+        })
+        .or_else(|| {
+            chat.launcher.is_empty().then(|| {
+                published
+                    .launchers
+                    .iter()
+                    .find(|launcher| launcher.agent.provider == chat.provider)
+            })?
+        })
+        .ok_or_else(|| {
+            CoreError::from("Sikemux on this host can no longer start that chat's agent")
+        })?;
+    Ok(ChatChoice {
+        launcher: launcher.id.clone(),
+        project: project.id.clone(),
+        permission_mode: choice.permission_mode,
+        model: choice.model,
+        effort: choice.effort,
+        resume_id: Some(chat.session_id.clone()),
+    })
 }
 
 fn recent_id(chat: &Recent) -> String {
@@ -1274,67 +1357,36 @@ impl Workspaces {
         open: &[ChatInfo],
     ) -> CoreResult<ChatChoice> {
         let published = self.published.locked();
-        let saved = &published.saved;
-        let pinned = saved.pinned.iter().find_map(|pin| {
-            let chat = Recent {
-                launcher: String::new(),
-                provider: pin.provider.clone(),
-                session_id: pin.session_id.clone(),
-                title: pin.title.clone(),
-                cwd: pin.project.clone(),
-                active_at: 0,
-            };
-            (recent_id(&chat) == choice.recent).then_some(chat)
+        let chat = recent_or_pinned(&published, &choice.recent).ok_or_else(|| {
+            CoreError::from("that chat is no longer among the recent ones on this host")
+        })?;
+        choice_of(&published, &chat, choice, open)
+    }
+
+    /// How to take up `provider`'s session again in the project at `project`, as a recent
+    /// chat when it still is one.
+    pub(crate) fn session_choice(
+        &self,
+        session: SessionChoice,
+        open: &[ChatInfo],
+    ) -> CoreResult<ChatChoice> {
+        let published = self.published.locked();
+        let recent = format!("{}:{}", session.provider, session.session_id);
+        let chat = recent_or_pinned(&published, &recent).unwrap_or(Recent {
+            launcher: String::new(),
+            provider: session.provider,
+            session_id: session.session_id,
+            title: String::new(),
+            cwd: session.project,
+            active_at: 0,
         });
-        let chat = published
-            .recent
-            .iter()
-            .find(|chat| recent_id(chat) == choice.recent)
-            .or(pinned.as_ref())
-            .ok_or_else(|| {
-                CoreError::from("that chat is no longer among the recent ones on this host")
-            })?;
-        if running_now(chat, open).is_some() {
-            return Err("that chat is already open on this host".into());
-        }
-        let project = saved
-            .projects
-            .iter()
-            .find(|project| project.path == chat.cwd)
-            .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
-        // A pinned chat that left the recent ones keeps no launcher, so it
-        // starts on the account the person chose for its agent.
-        let chosen = saved
-            .accounts
-            .as_ref()
-            .map(|book| format!("{}:{}", chat.provider, book.chosen(&chat.provider)));
-        let launcher = published
-            .launchers
-            .iter()
-            .filter(|launcher| launcher.agent.provider == chat.provider)
-            .find(|launcher| {
-                launcher.id == chat.launcher
-                    || (chat.launcher.is_empty() && Some(&launcher.id) == chosen.as_ref())
-            })
-            .or_else(|| {
-                chat.launcher.is_empty().then(|| {
-                    published
-                        .launchers
-                        .iter()
-                        .find(|launcher| launcher.agent.provider == chat.provider)
-                })?
-            })
-            .ok_or_else(|| {
-                CoreError::from("Sikemux on this host can no longer start that chat's agent")
-            })?;
-        Ok(ChatChoice {
-            launcher: launcher.id.clone(),
-            project: project.id.clone(),
-            permission_mode: choice.permission_mode,
-            model: choice.model,
-            effort: choice.effort,
-            resume_id: Some(chat.session_id.clone()),
-        })
+        let choice = ResumeChoice {
+            recent,
+            permission_mode: None,
+            model: None,
+            effort: None,
+        };
+        choice_of(&published, &chat, choice, open)
     }
 
     pub(crate) fn project_paths(&self) -> Vec<PathBuf> {

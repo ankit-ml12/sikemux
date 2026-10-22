@@ -109,6 +109,7 @@ calls! { core, client, params;
         let params: AgentParams = parse(params)?;
         answer(super::launching::start_saved(&core, &params.agent_id).await?)
     },
+    "resumeSession": Full => answer(super::launching::resume_session(&core, parse(params)?).await?),
     "activitySummary": Watch, any_program => answer(activity_summary(&core, parse(params)?).await?),
     "setActivityPrice": Person => {
         let params: ActivityPriceParams = parse(params)?;

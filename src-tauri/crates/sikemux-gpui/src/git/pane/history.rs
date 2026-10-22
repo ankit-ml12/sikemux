@@ -9,12 +9,14 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, hsla, point, px, relative, AnyElement, App, Bounds, ClipboardItem, Corners, Div,
     Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels,
-    SharedString, StatefulInteractiveElement, Styled, Window,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use serde::Deserialize;
+use serde_json::json;
 use sikemux_core::git::log::GitCommit;
 
 use super::GitPane;
+use crate::core::Target;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
@@ -578,6 +580,8 @@ pub struct CommitOwner {
     /// The agent that has its session open now.
     open: Option<String>,
     session_id: Option<String>,
+    /// The folder of the project its session ran in.
+    project: Option<String>,
 }
 
 impl CommitOwner {
@@ -610,22 +614,39 @@ impl CommitOwner {
         format!("{who} ({}) wrote this · {reach}", ran.join(", "))
     }
 
-    /// Brings forward the agent that has the session open, else takes the session up again.
-    fn open(&self, bench: &Workbench) {
+    /// Brings forward the agent that has the session open, else takes the session up again
+    /// in the project it ran in, on the core the history came from.
+    fn open(
+        &self,
+        bench: &WeakEntity<Workbench>,
+        core: &Target,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         if let Some(agent) = &self.open {
-            return bench.open_agent(agent);
+            if let Some(bench) = bench.upgrade() {
+                bench.read(cx).open_agent(agent);
+            }
+            return;
         }
-        let Some(session) = &self.session_id else {
+        let (Some(session), Some(project)) = (&self.session_id, &self.project) else {
             return;
         };
-        let id = format!("{}:{session}", self.cli);
-        let recent = bench
-            .view
-            .as_ref()
-            .and_then(|view| view.recent.iter().find(|recent| recent.id == id));
-        if let Some(recent) = recent {
-            bench.resume_chat(recent);
-        }
+        let params = json!({ "provider": self.cli, "sessionId": session, "project": project });
+        let (answer, core) = (core.request("resumeSession", params), core.clone());
+        window
+            .spawn(cx, async move |cx| match answer.await {
+                Ok(started) => {
+                    let tab = json!({ "project": started["project"], "kind": "agent", "target": started["agentId"] });
+                    core.call("openTab", tab);
+                }
+                Err(error) => {
+                    let _ = cx.update(|window, cx| {
+                        window.push_notification(Notification::error(error), cx)
+                    });
+                }
+            })
+            .detach();
     }
 }
 
@@ -666,8 +687,9 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
                 ),
             None => div().min_w_0().truncate().child(owner.name.clone()),
         };
-        let reachable = owner.open.is_some() || owner.session_id.is_some();
-        let (bench, opened) = (pane.bench.clone(), owner.clone());
+        let reachable =
+            owner.open.is_some() || (owner.session_id.is_some() && owner.project.is_some());
+        let (bench, core, opened) = (pane.bench.clone(), pane.core.clone(), owner.clone());
         div()
             .id(SharedString::from(format!("commit-agent:{hash}:{index}")))
             .h(px(18.))
@@ -688,11 +710,9 @@ fn commit_agents(pane: &GitPane, hash: &str, compact: bool, cx: &App) -> Option<
             .when(reachable, |chip| {
                 chip.cursor_pointer()
                     .hover(move |chip| chip.bg(t.surface_hover).text_color(t.text_primary))
-                    .on_click(move |_, _, cx| {
+                    .on_click(move |_, window, cx| {
                         cx.stop_propagation();
-                        if let Some(bench) = bench.upgrade() {
-                            opened.open(bench.read(cx));
-                        }
+                        opened.open(&bench, &core, window, cx);
                     })
             })
             .child(mark)

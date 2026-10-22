@@ -13,15 +13,16 @@ use crate::launch::terminal::{self, TerminalRun};
 use crate::launch::tools::Tools;
 use crate::launch::{AgentSpec, PermissionMode};
 use crate::protocol::{
-    ChatAccount, ChatLaunch, Continuation, Event, RequestId, Response, SessionId, SpawnTarget,
-    TerminalSpawn, WAKE_WAIT,
+    ChatAccount, ChatLaunch, ChatStart, Continuation, Event, RequestId, Response, SessionId,
+    SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
+use serde_json::{json, Value};
 use sikemux_process::vars;
 use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use super::chat;
 use super::connection::{blocking, ClientConn};
-use super::workspace::{launcher_of, ChatChoice, ResumeChoice};
+use super::workspace::{launcher_of, ChatChoice, ResumeChoice, SessionChoice};
 use super::{lifecycle, Core, CoreError, CoreResult};
 
 /// Where this core's agents reach their tools; none for a core without a
@@ -316,16 +317,29 @@ pub(crate) fn start_chat(
 ) {
     let (core, client) = (core.clone(), client.clone());
     tokio::spawn(async move {
-        let result = start_new(&core, &client, choice).await;
+        let result = start_new(&core, Some(&client), choice)
+            .await
+            .map(|(agent_id, start)| Response::ChatBegun { agent_id, start });
         client.respond(request_id, result);
     });
 }
 
+/// Takes up an agent's session again in the project it ran in, recent or not, and
+/// answers the agent that holds it once its session is ready.
+pub(crate) async fn resume_session(core: &Arc<Core>, session: SessionChoice) -> CoreResult<Value> {
+    let choice = core
+        .workspaces
+        .session_choice(session, &core.chats.list())?;
+    let project = choice.project.clone();
+    let (agent_id, _) = start_new(core, None, choice).await?;
+    Ok(json!({ "agentId": agent_id, "project": project }))
+}
+
 async fn start_new(
     core: &Arc<Core>,
-    client: &Arc<ClientConn>,
+    client: Option<&Arc<ClientConn>>,
     choice: ChatChoice,
-) -> CoreResult<Response> {
+) -> CoreResult<(String, ChatStart)> {
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
     let chosen = Launch {
         agent_id: agent_id.clone(),
@@ -345,10 +359,10 @@ async fn start_new(
         .next()
         .unwrap_or_default()
         .to_owned();
-    let started = start(core, Some(client), chosen).await?;
+    let started = start(core, client, chosen).await?;
     remember_kind(core, &kind);
     let start = chat::until_started(core, started).await?;
-    Ok(Response::ChatBegun { agent_id, start })
+    Ok((agent_id, start))
 }
 
 /// Keeps the kind of agent a chat was started as, so a project with no agent of its own
