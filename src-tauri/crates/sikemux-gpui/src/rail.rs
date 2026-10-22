@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use gpui_kit::base::Popover;
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
-use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight,
@@ -51,7 +50,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                 .pt(px(10.))
                 .px(px(10.))
                 .pb(px(16.))
-                .overflow_y_scrollbar()
+                .overflow_y_scroll()
                 .child(
                     Group::new("Projects", empty)
                         .first()

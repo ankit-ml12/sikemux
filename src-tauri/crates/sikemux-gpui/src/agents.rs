@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
-use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, Context, Entity,
@@ -193,7 +192,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .pt(px(8.))
                 .px(px(10.))
                 .pb(px(16.))
-                .overflow_y_scrollbar()
+                .overflow_y_scroll()
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows))
                 .when(!pinned.is_empty(), |scroll| {
@@ -1330,7 +1329,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                 .pt(px(8.))
                 .px(px(10.))
                 .pb(px(16.))
-                .overflow_y_scrollbar()
+                .overflow_y_scroll()
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
         )
@@ -1433,7 +1432,7 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                 .pt(px(8.))
                 .px(px(10.))
                 .pb(px(16.))
-                .overflow_y_scrollbar()
+                .overflow_y_scroll()
                 .children(empty)
                 .child(div().flex().flex_col().gap(px(2.)).children(rows)),
         )
