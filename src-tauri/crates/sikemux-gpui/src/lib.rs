@@ -54,6 +54,7 @@ mod ports;
 mod project_settings;
 pub mod project_switcher;
 mod rail;
+mod run_check;
 pub mod search;
 mod see_through;
 mod send_to;

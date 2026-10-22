@@ -543,8 +543,8 @@ fn run_button(
     IconButton::new(id, Icon::Run, format!("Run {label}"))
         .small()
         .on_click(move |_, _, cx| {
-            this.update(cx, |bench, _| {
-                bench.call_in_front("taskStart", json!({ "project": folder, "taskId": task_id }))
+            this.update(cx, |bench, cx| {
+                bench.start_task_in(folder.clone(), &task_id, cx)
             })
         })
 }
@@ -612,6 +612,18 @@ fn tasks(
                 folder,
                 this,
             ))
+            .child({
+                let (editing, folder, task) = (this.clone(), folder.to_owned(), (*task).clone());
+                IconButton::new(
+                    SharedString::from(format!("own-edit-{at}")),
+                    Icon::Pencil,
+                    "Edit",
+                )
+                .small()
+                .on_click(move |_, window, cx| {
+                    editing.update(cx, |bench, cx| bench.edit_task(&folder, &task, window, cx))
+                })
+            })
             .child(
                 IconButton::new(
                     SharedString::from(format!("own-remove-{at}")),

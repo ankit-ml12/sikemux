@@ -237,13 +237,18 @@ impl Workbench {
                 } else if let Some(id) = row.key.strip_prefix(STANDALONE) {
                     bench.run_standalone(id, window, cx);
                 } else if let Some(path) = row.key.strip_prefix(OPEN_WORKTREE) {
-                    bench.open_place(&format!("folder:{path}"), cx);
+                    bench.open_place(
+                        &format!("folder:{path}"),
+                        crate::picker::ThenPicked::Open,
+                        window,
+                        cx,
+                    );
                 } else if let Some(task) = row
                     .key
                     .strip_prefix(RUN_TASK)
                     .or_else(|| row.key.strip_prefix(RESTART_TASK))
                 {
-                    bench.start_task(task);
+                    bench.start_task(task, cx);
                 } else if let Some(execution) = row.key.strip_prefix(STOP_TASK) {
                     bench.stop_run(execution);
                 } else if let Some(project) = row.key.strip_prefix(START_PREVIEW) {

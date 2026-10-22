@@ -1,5 +1,5 @@
 //! The dialog that saves a person's own start command as one of the project's tasks,
-//! for the team in sikemux.json or for them alone.
+//! for the team in sikemux.json or for them alone, or changes one they saved.
 
 use std::rc::Rc;
 
@@ -11,7 +11,7 @@ use gpui_kit::{
     div, px, AnyElement, AppContext, Context, Entity, FontWeight, IntoElement, ParentElement,
     SharedString, Styled, Window,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -24,33 +24,67 @@ pub struct AddTask {
     command: Entity<InputState>,
     folder: Entity<InputState>,
     team: bool,
+    /// The task this is an edit of.
+    replaces: Option<String>,
 }
 
 impl AddTask {
     pub fn new(project: String, window: &mut Window, cx: &mut Context<Workbench>) -> Self {
-        let label = field("Backend", window, cx);
+        Self::filled(project, None, window, cx)
+    }
+
+    /// The dialog holding the person's own `task`, to change it.
+    pub fn edit(
+        project: String,
+        task: &Value,
+        window: &mut Window,
+        cx: &mut Context<Workbench>,
+    ) -> Self {
+        Self::filled(project, Some(task), window, cx)
+    }
+
+    fn filled(
+        project: String,
+        task: Option<&Value>,
+        window: &mut Window,
+        cx: &mut Context<Workbench>,
+    ) -> Self {
+        let text = |key: &str| {
+            task.and_then(|task| task[key].as_str())
+                .filter(|value| *value != ".")
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let label = field("Backend", text("label"), window, cx);
         label.update(cx, |state, cx| state.focus(window, cx));
         Self {
             project,
             label,
-            command: field("bash tool/run.sh", window, cx),
-            folder: field("The project root", window, cx),
-            team: true,
+            command: field("bash tool/run.sh", text("command"), window, cx),
+            folder: field("The project root", text("cwd"), window, cx),
+            team: task.is_none_or(|task| task["foundIn"].is_null()),
+            replaces: task.and_then(|task| task["id"].as_str()).map(str::to_owned),
         }
     }
 }
 
 fn field(
     placeholder: &'static str,
+    value: String,
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> Entity<InputState> {
-    cx.new(|cx| InputState::new(window, cx).placeholder(placeholder))
+    cx.new(|cx| {
+        InputState::new(window, cx)
+            .placeholder(placeholder)
+            .default_value(value)
+    })
 }
 
 /// The dialog, while one is open.
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let adding = bench.adding_task.as_ref()?;
+    let editing = adding.replaces.is_some();
     let t = Tokens::get(cx).clone();
     let field = |name: &'static str, input: &Entity<InputState>, mono: bool| {
         div()
@@ -135,12 +169,13 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         ))
         .child(dialog::button(
             "task-add",
-            "Add task".into(),
+            if editing { "Save" } else { "Add task" }.into(),
             Some(t.accent),
             save.clone(),
             cx,
         ));
-    Some(dialog::sheet("Add a task".into(), body, foot, save, close, cx).into_any_element())
+    let title = if editing { "Edit task" } else { "Add a task" };
+    Some(dialog::sheet(title.into(), body, foot, save, close, cx).into_any_element())
 }
 
 /// Saves the task the dialog holds, once it has a name and a command.
@@ -157,8 +192,9 @@ fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
     if label.is_empty() || command.is_empty() {
         return;
     }
-    let (team, project) = (adding.team, adding.project.clone());
-    let params = json!({ "project": project, "label": label, "command": command, "cwd": folder, "team": team });
+    let (team, project, replaces) = (adding.team, adding.project.clone(), adding.replaces.clone());
+    let edited = replaces.is_some();
+    let params = json!({ "project": project, "label": label, "command": command, "cwd": folder, "team": team, "replaces": replaces });
     let adding = bench.target().request("addTask", params);
     bench.adding_task = None;
     cx.notify();
@@ -169,15 +205,16 @@ fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
                 if let Some(task) = answer["taskId"].as_str() {
                     bench.pick_task(task, cx);
                 }
+                let done = if edited { "Saved" } else { "Added" };
                 let saved = if team {
-                    format!("Added {label} in sikemux.json; commit it to share it")
+                    format!("{done} {label} in sikemux.json; commit it to share it")
                 } else {
-                    format!("Added {label} for you only")
+                    format!("{done} {label} for you only")
                 };
                 window.push_notification(Notification::success(saved), cx);
             }
             Err(error) => window.push_notification(
-                Notification::error(format!("Could not add the task: {error}")),
+                Notification::error(format!("Could not save the task: {error}")),
                 cx,
             ),
         });

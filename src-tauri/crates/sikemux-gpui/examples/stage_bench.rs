@@ -363,7 +363,7 @@ fn main() -> anyhow::Result<()> {
             })
             .ok_or_else(|| anyhow::anyhow!("the project lists no task"))?;
         run.bench
-            .update(&mut run.cx, |bench, _| bench.start_task(&task));
+            .update(&mut run.cx, |bench, cx| bench.start_task(&task, cx));
         let running = |bench: &Workbench| {
             bench
                 .person_runs()

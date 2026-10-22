@@ -468,6 +468,11 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .filter(|other| other["owner"]["kind"] != "terminal" && Some(*other) != port)
             .filter_map(|other| PortRow::new(other, bench))
             .collect(),
+        finders: crate::send_to::choices(bench),
+        project_name: bench
+            .project()
+            .map(|project| project.name.clone())
+            .unwrap_or_default(),
     });
     let primary = if running.is_some() {
         format!("Stop {label}")
@@ -504,9 +509,9 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .text_color(t.text_secondary)
                     .hover(move |style| style.text_color(t.text_primary).bg(t.surface_hover))
                     .tooltip(ui::tooltip(primary))
-                    .on_click(cx.listener(move |bench, _, _, _| match &execution {
+                    .on_click(cx.listener(move |bench, _, _, cx| match &execution {
                         Some(execution) => bench.stop_run(execution),
-                        None => bench.start_task(&id),
+                        None => bench.start_task(&id, cx),
                     }))
                     .child(ui::icon(glyph, 11.).text_color(tint)),
             )
@@ -543,8 +548,8 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                             .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
                             .text_color(t.text_tertiary),
                     )
-                    .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, _, _| {
-                        menu.build(popup)
+                    .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
+                        menu.build(popup, window, cx)
                     }),
             )
             .into_any_element(),
@@ -607,6 +612,9 @@ struct RunMenu {
     selected: String,
     /// Other things listening in the project, that tasks or agents started.
     others: Vec<PortRow>,
+    /// Who can be asked to find the project's tasks, and the project's name for the asking.
+    finders: Vec<crate::send_to::Choice>,
+    project_name: String,
 }
 
 struct RunningTask {
@@ -624,7 +632,12 @@ struct TaskGroup {
 }
 
 impl RunMenu {
-    fn build(&self, popup: PopupMenu) -> PopupMenu {
+    fn build(
+        &self,
+        popup: PopupMenu,
+        window: &mut Window,
+        cx: &mut Context<PopupMenu>,
+    ) -> PopupMenu {
         let mut popup = popup
             .check_side(Side::Right)
             .scrollable(true)
@@ -647,7 +660,7 @@ impl RunMenu {
             }
             let task = running.id.clone();
             popup = popup.item(PopupMenuItem::new("Restart").icon(Icon::Refresh).on_click(
-                on_bench(&self.bench, move |bench, _| bench.start_task(&task)),
+                on_bench(&self.bench, move |bench, cx| bench.start_task(&task, cx)),
             ));
         }
         if let Some((session, label)) = &self.output {
@@ -684,7 +697,7 @@ impl RunMenu {
             popup = popup.item(other.running_item(&self.bench));
         }
         let bench = self.bench.clone();
-        popup.separator().label("Your own tasks").item(
+        let popup = popup.separator().label("Your own tasks").item(
             PopupMenuItem::new("Add a task…")
                 .icon(Icon::Plus)
                 .on_click(move |_, window, cx| {
@@ -693,6 +706,31 @@ impl RunMenu {
                         let _ = bench.update(cx, |bench, cx| bench.add_task(window, cx));
                     });
                 }),
+        );
+        if self.finders.is_empty() {
+            return popup;
+        }
+        let (bench, finders, name) = (
+            self.bench.clone(),
+            self.finders.clone(),
+            self.project_name.clone(),
+        );
+        popup.submenu(
+            "Find tasks with an agent…",
+            window,
+            cx,
+            move |menu, _, _| {
+                finders.iter().fold(menu, |menu, choice| {
+                    let (bench, to, name) = (bench.clone(), choice.to.clone(), name.clone());
+                    menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
+                        move |_, window, cx| {
+                            let _ = bench.update(cx, |bench, cx| {
+                                bench.find_tasks_with(to.clone(), &name, window, cx)
+                            });
+                        },
+                    ))
+                })
+            },
         )
     }
 }

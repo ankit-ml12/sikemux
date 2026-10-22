@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use gpui_kit::{AppContext, Context, Window};
+use gpui_kit::{Context, Window};
 use serde_json::{json, Value};
 
 use crate::chat::tilde;
@@ -27,6 +27,13 @@ pub struct OpenPlace;
 const PROJECT: &str = "project:";
 const FOLDER: &str = "folder:";
 const HOST: &str = "host:";
+
+/// What happens once a place is picked, past bringing it forward.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ThenPicked {
+    Open,
+    StartChat,
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Picking {
@@ -75,6 +82,21 @@ fn host_line(host: &Value) -> String {
 
 impl Workbench {
     pub fn toggle_picker(&mut self, picking: Picking, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_picker(picking, ThenPicked::Open, window, cx);
+    }
+
+    /// The project picker, doing `then` with the project picked.
+    pub fn pick_project(&mut self, then: ThenPicked, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_picker(Picking::Projects, then, window, cx);
+    }
+
+    fn open_picker(
+        &mut self,
+        picking: Picking,
+        then: ThenPicked,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if picking.projects() {
             let roots = self.preferences().project_roots;
             if !roots.is_empty() {
@@ -92,17 +114,18 @@ impl Workbench {
                 params: json!({}),
             });
         }
-        let placeholder = match picking {
-            Picking::Projects => "open a project…",
-            Picking::Hosts => "connect to a host…",
-            Picking::Both => "open a project or host…",
+        let placeholder = match (picking, then) {
+            (_, ThenPicked::StartChat) => "start a chat in a project…",
+            (Picking::Projects, _) => "open a project…",
+            (Picking::Hosts, _) => "connect to a host…",
+            (Picking::Both, _) => "open a project or host…",
         };
         let spec = Spec::new(
             picking.id(),
             placeholder,
             self.places(picking),
-            |row, bench, _, cx| {
-                bench.open_place(&row.key, cx);
+            move |row, bench, window, cx| {
+                bench.open_place(&row.key, then, window, cx);
             },
         )
         .empty(if picking == Picking::Hosts {
@@ -184,22 +207,33 @@ impl Workbench {
         rows
     }
 
-    pub(crate) fn open_place(&self, key: &str, cx: &mut Context<Self>) {
+    pub(crate) fn open_place(
+        &mut self,
+        key: &str,
+        then: ThenPicked,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(project) = key.strip_prefix(PROJECT) {
             self.activate_project(project);
+            if then == ThenPicked::StartChat {
+                self.start_chat_in(project, window, cx);
+            }
         } else if let Some(path) = key.strip_prefix(FOLDER) {
-            let asks = self.asks.clone();
             let added = crate::core::request(&self.asks, "addProject", json!({ "path": path }));
-            cx.background_spawn(async move {
-                match added.await {
-                    Ok(project) => {
-                        let _ = asks.send(Ask::Call {
-                            method: "activateProject",
-                            params: json!({ "project": project["id"] }),
-                        });
+            cx.spawn_in(window, async move |bench, cx| {
+                let project = match added.await {
+                    Ok(project) => project["id"].as_str().unwrap_or_default().to_owned(),
+                    Err(error) => {
+                        return eprintln!("sikemux: the core would not add the project: {error}")
                     }
-                    Err(error) => eprintln!("sikemux: the core would not add the project: {error}"),
-                }
+                };
+                let _ = bench.update_in(cx, |bench, window, cx| {
+                    bench.activate_project(&project);
+                    if then == ThenPicked::StartChat {
+                        bench.start_chat_in(&project, window, cx);
+                    }
+                });
             })
             .detach();
         } else if let Some(alias) = key.strip_prefix(HOST) {

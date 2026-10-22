@@ -64,7 +64,7 @@ pub struct Workbench {
     _voice_heard: [Subscription; 4],
     _shortcuts_over_settings: Subscription,
     /// The project the per-project watches were last made for, by path.
-    watched_project: Option<String>,
+    pub(crate) watched_project: Option<String>,
     /// The host whose core those watches went to.
     watched_place: crate::hosts::Place,
     pub battery: Option<Battery>,
@@ -189,6 +189,8 @@ pub struct Workbench {
     /// The task the person is writing in the Add a task dialog, while it is open.
     pub adding_task: Option<crate::add_task::AddTask>,
     pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
+    /// A task its checks held back, waiting on the person.
+    pub run_check: Option<crate::run_check::RunCheck>,
     /// The agent in front whose worktree its header reads, by id and folder, and where it is.
     pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
     /// The core's trust questions already put to the person, by id.
@@ -530,6 +532,7 @@ impl Workbench {
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
             buddy_picker: None,
+            run_check: None,
             watched_worktree: None,
             trust_asked: HashSet::new(),
             trust_host: None,
@@ -940,6 +943,7 @@ impl Workbench {
             Update::Notice { title, body, agent } => {
                 return crate::notifications::notice(self, title, body, agent, cx);
             }
+            Update::AccountDevice { key, name } => return self.new_account_device(key, name, cx),
             Update::Network(change) => {
                 return self
                     .voice
@@ -1754,7 +1758,7 @@ impl Workbench {
     /// Whether anything is over the whole window: a phone waiting to pair, a command's terminal,
     /// or the welcome, the release notes or runtime diagnostics.
     fn over_shown(&self) -> bool {
-        self.experience.is_some() || self.command_popup.is_some() || self.waiting_phone().is_some()
+        self.experience.is_some() || self.command_popup.is_some() || self.someone_waits()
     }
 
     /// Whether a push from a watch carries what the window already holds, so nothing in it
@@ -1829,12 +1833,6 @@ impl Workbench {
             .update(cx, |clock, cx| clock.set(counting, started_at, cx));
     }
 
-    pub fn start_task(&self, task: &str) {
-        if let Some(project) = &self.watched_project {
-            self.call_in_front("taskStart", json!({ "project": project, "taskId": task }));
-        }
-    }
-
     /// Makes `task` the one the project's Run button starts.
     pub fn pick_task(&mut self, task: &str, cx: &mut Context<Self>) {
         if let Some(project) = self.watched_project.clone() {
@@ -1849,6 +1847,23 @@ impl Workbench {
             self.adding_task = Some(crate::add_task::AddTask::new(project, window, cx));
             cx.notify();
         }
+    }
+
+    /// Opens the task dialog on the person's own `task` of `project`, to change it.
+    pub fn edit_task(
+        &mut self,
+        project: &str,
+        task: &Value,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adding_task = Some(crate::add_task::AddTask::edit(
+            project.to_owned(),
+            task,
+            window,
+            cx,
+        ));
+        cx.notify();
     }
 
     /// Brings forward the project's tab showing `target`, opening one when none does.
@@ -1963,6 +1978,15 @@ impl Workbench {
             .map_or(&[], |view| view.workspace.launchers.as_slice())
     }
 
+    /// Whether agents of `provider` have the built-in chat, as the core's catalog says; any agent
+    /// does until the catalog is read.
+    pub fn has_chat(&self, provider: &str) -> bool {
+        self.read("catalog")
+            .and_then(Value::as_array)
+            .and_then(|kinds| kinds.iter().find(|kind| kind["type"] == provider))
+            .is_none_or(|kind| !kind["chat"].is_null())
+    }
+
     /// What a new chat started from the rail starts with.
     pub fn launcher(&self) -> Option<&LauncherInfo> {
         let launchers = self.launchers();
@@ -2031,10 +2055,25 @@ impl Workbench {
 
     /// A terminal tab in the project in front, on the shell the core keeps ready there.
     /// Starts a chat with the agent the rail is set to, in the project in front.
-    pub fn new_chat(&self) {
-        if let (Some(project), Some(launcher)) = (self.project(), self.launcher()) {
-            self.target()
-                .start_chat(launcher.id.clone(), project.id.clone(), None, None);
+    /// Starts a chat in the project in front, or in the one picked when no project is in front,
+    /// or on an SSH host's strip opens its Install Sikemux pane.
+    pub fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.strip() {
+            Some(Strip::Host(alias)) => self.open_install_pane(&alias),
+            Some(Strip::Project(project)) => self.start_chat_in(&project, window, cx),
+            _ => self.pick_project(crate::picker::ThenPicked::StartChat, window, cx),
+        }
+    }
+
+    /// Starts a chat in `project` with the agent the rail starts with, or offers every agent when
+    /// none is installed.
+    pub fn start_chat_in(&mut self, project: &str, window: &mut Window, cx: &mut Context<Self>) {
+        match self.launcher() {
+            Some(launcher) => {
+                self.target()
+                    .start_chat(launcher.id.clone(), project.to_owned(), None, None)
+            }
+            None => self.toggle_agent_palette(window, cx),
         }
     }
 
@@ -3490,12 +3529,7 @@ impl Render for Workbench {
                     crate::settings::toggle(bench, window, cx)
                 }),
             )
-            .on_action(
-                cx.listener(|bench, _: &NewChat, _, _| match bench.chosen_host() {
-                    crate::hosts::HostChoice::Ssh(alias) => bench.open_install_pane(&alias),
-                    _ => bench.new_chat(),
-                }),
-            )
+            .on_action(cx.listener(|bench, _: &NewChat, window, cx| bench.new_chat(window, cx)))
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, cx| bench.toggle_front_desk(cx)))
             .on_action(cx.listener(|bench, _: &NewPage, _, cx| bench.new_front_page(cx)))
@@ -3646,6 +3680,7 @@ impl Render for Workbench {
             .children(asked)
             .children(crate::add_task::view(self, cx))
             .children(crate::buddy_picker::view(self, cx))
+            .children(crate::run_check::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::opening(self, cx))
             .when(

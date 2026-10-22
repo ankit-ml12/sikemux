@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::{AppContext, Context, SharedString, WeakEntity, Window};
 use serde_json::{json, Value};
 
@@ -310,6 +311,43 @@ impl Workbench {
             });
         })
         .detach();
+    }
+
+    /// Says a device or host joined the account, with a way to take it off again (ADR 0018).
+    pub fn new_account_device(&mut self, key: String, name: String, cx: &mut Context<Self>) {
+        let name = if name.is_empty() {
+            "a device".to_owned()
+        } else {
+            name
+        };
+        let asks = self.asks.clone();
+        let note = Notification::info(format!("New device on your account: {name}")).action(
+            move |_, _, cx| {
+                let (note, asks, key, name) =
+                    (cx.entity(), asks.clone(), key.clone(), name.clone());
+                gpui_kit::component::button::Button::new("remove-account-device")
+                    .label("Remove")
+                    .on_click(move |_, window, cx| {
+                        let removed =
+                            core::request(&asks, "removeAccountDevice", json!({ "key": key }));
+                        let name = name.clone();
+                        window
+                            .spawn(cx, async move |cx| {
+                                if let Err(error) = removed.await {
+                                    let _ = cx.update(|window, cx| {
+                                        window.push_notification(
+                                            Notification::error(format!("Remove {name}: {error}")),
+                                            cx,
+                                        )
+                                    });
+                                }
+                            })
+                            .detach();
+                        note.update(cx, |note, cx| note.dismiss(window, cx));
+                    })
+            },
+        );
+        self.notify(note, cx);
     }
 
     /// Puts the person on `choice`, which the rail and the tab list then follow.

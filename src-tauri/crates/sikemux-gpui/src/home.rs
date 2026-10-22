@@ -160,7 +160,7 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
                 .child(
                     Button::new("empty-new-agent", "New agent", Variant::Outline)
                         .keys(hint("agent.new"))
-                        .on_click(cx.listener(|bench, _, _, _| bench.new_chat())),
+                        .on_click(cx.listener(|bench, _, window, cx| bench.new_chat(window, cx))),
                 )
                 .child(
                     Button::new("empty-new-terminal", "New terminal", Variant::Outline)
@@ -293,6 +293,7 @@ fn pane_header(
     ];
     let in_terminal = bench.agent_terminal(&agent.id).is_some();
     let working = matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked);
+    let has_chat = bench.has_chat(&agent.provider);
     let switched = agent.id.clone();
     let shared = agent.id.clone();
     let open_share = cx.listener(move |bench, _, window, cx| bench.open_share(&shared, window, cx));
@@ -374,16 +375,22 @@ fn pane_header(
             crate::worktree_head::badges(bench, &agent.id, cx),
             |header, badges| header.action(badges),
         )
-        .action(share)
+        .when(has_chat, |header| header.action(share))
         .action(more)
         .controls(
             div().flex().items_center().gap(px(4.)).child(
                 Segmented::new("agent-view", views, usize::from(in_terminal))
                     .pill()
-                    .disabled_because(working.then(|| {
-                        let other = if in_terminal { "GUI" } else { "TUI" };
-                        format!("Wait for the agent to finish before opening {other}")
-                    }))
+                    .disabled_because(match (has_chat, working) {
+                        (false, _) => Some("This agent has no built-in chat".to_owned()),
+                        (true, true) => {
+                            let other = if in_terminal { "GUI" } else { "TUI" };
+                            Some(format!(
+                                "Wait for the agent to finish before opening {other}"
+                            ))
+                        }
+                        (true, false) => None,
+                    })
                     .on_select(cx.listener(move |bench, picked: &usize, _, _| {
                         let terminal = *picked == 1;
                         if terminal != in_terminal {

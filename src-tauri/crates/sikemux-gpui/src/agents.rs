@@ -130,7 +130,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .px(px(10.))
                 .child(
                     new_row("new-chat", Icon::Plus, "New chat", "agent.new", cx)
-                        .on_click(cx.listener(|bench, _, _, _| bench.new_chat())),
+                        .on_click(cx.listener(|bench, _, window, cx| bench.new_chat(window, cx))),
                 )
                 .child(
                     new_row(

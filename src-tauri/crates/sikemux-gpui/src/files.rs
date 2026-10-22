@@ -23,7 +23,8 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
-use crate::workbench::Workbench;
+use crate::workbench::{Strip, Workbench};
+use sikemux_wire::protocol::PaneKind;
 
 /// One thing in a folder, as the core listed it: folders first, then by name.
 #[derive(Clone, PartialEq)]
@@ -426,6 +427,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                         ),
                 ),
         )
+        .children(open_files(bench, cx))
         .child(
             uniform_list(
                 "file-rows",
@@ -453,6 +455,102 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             .px(px(6.))
             .pb(px(4.)),
         )
+}
+
+/// A file's icon by its name, in the box rows line marks up in.
+fn file_glyph(name: &str, cx: &mut Context<Workbench>) -> AnyElement {
+    let glyph = match crate::file_icons::icon(name, cx) {
+        Some(icon) => gpui_kit::img(icon)
+            .size(px(16.))
+            .flex_none()
+            .into_any_element(),
+        None => ui::icon(Icon::File, 16.)
+            .text_color(Tokens::get(cx).text_tertiary)
+            .into_any_element(),
+    };
+    ui::mark_box(22., glyph).into_any_element()
+}
+
+/// The files open in the project's tabs, listed above its tree as the Mac's Files page does.
+fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let strip = bench
+        .strip()
+        .filter(|strip| matches!(strip, Strip::Project(_)))?;
+    let open: Vec<(String, PathBuf)> = bench
+        .tabs(&strip)
+        .iter()
+        .filter_map(|tab| match crate::tabs::first_view(&tab.pane)? {
+            (PaneKind::Files, target) => Some((tab.id.clone(), PathBuf::from(target))),
+            _ => None,
+        })
+        .collect();
+    if open.is_empty() {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    let front = bench.front_file();
+    let root = bench.files.root.clone();
+    let rows = open.into_iter().map(|(tab, path)| {
+        let active = front.as_deref() == Some(path.as_path());
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let folder = path
+            .parent()
+            .zip(root.as_deref())
+            .and_then(|(dir, root)| dir.strip_prefix(root).ok())
+            .map(|dir| dir.display().to_string())
+            .filter(|dir| !dir.is_empty());
+        let strip = strip.clone();
+        BaseButton::new(SharedString::from(format!("open-file-{tab}")))
+            .accessibility_label(SharedString::from(name.clone()))
+            .w_full()
+            .h(px(ROW_HEIGHT))
+            .pl(px(4.))
+            .pr(px(8.))
+            .flex()
+            .items_center()
+            .justify_start()
+            .gap(px(5.))
+            .rounded(theme::RADIUS_2)
+            .text_size(crate::theme::ui_text(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(if active {
+                t.text_primary
+            } else {
+                t.text_secondary
+            })
+            .when(active, |row| row.bg(t.surface_chosen))
+            .when(!active, |row| {
+                row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
+            })
+            .on_click(cx.listener(move |bench, _, _, _| bench.activate_tab(&strip, &tab)))
+            .child(file_glyph(&name, cx))
+            .child(div().min_w_0().truncate().child(name))
+            .children(folder.map(|folder| {
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(t.text_tertiary)
+                    .child(folder)
+            }))
+            .into_any_element()
+    });
+    let rows: Vec<AnyElement> = rows.collect();
+    Some(
+        div()
+            .flex_none()
+            .mx(px(6.))
+            .mb(px(4.))
+            .pb(px(4.))
+            .flex()
+            .flex_col()
+            .border_b_1()
+            .border_color(t.border)
+            .children(rows)
+            .into_any_element(),
+    )
 }
 
 fn row_view(
@@ -496,16 +594,7 @@ fn row_view(
             .child(ui::icon(Icon::Folder, 17.).text_color(t.text_tertiary))
             .into_any_element()
     } else {
-        let glyph = match crate::file_icons::icon(&row.entry.name, cx) {
-            Some(icon) => gpui_kit::img(icon)
-                .size(px(16.))
-                .flex_none()
-                .into_any_element(),
-            None => ui::icon(Icon::File, 16.)
-                .text_color(t.text_tertiary)
-                .into_any_element(),
-        };
-        ui::mark_box(22., glyph).into_any_element()
+        file_glyph(&row.entry.name, cx)
     };
     let tail = match mark {
         Some((Some(letter), mark)) if !row.entry.dir => Some(

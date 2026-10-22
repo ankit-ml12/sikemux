@@ -1,6 +1,7 @@
-//! Asks over the whole window whether a phone waiting to connect may, the one that has waited
-//! longest first, since each gives up after two minutes. A phone that starts waiting while
-//! Sikemux is in the background is announced with a notification and a bounce.
+//! Asks over the whole window whether a phone waiting to connect may, or another host on the
+//! account asking to link, the one that has waited longest first, since each gives up after two
+//! minutes. One that starts waiting while Sikemux is in the background is announced with a
+//! notification and a bounce.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -11,6 +12,7 @@ use gpui_kit::{
     IntoElement, KeyBinding, ParentElement, SharedString, StatefulInteractiveElement, Styled,
     Window,
 };
+use serde_json::json;
 use sikemux_wire::protocol::{DeviceAccess, PendingDevice};
 
 use crate::core::{Ask, RemoteAsk};
@@ -32,9 +34,11 @@ pub fn install(cx: &mut App) {
     ]);
 }
 
-/// The question while a phone waits: the access it would get, and the phones already told of.
+/// The question while a phone or host waits: the access a phone would get, the hosts asking to
+/// link, and the requests already told of.
 pub struct Pairing {
     access: DeviceAccess,
+    links: Vec<PendingDevice>,
     announced: HashSet<String>,
     ticking: bool,
     focus: FocusHandle,
@@ -44,9 +48,49 @@ impl Pairing {
     pub fn new(cx: &mut App) -> Self {
         Self {
             access: DeviceAccess::Full,
+            links: Vec::new(),
             announced: HashSet::new(),
             ticking: false,
             focus: cx.focus_handle(),
+        }
+    }
+}
+
+/// Who waits: a phone that wants to connect, or another host on the account that wants to link.
+#[derive(Clone, Copy, PartialEq)]
+enum Asker {
+    Phone,
+    Host,
+}
+
+impl Asker {
+    fn name(self, request: &PendingDevice) -> String {
+        match (request.name.is_empty(), self) {
+            (false, _) => request.name.clone(),
+            (true, Asker::Phone) => "A phone".into(),
+            (true, Asker::Host) => "Another host".into(),
+        }
+    }
+
+    /// What the question says, on two lines.
+    fn lines(self, name: &str) -> (String, &'static str) {
+        match self {
+            Asker::Phone => (format!("{name} wants to connect"), "to this computer"),
+            Asker::Host => (format!("{name} wants to link"), "with this host"),
+        }
+    }
+
+    /// What the notification says while Sikemux is in the background.
+    fn notice(self, name: &str) -> (String, &'static str) {
+        match self {
+            Asker::Phone => (
+                format!("{name} wants to connect to this computer"),
+                "It is signed in to your Sikemux account. Allow or decline it in Sikemux.",
+            ),
+            Asker::Host => (
+                format!("{name} wants to link with this host"),
+                "Its agents could start agents here. Allow or decline it in Sikemux.",
+            ),
         }
     }
 }
@@ -67,19 +111,46 @@ const ACCESS: [(DeviceAccess, Icon, &str, &str); 2] = [
 ];
 
 impl Workbench {
-    pub(crate) fn waiting_phone(&self) -> Option<&PendingDevice> {
-        self.remote
-            .as_ref()?
-            .pending
+    /// Whether a phone or host waits on the person's answer.
+    pub(crate) fn someone_waits(&self) -> bool {
+        self.waiting().is_some()
+    }
+
+    /// Every phone and host waiting, as the person would be asked about them.
+    fn waiting_all(&self) -> Vec<(Asker, &PendingDevice)> {
+        let phones = self
+            .remote
             .iter()
-            .min_by_key(|request| request.expires_at)
+            .flat_map(|remote| &remote.pending)
+            .map(|request| (Asker::Phone, request));
+        let hosts = self
+            .pairing
+            .links
+            .iter()
+            .map(|request| (Asker::Host, request));
+        phones.chain(hosts).collect()
+    }
+
+    /// The phone or host that has waited longest, which the person is asked about first.
+    fn waiting(&self) -> Option<(Asker, &PendingDevice)> {
+        self.waiting_all()
+            .into_iter()
+            .min_by_key(|(_, request)| request.expires_at)
     }
 
     fn answer_pairing(&mut self, allow: bool, cx: &mut Context<Self>) {
-        let Some(id) = self.waiting_phone().map(|request| request.id.clone()) else {
+        let Some((asker, id)) = self
+            .waiting()
+            .map(|(asker, request)| (asker, request.id.clone()))
+        else {
             return;
         };
         let access = std::mem::replace(&mut self.pairing.access, DeviceAccess::Full);
+        let access = match asker {
+            Asker::Phone => access,
+            Asker::Host => DeviceAccess::Full,
+        };
+        self.pairing.links.retain(|request| request.id != id);
         let _ = self
             .asks
             .send(Ask::Remote(RemoteAsk::Answer { id, allow, access }));
@@ -87,42 +158,54 @@ impl Workbench {
     }
 }
 
-/// Hears what the core says of phones waiting: tells the person of new ones while Sikemux is in
-/// the background, and keeps the countdown moving while one waits.
+/// Hears what the core says of phones waiting, and reads again which hosts ask to link.
 pub fn remote_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    let waiting: Vec<PendingDevice> = bench
-        .remote
-        .as_ref()
-        .map_or(Vec::new(), |remote| remote.pending.clone());
-    let fresh: Vec<&PendingDevice> = waiting
+    let asked = crate::core::request(&bench.asks, "pairing", json!({}));
+    cx.spawn(async move |bench, cx| {
+        let Ok(pairing) = asked.await else {
+            return;
+        };
+        let links = serde_json::from_value(pairing["pendingLinks"].clone()).unwrap_or_default();
+        let _ = bench.update(cx, |bench, cx| {
+            bench.pairing.links = links;
+            waiting_moved(bench, cx);
+        });
+    })
+    .detach();
+    waiting_moved(bench, cx);
+}
+
+/// Tells the person of phones and hosts that started waiting while Sikemux is in the background,
+/// and keeps the countdown moving while one waits.
+fn waiting_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let waiting: Vec<(Asker, PendingDevice)> = bench
+        .waiting_all()
+        .into_iter()
+        .map(|(asker, request)| (asker, request.clone()))
+        .collect();
+    let fresh: Vec<&(Asker, PendingDevice)> = waiting
         .iter()
-        .filter(|request| !bench.pairing.announced.contains(&request.id))
+        .filter(|(_, request)| !bench.pairing.announced.contains(&request.id))
         .collect();
     if !fresh.is_empty() && cx.active_window().is_none() {
         if let Some(window) = cx.windows().first().copied() {
             let _ = window.update(cx, |_, window, _| window.request_attention());
         }
-        for request in &fresh {
-            let name = if request.name.is_empty() {
-                "A phone"
-            } else {
-                &request.name
-            };
-            crate::notifications::post(
-                format!("{name} wants to connect to this computer"),
-                "It is signed in to your Sikemux account. Allow or decline it in Sikemux.".into(),
-                None,
-                cx,
-            );
+        for (asker, request) in &fresh {
+            let (title, body) = asker.notice(&asker.name(request));
+            crate::notifications::post(title, body.into(), None, cx);
         }
     }
-    bench.pairing.announced = waiting.iter().map(|request| request.id.clone()).collect();
+    bench.pairing.announced = waiting
+        .iter()
+        .map(|(_, request)| request.id.clone())
+        .collect();
     if !waiting.is_empty() && !bench.pairing.ticking {
         bench.pairing.ticking = true;
         cx.spawn(async move |bench, cx| loop {
             cx.background_executor().timer(Duration::from_secs(1)).await;
             let going = bench.update(cx, |bench, cx| {
-                let going = bench.waiting_phone().is_some();
+                let going = bench.waiting().is_some();
                 bench.pairing.ticking = going;
                 match going {
                     true => bench.parts.redraw(&bench.parts.over, cx),
@@ -151,18 +234,15 @@ pub fn overlay(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    let request = bench.waiting_phone()?;
+    let (asker, request) = bench.waiting()?;
+    let host = asker == Asker::Host;
     let t = Tokens::get(cx).clone();
     if !bench.pairing.focus.is_focused(window) {
         cx.defer_in(window, |bench, window, cx| {
             bench.pairing.focus.focus(window, cx)
         });
     }
-    let name = if request.name.is_empty() {
-        "A phone".to_owned()
-    } else {
-        request.name.clone()
-    };
+    let (first, second) = asker.lines(&asker.name(request));
     let account = bench
         .view
         .as_ref()
@@ -227,7 +307,7 @@ pub fn overlay(
                 .flex()
                 .items_center()
                 .gap(px(14.))
-                .child(tile(Icon::Phone))
+                .child(tile(if host { Icon::Laptop } else { Icon::Phone }))
                 .child(div().w(px(48.)).h(px(1.)).bg(t.border))
                 .child(tile(Icon::Laptop)),
         )
@@ -236,16 +316,26 @@ pub fn overlay(
                 .text_center()
                 .text_size(crate::theme::ui_text(22.))
                 .text_color(t.text_primary)
-                .child(format!("{name} wants to connect"))
-                .child(div().child("to this computer")),
+                .child(first)
+                .child(div().child(second)),
         )
+        .when(host, |column| {
+            column.child(
+                div()
+                    .text_size(crate::theme::ui_text(12.))
+                    .text_color(t.text_secondary)
+                    .child("Its agents could start agents here, on this host's sign-ins."),
+            )
+        })
         .children(account.map(|account| {
             div()
                 .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_tertiary)
                 .child(format!("Signed in as {account}"))
         }))
-        .child(div().flex().flex_col().gap(px(8.)).children(choices))
+        .when(!host, |column| {
+            column.child(div().flex().flex_col().gap(px(8.)).children(choices))
+        })
         .child(
             div()
                 .flex()
@@ -270,7 +360,7 @@ pub fn overlay(
                 .flex()
                 .gap(px(16.))
                 .child(hint("esc", "Decline"))
-                .child(hint("↑↓", "Choose access"))
+                .when(!host, |hints| hints.child(hint("↑↓", "Choose access")))
                 .child(hint("↵", "Allow")),
         );
     Some(
@@ -280,7 +370,10 @@ pub fn overlay(
             .track_focus(&bench.pairing.focus)
             .on_action(cx.listener(|bench, _: &Allow, _, cx| bench.answer_pairing(true, cx)))
             .on_action(cx.listener(|bench, _: &Decline, _, cx| bench.answer_pairing(false, cx)))
-            .on_action(cx.listener(|bench, _: &OtherAccess, _, cx| {
+            .on_action(cx.listener(move |bench, _: &OtherAccess, _, cx| {
+                if host {
+                    return;
+                }
                 bench.pairing.access = match bench.pairing.access {
                     DeviceAccess::Full => DeviceAccess::Watch,
                     DeviceAccess::Watch => DeviceAccess::Full,

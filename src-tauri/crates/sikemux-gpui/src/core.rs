@@ -49,6 +49,11 @@ pub enum Update {
         body: String,
         agent: String,
     },
+    /// A device or host joined the person's account.
+    AccountDevice {
+        key: String,
+        name: String,
+    },
     /// What came of a chat the window attached to, by its agent's id.
     Chat(String, ChatNews),
     /// Something the core asks of a window, such as an agent's browser step.
@@ -908,6 +913,9 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Network { change })) => {
                                 let _ = updates.send(Update::Network(change));
+                            }
+                            Some(ClientEvent::Event(Event::AccountDevice { key, name, .. })) => {
+                                let _ = updates.send(Update::AccountDevice { key, name });
                             }
                             Some(ClientEvent::Event(Event::Remote { status })) => {
                                 follow_links(&linked, &client);
