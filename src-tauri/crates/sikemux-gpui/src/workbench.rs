@@ -2368,6 +2368,7 @@ impl Workbench {
                 destructive,
                 ..
             } => crate::ui::Confirm::new(title.clone(), body.clone(), yes.clone())
+                .marked()
                 .destructive(*destructive)
                 .on_yes(answered(true))
                 .on_no(answered(false))
@@ -2392,6 +2393,7 @@ impl Workbench {
                     .clone();
                 let (typing, giving_up) = (cx.entity(), cx.entity());
                 crate::ui::Prompt::new(title.clone(), &field)
+                    .marked()
                     .on_yes(move |typed, window, cx| {
                         typing.update(cx, |bench, cx| {
                             if let Some(Asking::Prompt { then, .. }) = bench.take_asking(cx) {

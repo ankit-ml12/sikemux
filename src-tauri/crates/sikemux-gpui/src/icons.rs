@@ -162,6 +162,7 @@ icons!(
     Vercel => "vercel",
     PhoneQr => "phone-qr",
     Warning => "warning",
+    InfoCircle => "info-circle",
     Waterfall => "waterfall",
     Window => "window",
     Workflow => "workflow",

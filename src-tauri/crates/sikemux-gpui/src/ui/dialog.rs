@@ -75,10 +75,25 @@ pub(crate) fn sheet_of(
     framed(width, head, body, foot, yes, no, cx)
 }
 
-/// A sheet with `glyph` in a tile beside its title, as the Mac's dialogs have it; its body
-/// clears the tile, at `GLYPH_INSET`, and its foot starts from [`hinted_foot`].
+/// The mark beside a sheet's title, in the danger colour for a sheet whose yes cannot be undone.
+pub(crate) struct Tile {
+    pub icon: Icon,
+    pub danger: bool,
+}
+
+impl From<Icon> for Tile {
+    fn from(icon: Icon) -> Self {
+        Tile {
+            icon,
+            danger: false,
+        }
+    }
+}
+
+/// A sheet with `tile` beside its title, as the Mac's dialogs have it; its body clears the
+/// tile, at `GLYPH_INSET`, and its foot starts from [`hinted_foot`].
 pub(crate) fn marked_sheet(
-    glyph: Icon,
+    tile: impl Into<Tile>,
     title: SharedString,
     body: AnyElement,
     foot: Div,
@@ -86,29 +101,59 @@ pub(crate) fn marked_sheet(
     no: Answer,
     cx: &mut App,
 ) -> AlertDialog {
-    let head = head(Some(glyph), title, cx);
+    let head = head(Some(tile.into()), title, cx);
     framed(px(440.), head, body, foot, yes, no, cx)
 }
 
-/// A marked sheet's foot before its buttons: at its left, the word Escape does.
-pub(crate) fn hinted_foot(escape: &'static str, cx: &App) -> Div {
+/// A sheet's foot before its buttons, with `note` at its left.
+pub(crate) fn hinted_foot(note: impl IntoElement, cx: &App) -> Div {
     div().child(
         div()
             .flex_1()
+            .min_w_0()
             .flex()
             .items_center()
             .gap(px(6.))
             .text_size(crate::theme::ui_text(11.))
             .text_color(Tokens::get(cx).text_disabled)
-            .child(super::kbd("esc", cx))
-            .child(escape),
+            .child(note),
     )
+}
+
+/// What Escape does, as a foot's note says it.
+pub(crate) fn escape(word: &'static str, cx: &App) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .child(super::kbd("esc", cx))
+        .child(word)
 }
 
 /// How far a marked sheet's body sits in, so its text lines up with the title, not the tile.
 pub(crate) const GLYPH_INSET: f32 = 54.;
 
-fn head(glyph: Option<Icon>, title: SharedString, cx: &App) -> Div {
+/// A marked sheet's body: in from the tile, and clear of the foot by the Mac's margin.
+pub(crate) fn marked_body() -> Div {
+    div()
+        .pl(px(GLYPH_INSET))
+        .pr(px(20.))
+        .pt(px(8.))
+        .pb(px(14.))
+        .flex()
+        .flex_col()
+}
+
+/// A paragraph of a marked sheet's body.
+pub(crate) fn prose(words: impl Into<SharedString>, t: &Tokens) -> Div {
+    div()
+        .text_size(crate::theme::ui_text(13.))
+        .line_height(crate::theme::ui_text(20.))
+        .text_color(t.text_tertiary)
+        .child(words.into())
+}
+
+fn head(tile: Option<Tile>, title: SharedString, cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
         .flex()
@@ -116,7 +161,11 @@ fn head(glyph: Option<Icon>, title: SharedString, cx: &App) -> Div {
         .gap(px(8.))
         .px(px(20.))
         .pt(px(16.))
-        .children(glyph.map(|glyph| {
+        .children(tile.map(|tile| {
+            let (ink, ground) = match tile.danger {
+                true => (t.danger, t.danger.opacity(0.14)),
+                false => (t.text_primary, t.surface_chosen),
+            };
             div()
                 .size(px(26.))
                 .flex_none()
@@ -124,8 +173,8 @@ fn head(glyph: Option<Icon>, title: SharedString, cx: &App) -> Div {
                 .items_center()
                 .justify_center()
                 .rounded(RADIUS_2)
-                .bg(t.surface_chosen)
-                .child(icon(glyph, 15.).text_color(t.text_primary))
+                .bg(ground)
+                .child(icon(tile.icon, 15.).text_color(ink))
         }))
         .child(text(title, 14., FontWeight::SEMIBOLD).text_color(t.text_primary))
 }
@@ -249,6 +298,7 @@ pub struct Confirm {
     body: SharedString,
     yes: SharedString,
     destructive: bool,
+    marked: bool,
     on_yes: Answer,
     on_no: Answer,
 }
@@ -264,6 +314,7 @@ impl Confirm {
             body: body.into(),
             yes: yes.into(),
             destructive: false,
+            marked: false,
             on_yes: Rc::new(|_, _| {}),
             on_no: Rc::new(|_, _| {}),
         }
@@ -271,6 +322,13 @@ impl Confirm {
 
     pub fn destructive(mut self, destructive: bool) -> Self {
         self.destructive = destructive;
+        self
+    }
+
+    /// Drawn as the Mac's own confirm is, with its mark beside the title and Escape's word
+    /// at its foot; the Git pane's questions stay plain, as the Mac's Git modals are.
+    pub fn marked(mut self) -> Self {
+        self.marked = true;
         self
     }
 
@@ -291,6 +349,38 @@ impl RenderOnce for Confirm {
         let fill = if self.destructive { t.danger } else { t.accent };
         let held = hold_focus(window, cx);
         let (on_yes, on_no) = (held.back(self.on_yes), held.back(self.on_no));
+        if self.marked {
+            let lines = self.body.split('\n').filter(|line| !line.trim().is_empty());
+            let body = marked_body()
+                .gap(px(8.))
+                .children(lines.map(|line| prose(line.to_owned(), &t)))
+                .into_any_element();
+            let foot = hinted_foot(escape("cancel", cx), cx)
+                .child(button(
+                    "confirm-no",
+                    "Cancel".into(),
+                    None,
+                    on_no.clone(),
+                    cx,
+                ))
+                .child(button(
+                    "confirm-yes",
+                    self.yes,
+                    Some(fill),
+                    on_yes.clone(),
+                    cx,
+                ));
+            let tile = Tile {
+                icon: if self.destructive {
+                    Icon::Warning
+                } else {
+                    Icon::InfoCircle
+                },
+                danger: self.destructive,
+            };
+            return marked_sheet(tile, self.title, body, foot, on_yes, on_no, cx)
+                .focus_handle(held.focus);
+        }
         let foot = div()
             .child(button(
                 "confirm-no",
@@ -331,6 +421,7 @@ impl RenderOnce for Confirm {
 pub struct Prompt {
     title: SharedString,
     field: Entity<InputState>,
+    marked: bool,
     on_yes: Typed,
     on_no: Answer,
 }
@@ -340,9 +431,16 @@ impl Prompt {
         Self {
             title: title.into(),
             field: field.clone(),
+            marked: false,
             on_yes: Rc::new(|_, _, _| {}),
             on_no: Rc::new(|_, _| {}),
         }
+    }
+
+    /// Drawn as the Mac's own prompt is; see [`Confirm::marked`].
+    pub fn marked(mut self) -> Self {
+        self.marked = true;
+        self
     }
 
     pub fn on_yes(mut self, answer: impl Fn(String, &mut Window, &mut App) + 'static) -> Self {
@@ -364,6 +462,45 @@ impl RenderOnce for Prompt {
             let typed = field.read(cx).value().to_string();
             on_yes(typed, window, cx)
         });
+        if self.marked {
+            let field = div()
+                .h(px(32.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .border_1()
+                .border_color(t.border)
+                .rounded(RADIUS_2)
+                .bg(t.surface_sunken)
+                .text_size(crate::theme::ui_text(13.))
+                .text_color(t.text_primary)
+                .child(Input::new(&self.field).appearance(false));
+            let foot = hinted_foot(escape("cancel", cx), cx)
+                .child(button(
+                    "prompt-no",
+                    "Cancel".into(),
+                    None,
+                    self.on_no.clone(),
+                    cx,
+                ))
+                .child(button(
+                    "prompt-yes",
+                    "Save".into(),
+                    Some(t.accent),
+                    yes.clone(),
+                    cx,
+                ));
+            let body = marked_body().pt(px(12.)).child(field).into_any_element();
+            return marked_sheet(
+                Icon::InfoCircle,
+                self.title,
+                body,
+                foot,
+                yes,
+                self.on_no,
+                cx,
+            );
+        }
         let foot = div()
             .child(button(
                 "prompt-no",

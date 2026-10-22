@@ -526,6 +526,7 @@ impl Render for HostArea {
                 asking.body.clone(),
                 asking.yes.clone(),
             )
+            .marked()
             .destructive(asking.destructive)
             .on_yes(move |_, cx| {
                 let then = then.clone();

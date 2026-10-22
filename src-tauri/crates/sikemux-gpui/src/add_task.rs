@@ -116,11 +116,8 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         (Icon::Agents, SharedString::from("For the team")),
         (Icon::User, SharedString::from("Only me")),
     ];
-    let body = div()
-        .px(px(16.))
-        .py(px(14.))
-        .flex()
-        .flex_col()
+    let body = dialog::marked_body()
+        .pt(px(12.))
         .gap(px(12.))
         .child(field("Name", &adding.label, false))
         .child(field("Command", &adding.command, true))
@@ -159,7 +156,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             cx.notify();
         })
     });
-    let foot = div()
+    let foot = dialog::hinted_foot(dialog::escape("cancel", cx), cx)
         .child(dialog::button(
             "task-cancel",
             "Cancel".into(),
@@ -175,7 +172,8 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             cx,
         ));
     let title = if editing { "Edit task" } else { "Add a task" };
-    Some(dialog::sheet(title.into(), body, foot, save, close, cx).into_any_element())
+    let tile = if editing { Icon::Pencil } else { Icon::Plus };
+    Some(dialog::marked_sheet(tile, title.into(), body, foot, save, close, cx).into_any_element())
 }
 
 /// Saves the task the dialog holds, once it has a name and a command.

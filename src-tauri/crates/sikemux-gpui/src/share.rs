@@ -184,14 +184,6 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .problem
         .clone()
         .or_else(|| bench.refusal_of(&sharing.agent));
-    let inset = |row: Div| row.pl(px(dialog::GLYPH_INSET)).pr(px(20.));
-    let para = |words: &'static str| {
-        div()
-            .text_size(crate::theme::ui_text(13.))
-            .line_height(crate::theme::ui_text(20.))
-            .text_color(t.text_tertiary)
-            .child(words)
-    };
     let label =
         |words: &'static str| ui::text(words, 12., FontWeight::MEDIUM).text_color(t.text_tertiary);
     let field = match &share {
@@ -287,18 +279,19 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     })),
             ),
     };
-    let body = div()
-        .flex()
-        .flex_col()
-        .pb(px(14.))
+    let body = dialog::marked_body()
         .child(
-            inset(div().pt(px(8.)).flex().flex_col().gap(px(8.)))
-                .child(para("Anyone signed in to Sikemux who has the link can read this chat as it happens, from its start. They cannot type in it or answer its requests."))
-                .child(para("It shows everything the agent read and ran, including the contents of files and any secrets in them.")),
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(dialog::prose("Anyone signed in to Sikemux who has the link can read this chat as it happens, from its start. They cannot type in it or answer its requests.", &t))
+                .child(dialog::prose("It shows everything the agent read and ran, including the contents of files and any secrets in them.", &t)),
         )
-        .child(inset(div().pt(px(12.))).child(field))
+        .child(div().pt(px(12.)).child(field))
         .children(problem.map(|problem| {
-            inset(div().pt(px(12.)))
+            div()
+                .pt(px(12.))
                 .text_size(crate::theme::ui_text(12.))
                 .line_height(crate::theme::ui_text(18.))
                 .text_color(t.danger)
@@ -319,7 +312,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     this.update(cx, |bench, cx| bench.stop_share(id, window, cx))
                 })
             };
-            let foot = dialog::hinted_foot("close", cx)
+            let foot = dialog::hinted_foot(dialog::escape("close", cx), cx)
                 .child(dialog::button(
                     "share-stop",
                     "Stop sharing".into(),
@@ -345,7 +338,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             } else {
                 "Create link"
             };
-            let foot = dialog::hinted_foot("close", cx)
+            let foot = dialog::hinted_foot(dialog::escape("close", cx), cx)
                 .child(dialog::button(
                     "share-cancel",
                     "Cancel".into(),

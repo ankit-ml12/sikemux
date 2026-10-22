@@ -299,14 +299,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             })
         })
     };
-    let foot = div()
-        .child(
-            div()
-                .flex_1()
-                .text_size(crate::theme::ui_text(11.))
-                .text_color(t.text_tertiary)
-                .child(hint),
-        )
+    let foot = dialog::hinted_foot(hint, cx)
         .when(chosen, |foot| {
             foot.child(dialog::button(
                 "buddy-default",

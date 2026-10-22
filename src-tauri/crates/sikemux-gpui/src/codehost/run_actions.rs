@@ -1009,11 +1009,8 @@ pub fn dispatch_sheet(area: &HostArea, cx: &mut Context<HostArea>) -> Option<Any
         })
         .ok();
     });
-    let body = div()
-        .px(px(16.))
-        .py(px(14.))
-        .flex()
-        .flex_col()
+    let body = ui::dialog::marked_body()
+        .pt(px(12.))
         .gap(px(10.))
         .text_size(crate::theme::ui_text(12.))
         .child(ui::meta("Branch or tag", cx))
@@ -1058,7 +1055,8 @@ pub fn dispatch_sheet(area: &HostArea, cx: &mut Context<HostArea>) -> Option<Any
             cx,
         ));
     Some(
-        ui::dialog::sheet(
+        ui::dialog::marked_sheet(
+            Icon::Run,
             format!("Run {}", dispatch.workflow.name).into(),
             body.into_any_element(),
             foot,
