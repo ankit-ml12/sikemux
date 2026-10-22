@@ -1,5 +1,5 @@
-//! The switcher a new chat's project name opens, which moves the chat to another
-//! project open here, or to a folder found under the person's project roots.
+//! The project picker a new chat's project name and the top bar open: the projects open here,
+//! then folders found under the person's project roots, searchable in both.
 
 use gpui_kit::base::{Popover, Selectable};
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -24,6 +24,9 @@ const CONTEXT: &str = "ProjectSwitcher";
 /// Closes the popover the switcher is in.
 type Dismiss = std::rc::Rc<dyn Fn(&mut Window, &mut App)>;
 
+/// What picking a project does with it, by its id, once a folder found on disk is one.
+pub type OnPick = std::rc::Rc<dyn Fn(String, &mut App)>;
+
 pub fn install(cx: &mut App) {
     let context = Some("ProjectSwitcher > Input");
     cx.bind_keys([
@@ -45,7 +48,7 @@ struct Choice {
 /// The open switcher: its search, the row the keys are on, and the folders found on disk.
 pub struct Switcher {
     bench: WeakEntity<Workbench>,
-    agent: String,
+    on_pick: OnPick,
     cwd: String,
     query: Entity<InputState>,
     chosen: usize,
@@ -84,7 +87,7 @@ fn pretty(path: &str) -> String {
 impl Switcher {
     fn new(
         bench: &Entity<Workbench>,
-        agent: String,
+        on_pick: OnPick,
         cwd: String,
         close: Dismiss,
         window: &mut Window,
@@ -124,7 +127,7 @@ impl Switcher {
         }
         Self {
             bench: bench.downgrade(),
-            agent,
+            on_pick,
             cwd,
             query,
             chosen: 0,
@@ -172,7 +175,7 @@ impl Switcher {
             .collect()
     }
 
-    /// Moves the chat to `choice`, making the folder a project first when it is not one.
+    /// Picks `choice`, making the folder a project first when it is not one.
     fn pick(&mut self, choice: Choice, window: &mut Window, cx: &mut Context<Self>) {
         (self.close)(window, cx);
         if choice.path == self.cwd {
@@ -182,8 +185,8 @@ impl Switcher {
             return;
         };
         let asks = bench.read(cx).asks.clone();
-        let agent = self.agent.clone();
-        cx.spawn(async move |_, _| {
+        let on_pick = self.on_pick.clone();
+        cx.spawn(async move |_, cx| {
             let project = match choice.project {
                 Some(project) => project,
                 None => {
@@ -198,10 +201,7 @@ impl Switcher {
                     }
                 }
             };
-            let moving = json!({ "agentId": agent, "project": project });
-            if let Err(error) = core::request(&asks, "moveAgentToProject", moving).await {
-                eprintln!("sikemux: the chat stayed where it was: {error}");
-            }
+            let _ = cx.update(|cx| on_pick(project, cx));
         })
         .detach();
     }
@@ -348,10 +348,36 @@ pub fn around(
     cwd: &str,
     this: &Entity<Workbench>,
 ) -> Popover {
-    let (agent, folder, this) = (agent.to_owned(), cwd.to_owned(), this.clone());
+    let (moved, bench) = (agent.to_owned(), this.downgrade());
+    let on_pick: OnPick = std::rc::Rc::new(move |project, cx| {
+        let Some(asks) = bench.upgrade().map(|bench| bench.read(cx).asks.clone()) else {
+            return;
+        };
+        let agent = moved.clone();
+        cx.background_spawn(async move {
+            let moving = json!({ "agentId": agent, "project": project });
+            if let Err(error) = core::request(&asks, "moveAgentToProject", moving).await {
+                eprintln!("sikemux: the chat stayed where it was: {error}");
+            }
+        })
+        .detach();
+    });
     let key = SharedString::from(format!("project-switcher-{agent}"));
+    picker(key, trigger, cwd, Anchor::BottomLeft, on_pick, this)
+}
+
+/// Wraps `trigger` in the project picker, keyed `key`, with `cwd` the project shown now.
+pub fn picker(
+    key: SharedString,
+    trigger: impl Selectable + IntoElement + 'static,
+    cwd: &str,
+    anchor: Anchor,
+    on_pick: OnPick,
+    this: &Entity<Workbench>,
+) -> Popover {
+    let (folder, this) = (cwd.to_owned(), this.clone());
     Popover::new(key.clone())
-        .anchor(Anchor::BottomLeft)
+        .anchor(anchor)
         .offset(px(6.))
         .trigger(trigger)
         .content(move |_, window, cx| {
@@ -359,8 +385,9 @@ pub fn around(
             let close: Dismiss = std::rc::Rc::new(move |window, cx| {
                 popover.update(cx, |popover, cx| popover.dismiss(window, cx));
             });
-            window.use_keyed_state(key, cx, |window, cx| {
-                Switcher::new(&this, agent, folder, close, window, cx)
+            let (on_pick, folder) = (on_pick.clone(), folder.clone());
+            window.use_keyed_state(key.clone(), cx, |window, cx| {
+                Switcher::new(&this, on_pick, folder, close, window, cx)
             })
         })
 }

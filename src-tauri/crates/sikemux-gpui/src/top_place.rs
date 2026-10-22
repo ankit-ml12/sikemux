@@ -4,11 +4,9 @@
 use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
-use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, AppContext, Context, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    div, px, Anchor, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use crate::hosts::HostChoice;
@@ -16,9 +14,6 @@ use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui::{self, Menu, MenuItem};
 use crate::workbench::{Strip, Workbench};
-
-/// A project picker longer than this gets a field to find one by name.
-const FIND_PAST: usize = 8;
 
 /// Picks a choice by its key and closes the picker.
 type Pick = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
@@ -67,7 +62,6 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         "place-host",
         shown,
         hosts.iter().map(|(_, choice)| choice.clone()).collect(),
-        None,
         move |key, cx| {
             let Some((choice, _)) = hosts.iter().find(|(_, shown)| shown.key == *key) else {
                 return;
@@ -108,19 +102,22 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         HostChoice::This => None,
     };
     let project = set_up_alias.and_then(|alias| set_up_offer(bench, &alias, cx));
+    let here = (bench.project()).map(|project| project.path.to_string_lossy().into_owned());
     let project = project.or_else(|| {
         front.map(|front| {
-            let find = (projects.len() > FIND_PAST).then_some("Find a project");
-            picker(
-                "place-project",
-                front,
-                projects,
-                find,
-                move |key, cx| {
-                    this.update(cx, |bench, _| bench.activate_project(key)).ok();
-                },
-                cx,
+            let on_pick: crate::project_switcher::OnPick = Rc::new(move |project, cx| {
+                this.update(cx, |bench, _| bench.activate_project(&project))
+                    .ok();
+            });
+            crate::project_switcher::picker(
+                "place-project".into(),
+                pill("place-project", front, cx),
+                here.as_deref().unwrap_or_default(),
+                Anchor::TopLeft,
+                on_pick,
+                &cx.entity(),
             )
+            .into_any_element()
         })
     });
     div()
@@ -186,17 +183,10 @@ fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> 
 
 /// A pill naming `shown`, lifted only on hover or while open, opening a menu of `choices`,
 /// with a field over it that finds one by name when `find` gives it its placeholder.
-fn picker(
-    id: &'static str,
-    shown: Choice,
-    choices: Vec<Choice>,
-    find: Option<&'static str>,
-    on_choose: impl Fn(&SharedString, &mut App) + 'static,
-    cx: &App,
-) -> AnyElement {
+/// The pill a picker in the top bar opens from: the choice shown now, its mark and name.
+fn pill(id: &'static str, shown: Choice, cx: &App) -> BaseButton {
     let t = Tokens::get(cx).clone();
-    let chosen = shown.key.clone();
-    let trigger = BaseButton::new(SharedString::from(format!("{id}-pill")))
+    BaseButton::new(SharedString::from(format!("{id}-pill")))
         .accessibility_label(shown.label.clone())
         .h(px(26.))
         .max_w(px(220.))
@@ -211,13 +201,24 @@ fn picker(
         .hover(move |style| style.bg(t.surface_chosen))
         .styles(move |styles| styles.selected(move |style| style.bg(t.surface_chosen)))
         .child(mark(shown.mark))
-        .child(div().min_w_0().truncate().child(shown.label));
+        .child(div().min_w_0().truncate().child(shown.label))
+}
+
+fn picker(
+    id: &'static str,
+    shown: Choice,
+    choices: Vec<Choice>,
+    on_choose: impl Fn(&SharedString, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let chosen = shown.key.clone();
+    let trigger = pill(id, shown, cx);
     let (choices, on_choose) = (Rc::new(choices), Rc::new(on_choose));
     Popover::new(id)
         .anchor(Anchor::TopLeft)
         .offset(px(4.))
         .trigger(trigger)
-        .content(move |_, window, cx| {
+        .content(move |_, _, cx| {
             let popover = cx.entity();
             let pick: Pick = {
                 let on_choose = on_choose.clone();
@@ -226,23 +227,7 @@ fn picker(
                     popover.update(cx, |popover, cx| popover.dismiss(window, cx));
                 })
             };
-            match find {
-                Some(placeholder) => {
-                    let (choices, chosen) = (choices.clone(), chosen.clone());
-                    window
-                        .use_keyed_state(
-                            SharedString::from(format!("{id}-find")),
-                            cx,
-                            move |window, cx| {
-                                Find::new(id, placeholder, choices, chosen, pick, window, cx)
-                            },
-                        )
-                        .into_any_element()
-                }
-                None => Menu::new()
-                    .child(rows(id, choices.iter(), &chosen, &pick))
-                    .into_any_element(),
-            }
+            Menu::new().child(rows(id, choices.iter(), &chosen, &pick))
         })
         .into_any_element()
 }
@@ -271,77 +256,6 @@ fn rows<'a>(
             .checked(choice.key == *chosen)
             .on_click(move |_, window, cx| pick(&key, window, cx))
         }))
-}
-
-/// An open picker with a field over its rows that keeps those whose name holds what is
-/// typed; Return picks the first of them.
-struct Find {
-    id: &'static str,
-    query: Entity<InputState>,
-    choices: Rc<Vec<Choice>>,
-    chosen: SharedString,
-    pick: Pick,
-    _typing: Subscription,
-}
-
-impl Find {
-    fn new(
-        id: &'static str,
-        placeholder: &'static str,
-        choices: Rc<Vec<Choice>>,
-        chosen: SharedString,
-        pick: Pick,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
-        query.update(cx, |query, cx| query.focus(window, cx));
-        let typing =
-            cx.subscribe_in(
-                &query,
-                window,
-                |find: &mut Self, _, event, window, cx| match event {
-                    InputEvent::Change => cx.notify(),
-                    InputEvent::PressEnter { .. } => {
-                        let first = find.found(cx).first().map(|choice| choice.key.clone());
-                        if let Some(key) = first {
-                            let pick = find.pick.clone();
-                            pick(&key, window, cx);
-                        }
-                    }
-                    _ => {}
-                },
-            );
-        Self {
-            id,
-            query,
-            choices,
-            chosen,
-            pick,
-            _typing: typing,
-        }
-    }
-
-    fn found(&self, cx: &App) -> Vec<&Choice> {
-        let words = self.query.read(cx).value().trim().to_lowercase();
-        self.choices
-            .iter()
-            .filter(|choice| choice.label.to_lowercase().contains(&words))
-            .collect()
-    }
-}
-
-impl Render for Find {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let found = self.found(cx);
-        Menu::new()
-            .child(
-                div()
-                    .pb(px(4.))
-                    .child(ui::Field::new(&self.query).icon(Icon::Search)),
-            )
-            .child(rows(self.id, found.into_iter(), &self.chosen, &self.pick))
-    }
 }
 
 fn mark((icon, color): (Icon, Hsla)) -> impl IntoElement {
