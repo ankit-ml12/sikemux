@@ -268,8 +268,9 @@ impl Menu {
         cx.notify();
     }
 
-    /// The agents and accounts a chat that has not started can move to: the featured ones,
-    /// its own, and those installed here.
+    /// The agents a chat that has not started can move to, each on the account it runs on
+    /// now, since the strip under the chat picks the account: the featured ones, its own, and
+    /// those installed here.
     fn agents(&self, cx: &App) -> Vec<(String, Option<String>, String)> {
         let Some(bench) = self.bench.upgrade() else {
             return Vec::new();
@@ -298,23 +299,14 @@ impl Menu {
                     || provider == self.picked.provider
                     || installed.iter().any(|each| each == provider)
             })
-            .flat_map(|kind| {
+            .map(|kind| {
                 let provider = kind["type"].as_str().unwrap_or_default().to_owned();
                 let label = kind["label"].as_str().unwrap_or_default().to_owned();
-                let accounts = bench.accounts.of(&provider);
-                match accounts.is_empty() {
-                    true => vec![(provider, None, label)],
-                    false => accounts
-                        .into_iter()
-                        .map(|profile| {
-                            (
-                                provider.clone(),
-                                Some(profile.id.clone()),
-                                profile.name.clone(),
-                            )
-                        })
-                        .collect(),
-                }
+                let account = bench
+                    .accounts
+                    .current(&provider)
+                    .map(|profile| profile.id.clone());
+                (provider, account, label)
             })
             .collect()
     }
@@ -378,43 +370,36 @@ impl Render for Menu {
         let this = cx.entity();
         let agents: Vec<AnyElement> = match self.picked.locked {
             true => Vec::new(),
-            false => {
-                let builtin = format!("builtin-{}", self.picked.provider);
-                let on_now = self.picked.profile.clone().unwrap_or(builtin);
-                self.agents(cx)
-                    .into_iter()
-                    .map(|(provider, profile, label)| {
-                        let pressed = provider == self.picked.provider
-                            && profile.as_deref().is_none_or(|profile| profile == on_now);
-                        let moving = self.picked.moving.clone();
-                        let (close, going) = (
-                            self.close.clone(),
-                            Moving {
-                                provider: provider.clone(),
-                                profile: profile.clone(),
-                                model: None,
-                                model_provider: None,
-                            },
-                        );
-                        chip(
-                            SharedString::from(format!(
-                                "model-agent-{provider}-{}",
-                                profile.as_deref().unwrap_or_default()
-                            )),
-                            Some(ui::mark(&provider, 14.)),
-                            label,
-                            pressed,
-                            &t,
-                            move |window, cx| {
-                                if !pressed {
-                                    close(window, cx);
-                                    moving(going.clone(), window, cx);
-                                }
-                            },
-                        )
-                    })
-                    .collect()
-            }
+            false => self
+                .agents(cx)
+                .into_iter()
+                .map(|(provider, profile, label)| {
+                    let pressed = provider == self.picked.provider;
+                    let moving = self.picked.moving.clone();
+                    let (close, going) = (
+                        self.close.clone(),
+                        Moving {
+                            provider: provider.clone(),
+                            profile: profile.clone(),
+                            model: None,
+                            model_provider: None,
+                        },
+                    );
+                    chip(
+                        SharedString::from(format!("model-agent-{provider}")),
+                        Some(ui::mark(&provider, 14.)),
+                        label,
+                        pressed,
+                        &t,
+                        move |window, cx| {
+                            if !pressed {
+                                close(window, cx);
+                                moving(going.clone(), window, cx);
+                            }
+                        },
+                    )
+                })
+                .collect(),
         };
         let payers: Vec<AnyElement> = match self.picked.locked || self.routes.is_empty() {
             true => Vec::new(),

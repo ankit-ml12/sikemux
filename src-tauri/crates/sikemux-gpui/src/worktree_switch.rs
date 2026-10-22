@@ -60,7 +60,7 @@ fn about(switch: &Switch) -> String {
 /// Turns the worktree on or off for the first message.
 pub type Flip = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// The switch, dressed as the YOLO toggle beside it so the two read as one row of chat settings.
+/// The switch, in the strip docked on the composer beside the project it works in.
 pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let on = !matches!(switch, Switch::Choosing { on: false });
@@ -73,7 +73,7 @@ pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App
         .accessibility_label("Worktree")
         .selected(on)
         .disabled(!settable)
-        .h(px(31.))
+        .h(px(26.))
         .max_w(px(220.))
         .px(px(11.))
         .flex()

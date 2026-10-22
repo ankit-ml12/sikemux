@@ -25,16 +25,18 @@ type Pick = Rc<dyn Fn(&str, &str, &mut Window, &mut App)>;
 type Paste = Rc<dyn Fn(&ClipboardItem, &mut Window, &mut App) -> bool>;
 type Chip = Rc<dyn Fn(&InlineTokenContext, &mut Window, &mut App) -> AnyElement>;
 
-/// The project a new chat starts in, docked on the composer until its first message.
+/// Where the chat runs, docked on its composer: the host, the project and its branch or
+/// worktree on the left, the account on the right.
 pub struct Strip {
     pub project: SharedString,
+    /// The project's folder, which its name's tooltip gives.
     pub path: SharedString,
     pub branch: Option<SharedString>,
-    /// The chat its project name moves to another project, the folder the chat is in now,
-    /// and the workbench that moves it.
-    pub chat: String,
-    pub cwd: String,
-    pub bench: Entity<Workbench>,
+    /// Until the first message the project's name opens a switcher that moves the chat: the
+    /// chat, the folder it is in now, and the workbench that moves it.
+    pub moves: Option<(String, String, Entity<Workbench>)>,
+    pub worktree: Option<AnyElement>,
+    pub account: Option<AnyElement>,
 }
 
 /// A chat's composer: its draft, and the bar of what the chat lets the person change, as the
@@ -50,8 +52,8 @@ pub struct Composer {
     steers: bool,
     yolo: Option<(bool, bool, Act)>,
     pickers: Option<(Option<ConfigPicker>, Option<ConfigPicker>, Pick)>,
-    /// The model menu, which before the chat starts also moves it to another agent, account
-    /// or paying provider.
+    /// The model menu, which before the chat starts also moves it to another agent or paying
+    /// provider; the strip picks the account.
     model_menu: Option<(Picked, Entity<Workbench>)>,
     usage: Option<ContextUsage>,
     /// The files going with the message, the button that picks more, what a paste of
@@ -333,71 +335,91 @@ impl RenderOnce for Composer {
 
 fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let name = |chevron: bool| {
+        div()
+            .h(px(26.))
+            .pl(px(8.))
+            .pr(px(9.))
+            .max_w(px(240.))
+            .flex()
+            .items_center()
+            .gap(px(7.))
+            .rounded_full()
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(t.text_primary)
+            .child(ui::icon(Icon::Folder, 12.).text_color(t.live))
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(strip.project.clone()),
+            )
+            .when(chevron, |name| {
+                name.child(
+                    ui::icon(Icon::Chevron, 10.)
+                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                        .text_color(t.text_tertiary),
+                )
+            })
+    };
+    let project = match strip.moves {
+        Some((chat, cwd, bench)) => crate::project_switcher::around(
+            BaseButton::new("composer-project")
+                .accessibility_label("Project")
+                .rounded_full()
+                .hover(move |style| style.bg(t.surface_hover))
+                .tooltip(ui::tooltip(strip.path.clone()))
+                .child(name(true)),
+            &chat,
+            &cwd,
+            &bench,
+        )
+        .into_any_element(),
+        None => div()
+            .id("composer-project")
+            .min_w_0()
+            .tooltip(ui::tooltip(strip.path.clone()))
+            .child(name(false))
+            .into_any_element(),
+    };
     div()
         .w_full()
         .max_w(px(780.))
         .flex()
         .items_center()
-        .gap(px(10.))
-        .pt(px(5.))
-        .pr(px(12.))
-        .pb(px(5.))
-        .pl(px(6.))
+        .gap(px(4.))
+        .py(px(4.))
+        .px(px(6.))
         .border_t_1()
         .border_l_1()
         .border_r_1()
         .border_color(t.border)
         .rounded_t(theme::RADIUS_3)
         .bg(fill)
-        .child(crate::project_switcher::around(
-            BaseButton::new("composer-project")
-                .accessibility_label("Project")
-                .h(px(26.))
-                .pl(px(8.))
-                .pr(px(9.))
-                .max_w(px(240.))
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .rounded_full()
-                .text_size(px(12.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text_primary)
-                .hover(move |style| style.bg(t.surface_hover))
-                .child(ui::icon(Icon::Folder, 12.).text_color(t.live))
-                .child(
-                    div()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .child(strip.project),
-                )
-                .child(
-                    ui::icon(Icon::Chevron, 10.)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                        .text_color(t.text_tertiary),
-                ),
-            &strip.chat,
-            &strip.cwd,
-            &strip.bench,
-        ))
         .child(
             div()
-                .ml_auto()
-                .min_w_0()
-                .overflow_hidden()
-                .text_ellipsis()
-                .whitespace_nowrap()
-                .child(ui::mono(strip.path, 10.5, cx).text_color(t.text_tertiary)),
-        )
-        .children(strip.branch.map(|branch| {
-            div()
                 .flex_none()
-                .max_w(px(160.))
+                .pl(px(8.))
+                .pr(px(6.))
                 .flex()
                 .items_center()
-                .gap(px(4.))
+                .gap(px(6.))
+                .child(ui::icon(Icon::Laptop, 12.).text_color(t.text_secondary))
+                .child(ui::text("This host", 12., FontWeight::NORMAL).text_color(t.text_secondary)),
+        )
+        .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary))
+        .child(project)
+        .children(strip.branch.map(|branch| {
+            div()
+                .min_w_0()
+                .max_w(px(200.))
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
                 .child(ui::icon(Icon::Git, 11.).text_color(t.text_tertiary))
                 .child(
                     ui::mono(branch, 10.5, cx)
@@ -407,6 +429,9 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                         .whitespace_nowrap(),
                 )
         }))
+        .children(strip.worktree)
+        .child(div().flex_1())
+        .children(strip.account)
 }
 
 /// YOLO or SAFE: whether the agent acts without asking. YOLO's letters run through the

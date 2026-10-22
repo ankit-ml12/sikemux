@@ -1,5 +1,6 @@
-//! Moves a chat that has started to another of the person's accounts with its agent,
-//! even in the middle of a turn: those signed in that keep their chats where this one does.
+//! Which of the person's accounts with its agent a chat runs on. One that has started moves
+//! there, even in the middle of a turn, to those signed in that keep their chats where this
+//! one does; one that has not simply starts there, on any signed in.
 
 use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::prelude::FluentBuilder;
@@ -42,11 +43,13 @@ fn move_chat(bench: &Workbench, agent: &str, profile: &Profile) {
     });
 }
 
-/// A chat that has started: its agent's id, which agent it is, and the account it runs on.
+/// A chat: its agent's id, which agent it is, the account it runs on, and whether it has
+/// started.
 pub struct Chat<'a> {
     pub agent: &'a str,
     pub provider: &'a str,
     pub on: &'a str,
+    pub started: bool,
 }
 
 /// The picker for the chat, or none while no other account can take it over.
@@ -62,6 +65,7 @@ pub fn picker(
         agent,
         provider,
         on,
+        started,
     } = chat;
     let t = Tokens::get(cx).clone();
     let current = bench.accounts.profile(on)?.clone();
@@ -77,7 +81,7 @@ pub fn picker(
         .of(provider)
         .into_iter()
         .filter_map(|profile| Some((profile.clone(), signed_in(profile)?)))
-        .filter(|(_, status)| sessions.is_some() && status.sessions == sessions)
+        .filter(|(_, status)| !started || sessions.is_some() && status.sessions == sessions)
         .collect();
     if !movable.iter().any(|(profile, _)| profile.id != current.id) {
         return None;
@@ -109,7 +113,7 @@ pub fn picker(
     let trigger = BaseButton::new(SharedString::from(format!("account-picker-{agent}")))
         .accessibility_label("Account")
         .disabled(disabled)
-        .h(px(28.))
+        .h(px(26.))
         .max_w(px(200.))
         .px(px(10.))
         .flex()
@@ -185,7 +189,14 @@ pub fn picker(
                     let here = profile.id == on;
                     item.on_click(move |_, window, cx| {
                         if !here {
-                            this.update(cx, |bench, _| move_chat(bench, &agent, &chosen));
+                            this.update(cx, |bench, _| match started {
+                                true => move_chat(bench, &agent, &chosen),
+                                false => bench.start_as(
+                                    &agent,
+                                    serde_json::json!({ "profileId": chosen.id }),
+                                    &chosen.name,
+                                ),
+                            });
                         }
                         popover.update(cx, |popover, cx| popover.dismiss(window, cx));
                     })

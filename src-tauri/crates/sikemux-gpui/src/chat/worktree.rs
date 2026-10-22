@@ -1,5 +1,5 @@
 //! Whether a new chat starts in a worktree of its own: the core says what the person chose
-//! for its project, the switch in the chat's header flips that, and the first message with
+//! for its project, the switch in the strip on the chat's composer flips that, and the first message with
 //! it on has the core make the worktree and start the chat there before it goes.
 
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use crate::workbench::Workbench;
 use crate::worktree_switch::{Flip, Switch};
 
 impl Workbench {
-    /// The worktree switch `agent`'s header shows, and what flipping it does.
+    /// The worktree switch `agent`'s composer strip shows, and what flipping it does.
     pub fn worktree_switch(&self, agent: &str, cx: &Context<Self>) -> Option<(Switch, Flip)> {
         let saved = self
             .view

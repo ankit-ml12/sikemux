@@ -28,8 +28,8 @@ use sikemux_wire::chat::{
     LetterKind, PartTree, PermissionAsk, SubagentCard, SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
-    ChatAttachment, ChatContext, ChatMark, MidTurnSend, DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE,
-    MIN_TEXT_SCALE,
+    AgentStatus, ChatAttachment, ChatContext, ChatMark, MidTurnSend, WorkspaceAgent,
+    DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
 };
 
 use crate::composer::{Composer, Strip};
@@ -41,6 +41,7 @@ use crate::syntax;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Variant};
 use crate::workbench::{AgentRow, Workbench};
+use crate::worktree_switch::Switch;
 use gpui_kit::component::Sizable;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -2315,24 +2316,7 @@ fn composer(
     });
     let fresh = chat.is_empty(cx)
         && saved.is_some_and(|saved| saved.resume_id.is_none() && saved.worktree.is_none());
-    let strip = saved.filter(|_| fresh).map(|saved| Strip {
-        project: saved
-            .cwd
-            .file_name()
-            .map_or_else(
-                || saved.cwd.to_string_lossy(),
-                |name| name.to_string_lossy(),
-            )
-            .into_owned()
-            .into(),
-        path: tilde(&saved.cwd).into(),
-        branch: bench
-            .project()
-            .and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
-        chat: agent.id.clone(),
-        cwd: saved.cwd.to_string_lossy().into_owned(),
-        bench: cx.entity(),
-    });
+    let strip = saved.map(|saved| strip(bench, agent, saved, fresh, head, cx));
     let on_add = {
         let (this, agent) = (this.clone(), agent.id.clone());
         Rc::new(move |window: &mut Window, cx: &mut App| {
@@ -2406,7 +2390,6 @@ fn composer(
     if let Some(saved) = saved.filter(|_| fresh || model.is_some()) {
         let moving: crate::model_picker::Move = {
             let (this, agent) = (this.clone(), agent.id.clone());
-            let renamed = saved.renamed;
             Rc::new(move |to: crate::model_picker::Moving, _, cx| {
                 this.update(cx, |bench, _| {
                     let account = to
@@ -2414,21 +2397,14 @@ fn composer(
                         .as_deref()
                         .and_then(|id| bench.accounts.profile(id));
                     let title = account.map_or(to.provider.as_str(), |account| &account.name);
-                    let mut patch = json!({
+                    let patch = json!({
                         "provider": to.provider,
                         "profileId": to.profile,
                         "model": to.model,
                         "modelProvider": to.model_provider,
                         "effort": null,
-                        "resumeId": null,
                     });
-                    if !renamed {
-                        patch["title"] = title.into();
-                    }
-                    bench.ask_chat(ChatAsk::Move {
-                        agent: agent.clone(),
-                        patch,
-                    });
+                    bench.start_as(&agent, patch, title);
                 })
                 .ok();
             })
@@ -2462,7 +2438,89 @@ fn composer(
     Some((composer.menu(dock), offering))
 }
 
+/// Where the chat runs, for the strip docked on its composer: its project, which names a
+/// worktree agent's project rather than its worktree's folder, the branch or worktree it works
+/// on, and the account it runs on.
+fn strip(
+    bench: &Workbench,
+    agent: &AgentRow,
+    saved: &WorkspaceAgent,
+    fresh: bool,
+    head: Option<&ChatHead>,
+    cx: &mut Context<Workbench>,
+) -> Strip {
+    let project = bench
+        .projects()
+        .iter()
+        .find(|project| project.id == saved.project);
+    let folder = project.map_or(saved.cwd.as_path(), |project| project.path.as_path());
+    let switch = bench.worktree_switch(&agent.id, cx);
+    let elsewhere = switch
+        .as_ref()
+        .is_some_and(|(switch, _)| !matches!(switch, Switch::Choosing { .. }));
+    let worktree = switch.map(|(switch, flip)| {
+        crate::worktree_switch::toggle(format!("worktree-{}", agent.id), &switch, flip, cx)
+    });
+    let on = saved.profile_id.clone().or_else(|| {
+        bench
+            .accounts
+            .current(&agent.provider)
+            .map(|profile| profile.id.clone())
+    });
+    let account = on.and_then(|on| {
+        let chat = crate::account_picker::Chat {
+            agent: &agent.id,
+            provider: &agent.provider,
+            on: &on,
+            started: !fresh,
+        };
+        let running = matches!(agent.status, AgentStatus::Working | AgentStatus::Starting);
+        let ready = head.is_some_and(|head| head.connection == ChatConnection::Ready);
+        let this = cx.entity();
+        crate::account_picker::picker(bench, chat, running, !ready, &this, cx)
+    });
+    Strip {
+        project: folder
+            .file_name()
+            .map_or_else(|| folder.to_string_lossy(), |name| name.to_string_lossy())
+            .into_owned()
+            .into(),
+        path: tilde(folder).into(),
+        branch: project
+            .filter(|_| !elsewhere)
+            .and_then(|project| Some(project.git.as_ref()?.branch.clone().into())),
+        moves: fresh.then(|| {
+            (
+                agent.id.clone(),
+                saved.cwd.to_string_lossy().into_owned(),
+                cx.entity(),
+            )
+        }),
+        worktree,
+        account,
+    }
+}
+
 impl Workbench {
+    /// Starts `agent`, which has not started yet, again as `patch` changes it, titled `title`
+    /// unless the person named it.
+    pub fn start_as(&self, agent: &str, mut patch: Value, title: &str) {
+        let renamed = self.view.as_ref().is_some_and(|view| {
+            view.workspace
+                .agents
+                .iter()
+                .any(|saved| saved.id == agent && saved.renamed)
+        });
+        patch["resumeId"] = Value::Null;
+        if !renamed {
+            patch["title"] = title.into();
+        }
+        self.ask_chat(ChatAsk::Move {
+            agent: agent.to_owned(),
+            patch,
+        });
+    }
+
     /// Lets `agent` run without asking, or has it ask again, when its kind of agent can.
     pub fn toggle_yolo(&self, agent: &str) {
         let Some(saved) = self
