@@ -506,8 +506,12 @@ impl Workbench {
                     });
                 })
             },
-            _focus_lost: cx
-                .on_focus_lost(window, |bench, window, cx| bench.focus.focus(window, cx)),
+            _focus_lost: cx.on_focus_lost(window, |bench, window, cx| {
+                // A view asked for the keys but is not drawn yet; it takes them once it is.
+                if window.focused(cx).is_none() {
+                    bench.focus.focus(window, cx)
+                }
+            }),
             takes_keys: Cell::new(None),
             watched_project: None,
             watched_place: crate::hosts::Place::This,
