@@ -1,12 +1,14 @@
 //! Where the window is, in the middle of the top bar: the chosen host, then the project in
 //! front, each a picker.
 
+use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, radians, Anchor, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Transformation,
+    Window,
 };
 
 use crate::hosts::HostChoice;
@@ -29,7 +31,7 @@ struct Choice {
 pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let host_mark = |choice: &HostChoice| match choice {
-        HostChoice::This => (Icon::Laptop, t.text_secondary),
+        HostChoice::This => (Icon::Laptop, t.text_primary),
         HostChoice::Account(_) => (Icon::Server, t.host),
         HostChoice::Ssh(_) => (Icon::Server, t.ssh),
     };
@@ -193,7 +195,7 @@ fn pill(id: &'static str, shown: Choice, cx: &App) -> BaseButton {
         .px(px(10.))
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(px(8.))
         .rounded_full()
         .text_size(crate::theme::ui_text(12.))
         .font_weight(FontWeight::MEDIUM)
@@ -202,6 +204,12 @@ fn pill(id: &'static str, shown: Choice, cx: &App) -> BaseButton {
         .styles(move |styles| styles.selected(move |style| style.bg(t.surface_chosen)))
         .child(mark(shown.mark))
         .child(div().min_w_0().truncate().child(shown.label))
+        .child(
+            ui::icon(Icon::Chevron, 9.)
+                .flex_none()
+                .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                .text_color(t.text_tertiary),
+        )
 }
 
 fn picker(
