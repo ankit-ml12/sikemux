@@ -17,6 +17,7 @@ use gpui_kit::{
     Styled, Subscription, Transformation, WeakEntity, Window,
 };
 use serde_json::{json, Value};
+use sikemux_wire::protocol::PaneKind;
 
 use crate::core::Target;
 use crate::hosts::Place;
@@ -819,7 +820,11 @@ impl Workbench {
                 .target()
                 .request("files.create", json!({ "path": path, "dir": naming.dir })),
         };
-        let (parent, dir) = (naming.parent, naming.dir || naming.from.is_some());
+        let (parent, dir, from) = (
+            naming.parent,
+            naming.dir || naming.from.is_some(),
+            naming.from,
+        );
         cx.spawn_in(window, async move |bench, cx| {
             let made = made.await;
             bench
@@ -827,8 +832,10 @@ impl Workbench {
                     match made {
                         Ok(_) => {
                             bench.files.reload(&parent, &bench.target());
-                            if !dir {
-                                bench.open_file(&path);
+                            match &from {
+                                Some(from) => bench.follow_rename(from, &path, cx),
+                                None if !dir => bench.open_file(&path),
+                                None => {}
                             }
                         }
                         Err(error) => bench.notify(Notification::error(error), cx),
@@ -839,6 +846,54 @@ impl Workbench {
         })
         .detach();
         cx.notify();
+    }
+
+    /// Moves the editor tabs of `from`, or of the files under it, to the same names under
+    /// `to`, each in its own place in the strip, leaving the tab in front where it was.
+    fn follow_rename(&self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+        let Some(strip) = self.strip() else {
+            return;
+        };
+        let front = self.tab().map(|tab| tab.id.clone());
+        let moved: Vec<(usize, String, PathBuf)> = self
+            .tabs(&strip)
+            .iter()
+            .enumerate()
+            .filter_map(|(at, tab)| {
+                let (kind, target) = crate::tabs::first_view(&tab.pane)?;
+                let rest = Path::new(target).strip_prefix(from).ok()?;
+                (kind == PaneKind::Files).then(|| (at, tab.id.clone(), to.join(rest)))
+            })
+            .collect();
+        if moved.is_empty() {
+            return;
+        }
+        let core = self.target();
+        cx.spawn(async move |_, _| {
+            for (at, old, path) in moved {
+                let opened = core
+                    .request(
+                        "openTab",
+                        strip.with(json!({ "kind": "files", "target": path.to_string_lossy() })),
+                    )
+                    .await;
+                let Ok(Value::String(tab)) = opened else {
+                    continue;
+                };
+                let _ = core
+                    .request("moveTab", strip.with(json!({ "tab": tab, "to": at })))
+                    .await;
+                let _ = core
+                    .request("closeTab", strip.with(json!({ "tab": old })))
+                    .await;
+            }
+            if let Some(front) = front {
+                let _ = core
+                    .request("activateTab", strip.with(json!({ "tab": front })))
+                    .await;
+            }
+        })
+        .detach();
     }
 
     /// Moves `path` to the Trash once the person confirms.
