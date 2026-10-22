@@ -12,7 +12,8 @@
 //!                                 share dialog of the chat in front; "press x,y", "hold x,y" and
 //!                                 "release x,y" drag the pointer with its button down, and
 //!                                 "clipboard" prints the text copied; "state" prints one line of what
-//!                                 the window shows (Settings, any modal, the front view, the focus, the tabs)
+//!                                 the window shows (Settings, any modal, the front view, the focus, the tabs,
+//!                                 the chosen host, a trust question)
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -387,8 +388,16 @@ fn state(bench: &workbench::Workbench, stack: &[gpui::KeyContext]) -> String {
     let tabs = bench.strip().map_or(0, |strip| bench.tabs(&strip).len());
     let settings = if bench.settings.is_some() { "open" } else { "closed" };
     let shown = |name: Option<String>| name.map_or_else(|| "none".to_owned(), |name| kebab(&name));
+    let host = bench.chosen_host().key();
+    let asking = ["trust", "host-trust"].iter().any(|key| {
+        bench
+            .read(key)
+            .and_then(|asks| asks.as_array())
+            .is_some_and(|asks| !asks.is_empty())
+    });
+    let trust = if asking { "asking" } else { "none" };
     format!(
-        "state settings={settings} modal={} tab={} focus={} tabs={tabs}",
+        "state settings={settings} modal={} tab={} focus={} tabs={tabs} host={host} trust={trust}",
         shown(modal),
         shown(tab),
         shown(focus),
