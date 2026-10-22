@@ -87,9 +87,25 @@ fn fact(name: &'static str, value: AnyElement, cx: &mut Context<BoardPane>) -> A
         .flex()
         .items_center()
         .gap(px(10.))
-        .child(ui::meta(name, cx).w(px(64.)).flex_none())
-        .child(value)
+        .child(ui::caps(name, cx).w(px(64.)).flex_none())
+        .child(div().flex_1().min_w_0().child(value))
         .into_any_element()
+}
+
+/// A group of settings running edge to edge under a hairline, its name above its fields.
+fn settings_group(name: &'static str, cx: &mut Context<BoardPane>) -> gpui_kit::Div {
+    let t = Tokens::get(cx).clone();
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .mt(px(4.))
+        .px(px(14.))
+        .pt(px(12.))
+        .pb(px(10.))
+        .border_t_1()
+        .border_color(t.border)
+        .child(ui::caps(name, cx))
 }
 
 /// The cards under `id`, and theirs, which it cannot be put under.
@@ -646,12 +662,7 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
     }
     let busy = pane.busy;
     view.child(
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .px(px(14.))
-            .py(px(10.))
+        settings_group("Agents", cx)
             .child(fact(
                 "At once",
                 select(
@@ -697,6 +708,9 @@ fn auto_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                 ),
                 cx,
             ))
+    )
+    .child(
+        settings_group("Reviewer", cx)
             .child(fact(
                 "Reviewer",
                 select(
