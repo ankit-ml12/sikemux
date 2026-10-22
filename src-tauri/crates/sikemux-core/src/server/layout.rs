@@ -479,7 +479,7 @@ fn edit<T>(core: &Core, change: impl FnOnce(&mut Layout) -> CoreResult<T>) -> Co
         core.layouts.kept.save(&*kept);
         answer
     };
-    core.view_changed();
+    core.view_changed_now();
     core.spares.front_changed();
     Ok(answer)
 }

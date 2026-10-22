@@ -369,6 +369,8 @@ pub(crate) struct Core {
     pub(crate) view_watched: Notify,
     /// Sends the device view before its next tick, once an agent's state changed.
     pub(crate) view_stale: Notify,
+    /// Sends it at once, without waiting for more changes to go with it.
+    pub(crate) view_due: Notify,
     pub(crate) names: names::Names,
     pub(crate) boards: board::Boards,
     pub(crate) changes: changed::Changes,
@@ -482,6 +484,7 @@ impl Core {
             activity_log: Arc::new(activity_log::ActivityLog::new(data_dir)),
             view_watched: Notify::new(),
             view_stale: Notify::new(),
+            view_due: Notify::new(),
             names,
             boards: board::Boards::new(data_dir),
             changes: changed::Changes::default(),
@@ -1215,8 +1218,13 @@ async fn device_views(core: Arc<Core>) {
         };
         if changed {
             let now = tokio::time::Instant::now();
-            tokio::time::sleep_until((now + DEVICE_VIEW_GATHER).max(built + DEVICE_VIEW_SPACING))
-                .await;
+            let gathered = tokio::time::sleep_until(
+                (now + DEVICE_VIEW_GATHER).max(built + DEVICE_VIEW_SPACING),
+            );
+            tokio::select! {
+                () = gathered => {}
+                () = core.view_due.notified() => {}
+            }
         }
         core.show_phones();
         let now = core.window.client_id();
