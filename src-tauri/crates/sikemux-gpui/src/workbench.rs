@@ -3591,6 +3591,7 @@ pub enum TakesKeys {
     Terminal,
     Git,
     File(PathBuf),
+    Board,
 }
 
 impl TakesKeys {
@@ -3599,6 +3600,7 @@ impl TakesKeys {
             Self::Terminal => kind == PaneKind::Terminal,
             Self::Git => kind == PaneKind::Git,
             Self::File(_) => kind == PaneKind::Files,
+            Self::Board => kind == PaneKind::Board,
         }
     }
 }
@@ -3781,7 +3783,7 @@ impl Render for Workbench {
                 }),
             )
             .on_action(
-                cx.listener(|bench, _: &crate::places::FocusBoard, _, _| bench.focus_board()),
+                cx.listener(|bench, _: &crate::places::FocusBoard, _, cx| bench.focus_board(cx)),
             )
             .on_action(
                 cx.listener(|bench, _: &crate::switcher::NextPlace, window, cx| {

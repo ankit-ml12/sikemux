@@ -168,8 +168,9 @@ impl Workbench {
         }
     }
 
-    pub fn focus_board(&self) {
+    pub fn focus_board(&self, cx: &mut App) {
         if let Some(project) = self.project() {
+            self.take_keys_when_shown(crate::workbench::TakesKeys::Board, cx);
             self.call_in_front(
                 "openTab",
                 json!({ "project": project.id, "kind": "board", "target": project.path.to_string_lossy() }),

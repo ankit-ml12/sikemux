@@ -429,7 +429,13 @@ fn view(
             None => ui::pane(cx).into_any_element(),
         },
         PaneKind::Board => match &bench.board {
-            Some(pane) => ui::pane(cx).child(pane.clone()).into_any_element(),
+            Some(pane) => {
+                if bench.claims_keys(TakesKeys::Board) {
+                    let focus = pane.read(cx).focus_handle(cx);
+                    cx.defer_in(window, move |_, window, cx| window.focus(&focus, cx));
+                }
+                ui::pane(cx).child(pane.clone()).into_any_element()
+            }
             None => ui::pane(cx).into_any_element(),
         },
         PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
