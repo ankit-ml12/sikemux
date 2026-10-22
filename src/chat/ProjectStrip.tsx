@@ -214,6 +214,7 @@ export function ProjectStrip({
                     )}
                 </div>
             )}
+            {(where || branch) && <span className="chat-project-divider" aria-hidden="true" />}
             {where ? (
                 <WorktreeToggle state={where} onToggle={worktree.toggle} />
             ) : (
