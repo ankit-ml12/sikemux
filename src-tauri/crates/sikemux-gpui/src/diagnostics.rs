@@ -4,9 +4,10 @@
 
 use std::collections::BTreeMap;
 
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, ClipboardItem, Context, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
+    div, px, relative, AnyElement, App, ClipboardItem, Context, Entity, FocusHandle, FontWeight,
+    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Value};
@@ -25,6 +26,17 @@ pub struct Diagnostics {
     error: Option<String>,
     /// Where the snapshot was last saved, once it was.
     saved: Option<String>,
+    /// Holds the keys while it is up, so the shell's shortcuts stand aside.
+    focus: Option<FocusHandle>,
+}
+
+/// Takes the keys the first time it is drawn.
+pub fn take_keys(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+    if let Some(diagnostics) = diagnostics_of(bench).filter(|shown| shown.focus.is_none()) {
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        diagnostics.focus = Some(focus);
+    }
 }
 
 fn diagnostics_of(bench: &mut Workbench) -> Option<&mut Diagnostics> {
@@ -340,6 +352,10 @@ pub fn render(
         );
     div()
         .id("diagnostics-backdrop")
+        .key_context("Diagnostics Modal")
+        .when_some(diagnostics.focus.as_ref(), |backdrop, focus| {
+            backdrop.track_focus(focus)
+        })
         .absolute()
         .inset_0()
         .p(px(24.))

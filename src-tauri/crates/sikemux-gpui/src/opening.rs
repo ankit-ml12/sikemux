@@ -160,7 +160,7 @@ impl Workbench {
 
     /// Has the core open each target, each file's cursor going to its line once it is read,
     /// and gathers what opened and the tabs the files opened in.
-    fn open_targets(
+    pub(crate) fn open_targets(
         &mut self,
         targets: Vec<CliOpenTarget>,
         behind: bool,
