@@ -341,6 +341,8 @@ struct Reading {
     /// The chat takes a sent message written again.
     editable: bool,
     editing: Option<edit::Editing>,
+    /// The host no longer keeps the turns before the first row.
+    earlier_lost: bool,
 }
 
 impl Reading {
@@ -671,10 +673,11 @@ impl Chat {
                 && head.connection == ChatConnection::Ready
                 && !head.running
         });
+        let earlier_lost = self.state.as_ref().is_some_and(|head| head.earlier_lost);
         self.reader.update(cx, |reading, cx| {
-            if (reading.running, reading.editable) != (running, editable) {
-                reading.running = running;
-                reading.editable = editable;
+            let now = (running, editable, earlier_lost);
+            if (reading.running, reading.editable, reading.earlier_lost) != now {
+                (reading.running, reading.editable, reading.earlier_lost) = now;
                 cx.notify();
             }
         });
@@ -2811,8 +2814,24 @@ fn row(
         .collect();
     let summary = opens.map(|fold| work(fold, !folded, looks));
     let carried = !message.attachments.is_empty() || !message.context.is_empty();
+    let lost = (ix == 0 && looks.reading.earlier_lost).then(|| {
+        div()
+            .w_full()
+            .pt(px(44.))
+            .pb(px(8.))
+            .flex()
+            .justify_center()
+            .child(
+                ui::text(
+                    "Earlier messages are no longer kept.",
+                    12.,
+                    FontWeight::NORMAL,
+                )
+                .text_color(Tokens::get(cx).text_tertiary),
+            )
+    });
     if parts.is_empty() && message.letters.is_empty() && summary.is_none() && !carried {
-        return div().into_any_element();
+        return div().children(lost).into_any_element();
     }
     let lettered = !message.letters.is_empty();
     let content = if lettered {
@@ -2879,7 +2898,9 @@ fn row(
     div()
         .w_full()
         .flex()
-        .justify_center()
+        .flex_col()
+        .items_center()
+        .children(lost)
         .child(
             div()
                 .w_full()
@@ -2892,7 +2913,9 @@ fn row(
                         row.py(px(5.))
                     }
                 })
-                .when(ix == 0, |row| row.pt(px(56.)))
+                .when(ix == 0 && !looks.reading.earlier_lost, |row| {
+                    row.pt(px(56.))
+                })
                 .when(ix + 1 == rows.len(), |row| row.pb(px(32.)))
                 .child(content),
         )
