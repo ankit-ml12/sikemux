@@ -3,7 +3,7 @@
 //! or in place of the view in focus, or in a terminal floating over the window.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use super::connection::blocking;
 use super::layout::At;
 use super::{Core, CoreError, CoreResult};
-use crate::protocol::{CustomCommandPlacement, SessionId};
+use crate::protocol::{CustomCommand, CustomCommandPlacement, SessionId};
+use crate::tasks::config::{self, ActionPlacement, ConfigLoad};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 const OUTPUT_LIMIT: usize = 16_000;
@@ -71,7 +72,12 @@ pub(crate) async fn run(params: CommandParams) -> CoreResult<CommandResult> {
 pub(crate) struct RunCustomParams {
     project: String,
     /// The command, by its id in the person's preferences.
-    id: String,
+    #[serde(default)]
+    id: Option<String>,
+    /// Or the project's `sikemux.json` action, by its id, which runs once the person trusts
+    /// the file.
+    #[serde(default)]
+    action: Option<String>,
     /// The tab in front and its view in focus, which a split or replacing command goes
     /// beside or in place of.
     tab: Option<String>,
@@ -90,20 +96,58 @@ pub(crate) struct Ran {
     result: Option<CommandResult>,
 }
 
+/// The project's `sikemux.json` action `id` as a command to run, once the person trusts the
+/// file, asked as a task's start asks.
+async fn project_action(core: &Arc<Core>, project: &Path, id: &str) -> CoreResult<CustomCommand> {
+    let config = {
+        let project = project.to_path_buf();
+        blocking(move || Ok(config::load(&project))).await?
+    };
+    let ConfigLoad::Valid { config, .. } = config else {
+        return Err("sikemux.json is not valid".into());
+    };
+    let action = config
+        .actions
+        .into_iter()
+        .find(|action| action.id == id)
+        .ok_or("sikemux.json has no such action")?;
+    if !super::tasks::config_trusted(core, project, None).await {
+        return Err("sikemux.json was not trusted".into());
+    }
+    Ok(CustomCommand {
+        id: format!("project.{}", action.id),
+        title: action.label,
+        detail: action.description,
+        command: action.command,
+        contexts: Vec::new(),
+        placement: match action.placement {
+            ActionPlacement::Background => CustomCommandPlacement::Background,
+            ActionPlacement::Terminal => CustomCommandPlacement::Terminal,
+            ActionPlacement::Split => CustomCommandPlacement::Split,
+            ActionPlacement::Popup => CustomCommandPlacement::Popup,
+            ActionPlacement::Replace => CustomCommandPlacement::Replace,
+        },
+    })
+}
+
 /// Runs one of the person's custom commands in `project`, as its placement
 /// says. A split or replacing command with no view to go beside opens a tab.
 pub(crate) async fn run_custom(core: &Arc<Core>, params: RunCustomParams) -> CoreResult<Ran> {
-    let command = core
-        .preferences
-        .get()
-        .custom_commands
-        .into_iter()
-        .find(|command| command.id == params.id)
-        .ok_or_else(|| CoreError::from("that custom command is no longer in Settings"))?;
     let project = core
         .workspaces
         .project_info(&params.project)
         .ok_or_else(|| CoreError::from("that project is not on this host"))?;
+    let command = match (&params.action, &params.id) {
+        (Some(action), _) => project_action(core, &project.path, action).await?,
+        (None, Some(id)) => core
+            .preferences
+            .get()
+            .custom_commands
+            .into_iter()
+            .find(|command| command.id == *id)
+            .ok_or_else(|| CoreError::from("that custom command is no longer in Settings"))?,
+        (None, None) => return Err("name a custom command or a sikemux.json action".into()),
+    };
     let beside = params.tab.zip(params.pane);
     match (command.placement, beside) {
         (CustomCommandPlacement::Background, _) => {}
