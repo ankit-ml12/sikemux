@@ -167,8 +167,8 @@ impl GitPane {
     }
 
     /// Reads which branches have an open pull request on the code host, if there is one.
-    fn read_branch_pulls(&mut self, cx: &mut Context<Self>) {
-        if self.host_of(cx).is_none() {
+    pub(super) fn read_branch_pulls(&mut self, cx: &mut Context<Self>) {
+        if self.host_of().is_none() {
             return;
         }
         let params = json!({ "project": self.repo, "state": "open" });
@@ -951,7 +951,7 @@ fn pull_chip(pane: &GitPane, branch: &str, index: usize, cx: &App) -> Option<Any
         t.live
     };
     let bench = pane.bench.clone();
-    let repo = pane.host_of(cx)?.0.repo;
+    let repo = pane.host_of()?.0.repo;
     Some(
         gpui_kit::base::Button::new(("branch-pull", index))
             .accessibility_label(SharedString::from(format!("Open pull request #{number}")))

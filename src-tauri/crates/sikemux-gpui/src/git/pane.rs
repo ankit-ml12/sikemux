@@ -307,6 +307,8 @@ pub struct GitPane {
     /// and takes no changes.
     out_of_reach: Option<SharedString>,
     pub repo: String,
+    /// The repository's code host and the account chosen for it, as the workbench last said.
+    code_host: Option<(ProjectCodeHost, Option<String>)>,
     overview: Option<Result<GitOverview, String>>,
     /// Files moved to a group before git says so, by path.
     moving: HashMap<String, Side>,
@@ -391,6 +393,21 @@ impl GitPane {
         }
     }
 
+    pub fn set_code_host(
+        &mut self,
+        host: Option<(ProjectCodeHost, Option<String>)>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.code_host == host {
+            return;
+        }
+        self.code_host = host;
+        if self.page == Page::Branches {
+            self.read_branch_pulls(cx);
+        }
+        cx.notify();
+    }
+
     pub fn new(
         core: Target,
         repo: String,
@@ -413,6 +430,7 @@ impl GitPane {
             core,
             out_of_reach: None,
             repo,
+            code_host: None,
             overview: None,
             moving: HashMap::new(),
             moved: Vec::new(),
@@ -672,25 +690,13 @@ impl GitPane {
     }
 
     /// The code host of the project this repository is in, and the account it picked there.
-    fn host_of(&self, cx: &App) -> Option<(ProjectCodeHost, Option<String>)> {
-        let bench = self.bench.upgrade()?;
-        let bench = bench.read(cx);
-        let project = bench
-            .projects()
-            .iter()
-            .filter(|project| Path::new(&self.repo).starts_with(&project.path))
-            .max_by_key(|project| project.path.as_os_str().len())?;
-        let host = project.code_host.clone()?;
-        let account = project
-            .code_hosts
-            .get(&host.host)
-            .and_then(|choice| choice.account.clone());
-        Some((host, account))
+    fn host_of(&self) -> Option<(ProjectCodeHost, Option<String>)> {
+        self.code_host.clone()
     }
 
     /// Lists the code host's notifications, or says there is no host to list them from.
     fn open_inbox(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((host, account)) = self.host_of(cx) else {
+        let Some((host, account)) = self.host_of() else {
             self.inbox = None;
             return false;
         };
@@ -708,9 +714,9 @@ impl GitPane {
 
     /// The side column's pages in their order, the inbox last while the repository's host
     /// has one.
-    fn page_order(&self, cx: &App) -> Vec<Page> {
+    fn page_order(&self) -> Vec<Page> {
         let mut order = vec![Page::Changes, Page::History, Page::Branches];
-        if self.host_of(cx).is_some() {
+        if self.host_of().is_some() {
             order.push(Page::Inbox);
         }
         order
@@ -722,7 +728,7 @@ impl GitPane {
         if !self.show_page(page, cx) {
             return;
         }
-        let order = self.page_order(cx);
+        let order = self.page_order();
         if let Some(moved) = self.slide.turn(was, page, &order) {
             track::settle(self, moved, |pane: &mut Self| &mut pane.slide, cx);
         }
@@ -743,7 +749,7 @@ impl GitPane {
 
     /// Follows a scroll over the side column's pages; true when it took it as a swipe.
     fn swipe(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
-        let order = self.page_order(cx);
+        let order = self.page_order();
         match self.slide.scroll(event, &order, &self.page) {
             Scrolled::Ignored => return false,
             Scrolled::Glided => return true,
@@ -2213,7 +2219,7 @@ impl Render for GitPane {
 
 /// The side column: the branch with its sync actions, then the changes and the commit box.
 fn side(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>) -> impl IntoElement {
-    let order = pane.page_order(cx);
+    let order = pane.page_order();
     let (shown, start, motion) = pane.slide.shown(pane.page, &order);
     let cards = shown
         .into_iter()
@@ -2451,7 +2457,7 @@ fn pages(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             "Branches — 3",
             Page::Branches,
         ))
-        .when(pane.host_of(cx).is_some(), |pages| {
+        .when(pane.host_of().is_some(), |pages| {
             pages.child(page(
                 "git-page-inbox",
                 Icon::Inbox,

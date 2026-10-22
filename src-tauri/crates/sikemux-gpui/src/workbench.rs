@@ -20,8 +20,8 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{
     AgentFace, AgentGroup, AgentStatus, DeviceView, LauncherInfo, MidTurnSend, Pane, PaneKind,
-    Preferences, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionId, SessionInfo,
-    SpaceInfo, Tab, TabRailPage, TabRailScope,
+    Preferences, ProjectCodeHost, ProjectInfo, ProjectLayout, RecentInfo, RemoteStatus, SessionId,
+    SessionInfo, SpaceInfo, Tab, TabRailPage, TabRailScope,
 };
 use tokio::sync::mpsc;
 
@@ -1549,11 +1549,30 @@ impl Workbench {
     fn tell_reach(&self, cx: &mut Context<Self>) {
         let away = self.out_of_reach();
         if let Some(pane) = &self.git {
-            pane.update(cx, |pane, cx| pane.set_out_of_reach(away.clone(), cx));
+            let host = self.code_host_of(&pane.read(cx).repo);
+            pane.update(cx, |pane, cx| {
+                pane.set_out_of_reach(away.clone(), cx);
+                pane.set_code_host(host, cx);
+            });
         }
         if let Some(area) = &self.host {
             area.update(cx, |area, cx| area.set_out_of_reach(away, cx));
         }
+    }
+
+    /// The code host of the project holding `repo`, with the account chosen for it there.
+    fn code_host_of(&self, repo: &str) -> Option<(ProjectCodeHost, Option<String>)> {
+        let project = self
+            .projects()
+            .iter()
+            .filter(|project| Path::new(repo).starts_with(&project.path))
+            .max_by_key(|project| project.path.as_os_str().len())?;
+        let host = project.code_host.clone()?;
+        let account = project
+            .code_hosts
+            .get(&host.host)
+            .and_then(|choice| choice.account.clone());
+        Some((host, account))
     }
 
     /// The repository the Git views of the project in front open on: one picked from the
@@ -3018,8 +3037,12 @@ impl Workbench {
         }
         let bench = cx.entity().downgrade();
         let away = self.out_of_reach();
+        let host = self.code_host_of(&repo);
         let pane = cx.new(|cx| GitPane::new(target, repo, bench, window, cx));
-        pane.update(cx, |pane, cx| pane.set_out_of_reach(away, cx));
+        pane.update(cx, |pane, cx| {
+            pane.set_out_of_reach(away, cx);
+            pane.set_code_host(host, cx);
+        });
         if let Some(overview) = self.reads.get("git-overview") {
             pane.update(cx, |pane, cx| pane.overview(overview, cx));
         }
