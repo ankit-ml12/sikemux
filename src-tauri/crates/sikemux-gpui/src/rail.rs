@@ -5,9 +5,9 @@ use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, WeakEntity,
-    Window,
+    div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    Styled, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
@@ -878,7 +878,8 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let chosen = bench.space.clone();
     let chip = |id: Option<String>, glyph: Option<Icon>, name: SharedString| {
         let on = chosen == id;
-        div()
+        let has_icon = glyph.is_some();
+        let chip = div()
             .id(SharedString::from(format!(
                 "space-{}",
                 id.as_deref().unwrap_or("all")
@@ -907,7 +908,18 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .text_ellipsis()
                     .child(name),
             )
-            .on_click(cx.listener(move |bench, _, _, cx| bench.show_space(id.clone(), cx)))
+            .on_click({
+                let id = id.clone();
+                cx.listener(move |bench, _, _, cx| bench.show_space(id.clone(), cx))
+            });
+        match id {
+            Some(space) => {
+                let bench = cx.entity();
+                chip.context_menu(move |popup, _, _| space_menu(popup, &bench, &space, has_icon))
+                    .into_any_element()
+            }
+            None => chip.into_any_element(),
+        }
     };
     div()
         .id("space-track")
@@ -939,6 +951,42 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             )
         }))
         .into_any_element()
+}
+
+/// What a right click on a space offers, as the Mac's space switch does.
+fn space_menu(
+    popup: PopupMenu,
+    bench: &Entity<Workbench>,
+    space: &str,
+    has_icon: bool,
+) -> PopupMenu {
+    let item = |label: &'static str,
+                icon: Icon,
+                act: fn(&mut Workbench, String, &mut Context<Workbench>)| {
+        let (bench, space) = (bench.clone(), space.to_owned());
+        PopupMenuItem::new(label)
+            .icon(icon)
+            .on_click(move |_, _, cx| {
+                bench.update(cx, |bench, cx| act(bench, space.clone(), cx));
+            })
+    };
+    let mut popup = popup.item(item("Rename…", Icon::Pencil, |bench, space, cx| {
+        bench.rename_space(space, cx)
+    }));
+    if has_icon {
+        popup = popup.item(item("Remove Icon", Icon::Trash, |bench, space, _| {
+            bench.remove_space_icon(&space)
+        }));
+    }
+    popup
+        .separator()
+        .item(item("New Space…", Icon::Plus, |bench, _, cx| {
+            bench.new_space(None, cx)
+        }))
+        .separator()
+        .item(item("Delete Space…", Icon::Trash, |bench, space, cx| {
+            bench.delete_space(space, cx)
+        }))
 }
 
 /// Who the host is signed in as, or the card that signs it in.

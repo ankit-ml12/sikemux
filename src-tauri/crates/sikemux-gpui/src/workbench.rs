@@ -2680,6 +2680,95 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Sets this host's spaces to what `edit` makes of them.
+    fn edit_spaces(&self, edit: impl FnOnce(&mut Vec<SpaceInfo>)) {
+        let mut spaces = self
+            .view
+            .as_ref()
+            .map_or_else(Vec::new, |view| view.workspace.spaces.clone());
+        edit(&mut spaces);
+        self.call("setSpaces", json!({ "spaces": spaces }));
+    }
+
+    /// Asks for the space's new name, as the Mac does.
+    pub fn rename_space(&mut self, id: String, cx: &mut Context<Self>) {
+        let current = self
+            .view
+            .as_ref()
+            .and_then(|view| view.workspace.spaces.iter().find(|space| space.id == id))
+            .map(|space| space.name.clone())
+            .unwrap_or_default();
+        self.prompt(
+            "Rename space",
+            current,
+            move |bench, name, _, _| {
+                let name: String = name.trim().chars().take(MAX_SPACE_NAME).collect();
+                if name.is_empty() {
+                    return;
+                }
+                bench.edit_spaces(|spaces| {
+                    if let Some(space) = spaces.iter_mut().find(|space| space.id == id) {
+                        space.name = name;
+                    }
+                });
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub fn remove_space_icon(&self, id: &str) {
+        self.edit_spaces(|spaces| {
+            if let Some(space) = spaces.iter_mut().find(|space| space.id == id) {
+                space.icon.clear();
+            }
+        });
+    }
+
+    /// Deletes the space once the person agrees; its projects stay open and show under All.
+    pub fn delete_space(&mut self, id: String, cx: &mut Context<Self>) {
+        let name = self
+            .view
+            .as_ref()
+            .and_then(|view| view.workspace.spaces.iter().find(|space| space.id == id))
+            .map(|space| space.name.clone())
+            .unwrap_or_default();
+        self.confirm(
+            format!("Delete “{name}”?"),
+            "Its projects stay open and show under All.",
+            "Delete",
+            true,
+            move |bench, yes, _, cx| {
+                if !yes {
+                    return;
+                }
+                bench.edit_spaces(|spaces| spaces.retain(|space| space.id != id));
+                let held: Vec<String> = bench
+                    .view
+                    .as_ref()
+                    .map(|view| {
+                        view.workspace
+                            .projects
+                            .iter()
+                            .filter(|project| project.space.as_ref() == Some(&id))
+                            .map(|project| project.id.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for project in held {
+                    bench.call(
+                        "updateProject",
+                        json!({ "id": project, "patch": { "space": null } }),
+                    );
+                }
+                if bench.space.as_ref() == Some(&id) {
+                    bench.show_space(None, cx);
+                }
+            },
+            cx,
+        );
+    }
+
     /// Shows one space's projects, or every project, and leaves a project the space hides
     /// for the first one it shows.
     pub fn show_space(&mut self, space: Option<String>, cx: &mut Context<Self>) {
