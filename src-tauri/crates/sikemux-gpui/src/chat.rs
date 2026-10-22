@@ -12,7 +12,7 @@ use gpui_kit::component::input::{Input, InputState, TextareaState};
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, relative, AnyElement, App, AppContext, Context, Entity, Focusable,
+    actions, div, px, relative, AnyElement, App, AppContext, Context, Div, Entity, Focusable,
     FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement, KeyBinding, ParentElement,
     Radians, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, StyledText,
     Subscription, Task, Transformation, WeakEntity, Window,
@@ -25,7 +25,8 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
-    LetterKind, PartTree, PermissionAsk, SubagentCard, SubagentState, WorkFold,
+    LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk, SubagentCard,
+    SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
     AgentStatus, ChatAttachment, ChatContext, ChatMark, MidTurnSend, WorkspaceAgent,
@@ -3274,6 +3275,38 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
         .into_any_element()
 }
 
+/// The box something said beside the reply sits in: a background task that ended, a notice
+/// from the agent, or a move to another account.
+fn notice_box(looks: &Drawn) -> Div {
+    div()
+        .my(px(4.))
+        .px(px(10.))
+        .py(px(4.))
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .min_w_0()
+        .border_1()
+        .border_color(looks.tints.line_soft)
+        .rounded(theme::RADIUS_2)
+        .text_size(crate::theme::ui_text(10.5))
+        .text_color(looks.quiet)
+}
+
+/// What the notice is about, giving way before its state does.
+fn notice_name(name: String, mono: bool, looks: &Drawn) -> Div {
+    div()
+        .min_w_0()
+        .truncate()
+        .when(mono, |name| name.font_family(theme::MONO))
+        .text_color(looks.ink)
+        .child(name)
+}
+
+fn notice_summary(summary: String) -> Div {
+    div().min_w_0().truncate().child(summary)
+}
+
 /// A subagent the agent started: its name, its task and how it stands, opening onto
 /// what it did. A closed card draws none of its rows, though they keep arriving.
 fn subagent(
@@ -3551,15 +3584,55 @@ fn part(
             line(Icon::Run, tool.title.clone(), tint)
         }
         ChatPart::Subagent { subagent, .. } => self::subagent(subagent, pen, looks, window, cx),
-        ChatPart::Notice { notice, .. } => line(Icon::Run, notice.name.clone(), looks.faint),
-        ChatPart::AgentNotice { notice, .. } => {
-            line(Icon::Inbox, notice.title.clone(), looks.faint)
+        ChatPart::Notice { notice, .. } => {
+            let t = Tokens::get(cx);
+            let icon = match notice.task_type.as_deref() {
+                Some("workflow") => Icon::Workflow,
+                _ => Icon::Timer,
+            };
+            let (state, tint) = match notice.state {
+                NoticeState::Completed => ("completed", looks.quiet),
+                NoticeState::Failed => ("failed", t.danger),
+                NoticeState::Stopped => ("stopped", looks.quiet),
+            };
+            notice_box(looks)
+                .child(ui::icon(icon, 12.).text_color(looks.quiet))
+                .child(notice_name(notice.name.clone(), true, looks))
+                .child(div().flex_none().text_color(tint).child(state))
+                .children(notice.summary.clone().map(notice_summary))
+                .into_any_element()
         }
-        ChatPart::Account { moved, .. } => line(
-            Icon::LogIn,
-            format!("Moved to {}", moved.label),
-            looks.faint,
-        ),
+        ChatPart::AgentNotice { notice, .. } => {
+            let t = Tokens::get(cx);
+            let (icon, tint, state) = match notice.severity {
+                NoticeSeverity::Info => (Icon::Inbox, looks.quiet, looks.quiet),
+                NoticeSeverity::Warning => (Icon::Warning, t.warn, looks.quiet),
+                NoticeSeverity::Error => (Icon::Warning, t.danger, t.danger),
+            };
+            notice_box(looks)
+                .child(ui::icon(icon, 12.).text_color(tint))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(state)
+                        .child(notice.title.clone()),
+                )
+                .children(notice.description.clone().map(notice_summary))
+                .into_any_element()
+        }
+        ChatPart::Account { moved, .. } => {
+            let why = moved
+                .from
+                .as_ref()
+                .filter(|_| moved.reason == MoveReason::Limit)
+                .map(|from| format!("{from} reached its usage limit"));
+            notice_box(looks)
+                .child(ui::icon(Icon::User, 12.).text_color(looks.quiet))
+                .child(div().flex_none().child("Moved to"))
+                .child(notice_name(moved.label.clone(), false, looks))
+                .children(why.map(notice_summary))
+                .into_any_element()
+        }
         ChatPart::Content { content, .. } => content::content(id, content, looks, cx),
     }
 }
