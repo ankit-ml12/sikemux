@@ -155,6 +155,7 @@ calls! { core, client, params;
         answer(workspace::close_agent(&core, params.agent_id)?)
     },
     "createAgentWorktree": Person => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
+    "agentReview": Watch => answer(super::agent_worktree::review(&core, parse(params)?).await?),
     "worktreeRemoval": Person => answer(super::agent_worktree::removal(&core, parse(params)?).await?),
     "removeAgentWorktree": Person => answer(super::agent_worktree::remove(&core, parse(params)?).await?),
     "agentWorktreeAt": Full => answer(super::sandbox::at(parse(params)?).await?),

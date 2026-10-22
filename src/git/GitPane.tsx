@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { defaultRepoAmong, isMissingRepository } from "./projectRepo";
+import { useProjectRepo } from "./projectRepo";
 import {
     git,
     hasUnstaged,
@@ -1980,18 +1980,10 @@ export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd:
     const fetching = useSettled(visible);
     const selectedRepo = useStore((s) => s.gitViews[paneId]?.repo ?? null);
     const listing = useStore((s) => s.gitViews[paneId]?.listing ?? false);
-    const chosen = useStore((s) => s.preferences?.defaultGitRepos[cwd]);
-    const rootOverview = useCachedResourceEnabled(fetching && !!cwd && !selectedRepo, gitOverviewR, cwd || "");
-    const settledRoot = useRef<{ cwd: string; missing: boolean } | null>(null);
-    if (rootOverview.status !== "loading") {
-        settledRoot.current = { cwd, missing: rootOverview.status === "error" && !rootOverview.data && isMissingRepository(rootOverview.error) };
-    }
-    const rootMissing = settledRoot.current?.cwd === cwd && settledRoot.current.missing;
-    const discovered = useCachedResourceEnabled(fetching && rootMissing && !selectedRepo, gitDiscoveredReposR, cwd || "");
-    const fallback = rootMissing && discovered.data ? defaultRepoAmong(chosen, discovered.data) : null;
+    const found = useProjectRepo(cwd, fetching && !selectedRepo);
 
-    if (!selectedRepo && rootMissing && (listing || !fallback)) return <GitRepoPicker paneId={paneId} root={cwd} active={fetching} />;
-    const repo = selectedRepo ?? fallback ?? cwd;
+    if (!selectedRepo && found.repos && (listing || !found.repo)) return <GitRepoPicker paneId={paneId} root={cwd} active={fetching} />;
+    const repo = selectedRepo ?? found.repo ?? cwd;
     return (
         <GitWorkbench
             paneId={paneId}

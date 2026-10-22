@@ -3,12 +3,14 @@
 //! their answers, and the agent goes back to the main checkout.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::connection::blocking;
 use super::sandbox::AgentWorktree;
+use super::{board, ports, tasks};
 use super::{Core, CoreError, CoreResult};
 use crate::git::Git;
 use crate::protocol::WorkspaceAgent;
@@ -92,6 +94,128 @@ fn busy(core: &Core, agent_id: &str) -> bool {
     core.chats
         .get(agent_id)
         .is_some_and(|chat| chat.state_now() != "idle")
+}
+
+/// What an agent's worktree shows of its work, as its review lays it out.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Review {
+    branch: String,
+    path: PathBuf,
+    /// The first line of what it put on its card as the result.
+    summary: Option<String>,
+    /// Files changed since it branched, committed or not.
+    changed: Vec<String>,
+    /// How many of them are not committed.
+    uncommitted: usize,
+    /// Test results were found.
+    tested: bool,
+    passed: u64,
+    failed: u64,
+    /// Where a server it started listens.
+    url: Option<String>,
+    /// What to tell it about the tests that fail, while some do.
+    failures: Option<String>,
+}
+
+/// The paths `git status --porcelain` lists, a rename by its new name.
+fn status_paths(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(|path| path.rsplit(" -> ").next().unwrap_or(path).to_owned())
+        .collect()
+}
+
+fn changes(worktree: &AgentWorktree) -> (Vec<String>, usize) {
+    let base = worktree.base.as_deref().unwrap_or(&worktree.start_sha);
+    let committed = Git::at(&worktree.path)
+        .text(&["diff", "--name-only", &format!("{base}...HEAD")])
+        .unwrap_or_default();
+    let uncommitted = status_paths(
+        &Git::at(&worktree.path)
+            .text(&["status", "--porcelain"])
+            .unwrap_or_default(),
+    );
+    let mut changed: Vec<String> = Vec::new();
+    for path in committed
+        .lines()
+        .map(str::to_owned)
+        .chain(uncommitted.iter().cloned())
+    {
+        if !path.is_empty() && !changed.contains(&path) {
+            changed.push(path);
+        }
+    }
+    (changed, uncommitted.len())
+}
+
+/// The tests that fail, each with its message, as a note asking the agent to fix them.
+fn failure_note(modules: &[Value]) -> Option<String> {
+    let lines: Vec<String> = modules
+        .iter()
+        .filter_map(|module| module["failures"].as_array())
+        .flatten()
+        .map(|failure| {
+            let mut line = format!(
+                "- {}: {}",
+                failure["test"].as_str().unwrap_or_default(),
+                failure["message"].as_str().unwrap_or_default()
+            );
+            if let Some(at) = failure["line"].as_u64() {
+                line.push_str(&format!(" (line {at})"));
+            }
+            line
+        })
+        .collect();
+    (!lines.is_empty()).then(|| {
+        format!(
+            "These tests fail in your worktree:\n{}\nFix them and run the tests again.",
+            lines.join("\n")
+        )
+    })
+}
+
+/// The `agentReview` call.
+pub(crate) async fn review(core: &Arc<Core>, params: WorktreeParams) -> CoreResult<Review> {
+    let (_, worktree) = worktree_of(core, &params.agent_id)?;
+    let summary = board::agent_card(core, &params.agent_id)
+        .and_then(|card| card.result)
+        .and_then(|result| {
+            result
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .map(str::to_owned)
+        });
+    let tests = tasks::module_tests(core, worktree.path.to_string_lossy().into_owned()).await?;
+    let modules = tests.as_array().cloned().unwrap_or_default();
+    let sum = |key: &str| -> u64 {
+        modules
+            .iter()
+            .filter_map(|module| module[key].as_u64())
+            .sum()
+    };
+    let (passed, failed) = (sum("passed"), sum("failed"));
+    let (changed, uncommitted, url) = {
+        let (core, worktree, agent_id) = (core.clone(), worktree.clone(), params.agent_id.clone());
+        blocking(move || {
+            let (changed, uncommitted) = changes(&worktree);
+            Ok((changed, uncommitted, ports::agent_url(&core, &agent_id)))
+        })
+        .await?
+    };
+    Ok(Review {
+        branch: worktree.branch,
+        path: worktree.path,
+        summary,
+        changed,
+        uncommitted,
+        tested: !modules.is_empty(),
+        passed,
+        failed,
+        url,
+        failures: (failed > 0).then(|| failure_note(&modules)).flatten(),
+    })
 }
 
 pub(crate) async fn removal(core: &Core, params: WorktreeParams) -> CoreResult<Removal> {

@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../state/commands", () => ({ moveAgentToProject: mocks.move }));
-vi.mock("../api/git", () => ({ git: { overview: async () => ({ status: { branch: "main" } }) } }));
+vi.mock("../api/git", () => ({
+    git: {
+        overview: async () => ({ status: { branch: "main" } }),
+        projectRepo: async (project: string) => ({ repo: project, repos: null }),
+    },
+}));
 vi.mock("../api/settings", () => ({ settingsApi: { scanProjectRoots: mocks.scan } }));
 
 const initial = getState();

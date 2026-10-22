@@ -22,7 +22,13 @@ vi.mock("../api/fs", () => {
     const fsapi = { pathKinds: async (paths: string[]) => paths.map(() => null) };
     return { fsapi, filesOn: () => fsapi };
 });
-vi.mock("../api/git", () => ({ git: { worktrees: async () => [], overview: async () => ({ status: { branch: "main" } }) } }));
+vi.mock("../api/git", () => ({
+    git: {
+        worktrees: async () => [],
+        overview: async () => ({ status: { branch: "main" } }),
+        projectRepo: async (project: string) => ({ repo: project, repos: null }),
+    },
+}));
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async (listener: (event: AcpEvent) => void) => {

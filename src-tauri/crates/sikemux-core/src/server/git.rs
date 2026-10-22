@@ -67,6 +67,18 @@ macro_rules! methods {
     (@read) => { false };
 }
 
+/// Whether a project or an agent here works inside `path`.
+fn lived_in(core: &Core, path: &Path) -> bool {
+    let projects = core.workspaces.project_paths();
+    projects.iter().any(|project| project.starts_with(path))
+        || core
+            .workspaces
+            .agent_ids()
+            .into_iter()
+            .filter_map(|id| core.workspaces.agent(&id))
+            .any(|agent| agent.cwd.starts_with(path))
+}
+
 pub(crate) async fn call(
     core: &Core,
     peer: &Peer,
@@ -74,7 +86,7 @@ pub(crate) async fn call(
     params: Value,
 ) -> CoreResult<Value> {
     if matches!(peer, Peer::Device { .. }) {
-        let asked = ["repo", "root"]
+        let asked = ["repo", "root", "project"]
             .into_iter()
             .find_map(|key| params.get(key).and_then(Value::as_str))
             .map(PathBuf::from)
@@ -84,12 +96,38 @@ pub(crate) async fn call(
             return Err("a device may only look at the workspace's projects".into());
         }
     }
+    if method == "git.worktreeRemove" {
+        let path = params
+            .get("path")
+            .and_then(Value::as_str)
+            .map(PathBuf::from);
+        if path.is_some_and(|path| lived_in(core, &path)) {
+            return Err(
+                "close the worktree's Sikemux project and agents before removing it".into(),
+            );
+        }
+    }
+    let mut params = params;
+    if method == "git.projectRepo" {
+        let chosen = params
+            .get("project")
+            .and_then(Value::as_str)
+            .and_then(|project| {
+                core.preferences
+                    .get()
+                    .default_git_repos
+                    .get(project)
+                    .cloned()
+            });
+        params["chosen"] = serde_json::json!(chosen);
+    }
     run(method, params).await
 }
 
 methods!(
     "git.status" read => status::git_status { repo: String },
     "git.discoverRepos" read => status::git_discover_repos { root: String },
+    "git.projectRepo" read => status::git_project_repo { project: String, chosen: Option<String> },
     "git.overview" read => log::git_overview { repo: String },
     "git.log" read => log::git_log { repo: String },
     "git.diff" read => changes::git_diff { repo: String, path: String, staged: bool },

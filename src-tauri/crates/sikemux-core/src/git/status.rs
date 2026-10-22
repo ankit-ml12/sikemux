@@ -413,6 +413,42 @@ pub async fn git_discover_repos(root: String) -> Result<Vec<DiscoveredRepo>, Str
     .await
 }
 
+/// The repository a project's Git views open on, and the repositories inside the project
+/// folder when it is not one itself.
+#[derive(Serialize, Debug)]
+pub struct ProjectRepo {
+    /// None while the person has to pick among several.
+    repo: Option<String>,
+    repos: Option<Vec<DiscoveredRepo>>,
+}
+
+/// The folder itself when it is in a repository, else the one the person chose among the
+/// repositories directly inside it while it is still there, else the only one.
+pub async fn git_project_repo(
+    project: String,
+    chosen: Option<String>,
+) -> Result<ProjectRepo, String> {
+    let folder = project.clone();
+    let inside = run_blocking(move || Ok::<_, String>(open_repo(&folder).is_ok())).await?;
+    if inside {
+        return Ok(ProjectRepo {
+            repo: Some(project),
+            repos: None,
+        });
+    }
+    let repos = git_discover_repos(project).await?;
+    let repo = chosen
+        .filter(|chosen| repos.iter().any(|repo| &repo.path == chosen))
+        .or_else(|| match repos.as_slice() {
+            [only] => Some(only.path.clone()),
+            _ => None,
+        });
+    Ok(ProjectRepo {
+        repo,
+        repos: Some(repos),
+    })
+}
+
 /// The repository's branch chip, read from the same cached walk as its status.
 pub(crate) async fn git_chip(repo: String) -> Result<crate::protocol::ProjectGit, String> {
     let status = git_status(repo).await?;

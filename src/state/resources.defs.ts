@@ -12,6 +12,7 @@ import {
     type GitStash,
     type GitWorktree,
     type LineOwners,
+    type ProjectRepo,
 } from "../api/git";
 import { settingsApi, type ProjectEntry } from "../api/settings";
 import { sshApi, type SshHost } from "../api/ssh";
@@ -41,6 +42,12 @@ export const gitCommitLinesR = resource({
     kind: "git.commitLines",
     fetch: (repo: string, commit: string): Promise<LineOwners> => git.commitLines(repo, commit),
     staleAfterMs: 30_000,
+});
+
+export const gitProjectRepoR = resource({
+    kind: "git.projectRepo",
+    fetch: (project: string): Promise<ProjectRepo> => git.projectRepo(project),
+    staleAfterMs: 5_000,
 });
 
 export const gitDiscoveredReposR = resource({
