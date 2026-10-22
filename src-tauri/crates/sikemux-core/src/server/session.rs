@@ -107,8 +107,8 @@ pub(crate) struct Session {
     title_pending: AtomicBool,
     /// Callers waiting for a line containing some text to show on the screen.
     line_waiters: Mutex<Vec<LineWaiter>>,
-    /// Input to type once the shell shows its prompt.
-    typed_at_prompt: Mutex<Option<Vec<u8>>>,
+    /// A draft to type once the shell shows its prompt.
+    typed_at_prompt: Mutex<Option<String>>,
     _capacity_permit: CapacityPermit,
 }
 
@@ -942,28 +942,46 @@ fn at_prompt(screen: &Screen) -> bool {
 }
 
 fn type_waiting(session: &Session) {
-    if let Some(bytes) = session.typed_at_prompt.locked().take() {
-        queue_input(session, bytes, Box::new(|_| {}));
+    let draft = session.typed_at_prompt.locked().take();
+    if let Some(draft) = draft {
+        type_draft(session, &draft);
     }
 }
 
-/// Types `bytes` into the session once it is ready for them: at its shell's
-/// prompt, or a moment after it starts when the core cannot see a prompt.
-/// `draft` as a terminal takes it pasted, to sit at the prompt unsent; none
-/// when there is nothing to paste.
-pub(crate) fn pasted(draft: &str) -> Option<Vec<u8>> {
-    let draft = draft.replace('\0', "");
-    let draft = draft.trim();
-    (!draft.is_empty()).then(|| format!("\x1b[200~{draft}\x1b[201~").into_bytes())
+/// Types `draft` to sit at the prompt unsent: pasted when the program has
+/// turned bracketed paste on, else on one line, since a bare newline would
+/// send it.
+fn type_draft(session: &Session, draft: &str) {
+    let bytes = {
+        let screen = session.screen.locked();
+        if screen.terminal.bracketed_paste() {
+            screen.terminal.encode(&TerminalInput::Paste {
+                text: draft.to_owned(),
+            })
+        } else {
+            draft.replace(['\r', '\n'], " ").into_bytes()
+        }
+    };
+    queue_input(session, bytes, Box::new(|_| {}));
 }
 
-pub(crate) fn type_when_ready(session: &Arc<Session>, bytes: Vec<u8>) {
+/// `draft` as it can be typed into a terminal; none when nothing is left.
+pub(crate) fn typable(draft: &str) -> Option<String> {
+    let draft = draft.replace('\0', "");
+    let draft = draft.trim();
+    (!draft.is_empty()).then(|| draft.to_owned())
+}
+
+/// Types `draft` into the session once it is ready for it: at its shell's
+/// prompt, or a moment after it starts when the core cannot see a prompt.
+/// How it is typed is decided then, by what the program has turned on.
+pub(crate) fn type_when_ready(session: &Arc<Session>, draft: String) {
     let screen = session.screen.locked();
     if session.shell_protocol && at_prompt(&screen) {
         drop(screen);
-        return queue_input(session, bytes, Box::new(|_| {}));
+        return type_draft(session, &draft);
     }
-    *session.typed_at_prompt.locked() = Some(bytes);
+    *session.typed_at_prompt.locked() = Some(draft);
     drop(screen);
     let wait = if session.shell_protocol {
         PROMPT_WAIT

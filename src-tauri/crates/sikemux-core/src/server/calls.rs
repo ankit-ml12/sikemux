@@ -365,8 +365,8 @@ calls! { core, client, params;
     "typeWhenReady": Full => {
         let params: TypeWhenReadyParams = parse(params)?;
         let session = core.session(params.id).ok_or("that terminal is not on this host")?;
-        if let Some(input) = params.input() {
-            super::session::type_when_ready(&session, input);
+        if let Some(draft) = super::session::typable(&params.draft) {
+            super::session::type_when_ready(&session, draft);
         }
         answer(json!({}))
     },
@@ -650,12 +650,6 @@ struct SessionParams {
 struct TypeWhenReadyParams {
     id: crate::protocol::SessionId,
     draft: String,
-}
-
-impl TypeWhenReadyParams {
-    fn input(&self) -> Option<Vec<u8>> {
-        super::session::pasted(&self.draft)
-    }
 }
 
 /// Which theme to answer for; the person's pick when none is named.

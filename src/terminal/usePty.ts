@@ -238,7 +238,7 @@ export function usePty(opts: {
         const unregisterTextInsert = host
             ? registerTextInsert(host, (text) => {
                   if (text.includes("\0")) return;
-                  void controller.write(`\x1b[200~${text} \x1b[201~`);
+                  void controller.input({ type: "paste", text: `${text} ` });
               })
             : () => {};
 
