@@ -62,6 +62,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
             recent.title.clone(),
         )
         .mark(22., ui::mark(&recent.provider, 20.))
+        .compact(bench.rail_compact())
         .child(ui::mono(age(recent.active_at), 11., cx))
         .on_click(cx.listener({
             let recent = recent.clone();
@@ -372,6 +373,7 @@ fn agent_row(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -
     )
     .mark(22., ui::agent_mark(agent, 20., cx))
     .chosen(chosen)
+    .compact(bench.rail_compact())
     .when_some(project, |row, project| {
         row.subtitle(
             div()
@@ -449,6 +451,7 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         return None;
     }
     let launcher = bench.launcher()?;
+    let compact = bench.rail_compact();
     let account = bench
         .read("usage")?
         .as_array()?
@@ -487,20 +490,20 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(px(if compact { 4. } else { 6. }))
             .children(windows.iter().map(|window| limit_row(window, cx)))
             .into_any_element()
     };
     Some(
         div()
             .flex_none()
-            .mt(px(12.))
+            .mt(px(if compact { 10. } else { 12. }))
             .mx(px(10.))
-            .mb(px(16.))
+            .mb(px(if compact { 12. } else { 16. }))
             .child(
                 div()
                     .h(px(18.))
-                    .mb(px(9.))
+                    .mb(px(if compact { 8. } else { 9. }))
                     .px(px(8.))
                     .flex()
                     .items_center()

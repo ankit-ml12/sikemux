@@ -1390,6 +1390,12 @@ impl Workbench {
     }
 
     /// The path of the project whose tasks, runs and ports the store watches.
+    /// Whether the person chose the rails' Compact density.
+    pub fn rail_compact(&self) -> bool {
+        self.read("preferences")
+            .is_some_and(|preferences| preferences["railDensity"] == "compact")
+    }
+
     pub fn watched_project(&self) -> Option<&str> {
         self.watched_project.as_deref()
     }

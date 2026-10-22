@@ -29,6 +29,7 @@ pub struct Row {
     quiet: bool,
     bold: bool,
     chosen: bool,
+    compact: bool,
     subtitle: Option<AnyElement>,
     status: Option<AnyElement>,
     right: f32,
@@ -47,6 +48,7 @@ impl Row {
             quiet: false,
             bold: false,
             chosen: false,
+            compact: false,
             subtitle: None,
             status: None,
             right: 8.,
@@ -92,6 +94,12 @@ impl Row {
 
     pub fn status(mut self, status: Option<impl IntoElement>) -> Self {
         self.status = status.map(IntoElement::into_any_element);
+        self
+    }
+
+    /// A pixel shorter on one line, as the rail's Compact density draws it.
+    pub fn compact(mut self, compact: bool) -> Self {
+        self.compact = compact;
         self
     }
 
@@ -141,7 +149,11 @@ impl RenderOnce for Row {
             .accessibility_label(self.title.clone())
             .relative()
             .w_full()
-            .h(px(if two_lines { 40. } else { 28. }))
+            .h(px(match (two_lines, self.compact) {
+                (true, _) => 40.,
+                (false, true) => 27.,
+                (false, false) => 28.,
+            }))
             .pl(px(4. + (20. - self.slot) / 2.))
             .pr(px(right))
             .flex()
