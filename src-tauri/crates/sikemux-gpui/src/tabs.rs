@@ -22,6 +22,7 @@ use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
+use crate::motion;
 use crate::ports::PortRow;
 use crate::theme::Tokens;
 use crate::ui::{self, IconButton, Tab};
@@ -51,22 +52,7 @@ fn strip_with_tabs(bench: &Workbench) -> Option<Strip> {
 /// project's tabs on a row of their own from the window's left edge to its right.
 pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let tabs: Option<Vec<_>> = strip_with_tabs(bench).map(|strip| {
-        let front = bench.tab().map(|tab| tab.id.clone());
-        bench
-            .tabs(&strip)
-            .iter()
-            .map(|tab| {
-                strip_tab(
-                    bench,
-                    &strip,
-                    tab,
-                    front.as_deref() == Some(tab.id.as_str()),
-                    cx,
-                )
-            })
-            .collect()
-    });
+    let tabs: Option<Vec<_>> = strip_with_tabs(bench).map(|strip| strip_tabs(bench, &strip, cx));
     let bar = div()
         .id("top-bar")
         .relative()
@@ -864,6 +850,44 @@ fn plain(value: &Value) -> String {
     value
         .as_str()
         .map_or_else(|| value.to_string(), str::to_owned)
+}
+
+/// The strip's tabs: one just opened widens into its place, and one just closed narrows away,
+/// unless the strip changed most of its tabs at once, as another project's does.
+fn strip_tabs(bench: &Workbench, strip: &Strip, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
+    let front = bench.tab().map(|tab| tab.id.clone());
+    let listed = bench.tabs(strip);
+    let shown = listed
+        .iter()
+        .map(|tab| (tab.id.clone(), tab.clone()))
+        .collect();
+    let lasting = motion::TAB_ARRIVAL
+        .grow
+        .duration
+        .max(motion::TAB_DEPARTURE.close.duration);
+    let mut seen = bench.strip_seen.borrow_mut();
+    let (arriving, left) = seen.update(format!("{strip:?}"), shown, 2, lasting);
+    let mut drawn: Vec<AnyElement> = listed
+        .iter()
+        .map(|tab| {
+            let active = front.as_deref() == Some(tab.id.as_str());
+            let drawn = strip_tab(bench, strip, tab, active, cx);
+            match arriving.contains(&tab.id) {
+                true => {
+                    let key = SharedString::from(format!("tab-arrive:{}", tab.id));
+                    motion::arriving(key, motion::TAB_ARRIVAL, drawn).into_any_element()
+                }
+                false => drawn,
+            }
+        })
+        .collect();
+    for gone in left {
+        let tab = strip_tab(bench, strip, &gone.item, false, cx);
+        let key = SharedString::from(format!("tab-depart:{}", gone.id));
+        let tab = motion::departing(key, gone.since, motion::TAB_DEPARTURE, tab);
+        drawn.insert(gone.at.min(drawn.len()), tab.into_any_element());
+    }
+    drawn
 }
 
 fn strip_tab(

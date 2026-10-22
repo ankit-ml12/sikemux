@@ -118,6 +118,9 @@ pub struct Workbench {
     pub folded_teams: HashSet<String>,
     /// The agent rows the rail drew last, for telling the rows that have just arrived.
     pub(crate) rail_seen: std::cell::RefCell<crate::agents::RailSeen>,
+    /// The strip's tabs as drawn last, for telling those that have just opened and closed.
+    pub(crate) strip_seen:
+        std::cell::RefCell<crate::motion::ListMemory<sikemux_wire::protocol::Tab>>,
     /// The card beside the agent row the pointer rests on.
     pub agent_card: crate::agent_card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
@@ -250,7 +253,7 @@ pub struct CiRepo {
 
 /// Whose tabs a strip holds: a project's, those of an SSH host shown instead of one, or
 /// the terminals of no project.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Strip {
     Project(String),
     Host(String),
@@ -553,6 +556,7 @@ impl Workbench {
             all_projects: false,
             folded_teams: HashSet::new(),
             rail_seen: Default::default(),
+            strip_seen: Default::default(),
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
             rail_frame: Rc::default(),

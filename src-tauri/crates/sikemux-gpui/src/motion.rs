@@ -13,8 +13,8 @@ use gpui_kit::base::motion::Interpolate;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, Animation, AnyElement, App, Bounds, Element, ElementId, GlobalElementId,
-    Hsla, InspectorElementId, IntoElement, LayoutId, ParentElement, Pixels, Rgba, SharedString,
-    Styled, Svg, Transformation, Window,
+    Hsla, InspectorElementId, InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels,
+    Rgba, SharedString, Styled, Svg, Transformation, Window,
 };
 
 /// How a value moves to a new target: over how long, on which curve, and whether it moves
@@ -409,46 +409,251 @@ pub fn folded(
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
+    fold_along(id.into(), Along::Down, shown, false, body, window, cx)
+}
+
+/// Which way a slot opens and closes: in height, as a list's row, or in width, as a tab.
+#[derive(Clone, Copy)]
+pub enum Along {
+    Down,
+    Across,
+}
+
+/// `body` in a slot `shown` of its own size along `along`, faded as much. Before its size is
+/// known it draws whole when `whole_first`, else shut.
+fn fold_along(
+    id: ElementId,
+    along: Along,
+    shown: f32,
+    whole_first: bool,
+    body: impl IntoElement,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let measured = window
-        .use_keyed_state(id.into(), cx, |_, _| Rc::new(Cell::new(0.)))
+        .use_keyed_state(id, cx, |_, _| Rc::new(Cell::new(0.)))
         .read(cx)
         .clone();
-    let height = measured.get();
-    div()
-        .flex()
-        .flex_col()
-        .overflow_hidden()
-        .opacity(shown)
-        .when(shown < 1., |fold| fold.h(px(height * shown)))
-        .child(div().flex_none().child(body))
+    let size = measured.get();
+    let open = shown >= 1. || (whole_first && size == 0.);
+    let slot = div().flex().overflow_hidden().opacity(shown);
+    let slot = match along {
+        Along::Down => slot.flex_col().when(!open, |slot| slot.h(px(size * shown))),
+        Along::Across => slot.when(!open, |slot| slot.w(px(size * shown)).min_w_0()),
+    };
+    slot.child(div().flex_none().child(body))
         .on_children_prepainted(move |bounds, _, _| {
             if let Some(body) = bounds.first() {
-                measured.set(body.size.height.into());
+                measured.set(match along {
+                    Along::Down => body.size.height.into(),
+                    Along::Across => body.size.width.into(),
+                });
             }
         })
         .into_any_element()
 }
 
-/// A row that has just come into a list, growing its slot to its own height and sliding in
-/// from the left as the Mac's agent rows arrive. It plays once, from when it first draws.
-pub fn arriving(id: impl Into<ElementId>, body: impl IntoElement + 'static) -> WithWindow {
+/// How an item comes into a list: its slot opens on `grow`, and it slides in from `slide`
+/// points to the left on its own ease.
+#[derive(Clone, Copy)]
+pub struct Arrival {
+    pub along: Along,
+    pub grow: Ease,
+    pub slide: Option<(Ease, f32)>,
+}
+
+/// How an item leaves a list: what it shows fades on `fade`, sliding `slide` points left,
+/// while its slot closes on `close`.
+#[derive(Clone, Copy)]
+pub struct Departure {
+    pub along: Along,
+    pub fade: Ease,
+    pub slide: f32,
+    pub close: Ease,
+}
+
+/// An agent's row coming into the rail, and leaving it: content gone in 50 ms, the slot
+/// closing front-loaded, so the row answers the click at once.
+pub const ROW_ARRIVAL: Arrival = Arrival {
+    along: Along::Down,
+    grow: ARRIVE,
+    slide: Some((ARRIVE_SLIDE, 6.)),
+};
+pub const ROW_DEPARTURE: Departure = Departure {
+    along: Along::Down,
+    fade: Ease::new(50, Curve::Linear),
+    slide: 6.,
+    close: Ease::new(120, Curve::Bezier(0.25, 0.8, 0.25, 1.)),
+};
+/// A tab opening in its strip by widening, and closing by narrowing away.
+pub const TAB_ARRIVAL: Arrival = Arrival {
+    along: Along::Across,
+    grow: Ease::new(160, Curve::OUT),
+    slide: None,
+};
+pub const TAB_DEPARTURE: Departure = Departure {
+    along: Along::Across,
+    fade: Ease::new(50, Curve::Linear),
+    slide: 0.,
+    close: Ease::new(120, Curve::Bezier(0.25, 0.8, 0.25, 1.)),
+};
+
+impl Arrival {
+    fn lasts(&self) -> Duration {
+        self.grow
+            .duration
+            .max(self.slide.map_or(Duration::ZERO, |(ease, _)| ease.duration))
+    }
+}
+
+/// An item that has just come into a list, as `arrival` says. It plays once, from when it
+/// first draws.
+pub fn arriving(
+    id: impl Into<ElementId>,
+    arrival: Arrival,
+    body: impl IntoElement + 'static,
+) -> WithWindow {
     let id: ElementId = id.into();
     with_window(move |window, cx| {
         let born = *window
             .use_keyed_state(id.clone(), cx, |_, _| Instant::now())
             .read(cx);
         let age = born.elapsed();
-        let share = |ease: Ease| (age.as_secs_f32() / ease.duration.as_secs_f32()).min(1.);
-        if cx.reduce_motion() || age >= ARRIVE_SLIDE.duration {
+        if cx.reduce_motion() || age >= arrival.lasts() {
             return body.into_any_element();
         }
         window.request_animation_frame();
-        let grown = ARRIVE.at(share(ARRIVE));
-        let slid = ARRIVE_SLIDE.at(share(ARRIVE_SLIDE));
-        let body = div().relative().left(px(-6. * (1. - slid))).child(body);
+        let share = |ease: Ease| ease.at((age.as_secs_f32() / ease.duration.as_secs_f32()).min(1.));
+        let body = match arrival.slide {
+            Some((ease, from)) => div()
+                .relative()
+                .left(px(-from * (1. - share(ease))))
+                .child(body)
+                .into_any_element(),
+            None => body.into_any_element(),
+        };
         let slot = ElementId::NamedChild(Arc::new(id), "slot".into());
-        folded(slot, grown, body, window, cx)
+        fold_along(
+            slot,
+            arrival.along,
+            share(arrival.grow),
+            false,
+            body,
+            window,
+            cx,
+        )
     })
+}
+
+/// An item that left its list at `since`, drawn on its way out as `departure` says; nothing
+/// once it has gone.
+pub fn departing(
+    id: impl Into<ElementId>,
+    since: Instant,
+    departure: Departure,
+    body: impl IntoElement + 'static,
+) -> WithWindow {
+    let id: ElementId = id.into();
+    with_window(move |window, cx| {
+        let age = since.elapsed().as_secs_f32();
+        let through = |ease: Ease| ease.at((age / ease.duration.as_secs_f32()).min(1.));
+        if cx.reduce_motion() || through(departure.close) >= 1. {
+            return div().into_any_element();
+        }
+        window.request_animation_frame();
+        let faded = through(departure.fade);
+        let body = div()
+            .relative()
+            .left(px(-departure.slide * faded))
+            .opacity(1. - faded)
+            .child(body);
+        let left = 1. - through(departure.close);
+        let slot = div().occlude().child(fold_along(
+            id,
+            departure.along,
+            left,
+            true,
+            body,
+            window,
+            cx,
+        ));
+        slot.into_any_element()
+    })
+}
+
+/// What a list drew last and in which view of it: the items that have just come into it, and
+/// copies of those that have just left it, with where they were, to draw on their way out.
+pub struct ListMemory<T> {
+    view: String,
+    shown: Vec<(String, T)>,
+    arrived: Vec<(String, Instant)>,
+    left: Vec<Left<T>>,
+}
+
+/// An item that left a list: where it was, what it was, and when.
+pub struct Left<T> {
+    pub at: usize,
+    pub id: String,
+    pub item: T,
+    pub since: Instant,
+}
+
+impl<T> Default for ListMemory<T> {
+    fn default() -> Self {
+        ListMemory {
+            view: String::new(),
+            shown: Vec::new(),
+            arrived: Vec::new(),
+            left: Vec::new(),
+        }
+    }
+}
+
+impl<T: Clone> ListMemory<T> {
+    /// Takes the list `shown` in `view`, and answers which items have just arrived and which
+    /// have just left, over `lasting`. A view drawn first, another view, or one that changed
+    /// more than `most` items at once is a different list, which just shows.
+    pub fn update(
+        &mut self,
+        view: String,
+        shown: Vec<(String, T)>,
+        most: usize,
+        lasting: Duration,
+    ) -> (Vec<String>, &[Left<T>]) {
+        self.arrived.retain(|(_, at)| at.elapsed() < lasting);
+        self.left.retain(|left| left.since.elapsed() < lasting);
+        let was: std::collections::HashSet<&str> =
+            self.shown.iter().map(|(id, _)| id.as_str()).collect();
+        let now: std::collections::HashSet<&str> =
+            shown.iter().map(|(id, _)| id.as_str()).collect();
+        let added = now.difference(&was).count();
+        let removed = was.difference(&now).count();
+        let kept = now.intersection(&was).count();
+        let same =
+            view == self.view && added <= most && removed <= most && (kept > 0 || was.is_empty());
+        if same {
+            let at = Instant::now();
+            let fresh: Vec<String> = now.difference(&was).map(|id| (*id).to_owned()).collect();
+            self.arrived.extend(fresh.into_iter().map(|id| (id, at)));
+            for (ix, (id, item)) in self.shown.iter().enumerate() {
+                if !now.contains(id.as_str()) {
+                    self.left.push(Left {
+                        at: ix,
+                        id: id.clone(),
+                        item: item.clone(),
+                        since: at,
+                    });
+                }
+            }
+        } else {
+            self.arrived.clear();
+            self.left.clear();
+        }
+        self.view = view;
+        self.shown = shown;
+        let arrived = self.arrived.iter().map(|(id, _)| id.clone()).collect();
+        (arrived, &self.left)
+    }
 }
 
 /// What `build` draws, given the window to draw it in; for drawing that has none to hand.
