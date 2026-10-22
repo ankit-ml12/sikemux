@@ -182,6 +182,11 @@ pub fn configure_pty_environment(
             cmd.env(key, value);
         }
     }
+    if let Some((key, value)) = sikemux_process::jobs::variable() {
+        if cmd.get_env(key).is_none() {
+            cmd.env(key, value);
+        }
+    }
 
     for key in OPTIONAL_PTY_ENV {
         cmd.env_remove(key);

@@ -58,6 +58,10 @@ On a macOS host, a new worktree also starts warm: Cargo's `target` and each `nod
 
 When an agent starts a Spring Boot, Next.js, FastAPI or Flask app and its port is taken, often by another agent's copy, Sikemux runs it on the next free port and tells the agent where.
 
+## Builds take turns
+
+When several agents build at once, their Rust builds share one pool of jobs, one fewer than the computer has cores, instead of each starting a job per core. Cargo, rustc and the C compilers that build scripts start draw from it, so builds take turns rather than slowing each other down.
+
 ## A check on every commit
 
 When `sikemux.json` names a `check` command, which you can set under **Check** on the project settings' Tasks page, Sikemux runs it on each commit as committed, in a checkout of its own beside the project, so the work agents have not committed yet never decides the result. The agents whose commits it failed after hear at once; you hear if the project stays broken for 15 minutes. Files a project builds from its other files and commits, such as generated types, go in `sikemux.json` under `generate`, with the command that makes them and the files it writes: after each commit Sikemux runs it there and commits what changed, so agents never commit them by hand.
