@@ -25,7 +25,6 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
 use crate::workbench::{Strip, Workbench};
-use sikemux_wire::protocol::PaneKind;
 
 /// One thing in a folder, as the core listed it: folders first, then by name.
 #[derive(Clone, PartialEq)]
