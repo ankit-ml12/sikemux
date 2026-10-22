@@ -886,6 +886,9 @@ impl Workbench {
             }
             Update::Read(key @ ("runs" | "ports"), value) => {
                 self.reads.insert(key, value);
+                if key == "runs" {
+                    self.place_agent_runs();
+                }
                 self.time_run(cx);
             }
             Update::Read("whatsNew", value) => crate::experience::whats_new_read(self, &value, cx),
