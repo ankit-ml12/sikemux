@@ -22,6 +22,9 @@ const FLICK: f32 = 500.;
 const RECOIL: f32 = 200.;
 /// Only the last moments before the hand lifts say how fast it was going.
 const SPEED_WINDOW: Duration = Duration::from_millis(80);
+/// The glide macOS sends after a landed swipe comes at least this often; a longer gap
+/// means it is over.
+const GLIDE_GAP: Duration = Duration::from_millis(100);
 /// How quickly a landing closes: it settles in about a quarter of a second, without bouncing.
 const SPRING_RATE: f32 = 25.;
 pub const SPRING_LONGEST: Duration = Duration::from_millis(600);
@@ -41,6 +44,8 @@ pub enum Swiped {
     Ignored,
     /// The pages follow the hand; they sit `Swipe::offset` pages along.
     Moved,
+    /// The glide after a landing, which nothing under the pages may scroll by.
+    Gliding,
     /// The hand lifted. The pages land `step` pages along (-1, 0 or 1), starting from
     /// `from` pages away from there at `speed` pages a second.
     Landed { step: i32, from: f32, speed: f32 },
@@ -55,6 +60,8 @@ pub struct Swipe {
     /// Where the pages sit, in pages from the one the swipe started on.
     pub offset: f32,
     pushes: VecDeque<(Instant, f32)>,
+    /// When the last of a landed swipe's glide came.
+    glided: Option<Instant>,
 }
 
 impl Swipe {
@@ -93,11 +100,25 @@ impl Swipe {
                 self.offset = drag_offset(self.raw, ends);
                 Swiped::Moved
             }
+            TouchPhase::Moved => {
+                let now = Instant::now();
+                match self.glided {
+                    Some(at) if now.duration_since(at) <= GLIDE_GAP => {
+                        self.glided = Some(now);
+                        Swiped::Gliding
+                    }
+                    _ => {
+                        self.glided = None;
+                        Swiped::Ignored
+                    }
+                }
+            }
             TouchPhase::Ended | TouchPhase::Cancelled if self.live => {
                 self.live = false;
                 if self.claimed != Some(true) {
                     return Swiped::Ignored;
                 }
+                self.glided = Some(Instant::now());
                 let speed = if event.touch_phase == TouchPhase::Cancelled {
                     0.
                 } else {

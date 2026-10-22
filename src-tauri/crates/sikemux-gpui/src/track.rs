@@ -1,21 +1,26 @@
-//! Things laid side by side while they move between one another: the stage's tabs and the
-//! tab rail's pages. A swipe drags them, a landing springs them onto one, and the stage
-//! pans one tab over when its tab changes some other way.
+//! Things laid side by side while they move between one another: the stage's tabs, the
+//! tab rail's pages and the Git pane's lists. A swipe drags them, a landing springs them
+//! onto one, and a switch made some other way travels one place over.
 
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::{
-    canvas, div, relative, AnimationExt, AnyElement, App, Context, DispatchPhase, ElementId,
-    InteractiveElement, IntoElement, ParentElement, ScrollWheelEvent, SharedString, Styled, Task,
-    TouchPhase, Window,
+    canvas, div, relative, AnimationExt, AnyElement, App, Context, DispatchPhase, Div, ElementId,
+    IntoElement, ParentElement, ScrollWheelEvent, Styled, Task, TouchPhase, Window,
 };
 use sikemux_wire::protocol::PaneKind;
 
 use crate::panes;
 use crate::swipe::{self, Ends, Swipe, Swiped};
 use crate::workbench::{RailPage, Workbench};
+
+thread_local! {
+    /// The innermost row under the pointer as the gesture began, which alone follows it, so
+    /// the Git pane's lists swipe without the stage's tabs swiping around them.
+    static OWNER: Cell<usize> = const { Cell::new(0) };
+}
 
 /// One row of things that slide: what a hand or a switch is doing to it now.
 pub struct Slide<K> {
@@ -57,11 +62,33 @@ type Landing<K> = (Vec<(K, i32)>, f32, f32, Option<K>);
 
 /// What a row draws: each thing and its place, where the row is, and the motion moving it
 /// with its spring.
-type Shown<K> = (Vec<(K, i32)>, f32, Option<(usize, Option<f32>)>);
+pub(crate) type Shown<K> = (Vec<(K, i32)>, f32, Option<(usize, Option<f32>)>);
+
+/// What a row did with one scroll.
+pub(crate) enum Scrolled<K> {
+    Ignored,
+    /// Taken without changing what shows.
+    Glided,
+    Moved,
+    Landed(Landing<K>),
+}
+
+fn beside<K: Clone>(order: &[K], slot: usize, way: i32) -> Option<K> {
+    slot.checked_add_signed(way as isize)
+        .and_then(|at| order.get(at))
+        .cloned()
+}
 
 impl<K: Clone + PartialEq> Slide<K> {
-    /// What the row shows: each thing and its place, where the row is, and how it moves.
-    fn shown(&self, front: K, beside: impl Fn(i32) -> Option<K>) -> Shown<K> {
+    pub(crate) fn width(&self) -> Rc<Cell<f32>> {
+        self.width.clone()
+    }
+
+    /// What the row shows with `front` in front of `order`: each thing and its place,
+    /// where the row is, and how it moves.
+    pub(crate) fn shown(&self, front: K, order: &[K]) -> Shown<K> {
+        let slot = order.iter().position(|item| *item == front).unwrap_or(0);
+        let beside = |way: i32| beside(order, slot, way);
         if let Some(motion) = &self.motion {
             return (
                 motion.shown.clone(),
@@ -78,49 +105,57 @@ impl<K: Clone + PartialEq> Slide<K> {
         (vec![(front, 0)], 0., None)
     }
 
-    /// Follows a scroll over the row, where `front` is one of `order`. Answers whether the
-    /// row took it, and the landing when the hand lifted.
-    fn scroll(
+    /// Follows a scroll over the row, where `front` is one of `order`.
+    pub(crate) fn scroll(
         &mut self,
         event: &ScrollWheelEvent,
         order: &[K],
         front: &K,
-    ) -> (bool, Option<Landing<K>>) {
+    ) -> Scrolled<K> {
         let slot = order.iter().position(|item| item == front).unwrap_or(0);
         let ends = Ends {
             previous: slot > 0,
             next: slot + 1 < order.len(),
         };
-        let beside = |way: i32| {
-            slot.checked_add_signed(way as isize)
-                .and_then(|at| order.get(at))
-                .cloned()
-        };
+        let beside = |way: i32| beside(order, slot, way);
         match self.swipe.scroll(event, self.width.get(), ends) {
-            Swiped::Ignored => (false, None),
+            Swiped::Ignored => Scrolled::Ignored,
+            Swiped::Gliding => Scrolled::Glided,
             Swiped::Moved => {
                 self.motion = None;
-                (true, None)
+                Scrolled::Moved
             }
             Swiped::Landed { step, from, speed } => {
                 if step == 0 {
                     let way = from.signum() as i32;
                     let mut shown = vec![(front.clone(), 0)];
                     shown.extend(beside(way).map(|next| (next, way)));
-                    return (true, Some((shown, from, speed, None)));
+                    return Scrolled::Landed((shown, from, speed, None));
                 }
                 let Some(target) = beside(step) else {
-                    return (true, None);
+                    return Scrolled::Glided;
                 };
                 self.front = Some(target.clone());
                 let shown = vec![(front.clone(), -step), (target.clone(), 0)];
-                (true, Some((shown, from, speed, Some(target))))
+                Scrolled::Landed((shown, from, speed, Some(target)))
             }
         }
     }
 
+    /// Springs from `was` over to `now`, for a switch made with a click or a key.
+    pub(crate) fn turn(&mut self, was: K, now: K, order: &[K]) -> Option<(usize, Duration)> {
+        self.front = Some(now.clone());
+        let at = |item: &K| order.iter().position(|kept| kept == item);
+        let (from, to) = (at(&was)?, at(&now)?);
+        if from == to {
+            return None;
+        }
+        let way = if to > from { 1 } else { -1 };
+        Some(self.travel(vec![(was, -way), (now, 0)], -way as f32, Some(0.)))
+    }
+
     /// Starts things travelling; answers the motion and how long until it has arrived.
-    fn travel(
+    pub(crate) fn travel(
         &mut self,
         shown: Vec<(K, i32)>,
         start: f32,
@@ -166,57 +201,50 @@ impl Workbench {
             return false;
         }
         let front = front.id.clone();
-        let (taken, landed) = self.track.scroll(event, &order, &front);
-        if let Some((shown, from, speed, target)) = landed {
-            if let Some(target) = target {
-                self.activate_tab(&strip, &target);
+        match self.track.scroll(event, &order, &front) {
+            Scrolled::Ignored => return false,
+            Scrolled::Glided => return true,
+            Scrolled::Moved => {}
+            Scrolled::Landed((shown, from, speed, target)) => {
+                if let Some(target) = target {
+                    self.activate_tab(&strip, &target);
+                }
+                let moved = self.track.travel(shown, from, Some(speed));
+                settle(self, moved, |bench: &mut Self| &mut bench.track, cx);
             }
-            let moved = self.track.travel(shown, from, Some(speed));
-            self.settle(moved, |bench| &mut bench.track, cx);
         }
-        if taken {
-            self.parts.redraw(&self.parts.stage, cx);
-        }
-        taken
+        self.parts.redraw(&self.parts.stage, cx);
+        true
     }
 
     /// Follows a scroll over the tab rail; true when it took it as a swipe between pages.
     fn swipe_rail(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
         let front = self.rail_page;
-        let (taken, landed) = self.rail_slide.scroll(event, &RailPage::ALL, &front);
-        if let Some((shown, from, speed, target)) = landed {
-            if let Some(target) = target {
-                self.rail_page = target;
+        match self.rail_slide.scroll(event, &RailPage::ALL, &front) {
+            Scrolled::Ignored => return false,
+            Scrolled::Glided => return true,
+            Scrolled::Moved => {}
+            Scrolled::Landed((shown, from, speed, target)) => {
+                if let Some(target) = target {
+                    self.rail_page = target;
+                }
+                let moved = self.rail_slide.travel(shown, from, Some(speed));
+                settle(self, moved, |bench: &mut Self| &mut bench.rail_slide, cx);
             }
-            let moved = self.rail_slide.travel(shown, from, Some(speed));
-            self.settle(moved, |bench| &mut bench.rail_slide, cx);
         }
-        if taken {
-            self.parts.redraw(&self.parts.tabs, cx);
-        }
-        taken
+        self.parts.redraw(&self.parts.tabs, cx);
+        true
     }
 
     /// Shows another of the tab rail's pages, springing over to it.
     pub fn show_rail_page(&mut self, page: RailPage, cx: &mut Context<Self>) {
-        if self.rail_page != page {
+        let was = std::mem::replace(&mut self.rail_page, page);
+        if was != page {
             self.keep_rails(cx);
         }
-        self.rail_page = page;
-        let Some((was, now)) = self.rail_slide.moved_to(Some(page)) else {
-            return cx.notify();
-        };
-        let at = |page: RailPage| {
-            RailPage::ALL
-                .iter()
-                .position(|kept| *kept == page)
-                .unwrap_or(0)
-        };
-        let way = if at(now) > at(was) { 1 } else { -1 };
-        let moved = self
-            .rail_slide
-            .travel(vec![(was, -way), (now, 0)], -way as f32, Some(0.));
-        self.settle(moved, |bench| &mut bench.rail_slide, cx);
+        if let Some(moved) = self.rail_slide.turn(was, page, &RailPage::ALL) {
+            settle(self, moved, |bench: &mut Self| &mut bench.rail_slide, cx);
+        }
         cx.notify();
     }
 
@@ -239,29 +267,29 @@ impl Workbench {
         let moved = self
             .track
             .travel(vec![(was, -way), (now, 0)], -way as f32, None);
-        self.settle(moved, |bench| &mut bench.track, cx);
+        settle(self, moved, |bench: &mut Self| &mut bench.track, cx);
         self.parts.redraw(&self.parts.stage, cx);
     }
+}
 
-    /// Stops drawing a motion's extra things once it has arrived.
-    fn settle<K: 'static>(
-        &mut self,
-        (id, lasts): (usize, Duration),
-        slide: fn(&mut Workbench) -> &mut Slide<K>,
-        cx: &mut Context<Self>,
-    ) {
-        let task = cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(lasts).await;
-            let _ = this.update(cx, |bench, cx| {
-                let row = slide(bench);
-                if row.motion.as_ref().is_some_and(|motion| motion.id == id) {
-                    row.motion = None;
-                    cx.notify();
-                }
-            });
+/// Stops drawing a motion's extra things once it has arrived.
+pub(crate) fn settle<T: 'static, K: 'static>(
+    owner: &mut T,
+    (id, lasts): (usize, Duration),
+    slide: fn(&mut T) -> &mut Slide<K>,
+    cx: &mut Context<T>,
+) {
+    let task = cx.spawn(async move |this, cx| {
+        cx.background_executor().timer(lasts).await;
+        let _ = this.update(cx, |owner, cx| {
+            let row = slide(owner);
+            if row.motion.as_ref().is_some_and(|motion| motion.id == id) {
+                row.motion = None;
+                cx.notify();
+            }
         });
-        slide(self).settle = Some(task);
-    }
+    });
+    slide(owner).settle = Some(task);
 }
 
 /// Whether a swipe over this tab pages between tabs; an editor or a page scrolls sideways
@@ -283,47 +311,33 @@ pub fn stage(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let order: Vec<String> = bench
-        .strip()
-        .map(|strip| {
-            bench
-                .tabs(&strip)
-                .iter()
-                .map(|tab| tab.id.clone())
-                .collect()
+    let strip = bench.strip();
+    let tabs = strip.as_ref().map_or(&[][..], |strip| bench.tabs(strip));
+    let order: Vec<String> = tabs.iter().map(|tab| tab.id.clone()).collect();
+    let (shown, start, motion) = bench.track.shown(front.id.clone(), &order);
+    let cards = shown
+        .into_iter()
+        .filter_map(|(id, place)| {
+            let tab = tabs.iter().find(|tab| tab.id == id)?;
+            Some((panes::tab(bench, tab, window, cx), place))
         })
-        .unwrap_or_default();
-    let slot = order.iter().position(|tab| *tab == front.id).unwrap_or(0);
-    let (shown, start, motion) = bench.track.shown(front.id.clone(), |way| {
-        slot.checked_add_signed(way as isize)
-            .and_then(|at| order.get(at))
-            .cloned()
-    });
-    let mut cards = Vec::new();
-    for (id, place) in shown {
-        let strip = bench.strip();
-        let tab = strip
-            .as_ref()
-            .and_then(|strip| bench.tabs(strip).iter().find(|tab| tab.id == id))
-            .cloned();
-        if let Some(tab) = tab {
-            cards.push((panes::tab(bench, &tab, window, cx), place));
-        }
-    }
+        .collect();
     let this = cx.entity().downgrade();
-    div()
-        .id(SharedString::from("stage-track"))
-        .relative()
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .overflow_hidden()
-        .child(listener(&bench.track.width, move |event, cx| {
+    row(
+        "stage-track",
+        &bench.track.width,
+        cards,
+        start,
+        motion,
+        move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_stage(event, cx))
                 .unwrap_or(false)
-        }))
-        .child(lane("stage-track", cards, start, motion))
-        .into_any_element()
+        },
+    )
+    .flex_1()
+    .min_w_0()
+    .h_full()
+    .into_any_element()
 }
 
 /// The tab rail's pages: the one shown, with the one beside it while they move.
@@ -332,33 +346,43 @@ pub fn rail(
     page: impl Fn(RailPage, &mut Context<Workbench>) -> AnyElement,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let slot = RailPage::ALL
-        .iter()
-        .position(|kept| *kept == bench.rail_page)
-        .unwrap_or(0);
-    let (shown, start, motion) = bench.rail_slide.shown(bench.rail_page, |way| {
-        slot.checked_add_signed(way as isize)
-            .and_then(|at| RailPage::ALL.get(at))
-            .copied()
-    });
+    let (shown, start, motion) = bench.rail_slide.shown(bench.rail_page, &RailPage::ALL);
     let cards = shown
         .into_iter()
         .map(|(shown, place)| (page(shown, cx), place))
         .collect();
     let this = cx.entity().downgrade();
-    div()
-        .id(SharedString::from("rail-track"))
-        .relative()
-        .flex_1()
-        .min_h_0()
-        .w_full()
-        .overflow_hidden()
-        .child(listener(&bench.rail_slide.width, move |event, cx| {
+    row(
+        "rail-track",
+        &bench.rail_slide.width,
+        cards,
+        start,
+        motion,
+        move |event, cx| {
             this.update(cx, |bench, cx| bench.swipe_rail(event, cx))
                 .unwrap_or(false)
-        }))
-        .child(lane("rail-track", cards, start, motion))
-        .into_any_element()
+        },
+    )
+    .flex_1()
+    .min_h_0()
+    .w_full()
+    .into_any_element()
+}
+
+/// A row's frame: what it shows, and the hearing of its swipes; the caller sizes it.
+pub(crate) fn row(
+    id: &'static str,
+    width: &Rc<Cell<f32>>,
+    cards: Vec<(AnyElement, i32)>,
+    start: f32,
+    motion: Option<(usize, Option<f32>)>,
+    swiped: impl Fn(&ScrollWheelEvent, &mut App) -> bool + 'static,
+) -> Div {
+    div()
+        .relative()
+        .overflow_hidden()
+        .child(listener(width, swiped))
+        .child(lane(id, cards, start, motion))
 }
 
 /// A row of things, each a row's width, sitting `start` places along and travelling to
@@ -412,11 +436,15 @@ fn listener(
         move |bounds, _, window, _| {
             width.set(f32::from(bounds.size.width));
             let swiped = swiped.clone();
+            let me = Rc::as_ptr(&width) as usize;
             window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
-                if phase == DispatchPhase::Capture
-                    && bounds.contains(&event.position)
-                    && swiped(event, cx)
-                {
+                if phase != DispatchPhase::Capture || !bounds.contains(&event.position) {
+                    return;
+                }
+                if event.touch_phase == TouchPhase::Started {
+                    OWNER.set(me);
+                }
+                if OWNER.get() == me && swiped(event, cx) {
                     cx.stop_propagation();
                 }
             });

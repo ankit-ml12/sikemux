@@ -15,8 +15,8 @@ use gpui_kit::{
     div, img, list, px, radians, relative, Action, Anchor, AnyElement, App, AppContext,
     ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Transformation,
-    WeakEntity, Window,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    Transformation, WeakEntity, Window,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -36,6 +36,7 @@ use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::track::{self, Scrolled, Slide};
 use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
 use crate::workbench::{AgentRow, Workbench};
 
@@ -321,6 +322,7 @@ pub struct GitPane {
     pub(super) review: Review,
     review_folded: bool,
     page: Page,
+    slide: Slide<Page>,
     /// Where a range of rows started, which Space stages and `d` discards at once.
     range: Option<usize>,
     /// The commit chosen in the history, by its place in the log.
@@ -424,6 +426,7 @@ impl GitPane {
             review: Review::default(),
             review_folded: false,
             page: Page::Changes,
+            slide: Slide::default(),
             range: None,
             commit: 0,
             graph: Rc::new(graph(&[])),
@@ -543,14 +546,14 @@ impl GitPane {
         self.commits = shown;
     }
 
-    /// Makes the filter field of the page in front when it shows one, and keeps its
-    /// query as the person types.
+    /// Makes the page's filter field when it shows one, and keeps its query as the person
+    /// types.
     fn filter_field(
         &mut self,
+        page: Page,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Entity<InputState>> {
-        let page = self.page;
         let filter = &self.filters[page as usize];
         if page == Page::Inbox || (page == Page::Changes && !filter.open && filter.query.is_empty())
         {
@@ -610,7 +613,7 @@ impl GitPane {
     /// Puts the keyboard in the page's filter, opening the Changes one.
     fn find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.filters[self.page as usize].open = true;
-        if let Some(field) = self.filter_field(window, cx) {
+        if let Some(field) = self.filter_field(self.page, window, cx) {
             field.update(cx, |field, cx| field.focus(window, cx));
         }
         cx.notify();
@@ -703,16 +706,58 @@ impl GitPane {
         true
     }
 
+    /// The side column's pages in their order, the inbox last while the repository's host
+    /// has one.
+    fn page_order(&self, cx: &App) -> Vec<Page> {
+        let mut order = vec![Page::Changes, Page::History, Page::Branches];
+        if self.host_of(cx).is_some() {
+            order.push(Page::Inbox);
+        }
+        order
+    }
+
+    /// Turns to another page, springing over to it.
     fn turn(&mut self, page: Page, cx: &mut Context<Self>) {
+        let was = self.page;
+        if !self.show_page(page, cx) {
+            return;
+        }
+        let order = self.page_order(cx);
+        if let Some(moved) = self.slide.turn(was, page, &order) {
+            track::settle(self, moved, |pane: &mut Self| &mut pane.slide, cx);
+        }
+    }
+
+    fn show_page(&mut self, page: Page, cx: &mut Context<Self>) -> bool {
         if page == Page::Branches && self.page != page {
             self.read_remotes(cx);
         }
         if page == Page::Inbox && !self.open_inbox(cx) {
-            return;
+            return false;
         }
         self.page = page;
         self.follow(cx);
         cx.notify();
+        true
+    }
+
+    /// Follows a scroll over the side column's pages; true when it took it as a swipe.
+    fn swipe(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) -> bool {
+        let order = self.page_order(cx);
+        match self.slide.scroll(event, &order, &self.page) {
+            Scrolled::Ignored => return false,
+            Scrolled::Glided => return true,
+            Scrolled::Moved => {}
+            Scrolled::Landed((shown, from, speed, target)) => {
+                if let Some(target) = target {
+                    self.show_page(target, cx);
+                }
+                let moved = self.slide.travel(shown, from, Some(speed));
+                track::settle(self, moved, |pane: &mut Self| &mut pane.slide, cx);
+            }
+        }
+        cx.notify();
+        true
     }
 
     /// What the review column shows: the changes while there are some and Changes is in
@@ -2127,7 +2172,6 @@ impl Render for GitPane {
             self.draft
                 .update(cx, |draft, cx| draft.set_value(written, window, cx));
         }
-        let filter = self.filter_field(window, cx);
         let reviewed = review(self, window, cx);
         let pushed =
             matches!(&self.overview, Some(Ok(overview)) if overview.status.upstream.is_some());
@@ -2151,7 +2195,7 @@ impl Render for GitPane {
             .gap(px(8.))
             .font_family(theme::UI)
             .on_key_down(cx.listener(Self::key))
-            .child(side(self, filter, cx))
+            .child(side(self, window, cx))
             .child(
                 ui::pane(cx)
                     .flex_1()
@@ -2168,13 +2212,28 @@ impl Render for GitPane {
 }
 
 /// The side column: the branch with its sync actions, then the changes and the commit box.
-fn side(
-    pane: &mut GitPane,
-    filter: Option<Entity<InputState>>,
-    cx: &mut Context<GitPane>,
-) -> impl IntoElement {
-    let count = (pane.page == Page::History).then(|| pane.log().len());
-    let filter = filter.map(|field| filter_row(&field, count, cx));
+fn side(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>) -> impl IntoElement {
+    let order = pane.page_order(cx);
+    let (shown, start, motion) = pane.slide.shown(pane.page, &order);
+    let cards = shown
+        .into_iter()
+        .map(|(page, place)| (side_page(pane, page, window, cx), place))
+        .collect();
+    let this = cx.entity().downgrade();
+    let pages_row = track::row(
+        "git-side-pages",
+        &pane.slide.width(),
+        cards,
+        start,
+        motion,
+        move |event, cx| {
+            this.update(cx, |pane, cx| pane.swipe(event, cx))
+                .unwrap_or(false)
+        },
+    )
+    .flex_1()
+    .min_h_0()
+    .w_full();
     let commands = pane.commands_open.then(|| command_log(pane, cx));
     div()
         .w(relative(0.3))
@@ -2195,17 +2254,31 @@ fn side(
                         .clone()
                         .map(|host| crate::codehost::away_note(&host, cx).mx(px(8.))),
                 )
-                .map(|side| match pane.page {
-                    Page::Changes => side.child(changes(pane, filter, cx)),
-                    Page::History => side.children(filter).child(history_list(pane, cx)),
-                    Page::Branches => side.children(filter).child(branches_page(pane, cx)),
-                    Page::Inbox => {
-                        side.child(div().flex_1().min_h_0().children(pane.inbox.clone()))
-                    }
-                })
+                .child(pages_row)
                 .child(pages(pane, cx)),
         )
         .children(commands)
+}
+
+/// One of the side column's pages, whole, with its filter.
+fn side_page(
+    pane: &mut GitPane,
+    page: Page,
+    window: &mut Window,
+    cx: &mut Context<GitPane>,
+) -> AnyElement {
+    let count = (page == Page::History).then(|| pane.log().len());
+    let filter = pane
+        .filter_field(page, window, cx)
+        .map(|field| filter_row(&field, count, cx));
+    let body = div().size_full().flex().flex_col();
+    match page {
+        Page::Changes => body.child(changes(pane, filter, cx)),
+        Page::History => body.children(filter).child(history_list(pane, cx)),
+        Page::Branches => body.children(filter).child(branches_page(pane, cx)),
+        Page::Inbox => body.child(div().flex_1().min_h_0().children(pane.inbox.clone())),
+    }
+    .into_any_element()
 }
 
 /// The git operations the pane ran, newest first.
