@@ -69,6 +69,10 @@ pub struct Desks {
     /// What each agent's desk shows: its pages, or its simulator.
     kinds: HashMap<String, DeskKind>,
     page_files: Arc<PageFiles>,
+    /// The files on each agent's desk, beside its pages, in the order they were opened there.
+    files: HashMap<String, Vec<PathBuf>>,
+    /// The file each desk shows in front of its pages, while it shows one.
+    front_file: HashMap<String, PathBuf>,
     /// The agent whose address ⌘L asked for, focused once its desk has drawn it.
     address_wanted: Option<String>,
     _hearing: Option<gpui_kit::Task<()>>,
@@ -153,6 +157,8 @@ impl Desks {
             known: HashMap::new(),
             kinds: HashMap::new(),
             page_files,
+            files: HashMap::new(),
+            front_file: HashMap::new(),
             address_wanted: None,
             _hearing: task,
             _activation: activation,
@@ -421,6 +427,61 @@ impl Workbench {
         self.desks.kinds.insert(agent.to_owned(), kind);
     }
 
+    /// Opens `path` on the agent's desk in front of its pages, its cursor at `line` and `column`
+    /// counted from one, bringing the desk out if it is closed.
+    pub(crate) fn open_file_on_desk(
+        &mut self,
+        agent: &str,
+        path: PathBuf,
+        line: Option<u32>,
+        column: Option<u32>,
+    ) {
+        let files = self.desks.files.entry(agent.to_owned()).or_default();
+        if !files.contains(&path) {
+            files.push(path.clone());
+        }
+        if let Some(line) = line {
+            self.editors.reveal(crate::editor::OpenAt {
+                path: path.clone(),
+                line: line.saturating_sub(1),
+                column: column.map(|column| column.saturating_sub(1)),
+            });
+        }
+        self.desks.front_file.insert(agent.to_owned(), path);
+        self.show_kind(agent, DeskKind::Pages);
+        if !self.desk_open_anywhere(agent) {
+            self.reveal_desk(agent);
+        }
+    }
+
+    /// Takes a file off the agent's desk; the next one comes to the front, else its pages.
+    fn close_desk_file(&mut self, agent: &str, path: &Path) {
+        let Some(files) = self.desks.files.get_mut(agent) else {
+            return;
+        };
+        files.retain(|file| file != path);
+        if self
+            .desks
+            .front_file
+            .get(agent)
+            .is_some_and(|front| front == path)
+        {
+            match files.last() {
+                Some(next) => {
+                    self.desks.front_file.insert(agent.to_owned(), next.clone());
+                }
+                None => {
+                    self.desks.front_file.remove(agent);
+                }
+            }
+        }
+    }
+
+    /// The files on every desk, which their editors keep open while no tab shows them.
+    pub(crate) fn desk_files(&self) -> impl Iterator<Item = &PathBuf> {
+        self.desks.files.values().flatten()
+    }
+
     /// Turns the agent's desk to its pages, bringing the desk out if it is closed, so the
     /// person sees what the agent does there.
     fn show_pages(&mut self, agent: &str) {
@@ -541,6 +602,16 @@ impl Workbench {
     /// Closes what the desk holding the keys shows, its page or its simulator, and says whether
     /// it had one to close; elsewhere, ⌘W closes the tab as it would anywhere else.
     pub fn close_shown_page(&mut self, window: &Window, cx: &App) -> bool {
+        let file_desk = self.front_agent().and_then(|(tab, _, agent)| {
+            let focused = self.panes.focused.as_deref()?;
+            (self.desk_of(&tab, &agent).as_deref() == Some(focused)).then_some(agent)
+        });
+        if let Some(agent) = file_desk {
+            if let Some(file) = self.desks.front_file.get(&agent).cloned() {
+                self.close_desk_file(&agent, &file);
+                return true;
+            }
+        }
         let Some(agent) = self.focused_desk(window, cx) else {
             return false;
         };
@@ -878,7 +949,7 @@ pub fn pane(
     tab: &str,
     view: &str,
     agent: &str,
-    _window: &Window,
+    window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
@@ -887,6 +958,7 @@ pub fn pane(
         return simulator_desk(bench, tab, view, agent, cx);
     }
     let strip = bench.desks.strips.get(agent);
+    let front_file = bench.desks.front_file.get(agent);
     let front = strip.and_then(|strip| {
         strip
             .tabs
@@ -925,15 +997,19 @@ pub fn pane(
                 .items_center()
                 .gap(px(4.))
                 .rounded(RADIUS_2)
-                .when(page.active, |tab| tab.bg(t.surface_chosen))
+                .when(page.active && front_file.is_none(), |tab| {
+                    tab.bg(t.surface_chosen)
+                })
                 .hover(|tab| tab.bg(t.surface_hover))
-                .text_color(if page.active {
+                .text_color(if page.active && front_file.is_none() {
                     t.text_primary
                 } else {
                     t.text_secondary
                 })
-                .on_click(cx.listener(move |bench, _, _, _| {
-                    bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab))
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench.desks.front_file.remove(&switch_agent);
+                    bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
+                    bench.parts.redraw(&bench.parts.stage, cx);
                 }))
                 .when(page.acting, |tab| {
                     tab.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
@@ -954,6 +1030,70 @@ pub fn pane(
                     .glyph(10.)
                     .on_click(cx.listener(move |bench, _, _, _| {
                         bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
+                    })),
+                ),
+        );
+    }
+    for (index, file) in bench
+        .desks
+        .files
+        .get(agent)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let shown = front_file == Some(file);
+        let label = file.file_name().map_or_else(
+            || file.to_string_lossy().into_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        let (pick_agent, pick_file) = (agent.to_owned(), file.clone());
+        let (close_agent, close_file) = (agent.to_owned(), file.clone());
+        let id = format!("{agent}-{index}");
+        head = head.child(
+            div()
+                .id(SharedString::from(format!("desk-file-{id}")))
+                .min_w_0()
+                .max_w(px(200.))
+                .h(px(26.))
+                .pl(px(8.))
+                .pr(px(2.))
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .rounded(RADIUS_2)
+                .when(shown, |tab| tab.bg(t.surface_chosen))
+                .hover(|tab| tab.bg(t.surface_hover))
+                .text_color(if shown {
+                    t.text_primary
+                } else {
+                    t.text_secondary
+                })
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench
+                        .desks
+                        .front_file
+                        .insert(pick_agent.clone(), pick_file.clone());
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                }))
+                .child(ui::icon(Icon::File, 11.))
+                .child(
+                    ui::text(label, 12., FontWeight::NORMAL)
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap(),
+                )
+                .child(
+                    IconButton::new(
+                        SharedString::from(format!("desk-file-close-{id}")),
+                        Icon::Close,
+                        "Close file",
+                    )
+                    .glyph(10.)
+                    .on_click(cx.listener(move |bench, _, _, cx| {
+                        bench.close_desk_file(&close_agent, &close_file);
+                        bench.parts.redraw(&bench.parts.stage, cx);
                     })),
                 ),
         );
@@ -1006,6 +1146,19 @@ pub fn pane(
                 .min_w_0()
                 .child(Input::new(&page.address).appearance(false))
         }));
+    if let Some(file) = front_file {
+        let editor = crate::editor::pane(bench, &cx.entity(), &file.to_string_lossy(), window, cx);
+        return ui::pane(cx)
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(head)
+                    .child(div().flex_1().min_h_0().child(editor)),
+            )
+            .into_any_element();
+    }
     let body = div()
         .flex_1()
         .min_h_0()

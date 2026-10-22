@@ -1191,6 +1191,12 @@ pub fn keep(bench: &mut Workbench) {
             files_in(&place, &tab.pane, &mut shown);
         }
     }
+    let place = bench.place();
+    shown.extend(
+        bench
+            .desk_files()
+            .map(|path| FileKey::new(place.clone(), path.clone())),
+    );
     let closed: Vec<FileKey> = bench
         .editors
         .viewers

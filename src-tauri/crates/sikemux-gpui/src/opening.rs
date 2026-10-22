@@ -103,6 +103,14 @@ impl Workbench {
         }
         let kind = params["kind"].as_str().unwrap_or_default().to_owned();
         match kind.as_str() {
+            "file" if request.agent_id.is_some() => {
+                let path = params["path"].as_str().unwrap_or_default().to_owned();
+                let line = params["line"].as_u64().map(|line| line as u32);
+                let agent = request.agent_id.clone().unwrap_or_default();
+                self.open_file_on_desk(&agent, PathBuf::from(&path), line, None);
+                self.parts.redraw(&self.parts.stage, cx);
+                answer(Ok(json!({ "kind": kind, "agentId": agent, "path": path })));
+            }
             "file" => {
                 let path = params["path"].as_str().unwrap_or_default().to_owned();
                 let target = CliOpenTarget {
