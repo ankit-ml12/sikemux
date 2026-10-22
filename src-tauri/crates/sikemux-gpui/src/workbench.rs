@@ -1142,17 +1142,22 @@ impl Workbench {
         let Some(chat) = self.chats.get_mut(&agent) else {
             return;
         };
+        let mut returned = false;
         if let Some(composing) = chat.composer.as_mut() {
             let empty = composing.draft.read(cx).value().trim().is_empty();
-            if let Some(returned) = composing.returned.take().filter(|_| empty) {
-                composing.draft.update(cx, |draft, cx| {
-                    draft.set_value(returned.content, window, cx)
-                });
-                composing.attachments = returned.attachments;
-                composing.context = returned.context;
-                composing.tracked_context = returned.tracked_context;
+            if let Some(held) = composing.returned.take().filter(|_| empty) {
+                composing
+                    .draft
+                    .update(cx, |draft, cx| draft.set_value(held.content, window, cx));
+                composing.attachments = held.attachments;
+                composing.context = held.context;
+                composing.tracked_context = held.tracked_context;
+                returned = true;
             }
             composing.take_arrived(window, cx);
+        }
+        if returned {
+            self.keep_draft(&agent, cx);
         }
         self.focus_draft(&agent, window, cx);
         let Some(chat) = self.chats.get_mut(&agent) else {

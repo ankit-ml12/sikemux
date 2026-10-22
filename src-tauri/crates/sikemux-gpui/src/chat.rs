@@ -1621,6 +1621,7 @@ fn recall<A: gpui::Action>(
             let typed = draft.read(cx).value().to_string();
             let prompt = chat.recall(older, &typed, cx)?;
             draft.update(cx, |draft, cx| draft.set_value(prompt, window, cx));
+            bench.typed_draft(&agent, cx);
             Some(())
         });
         if !matches!(brought, Ok(Some(()))) {
