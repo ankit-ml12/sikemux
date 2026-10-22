@@ -114,7 +114,10 @@ pub fn draw(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workben
     let this = cx.entity();
     match &bench.experience {
         Some(Experience::Welcome(_)) => welcome::render(bench, &this, window, cx),
-        Some(Experience::WhatsNew(_)) => whats_new::render(bench, &this, window, cx),
+        Some(Experience::WhatsNew(_)) => {
+            whats_new::take_keys(bench, window, cx);
+            whats_new::render(bench, &this, window, cx)
+        }
         Some(Experience::Diagnostics(_)) => {
             diagnostics::take_keys(bench, window, cx);
             diagnostics::render(bench, &this, cx)

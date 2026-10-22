@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, relative, AnyElement, App, Context, Entity, FontWeight, Hsla, Image, ImageFormat,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, img, px, relative, AnyElement, App, Context, Entity, FocusHandle, FontWeight, Hsla, Image,
+    ImageFormat, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 use gpui_transcript::{Markdown, Pen, Style};
 use serde::Deserialize;
@@ -37,6 +37,17 @@ pub struct WhatsNew {
     markdown: Option<Rc<Markdown>>,
     avatars: HashMap<String, Arc<Image>>,
     everyone: bool,
+    /// Holds the keys while it is up, so Escape closes it and the shell's shortcuts stand aside.
+    focus: Option<FocusHandle>,
+}
+
+/// Takes the keys the first time it is drawn.
+pub fn take_keys(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+    if let Some(news) = news_of(bench).filter(|news| news.focus.is_none()) {
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        news.focus = Some(focus);
+    }
 }
 
 impl WhatsNew {
@@ -282,6 +293,7 @@ pub fn render(
     div()
         .id("whats-new-backdrop")
         .key_context("WhatsNew Modal")
+        .when_some(news.focus.as_ref(), |backdrop, focus| backdrop.track_focus(focus))
         .absolute()
         .inset_0()
         .p(px(24.))
