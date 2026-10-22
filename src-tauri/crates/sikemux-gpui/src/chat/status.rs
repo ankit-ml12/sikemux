@@ -25,6 +25,8 @@ use crate::workbench::{AgentRow, Workbench};
 /// chat around it as it was.
 pub struct Activity {
     provider: String,
+    /// The chat's agent as the pane last drew it, whose face the line wears.
+    agent: Option<AgentRow>,
     label: Option<SharedString>,
     since: Instant,
     _ticking: Option<Task<()>>,
@@ -34,9 +36,20 @@ impl Activity {
     pub fn new(provider: &str) -> Self {
         Self {
             provider: provider.to_owned(),
+            agent: None,
             label: None,
             since: Instant::now(),
             _ticking: None,
+        }
+    }
+
+    pub fn wear(&mut self, agent: &AgentRow, cx: &mut Context<Self>) {
+        let worn = self.agent.as_ref().is_some_and(|worn| {
+            worn.id == agent.id && worn.face == agent.face && worn.group == agent.group
+        });
+        if !worn {
+            self.agent = Some(agent.clone());
+            cx.notify();
         }
     }
 
@@ -74,7 +87,10 @@ impl Render for Activity {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(ui::mark(&self.provider, 17.))
+                .child(match &self.agent {
+                    Some(agent) => ui::agent_mark(agent, 21., cx),
+                    None => ui::mark(&self.provider, 21.),
+                })
                 .child(div().min_w_0().text_size(crate::theme::ui_text(13.)).child(
                     crate::ui::shimmer::shimmer(format!("activity:{}", cx.entity_id()), label),
                 ))

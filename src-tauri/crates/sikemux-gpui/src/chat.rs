@@ -1465,6 +1465,8 @@ pub fn pane(
         .as_ref()
         .filter(|_| chat.is_empty(cx))
         .and_then(|switch| crate::worktree_switch::note(switch, cx));
+    chat.activity_line
+        .update(cx, |line, cx| line.wear(agent, cx));
     chat.reader.update(cx, |reading, cx| {
         if reading.worktree != worktree {
             reading.worktree = worktree;
