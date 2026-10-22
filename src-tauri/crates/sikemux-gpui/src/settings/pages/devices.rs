@@ -45,6 +45,7 @@ fn make(bench: &mut Workbench, _: &mut Window, cx: &mut Context<Workbench>) {
     }
     let _ = bench.asks.send(Ask::Remote(RemoteAsk::Status));
     read_links(bench, cx);
+    bench.parts.redraw(&bench.parts.stage, cx);
 }
 
 fn fields_of(bench: &mut Workbench) -> Option<&mut Fields> {

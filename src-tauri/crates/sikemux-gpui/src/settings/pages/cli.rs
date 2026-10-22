@@ -20,6 +20,7 @@ fn ask(bench: &mut Workbench, method: &'static str, cx: &mut Context<Workbench>)
     };
     settings.pages.cli.get_or_insert(Value::Null);
     settings.pages.cli_busy = method == "installCli";
+    bench.parts.redraw(&bench.parts.stage, cx);
     let asks = bench.asks.clone();
     cx.spawn(async move |bench, cx| {
         let answer = core::request(&asks, method, json!({})).await;
