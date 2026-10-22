@@ -635,30 +635,33 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
         .as_ref()
         .map(|board| (&board.settings, board.running));
     let auto_on = settings.is_some_and(|(settings, _)| settings.auto);
-    let auto_label = match settings {
-        Some((settings, running)) if settings.auto => {
-            format!("Auto · {running} of {}", settings.slots)
-        }
-        _ => "Auto".to_owned(),
-    };
+    let auto_count = settings
+        .filter(|(settings, _)| settings.auto)
+        .map(|(settings, running)| format!("{running} of {}", settings.slots));
+    let auto_tip = pane
+        .board
+        .as_ref()
+        .and_then(|board| board.auto_note.clone())
+        .unwrap_or_else(|| if auto_on { "Auto is on" } else { "Auto is off" }.to_owned());
     let header_button =
         |id: &'static str, label: String, icon: Option<Icon>, pressed: bool, open: Open| {
-            let mut button = Button::new(id, label, Variant::Outline);
+            let mut button = Button::new(id, label, Variant::Outline).pressed(pressed);
             if let Some(icon) = icon {
                 button = button.icon(icon);
             }
-            let _ = pressed;
             button.on_click(cx.listener(move |pane, _, window, cx| {
                 let next = (pane.open != Some(open)).then_some(open);
                 pane.select(next, window, cx);
             }))
         };
     div()
+        .flex_none()
+        .min_h(px(45.))
         .flex()
         .items_center()
         .gap(px(8.))
         .px(px(12.))
-        .py(px(8.))
+        .bg(crate::see_through::ground(t.surface, cx))
         .border_b_1()
         .border_color(t.border)
         .child(
@@ -678,22 +681,22 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
         )
         .child(div().flex_1())
         .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(div().size(px(6.)).rounded_full().bg(if auto_on {
-                    t.live
-                } else {
-                    t.text_tertiary
-                }))
-                .child(header_button(
-                    "board-auto",
-                    auto_label,
-                    None,
-                    pane.open == Some(Open::Auto),
-                    Open::Auto,
-                )),
+            header_button(
+                "board-auto",
+                match auto_count {
+                    Some(count) => format!("Auto {count}"),
+                    None => "Auto".to_owned(),
+                },
+                None,
+                pane.open == Some(Open::Auto),
+                Open::Auto,
+            )
+            .lead(div().size(px(6.)).rounded_full().bg(if auto_on {
+                t.live
+            } else {
+                t.text_tertiary
+            }))
+            .tooltip(auto_tip),
         )
         .child(header_button(
             "board-messages",
@@ -746,7 +749,9 @@ fn body(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
         .flex_1()
         .min_h_0()
         .overflow_y_scroll()
-        .p(px(12.))
+        .px(px(12.))
+        .pt(px(10.))
+        .pb(px(12.))
         .flex()
         .flex_col()
         .gap(px(14.))
@@ -877,7 +882,8 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
                 .flex()
                 .flex_col()
                 .gap(px(6.))
-                .p(px(6.))
+                .px(px(6.))
+                .when(!cards.is_empty(), |column| column.pb(px(6.)))
                 .rounded(theme::RADIUS_3)
                 .bg(t.surface_sunken)
                 .when(key != "needs", |column| {
@@ -889,10 +895,12 @@ fn columns(pane: &BoardPane, ids: &[u64], cx: &mut Context<BoardPane>) -> impl I
                 })
                 .child(
                     div()
+                        .flex_none()
+                        .h(px(34.))
                         .flex()
                         .items_center()
                         .justify_between()
-                        .px(px(4.))
+                        .px(px(6.))
                         .child(ui::caps(name, cx))
                         .child(ui::meta(cards.len().to_string(), cx)),
                 )

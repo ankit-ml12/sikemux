@@ -4,9 +4,9 @@ use gpui_kit::base::{Button as BaseButton, Selectable};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Radians, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Transformation, Window,
+    div, px, AnyElement, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement,
+    IntoElement, ParentElement, Radians, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Transformation, Window,
 };
 
 use super::{icon, kbd, text};
@@ -213,6 +213,9 @@ pub struct Button {
     keys: Option<SharedString>,
     on_click: Option<OnClick>,
     disabled: bool,
+    pressed: bool,
+    lead: Option<AnyElement>,
+    tooltip: Option<SharedString>,
 }
 
 /// A button can open a popover; it looks the same open or closed.
@@ -236,6 +239,9 @@ impl Button {
             keys: None,
             on_click: None,
             disabled: false,
+            pressed: false,
+            lead: None,
+            tooltip: None,
         }
     }
 
@@ -247,6 +253,23 @@ impl Button {
     /// Dimmed, and does nothing when clicked.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Lifted as a chosen item is, while what it opens is open.
+    pub fn pressed(mut self, pressed: bool) -> Self {
+        self.pressed = pressed;
+        self
+    }
+
+    /// Something drawn before the label in place of an icon, such as a status dot.
+    pub fn lead(mut self, lead: impl IntoElement) -> Self {
+        self.lead = Some(lead.into_any_element());
+        self
+    }
+
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
         self
     }
 
@@ -323,9 +346,17 @@ impl RenderOnce for Button {
         } else {
             t.text_primary
         };
+        let base = base
+            .when(self.pressed, |button| {
+                button.bg(t.surface_chosen).text_color(t.text_primary)
+            })
+            .when_some(self.tooltip, |button, tip| {
+                button.tooltip(super::tooltip(tip))
+            });
         base.when_some(on_click, |button, handler| {
             button.on_click(move |event, window, cx| handler(event, window, cx))
         })
+        .children(self.lead)
         .children(self.icon.map(|icon_name| {
             icon(icon_name, glyph)
                 .text_color(rest)

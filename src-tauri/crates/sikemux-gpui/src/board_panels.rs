@@ -53,11 +53,14 @@ pub(crate) fn panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Option<Any
 fn head(title: AnyElement, cx: &mut Context<BoardPane>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     div()
+        .flex_none()
+        .min_h(px(45.))
         .flex()
         .items_center()
         .gap(px(6.))
-        .px(px(14.))
-        .py(px(10.))
+        .pl(px(12.))
+        .pr(px(8.))
+        .bg(crate::see_through::ground(t.surface, cx))
         .border_b_1()
         .border_color(t.border)
         .child(title)
