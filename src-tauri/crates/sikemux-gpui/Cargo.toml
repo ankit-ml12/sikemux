@@ -96,6 +96,76 @@ opt-level = 3
 [profile.release.package.gpui-transcript]
 opt-level = 3
 
+# Terminal output, serialization and search stay at full speed, as in src-tauri's profile.
+[profile.release.package.sikemux-pty]
+opt-level = 3
+[profile.release.package.sikemux-wire]
+opt-level = 3
+[profile.release.package.vte]
+opt-level = 3
+[profile.release.package.unicode-width]
+opt-level = 3
+[profile.release.package.arrayvec]
+opt-level = 3
+[profile.release.package.itoa]
+opt-level = 3
+[profile.release.package.memchr]
+opt-level = 3
+[profile.release.package.serde]
+opt-level = 3
+[profile.release.package.serde_core]
+opt-level = 3
+[profile.release.package.serde_json]
+opt-level = 3
+[profile.release.package.ryu]
+opt-level = 3
+[profile.release.package.zmij]
+opt-level = 3
+[profile.release.package.indexmap]
+opt-level = 3
+[profile.release.package.hashbrown]
+opt-level = 3
+[profile.release.package.tokio]
+opt-level = 3
+[profile.release.package.bytes]
+opt-level = 3
+[profile.release.package.mio]
+opt-level = 3
+[profile.release.package.regex]
+opt-level = 3
+[profile.release.package.regex-automata]
+opt-level = 3
+[profile.release.package.aho-corasick]
+opt-level = 3
+[profile.release.package.grep-searcher]
+opt-level = 3
+[profile.release.package.grep-regex]
+opt-level = 3
+[profile.release.package.grep-matcher]
+opt-level = 3
+[profile.release.package.ignore]
+opt-level = 3
+[profile.release.package.globset]
+opt-level = 3
+[profile.release.package.bstr]
+opt-level = 3
+[profile.release.package.portable-pty]
+opt-level = 3
+[profile.release.package.ring]
+opt-level = 3
+[profile.release.package.base64]
+opt-level = 3
+[profile.release.package.rayon]
+opt-level = 3
+[profile.release.package.rayon-core]
+opt-level = 3
+[profile.release.package.crossbeam-deque]
+opt-level = 3
+[profile.release.package.crossbeam-epoch]
+opt-level = 3
+[profile.release.package.crossbeam-utils]
+opt-level = 3
+
 # GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.
 [patch.crates-io]
 gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "3c613611f4cd85c8bb631aac24824c51fb013ea0" }
