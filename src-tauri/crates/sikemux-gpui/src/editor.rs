@@ -248,6 +248,18 @@ pub fn pane(
             Some(_) => "FileEditor peek",
             None => CONTEXT,
         })
+        .capture_any_mouse_down({
+            let key = key.clone();
+            window.listener_for(&this, move |bench, event: &gpui_kit::MouseDownEvent, _, cx| {
+                let held = event.modifiers;
+                let lsp_click = event.button == gpui_kit::MouseButton::Left
+                    && held.secondary()
+                    && (held.shift || held.alt);
+                if lsp_click && lsp::navigate(bench, &key, held.shift, cx) {
+                    cx.stop_propagation();
+                }
+            })
+        })
         .on_action(
             window.listener_for(&this, move |bench, _: &Save, window, cx| {
                 save(bench, &saving, window, cx)

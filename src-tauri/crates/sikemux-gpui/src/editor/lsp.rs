@@ -1,16 +1,18 @@
 //! Language servers for the editor's files, run by the core: a file opens
 //! with its language's server once the person trusts its project, stays in
-//! step as it is edited, and answers where a symbol is defined.
+//! step as it is edited, and answers where a symbol is defined, implemented
+//! and used.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Duration;
 
 use gpui_kit::component::input::{DefinitionProvider, Rope, RopeExt};
+use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, AppContext, Context, Task, Window};
-use lsp_types::{LocationLink, Range, ShowDocumentParams, Uri};
+use lsp_types::{LocationLink, Position, Range, ShowDocumentParams, Uri};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -38,6 +40,8 @@ pub(super) struct Served {
     version: u32,
     /// Sends the text to the server once typing pauses.
     sync: Task<()>,
+    /// The symbol last held under the pointer with ⌘, which a ⌘-click then acts on.
+    hovered: Rc<Cell<Option<Position>>>,
 }
 
 impl Served {
@@ -163,12 +167,14 @@ fn attach_trusted(
                 path: name,
                 version: 1,
                 sync: Task::ready(()),
+                hovered: Rc::new(Cell::new(None)),
             };
             let found = Rc::new(RefCell::new(Vec::new()));
             let definitions = Rc::new(Definitions {
                 asks: bench.asks.clone(),
                 document: served.document(),
                 found: found.clone(),
+                hovered: served.hovered.clone(),
             });
             let (this, current) = (cx.weak_entity(), path.clone());
             document.state.update(cx, |state, _| {
@@ -358,6 +364,7 @@ struct Definitions {
     asks: UnboundedSender<Ask>,
     document: Value,
     found: Rc<RefCell<Vec<LocationLink>>>,
+    hovered: Rc<Cell<Option<Position>>>,
 }
 
 impl DefinitionProvider for Definitions {
@@ -369,6 +376,7 @@ impl DefinitionProvider for Definitions {
         cx: &mut App,
     ) -> Task<anyhow::Result<Vec<LocationLink>>> {
         let position = text.offset_to_position(offset);
+        self.hovered.set(Some(position));
         let (asks, document) = (self.asks.clone(), self.document.clone());
         let asked = cx.background_spawn(async move {
             for kind in KINDS {
@@ -398,6 +406,53 @@ impl DefinitionProvider for Definitions {
             Ok(links)
         })
     }
+}
+
+/// Where a ⌘⇧-click's symbol is used, or a ⌥⌘-click's is implemented, as on the Mac: uses are
+/// always listed, and one implementation is gone to. Says whether the click was the server's.
+pub(super) fn navigate(
+    bench: &mut Workbench,
+    key: &FileKey,
+    references: bool,
+    cx: &mut Context<Workbench>,
+) -> bool {
+    let Some(served) = bench
+        .editors
+        .open
+        .get(key)
+        .and_then(|document| document.served.as_ref())
+    else {
+        return false;
+    };
+    let Some(position) = served.hovered.get() else {
+        return false;
+    };
+    let kind = if references { "references" } else { "implementation" };
+    let mut params = served.document();
+    params["line"] = position.line.into();
+    params["character"] = position.character.into();
+    params["kind"] = kind.into();
+    let asked = core::request(&bench.asks, "lsp.locations", params);
+    let key = key.clone();
+    cx.spawn(async move |bench, cx| {
+        let found = asked.await.unwrap_or_default();
+        let mut places: Vec<OpenAt> = found
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(link)
+            .filter_map(|link| place(&link))
+            .collect();
+        places.dedup_by(|a, b| a.path == b.path && a.line == b.line && a.column == b.column);
+        let _ = bench.update(cx, |bench, cx| match (references, places.len()) {
+            (_, 0) => bench.notify(Notification::info(format!("No {kind} found")), cx),
+            (false, 1) => super::go(bench, places.remove(0), cx),
+            (true, _) => super::peek(bench, &key, "References", places, cx),
+            (false, _) => super::peek(bench, &key, "Implementations", places, cx),
+        });
+    })
+    .detach();
+    true
 }
 
 fn link(location: &Value) -> Option<LocationLink> {
