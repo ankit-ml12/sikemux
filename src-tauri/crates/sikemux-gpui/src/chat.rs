@@ -3456,7 +3456,7 @@ fn row(
                 self::subagent(card, pen, looks, window, cx)
             }
             Shown::Part(part) => self::part(row, part, user, pen, looks, window, cx),
-            Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks),
+            Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks, window, cx),
         })
         .collect();
     let summary = opens.map(|fold| work(fold, !folded, looks, cx));
@@ -4016,6 +4016,8 @@ fn subagent(
                         &calls,
                         live && ix + 1 == rows.len() && at + 1 == count,
                         looks,
+                        window,
+                        cx,
                     ),
                 });
             }

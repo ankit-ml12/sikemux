@@ -7,9 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, Action, AnyElement, App, ClipboardItem, Div, HighlightStyle, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, StyledText,
+    div, px, relative, Action, AnyElement, App, ClipboardItem, Div, ElementId, HighlightStyle,
+    Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, StyledText, Window,
 };
 use sikemux_wire::chat::{
     ChatPart, DiffLine, DiffSummary, OutputSummary, ToolAction, ToolCall, ToolDetail, ToolRow,
@@ -255,7 +255,13 @@ fn chevron(id: impl Into<SharedString>, open: bool, tint: Hsla) -> impl IntoElem
 
 /// A run of calls: a line counting them and how long they took, and while the
 /// agent is still adding to it, or the reader opened it, each call's row.
-pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
+pub fn run(
+    parts: &[&ChatPart],
+    live: bool,
+    looks: &Drawn,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let calls: Vec<Call> = parts.iter().filter_map(|part| Call::of(part)).collect();
     let Some(first) = parts.first() else {
         return div().into_any_element();
@@ -321,11 +327,14 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
             open,
             looks.quiet,
         )))
-        .on_click(move |_, _, cx| {
-            reader.update(cx, |reading, cx| {
-                reading.tools.runs.insert(key.clone(), !open);
-                cx.notify();
-            })
+        .on_click({
+            let key = key.clone();
+            move |_, _, cx| {
+                reader.update(cx, |reading, cx| {
+                    reading.tools.runs.insert(key.clone(), !open);
+                    cx.notify();
+                })
+            }
         });
     let kind = calls
         .iter()
@@ -333,18 +342,38 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
         .max()
         .unwrap_or(4)
         .clamp(4, 16);
-    let rows = calls
-        .iter()
-        .enumerate()
-        .map(|(ix, call)| row(call, ix + 1 == count, kind, looks));
+    let ease = if open {
+        motion::UNFOLD
+    } else {
+        motion::FOLD_AWAY
+    };
+    let shown = motion::follow(
+        ElementId::Name(format!("run-fold:{key}").into()),
+        if open { 1. } else { 0. },
+        ease,
+        window,
+        cx,
+    );
+    let body = (shown > 0.).then(|| {
+        let rows = calls
+            .iter()
+            .enumerate()
+            .map(|(ix, call)| row(call, ix + 1 == count, kind, looks));
+        let rows = div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows);
+        motion::folded(
+            ElementId::Name(format!("run-body:{key}").into()),
+            shown,
+            rows,
+            window,
+            cx,
+        )
+    });
     div()
         .my(px(7.))
         .font_family(theme::MONO)
         .text_size(crate::theme::ui_text(11.))
         .child(div().flex().child(sum))
-        .when(open, |run| {
-            run.child(div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows))
-        })
+        .children(body)
         .into_any_element()
 }
 

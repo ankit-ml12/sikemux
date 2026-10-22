@@ -3,15 +3,18 @@
 //! What the Mac stills while macOS asks for less motion is stilled here too; the few it lets
 //! move anyway, here as there, say so with `Ease::moves_when_reduced`.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::base::animation::cubic_bezier;
 use gpui_kit::base::motion::Interpolate;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    radians, Animation, AnyElement, App, Bounds, Element, ElementId, GlobalElementId, Hsla,
-    InspectorElementId, IntoElement, LayoutId, Pixels, Rgba, SharedString, Svg, Transformation,
-    Window,
+    div, px, radians, Animation, AnyElement, App, Bounds, Element, ElementId, GlobalElementId,
+    Hsla, InspectorElementId, IntoElement, LayoutId, ParentElement, Pixels, Rgba, SharedString,
+    Styled, Svg, Transformation, Window,
 };
 
 /// How a value moves to a new target: over how long, on which curve, and whether it moves
@@ -102,6 +105,10 @@ pub const SECOND_RING: Duration = Duration::from_millis(380);
 pub fn entrance(ease: Ease) -> Animation {
     Animation::new(ease.duration).with_easing(move |t| ease.at(t))
 }
+
+/// A run of tool calls opening onto its calls, and folding them away.
+pub const UNFOLD: Ease = Ease::new(180, Curve::OUT);
+pub const FOLD_AWAY: Ease = Ease::new(140, Curve::Bezier(0.4, 0., 1., 1.));
 
 /// The angle of a fold's chevron, open or shut.
 pub fn fold_angle(open: bool) -> f32 {
@@ -383,6 +390,35 @@ impl<K: PartialEq + Clone + 'static> Element for Replay<K> {
     ) {
         element.paint(window, cx);
     }
+}
+
+/// `body` folded `shown` of the way open, from 0 shut to 1 at its own height; it fades as it
+/// folds. Its height is the one it last drew at, so it must be drawn while it folds.
+pub fn folded(
+    id: impl Into<ElementId>,
+    shown: f32,
+    body: impl IntoElement,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let measured = window
+        .use_keyed_state(id.into(), cx, |_, _| Rc::new(Cell::new(0.)))
+        .read(cx)
+        .clone();
+    let height = measured.get();
+    div()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .opacity(shown)
+        .when(shown < 1., |fold| fold.h(px(height * shown)))
+        .child(div().flex_none().child(body))
+        .on_children_prepainted(move |bounds, _, _| {
+            if let Some(body) = bounds.first() {
+                measured.set(body.size.height.into());
+            }
+        })
+        .into_any_element()
 }
 
 /// Whether the pointer was over the element `id` when it last moved, and what keeps that
