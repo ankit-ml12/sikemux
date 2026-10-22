@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use gpui_kit::base::Popover;
-use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
+use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, Anchor, AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight,
@@ -131,9 +132,9 @@ fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
         })
         .status(Some(ui::dot(Tone::Ok, cx)));
     let (bench_entity, approval) = (cx.weak_entity(), bench.approvals.get(&None).copied());
-    div()
-        .id("this-host-menu")
-        .context_menu(move |popup, _, _| {
+    with_menu(
+        "this-host-menu".into(),
+        move |popup, _, _| {
             let bench = bench_entity.clone();
             popup
                 .item(
@@ -148,9 +149,56 @@ fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
                 )
                 .separator()
                 .item(approval_item(bench_entity.clone(), None, approval))
-        })
-        .child(row)
+        },
+        row,
+        cx,
+    )
 }
+
+/// A host's row with its menu on a right-click and on a ⋯ that shows while the pointer is
+/// over the row, as main's host rows have it.
+fn with_menu(
+    id: SharedString,
+    menu: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    row: Row,
+    cx: &App,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let menu = Rc::new(menu);
+    let more = menu.clone();
+    div()
+        .id(id.clone())
+        .relative()
+        .group(HOST_ROW)
+        .context_menu(move |popup, window, cx| menu(popup, window, cx))
+        .child(row)
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right(px(4.))
+                .flex()
+                .items_center()
+                .opacity(0.)
+                .group_hover(HOST_ROW, |more| more.opacity(1.))
+                .child(
+                    KitButton::new(SharedString::from(format!("{id}-more")))
+                        .ghost()
+                        .compact()
+                        .rounded(RADIUS_2)
+                        .bg(t.surface_hover)
+                        .child(ui::icon(Icon::More, 12.).text_color(t.text_secondary))
+                        .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
+                            more(popup, window, cx)
+                        }),
+                ),
+        )
+        .into_any_element()
+}
+
+/// The hover group of a host's row, whose ⋯ shows on hover.
+const HOST_ROW: &str = "host-row";
 
 /// "Require approval for new devices" on `host`, this one when none, ticked while it does.
 fn approval_item(
@@ -278,9 +326,9 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 let Some(alias) = alias else {
                     return row.into_any_element();
                 };
-                return div()
-                    .id(menu_id)
-                    .context_menu(move |popup, _, _| {
+                return with_menu(
+                    menu_id,
+                    move |popup, _, _| {
                         let (bench, alias) = (bench_entity.clone(), alias.clone());
                         let edited = (bench.clone(), alias.clone());
                         let popup = popup
@@ -306,18 +354,19 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                             Some(item) => popup.item(item),
                             None => popup,
                         }
-                    })
-                    .child(row)
-                    .into_any_element();
+                    },
+                    row,
+                    cx,
+                );
             };
             let has_project = bench
                 .host_views
                 .get(&key)
                 .is_some_and(|view| !view.workspace.projects.is_empty());
             let approval = bench.approvals.get(&Some(key.clone())).copied();
-            div()
-                .id(menu_id)
-                .context_menu(move |popup, _, _| {
+            with_menu(
+                menu_id,
+                move |popup, _, _| {
                     let bench = bench_entity.clone();
                     let mut popup = popup;
                     if let Some(item) = set_up_item(bench.clone()) {
@@ -372,9 +421,10 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                                     }
                                 }),
                         )
-                })
-                .child(row)
-                .into_any_element()
+                },
+                row,
+                cx,
+            )
         })
         .collect()
 }

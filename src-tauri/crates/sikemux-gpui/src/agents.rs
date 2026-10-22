@@ -164,6 +164,10 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .flex_none()
                 .pt(px(4.))
                 .px(px(10.))
+                .children(
+                    other_host(bench)
+                        .map(|host| ui::meta(format!("on {host}"), cx).px(px(8.)).pt(px(4.))),
+                )
                 .child(
                     new_row("new-chat", Icon::Plus, "New chat", "agent.new", cx)
                         .on_click(cx.listener(|bench, _, window, cx| bench.new_chat(window, cx))),
