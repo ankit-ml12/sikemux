@@ -60,6 +60,8 @@ pub struct Workbench {
     /// The latest answer to each watched call, by key.
     reads: HashMap<&'static str, Value>,
     pub lost: Option<String>,
+    /// Opening has taken long enough to show the mark.
+    pub boot_shown: bool,
     /// Opening has taken long enough to say what the window waits for.
     pub slow_start: bool,
     /// Dictation, heard into the chat or terminal holding the keyboard.
@@ -495,6 +497,7 @@ impl Workbench {
             view: None,
             reads: HashMap::new(),
             lost: None,
+            boot_shown: false,
             slow_start: false,
             voice,
             _voice_heard: voice_heard,

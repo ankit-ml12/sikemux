@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement, Styled,
+    div, px, white, AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement,
+    Styled,
 };
 
 use crate::icons::Icon;
@@ -14,14 +15,24 @@ use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
 
-/// How long the mark shows alone before the window says what it waits for.
-pub const PATIENCE: Duration = Duration::from_millis(900);
+/// An opening that finishes within this shows only the window's ground, so it never flashes.
+const SHOW_MARK_AFTER: Duration = Duration::from_millis(400);
+/// An opening still going after this says what it waits on.
+const NAME_THE_WAIT_AFTER: Duration = Duration::from_millis(3000);
 
 impl Workbench {
-    /// Says what the window waits for once opening has taken longer than [`PATIENCE`].
+    /// Shows the mark once opening has taken [`SHOW_MARK_AFTER`], and says what the window
+    /// waits for once it has taken [`NAME_THE_WAIT_AFTER`].
     pub fn wait_patiently(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(PATIENCE).await;
+            cx.background_executor().timer(SHOW_MARK_AFTER).await;
+            let _ = this.update(cx, |bench, cx| {
+                bench.boot_shown = true;
+                cx.notify();
+            });
+            cx.background_executor()
+                .timer(NAME_THE_WAIT_AFTER - SHOW_MARK_AFTER)
+                .await;
             let _ = this.update(cx, |bench, cx| {
                 bench.slow_start = true;
                 cx.notify();
@@ -69,12 +80,33 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
     let t = Tokens::get(cx).clone();
     let words = bench.slow_start.then(|| {
         if bench.version.is_empty() {
-            "Waiting for Sikemux to start".to_owned()
+            "Waiting for Sikemux to start"
         } else {
-            "Opening your workspace".to_owned()
+            "Opening your workspace"
         }
     });
-    let detail = bench.slow_start.then(|| bench.lost.clone()).flatten();
+    let mark = div()
+        .relative()
+        .child(ui::icon(Icon::Logo, 34.).text_color(white()).opacity(0.9))
+        .when_some(words, |mark, words| {
+            mark.child(
+                div()
+                    .absolute()
+                    .top(px(34. + 14.))
+                    .left(px(17.))
+                    .w(px(0.))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .text_size(crate::theme::ui_text(13.))
+                            .text_color(t.text_secondary)
+                            .child(words),
+                    ),
+            )
+        });
     Some(
         div()
             .id("opening")
@@ -85,7 +117,7 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
             .justify_center()
             .bg(t.surface_sunken)
             .occlude()
-            .child(mark_with(words, detail, cx))
+            .when(bench.boot_shown, |cover| cover.child(mark))
             .into_any_element(),
     )
 }
