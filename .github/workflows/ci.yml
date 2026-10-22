@@ -275,7 +275,7 @@ jobs:
             src-tauri/crates/sikemux-gpui
             src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
-          save-if: false
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build the window probe
         run: cargo build --example window_probe
