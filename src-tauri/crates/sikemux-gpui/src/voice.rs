@@ -430,7 +430,7 @@ impl crate::workbench::Workbench {
                 }
             }
             Heard::Words(Some(Target::Terminal(id)), text) => {
-                if !crate::terminal::type_text(self, *id, text.clone()) {
+                if !crate::terminal::type_text(self, *id, text.clone(), cx) {
                     self.copy_dictation(text, window, cx);
                 }
             }

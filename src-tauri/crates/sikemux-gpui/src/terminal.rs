@@ -1040,11 +1040,12 @@ pub fn focused(bench: &Workbench) -> Option<TermKey> {
 }
 
 /// Types `text` into terminal `id` as a paste, as dictation does; whether it is still open.
-pub fn type_text(bench: &mut Workbench, id: TermKey, text: String) -> bool {
+pub fn type_text(bench: &mut Workbench, id: TermKey, text: String, cx: &mut App) -> bool {
     if !bench.terminals.open.contains_key(&id) {
         return false;
     }
     send(bench, id, TerminalInput::Paste { text });
+    bench.terminals.redraw(id, cx);
     true
 }
 
@@ -1507,6 +1508,7 @@ fn close_find(bench: &mut Workbench, id: TermKey, window: &mut Window, cx: &mut 
         terminal.find = None;
         window.focus(&terminal.focus, cx);
     }
+    bench.terminals.redraw(id, cx);
 }
 
 fn find_in(bench: &mut Workbench, id: TermKey, step: Step, cx: &mut Context<Workbench>) {
@@ -1605,6 +1607,7 @@ fn resize_text(bench: &Workbench, step: Option<i32>) {
 fn paste(bench: &mut Workbench, id: TermKey, cx: &mut App) {
     if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
         send(bench, id, TerminalInput::Paste { text });
+        bench.terminals.redraw(id, cx);
     }
 }
 
@@ -1630,6 +1633,7 @@ fn find_bar(bench: &Entity<Workbench>, id: TermKey, find: &Find) -> ui::FindBar 
                     find.found = FindResult::default();
                 }
                 find_in(bench, id, Step::Typed, cx);
+                bench.terminals.redraw(id, cx);
             })
         }
     };

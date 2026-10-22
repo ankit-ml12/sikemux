@@ -260,8 +260,8 @@ fn main() -> anyhow::Result<()> {
             Ok(lines) => format!("{FLOOD_LINE} | head -n {lines}"),
             Err(_) => FLOOD_LINE.to_owned(),
         };
-        run.bench.update(&mut run.cx, |bench, _| {
-            terminal::type_text(bench, id, flood);
+        run.bench.update(&mut run.cx, |bench, cx| {
+            terminal::type_text(bench, id, flood, cx);
         });
         run.cx
             .update_window(run.window, |_, window, cx| {
@@ -431,8 +431,8 @@ fn main() -> anyhow::Result<()> {
         .ok();
 
     let started = Instant::now();
-    run.bench.update(&mut run.cx, |bench, _| {
-        terminal::type_text(bench, id, FLOOD.into());
+    run.bench.update(&mut run.cx, |bench, cx| {
+        terminal::type_text(bench, id, FLOOD.into(), cx);
     });
     run.cx
         .update_window(run.window, |_, window, cx| {
