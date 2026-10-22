@@ -314,6 +314,14 @@ jobs:
           --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent
           --seed target/debug/examples/fake_chat --out window-run/desk
 
+      - name: Check the ground's grain, picture and see-through
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri/crates/sikemux-gpui
+        run: >-
+          python3 -I ci/ground-check.py --app target/debug/sikemux
+          --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent
+          --seed target/debug/examples/fake_chat --out window-run/ground
+
       - name: Upload the capture
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
