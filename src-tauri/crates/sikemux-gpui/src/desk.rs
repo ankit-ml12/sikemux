@@ -363,7 +363,14 @@ impl Workbench {
     fn hear(&mut self, heard: Heard, window: &mut Window, cx: &mut Context<Self>) {
         match heard {
             Heard::Tabs => self.read_strips(),
-            Heard::Downloaded(download) => self.notify(downloaded(&download), cx),
+            Heard::Downloaded(download) => {
+                #[cfg(feature = "drive")]
+                crate::drive::trace(format_args!(
+                    "download {:?} {}",
+                    download.state, download.path
+                ));
+                self.notify(downloaded(&download), cx)
+            }
             Heard::Shortcut(shortcut) => {
                 let shift = if shortcut.shift { "Shift+" } else { "" };
                 let keys = crate::keymap::keystroke(&format!("Meta+{shift}{}", shortcut.code));
@@ -688,8 +695,10 @@ impl Workbench {
     /// it had one to close; elsewhere, ⌘W closes the tab as it would anywhere else.
     pub fn close_shown_page(&mut self, window: &Window, cx: &App) -> bool {
         let file_desk = self.front_agent().and_then(|(tab, _, agent)| {
-            let focused = self.panes.focused.as_deref()?;
-            (self.desk_of(&tab, &agent).as_deref() == Some(focused)).then_some(agent)
+            let desk = self.desk_of(&tab, &agent)?;
+            let keys_in_file = matches!(self.desks.front.get(&agent),
+                Some(DeskItem::File(path)) if self.editors.has_keys(path, window, cx));
+            (keys_in_file || self.panes.focused.as_deref() == Some(desk.as_str())).then_some(agent)
         });
         if let Some(agent) = file_desk {
             if let Some(item) = self.desks.front.get(&agent).cloned() {
@@ -923,6 +932,70 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             page.address
                 .update(cx, |address, cx| address.set_value(url, window, cx));
         }
+    }
+}
+
+#[cfg(feature = "drive")]
+impl Workbench {
+    /// What each desk holds and where the keys are, for the test bundle's driver to check.
+    pub fn drive_state(&self, window: &Window, cx: &App) -> Value {
+        let desks = &self.desks;
+        let agents: std::collections::BTreeSet<&String> = (desks.strips.keys())
+            .chain(desks.items.keys())
+            .chain(desks.kinds.keys())
+            .chain(desks.pages.keys())
+            .collect();
+        let item = |item: &DeskItem| match item {
+            DeskItem::File(path) => json!({ "file": path }),
+            DeskItem::Terminal { session, title } => {
+                json!({ "terminal": title, "session": session })
+            }
+        };
+        let desk = |agent: &String| {
+            let page = desks.pages.get(agent);
+            let address = page.map(|page| page.address.read(cx));
+            let pages = desks.strips.get(agent).map(|strip| {
+                (strip.tabs.iter())
+                    .map(|tab| {
+                        json!({
+                            "title": tab.title,
+                            "url": tab.url,
+                            "active": tab.active,
+                            "loading": tab.loading,
+                            "back": tab.can_go_back,
+                            "forward": tab.can_go_forward,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            });
+            json!({
+                "open": self.desk_open_anywhere(agent),
+                "kind": match desks.kinds.get(agent).copied().unwrap_or_default() {
+                    DeskKind::Pages => "pages",
+                    DeskKind::Simulator => "simulator",
+                },
+                "pages": pages,
+                "items": desks.items.get(agent).map(|items| items.iter().map(item).collect::<Vec<_>>()),
+                "front": desks.front.get(agent).map(item),
+                "pageFocused": page.is_some_and(|page| page.focus.is_focused(window)),
+                "pageBounds": page.and_then(|page| page.surface.placed()).map(|frame| {
+                    let bounds = frame.visible;
+                    [bounds.left(), bounds.top(), bounds.size.width, bounds.size.height].map(f32::from)
+                }),
+                "addressFocused": address.is_some_and(|address| address.focus_handle(cx).is_focused(window)),
+                "address": address.map(|address| address.value().to_string()),
+            })
+        };
+        let files = (self.editors.open_files(cx).into_iter())
+            .map(|(path, line, dirty)| json!({ "path": path, "line": line, "dirty": dirty }))
+            .collect::<Vec<_>>();
+        let size = window.viewport_size();
+        json!({
+            "window": [f32::from(size.width), f32::from(size.height)],
+            "contexts": window.context_stack().iter().map(|context| format!("{context:?}")).collect::<Vec<_>>(),
+            "desks": agents.into_iter().map(|agent| (agent.clone(), desk(agent))).collect::<serde_json::Map<_, _>>(),
+            "files": files,
+        })
     }
 }
 

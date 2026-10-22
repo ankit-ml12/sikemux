@@ -6,17 +6,21 @@
 //! Steps, one per line and ended by a line `end`, in points from the window's top-left corner:
 //!   activate | move x y | click x y | double x y | right x y | drag x1 y1 x2 y2 [steps]
 //!   key cmd+shift+p | text some words | scroll x y dx dy [steps] [momentum] | wait seconds
+//!   state, answered with what the desks hold and where the keys are, as JSON on its line
+//!   register, which takes the core's window calls without activating the window
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::Duration;
 
 use gpui_kit::{
-    point, px, AnyWindowHandle, App, AsyncApp, Keystroke, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput, Point, ScrollDelta, ScrollWheelEvent,
-    TouchPhase,
+    point, px, AnyWindowHandle, App, AsyncApp, Entity, Keystroke, Modifiers, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformInput, Point, ScrollDelta,
+    ScrollWheelEvent, TouchPhase,
 };
 use tokio::sync::mpsc;
+
+use crate::workbench::Workbench;
 
 const SETTLE: Duration = Duration::from_millis(60);
 const FRAME: Duration = Duration::from_millis(16);
@@ -30,7 +34,7 @@ pub fn stays_behind() -> bool {
 }
 
 /// Listens for step files while the test bundle runs, and answers each with what it did.
-pub fn listen(window: AnyWindowHandle, cx: &mut App) {
+pub fn listen(window: AnyWindowHandle, bench: Entity<Workbench>, cx: &mut App) {
     let Some(path) = std::env::var_os("SIKEMUX_GPUI_DRIVE") else {
         return;
     };
@@ -61,8 +65,9 @@ pub fn listen(window: AnyWindowHandle, cx: &mut App) {
                 if line.is_empty() || line.starts_with('#') {
                     continue;
                 }
-                let said = match run(line, window, cx).await {
-                    Ok(()) => format!("did: {line}\n"),
+                let said = match run(line, window, &bench, cx).await {
+                    Ok(None) => format!("did: {line}\n"),
+                    Ok(Some(answer)) => format!("did: {line} {answer}\n"),
                     Err(problem) => format!("{problem}: {line}\n"),
                 };
                 let _ = stream.write_all(said.as_bytes());
@@ -74,7 +79,28 @@ pub fn listen(window: AnyWindowHandle, cx: &mut App) {
     .detach();
 }
 
-async fn run(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(), &'static str> {
+async fn run(
+    line: &str,
+    window: AnyWindowHandle,
+    bench: &Entity<Workbench>,
+    cx: &mut AsyncApp,
+) -> Result<Option<String>, &'static str> {
+    if line == "state" {
+        return window
+            .update(cx, |_, window, cx| bench.read(cx).drive_state(window, cx))
+            .map(|state| Some(state.to_string()))
+            .map_err(|_| "the window is gone");
+    }
+    if line == "register" {
+        bench.read_with(cx, |bench, _| {
+            let _ = bench.asks.send(crate::core::Ask::RegisterWindow);
+        });
+        return Ok(None);
+    }
+    acted(line, window, cx).await.map(|()| None)
+}
+
+async fn acted(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(), &'static str> {
     let (verb, rest) = line.split_once(' ').unwrap_or((line, ""));
     let words: Vec<&str> = rest.split_whitespace().collect();
     let number = |at: usize| words.get(at).and_then(|word| word.parse::<f32>().ok());

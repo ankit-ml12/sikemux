@@ -10,8 +10,8 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, FontWeight,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, SharedString,
+    actions, div, px, AnyElement, AnyWindowHandle, App, AppContext, Context, Entity, Focusable,
+    FontWeight, InteractiveElement, IntoElement, KeyBinding, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
@@ -192,6 +192,24 @@ enum Notice {
 }
 
 impl Editors {
+    /// Each open file with its cursor's line, counted from one, and whether it has unsaved edits.
+    #[cfg(feature = "drive")]
+    pub fn open_files(&self, cx: &App) -> Vec<(PathBuf, u32, bool)> {
+        (self.open.iter())
+            .map(|(key, document)| {
+                let line = document.state.read(cx).cursor_position().line + 1;
+                (key.path.clone(), line, document.dirty)
+            })
+            .collect()
+    }
+
+    /// Whether the keys are in the editor showing `path`.
+    pub fn has_keys(&self, path: &Path, window: &Window, cx: &App) -> bool {
+        (self.open.iter()).any(|(key, document)| {
+            key.path == path && document.state.read(cx).focus_handle(cx).is_focused(window)
+        })
+    }
+
     /// Whether the file has edits not yet saved.
     pub fn is_dirty(&self, key: &FileKey) -> bool {
         self.open.get(key).is_some_and(|document| document.dirty)

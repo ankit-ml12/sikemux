@@ -78,6 +78,11 @@ impl NativeSurface {
         &*self.0.surface
     }
 
+    /// Where the surface was last placed, or none while it is hidden.
+    pub fn placed(&self) -> Option<Frame> {
+        self.0.placed.get()
+    }
+
     fn place(&self, by: u64, frame: Option<Frame>) {
         self.0.placed_by.set(by);
         if self.0.placed.replace(frame) != frame {

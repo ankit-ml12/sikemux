@@ -30,7 +30,7 @@ fn main() {
                 }),
                 ..Default::default()
             };
-            let (_window, _) = gpui_kit::open_window(options, cx, |window, cx| {
+            let (_window, _bench) = gpui_kit::open_window(options, cx, |window, cx| {
                 if let Err(error) = window.enable_scene_overlay() {
                     eprintln!("sikemux: pages will cover menus, with no overlay plane: {error}");
                 }
@@ -38,7 +38,7 @@ fn main() {
             })
             .expect("window opens");
             #[cfg(feature = "drive")]
-            sikemux_gpui::drive::listen(_window, cx);
+            sikemux_gpui::drive::listen(_window, _bench, cx);
             #[cfg(feature = "drive")]
             let behind = sikemux_gpui::drive::stays_behind();
             #[cfg(not(feature = "drive"))]
