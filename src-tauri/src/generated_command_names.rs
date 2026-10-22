@@ -8,6 +8,7 @@ pub const IPC_COMMANDS: &[&str] = &[
     "pty_ack",
     "pty_attach",
     "pty_write",
+    "pty_paste",
     "pty_resize",
     "pty_reset_modes",
     "pty_kill",

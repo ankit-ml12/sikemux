@@ -87,6 +87,8 @@ pub(crate) struct Session {
     pub(crate) shell_protocol: bool,
     subscribers: Mutex<HashMap<ClientId, Subscriber>>,
     flow_control: Notify,
+    /// Woken by output while the program has bracketed paste on.
+    pastes_on: Notify,
     pub(crate) last_activity_ms: AtomicU64,
     pub(crate) trimmed: AtomicBool,
     killed: AtomicBool,
@@ -157,6 +159,7 @@ impl Session {
             shell_protocol: parts.shell_protocol,
             subscribers: Mutex::new(HashMap::new()),
             flow_control: Notify::new(),
+            pastes_on: Notify::new(),
             last_activity_ms: AtomicU64::new(parts.last_activity_ms),
             trimmed: AtomicBool::new(parts.trimmed),
             killed: AtomicBool::new(parts.killed),
@@ -530,6 +533,34 @@ async fn write_input(session: Weak<Session>, mut jobs: mpsc::UnboundedReceiver<I
     }
 }
 
+/// `text` as typed into `session` to arrive as one paste: between paste
+/// markers when its program has turned bracketed paste on, else on one line,
+/// since a bare newline would send it.
+pub(crate) fn pasted(session: &Session, text: &str) -> Vec<u8> {
+    let plain: String = text
+        .chars()
+        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
+        .collect();
+    let pastes = session.parser.locked().screen().bracketed_paste();
+    if pastes {
+        format!("\x1b[200~{plain}\x1b[201~").into_bytes()
+    } else {
+        plain.replace('\n', " ").into_bytes()
+    }
+}
+
+/// Waits up to `limit` for the program to turn bracketed paste on, as one
+/// does once it has started and is ready for a pasted draft.
+pub(crate) async fn until_pastes(session: &Session, limit: Duration) {
+    let turned_on = session.pastes_on.notified();
+    tokio::pin!(turned_on);
+    turned_on.as_mut().enable();
+    if session.parser.locked().screen().bracketed_paste() {
+        return;
+    }
+    let _ = tokio::time::timeout(limit, turned_on).await;
+}
+
 pub(crate) fn queue_input(
     session: &Session,
     bytes: Vec<u8>,
@@ -828,6 +859,9 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
         .map(|shell| shell.process_for_events(bytes, output_now_ms))
         .unwrap_or_default();
     parser.process(bytes);
+    if parser.screen().bracketed_paste() {
+        session.pastes_on.notify_waiters();
+    }
     if let Some(agent) = session.agent.as_ref() {
         agent.note_parsed();
     }

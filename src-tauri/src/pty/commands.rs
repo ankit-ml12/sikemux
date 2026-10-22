@@ -297,6 +297,29 @@ pub async fn pty_write(
     finish(outcome, operation)
 }
 
+/// Types `text` into a session as one paste, as its program takes pastes, then
+/// Enter when `submit`; `starting` gives a just-started program a moment to
+/// get ready for it.
+#[tauri::command]
+pub async fn pty_paste(
+    manager: State<'_, PtyManager>,
+    hosts: State<'_, Hosts>,
+    id: SessionId,
+    text: String,
+    submit: bool,
+    starting: bool,
+) -> AppResult<()> {
+    let (client, id) = session_client(&manager, &hosts, id).await?;
+    client
+        .call(
+            "pasteIntoTerminal",
+            serde_json::json!({ "id": id, "text": text, "submit": submit, "starting": starting }),
+        )
+        .await
+        .map_err(core_error)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn pty_resize(
     manager: State<'_, PtyManager>,

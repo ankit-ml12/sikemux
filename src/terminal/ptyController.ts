@@ -32,6 +32,8 @@ export interface PtyAttachResult {
 export interface PtyApi<ChannelTransport, Context = unknown> {
     spawn(request: PtySpawnRequest<Context>): Promise<number>;
     write(id: number, data: string): Promise<void>;
+    /** Types `text` as one paste, as the program in the terminal takes pastes. */
+    paste(id: number, text: string, options?: PtyPasteOptions): Promise<void>;
     resize(id: number, cols: number, rows: number): Promise<void>;
     kill(id: number): Promise<void>;
     attach(id: number, channel: ChannelTransport): Promise<PtyAttachResult>;
@@ -40,6 +42,13 @@ export interface PtyApi<ChannelTransport, Context = unknown> {
     ack(id: number, subId: number, bytes: number): Promise<void>;
     /** Whether a process this page did not start may be taken over instead of spawning one. */
     resume?(id: number): Promise<boolean>;
+}
+
+export interface PtyPasteOptions {
+    /** Press Enter after it. */
+    readonly submit?: boolean;
+    /** The terminal has just started, so the core waits briefly for its program to be ready. */
+    readonly starting?: boolean;
 }
 
 export interface PtyChannelBinding<ChannelTransport> {
@@ -559,14 +568,18 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
     }
 
     write(data: string): Promise<void> {
-        return containRejection(this.performWrite(data));
+        return containRejection(this.performInput((id) => this.api.write(id, data)));
     }
 
-    private async performWrite(data: string): Promise<void> {
+    paste(text: string): Promise<void> {
+        return containRejection(this.performInput((id) => this.api.paste(id, text)));
+    }
+
+    private async performInput(send: (id: number) => Promise<void>): Promise<void> {
         const id = await this.readyPtyId();
         this.assertRunning(id);
         try {
-            await this.api.write(id, data);
+            await send(id);
         } catch (error) {
             if (!this.disposeRequested && this.status === "running" && this.ptyId === id) {
                 this.failureOperation = "write";
@@ -866,9 +879,11 @@ export class PtyLifecycleController<ChannelTransport, Context = unknown> {
         this.initialDraft = null;
         this.emitState();
         try {
-            const submitted = pasteChunks ? `${pasteChunks.map((chunk) => `\x1b[200~${chunk}\x1b[201~`).join("")}\r` : "";
-            const input = `${submitted}${draft ? `\x1b[200~${draft}\x1b[201~` : ""}`;
-            await this.api.write(id, input);
+            const chunks = pasteChunks ?? [];
+            for (const [index, chunk] of chunks.entries()) {
+                await this.api.paste(id, chunk, { submit: index === chunks.length - 1, starting: true });
+            }
+            if (draft) await this.api.paste(id, draft, { starting: true });
             if (this.disposeRequested || this.ptyId !== id) {
                 this.initialInputStatus = "cancelled";
                 this.emitState();

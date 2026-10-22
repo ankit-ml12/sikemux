@@ -8,6 +8,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::protocol::SessionId;
+
 use super::access::{Needs, Peer};
 use super::attachments;
 use super::changed::Topic;
@@ -77,6 +79,7 @@ calls! { core, client, params;
     "chatFile": Watch, any_program => answer(chat_file(&core, &client.peer, parse(params)?).await?),
     "nameAgent": Local => answer(name_agent(&core, parse(params)?).await?),
     "renameAgent": Full => answer(rename_agent(&core, parse(params)?).await?),
+    "pasteIntoTerminal": Full => answer(paste_into_terminal(&core, parse(params)?).await?),
     "closedAgents": Local => answer(closed_agents(&core, parse(params)?).await?),
     "publishBuddies": Local => answer(core.workspaces.publish_buddies(parse(params)?)?),
     "agentNames": Watch, any_program => answer(agent_names(&core).await?),
@@ -375,6 +378,47 @@ fn answer(result: impl Serialize) -> CoreResult<Value> {
 
 fn signed((key, signature): (String, String)) -> Value {
     json!({ "key": key, "signature": signature })
+}
+
+#[derive(Deserialize)]
+struct PasteParams {
+    id: SessionId,
+    text: String,
+    #[serde(default)]
+    submit: bool,
+    /// The terminal has only just started, so its program may not be ready.
+    #[serde(default)]
+    starting: bool,
+}
+
+/// How long a just-started program has to turn bracketed paste on before
+/// text pasted into it is typed on one line instead.
+const STARTING_PASTE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Types `text` into a terminal as one paste, then Enter when it is to be
+/// sent, answering once the terminal has taken it.
+async fn paste_into_terminal(core: &Core, params: PasteParams) -> CoreResult<()> {
+    let session = core
+        .session(params.id)
+        .ok_or("that terminal is not on this host")?;
+    if params.starting {
+        super::session::until_pastes(&session, STARTING_PASTE_WAIT).await;
+    }
+    let mut bytes = super::session::pasted(&session, &params.text);
+    if params.submit {
+        bytes.push(b'\r');
+    }
+    let (done, typed) = tokio::sync::oneshot::channel();
+    super::connection::type_input(
+        core,
+        &session,
+        bytes,
+        Box::new(move |result| {
+            let _ = done.send(result);
+        }),
+    );
+    typed.await.map_err(|_| "that terminal closed")??;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]

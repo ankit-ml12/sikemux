@@ -449,9 +449,11 @@ describe("usePty", () => {
         expect(dispatchPaths(host, ["/tmp/a b", "/tmp/O'Brien", "-$(touch nope);|*?>\nfile"])).toBe(true);
 
         await waitFor(() => {
-            expect(invoke).toHaveBeenCalledWith("pty_write", {
+            expect(invoke).toHaveBeenCalledWith("pty_paste", {
                 id: 42,
-                data: "\x1b[200~'/tmp/a b' '/tmp/O'\\''Brien' '-$(touch nope);|*?>\nfile'\x1b[201~",
+                text: "'/tmp/a b' '/tmp/O'\\''Brien' '-$(touch nope);|*?>\nfile'",
+                submit: false,
+                starting: false,
             });
         });
     });
@@ -480,7 +482,7 @@ describe("usePty", () => {
         invoke.mockImplementation(async (command: string) => {
             if (command === "pty_spawn") return 42;
             if (command === "integration_health") return { shell: "/bin/zsh" };
-            if (command === "pty_write") throw writeError;
+            if (command === "pty_paste") throw writeError;
             return null;
         });
         const errors = vi.spyOn(performanceTelemetry, "incrementCounter");
@@ -495,7 +497,7 @@ describe("usePty", () => {
 
         const host = view.container.firstElementChild as HTMLElement;
         expect(dispatchPaths(host, ["/tmp/file"])).toBe(true);
-        await waitFor(() => expect(invoke.mock.calls.some(([command]) => command === "pty_write")).toBe(true));
+        await waitFor(() => expect(invoke.mock.calls.some(([command]) => command === "pty_paste")).toBe(true));
         await Promise.resolve();
         await Promise.resolve();
 

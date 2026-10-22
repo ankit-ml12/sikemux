@@ -98,6 +98,7 @@ const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
+    paste: (id, text, options) => invoke<void>("pty_paste", { id, text, submit: options?.submit ?? false, starting: options?.starting ?? false }),
     resize: (id, cols, rows) => {
         noteTerminalSize(cols, rows);
         return invoke<void>("pty_resize", { id, cols, rows });
@@ -311,7 +312,7 @@ export function usePty(opts: {
                       .then((semantics) => {
                           if (!active) return;
                           const body = encodeDroppedPaths(droppedPaths, semantics);
-                          return controller.write(`\x1b[200~${body}\x1b[201~`);
+                          return controller.paste(body);
                       })
                       // PtyLifecycleController is the sole reporter for write
                       // failures; this catch only prevents an unhandled promise.
@@ -321,7 +322,7 @@ export function usePty(opts: {
         const unregisterTextInsert = host
             ? registerTextInsert(host, (text) => {
                   if (text.includes("\0")) return;
-                  void controller.write(`\x1b[200~${text} \x1b[201~`);
+                  void controller.paste(`${text} `);
               })
             : () => {};
 

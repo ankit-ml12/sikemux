@@ -25,6 +25,7 @@
     "allow-pty-ack",
     "allow-pty-attach",
     "allow-pty-write",
+    "allow-pty-paste",
     "allow-pty-resize",
     "allow-pty-reset-modes",
     "allow-pty-kill",

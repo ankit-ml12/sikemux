@@ -398,13 +398,9 @@ async fn read_requests(
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
                 };
-                agent::note_input(core, &target, bytes);
-                if let Some(agent) = target.agent.as_ref().filter(|_| agent::submits_line(bytes)) {
-                    core.harness.questions.typed(agent.agent_id());
-                    messages::worked(core, agent.agent_id());
-                }
                 let reply_to = client.clone();
-                session::queue_input(
+                type_input(
+                    core,
                     &target,
                     bytes.to_vec(),
                     Box::new(move |result| {
@@ -418,6 +414,25 @@ async fn read_requests(
             FrameKind::Output | FrameKind::Snapshot | FrameKind::Frozen => return,
         }
     }
+}
+
+/// Types `bytes` into `target` as the person's own input.
+pub(crate) fn type_input(
+    core: &Core,
+    target: &session::Session,
+    bytes: Vec<u8>,
+    reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
+) {
+    agent::note_input(core, target, &bytes);
+    if let Some(agent) = target
+        .agent
+        .as_ref()
+        .filter(|_| agent::submits_line(&bytes))
+    {
+        core.harness.questions.typed(agent.agent_id());
+        messages::worked(core, agent.agent_id());
+    }
+    session::queue_input(target, bytes, reply);
 }
 
 pub(crate) async fn blocking<T: Send + 'static>(

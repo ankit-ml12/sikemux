@@ -134,6 +134,7 @@ describe("useXterm renderer boot", () => {
             resize,
             attach,
             write: vi.fn().mockResolvedValue(undefined),
+            paste: vi.fn().mockResolvedValue(undefined),
         } as unknown as NativePtyController;
 
         const view = render(<Harness controller={controller} onExit={onExit} />);
@@ -170,6 +171,7 @@ describe("useXterm renderer boot", () => {
                 });
             }),
             write: vi.fn().mockResolvedValue(undefined),
+            paste: vi.fn().mockResolvedValue(undefined),
         } as unknown as NativePtyController;
 
         render(<Harness controller={controller} onExit={vi.fn()} />);
@@ -196,6 +198,7 @@ describe("useXterm renderer boot", () => {
                 detach: vi.fn().mockResolvedValue(undefined),
             }),
             write: vi.fn().mockResolvedValue(undefined),
+            paste: vi.fn().mockResolvedValue(undefined),
         } as unknown as NativePtyController;
 
         render(<Harness controller={controller} onExit={vi.fn()} />);

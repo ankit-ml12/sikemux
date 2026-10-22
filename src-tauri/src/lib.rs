@@ -256,6 +256,7 @@ pub fn run() {
             pty::commands::pty_ack,
             pty::commands::pty_attach,
             pty::commands::pty_write,
+            pty::commands::pty_paste,
             pty::commands::pty_resize,
             pty::commands::pty_reset_modes,
             pty::commands::pty_kill,
