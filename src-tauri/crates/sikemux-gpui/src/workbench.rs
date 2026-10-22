@@ -3246,6 +3246,8 @@ impl Render for Workbench {
         if window.focused(cx).is_none() {
             self.focus.focus(window, cx);
         }
+        let asking = self.asking_freely(window);
+        let this = cx.weak_entity();
         crate::see_through::follow(window, cx);
         let t = Tokens::get(cx);
         window.set_ground(Some(crate::see_through::ground(t.surface_sunken, cx)));
@@ -3258,6 +3260,9 @@ impl Render for Workbench {
             .on_modifiers_changed(
                 cx.listener(|bench, event, _, cx| bench.modifiers_changed(event, cx)),
             )
+            .when_some(asking, |shell, agent| {
+                crate::chat::question_keys(shell, &agent, false, &this)
+            })
             .capture_key_down(cx.listener(|bench, event, _, cx| bench.switcher_key(event, cx)))
             .on_action(
                 cx.listener(|bench, _: &crate::places::ClosePlace, _, cx| bench.close_place(cx)),

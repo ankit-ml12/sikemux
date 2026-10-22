@@ -1541,14 +1541,7 @@ pub fn pane(
         .flex_col()
         .when(composing, |pane| attach::takes_drops(pane, id, cx))
         .when(asking, |pane| {
-            pane.key_context("QuestionDock")
-                .on_action(pressed(id, |choose: &Choose| Press::Choose(choose.0), cx))
-                .on_action(pressed(id, |_: &PreviousChoice| Press::Up, cx))
-                .on_action(pressed(id, |_: &NextChoice| Press::Down, cx))
-                .on_action(pressed(id, |_: &PreviousQuestion| Press::Left, cx))
-                .on_action(pressed(id, |_: &NextQuestion| Press::Right, cx))
-                .on_action(pressed(id, |_: &Tick| Press::Tick, cx))
-                .on_action(pressed(id, |_: &Confirm| Press::Pick, cx))
+            question_keys(pane, id, true, &cx.weak_entity())
         })
         .child(rows)
         .child(chat.activity_line.clone())
@@ -1666,12 +1659,38 @@ pub fn dictate(agent: &str, this: WeakEntity<Workbench>) -> crate::voice::Act {
 }
 
 /// Hands a key's action to the question on show; one it does not take goes on to the draft.
+/// The keys the open question on show takes: its choices by number and the arrows, and with
+/// `all`, space to tick and return to pick, which only the chat itself takes.
+pub fn question_keys<E: InteractiveElement + FluentBuilder>(
+    keyed: E,
+    agent: &str,
+    all: bool,
+    bench: &WeakEntity<Workbench>,
+) -> E {
+    keyed
+        .key_context("QuestionDock")
+        .on_action(pressed(
+            agent,
+            |choose: &Choose| Press::Choose(choose.0),
+            bench,
+        ))
+        .on_action(pressed(agent, |_: &PreviousChoice| Press::Up, bench))
+        .on_action(pressed(agent, |_: &NextChoice| Press::Down, bench))
+        .on_action(pressed(agent, |_: &PreviousQuestion| Press::Left, bench))
+        .on_action(pressed(agent, |_: &NextQuestion| Press::Right, bench))
+        .when(all, |keyed| {
+            keyed
+                .on_action(pressed(agent, |_: &Tick| Press::Tick, bench))
+                .on_action(pressed(agent, |_: &Confirm| Press::Pick, bench))
+        })
+}
+
 fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
     agent: &str,
     press: F,
-    cx: &mut Context<Workbench>,
+    bench: &WeakEntity<Workbench>,
 ) -> impl Fn(&A, &mut Window, &mut App) + use<A, F> {
-    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    let (agent, this) = (agent.to_owned(), bench.clone());
     move |action: &A, _: &mut Window, cx: &mut App| {
         let taken = this.update(cx, |bench, cx| {
             let open: Vec<&Question> = bench
@@ -2680,6 +2699,23 @@ fn strip(
 }
 
 impl Workbench {
+    /// The chat in front while its question asks and nothing else holds the keys, as when the
+    /// person clicked away from every field, so the question takes its keys from anywhere.
+    pub fn asking_freely(&self, window: &Window) -> Option<String> {
+        if !self.focus.is_focused(window) {
+            return None;
+        }
+        let agent = self.agent()?;
+        let chat = self.chats.get(&agent.id)?;
+        let open: Vec<&Question> = self
+            .questions
+            .iter()
+            .filter(|question| question.of(&agent.id, "open"))
+            .collect();
+        let asking = chat.current(&open).is_some() && !chat.is_folded(&open);
+        (asking && !chat.sending_answers()).then_some(agent.id)
+    }
+
     /// Asks what a change to `agent`'s questions asks. Answers wait on the core, the questions
     /// they answer held as sending, then leave the open ones without waiting for its next list.
     pub fn ask_answering(&mut self, agent: &str, ask: Ask, cx: &mut Context<Self>) {
