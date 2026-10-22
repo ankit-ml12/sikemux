@@ -254,7 +254,12 @@ async fn sign_in_over_ssh(
     let alias = checked_alias(&alias)?.to_owned();
     let core = manager.client().await?;
     if matches!(expected, Code::Needed)
-        && core.remote_status().await.map_err(core_error)?.owner.is_none()
+        && core
+            .remote_status()
+            .await
+            .map_err(core_error)?
+            .owner
+            .is_none()
     {
         return Err(AppError::Other(format!(
             "this app is not signed in to your Sikemux account, so it cannot add {alias} to it; sign in at the bottom of the side rail first"
