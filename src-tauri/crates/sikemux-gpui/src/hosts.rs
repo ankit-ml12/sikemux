@@ -111,8 +111,9 @@ impl Workbench {
         }
     }
 
-    /// Opens the project at `path` on the account host `host`, which clones it from its remote
-    /// or takes it from this host as a bundle, then puts the person on that host.
+    /// Opens the project at `path` on the account host `host`, once the person agrees: that
+    /// host clones it from its remote or takes it from this host as a bundle, then the person is
+    /// on that host, in that project. Only committed work goes.
     pub fn open_on(
         &mut self,
         path: &Path,
@@ -121,14 +122,55 @@ impl Workbench {
         after: HostChoice,
         cx: &mut Context<Self>,
     ) {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (path, host) = (path.to_owned(), host.to_owned());
+        self.confirm(
+            format!("Open {name} on {label}?"),
+            format!("{label} clones it from its remote, or takes it from where it is when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay there."),
+            "Open",
+            false,
+            move |bench, yes, _, cx| {
+                if yes {
+                    bench.open_on_now(&path, &host, &name, label.clone(), after.clone(), cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn open_on_now(
+        &mut self,
+        path: &Path,
+        host: &str,
+        name: &str,
+        label: SharedString,
+        after: HostChoice,
+        cx: &mut Context<Self>,
+    ) {
         let params = json!({ "path": path, "host": host });
         // The project's own host sends it, so the call goes to the host in front.
         let opening = self.target().request("openOnHost", params);
-        self.notify(Notification::info(format!("Opening on {label}…")), cx);
+        self.notify(
+            Notification::info(format!("Opening {name} on {label}…")),
+            cx,
+        );
         cx.spawn(async move |bench, cx| {
             let opened = opening.await;
             let _ = bench.update(cx, |bench, cx| match opened {
-                Ok(_) => bench.choose_host(after, cx),
+                Ok(opened) => {
+                    let place = match &after {
+                        HostChoice::Account(key) => Place::Account(key.clone()),
+                        _ => Place::This,
+                    };
+                    bench.choose_host(after, cx);
+                    if let Some(project) = opened["project"].as_str() {
+                        core::Target::new(&bench.asks, place)
+                            .call("activateProject", json!({ "project": project }));
+                    }
+                }
                 Err(error) => bench.notify(
                     Notification::error(format!("It did not open on {label}: {error}")),
                     cx,

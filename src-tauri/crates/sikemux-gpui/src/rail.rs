@@ -124,7 +124,6 @@ fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
         .on_click(
             cx.listener(|bench, _, _, cx| bench.choose_host(crate::hosts::HostChoice::This, cx)),
         )
-        .tag("here")
         .when(agents > 0, |row| {
             row.detail(format!(
                 "{agents} {}",
@@ -231,7 +230,9 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
             let row = Row::new(SharedString::from(format!("host-{name}")), name.clone())
                 .chosen(chosen)
                 .when_some(alias.clone(), |row, alias| {
-                    row.on_click(cx.listener(move |bench, _, _, _| bench.open_ssh_terminal(&alias)))
+                    row.on_click(cx.listener(move |bench, _, _, cx| {
+                        bench.choose_host(crate::hosts::HostChoice::Ssh(alias.clone()), cx)
+                    }))
                 })
                 .when_some(key, |row, key| {
                     row.on_click(cx.listener(move |bench, _, _, cx| {
@@ -260,7 +261,11 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .zip(set_up_alias);
             let set_up_item = move |bench: WeakEntity<Workbench>| {
                 set_up.clone().map(|(set_up, alias)| {
-                    PopupMenuItem::new(set_up.offer(&alias))
+                    let label = match set_up {
+                        crate::install_pane::SetUp::Install => "Install Sikemux here".to_owned(),
+                        _ => set_up.offer(&alias),
+                    };
+                    PopupMenuItem::new(label)
                         .icon(set_up.icon())
                         .disabled(setting_up)
                         .on_click(move |_, _, cx| {
