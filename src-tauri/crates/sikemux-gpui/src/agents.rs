@@ -109,7 +109,15 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .map(|recent| recent_row(bench, recent, cx))
         .collect();
     let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
-        if project.is_none() {
+        let shown = (project.zip(other_host(bench)))
+            .filter(|_| bench.filter_text.is_empty())
+            .map(|(project, host)| match bench.all_projects {
+                true => format!("No chats on {host}"),
+                false => format!("No chats in {} on {host}", project.name),
+            });
+        if let Some(title) = shown {
+            rail_empty(Icon::Agent, title, Some(("agent.new", "start one")), cx)
+        } else if project.is_none() {
             rail_empty(
                 Icon::Agent,
                 "No project open",
@@ -1239,9 +1247,17 @@ fn page_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
 }
 
 /// A rail page with nothing to list: a faint mark, what is missing, and the key that fills it.
+/// The account host chosen in front, by its name; none for this host or an SSH host.
+fn other_host(bench: &Workbench) -> Option<SharedString> {
+    match bench.chosen_host() {
+        crate::hosts::HostChoice::Account(key) => Some(bench.host_name(&key)),
+        _ => None,
+    }
+}
+
 fn rail_empty(
     glyph: Icon,
-    title: &'static str,
+    title: impl Into<SharedString>,
     press: Option<(&str, &'static str)>,
     cx: &App,
 ) -> AnyElement {
@@ -1294,9 +1310,15 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                 cx,
             )
         } else {
+            let title = match (bench.all_projects, bench.project(), other_host(bench)) {
+                (false, Some(project), Some(host)) => {
+                    format!("No terminals in {} on {host}", project.name)
+                }
+                _ => "No terminals open".to_owned(),
+            };
             rail_empty(
                 Icon::Terminal,
-                "No terminals open",
+                title,
                 Some(("terminal.new", "start one")),
                 cx,
             )
