@@ -6,10 +6,13 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::base::Button as BaseButton;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, uniform_list, AnyElement, ClickEvent, Context, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Transformation,
+    div, px, radians, uniform_list, AnyElement, AppContext, ClickEvent, Context, Entity,
+    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, SharedString, Styled,
+    Subscription, Transformation, Window,
 };
 use serde_json::{json, Value};
 
@@ -54,6 +57,16 @@ pub struct FileTree {
     pub marks: HashMap<PathBuf, (Option<char>, Mark)>,
     /// The rows as last laid out, until a listing or an opened folder changes them.
     rows: RefCell<Option<Rc<Vec<Row>>>>,
+    /// The name being typed for a new file or folder.
+    pub naming: Option<Naming>,
+}
+
+/// A new file or folder in `parent`, while the person types its name in the tree.
+pub struct Naming {
+    pub parent: PathBuf,
+    pub dir: bool,
+    pub input: Entity<InputState>,
+    _typing: Subscription,
 }
 
 impl FileTree {
@@ -195,6 +208,22 @@ impl FileTree {
             .any(|entry| entry.dir && entry.name == name.to_string_lossy())
     }
 
+    /// Lists `dir` again, as after something was made in it.
+    pub fn reload(&mut self, dir: &Path, core: &Target) {
+        self.relist(vec![dir.to_owned()], core);
+    }
+
+    /// Where the row typing a new name goes: after its folder's row, and how deep.
+    fn naming_at(&self, rows: &[Row]) -> Option<(usize, usize)> {
+        let naming = self.naming.as_ref()?;
+        Some(
+            match rows.iter().position(|row| row.path == naming.parent) {
+                Some(at) => (at + 1, rows[at].depth + 1),
+                None => (0, 0),
+            },
+        )
+    }
+
     pub fn collapse_all(&mut self) {
         self.expanded.clear();
         self.rows.take();
@@ -329,7 +358,8 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             || "files".to_owned(),
             |name| name.to_string_lossy().into_owned(),
         );
-    let count = bench.files.rows().len();
+    let rows = bench.files.rows();
+    let count = rows.len() + usize::from(bench.files.naming_at(&rows).is_some());
     let action = |id: &'static str, glyph: Icon, label: &'static str| {
         IconButton::new(id, glyph, label).small()
     };
@@ -366,8 +396,18 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                                 cx.notify();
                             }),
                         ))
-                        .child(action("files-new", Icon::FilePlus, "New file"))
-                        .child(action("files-new-folder", Icon::FolderPlus, "New folder"))
+                        .child(action("files-new", Icon::FilePlus, "New file").on_click(
+                            cx.listener(|bench, _, window, cx| {
+                                bench.name_new_entry(false, window, cx)
+                            }),
+                        ))
+                        .child(
+                            action("files-new-folder", Icon::FolderPlus, "New folder").on_click(
+                                cx.listener(|bench, _, window, cx| {
+                                    bench.name_new_entry(true, window, cx)
+                                }),
+                            ),
+                        )
                         .child(
                             action("files-collapse", Icon::CollapseAll, "Collapse folders")
                                 .on_click(cx.listener(|bench, _, _, cx| {
@@ -384,9 +424,19 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
                     let front = bench.front_file();
                     let rows = bench.files.rows();
-                    rows[range.start.min(rows.len())..range.end.min(rows.len())]
-                        .iter()
-                        .map(|row| row_view(row, &bench.files.marks, front.as_deref(), cx))
+                    let naming = bench.files.naming_at(&rows);
+                    range
+                        .filter_map(|index| {
+                            let row = match naming {
+                                Some((at, depth)) if index == at => {
+                                    let naming = bench.files.naming.as_ref()?;
+                                    return Some(naming_row(naming, depth, cx));
+                                }
+                                Some((at, _)) if index > at => rows.get(index - 1)?,
+                                _ => rows.get(index)?,
+                            };
+                            Some(row_view(row, &bench.files.marks, front.as_deref(), cx))
+                        })
                         .collect::<Vec<_>>()
                 }),
             )
@@ -510,3 +560,124 @@ fn row_view(
 }
 
 const ROW_HEIGHT: f32 = 23.;
+
+/// The row a new file's or folder's name is typed in, where it will appear.
+fn naming_row(naming: &Naming, depth: usize, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    div()
+        .w_full()
+        .h(px(ROW_HEIGHT))
+        .pl(px(4.
+            + depth as f32 * 13.
+            + if naming.dir { 0. } else { 13. }))
+        .pr(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .capture_key_down(cx.listener(|bench, event: &KeyDownEvent, _, cx| {
+            if event.keystroke.key == "escape" {
+                bench.files.naming = None;
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }))
+        .child(
+            ui::icon(if naming.dir { Icon::Folder } else { Icon::File }, 16.)
+                .text_color(t.text_tertiary),
+        )
+        .child(
+            Input::new(&naming.input)
+                .appearance(false)
+                .p_0()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_primary),
+        )
+        .into_any_element()
+}
+
+/// Whether `name` can name a file or folder: something, with no path in it.
+fn valid_entry_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0'])
+}
+
+impl Workbench {
+    /// Asks in the tree for the name of a new file, or folder, in the folder chosen there,
+    /// else the file in front's, else the project's.
+    pub fn name_new_entry(&mut self, dir: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.files.root.clone() else {
+            return;
+        };
+        let parent = self
+            .files
+            .selected_dir
+            .clone()
+            .or_else(|| {
+                self.front_file()
+                    .and_then(|file| file.parent().map(Path::to_path_buf))
+            })
+            .filter(|parent| parent.starts_with(&root))
+            .unwrap_or(root.clone());
+        if parent != root && !self.files.expanded.contains(&parent) {
+            self.files.toggle(&parent, &self.target());
+        }
+        let input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(if dir { "folder name" } else { "file name" })
+        });
+        input.update(cx, |input, cx| input.focus(window, cx));
+        let typing = cx.subscribe_in(
+            &input,
+            window,
+            |bench, input, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } => {
+                    let name = input.read(cx).value().trim().to_owned();
+                    bench.make_entry(&name, window, cx);
+                }
+                InputEvent::Blur => {
+                    bench.files.naming = None;
+                    cx.notify();
+                }
+                _ => {}
+            },
+        );
+        self.files.naming = Some(Naming {
+            parent,
+            dir,
+            input,
+            _typing: typing,
+        });
+        cx.notify();
+    }
+
+    /// Makes the file or folder named in the tree, opening a new file to write in.
+    fn make_entry(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if !valid_entry_name(name) {
+            return;
+        }
+        let Some(naming) = self.files.naming.take() else {
+            return;
+        };
+        let path = naming.parent.join(name);
+        let params = json!({ "path": path, "dir": naming.dir });
+        let made = self.target().request("files.create", params);
+        let (parent, dir) = (naming.parent, naming.dir);
+        cx.spawn_in(window, async move |bench, cx| {
+            let made = made.await;
+            bench
+                .update(cx, |bench, cx| {
+                    match made {
+                        Ok(_) => {
+                            bench.files.reload(&parent, &bench.target());
+                            if !dir {
+                                bench.open_file(&path);
+                            }
+                        }
+                        Err(error) => bench.notify(Notification::error(error), cx),
+                    }
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+}
