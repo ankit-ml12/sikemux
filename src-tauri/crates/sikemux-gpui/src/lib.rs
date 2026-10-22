@@ -37,6 +37,7 @@ pub mod git;
 mod home;
 pub mod hosts;
 pub mod icons;
+pub mod install_pane;
 mod keymap;
 pub mod model_picker;
 mod new_tab;

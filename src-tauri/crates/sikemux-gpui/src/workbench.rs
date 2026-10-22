@@ -3335,7 +3335,7 @@ impl Render for Workbench {
                     |bench, _: &crate::agent_palette::ChooseAgent, window, cx| match bench
                         .chosen_host()
                     {
-                        crate::hosts::HostChoice::Ssh(alias) => bench.install_host(&alias, cx),
+                        crate::hosts::HostChoice::Ssh(alias) => bench.open_install_pane(&alias),
                         _ => bench.toggle_agent_palette(window, cx),
                     },
                 ),
@@ -3392,8 +3392,8 @@ impl Render for Workbench {
                 }),
             )
             .on_action(
-                cx.listener(|bench, _: &NewChat, _, cx| match bench.chosen_host() {
-                    crate::hosts::HostChoice::Ssh(alias) => bench.install_host(&alias, cx),
+                cx.listener(|bench, _: &NewChat, _, _| match bench.chosen_host() {
+                    crate::hosts::HostChoice::Ssh(alias) => bench.open_install_pane(&alias),
                     _ => bench.new_chat(),
                 }),
             )

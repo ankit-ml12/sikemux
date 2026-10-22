@@ -360,19 +360,42 @@ fn team_rows(
     cx: &mut Context<Workbench>,
 ) -> Vec<AnyElement> {
     let teams = bench.filter_text.is_empty();
+    let remote = if teams {
+        remote_workers(bench)
+    } else {
+        Vec::new()
+    };
+    let remote_of = |members: &[&AgentRow]| -> Vec<&serde_json::Value> {
+        remote
+            .iter()
+            .copied()
+            .filter(|worker| {
+                members
+                    .iter()
+                    .any(|member| worker["lead"] == member.id.as_str())
+            })
+            .collect()
+    };
     let mut folded = false;
+    let mut team_members: Vec<&AgentRow> = Vec::new();
     let mut rows = Vec::with_capacity(agents.len());
     for (ix, agent) in agents.iter().enumerate() {
         let team = agent.team.filter(|_| teams);
+        let continues = |at: usize| {
+            agents
+                .get(at)
+                .is_some_and(|next| matches!(next.team, Some(TeamLink::Member | TeamLink::Last)))
+        };
         let fold = match team {
             Some(TeamLink::Head) => {
-                let count = agents[ix + 1..]
-                    .iter()
-                    .take_while(|worker| {
+                let members: Vec<&AgentRow> = std::iter::once(agent)
+                    .chain(agents[ix + 1..].iter().take_while(|worker| {
                         matches!(worker.team, Some(TeamLink::Member | TeamLink::Last))
-                    })
-                    .count();
+                    }))
+                    .collect();
+                let count = members.len() - 1 + remote_of(&members).len();
                 folded = bench.folded_teams.contains(&agent.id);
+                team_members = members;
                 Some(Fold {
                     open: !folded,
                     count,
@@ -386,8 +409,111 @@ fn team_rows(
             }
         };
         rows.push(agent_row(bench, agent, team, fold, cx).into_any_element());
+        if team.is_some() && !folded && !continues(ix + 1) {
+            for worker in remote_of(&team_members) {
+                rows.push(remote_row(worker, cx));
+            }
+        }
     }
     rows
+}
+
+/// The spine and tick that hang a team's rows under its lead.
+fn team_lines(team: Option<TeamLink>, open_head: bool, cx: &App) -> Vec<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let spine = |line: gpui_kit::Div| line.absolute().left(px(14.)).w(px(1.)).bg(t.tree_spine);
+    match (team, open_head) {
+        (Some(TeamLink::Head), true) => {
+            vec![spine(div()).top(px(26.)).bottom(px(-2.)).into_any_element()]
+        }
+        (Some(TeamLink::Member), _) => vec![
+            spine(div()).top(px(-2.)).bottom(px(-2.)).into_any_element(),
+            div()
+                .absolute()
+                .top(px(14.))
+                .left(px(14.))
+                .w(px(7.))
+                .h(px(1.))
+                .bg(t.tree_tick)
+                .into_any_element(),
+        ],
+        (Some(TeamLink::Last), _) => vec![div()
+            .absolute()
+            .top(px(-2.))
+            .left(px(14.))
+            .w(px(8.))
+            .h(px(17.))
+            .border_l_1()
+            .border_b_1()
+            .border_color(t.tree_spine)
+            .rounded_bl(px(4.))
+            .into_any_element()],
+        _ => Vec::new(),
+    }
+}
+
+/// The workers agents here started on linked hosts, as the core lists them in team order.
+fn remote_workers(bench: &Workbench) -> Vec<&serde_json::Value> {
+    bench
+        .shown()
+        .and_then(|view| view.inbox["remoteAgents"].as_array())
+        .into_iter()
+        .flatten()
+        .filter(|worker| worker["team"].is_string())
+        .collect()
+}
+
+/// A worker on a linked host, in its lead's team. It has no chat here to open.
+fn remote_row(worker: &serde_json::Value, cx: &mut Context<Workbench>) -> AnyElement {
+    let team = match worker["team"].as_str() {
+        Some("last") => Some(TeamLink::Last),
+        _ => Some(TeamLink::Member),
+    };
+    let reachable = worker["reachable"] == true;
+    let host = worker["host"].as_str().unwrap_or_default();
+    let title = format!(
+        "@{} on {host}{}",
+        worker["name"].as_str().unwrap_or_default(),
+        if reachable { "" } else { ", out of reach" }
+    );
+    let status = reachable
+        .then(|| {
+            serde_json::from_value::<sikemux_wire::protocol::AgentStatus>(worker["status"].clone())
+                .ok()
+        })
+        .flatten();
+    let tip = if reachable {
+        format!("Runs on {host}")
+    } else {
+        format!("{host} is out of reach")
+    };
+    div()
+        .id(SharedString::from(format!(
+            "remote-{}",
+            worker["agentId"].as_str().unwrap_or_default()
+        )))
+        .relative()
+        .pl(px(18.))
+        .tooltip(ui::tooltip(tip))
+        .child(
+            Row::new(
+                SharedString::from(format!(
+                    "remote-row-{}",
+                    worker["agentId"].as_str().unwrap_or_default()
+                )),
+                title,
+            )
+            .mark(
+                22.,
+                ui::mark(worker["cli"].as_str().unwrap_or_default(), 20.),
+            )
+            .quiet()
+            .when_some(status, |row, status| {
+                row.status(ui::status_mark(status, cx))
+            }),
+        )
+        .children(team_lines(team, false, cx))
+        .into_any_element()
 }
 
 impl Workbench {
@@ -505,35 +631,7 @@ fn agent_row(
             .child(format!("+{}", fold.count))
     }))
     .children(counts(agent, cx));
-    let spine = |line: gpui_kit::Div| line.absolute().left(px(14.)).w(px(1.)).bg(t.tree_spine);
-    let lines: Vec<AnyElement> = match (team, &fold) {
-        (Some(TeamLink::Head), Some(Fold { open: true, .. })) => {
-            vec![spine(div()).top(px(26.)).bottom(px(-2.)).into_any_element()]
-        }
-        (Some(TeamLink::Member), _) => vec![
-            spine(div()).top(px(-2.)).bottom(px(-2.)).into_any_element(),
-            div()
-                .absolute()
-                .top(px(14.))
-                .left(px(14.))
-                .w(px(7.))
-                .h(px(1.))
-                .bg(t.tree_tick)
-                .into_any_element(),
-        ],
-        (Some(TeamLink::Last), _) => vec![div()
-            .absolute()
-            .top(px(-2.))
-            .left(px(14.))
-            .w(px(8.))
-            .h(px(17.))
-            .border_l_1()
-            .border_b_1()
-            .border_color(t.tree_spine)
-            .rounded_bl(px(4.))
-            .into_any_element()],
-        _ => Vec::new(),
-    };
+    let lines = team_lines(team, matches!(fold, Some(Fold { open: true, .. })), cx);
     let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
     div()
         .id(SharedString::from(format!("agent-menu-{}", agent.id)))
@@ -1066,7 +1164,7 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                         "agent.new",
                         cx,
                     )
-                    .on_click(cx.listener(move |bench, _, _, cx| bench.install_host(&alias, cx))),
+                    .on_click(cx.listener(move |bench, _, _, _| bench.open_install_pane(&alias))),
                 ),
         )
         .child(

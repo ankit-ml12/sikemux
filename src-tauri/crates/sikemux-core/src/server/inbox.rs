@@ -292,6 +292,9 @@ pub(crate) struct RemoteAgent {
     pub project: String,
     /// Its host answers now.
     pub reachable: bool,
+    /// Its place on its lead's team, shown after the last of that team's agents here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team: Option<TeamLink>,
 }
 
 /// The workers agents here started on linked hosts.
@@ -313,6 +316,7 @@ fn remote_agents(core: &Core) -> Vec<RemoteAgent> {
             label: display::status_label(foreign.status),
             lead: foreign.parent,
             project: foreign.project,
+            team: None,
         })
         .collect()
 }
@@ -837,12 +841,69 @@ pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) ->
         .into_iter()
         .filter_map(|(project, agents)| Some((project, rollup(agents)?)))
         .collect();
+    let mut view = view_of(core, &agents(core, chats, sessions), sessions);
+    with_remote_workers(&mut listed, &mut view.remote_agents);
     View {
         rollup: rollup(&listed),
         projects,
         agents: listed,
-        ..view_of(core, &agents(core, chats, sessions), sessions)
+        ..view
     }
+}
+
+/// Adds the workers agents here started on linked hosts to their leads' teams: each team
+/// with such workers ends with them, in the order they come, so the team's last agent here
+/// no longer ends it. Workers whose lead is not listed stand on their own.
+fn with_remote_workers(listed: &mut [Shown], remote: &mut Vec<RemoteAgent>) {
+    let mut teams: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    while at < listed.len() {
+        let mut end = at;
+        if listed[at].team == Some(TeamLink::Head) {
+            while end + 1 < listed.len() && listed[end].team != Some(TeamLink::Last) {
+                end += 1;
+            }
+        }
+        teams.push((at, end));
+        at = end + 1;
+    }
+    let mut placed = vec![false; remote.len()];
+    let mut order = Vec::with_capacity(remote.len());
+    for (start, end) in teams {
+        let ids: Vec<&str> = listed[start..=end]
+            .iter()
+            .map(|agent| agent.agent_id.as_str())
+            .collect();
+        let workers: Vec<usize> = (0..remote.len())
+            .filter(|&ix| {
+                !placed[ix]
+                    && remote[ix]
+                        .lead
+                        .as_deref()
+                        .is_some_and(|lead| ids.contains(&lead))
+            })
+            .collect();
+        let Some(&last) = workers.last() else {
+            continue;
+        };
+        listed[end].team = Some(if start == end {
+            TeamLink::Head
+        } else {
+            TeamLink::Member
+        });
+        for &worker in &workers {
+            placed[worker] = true;
+            remote[worker].team = Some(if worker == last {
+                TeamLink::Last
+            } else {
+                TeamLink::Member
+            });
+            order.push(worker);
+        }
+    }
+    order.extend((0..remote.len()).filter(|&ix| !placed[ix]));
+    let mut taken: Vec<Option<RemoteAgent>> = remote.drain(..).map(Some).collect();
+    remote.extend(order.into_iter().filter_map(|ix| taken[ix].take()));
 }
 
 /// The agents in the order given, but each lead's workers right after it, in the same

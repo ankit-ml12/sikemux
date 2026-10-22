@@ -135,18 +135,22 @@ impl Workbench {
         .detach();
     }
 
-    /// Installs Sikemux on the SSH host `alias` over the person's own ssh, in a terminal of its
-    /// strip, and signs it in to the account; its row says how it goes.
-    pub fn install_host(&mut self, alias: &str, cx: &mut Context<Self>) {
+    /// Sets Sikemux up on the SSH host `alias` as `set_up` says, over the person's own ssh in a
+    /// terminal of its strip, signing it in to the account where that takes a code; its row
+    /// says how it goes.
+    pub fn set_up_host(
+        &mut self,
+        alias: &str,
+        set_up: crate::install_pane::SetUp,
+        cx: &mut Context<Self>,
+    ) {
         let (asks, alias) = (self.asks.clone(), alias.to_owned());
-        let params = json!({ "alias": alias, "work": "install" });
+        let params = json!({ "alias": alias, "work": set_up.work() });
         cx.spawn(async move |bench, cx| {
             if let Err(error) = core::request(&asks, "installHost", params).await {
                 let _ = bench.update(cx, |bench, cx| {
                     bench.notify(
-                        Notification::error(format!(
-                            "Sikemux was not installed on {alias}: {error}"
-                        )),
+                        Notification::error(format!("{}: {error}", set_up.offer(&alias))),
                         cx,
                     )
                 });

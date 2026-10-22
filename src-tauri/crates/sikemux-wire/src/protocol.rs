@@ -2018,6 +2018,12 @@ pub enum PaneKind {
     Desk,
     /// A project's own settings; `target` is its folder.
     ProjectSettings,
+    /// What setting Sikemux up adds on an SSH host, and the one action that does it; `target`
+    /// is the host's alias.
+    InstallSikemux,
+    /// A kind a newer core shows, which this build does not know and leaves out.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

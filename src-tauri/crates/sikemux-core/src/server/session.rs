@@ -862,8 +862,11 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
             id: session.id,
             link,
         });
-        if session.owner.ssh_host.is_some() {
+        if let Some(alias) = &session.owner.ssh_host {
             super::ssh::moved(core);
+            if link == sikemux_pty::shell_protocol::SshLink::Connected {
+                super::hosts::probe::ask(core, alias, false);
+            }
         }
     }
 }

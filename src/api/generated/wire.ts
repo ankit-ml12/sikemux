@@ -604,7 +604,12 @@ export interface RemoteAgent {
     project: string;
     /** Its host answers now. */
     reachable: boolean;
+    /** Its place on its lead's team, shown after the last of that team's agents here. */
+    team?: TeamLink;
 }
+
+/** Where an agent sits on its team: the lead heads it, the last worker ends it. */
+export type TeamLink = "head" | "member" | "last";
 
 /** How devices show an open agent here. */
 export interface AgentShown {
@@ -639,9 +644,6 @@ export interface AgentShown {
      */
     team?: TeamLink;
 }
-
-/** Where an agent sits on its team: the lead heads it, the last worker ends it. */
-export type TeamLink = "head" | "member" | "last";
 
 /**
  * Several agents shown as one: the group of the one that wants the person
@@ -718,7 +720,8 @@ export type Pane =
           sizes: number[];
       };
 
-export type PaneKind = "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings";
+export type PaneKind =
+    "agent" | "terminal" | "files" | "git" | "search" | "board" | "browser" | "plugin" | "desk" | "projectSettings" | "installSikemux";
 
 export type SplitDir = "row" | "column" | "stack";
 

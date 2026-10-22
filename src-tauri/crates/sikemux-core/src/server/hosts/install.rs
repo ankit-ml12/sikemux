@@ -38,6 +38,8 @@ pub(crate) enum Work {
     /// signs in on the way.
     Update,
     SignIn,
+    /// Starts the stopped core of a host Sikemux is already on.
+    Start,
 }
 
 /// What is being done to an SSH host from here, kept until the next set-up of that host so a
@@ -99,7 +101,7 @@ fn checked_alias(alias: &str) -> CoreResult<&str> {
 /// terminal. `hostSetup` waits for the end, and the host's row says how it went.
 pub(crate) async fn install_host(core: &Arc<Core>, params: InstallParams) -> CoreResult<Value> {
     let alias = checked_alias(&params.alias)?.to_owned();
-    let needs_code = params.work != Work::Update;
+    let needs_code = matches!(params.work, Work::Install | Work::SignIn);
     if needs_code && core.remote.owner().is_none() {
         return Err(format!(
             "this host is not signed in to your Sikemux account, so it cannot add {alias} to it"
@@ -131,6 +133,7 @@ pub(crate) async fn install_host(core: &Arc<Core>, params: InstallParams) -> Cor
         Work::Install => installer(),
         Work::Update => format!("{} && {}", installer(), over_ssh("restart")),
         Work::SignIn => over_ssh("login"),
+        Work::Start => over_ssh("start"),
     };
     let startup = format!("ssh -t -- {alias} {}", single_quoted(&remote));
     let started = async {
@@ -224,6 +227,7 @@ fn settle(core: &Core, alias: &str, run: u64, ended: Result<(), String>) {
 async fn finish(core: Arc<Core>, id: SessionId, alias: String, run: u64, needs_code: bool) {
     let ended = approve_shown_code(&core, id, &alias, run, needs_code).await;
     settle(&core, &alias, run, ended);
+    super::probe::ask(&core, &alias, true);
 }
 
 async fn approve_shown_code(
@@ -308,7 +312,7 @@ fn installer() -> String {
 
 /// `sikemux` with `args`, run on an SSH host through its login shell's PATH and where the
 /// installer puts it when that PATH does not reach it.
-fn over_ssh(args: &str) -> String {
+pub(super) fn over_ssh(args: &str) -> String {
     format!(r#"exec "$SHELL" -lc 'PATH="$PATH:$HOME/.local/bin" sikemux {args}'"#)
 }
 

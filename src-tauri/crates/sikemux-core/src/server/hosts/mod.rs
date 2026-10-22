@@ -17,6 +17,7 @@ mod link;
 mod listed;
 pub(crate) mod open;
 mod outbox;
+pub(crate) mod probe;
 pub(crate) mod route;
 pub(crate) mod spawn;
 pub(crate) mod team;
@@ -99,6 +100,9 @@ pub(crate) struct Hosts {
     installed_kept: Kept,
     /// What is being done to SSH hosts from here, by alias, until it ends well.
     setups: Mutex<HashMap<String, install::Setup>>,
+    /// What each SSH host was found to run when last asked, by alias.
+    probes: Mutex<HashMap<String, probe::Found>>,
+    probing: Mutex<probe::Probing>,
 }
 
 impl Hosts {
@@ -115,6 +119,8 @@ impl Hosts {
             installed: Mutex::new(installed_kept.load()),
             installed_kept,
             setups: Mutex::default(),
+            probes: Mutex::default(),
+            probing: Mutex::default(),
         }
     }
 

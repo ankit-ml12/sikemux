@@ -161,12 +161,20 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 _ => None,
             };
             let setup = &host["setup"];
+            let found = match host["found"].as_str() {
+                Some("signedOut") => Some("not signed in".to_owned()),
+                Some("other") => Some("on another account".to_owned()),
+                Some("stopped") => Some("stopped".to_owned()),
+                Some("outdated") => Some("older release".to_owned()),
+                _ => None,
+            };
             let detail = match (setup["work"].as_str(), setup["problem"].as_str()) {
                 (_, Some(problem)) => Some(format!("not set up: {problem}")),
                 (Some("install"), None) => Some("installing".to_owned()),
                 (Some("update"), None) => Some("updating".to_owned()),
+                (Some("start"), None) => Some("starting".to_owned()),
                 (Some(_), None) => Some("signing in".to_owned()),
-                (None, _) => detail,
+                (None, _) => found.or(detail),
             };
             let setting_up = setup.is_object() && setup["problem"].is_null();
             let alias = host["ssh"].as_str().filter(|_| !linked).map(str::to_owned);
@@ -190,7 +198,9 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                     |row, detail| row.detail(detail),
                 )
                 .status(Some(ui::dot(tone, cx)));
-            let Some(alias) = alias else {
+            let Some((alias, set_up)) =
+                alias.and_then(|alias| Some((alias.clone(), bench.set_up_of(&alias)?)))
+            else {
                 return row.into_any_element();
             };
             let bench_entity = cx.weak_entity();
@@ -199,12 +209,12 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .context_menu(move |popup, _, _| {
                     let (bench, alias) = (bench_entity.clone(), alias.clone());
                     popup.item(
-                        PopupMenuItem::new(format!("Install Sikemux on {alias}"))
-                            .icon(Icon::Download)
+                        PopupMenuItem::new(set_up.offer(&alias))
+                            .icon(set_up.icon())
                             .disabled(setting_up)
                             .on_click(move |_, _, cx| {
-                                let _ =
-                                    bench.update(cx, |bench, cx| bench.install_host(&alias, cx));
+                                let _ = bench
+                                    .update(cx, |bench, cx| bench.set_up_host(&alias, set_up, cx));
                             }),
                     )
                 })

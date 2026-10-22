@@ -96,10 +96,18 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     };
     let this = cx.entity().downgrade();
     // An SSH host without Sikemux has no projects, only the one thing that sets it up (ADR 0019).
-    let project = match &chosen {
-        HostChoice::Ssh(alias) => Some(set_up_offer(bench, alias, cx)),
-        _ => None,
+    let set_up_alias = match &chosen {
+        HostChoice::Ssh(alias) => Some(alias.clone()),
+        HostChoice::Account(key) => bench
+            .read("hosts")
+            .and_then(|hosts| hosts.as_array())
+            .and_then(|hosts| hosts.iter().find(|host| host["id"] == key.as_str()))
+            .and_then(|host| host["ssh"].as_str())
+            .filter(|alias| bench.set_up_of(alias).is_some())
+            .map(str::to_owned),
+        HostChoice::This => None,
     };
+    let project = set_up_alias.and_then(|alias| set_up_offer(bench, &alias, cx));
     let project = project.or_else(|| {
         front.map(|front| {
             let find = (projects.len() > FIND_PAST).then_some("Find a project");
@@ -140,43 +148,40 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .into_any_element()
 }
 
-/// The button that installs Sikemux on the SSH host `alias`, saying so while it runs.
-fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> AnyElement {
+/// The button that sets Sikemux up on the SSH host `alias` as it needs, saying so while it runs.
+fn set_up_offer(bench: &Workbench, alias: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
     let t = Tokens::get(cx).clone();
-    let running = bench
-        .read("hosts")
-        .and_then(|hosts| hosts.as_array())
-        .into_iter()
-        .flatten()
-        .find(|host| host["ssh"] == alias && host["id"].is_null())
-        .is_some_and(|host| host["setup"].is_object() && host["setup"]["problem"].is_null());
+    let set_up = bench.set_up_of(alias)?;
+    let running = bench.setting_up(alias);
     let label = match running {
-        true => format!("Installing {alias}…"),
-        false => format!("Install Sikemux on {alias}"),
+        Some(running) => running.running(alias),
+        None => set_up.offer(alias),
     };
     let alias = alias.to_owned();
-    BaseButton::new("place-set-up")
-        .accessibility_label(label.clone())
-        .disabled(running)
-        .h(px(26.))
-        .max_w(px(260.))
-        .px(px(10.))
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .rounded_full()
-        .text_size(crate::theme::ui_text(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(if running {
-            t.text_tertiary
-        } else {
-            t.text_primary
-        })
-        .hover(move |style| style.bg(t.surface_chosen))
-        .child(mark((Icon::Download, t.text_secondary)))
-        .child(div().min_w_0().truncate().child(label))
-        .on_click(cx.listener(move |bench, _, _, cx| bench.install_host(&alias, cx)))
-        .into_any_element()
+    Some(
+        BaseButton::new("place-set-up")
+            .accessibility_label(label.clone())
+            .disabled(running.is_some())
+            .h(px(26.))
+            .max_w(px(260.))
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded_full()
+            .text_size(crate::theme::ui_text(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(if running.is_some() {
+                t.text_tertiary
+            } else {
+                t.text_primary
+            })
+            .hover(move |style| style.bg(t.surface_chosen))
+            .child(mark((set_up.icon(), t.text_secondary)))
+            .child(div().min_w_0().truncate().child(label))
+            .on_click(cx.listener(move |bench, _, _, cx| bench.set_up_host(&alias, set_up, cx)))
+            .into_any_element(),
+    )
 }
 
 /// A pill naming `shown`, lifted only on hover or while open, opening a menu of `choices`,

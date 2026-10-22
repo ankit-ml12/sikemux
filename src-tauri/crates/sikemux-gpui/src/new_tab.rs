@@ -135,7 +135,7 @@ impl Workbench {
             "open a new tab…",
             rows,
             move |row, bench, window, cx| match row.key.as_ref() {
-                INSTALL => bench.install_host(&alias, cx),
+                INSTALL => bench.open_install_pane(&alias),
                 command => keymap::dispatch(command, window, cx),
             },
         )

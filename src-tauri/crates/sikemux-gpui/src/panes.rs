@@ -427,6 +427,19 @@ fn view(
         PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
         PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
         PaneKind::ProjectSettings => crate::project_settings::pane(bench, target, window, cx),
+        PaneKind::InstallSikemux => crate::install_pane::pane(bench, target, cx),
+        PaneKind::Unknown => ui::pane(cx)
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(crate::theme::ui_text(12.))
+                    .text_color(crate::theme::Tokens::get(cx).text_tertiary)
+                    .child("This tab needs a newer Sikemux."),
+            )
+            .into_any_element(),
         _ => home::agent_view(bench, tab, id, "", cx),
     }
 }

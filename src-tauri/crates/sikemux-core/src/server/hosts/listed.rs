@@ -36,6 +36,12 @@ pub(crate) struct HostRow {
     /// What is being done to an SSH host from here: installing, updating or signing in.
     #[serde(skip_serializing_if = "Option::is_none")]
     setup: Option<super::install::SetupRow>,
+    /// What its SSH host was found to run when last asked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    found: Option<super::probe::Found>,
+    /// What setting its SSH host up takes: installing where nothing has said Sikemux is there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    set_up: Option<super::install::Work>,
 }
 
 /// Linked hosts in the order they were linked, then the SSH hosts a terminal
@@ -56,6 +62,13 @@ pub(crate) fn rows(core: &Core) -> Vec<HostRow> {
             } else {
                 Reach::Away
             },
+            found: installed
+                .get(&link.id)
+                .and_then(|alias| super::probe::found(core, alias)),
+            set_up: installed
+                .get(&link.id)
+                .and_then(|alias| super::probe::found(core, alias))
+                .and_then(super::probe::Found::set_up),
             ssh: installed.get(&link.id).cloned(),
             setup: None,
             id: Some(link.id),
@@ -84,13 +97,21 @@ pub(crate) fn rows(core: &Core) -> Vec<HostRow> {
             *best = reach;
         }
     }
-    rows.extend(open.into_iter().map(|(alias, reach)| HostRow {
-        id: None,
-        name: alias.clone(),
-        platform: None,
-        reach,
-        setup: setups.remove(&alias),
-        ssh: Some(alias),
+    rows.extend(open.into_iter().map(|(alias, reach)| {
+        let found = super::probe::found(core, &alias);
+        HostRow {
+            id: None,
+            name: alias.clone(),
+            platform: None,
+            reach,
+            setup: setups.remove(&alias),
+            set_up: found.map_or(
+                Some(super::install::Work::Install),
+                super::probe::Found::set_up,
+            ),
+            found,
+            ssh: Some(alias),
+        }
     }));
     rows
 }
