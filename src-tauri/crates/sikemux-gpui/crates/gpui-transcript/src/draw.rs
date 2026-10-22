@@ -299,9 +299,20 @@ impl Element for Tall {
             .iter()
             .map(|block| block.size.get().map_or(px(0.), |size| size.height));
         let gaps = blocks.style.gap * blocks.blocks.len().saturating_sub(1) as f32;
-        let mut style = gpui::Style::default();
-        style.size.height = heights.fold(gaps, |sum, height| sum + height).into();
-        (window.request_layout(style, None, cx), laid)
+        let height = heights.fold(gaps, |sum, height| sum + height);
+        // A parent that sizes itself to its content, as a sent message's bubble does, asks for
+        // a width; the blocks were last laid out at `width`, so that is what they need.
+        let layout = window.request_measured_layout(
+            gpui::Style::default(),
+            move |known, available, _, _| {
+                let room = match available.width {
+                    AvailableSpace::Definite(room) => room.min(width),
+                    _ => width,
+                };
+                size(known.width.unwrap_or(room), known.height.unwrap_or(height))
+            },
+        );
+        (layout, laid)
     }
 
     fn prepaint(
