@@ -15,9 +15,9 @@ name = "sikemux"
 path = "src/main.rs"
 
 [features]
-# Drives the window from step files for the test bundle's real-window checks; never on in the
-# try-out or a release.
-drive = []
+# The test bundle's kit: drives the window from step files, and dials hosts at the addresses its
+# dev/host-addresses.json names. Never on in the try-out or a release.
+drive = ["sikemux-linked/host-addresses-file"]
 
 [dependencies]
 anyhow = "1"

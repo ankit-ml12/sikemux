@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use iroh::EndpointAddr;
 use serde_json::{json, Value};
 use sikemux_client::client::{ClientError, ClientEvent, CoreClient, EventSink};
-use sikemux_client::device::Device;
+use sikemux_client::device::{host_addr, Device};
 use sikemux_client::join::{JoinHello, JoinReply};
 use sikemux_client::remote::{PublicKey, SecretKey};
 use sikemux_wire::accounts::protocol::{JoinTicket, Relay};
@@ -50,6 +51,7 @@ pub enum Happened {
 /// The account's other hosts this app keeps connections to.
 pub struct Linked {
     device: Device,
+    relays: Vec<Relay>,
     /// What the account calls this app, before " on <host>".
     app: String,
     platform: String,
@@ -78,10 +80,11 @@ impl Linked {
         app: impl Into<String>,
         platform: impl Into<String>,
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Happened>), ClientError> {
-        let device = Device::bind(key, relays).await?;
+        let device = Device::bind(key, relays.clone()).await?;
         let (happened, heard) = mpsc::unbounded_channel();
         let linked = Arc::new(Self {
             device,
+            relays,
             app: app.into(),
             platform: platform.into(),
             own: Mutex::new(None),
@@ -176,6 +179,14 @@ impl Linked {
         Ok(serde_json::from_value(ticket)?)
     }
 
+    /// Where `host` is dialled: through the relays, and in a test kit also at the addresses
+    /// the kit names for it.
+    fn addr(&self, host: PublicKey) -> EndpointAddr {
+        kit_addresses(&host.to_string())
+            .into_iter()
+            .fold(host_addr(host, &self.relays), EndpointAddr::with_ip_addr)
+    }
+
     async fn join(&self, host: &str, key: PublicKey) -> Result<(), ClientError> {
         let ticket = self.ticket(host).await?;
         let hello = JoinHello {
@@ -183,7 +194,7 @@ impl Linked {
             name: self.app.clone(),
             platform: self.platform.clone(),
         };
-        match self.device.join(key, &hello).await {
+        match self.device.join_at(self.addr(key), &hello).await {
             Ok(JoinReply::Allowed { .. }) => Ok(()),
             Ok(JoinReply::Denied) => Err(ClientError::Core("the host turned this app away".into())),
             Ok(JoinReply::Refused { reason }) => Err(ClientError::Core(reason)),
@@ -203,7 +214,11 @@ async fn stay_connected(
     let mut wait = FIRST_RETRY;
     loop {
         let (events, mut heard) = mpsc::unbounded_channel();
-        match linked.device.connect(key, Arc::new(HostSink(events))).await {
+        match linked
+            .device
+            .connect_to(linked.addr(key), Arc::new(HostSink(events)))
+            .await
+        {
             Ok((connected, connection)) => {
                 wait = FIRST_RETRY;
                 client.send_replace(Some(Arc::new(connected)));
@@ -251,6 +266,39 @@ impl EventSink for HostSink {
     fn closed(&self) {
         let _ = self.0.send(None);
     }
+}
+
+/// The addresses a test kit names for `host` in `dev/host-addresses.json` under this app's
+/// config folder, as test cores on one machine have no relay to meet through.
+#[cfg(feature = "host-addresses-file")]
+fn kit_addresses(host: &str) -> Vec<std::net::SocketAddr> {
+    let folder = std::env::var_os("SIKEMUX_CONFIG_DIR").map(std::path::PathBuf::from);
+    let Some(text) = folder
+        .and_then(|folder| std::fs::read_to_string(folder.join("dev/host-addresses.json")).ok())
+    else {
+        return Vec::new();
+    };
+    let Ok(named) = serde_json::from_str::<HashMap<String, Vec<std::net::SocketAddr>>>(&text)
+    else {
+        return Vec::new();
+    };
+    let on_this_network = |ip: std::net::IpAddr| match ip {
+        std::net::IpAddr::V4(ip) => ip.is_loopback() || ip.is_private(),
+        std::net::IpAddr::V6(ip) => ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00,
+    };
+    if !named
+        .values()
+        .flatten()
+        .all(|address| on_this_network(address.ip()))
+    {
+        return Vec::new();
+    }
+    named.get(host).cloned().unwrap_or_default()
+}
+
+#[cfg(not(feature = "host-addresses-file"))]
+fn kit_addresses(_: &str) -> Vec<std::net::SocketAddr> {
+    Vec::new()
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {

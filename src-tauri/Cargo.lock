@@ -5877,6 +5877,7 @@ name = "sikemux-linked"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "iroh",
  "serde_json",
  "sikemux-client",
  "sikemux-wire",

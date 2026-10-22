@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+# Test kits only: dial hosts also at the addresses dev/host-addresses.json names, as local test
+# cores have no relay to meet through. Never on in a try-out or release.
+host-addresses-file = []
+
 [dependencies]
 sikemux-process = { path = "../sikemux-process" }
 sikemux-fold = { path = "../sikemux-fold" }

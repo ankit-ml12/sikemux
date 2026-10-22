@@ -294,7 +294,44 @@ fn addr_of(core: &Core, id: &str, addresses: &[String]) -> Result<EndpointAddr, 
     Ok(addresses
         .iter()
         .filter_map(|address| address.parse::<SocketAddr>().ok())
+        .chain(kit_addresses(id))
         .fold(with_relays, EndpointAddr::with_ip_addr))
+}
+
+/// Where a test kit's core also dials the host `id`: the addresses the kit names for it in
+/// `dev/host-addresses.json`, since test cores on one machine have no relay to meet through.
+#[cfg(feature = "host-addresses-file")]
+fn kit_addresses(id: &str) -> Vec<SocketAddr> {
+    let Some(text) = sikemux_process::paths::config_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join("dev/host-addresses.json")).ok())
+    else {
+        return Vec::new();
+    };
+    let Ok(named) = serde_json::from_str::<HashMap<String, Vec<SocketAddr>>>(&text) else {
+        return Vec::new();
+    };
+    if !named
+        .values()
+        .flatten()
+        .all(|address| on_this_network(address.ip()))
+    {
+        eprintln!("sikemux core: dev/host-addresses.json names an address off this network, so it is not used");
+        return Vec::new();
+    }
+    named.get(id).cloned().unwrap_or_default()
+}
+
+#[cfg(not(feature = "host-addresses-file"))]
+fn kit_addresses(_: &str) -> Vec<SocketAddr> {
+    Vec::new()
+}
+
+#[cfg(feature = "host-addresses-file")]
+fn on_this_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ip) => ip.is_loopback() || ip.is_private(),
+        std::net::IpAddr::V6(ip) => ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00,
+    }
 }
 
 async fn dial(core: &Core, id: &str, addresses: &[String]) -> Result<Connection, String> {
