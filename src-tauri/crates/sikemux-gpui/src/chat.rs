@@ -1712,6 +1712,44 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
 
 /// Brings an older or newer sent prompt into the draft; the arrow goes on to the text when
 /// there is none to bring.
+/// Backspace just after a chip selects it, as on the Mac, so only a second press removes it.
+fn select_chip(
+    agent: &str,
+    cx: &mut Context<Workbench>,
+) -> impl Fn(&gpui_kit::component::input::Backspace, &mut Window, &mut App) {
+    let (agent, this) = (agent.to_owned(), cx.weak_entity());
+    move |_, _, cx| {
+        let draft = this
+            .update(cx, |bench, _| {
+                Some(bench.chats.get(&agent)?.composer.as_ref()?.draft.clone())
+            })
+            .ok()
+            .flatten();
+        let Some(draft) = draft else {
+            return;
+        };
+        let chip = {
+            let state = draft.read(cx);
+            let cursor = state.cursor();
+            state
+                .selected_range()
+                .is_empty()
+                .then(|| {
+                    state
+                        .tokens()
+                        .iter()
+                        .map(|token| token.range())
+                        .find(|range| range.end == cursor)
+                })
+                .flatten()
+        };
+        if let Some(range) = chip {
+            draft.update(cx, |state, cx| state.set_selected_range(range, cx));
+            cx.stop_propagation();
+        }
+    }
+}
+
 fn recall<A: gpui::Action>(
     agent: &str,
     older: bool,
@@ -2498,6 +2536,7 @@ fn mounted_composer(
         .map(|(composer, offering)| {
             div()
                 .key_context("ChatComposer")
+                .capture_action(select_chip(id, cx))
                 .on_action(recall::<OlderPrompt>(id, true, cx))
                 .on_action(recall::<NewerPrompt>(id, false, cx))
                 .on_action(stop_turn(id, cx))
