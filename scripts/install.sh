@@ -287,7 +287,7 @@ install_host() {
   if $updated && "$bin/sikemux" status >/dev/null 2>&1; then
     note "The running core keeps $previous until you run: sikemux restart"
   fi
-  login_path=$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' </dev/null 2>/dev/null || true)
+  login_path=$("${SHELL:-/bin/sh}" -lc "printf %s \"\$PATH\"" </dev/null 2>/dev/null || true)
   case ":$PATH:$login_path:" in
     *":$bin:"*) ;;
     *) note "Add $(home_path "$bin") to your PATH to run sikemux from any shell." ;;
