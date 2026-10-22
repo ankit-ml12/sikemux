@@ -46,6 +46,7 @@ class Run:
         self.app = None
         self.processes = []
         self.preferences = {}
+        self.desk_body = None
 
     # The world the app runs in.
 
@@ -107,7 +108,7 @@ class Run:
                                     capture_output=True, text=True, timeout=60)
             (self.root / "seed.log").open("a").write(seeded.stdout + seeded.stderr)
             self.agents += [line.split()[1] for line in seeded.stdout.splitlines() if line.startswith("chat ")]
-        self.agent = self.agents[-1] if self.agents else None
+        self.front = self.agents[-1] if self.agents else None
         self.launch()
 
     def launch(self):
@@ -153,8 +154,19 @@ class Run:
                 return json.loads(line[len("did: state "):])
         return None
 
+    @property
+    def agent(self):
+        """The chat in front, which the composer's prompts go to, else the last one that was."""
+        active = self.strip().get("active") or ""
+        if active.startswith("agent:"):
+            self.front = active.removeprefix("agent:")
+        return self.front
+
     def desk(self, agent=None):
-        return ((self.state() or {}).get("desks") or {}).get(agent or self.agent) or {}
+        desk = ((self.state() or {}).get("desks") or {}).get(agent or self.agent) or {}
+        if desk.get("pageBounds"):
+            self.desk_body = desk["pageBounds"]
+        return desk
 
     def layout(self):
         try:
@@ -170,14 +182,15 @@ class Run:
         return (self.root / "app.log").read_text(errors="replace")
 
     def answers(self):
-        """What the fake agent said each tool answered, oldest first."""
-        found = []
+        """What the fake agent said each tool answered, oldest first, by chat."""
+        found = {}
         for path in sorted((self.root / "data/chat-history").glob("*.jsonl")):
             for line in path.read_text(errors="replace").splitlines():
                 try:
-                    found += [text for text in strings(json.loads(line)) if text.startswith(("tool answered: ", "tool failed: "))]
+                    said = [text for text in strings(json.loads(line)) if text.startswith(("tool answered: ", "tool failed: "))]
                 except ValueError:
                     continue
+                found.setdefault(path.name, []).extend(said)
         return found
 
     def composer(self):
@@ -186,16 +199,25 @@ class Run:
 
     def prompt(self, text, seconds=20):
         """Types `text` into the front chat's composer and sends it; answers the tool's reply."""
-        before = len(self.answers())
+        before = {chat: len(said) for chat, said in self.answers().items()}
         x, y = self.composer()
         self.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", f"text {text}", "wait 0.2", "key enter")
-        reply = until(lambda: (lambda now: now[before] if len(now) > before else None)(self.answers()), seconds)
-        return reply or ""
+
+        def new():
+            for chat, said in self.answers().items():
+                if len(said) > before.get(chat, 0):
+                    return said[before.get(chat, 0)]
+            return None
+
+        return until(new, seconds) or ""
+
+    def go(self, url):
+        """Types `url` into the desk's address and presses Enter, which hands the page the keys."""
+        self.drive("key cmd+l", "wait 0.6", f"text {url}", "wait 0.3", "key enter")
+        return bool(until(lambda: self.desk().get("pageFocused"), 8))
 
     def focus_page(self):
-        """Hands the keys to the desk's page, as Enter in its address does once it loads."""
-        self.drive("key cmd+l", "wait 0.6", "key enter", "wait 1.5")
-        return bool(until(lambda: self.desk().get("pageFocused"), 5))
+        return self.go(active_page(self.desk()).get("url", ""))
 
     def desks_per_agent(self):
         counts = {}
@@ -282,10 +304,12 @@ def active_page(desk):
 # The checks, in the order they run: each leaves the window as the next expects.
 
 def dp5(run):
-    every = run.prompt('tool app.console {}')
-    errors = run.prompt('tool app.console {"errors":true}')
-    shaped = every.startswith("tool answered") and errors.startswith("tool answered")
-    run.report("DP5", shaped and len(errors) <= len(every), f"all: {every[:160]!r} errors only: {errors[:160]!r}")
+    every = answered(run.prompt('tool app.console {}'))
+    errors = answered(run.prompt('tool app.console {"errors":true}'))
+    texts = [message.get("text", "") for message in errors.get("messages", [])]
+    only = all(text.startswith("sikemux") or "panicked" in text for text in texts)
+    run.report("DP5", bool(every.get("messages")) and only and errors.get("matched", 0) < errors.get("recorded", 0),
+               f"all: {every.get('matched')} of {every.get('recorded')} lines; errors only: {errors.get('matched')} of {errors.get('recorded')}, all sikemux lines or panics {only}")
 
 
 def dp3(run):
@@ -298,9 +322,8 @@ def d5(run):
     run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
     first = until(lambda: (lambda page: page if page.get("url", "").endswith("/page.html") and not page.get("loading") else None)(active_page(run.desk())), 15) or {}
     fresh = run.desk().get("open") and not first.get("back") and not first.get("forward")
-    run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page2.html"}))
+    focused = run.go(f"{run.site}/page2.html")
     second = until(lambda: (lambda page: page if page.get("url", "").endswith("/page2.html") and page.get("back") else None)(active_page(run.desk())), 15) or {}
-    focused = run.focus_page()
     run.drive("key cmd+[", "wait 1.5")
     back = active_page(run.desk())
     run.drive("key cmd+]", "wait 1.5")
@@ -355,8 +378,10 @@ def dk6(run):
 
 
 def d7(run):
-    urls = [page.get("url") for page in pages(run.desk())]
     x, y = run.composer()
+    if not run.desk().get("open"):
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1.5")
+    urls = [page.get("url") for page in pages(run.desk())]
     run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1")
     closed = run.desk().get("open")
     run.drive("key cmd+j", "wait 1.5")
@@ -367,7 +392,8 @@ def d7(run):
 
 def dk8(run):
     x, y = run.composer()
-    run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1")
+    if run.desk().get("open"):
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 0.3", "key cmd+j", "wait 1")
     closed = run.desk().get("open") is False
     run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
     opened = until(lambda: run.desk().get("open"), 10)
@@ -417,6 +443,9 @@ def df1(run):
 
 def df3(run):
     path = str(run.root / "project/a.txt")
+    if run.desk_body:
+        left, top, width, height = run.desk_body
+        run.drive(f"click {left + width / 2:.0f} {top + height / 2:.0f}", "wait 0.5")
     contexts = (run.state() or {}).get("contexts", [])
     tabs = len(run.strip().get("tabs", []))
     run.drive("key cmd+w", "wait 1")
@@ -453,6 +482,9 @@ def df5(run):
 
 def dk1(run):
     run.drive("key cmd+t", "wait 2")
+    width, height = (run.state() or {}).get("window", [1340, 881])
+    # A new terminal tab takes the keys only once it is clicked, as a person does to type in it.
+    run.drive(f"click {width * 0.55:.0f} {height * 0.5:.0f}", "wait 0.5")
     terminal = run.strip().get("active")
     run.drive("key cmd+shift+t", "wait 2")
     after = run.strip().get("active")
