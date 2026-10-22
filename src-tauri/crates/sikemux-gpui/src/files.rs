@@ -428,8 +428,8 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                 ),
         )
         .children(open_files(bench, cx))
-        .child(
-            uniform_list(
+        .child({
+            let rows = uniform_list(
                 "file-rows",
                 count,
                 cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
@@ -451,10 +451,22 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                         .collect::<Vec<_>>()
                 }),
             )
-            .flex_1()
+            .size_full()
             .px(px(6.))
-            .pb(px(4.)),
-        )
+            .pb(px(4.));
+            let tree = div().id("file-tree").flex_1().min_h_0();
+            match bench.files.root.clone() {
+                Some(root) => {
+                    let (this, here) = (cx.weak_entity(), matches!(bench.files.place, Place::This));
+                    tree.context_menu(move |popup, _, _| {
+                        row_menu(popup, &this, &root, true, Some(&root), here)
+                    })
+                    .child(rows)
+                    .into_any_element()
+                }
+                None => tree.child(rows).into_any_element(),
+            }
+        })
 }
 
 /// A file's icon by its name, in the box rows line marks up in.
