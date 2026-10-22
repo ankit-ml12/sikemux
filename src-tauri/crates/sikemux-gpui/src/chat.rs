@@ -2814,6 +2814,40 @@ fn strip(
 }
 
 impl Workbench {
+    /// How many tool calls of the chat in front have their detail held, and how many are open.
+    pub fn tool_details(&self, cx: &App) -> Option<(usize, usize)> {
+        let chat = self.chats.get(&self.agent()?.id)?;
+        Some(chat.reader.read(cx).tools.counts())
+    }
+
+    /// Opens the first tool call of the chat in front, as a click on its row does.
+    pub fn open_first_tool(&mut self, cx: &mut App) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        let Some(chat) = self.chats.get(&agent) else {
+            return;
+        };
+        let first = chat.transcript.read(cx).rows().iter().find_map(|row| {
+            row.message.parts.iter().find_map(|part| match part {
+                ChatPart::Tool { tool, ended_at, .. } => {
+                    Some((tool.tool_call_id.clone(), *ended_at))
+                }
+                _ => None,
+            })
+        });
+        let Some((tool, ended)) = first else {
+            return;
+        };
+        let ask = chat.reader.update(cx, |reading, cx| {
+            cx.notify();
+            reading.tools.toggle(&tool, ended)
+        });
+        if ask {
+            self.ask_chat(ChatAsk::Detail { agent, tool });
+        }
+    }
+
     /// Opens `menu` for a file the chat of `agent` names, at `at`, until it is dismissed.
     pub fn show_file_menu(
         &mut self,

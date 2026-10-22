@@ -63,6 +63,38 @@ impl Opened {
             .then(|| tool.tool_call_id.clone())
     }
 
+    /// Opens the call `id`, or closes it, as a click on its row does; answers whether its
+    /// detail is to be asked of the core.
+    pub fn toggle(&mut self, id: &str, ended: Option<u64>) -> bool {
+        if !self.calls.remove(id) {
+            self.calls.insert(id.to_owned());
+        }
+        let held = self
+            .details
+            .get(id)
+            .is_some_and(|asked| asked.ended == ended);
+        let ask = self.calls.contains(id) && !held;
+        if ask {
+            let asked = Asked {
+                ended,
+                detail: None,
+                picture: None,
+            };
+            self.details.insert(id.to_owned(), asked);
+        }
+        ask
+    }
+
+    /// How many calls have their detail held, and how many the reader has open.
+    pub fn counts(&self) -> (usize, usize) {
+        let held = self
+            .details
+            .values()
+            .filter(|asked| asked.detail.is_some())
+            .count();
+        (held, self.calls.len())
+    }
+
     pub fn held(&mut self, tool: String, detail: ToolDetail) {
         if let Some(asked) = self.details.get_mut(&tool) {
             let printed = detail
@@ -416,26 +448,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
     let toggle = move |_: &gpui_kit::ClickEvent, _: &mut gpui_kit::Window, cx: &mut App| {
         let ask = reader.update(cx, |reading, cx| {
             cx.notify();
-            let tools = &mut reading.tools;
-            if !tools.calls.remove(&id) {
-                tools.calls.insert(id.clone());
-            }
-            let held = tools
-                .details
-                .get(&id)
-                .is_some_and(|asked| asked.ended == ended);
-            let ask = tools.calls.contains(&id) && !held;
-            if ask {
-                tools.details.insert(
-                    id.clone(),
-                    Asked {
-                        ended,
-                        detail: None,
-                        picture: None,
-                    },
-                );
-            }
-            ask
+            reading.tools.toggle(&id, ended)
         });
         if ask {
             let tool = id.clone();

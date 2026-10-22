@@ -271,6 +271,7 @@ impl RenderOnce for Composer {
                 self.on_stop,
                 cx,
             ));
+        let has_strip = self.strip.is_some();
         div()
             .w_full()
             .px(px(16.))
@@ -278,6 +279,13 @@ impl RenderOnce for Composer {
             .flex()
             .flex_col()
             .items_center()
+            .on_children_prepainted(move |bounds, _, cx| {
+                let drawn = cx.default_global::<Drawn>();
+                drawn.composer = bounds.last().map_or(0., |box_| box_.size.width.into());
+                if !has_strip {
+                    drawn.strip = 0.;
+                }
+            })
             .children(self.strip.map(|strip| project_strip(strip, fill, cx)))
             .child(
                 div()
@@ -371,6 +379,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         Some((chat, cwd, bench)) => crate::project_switcher::around(
             BaseButton::new("composer-project")
                 .accessibility_label("Project")
+                .min_w_0()
                 .rounded_full()
                 .hover(move |style| style.bg(t.surface_hover))
                 .tooltip(ui::tooltip(strip.path.clone()))
@@ -387,9 +396,11 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
             .child(name(false))
             .into_any_element(),
     };
-    div()
+    // As wide as the composer under it less a step either side, so it sits on it like a tab.
+    let strip_row = div()
         .w_full()
-        .max_w(px(780.))
+        .min_w_0()
+        .overflow_hidden()
         .flex()
         .items_center()
         .gap(px(4.))
@@ -403,15 +414,18 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         .bg(fill)
         .child(
             div()
-                .flex_none()
+                .min_w_0()
+                .max_w(px(180.))
                 .pl(px(8.))
                 .pr(px(6.))
                 .flex()
                 .items_center()
                 .gap(px(6.))
                 .child(match strip.host {
-                    Some(_) => ui::icon(Icon::Server, 12.).text_color(t.host),
-                    None => ui::icon(Icon::Laptop, 12.).text_color(t.text_secondary),
+                    Some(_) => ui::icon(Icon::Server, 12.).flex_none().text_color(t.host),
+                    None => ui::icon(Icon::Laptop, 12.)
+                        .flex_none()
+                        .text_color(t.text_secondary),
                 })
                 .child(
                     ui::text(
@@ -419,10 +433,16 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                         12.,
                         FontWeight::NORMAL,
                     )
+                    .min_w_0()
+                    .truncate()
                     .text_color(t.text_secondary),
                 ),
         )
-        .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary))
+        .child(
+            ui::icon(Icon::Chevron, 10.)
+                .flex_none()
+                .text_color(t.text_tertiary),
+        )
         .child(project)
         .children(strip.branch.map(|branch| {
             div()
@@ -443,8 +463,34 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         }))
         .children(strip.worktree)
         .child(div().flex_1())
-        .children(strip.account)
+        .children(
+            strip
+                .account
+                .map(|account| div().min_w_0().flex().child(account)),
+        );
+    div()
+        .w_full()
+        .max_w(px(820.))
+        .px(px(STRIP_STEP))
+        .child(strip_row)
+        .on_children_prepainted(|bounds, _, cx| {
+            cx.default_global::<Drawn>().strip =
+                bounds.first().map_or(0., |row| row.size.width.into());
+        })
 }
+
+/// The widths the composer and the strip over it were last drawn at, which the shot example
+/// reports so a check can hold the strip narrower than the composer.
+#[derive(Default)]
+pub struct Drawn {
+    pub strip: f32,
+    pub composer: f32,
+}
+
+impl gpui_kit::Global for Drawn {}
+
+/// How far the strip over the composer steps in from either side of it.
+const STRIP_STEP: f32 = 20.;
 
 /// YOLO or SAFE: whether the agent acts without asking. YOLO's letters run through the
 /// rainbow the app paints it with.

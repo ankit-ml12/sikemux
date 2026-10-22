@@ -4,6 +4,7 @@
 //!     [--account "Name <email>"]  draws the rail as if the host were signed in as them
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
+//!     [--size 900x700]            draws the window at that size in points
 //!     [--then step…]              then does each step in turn: "click x,y", "dclick x,y", "rclick x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "swipe x,y pixels" or "swipe x,y pixels hold" for a sideways trackpad swipe,
@@ -13,8 +14,10 @@
 //!                                 "release x,y" drag the pointer with its button down, and
 //!                                 "clipboard" prints the text copied; "state" prints one line of what
 //!                                 the window shows (Settings, any modal, the front view, the focus, the tabs,
-//!                                 the chosen host, a trust question); "host this", "host host:<key>" or
-//!                                 "host ssh:<alias>" chooses the host in front, as a click on its row does
+//!                                 the chosen host, a trust question, the front chat's tool details held and
+//!                                 open); "open-tool" opens the front chat's first tool call; "host this",
+//!                                 "host host:<key>" or "host ssh:<alias>" chooses the host in front, as a
+//!                                 click on its row does
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -46,6 +49,12 @@ fn main() -> anyhow::Result<()> {
             .and_then(|at| args.get(at + 1).cloned())
     };
     let account = option("--account");
+    let window_size = option("--size")
+        .and_then(|size| {
+            let (width, height) = size.split_once('x')?;
+            Some((width.parse().ok()?, height.parse().ok()?))
+        })
+        .unwrap_or(WINDOW_SIZE);
     let files = std::env::args().any(|arg| arg == "--files");
     let scroll: Option<f32> = option("--scroll").and_then(|pixels| pixels.parse().ok());
     let steps: Vec<String> = std::env::args()
@@ -68,7 +77,7 @@ fn main() -> anyhow::Result<()> {
             gpui::WindowOptions {
                 window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
                     origin: gpui::point(px(0.), px(0.)),
-                    size: size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)),
+                    size: size(px(window_size.0), px(window_size.1)),
                 })),
                 focus: false,
                 show: false,
@@ -233,7 +242,19 @@ fn main() -> anyhow::Result<()> {
                 }
                 "state" => {
                     if let Some(bench) = bench.borrow().clone() {
-                        println!("{}", state(bench.read(cx), &window.context_stack()));
+                        let (held, open) = bench.read(cx).tool_details(cx).unwrap_or_default();
+                        let (strip, composer) = cx
+                            .try_global::<sikemux_gpui::composer::Drawn>()
+                            .map_or((0., 0.), |drawn| (drawn.strip, drawn.composer));
+                        println!(
+                            "{} held={held} open={open} strip={strip:.0} composer={composer:.0}",
+                            state(bench.read(cx), &window.context_stack())
+                        );
+                    }
+                }
+                "open-tool" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.update(cx, |bench, cx| bench.open_first_tool(cx));
                     }
                 }
                 "host" => {
