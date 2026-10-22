@@ -200,6 +200,11 @@ try {
   const { BATTERY_BOLT } = await server.ssrLoadModule(ICONS);
   const bolt = (extra) =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="7 -3 12 19" fill="currentColor"><path d="${BATTERY_BOLT}"${extra}></path></svg>\n`;
+  const chevron = await readFile(resolve(out, "chevron.svg"), "utf8");
+  await writeFile(
+    resolve(out, "chevron-down.svg"),
+    chevron.replace(/^(<svg[^>]*>)(.*)(<\/svg>)/s, '$1<g transform="rotate(90 8 8)">$2</g>$3'),
+  );
   await writeFile(resolve(out, "battery-bolt.svg"), bolt(""));
   await writeFile(resolve(out, "battery-bolt-gap.svg"), bolt(' stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"'));
   const { MARK_INNER } = await server.ssrLoadModule(SECTIONS);
