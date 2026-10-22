@@ -879,10 +879,13 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             move |bench, address, event: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     let input = address.read(cx).value().trim().to_string();
-                    if input.is_empty() {
-                        return;
+                    let shown = (bench.desks.strips.get(&typed))
+                        .and_then(|strip| strip.tabs.iter().find(|tab| tab.active))
+                        .map(|tab| shown_address(&tab.url));
+                    match input.is_empty() || shown.as_deref() == Some(input.as_str()) {
+                        true => bench.with_engine(|engine| engine.reload(&typed)),
+                        false => bench.with_engine(|engine| engine.navigate_typed(&typed, &input)),
                     }
-                    bench.with_engine(|engine| engine.navigate_typed(&typed, &input));
                     if let Some(page) = bench.desks.pages.get(&typed) {
                         page.focus.focus(window, cx);
                     }

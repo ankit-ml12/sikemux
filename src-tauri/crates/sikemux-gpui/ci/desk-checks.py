@@ -262,10 +262,22 @@ def until(check, seconds=8):
     return None
 
 
+FETCHED = {}
+
+
 def serve(folder):
-    handler = lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory=str(folder))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    server.RequestHandlerClass.log_message = lambda *a: None
+    class Pages(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args):
+            super().__init__(*args, directory=str(folder))
+
+        def do_GET(self):
+            FETCHED[self.path] = FETCHED.get(self.path, 0) + 1
+            super().do_GET()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Pages)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server.server_address[1]
 
@@ -412,6 +424,17 @@ def dk2(run):
                f"closed first {closed}; ⌘L: open {desk.get('open')}, address focused {desk.get('addressFocused')}, on {page.get('url')!r} with {held} pages held")
 
 
+def dk9(run):
+    """Enter in the address with nothing changed reloads the page and hands it the keys."""
+    run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
+    until(lambda: active_page(run.desk()).get("url", "").endswith("/page.html") and not active_page(run.desk()).get("loading"), 15)
+    before = FETCHED.get("/page.html", 0)
+    run.drive("key cmd+l", "wait 0.6", "key enter")
+    focused = until(lambda: run.desk().get("pageFocused"), 8)
+    reloaded = until(lambda: FETCHED.get("/page.html", 0) > before, 8)
+    run.report("DK9", bool(focused) and bool(reloaded), f"⌘L then Enter: page focused {bool(focused)}, fetched again {bool(reloaded)}")
+
+
 def one_desk(run):
     """Every way a desk opens, all at once with it closed, still leaves one desk."""
     x, y = run.composer()
@@ -543,7 +566,7 @@ def answered(said):
 
 
 CHECKS = [("DP5", dp5), ("DP3", dp3), ("D5", d5), ("DK3", dk3), ("D6", d6_dk4_dk5), ("DK6", dk6), ("D7", d7), ("DK8", dk8),
-          ("DK2", dk2), ("ONE-DESK", one_desk), ("DK7", dk7), ("DF1", df1), ("DF3", df3), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
+          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("DF1", df1), ("DF3", df3), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
 
 
 def main():
