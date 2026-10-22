@@ -8,6 +8,7 @@ pub mod find_bar;
 mod floats;
 pub mod grain;
 mod lists;
+pub mod moving_face;
 mod pane;
 mod select;
 
@@ -90,16 +91,19 @@ pub fn status_of_run(outcome: &str, size: f32, cx: &App) -> AnyElement {
 
 /// An agent's face, or its agent's mark while it wears none.
 pub fn agent_mark(agent: &AgentRow, size: f32, cx: &App) -> AnyElement {
-    match agent
+    let Some((face, image)) = agent
         .face
         .as_ref()
-        .and_then(|face| crate::faces::image(face, agent.group, cx))
-    {
-        Some(face) => gpui_kit::img(face)
+        .and_then(|face| crate::faces::image(face, agent.group, cx).map(|image| (face, image)))
+    else {
+        return mark(&agent.provider, size);
+    };
+    match moving_face::moves(agent.group, cx) {
+        true => moving_face::face(&agent.id, face, agent.group, image, size),
+        false => gpui_kit::img(image)
             .size(px(size))
             .flex_none()
             .into_any_element(),
-        None => mark(&agent.provider, size),
     }
 }
 

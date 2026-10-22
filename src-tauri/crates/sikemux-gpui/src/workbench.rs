@@ -334,6 +334,7 @@ impl Workbench {
         crate::project_switcher::install(cx);
         crate::model_picker::install(cx);
         crate::ui::grain::animate(window, cx);
+        crate::ui::moving_face::follow(window, cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());
@@ -607,6 +608,7 @@ impl Workbench {
                 self.reads.insert("hosts", value);
             }
             Update::View(view) => {
+                crate::ui::moving_face::set_on(view.face_style.motion, cx);
                 self.view = Some(*view);
                 let sessions = &self
                     .view
