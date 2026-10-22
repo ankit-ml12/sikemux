@@ -1,7 +1,9 @@
 //! What the window's renderer paints behind panes and overlays with the shaders in
 //! `assets/shaders`: the moving grain, the person's own picture dithered in its place,
-//! and the sky over the welcome screen and the release notes. They move by showing the
-//! last frame again with the renderer's clock moved on, so no view draws again for them.
+//! and the sky over the welcome screen and the release notes. The grain and the picture
+//! are on the window's ground, which macOS keeps in a layer of its own at one pixel per
+//! point, so the grain moves without anything over it drawn again. The sky is over the
+//! shell, so it moves by showing the whole last frame again with the clock moved on.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -68,8 +70,11 @@ enum Picture {
 impl Global for Grain {}
 
 impl Grain {
+    /// Only the grain moves: a picture holds still, and one still loading or a grain at no
+    /// strength paints nothing.
     fn moving(&self) -> bool {
-        self.skies > 0 || (self.shown && !matches!(self.picture, Picture::Loaded(_)))
+        self.skies > 0
+            || (self.shown && self.strength > 0. && matches!(self.picture, Picture::None))
     }
 }
 
@@ -149,7 +154,9 @@ fn read_picture(path: &Path) -> Option<Arc<RenderImage>> {
 
 /// What fills a pane's frame behind everything the pane shows.
 pub fn field(cx: &App) -> Option<impl IntoElement> {
-    let grain = cx.try_global::<Grain>().filter(|grain| grain.shown)?;
+    let grain = cx
+        .try_global::<Grain>()
+        .filter(|grain| grain.shown && grain.strength > 0.)?;
     let inner_radius = f32::from(RADIUS_3) - 1.;
     if let Picture::Loaded(picture) = &grain.picture {
         let picture = picture.clone();
@@ -159,9 +166,9 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
                 |_, _, _| {},
                 move |bounds, (), window, _| {
                     let mut params = [0.; gpui::SHADER_PARAMS];
-                    params[..3].copy_from_slice(&[window.scale_factor(), inner_radius, strength]);
+                    params[..3].copy_from_slice(&[window.ground_scale(), inner_radius, strength]);
                     if let Err(error) =
-                        window.paint_shader(bounds, &PICTURE, params, Some(&picture))
+                        window.paint_ground_shader(bounds, &PICTURE, params, Some(&picture))
                     {
                         eprintln!("sikemux: the pane picture does not draw: {error}");
                     }
@@ -189,14 +196,14 @@ pub fn field(cx: &App) -> Option<impl IntoElement> {
                 params[..8].copy_from_slice(&[
                     start,
                     speed,
-                    window.scale_factor(),
+                    window.ground_scale(),
                     inner_radius,
                     dot.r,
                     dot.g,
                     dot.b,
                     alpha,
                 ]);
-                let _ = window.paint_shader(bounds, &FIELD, params, None);
+                let _ = window.paint_ground_shader(bounds, &FIELD, params, None);
             },
         )
         .absolute()
@@ -250,28 +257,45 @@ fn clock(speed: f32, cx: &App) -> (f32, f32) {
     }
 }
 
-/// Moves what the shaders show on while the window is in front, at the rate the power allows.
+/// Moves what the shaders show on while the window is in front and can be seen, at the rate
+/// the power allows.
 pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
+    follow_reduced_motion(cx);
     let ticking = Rc::new(RefCell::new(None));
     let restart = |ticking: Rc<RefCell<Option<Task<()>>>>| {
         move |_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>| {
+            if window.is_window_active() {
+                follow_reduced_motion(cx);
+            }
             *ticking.borrow_mut() = tick(window, cx);
         }
     };
     cx.observe_window_activation(window, restart(ticking.clone()))
         .detach();
+    let on_visibility = restart(ticking.clone());
+    cx.observe_window_visibility(window, move |bench, _, window, cx| {
+        on_visibility(bench, window, cx)
+    })
+    .detach();
     cx.observe_global_in::<Grain>(window, restart(ticking))
         .detach();
 }
 
 fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
     let moving = window.is_window_active()
+        && window.is_visible()
         && !cx.reduce_motion()
         && cx.try_global::<Grain>().is_some_and(Grain::moving);
     moving.then(|| {
         cx.spawn_in(window, async move |bench, cx| loop {
-            let Ok(wait) = bench.update_in(cx, |bench, window, _| {
-                window.present_shaders();
+            let Ok(wait) = bench.update_in(cx, |bench, window, cx| {
+                match cx
+                    .try_global::<Grain>()
+                    .is_some_and(|grain| grain.skies > 0)
+                {
+                    true => window.present_shaders(),
+                    false => window.present_ground(),
+                }
                 let on_battery = bench.battery.is_some_and(|battery| !battery.charging);
                 let rate = match on_battery {
                     true => BATTERY_FRAMES_PER_SECOND,
@@ -284,4 +308,30 @@ fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
             cx.background_executor().timer(wait).await;
         })
     })
+}
+
+/// Takes macOS's ask for less motion again. It is changed in System Settings, so reading it
+/// each time the window comes back to the front follows it.
+fn follow_reduced_motion(cx: &mut App) {
+    let reduce = system_reduces_motion();
+    if cx.reduce_motion() != reduce {
+        cx.set_reduce_motion(reduce);
+        cx.refresh_windows();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn system_reduces_motion() -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    // SAFETY: NSWorkspace's shared workspace always exists, and the setting is a plain BOOL.
+    unsafe {
+        let workspace: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        msg_send![workspace, accessibilityDisplayShouldReduceMotion]
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_reduces_motion() -> bool {
+    false
 }

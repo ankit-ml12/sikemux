@@ -3003,6 +3003,7 @@ impl Render for Workbench {
         }
         crate::see_through::follow(window, cx);
         let t = Tokens::get(cx);
+        window.set_ground(Some(crate::see_through::ground(t.surface_sunken, cx)));
         let parts = &self.parts;
         div()
             .id("shell")
@@ -3183,7 +3184,6 @@ impl Render for Workbench {
             )
             .flex()
             .flex_col()
-            .bg(crate::see_through::ground(t.surface_sunken, cx))
             .font_family(theme::UI)
             .text_size(px(13.))
             .line_height(px(13. * 1.45))
