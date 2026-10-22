@@ -58,13 +58,13 @@ pub(crate) fn render(text: &str) -> Markdown {
 /// source and how it reads.
 pub(super) fn toolbar(
     this: &Entity<Workbench>,
-    path: &Path,
+    key: &super::FileKey,
     mode: Mode,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let choice = |id: &'static str, label: &'static str, shows: Mode| {
-        let (this, path) = (this.clone(), path.to_owned());
+        let (this, key) = (this.clone(), key.clone());
         let chosen = mode == shows;
         div()
             .id(id)
@@ -82,7 +82,7 @@ pub(super) fn toolbar(
             .when(chosen, |choice| choice.bg(t.surface_chosen))
             .on_click(move |_, window, cx| {
                 this.update(cx, |bench, cx| {
-                    super::show_mode(bench, &path, shows, window, cx)
+                    super::show_mode(bench, &key, shows, window, cx)
                 })
             })
             .child(label)

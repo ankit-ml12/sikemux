@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use super::{go, OpenAt};
 use crate::core;
+use crate::hosts::Place as Host;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -130,7 +131,7 @@ fn read_outline(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>)
     let Some(params) = bench
         .editors
         .open
-        .get(path)
+        .get(&super::FileKey::new(Host::This, path))
         .and_then(|document| Some(document.served.as_ref()?.document()))
     else {
         bench.editors.insights.outline = Outline::Unavailable;

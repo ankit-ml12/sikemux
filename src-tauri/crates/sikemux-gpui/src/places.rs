@@ -92,7 +92,7 @@ impl Workbench {
             .iter()
             .filter(|agent| matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked))
             .count();
-        let unsaved = self.editors.dirty_under(&project.path);
+        let unsaved = self.editors.dirty_under(&self.place(), &project.path);
         let path = project.path.to_string_lossy().into_owned();
         let close =
             move |bench: &mut Workbench| bench.call("removeProject", json!({ "path": path }));
@@ -234,7 +234,11 @@ impl Workbench {
                 cx,
             );
         }
-        if kind == PaneKind::Files && self.editors.is_dirty(std::path::Path::new(&target)) {
+        if kind == PaneKind::Files
+            && self
+                .editors
+                .is_dirty(&crate::editor::FileKey::new(self.place(), &target))
+        {
             let name = std::path::Path::new(&target).file_name().map_or_else(
                 || target.clone(),
                 |name| name.to_string_lossy().into_owned(),

@@ -14,7 +14,9 @@ use gpui_kit::{
 };
 use serde_json::json;
 
-use crate::core;
+use super::FileKey;
+use crate::core::Target;
+use crate::hosts::Place as Host;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -137,12 +139,14 @@ fn kind_of(mime: &str) -> Kind {
 }
 
 /// Asks the core what the file is, and reads the bytes a byte view shows.
-pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbench>) {
-    bench.editors.viewers.entry(path.clone()).or_default();
-    let asks = bench.asks.clone();
+pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench>) {
+    bench.editors.viewers.entry(key.clone()).or_default();
+    let target = Target::new(&bench.asks, key.place.clone());
     cx.spawn(async move |bench, cx| {
-        let name = path.to_string_lossy().into_owned();
-        let about = core::request(&asks, "files.preview", json!({ "path": name })).await;
+        let name = key.path.to_string_lossy().into_owned();
+        let about = target
+            .request("files.preview", json!({ "path": name }))
+            .await;
         let about = match about {
             Ok(about) => About {
                 mime: about["mime"]
@@ -154,7 +158,7 @@ pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbe
             },
             Err(error) => {
                 let _ = bench.update(cx, |bench, cx| {
-                    if let Some(viewer) = bench.editors.viewers.get_mut(&path) {
+                    if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                         viewer.failed = Some(error.into());
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);
@@ -165,7 +169,8 @@ pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbe
         let bytes = match kind_of(&about.mime) {
             Kind::Bytes => {
                 let read = json!({ "path": name, "at": 0, "length": SHOWN_BYTES });
-                core::request(&asks, "files.bytes", read)
+                target
+                    .request("files.bytes", read)
                     .await
                     .ok()
                     .and_then(|read| {
@@ -176,15 +181,15 @@ pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbe
             }
             _ => None,
         };
-        let document = kind_of(&about.mime) == Kind::Document;
+        let document = kind_of(&about.mime) == Kind::Document && key.place == Host::This;
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(viewer) = bench.editors.viewers.get_mut(&path) {
+            if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                 viewer.about = Some(about);
                 viewer.bytes = bytes;
                 viewer.failed = None;
             }
             if document {
-                show_document(bench, path.clone(), cx);
+                show_document(bench, key.clone(), cx);
             }
             bench.parts.redraw(&bench.parts.stage, cx);
         });
@@ -193,7 +198,7 @@ pub(super) fn load(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbe
 }
 
 /// Opens the document in macOS's own viewer, which needs the window to live in.
-fn show_document(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbench>) {
+fn show_document(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench>) {
     #[cfg(target_os = "macos")]
     {
         let Some(handle) = bench.editors.window else {
@@ -202,10 +207,10 @@ fn show_document(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbenc
         cx.spawn(async move |this, cx| {
             let _ = handle.update(cx, |_, window, cx| {
                 let _ = this.update(cx, |bench, cx| {
-                    let Some(viewer) = bench.editors.viewers.get_mut(&path) else {
+                    let Some(viewer) = bench.editors.viewers.get_mut(&key) else {
                         return;
                     };
-                    let document = gpui_native_view::document::Document::new(&path, window)
+                    let document = gpui_native_view::document::Document::new(&key.path, window)
                         .map(std::rc::Rc::new);
                     let focus = cx.focus_handle();
                     viewer.document = Some(document.map(|document| {
@@ -219,24 +224,24 @@ fn show_document(bench: &mut Workbench, path: PathBuf, cx: &mut Context<Workbenc
         .detach();
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (bench, path, cx);
+    let _ = (bench, key, cx);
 }
 
 /// Shows a document's viewer again after its file changed on disk.
-pub(super) fn reopen(bench: &Workbench, paths: &[PathBuf]) {
+pub(super) fn reopen(bench: &Workbench, keys: &[FileKey]) {
     #[cfg(target_os = "macos")]
-    for path in paths {
+    for key in keys {
         if let Some((document, _, _)) = bench
             .editors
             .viewers
-            .get(path)
+            .get(key)
             .and_then(|viewer| viewer.document.as_ref()?.as_ref())
         {
-            document.open(path);
+            document.open(&key.path);
         }
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (bench, paths);
+    let _ = (bench, keys);
 }
 
 /// A document's viewer, and the surface its element places.
@@ -266,17 +271,23 @@ impl gpui_native_view::Surface for Shown {
 pub(super) fn pane(
     bench: &Workbench,
     this: &Entity<Workbench>,
-    path: &Path,
+    key: &FileKey,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let Some(viewer) = bench.editors.viewers.get(path) else {
+    let path = key.path.as_path();
+    let Some(viewer) = bench.editors.viewers.get(key) else {
         return div().size_full().into_any_element();
     };
     let kind = viewer.about.as_ref().map(|about| kind_of(&about.mime));
+    let elsewhere = key.place != Host::This && matches!(kind, Some(Kind::Image | Kind::Document));
     let body: AnyElement = match (&viewer.failed, kind) {
         (Some(error), _) => message(error.clone(), &t),
         (None, None) => message("Reading…".into(), &t),
+        _ if elsewhere => message(
+            "This file is on another host, so it shows there for now.".into(),
+            &t,
+        ),
         (None, Some(Kind::Image)) => {
             let picture = Picture {
                 path: path.to_owned(),
@@ -303,7 +314,7 @@ pub(super) fn pane(
         .size_full()
         .flex()
         .flex_col()
-        .child(bar(this, path, viewer, cx))
+        .child(bar(this, key, viewer, cx))
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
 }
@@ -392,18 +403,19 @@ fn bytes(bytes: Vec<u8>, t: &Tokens) -> AnyElement {
 /// in Finder.
 fn bar(
     this: &Entity<Workbench>,
-    path: &Path,
+    key: &FileKey,
     viewer: &Viewer,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let path = key.path.as_path();
     let name = path.file_name().map_or_else(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
     let about = viewer.about.as_ref();
     let zoom = |id: &'static str, label: &'static str, to: fn(Zoom) -> Zoom| {
-        let (this, path) = (this.clone(), path.to_owned());
+        let (this, key) = (this.clone(), key.clone());
         div()
             .id(id)
             .px(px(6.))
@@ -412,7 +424,7 @@ fn bar(
             .hover(move |style| style.text_color(t.text_primary))
             .on_click(move |_, _, cx| {
                 this.update(cx, |bench, cx| {
-                    if let Some(viewer) = bench.editors.viewers.get_mut(&path) {
+                    if let Some(viewer) = bench.editors.viewers.get_mut(&key) {
                         viewer.zoom = to(viewer.zoom);
                     }
                     bench.parts.redraw(&bench.parts.stage, cx);
@@ -421,7 +433,7 @@ fn bar(
             .child(label)
     };
     let image = about.is_some_and(|about| kind_of(&about.mime) == Kind::Image);
-    let (reload, open, reveal) = (path.to_owned(), path.to_owned(), path.to_owned());
+    let (reload, open, reveal) = (key.clone(), path.to_owned(), path.to_owned());
     let this_reload = this.clone();
     div()
         .flex()

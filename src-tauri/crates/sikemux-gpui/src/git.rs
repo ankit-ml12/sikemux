@@ -70,13 +70,12 @@ pub fn hunks(base: SharedString, live: String, cx: &App) -> Task<Vec<Hunk>> {
 
 /// A file's text at a revision, such as `HEAD` or `:index`.
 pub fn file_at(
-    asks: &UnboundedSender<Ask>,
+    target: &crate::core::Target,
     repo: &str,
     rev: &str,
     path: &str,
 ) -> impl Future<Output = Result<String, String>> {
-    let answer = request(
-        asks,
+    let answer = target.request(
         "git.fileAt",
         json!({ "repo": repo, "rev": rev, "path": path }),
     );

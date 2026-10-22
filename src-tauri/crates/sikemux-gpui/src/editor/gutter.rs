@@ -1,7 +1,6 @@
 //! What changed in a file since its last commit, marked beside its lines and
 //! along the editor's right edge, which jumps there when clicked.
 
-use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -11,7 +10,7 @@ use gpui_kit::{
     IntoElement, ParentElement, Pixels, SharedString, StatefulInteractiveElement, Styled, Task,
 };
 
-use super::{lsp, place_cursor, OpenAt};
+use super::{lsp, place_cursor, FileKey, OpenAt};
 use crate::git::{self, DiffKind, Hunk};
 use crate::workbench::Workbench;
 
@@ -37,24 +36,35 @@ fn colour(kind: DiffKind) -> Hsla {
 }
 
 /// Reads the file as it was at its last commit, then marks what differs.
-pub(super) fn read_base(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>) {
-    let Some(project) = lsp::project_of(bench, path) else {
+pub(super) fn read_base(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    let Some(project) = lsp::project_of(bench, &key.path) else {
         return;
     };
-    let Some(relative) = path
+    let Some(target) = bench
+        .editors
+        .open
+        .get(key)
+        .map(|document| document.target.clone())
+    else {
+        return;
+    };
+    let Some(relative) = key
+        .path
         .strip_prefix(&project)
         .ok()
         .map(|relative| relative.to_string_lossy().into_owned())
     else {
         return;
     };
-    let (asks, path) = (bench.asks.clone(), path.to_owned());
+    let key = key.clone();
     cx.spawn(async move |bench, cx| {
-        let base = git::file_at(&asks, &project, "HEAD", &relative).await.ok();
+        let base = git::file_at(&target, &project, "HEAD", &relative)
+            .await
+            .ok();
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(document) = bench.editors.open.get_mut(&path) {
+            if let Some(document) = bench.editors.open.get_mut(&key) {
                 document.gutter.base = base.map(SharedString::from);
-                changed(&path, bench, cx);
+                changed(&key, bench, cx);
             }
         });
     })
@@ -62,15 +72,15 @@ pub(super) fn read_base(bench: &mut Workbench, path: &Path, cx: &mut Context<Wor
 }
 
 /// Marks again what differs from the last commit, once typing pauses.
-pub(super) fn changed(path: &Path, bench: &mut Workbench, cx: &mut Context<Workbench>) {
-    let Some(document) = bench.editors.open.get_mut(path) else {
+pub(super) fn changed(key: &FileKey, bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
     let Some(base) = document.gutter.base.clone() else {
         document.gutter.hunks = Rc::default();
         return bench.parts.redraw(&bench.parts.stage, cx);
     };
-    let (state, path) = (document.state.clone(), path.to_owned());
+    let (state, key) = (document.state.clone(), key.clone());
     document.gutter.refresh = Some(cx.spawn(async move |bench, cx| {
         cx.background_executor().timer(DEBOUNCE).await;
         let Ok(Some(task)) = bench.update(cx, |_, cx| {
@@ -81,7 +91,7 @@ pub(super) fn changed(path: &Path, bench: &mut Workbench, cx: &mut Context<Workb
         };
         let hunks = task.await;
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(document) = bench.editors.open.get_mut(&path) {
+            if let Some(document) = bench.editors.open.get_mut(&key) {
                 document.gutter.hunks = Rc::new(hunks);
                 bench.parts.redraw(&bench.parts.stage, cx);
             }
@@ -93,7 +103,7 @@ pub(super) fn changed(path: &Path, bench: &mut Workbench, cx: &mut Context<Workb
 /// the same runs along the right edge, in proportion to the file.
 pub(super) fn overlay(
     this: &Entity<Workbench>,
-    path: &Path,
+    key: &FileKey,
     state: &Entity<EditorState>,
     gutter: &Gutter,
     lines: usize,
@@ -137,11 +147,12 @@ pub(super) fn overlay(
         let (this, at) = (
             this.clone(),
             OpenAt {
-                path: path.to_owned(),
+                path: key.path.clone(),
                 line: hunk.lines.start,
                 column: Some(0),
             },
         );
+        let key = key.clone();
         let length = (hunk.lines.end - hunk.lines.start).max(1) as f32;
         div()
             .id(("change", index))
@@ -156,7 +167,7 @@ pub(super) fn overlay(
             .hover(|style| style.w(px(8.)))
             .on_click(move |_, window, cx| {
                 let at = at.clone();
-                this.update(cx, |bench, cx| place_cursor(bench, &at, window, cx))
+                this.update(cx, |bench, cx| place_cursor(bench, &key, &at, window, cx))
             })
     });
     div()

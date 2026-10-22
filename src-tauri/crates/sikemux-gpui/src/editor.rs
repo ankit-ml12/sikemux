@@ -16,9 +16,9 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{Pane, PaneKind};
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{self, Ask};
+use crate::core::{Ask, Target};
+use crate::hosts::Place as Host;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -94,10 +94,26 @@ pub fn install(cx: &mut App) {
     ]);
 }
 
-/// Every file open in an editor, by its path.
+/// A file by the host it is on and its path there, since two hosts can hold the same path.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FileKey {
+    pub place: Host,
+    pub path: PathBuf,
+}
+
+impl FileKey {
+    pub fn new(place: Host, path: impl Into<PathBuf>) -> Self {
+        Self {
+            place,
+            path: path.into(),
+        }
+    }
+}
+
+/// Every file open in an editor, by its host and path.
 #[derive(Default)]
 pub struct Editors {
-    open: HashMap<PathBuf, Document>,
+    open: HashMap<FileKey, Document>,
     /// Where a file asked to open at a line puts its cursor once it is read.
     reveal: Option<OpenAt>,
     /// The window the editors draw in, which reading and reloading update.
@@ -107,11 +123,13 @@ pub struct Editors {
     forward: Vec<OpenAt>,
     insights: insights::Insights,
     /// Files that are not text, shown for what they are.
-    viewers: HashMap<PathBuf, viewer::Viewer>,
+    viewers: HashMap<FileKey, viewer::Viewer>,
 }
 
 struct Document {
     state: Entity<EditorState>,
+    /// The host the file is read from and saved to.
+    target: Target,
     /// What the file held when it was last read or saved, and that text's version.
     saved: String,
     version: Option<String>,
@@ -147,23 +165,26 @@ enum Notice {
 
 impl Editors {
     /// Whether the file has edits not yet saved.
-    pub fn is_dirty(&self, path: &Path) -> bool {
-        self.open.get(path).is_some_and(|document| document.dirty)
+    pub fn is_dirty(&self, key: &FileKey) -> bool {
+        self.open.get(key).is_some_and(|document| document.dirty)
     }
 
-    /// How many files under `root` have changes not saved.
-    pub fn dirty_under(&self, root: &Path) -> usize {
+    /// How many files under `root` on `place` have changes not saved.
+    pub fn dirty_under(&self, place: &Host, root: &Path) -> usize {
         self.open
             .iter()
-            .filter(|(path, document)| document.dirty && path.starts_with(root))
+            .filter(|(key, document)| {
+                document.dirty && key.place == *place && key.path.starts_with(root)
+            })
             .count()
     }
 
-    /// The files the core keeps watching for changes on disk.
-    fn watched(&self) -> Vec<String> {
+    /// The files on `place` its core keeps watching for changes on disk.
+    fn watched(&self, place: &Host) -> Vec<String> {
         self.open
             .keys()
-            .map(|path| path.to_string_lossy().into_owned())
+            .filter(|key| key.place == *place)
+            .map(|key| key.path.to_string_lossy().into_owned())
             .collect()
     }
 }
@@ -176,21 +197,22 @@ pub fn pane(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let path = PathBuf::from(path);
+    let key = FileKey::new(bench.place(), path);
+    let path = key.path.clone();
     let t = Tokens::get(cx).clone();
-    if bench.editors.viewers.contains_key(&path) {
-        return viewer::pane(bench, this, &path, cx);
+    if bench.editors.viewers.contains_key(&key) {
+        return viewer::pane(bench, this, &key, cx);
     }
     if viewer::not_text(&path) {
-        let opening = path.clone();
+        let opening = key.clone();
         cx.defer_in(window, move |bench, window, cx| {
             bench.editors.window = Some(window.window_handle());
             viewer::load(bench, opening, cx)
         });
         return div().size_full().into_any_element();
     }
-    let Some(document) = bench.editors.open.get(&path) else {
-        let opening = path.clone();
+    let Some(document) = bench.editors.open.get(&key) else {
+        let opening = key.clone();
         cx.defer_in(window, move |bench, window, cx| {
             open(bench, opening, window, cx)
         });
@@ -198,16 +220,17 @@ pub fn pane(
     };
     if document.loaded {
         if let Some(at) = bench.editors.reveal.clone().filter(|at| at.path == path) {
+            let revealed = key.clone();
             cx.defer_in(window, move |bench, window, cx| {
                 bench.editors.reveal = None;
-                place_cursor(bench, &at, window, cx);
+                place_cursor(bench, &revealed, &at, window, cx);
             });
         }
     }
     let size = px((FONT_SIZE as f64 * text_scale(bench)) as f32);
     let project = lsp::project_of(bench, &path);
     let this = this.clone();
-    let saving = path.clone();
+    let saving = key.clone();
     div()
         .size_full()
         .flex()
@@ -233,15 +256,15 @@ pub fn pane(
         )
         .on_action(window.listener_for(&this, |bench, _: &ClosePeek, _, cx| close_peeks(bench, cx)))
         .on_action({
-            let path = path.clone();
+            let key = key.clone();
             window.listener_for(&this, move |bench, _: &GoToLine, window, cx| {
-                open_goto(bench, &path, window, cx)
+                open_goto(bench, &key, window, cx)
             })
         })
         .on_action({
-            let path = path.clone();
+            let key = key.clone();
             window.listener_for(&this, move |bench, _: &CloseGoToLine, window, cx| {
-                close_goto(bench, &path, window, cx)
+                close_goto(bench, &key, window, cx)
             })
         })
         .on_action(
@@ -258,7 +281,7 @@ pub fn pane(
             window.listener_for(&this, |bench, _: &TextSizeReset, _, _| rescale(bench, None)),
         )
         .when_some(document.notice.clone(), |pane, notice| {
-            pane.child(notice_bar(&this, &path, notice, cx))
+            pane.child(notice_bar(&this, &key, notice, cx))
         })
         .when_some(document.goto.as_ref(), |pane, (input, _)| {
             pane.child(
@@ -284,7 +307,7 @@ pub fn pane(
         })
         .when(
             preview::first_mode(&path) == preview::Mode::Preview,
-            |pane| pane.child(preview::toolbar(&this, &path, document.mode, cx)),
+            |pane| pane.child(preview::toolbar(&this, &key, document.mode, cx)),
         )
         .map(|pane| match (document.mode, document.rendered.clone()) {
             (preview::Mode::Preview, Some(markdown)) => {
@@ -310,7 +333,7 @@ pub fn pane(
                     .child(Editor::new(&document.state).bordered(false).h_full())
                     .child(gutter::overlay(
                         &this,
-                        &path,
+                        &key,
                         &document.state,
                         &document.gutter,
                         gpui_kit::component::input::RopeExt::lines_len(
@@ -341,10 +364,10 @@ pub fn pane(
 /// The places a symbol leads to, by file, with each line's text once read.
 struct Peek {
     title: SharedString,
-    places: Vec<Place>,
+    places: Vec<Spot>,
 }
 
-struct Place {
+struct Spot {
     at: OpenAt,
     text: Option<SharedString>,
 }
@@ -374,7 +397,7 @@ fn here(bench: &Workbench, cx: &App) -> Option<OpenAt> {
     let position = bench
         .editors
         .open
-        .get(&path)?
+        .get(&FileKey::new(bench.place(), path.clone()))?
         .state
         .read(cx)
         .cursor_position();
@@ -407,18 +430,18 @@ fn step(bench: &mut Workbench, back: bool, cx: &mut Context<Workbench>) {
 /// each one's line.
 fn peek(
     bench: &mut Workbench,
-    path: &Path,
+    key: &FileKey,
     title: &str,
     places: Vec<OpenAt>,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(document) = bench.editors.open.get_mut(path) else {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
-    let places: Vec<Place> = places
+    let places: Vec<Spot> = places
         .into_iter()
         .take(MAX_PEEKED)
-        .map(|at| Place { at, text: None })
+        .map(|at| Spot { at, text: None })
         .collect();
     let mut files: Vec<PathBuf> = places.iter().map(|place| place.at.path.clone()).collect();
     files.dedup();
@@ -426,11 +449,12 @@ fn peek(
         title: title.to_owned().into(),
         places,
     });
+    let target = document.target.clone();
     bench.parts.redraw(&bench.parts.stage, cx);
-    let (asks, peeked) = (bench.asks.clone(), path.to_owned());
+    let peeked = key.clone();
     cx.spawn(async move |bench, cx| {
         for file in files {
-            let Ok((text, _)) = read_file(asks.clone(), file.to_string_lossy().into_owned()).await
+            let Ok((text, _)) = read_file(&target, file.to_string_lossy().into_owned()).await
             else {
                 continue;
             };
@@ -585,12 +609,17 @@ fn peek_panel(
 
 /// Opens the field asking which line to go to, as `line` or `line:column`
 /// counted from 1.
-fn open_goto(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Context<Workbench>) {
-    if !bench.editors.open.contains_key(path) {
+fn open_goto(
+    bench: &mut Workbench,
+    key: &FileKey,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    if !bench.editors.open.contains_key(key) {
         return;
     }
     let input = cx.new(|cx| InputState::new(window, cx).placeholder("line[:column]"));
-    let asked_for = path.to_owned();
+    let asked_for = key.clone();
     let entered = cx.subscribe_in(
         &input,
         window,
@@ -608,16 +637,16 @@ fn open_goto(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut C
             close_goto(bench, &asked_for, window, cx);
             if let Some(line) = line {
                 let at = OpenAt {
-                    path: asked_for.clone(),
+                    path: asked_for.path.clone(),
                     line: line.saturating_sub(1),
                     column: column.map(|column| column.saturating_sub(1)),
                 };
-                place_cursor(bench, &at, window, cx);
+                place_cursor(bench, &asked_for, &at, window, cx);
             }
         },
     );
     input.update(cx, |input, cx| input.focus(window, cx));
-    if let Some(document) = bench.editors.open.get_mut(path) {
+    if let Some(document) = bench.editors.open.get_mut(key) {
         document.goto = Some((input, entered));
     }
     bench.parts.redraw(&bench.parts.stage, cx);
@@ -626,11 +655,11 @@ fn open_goto(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut C
 /// Closes the go-to-line field and gives the editor back the keyboard.
 fn close_goto(
     bench: &mut Workbench,
-    path: &Path,
+    key: &FileKey,
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(document) = bench.editors.open.get_mut(path) else {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
     if document.goto.take().is_some() {
@@ -648,11 +677,12 @@ type Run = dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>);
 
 fn notice_bar(
     this: &Entity<Workbench>,
-    path: &Path,
+    key: &FileKey,
     notice: Notice,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
+    let path = key.path.as_path();
     let name = path.file_name().map_or_else(
         || path.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
@@ -682,30 +712,37 @@ fn notice_bar(
         })
     };
     let reload = {
-        let path = path.to_owned();
+        let key = key.clone();
         button(
             "editor-reload",
             "Reload disk",
             ui::Variant::Outline,
             Rc::new(move |bench, window, cx| {
-                if let Some(document) = bench.editors.open.get_mut(&path) {
+                if let Some(document) = bench.editors.open.get_mut(&key) {
                     document.notice = None;
                     document.dirty = false;
                     document.version = None;
                 }
-                read(bench, path.clone(), window, cx);
+                read(bench, key.clone(), window, cx);
             }),
         )
     };
     let answers = match &notice {
         Notice::Trust(project) => {
             let answer = |allowed: bool| {
-                let (path, project) = (path.to_owned(), project.clone());
+                let (key, project) = (key.clone(), project.clone());
                 Rc::new(
                     move |bench: &mut Workbench,
                           window: &mut Window,
                           cx: &mut Context<Workbench>| {
-                        lsp::trust(bench, path.clone(), project.clone(), allowed, window, cx)
+                        lsp::trust(
+                            bench,
+                            key.path.clone(),
+                            project.clone(),
+                            allowed,
+                            window,
+                            cx,
+                        )
                     },
                 )
                     as Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>
@@ -748,13 +785,14 @@ fn notice_bar(
         .children(answers)
 }
 
-/// Makes the editor for `path` and reads the file into it.
-fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Context<Workbench>) {
-    if bench.editors.open.contains_key(&path) {
+/// Makes the editor for the file `key` and reads the file into it.
+fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Context<Workbench>) {
+    if bench.editors.open.contains_key(&key) {
         return;
     }
     bench.editors.window = Some(window.window_handle());
-    let name = path
+    let name = key
+        .path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -768,7 +806,7 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
         state.set_highlighter_factory(factory, cx);
         state
     });
-    let watched = path.clone();
+    let watched = key.clone();
     let changes = cx.subscribe(&state, move |bench, state, event: &InputEvent, cx| {
         if !matches!(event, InputEvent::Change) {
             return;
@@ -785,15 +823,17 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             cx.notify();
         }
         if dirty {
-            keep_preview(bench, &watched);
+            keep_preview(bench, &watched.path);
         }
         gutter::changed(&watched, bench, cx);
         blame::typed(bench, &watched, cx);
     });
+    let target = Target::new(&bench.asks, key.place.clone());
     bench.editors.open.insert(
-        path.clone(),
+        key.clone(),
         Document {
             state,
+            target,
             saved: String::new(),
             version: None,
             loaded: false,
@@ -802,35 +842,36 @@ fn open(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
             goto: None,
             served: None,
             peek: None,
-            mode: preview::first_mode(&path),
+            mode: preview::first_mode(&key.path),
             rendered: None,
             gutter: gutter::Gutter::default(),
             blame: blame::Blame::default(),
             _changes: changes,
         },
     );
-    show_files(&bench.editors, &bench.asks);
-    read(bench, path, window, cx);
+    show_files(bench, &key.place);
+    read(bench, key, window, cx);
 }
 
-/// Tells the core which files to watch: every one open in an editor.
-fn show_files(editors: &Editors, asks: &UnboundedSender<Ask>) {
-    let _ = asks.send(Ask::Call {
-        method: "showFiles",
-        params: json!({ "paths": editors.watched() }),
-    });
+/// Tells the core of `place` which files to watch: every one of its files open in an editor.
+fn show_files(bench: &Workbench, place: &Host) {
+    Target::new(&bench.asks, place.clone()).call(
+        "showFiles",
+        json!({ "paths": bench.editors.watched(place) }),
+    );
 }
 
 /// Reads the whole file in the pieces the core gives, starting again when it
 /// changes under the read.
-async fn read_file(asks: UnboundedSender<Ask>, path: String) -> Result<(String, String), String> {
+async fn read_file(target: &Target, path: String) -> Result<(String, String), String> {
     for _ in 0..READ_TRIES {
         let mut text = String::new();
         let mut at = 0u64;
         let mut stamp: Option<String> = None;
         let moved = loop {
-            let piece =
-                core::request(&asks, "files.read", json!({ "path": path, "at": at })).await?;
+            let piece = target
+                .request("files.read", json!({ "path": path, "at": at }))
+                .await?;
             let piece_stamp = piece["stamp"].as_str().map(str::to_owned);
             if stamp.is_some() && piece_stamp != stamp {
                 break true;
@@ -853,14 +894,21 @@ async fn read_file(asks: UnboundedSender<Ask>, path: String) -> Result<(String, 
 }
 
 /// Reads the file into its editor, replacing what it shows.
-fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Context<Workbench>) {
-    let asks = bench.asks.clone();
-    let name = path.to_string_lossy().into_owned();
+fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Context<Workbench>) {
+    let Some(target) = bench
+        .editors
+        .open
+        .get(&key)
+        .map(|document| document.target.clone())
+    else {
+        return;
+    };
+    let name = key.path.to_string_lossy().into_owned();
     cx.spawn_in(window, async move |bench, cx| {
-        let read = read_file(asks, name).await;
+        let read = read_file(&target, name).await;
         let _ = bench.update_in(cx, |bench, window, cx| {
             let asks = bench.asks.clone();
-            let Some(document) = bench.editors.open.get_mut(&path) else {
+            let Some(document) = bench.editors.open.get_mut(&key) else {
                 return;
             };
             let first = !document.loaded;
@@ -887,20 +935,22 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
                     lsp::changed(document, &asks, cx);
                 }
                 Err(error) if error.starts_with("not-text:") => {
-                    bench.editors.open.remove(&path);
-                    viewer::load(bench, path.clone(), cx);
-                    show_files(&bench.editors, &bench.asks);
+                    bench.editors.open.remove(&key);
+                    show_files(bench, &key.place);
+                    viewer::load(bench, key, cx);
                     return;
                 }
                 Err(error) => document.notice = Some(Notice::Failed(error)),
             }
             let flipped = document.dirty != was_dirty;
             if first && document.loaded {
-                lsp::attach(bench, path.clone(), window, cx);
-                gutter::read_base(bench, &path, cx);
-                blame::read(bench, &path, cx);
+                if key.place == Host::This {
+                    lsp::attach(bench, key.path.clone(), window, cx);
+                }
+                gutter::read_base(bench, &key, cx);
+                blame::read(bench, &key, cx);
             } else {
-                gutter::changed(&path, bench, cx);
+                gutter::changed(&key, bench, cx);
             }
             if flipped {
                 bench.parts.redraw(&bench.parts.top, cx);
@@ -913,24 +963,24 @@ fn read(bench: &mut Workbench, path: PathBuf, window: &mut Window, cx: &mut Cont
 
 /// Saves the editor's text over the file, refused by the core when the file
 /// moved on since it was read. A save of an unchanged file reads it again.
-fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(document) = bench.editors.open.get(path) else {
+fn save(bench: &mut Workbench, key: &FileKey, window: &mut Window, cx: &mut Context<Workbench>) {
+    let Some(document) = bench.editors.open.get(key) else {
         return;
     };
     if !document.dirty {
-        if let Some(document) = bench.editors.open.get_mut(path) {
+        if let Some(document) = bench.editors.open.get_mut(key) {
             document.version = None;
         }
-        return read(bench, path.to_owned(), window, cx);
+        return read(bench, key.clone(), window, cx);
     }
     let text = document.state.read(cx).value().to_string();
     let version = document.version.clone();
-    let asks = bench.asks.clone();
-    let path = path.to_owned();
+    let target = document.target.clone();
+    let key = key.clone();
     cx.spawn_in(window, async move |bench, cx| {
-        let saved = write_file(&asks, &path.to_string_lossy(), &text, version).await;
+        let saved = write_file(&target, &key.path.to_string_lossy(), &text, version).await;
         let _ = bench.update_in(cx, |bench, _, cx| {
-            let Some(document) = bench.editors.open.get_mut(&path) else {
+            let Some(document) = bench.editors.open.get_mut(&key) else {
                 return;
             };
             let landed = saved.is_ok();
@@ -951,7 +1001,7 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
             }
             let flipped = document.dirty != was_dirty;
             if landed {
-                blame::read(bench, &path, cx);
+                blame::read(bench, &key, cx);
             }
             if flipped {
                 bench.parts.redraw(&bench.parts.top, cx);
@@ -965,7 +1015,7 @@ fn save(bench: &mut Workbench, path: &Path, window: &mut Window, cx: &mut Contex
 /// Writes `text` in the pieces the core takes, never splitting a character,
 /// answering the saved file's version.
 async fn write_file(
-    asks: &UnboundedSender<Ask>,
+    target: &Target,
     path: &str,
     text: &str,
     version: Option<String>,
@@ -979,12 +1029,12 @@ async fn write_file(
         }
         let (piece, after) = rest.split_at(end);
         let more = !after.is_empty();
-        let written = core::request(
-            asks,
-            "files.write",
-            json!({ "path": path, "text": piece, "version": version, "upload": upload, "more": more }),
-        )
-        .await?;
+        let written = target
+            .request(
+                "files.write",
+                json!({ "path": path, "text": piece, "version": version, "upload": upload, "more": more }),
+            )
+            .await?;
         if !more {
             return written["version"]
                 .as_str()
@@ -1018,66 +1068,76 @@ fn keep_preview(bench: &Workbench, path: &Path) {
 /// Lets go of every file with no unsaved edits that no tab shows any more.
 pub fn keep(bench: &mut Workbench) {
     let mut shown = Vec::new();
-    if let Some(view) = &bench.view {
+    let views = bench.view.iter().map(|view| (Host::This, view)).chain(
+        bench
+            .host_views
+            .iter()
+            .map(|(host, view)| (Host::Account(host.clone()), view)),
+    );
+    for (place, view) in views {
         let strips = view
             .layout
             .projects
             .values()
             .chain(view.layout.hosts.values());
         for tab in strips.flat_map(|strip| &strip.tabs) {
-            files_in(&tab.pane, &mut shown);
+            files_in(&place, &tab.pane, &mut shown);
         }
     }
-    bench.editors.viewers.retain(|path, _| shown.contains(path));
-    let gone: Vec<PathBuf> = bench
+    bench.editors.viewers.retain(|key, _| shown.contains(key));
+    let gone: Vec<FileKey> = bench
         .editors
         .open
         .iter()
-        .filter(|(path, document)| !document.dirty && !shown.contains(*path))
-        .map(|(path, _)| path.clone())
+        .filter(|(key, document)| !document.dirty && !shown.contains(*key))
+        .map(|(key, _)| key.clone())
         .collect();
-    if gone.is_empty() {
-        return;
-    }
-    for path in gone {
-        if let Some(document) = bench.editors.open.remove(&path) {
+    let mut places: Vec<Host> = Vec::new();
+    for key in gone {
+        if let Some(document) = bench.editors.open.remove(&key) {
             lsp::closed(&document, &bench.asks);
         }
+        if !places.contains(&key.place) {
+            places.push(key.place);
+        }
     }
-    show_files(&bench.editors, &bench.asks);
+    for place in places {
+        show_files(bench, &place);
+    }
 }
 
-fn files_in(pane: &Pane, found: &mut Vec<PathBuf>) {
+fn files_in(place: &Host, pane: &Pane, found: &mut Vec<FileKey>) {
     match pane {
         Pane::View {
             kind: PaneKind::Files,
             target,
             ..
-        } => found.push(PathBuf::from(target)),
+        } => found.push(FileKey::new(place.clone(), target)),
         Pane::View { .. } => {}
-        Pane::Split { panes, .. } => panes.iter().for_each(|pane| files_in(pane, found)),
+        Pane::Split { panes, .. } => panes.iter().for_each(|pane| files_in(place, pane, found)),
     }
 }
 
 /// Reads again what open files were at their last commit, when the
 /// repository moved: `paths` from its root, `.git` for its head, or none for anything.
 pub fn git_changed(bench: &mut Workbench, paths: Option<&[String]>, cx: &mut Context<Workbench>) {
-    let open: Vec<PathBuf> = bench
+    let open: Vec<FileKey> = bench
         .editors
         .open
         .keys()
-        .filter(|path| {
+        .filter(|key| key.place == Host::This)
+        .filter(|key| {
             paths.is_none_or(|paths| {
                 paths
                     .iter()
-                    .any(|changed| changed == ".git" || path.ends_with(changed))
+                    .any(|changed| changed == ".git" || key.path.ends_with(changed))
             })
         })
         .cloned()
         .collect();
-    for path in open {
-        gutter::read_base(bench, &path, cx);
-        blame::read(bench, &path, cx);
+    for key in open {
+        gutter::read_base(bench, &key, cx);
+        blame::read(bench, &key, cx);
     }
 }
 
@@ -1088,16 +1148,18 @@ pub fn diagnostics_changed(bench: &mut Workbench, paths: &[String], cx: &mut Con
 
 /// Files that changed on disk: clean editors take the new text, and one with
 /// unsaved edits says the disk moved on when its version did.
-pub fn changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workbench>) {
-    let shown: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+pub fn changed(bench: &mut Workbench, place: &Host, paths: &[String], cx: &mut Context<Workbench>) {
+    let shown: Vec<FileKey> = paths
+        .iter()
+        .map(|path| FileKey::new(place.clone(), path))
+        .collect();
     viewer::reopen(bench, &shown);
     let Some(window) = bench.editors.window else {
         return;
     };
-    let changed: Vec<PathBuf> = paths
-        .iter()
-        .map(PathBuf::from)
-        .filter(|path| bench.editors.open.contains_key(path))
+    let changed: Vec<FileKey> = shown
+        .into_iter()
+        .filter(|key| bench.editors.open.contains_key(key))
         .collect();
     if changed.is_empty() {
         return;
@@ -1105,8 +1167,8 @@ pub fn changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workben
     cx.spawn(async move |this, cx| {
         let _ = window.update(cx, |_, window, cx| {
             let _ = this.update(cx, |bench, cx| {
-                for path in changed {
-                    read(bench, path, window, cx);
+                for key in changed {
+                    read(bench, key, window, cx);
                 }
             });
         });
@@ -1117,11 +1179,12 @@ pub fn changed(bench: &mut Workbench, paths: &[String], cx: &mut Context<Workben
 /// Puts the cursor where `at` says and brings its line into view.
 fn place_cursor(
     bench: &mut Workbench,
+    key: &FileKey,
     at: &OpenAt,
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(document) = bench.editors.open.get_mut(&at.path) else {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
     document.mode = preview::Mode::Source;
@@ -1140,12 +1203,12 @@ fn place_cursor(
 /// editor holds now.
 fn show_mode(
     bench: &mut Workbench,
-    path: &Path,
+    key: &FileKey,
     mode: preview::Mode,
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(document) = bench.editors.open.get_mut(path) else {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
     document.mode = mode;

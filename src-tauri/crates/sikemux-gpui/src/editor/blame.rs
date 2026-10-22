@@ -1,6 +1,5 @@
 //! Who last changed the line the cursor is on, written quietly at its end.
 
-use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -11,8 +10,7 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 
-use super::lsp;
-use crate::core;
+use super::{lsp, FileKey};
 use crate::theme;
 use crate::workbench::Workbench;
 
@@ -60,41 +58,46 @@ fn note(commit: &Value) -> Note {
 }
 
 /// Blames the editor's text now, as it stands.
-pub(super) fn read(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>) {
-    blame(bench, path, None, cx);
+pub(super) fn read(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    blame(bench, key, None, cx);
 }
 
 /// Hides the note while typing and blames again once it pauses.
-pub(super) fn typed(bench: &mut Workbench, path: &Path, cx: &mut Context<Workbench>) {
-    if let Some(document) = bench.editors.open.get_mut(path) {
+pub(super) fn typed(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    if let Some(document) = bench.editors.open.get_mut(key) {
         document.blame.typing = true;
     }
-    blame(bench, path, Some(DEBOUNCE), cx);
+    blame(bench, key, Some(DEBOUNCE), cx);
 }
 
-fn blame(bench: &mut Workbench, path: &Path, wait: Option<Duration>, cx: &mut Context<Workbench>) {
-    let Some(project) = lsp::project_of(bench, path) else {
+fn blame(
+    bench: &mut Workbench,
+    key: &FileKey,
+    wait: Option<Duration>,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(project) = lsp::project_of(bench, &key.path) else {
         return;
     };
-    let Some(relative) = path
+    let Some(relative) = key
+        .path
         .strip_prefix(&project)
         .ok()
         .map(|relative| relative.to_string_lossy().into_owned())
     else {
         return;
     };
-    let asks = bench.asks.clone();
-    let Some(document) = bench.editors.open.get_mut(path) else {
+    let Some(document) = bench.editors.open.get_mut(key) else {
         return;
     };
-    let (state, path) = (document.state.clone(), path.to_owned());
+    let (state, target, key) = (document.state.clone(), document.target.clone(), key.clone());
     document.blame.reading = Some(cx.spawn(async move |bench, cx| {
         if let Some(wait) = wait {
             cx.background_executor().timer(wait).await;
         }
         let contents = state.read_with(cx, |state, _| state.value().to_string());
         let asked = json!({ "repo": project, "path": relative, "contents": contents });
-        let Ok(blamed) = core::request(&asks, "git.blame", asked).await else {
+        let Ok(blamed) = target.request("git.blame", asked).await else {
             return;
         };
         let notes: Vec<Note> = blamed["commits"]
@@ -110,7 +113,7 @@ fn blame(bench: &mut Workbench, path: &Path, wait: Option<Duration>, cx: &mut Co
             .map(|index| index.as_u64().unwrap_or(0) as u32)
             .collect();
         let _ = bench.update(cx, |bench, cx| {
-            if let Some(document) = bench.editors.open.get_mut(&path) {
+            if let Some(document) = bench.editors.open.get_mut(&key) {
                 document.blame.notes = Rc::new(notes);
                 document.blame.lines = Rc::new(lines);
                 document.blame.typing = false;

@@ -835,6 +835,12 @@ impl Workbench {
                     return self.terminals.redraw(key, cx);
                 }
             }
+            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if *topic == "files") => {
+                if let Update::Changed { paths, .. } = *update {
+                    let place = Place::Account(host);
+                    crate::editor::changed(self, &place, paths.as_deref().unwrap_or_default(), cx);
+                }
+            }
             Update::From(..) => {}
             Update::Lost(reason) => self.lost = Some(reason),
             Update::ShutDown => return cx.quit(),
@@ -865,7 +871,12 @@ impl Workbench {
                     }
                 }
                 if topic == "files" {
-                    crate::editor::changed(self, paths.as_deref().unwrap_or_default(), cx);
+                    crate::editor::changed(
+                        self,
+                        &Place::This,
+                        paths.as_deref().unwrap_or_default(),
+                        cx,
+                    );
                     if let Some(search) = &self.search {
                         search.update(cx, |search, cx| search.changed(cx));
                     }

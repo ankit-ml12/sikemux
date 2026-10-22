@@ -781,7 +781,10 @@ fn strip_tab(
             None => base,
         },
         Some((kind, target)) => {
-            let unsaved = kind == PaneKind::Files && bench.editors.is_dirty(Path::new(target));
+            let unsaved = kind == PaneKind::Files
+                && bench
+                    .editors
+                    .is_dirty(&crate::editor::FileKey::new(bench.place(), target));
             base.mark(
                 ui::icon(kind_icon(kind), 13.).text_color(if kind == PaneKind::Terminal {
                     t.live

@@ -14,8 +14,10 @@ use lsp_types::{LocationLink, Range, ShowDocumentParams, Uri};
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::FileKey;
 use super::{Document, Notice, OpenAt};
 use crate::core::{self, Ask};
+use crate::hosts::Place as Host;
 use crate::workbench::Workbench;
 
 /// How long typing pauses before the server is sent the text.
@@ -108,7 +110,11 @@ fn attach_trusted(
             Some(false) => return,
             None => {
                 let _ = bench.update(cx, |bench, cx| {
-                    if let Some(document) = bench.editors.open.get_mut(&path) {
+                    if let Some(document) = bench
+                        .editors
+                        .open
+                        .get_mut(&FileKey::new(Host::This, path.clone()))
+                    {
                         document.notice = Some(Notice::Trust(project));
                         bench.parts.redraw(&bench.parts.stage, cx);
                     }
@@ -126,7 +132,7 @@ fn attach_trusted(
             bench
                 .editors
                 .open
-                .get(&path)
+                .get(&FileKey::new(Host::This, path.clone()))
                 .map(|document| document.state.read(cx).value().to_string())
         }) else {
             return;
@@ -144,7 +150,11 @@ fn attach_trusted(
             return;
         }
         let _ = bench.update(cx, |bench, cx| {
-            let Some(document) = bench.editors.open.get_mut(&path) else {
+            let Some(document) = bench
+                .editors
+                .open
+                .get_mut(&FileKey::new(Host::This, path.clone()))
+            else {
                 return;
             };
             let served = Served {
@@ -170,7 +180,13 @@ fn attach_trusted(
                         if found.len() > 1 {
                             let places = found.iter().filter_map(place).collect();
                             let _ = this.update(cx, |bench, cx| {
-                                super::peek(bench, &current, "Definitions", places, cx)
+                                super::peek(
+                                    bench,
+                                    &FileKey::new(Host::This, current.clone()),
+                                    "Definitions",
+                                    places,
+                                    cx,
+                                )
                             });
                             return true;
                         }
@@ -238,7 +254,11 @@ pub(super) fn trust(
     cx: &mut Context<Workbench>,
 ) {
     remember_trust(bench, project, allowed);
-    if let Some(document) = bench.editors.open.get_mut(&path) {
+    if let Some(document) = bench
+        .editors
+        .open
+        .get_mut(&FileKey::new(Host::This, path.clone()))
+    {
         document.notice = None;
     }
     if allowed {
