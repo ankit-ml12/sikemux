@@ -1,4 +1,6 @@
-use gpui_kit::{point, px, size, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
+use gpui_kit::{
+    point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowOptions,
+};
 use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
@@ -30,15 +32,22 @@ fn main() {
                 }),
                 ..Default::default()
             };
-            let (_window, _bench) = gpui_kit::open_window(options, cx, |window, cx| {
+            let (window, _bench) = gpui_kit::open_window(options, cx, |window, cx| {
                 if let Err(error) = window.enable_scene_overlay() {
                     eprintln!("sikemux: pages will cover menus, with no overlay plane: {error}");
                 }
                 cx.new(|cx| workbench::Workbench::new(link, window, cx))
             })
             .expect("window opens");
+            // GPUI Kit's root fills the window with its theme's background, over the ground
+            // that the panes' grain and picture paint on. The shell sets that ground itself.
+            if let Some(root) = window.downcast::<gpui_kit::base::Root>() {
+                let _ = root.update(cx, |root, _, _| {
+                    root.style().background = Some(gpui_kit::transparent_black().into());
+                });
+            }
             #[cfg(feature = "drive")]
-            sikemux_gpui::drive::listen(_window, _bench, cx);
+            sikemux_gpui::drive::listen(window, _bench, cx);
             #[cfg(feature = "drive")]
             let behind = sikemux_gpui::drive::stays_behind();
             #[cfg(not(feature = "drive"))]
