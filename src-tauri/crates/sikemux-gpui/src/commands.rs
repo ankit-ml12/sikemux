@@ -141,7 +141,9 @@ impl Workbench {
         let (Some(Strip::Project(_)), Some(repo)) = (self.strip(), self.git_repo()) else {
             return;
         };
-        let listed = core::request(&self.asks, "git.worktrees", json!({ "repo": repo }));
+        let listed = self
+            .target()
+            .request("git.worktrees", json!({ "repo": repo }));
         cx.spawn(async move |this, cx| {
             let Ok(worktrees) = listed.await else {
                 return;
@@ -179,7 +181,7 @@ impl Workbench {
                     return;
                 }
                 let params = json!({ "repo": repo, "path": path, "force": false });
-                let removed = core::request(&bench.asks, "git.worktreeRemove", params);
+                let removed = bench.target().request("git.worktreeRemove", params);
                 let branch = branch.clone();
                 cx.spawn(async move |this, cx| {
                     let removed = removed.await;

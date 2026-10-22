@@ -145,7 +145,7 @@ impl GitPane {
 
     /// Reads the remotes, and the open remote's branches, again.
     pub(super) fn read_remotes(&mut self, cx: &mut Context<Self>) {
-        let answer = crate::core::request(&self.asks, "git.remotes", self.repo_call(json!({})));
+        let answer = self.core.request("git.remotes", self.repo_call(json!({})));
         cx.spawn(async move |pane, cx| {
             let remotes: Vec<GitRemote> = answer
                 .await
@@ -172,7 +172,7 @@ impl GitPane {
             return;
         }
         let params = json!({ "project": self.repo, "state": "open" });
-        let answer = crate::core::request(&self.asks, "codeHostPulls", params);
+        let answer = self.core.request("codeHostPulls", params);
         cx.spawn(async move |pane, cx| {
             let list: Option<PullList> = answer
                 .await
@@ -202,7 +202,7 @@ impl GitPane {
 
     fn read_remote_branches(&mut self, remote: String, cx: &mut Context<Self>) {
         let params = self.repo_call(json!({ "remote": remote }));
-        let answer = crate::core::request(&self.asks, "git.remoteBranches", params);
+        let answer = self.core.request("git.remoteBranches", params);
         cx.spawn(async move |pane, cx| {
             let branches: Vec<GitRemoteBranch> = answer
                 .await

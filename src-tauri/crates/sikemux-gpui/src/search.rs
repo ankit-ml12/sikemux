@@ -22,9 +22,8 @@ use serde_json::{json, Value};
 use sikemux_core::server::search::{
     FileWindow, ReplaceResults, SearchFile, SearchHit, SearchOptions, SearchSummary,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{request, stream, Ask, Streaming};
+use crate::core::{Streaming, Target};
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::syntax::{self, LineRuns};
@@ -95,7 +94,7 @@ struct Shown {
 }
 
 pub struct SearchPane {
-    asks: UnboundedSender<Ask>,
+    core: Target,
     pub project: String,
     fields: Option<Fields>,
     options: SearchOptions,
@@ -125,9 +124,14 @@ pub struct SearchPane {
 }
 
 impl SearchPane {
-    pub fn new(asks: UnboundedSender<Ask>, project: String, cx: &mut Context<Self>) -> Self {
+    /// The host whose core the pane asks.
+    pub fn place(&self) -> &crate::hosts::Place {
+        self.core.place()
+    }
+
+    pub fn new(core: Target, project: String, cx: &mut Context<Self>) -> Self {
         Self {
-            asks,
+            core,
             project,
             fields: None,
             options: SearchOptions::default(),
@@ -255,7 +259,7 @@ impl SearchPane {
         cx.notify();
         let params =
             json!({ "project": self.project, "query": self.query, "options": self.options });
-        stream(&self.asks, "searchStream", params)
+        self.core.stream("searchStream", params)
     }
 
     fn found(&mut self, items: Vec<Value>, cx: &mut Context<Self>) {
@@ -356,7 +360,7 @@ impl SearchPane {
             .to_string_lossy()
             .into_owned();
         let params = json!({ "path": full, "line": line, "before": BEFORE, "after": AFTER });
-        let answer = request(&self.asks, "fileWindow", params);
+        let answer = self.core.request("fileWindow", params);
         self._reading = cx.spawn(async move |pane, cx| {
             let window = answer.await.and_then(|window| {
                 serde_json::from_value::<FileWindow>(window).map_err(|error| error.to_string())
@@ -438,7 +442,7 @@ impl SearchPane {
         let dry_run = self.previewed.is_none();
         self.replacing = true;
         let params = json!({ "project": self.project, "query": self.query, "replace": self.replace, "options": self.options, "dryRun": dry_run });
-        let answer = request(&self.asks, "searchReplace", params);
+        let answer = self.core.request("searchReplace", params);
         cx.spawn_in(window, async move |pane, cx| {
             let results = answer.await.and_then(|results| {
                 serde_json::from_value::<ReplaceResults>(results).map_err(|error| error.to_string())

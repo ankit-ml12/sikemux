@@ -380,7 +380,8 @@ impl Workbench {
             .project()
             .map(|project| project.path.to_string_lossy().into_owned());
         if self.project_files.project != project || self.project_files.files.is_empty() {
-            self.project_files.read(project.as_deref(), &self.asks);
+            self.project_files
+                .read(project.as_deref(), &crate::core::Target::here(&self.asks));
         }
         let files = self.project_files.files.clone();
         let ranking = cx.background_spawn(async move { ranked_entries(&needle, &files) });

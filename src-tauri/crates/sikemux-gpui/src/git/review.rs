@@ -13,11 +13,10 @@ use gpui_kit::{
 use serde_json::{json, Value};
 use sikemux_core::git::diff::DiffRow;
 use sikemux_core::git::status::GitFile;
-use tokio::sync::mpsc::UnboundedSender;
 
 use super::pane::{has_unstaged, is_staged, status_mark, GitPane, Side};
 use super::{row, Colours, Compared, Diff, Notes, RowLook};
-use crate::core::{request, Ask};
+use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
@@ -286,7 +285,7 @@ impl Review {
 
     /// Reads the diffs of the open cards from the one at the top of the list on, so a
     /// card has its diff by the time it is scrolled to.
-    fn read(&mut self, asks: &UnboundedSender<Ask>, cx: &mut Context<GitPane>) {
+    fn read(&mut self, core: &Target, cx: &mut Context<GitPane>) {
         let top = self.list().logical_scroll_top().item_ix;
         let first = self.items.get(top).map_or(0, |item| item.card());
         for index in first..(first + READ_AHEAD).min(self.cards.len()) {
@@ -306,7 +305,7 @@ impl Review {
                     head,
                 } = &section.compared;
                 let params = json!({ "repo": repo, "path": path, "baseRev": base, "headRev": head, "full": section.whole });
-                let answer = request(asks, "git.fileDiff", params);
+                let answer = core.request("git.fileDiff", params);
                 let (path, side) = (path.clone(), section.side);
                 cx.spawn(async move |pane, cx| {
                     let diff = answer.await.and_then(|rows| {
@@ -397,8 +396,8 @@ pub fn review(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>
             .child("Nothing to review.")
             .into_any_element();
     }
-    let asks = pane.asks.clone();
-    pane.review.read(&asks, cx);
+    let core = pane.core.clone();
+    pane.review.read(&core, cx);
     let language = |path: &str, cx: &App| {
         crate::file_icons::language(path, cx).filter(|language| crate::syntax::knows(language))
     };

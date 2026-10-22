@@ -15,7 +15,6 @@ use sikemux_wire::codehost::ChangedFile;
 
 use super::diffs::{Changed, Diffs};
 use super::{branch_chip, HostArea, Read, Said};
-use crate::core::request;
 use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -130,11 +129,9 @@ impl HostArea {
     }
 
     fn read_start(&self, cx: &mut Context<Self>) {
-        let answer = request(
-            &self.asks,
-            "codeHostNewPull",
-            json!({ "project": self.project }),
-        );
+        let answer = self
+            .core
+            .request("codeHostNewPull", json!({ "project": self.project }));
         cx.spawn(async move |area, cx| {
             let start = answer
                 .await
@@ -179,7 +176,7 @@ impl HostArea {
         composing.compared = None;
         composing.diffs = Diffs::new(Vec::new());
         let params = json!({ "repo": self.project, "base": base, "head": head });
-        let answer = request(&self.asks, "git.compare", params);
+        let answer = self.core.request("git.compare", params);
         cx.spawn(async move |area, cx| {
             let compared = answer.await.map_err(SharedString::from).and_then(|value| {
                 serde_json::from_value::<Compare>(value).map_err(|error| error.to_string().into())
@@ -225,7 +222,7 @@ impl HostArea {
         for changed in &composing.diffs.files {
             let path = changed.file.path.clone();
             let params = json!({ "repo": self.project, "path": path, "baseRev": merge_base, "headRev": head, "full": false });
-            let answer = request(&self.asks, "git.fileDiff", params);
+            let answer = self.core.request("git.fileDiff", params);
             cx.spawn(async move |area, cx| {
                 let rows: Vec<DiffRow> = answer
                     .await
@@ -273,7 +270,9 @@ impl HostArea {
             return;
         };
         composing.pushing = true;
-        let answer = request(&self.asks, "git.push", json!({ "repo": self.project }));
+        let answer = self
+            .core
+            .request("git.push", json!({ "repo": self.project }));
         cx.spawn(async move |area, cx| {
             let pushed = answer.await;
             area.update(cx, |area, cx| {

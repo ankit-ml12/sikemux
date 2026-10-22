@@ -16,7 +16,6 @@ use sikemux_wire::codehost::{Issue, IssueList, TimelineItem};
 use super::pulls::Listed;
 use super::thread::{self, Block, Post};
 use super::{ago, comments, label_chip, list_head, notice, Area, HostArea, Read, Said};
-use crate::core::request;
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Segmented, Variant};
@@ -254,7 +253,7 @@ impl HostArea {
             return;
         }
         let params = json!({ "project": self.project, "number": number });
-        let answer = request(&self.asks, "codeHostWorkOn", params);
+        let answer = self.core.request("codeHostWorkOn", params);
         cx.spawn(async move |area, cx| {
             let answer = answer.await;
             area.update(cx, |area, cx| {

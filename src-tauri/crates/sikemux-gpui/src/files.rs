@@ -12,9 +12,8 @@ use gpui_kit::{
     InteractiveElement, IntoElement, ParentElement, SharedString, Styled, Transformation,
 };
 use serde_json::{json, Value};
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::Ask;
+use crate::core::Target;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, IconButton};
@@ -57,7 +56,7 @@ pub struct FileTree {
 
 impl FileTree {
     /// Starts over on `root`, the project in front, unless it already shows it.
-    pub fn show(&mut self, root: Option<PathBuf>, asks: &UnboundedSender<Ask>) {
+    pub fn show(&mut self, root: Option<PathBuf>, core: &Target) {
         if root == self.root {
             return;
         }
@@ -66,20 +65,20 @@ impl FileTree {
             ..FileTree::default()
         };
         if let Some(root) = root {
-            self.relist(vec![root], asks);
+            self.relist(vec![root], core);
         }
     }
 
     /// Lists every shown folder again from scratch, for when answers on their way were lost.
-    pub fn relist_shown(&mut self, asks: &UnboundedSender<Ask>) {
+    pub fn relist_shown(&mut self, core: &Target) {
         self.asked.clear();
         self.again.clear();
         self.incoming.clear();
-        self.changed(None, asks);
+        self.changed(None, core);
     }
 
     /// Asks the core to list `dirs`; one already being listed is listed once more when it is in.
-    fn relist(&mut self, dirs: Vec<PathBuf>, asks: &UnboundedSender<Ask>) {
+    fn relist(&mut self, dirs: Vec<PathBuf>, core: &Target) {
         let fresh: Vec<PathBuf> = dirs
             .into_iter()
             .filter(|dir| {
@@ -91,11 +90,11 @@ impl FileTree {
                 true
             })
             .collect();
-        list(asks, &fresh, None);
+        list(core, &fresh, None);
     }
 
     /// Takes in a `files.list` answer, asking for the next page of any folder it left short.
-    pub fn listed(&mut self, answer: &Value, asks: &UnboundedSender<Ask>) {
+    pub fn listed(&mut self, answer: &Value, core: &Target) {
         for folder in answer.as_array().into_iter().flatten() {
             let Some(dir) = folder["dir"].as_str().map(PathBuf::from) else {
                 continue;
@@ -123,7 +122,7 @@ impl FileTree {
             let incoming = self.incoming.entry(dir.clone()).or_default();
             incoming.extend(entries);
             if got > 0 && incoming.len() < total {
-                list_from(asks, &dir, incoming.len());
+                list_from(core, &dir, incoming.len());
                 continue;
             }
             let whole = self.incoming.remove(&dir).unwrap_or_default();
@@ -133,14 +132,14 @@ impl FileTree {
             }
             self.asked.remove(&dir);
             if self.again.remove(&dir) {
-                self.relist(vec![dir], asks);
+                self.relist(vec![dir], core);
             }
         }
     }
 
     /// Lists again the folders shown that `paths` (relative to the project) could have changed,
     /// or every shown folder when the core did not say what moved.
-    pub fn changed(&mut self, paths: Option<&[String]>, asks: &UnboundedSender<Ask>) {
+    pub fn changed(&mut self, paths: Option<&[String]>, core: &Target) {
         let Some(root) = self.root.clone() else {
             return;
         };
@@ -167,17 +166,17 @@ impl FileTree {
             }
         };
         if !stale.is_empty() {
-            self.relist(stale, asks);
+            self.relist(stale, core);
         }
     }
 
-    pub fn toggle(&mut self, dir: &Path, asks: &UnboundedSender<Ask>) {
+    pub fn toggle(&mut self, dir: &Path, core: &Target) {
         self.selected_dir = Some(dir.to_owned());
         self.rows.take();
         if !self.expanded.remove(dir) {
             self.expanded.insert(dir.to_owned());
             if !self.listed.contains_key(dir) {
-                self.relist(vec![dir.to_owned()], asks);
+                self.relist(vec![dir.to_owned()], core);
             }
         }
     }
@@ -297,7 +296,7 @@ fn git_marks(root: &Path, overview: &Value) -> HashMap<PathBuf, (Option<char>, M
     marks
 }
 
-fn list(asks: &UnboundedSender<Ask>, dirs: &[PathBuf], from: Option<usize>) {
+fn list(core: &Target, dirs: &[PathBuf], from: Option<usize>) {
     let dirs: Vec<String> = dirs
         .iter()
         .map(|dir| dir.to_string_lossy().into_owned())
@@ -307,16 +306,12 @@ fn list(asks: &UnboundedSender<Ask>, dirs: &[PathBuf], from: Option<usize>) {
             Some(from) => json!({ "dirs": batch, "from": from }),
             None => json!({ "dirs": batch }),
         };
-        let _ = asks.send(Ask::Answer {
-            key: "files.list",
-            method: "files.list",
-            params,
-        });
+        core.answer("files.list", "files.list", params);
     }
 }
 
-fn list_from(asks: &UnboundedSender<Ask>, dir: &Path, from: usize) {
-    list(asks, &[dir.to_owned()], Some(from));
+fn list_from(core: &Target, dir: &Path, from: usize) {
+    list(core, &[dir.to_owned()], Some(from));
 }
 
 /// The tab rail's Files page: the project's name and what can be made in it, then its tree.
@@ -488,7 +483,7 @@ fn row_view(
         .on_click(cx.listener(move |bench, event: &ClickEvent, _, cx| {
             if bench.files.expanded.contains(&path) || bench.files.is_dir(&path) {
                 if event.click_count() == 1 {
-                    bench.files.toggle(&path, &bench.asks.clone());
+                    bench.files.toggle(&path, &bench.target());
                 }
             } else if event.click_count() == 2 {
                 bench.open_file(&path);

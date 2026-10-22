@@ -12,9 +12,8 @@ use gpui_kit::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{self, Ask};
+use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -56,12 +55,12 @@ pub struct AgentReview {
 impl AgentReview {
     fn new(
         bench: WeakEntity<Workbench>,
-        asks: &UnboundedSender<Ask>,
+        core: &Target,
         agent: String,
         close: Dismiss,
         cx: &mut Context<Self>,
     ) -> Self {
-        let read = core::request(asks, "agentReview", json!({ "agentId": agent }));
+        let read = core.request("agentReview", json!({ "agentId": agent }));
         cx.spawn(async move |review, cx| {
             let found = read.await.map_err(SharedString::from).and_then(|value| {
                 serde_json::from_value(value).map_err(|error| error.to_string().into())
@@ -308,8 +307,8 @@ pub fn open(bench: &mut Workbench, agent: &str, cx: &mut Context<Workbench>) {
     let close: Dismiss = Rc::new(move |_, cx| {
         closing.update(cx, |bench, cx| bench.close_review(cx)).ok();
     });
-    let asks = bench.asks.clone();
+    let target = bench.target();
     let agent = agent.to_owned();
-    let review = cx.new(|cx| AgentReview::new(weak, &asks, agent, close, cx));
+    let review = cx.new(|cx| AgentReview::new(weak, &target, agent, close, cx));
     bench.show_review(review, cx);
 }

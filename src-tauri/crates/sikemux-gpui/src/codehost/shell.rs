@@ -15,7 +15,7 @@ use sikemux_wire::codehost::RepoListing;
 use sikemux_wire::protocol::CodeHostChoice;
 
 use super::{host_label, HostArea, Said};
-use crate::core::{stream, Ask};
+use crate::core::Ask;
 use crate::icons::Icon;
 use crate::palette::{Mark, Row, Spec};
 use crate::theme::{Tokens, RADIUS_2};
@@ -389,7 +389,7 @@ impl HostArea {
 
     fn sign_in_with_browser(&mut self, cx: &mut Context<Self>) {
         let call = self.plugin_call("signInWithBrowser", json!({}));
-        let mut streaming = stream(&self.asks, "pluginStream", call);
+        let mut streaming = self.core.stream("pluginStream", call);
         let waiting = cx.spawn(async move |area, cx| {
             let mut result = None;
             let mut failed = None;
@@ -584,10 +584,7 @@ impl HostArea {
                     hosts.insert(host, choice);
                 }
                 let params = json!({ "id": project.id, "patch": { "codeHosts": hosts } });
-                let _ = bench.asks.send(Ask::Call {
-                    method: "updateProject",
-                    params,
-                });
+                bench.target().call("updateProject", params);
             })
             .ok();
     }
@@ -630,7 +627,7 @@ impl HostArea {
         }
         all.insert(self.host.host.clone(), kept);
         let params = json!({ "key": "pluginSettings", "value": all });
-        let _ = self.asks.send(Ask::Call {
+        let _ = self.core.asks().send(Ask::Call {
             method: "setPreference",
             params,
         });

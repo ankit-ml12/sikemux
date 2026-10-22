@@ -28,7 +28,7 @@ use tokio::sync::mpsc;
 use crate::battery::Battery;
 use crate::chat::{Chat, Composing, Question, Sent};
 use crate::codehost::{Area, HostArea, OpenArea};
-use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Update, Watch};
+use crate::core::{utc_offset_minutes, Ask, ChatAsk, ChatNews, Link, Target, Update, Watch};
 use crate::desk::{
     FocusAddress, NewPage, NewSimulator, PageBack, PageForward, ReloadPage, ToggleDesk,
 };
@@ -60,6 +60,8 @@ pub struct Workbench {
     _voice_heard: [Subscription; 3],
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
+    /// The host whose core those watches went to.
+    watched_place: crate::hosts::Place,
     pub battery: Option<Battery>,
     pub agent_setup: crate::agent_setup::Setup,
     /// The welcome or the release notes, while one is over the window.
@@ -448,6 +450,7 @@ impl Workbench {
             voice,
             _voice_heard: voice_heard,
             watched_project: None,
+            watched_place: crate::hosts::Place::This,
             watched_ci: None,
             battery: crate::battery::read(),
             agent_setup: Default::default(),
@@ -555,7 +558,7 @@ impl Workbench {
                     });
                 }
                 self.terminals.reattach(&self.asks);
-                self.files.relist_shown(&self.asks);
+                self.files.relist_shown(&self.target());
             }
             Update::From(_, update) if matches!(*update, Update::Chat(..)) => {
                 self.apply(*update, cx)
@@ -572,6 +575,7 @@ impl Workbench {
                     self.hosts_reached.remove(&host);
                     self.host_loads.remove(&host);
                 }
+                self.parts.redraw(&self.parts.stage, cx);
             }
             Update::HostsUnavailable(reason) => self.hosts_unavailable = Some(reason),
             Update::Read("hosts", value) => {
@@ -706,8 +710,8 @@ impl Workbench {
                 if key.starts_with("sign-in") {
                     self.signing_in = false;
                 }
-                if key == "files.list" {
-                    self.files.relist_shown(&self.asks);
+                if key == "files.list" && self.out_of_reach().is_none() {
+                    self.files.relist_shown(&self.target());
                 }
                 if key == crate::settings::ACTIVITY {
                     self.reads.insert(key, Value::Null);
@@ -715,7 +719,7 @@ impl Workbench {
                 }
             }
             Update::Read("files.list", value) => {
-                self.files.listed(&value, &self.asks);
+                self.files.listed(&value, &self.target());
                 return self.parts.redraw(&self.parts.tabs, cx);
             }
             Update::Read("git-project-repo", value) => {
@@ -817,9 +821,9 @@ impl Workbench {
                     .as_ref()
                     .map(|root| root.to_string_lossy().into_owned());
                 if topic == "git" && (project.is_none() || project == root) {
-                    self.files.changed(paths.as_deref(), &self.asks);
+                    self.files.changed(paths.as_deref(), &self.target());
                     if self.finder.is_some() {
-                        self.project_files.read(root.as_deref(), &self.asks);
+                        self.project_files.read(root.as_deref(), &self.target());
                     }
                 }
                 if topic == "files" {
@@ -1232,6 +1236,40 @@ impl Workbench {
         }
     }
 
+    /// The core the panes of the project in front ask: this host's, or the chosen account
+    /// host's.
+    pub fn target(&self) -> Target {
+        Target::new(&self.asks, self.place())
+    }
+
+    /// The name of the account host the panes ask while it is out of reach, else none.
+    fn out_of_reach(&self) -> Option<SharedString> {
+        let crate::hosts::Place::Account(key) = self.place() else {
+            return None;
+        };
+        if self.hosts_reached.contains(&key) {
+            return None;
+        }
+        let named = crate::hosts::HostChoice::Account(key.clone());
+        let label = self
+            .host_choices()
+            .into_iter()
+            .find(|option| option.choice == named)
+            .map_or_else(|| SharedString::from(key), |option| option.label);
+        Some(label)
+    }
+
+    /// Tells the Git pane and the code host's areas whether their host is in reach.
+    fn tell_reach(&self, cx: &mut Context<Self>) {
+        let away = self.out_of_reach();
+        if let Some(pane) = &self.git {
+            pane.update(cx, |pane, cx| pane.set_out_of_reach(away.clone(), cx));
+        }
+        if let Some(area) = &self.host {
+            area.update(cx, |area, cx| area.set_out_of_reach(away, cx));
+        }
+    }
+
     /// The repository the Git views of the project in front open on: one picked from the
     /// list, else the core's pick, the folder when it is one or the one chosen among those
     /// inside it. None while the person has to pick.
@@ -1285,10 +1323,10 @@ impl Workbench {
             .as_ref()
             .filter(|repo| Some(*repo) != was.as_ref() || self.read("git-overview").is_none())
         {
-            let _ = self.asks.send(Ask::Watch(
+            self.target().watch(
                 "git-overview",
                 Watch::new("git.overview", json!({ "repo": repo }), &["git"]),
-            ));
+            );
         }
         self.parts.redraw(&self.parts.stage, cx);
     }
@@ -1298,7 +1336,8 @@ impl Workbench {
         let path = self
             .project()
             .map(|project| project.path.to_string_lossy().into_owned());
-        if path == self.watched_project {
+        let place = self.place();
+        if path == self.watched_project && place == self.watched_place {
             return;
         }
         let activity = json!({ "utcOffsetMinutes": utc_offset_minutes(), "project": path });
@@ -1316,16 +1355,18 @@ impl Workbench {
         ));
         self.reads.remove("git-project-repo");
         self.git_listing = false;
-        let _ = self.asks.send(Ask::Watch(
+        let target = Target::new(&self.asks, place.clone());
+        target.watch(
             "git-project-repo",
             Watch::new(
                 "git.projectRepo",
                 json!({ "project": path }),
                 &["git", "preferences"],
             ),
-        ));
-        self.files.show(path.clone().map(PathBuf::from), &self.asks);
+        );
+        self.files.show(path.clone().map(PathBuf::from), &target);
         self.watched_project = path;
+        self.watched_place = place;
         self.watch_drafts();
     }
 
@@ -2246,6 +2287,7 @@ impl Workbench {
 
     /// Makes the Git pane when the project's Git tab comes to the front.
     fn git_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tell_reach(cx);
         let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
         let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
             return;
@@ -2256,16 +2298,17 @@ impl Workbench {
         if project.path.to_string_lossy() != *self.watched_project.as_deref().unwrap_or_default() {
             return;
         }
-        if self
-            .git
-            .as_ref()
-            .is_some_and(|pane| pane.read(cx).repo == repo)
-        {
+        let target = self.target();
+        if self.git.as_ref().is_some_and(|pane| {
+            let pane = pane.read(cx);
+            pane.repo == repo && pane.place() == target.place()
+        }) {
             return;
         }
-        let asks = self.asks.clone();
         let bench = cx.entity().downgrade();
-        let pane = cx.new(|cx| GitPane::new(asks, repo, bench, window, cx));
+        let away = self.out_of_reach();
+        let pane = cx.new(|cx| GitPane::new(target, repo, bench, window, cx));
+        pane.update(cx, |pane, cx| pane.set_out_of_reach(away, cx));
         if let Some(overview) = self.reads.get("git-overview") {
             pane.update(cx, |pane, cx| pane.overview(overview, cx));
         }
@@ -2285,15 +2328,14 @@ impl Workbench {
             return;
         };
         let project = project.path.to_string_lossy().into_owned();
-        if self
-            .search
-            .as_ref()
-            .is_some_and(|pane| pane.read(cx).project == project)
-        {
+        let target = self.target();
+        if self.search.as_ref().is_some_and(|pane| {
+            let pane = pane.read(cx);
+            pane.project == project && pane.place() == target.place()
+        }) {
             return;
         }
-        let asks = self.asks.clone();
-        self.search = Some(cx.new(|cx| SearchPane::new(asks, project, cx)));
+        self.search = Some(cx.new(|cx| SearchPane::new(target, project, cx)));
     }
 
     /// Makes the board pane when the project's board tab comes to the front.
@@ -2362,7 +2404,9 @@ impl Workbench {
             .and_then(|choice| choice.account.clone());
         let opening = self.opening.take();
         match &self.host {
-            Some(shown) if shown.read(cx).project == folder => {
+            Some(shown)
+                if shown.read(cx).project == folder && shown.read(cx).place() == &self.place() =>
+            {
                 shown.update(cx, |shown, cx| {
                     shown.project_moved(&host, account, branch, cx);
                     shown.show(area, cx);
@@ -2372,9 +2416,11 @@ impl Workbench {
                 });
             }
             _ => {
-                let (asks, bench) = (self.asks.clone(), cx.entity().downgrade());
-                let shown = cx.new(|_| HostArea::new(asks, bench, folder, host, account, branch));
+                let (target, bench) = (self.target(), cx.entity().downgrade());
+                let away = self.out_of_reach();
+                let shown = cx.new(|_| HostArea::new(target, bench, folder, host, account, branch));
                 shown.update(cx, |shown, cx| {
+                    shown.set_out_of_reach(away, cx);
                     shown.show(area, cx);
                     if let Some((area, number, repo)) = opening {
                         shown.open_item(area, number, repo, cx);

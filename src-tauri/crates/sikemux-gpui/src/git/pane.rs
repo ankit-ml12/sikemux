@@ -23,7 +23,6 @@ use sikemux_core::git::log::{GitCommit, GitOverview};
 use sikemux_core::git::stash::GitStash;
 use sikemux_core::git::status::GitFile;
 use sikemux_wire::protocol::ProjectCodeHost;
-use tokio::sync::mpsc::UnboundedSender;
 
 use branches::{branch_card, branches_page, Branches};
 use history::{commit_card, commit_row, graph, Graph, Inks};
@@ -32,7 +31,7 @@ mod branches;
 mod history;
 use super::review::{review, Review};
 use crate::codehost::inbox::Inbox;
-use crate::core::{request, Ask};
+use crate::core::Target;
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -301,7 +300,10 @@ impl Pick {
 }
 
 pub struct GitPane {
-    pub(super) asks: UnboundedSender<Ask>,
+    pub(super) core: Target,
+    /// The host the pane asks, while it is out of reach: the pane shows what it last said
+    /// and takes no changes.
+    out_of_reach: Option<SharedString>,
     pub repo: String,
     overview: Option<Result<GitOverview, String>>,
     /// Files moved to a group before git says so, by path.
@@ -367,8 +369,21 @@ pub struct GitPane {
 }
 
 impl GitPane {
+    /// The host whose core the pane asks.
+    pub fn place(&self) -> &crate::hosts::Place {
+        self.core.place()
+    }
+
+    /// Hears that the pane's host went out of reach, by its name, or came back.
+    pub fn set_out_of_reach(&mut self, host: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.out_of_reach != host {
+            self.out_of_reach = host;
+            cx.notify();
+        }
+    }
+
     pub fn new(
-        asks: UnboundedSender<Ask>,
+        core: Target,
         repo: String,
         bench: WeakEntity<Workbench>,
         window: &mut Window,
@@ -386,7 +401,8 @@ impl GitPane {
             }
         });
         Self {
-            asks,
+            core,
+            out_of_reach: None,
             repo,
             overview: None,
             moving: HashMap::new(),
@@ -665,8 +681,8 @@ impl GitPane {
                 inbox.update(cx, |inbox, cx| inbox.read(cx));
             }
             _ => {
-                let (asks, bench) = (self.asks.clone(), self.bench.clone());
-                self.inbox = Some(cx.new(|cx| Inbox::new(asks, bench, host, account, cx)));
+                let (core, bench) = (self.core.clone(), self.bench.clone());
+                self.inbox = Some(cx.new(|cx| Inbox::new(core, bench, host, account, cx)));
             }
         }
         true
@@ -721,7 +737,7 @@ impl GitPane {
                 self.asked_commit = Some(hash.clone());
                 self.read_commit_lines(&hash, cx);
                 let params = self.repo_call(json!({ "rev": hash }));
-                let answer = request(&self.asks, "git.commitFiles", params);
+                let answer = self.core.request("git.commitFiles", params);
                 cx.spawn(async move |pane, cx| {
                     let paths: Vec<String> = answer
                         .await
@@ -848,10 +864,15 @@ impl GitPane {
         if self.busy.is_some() {
             return;
         }
+        if let Some(host) = &self.out_of_reach {
+            let said = format!("{host} is out of reach, so this waits until it is back.");
+            self.fail(&said, cx);
+            return;
+        }
         let label = label.into();
         self.busy = Some(label.clone());
         let logged = self.logged(label);
-        let answer = request(&self.asks, method, params);
+        let answer = self.core.request(method, params);
         cx.spawn(async move |pane, cx| {
             let answer = answer.await;
             pane.update(cx, |pane, cx| {
@@ -969,7 +990,7 @@ impl GitPane {
         };
         self.running = true;
         let logged = self.logged(format!("{} {}", next.method, next.paths.join(" ")).into());
-        let answer = request(&self.asks, next.method, next.params);
+        let answer = self.core.request(next.method, next.params);
         cx.spawn(async move |pane, cx| {
             let answer = answer.await;
             pane.update(cx, |pane, cx| {
@@ -1413,7 +1434,7 @@ impl GitPane {
     fn read_owners(&mut self, cx: &mut Context<Self>) {
         let read = |staged: bool| {
             let params = json!({ "dir": self.repo, "staged": staged });
-            request(&self.asks, "changeOwners", params)
+            self.core.request("changeOwners", params)
         };
         let owners = read(false);
         let halves = self
@@ -1452,7 +1473,7 @@ impl GitPane {
     fn read_commit_lines(&mut self, hash: &str, cx: &mut Context<Self>) {
         self.commit_lines = Value::Null;
         let params = json!({ "dir": self.repo, "commit": hash });
-        let answer = request(&self.asks, "commitLines", params);
+        let answer = self.core.request("commitLines", params);
         let hash = hash.to_owned();
         cx.spawn(async move |pane, cx| {
             let lines = answer.await.unwrap_or(Value::Null);
@@ -1529,7 +1550,9 @@ impl GitPane {
     }
 
     fn read_stashes(&mut self, cx: &mut Context<Self>) {
-        let answer = request(&self.asks, "git.stashList", self.repo_call(json!({})));
+        let answer = self
+            .core
+            .request("git.stashList", self.repo_call(json!({})));
         cx.spawn(async move |pane, cx| {
             let stashes: Vec<GitStash> = answer
                 .await
@@ -1547,7 +1570,7 @@ impl GitPane {
 
     /// Reads everything the pane shows from the repository again.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let answer = request(&self.asks, "git.overview", self.repo_call(json!({})));
+        let answer = self.core.request("git.overview", self.repo_call(json!({})));
         cx.spawn(async move |pane, cx| {
             if let Ok(overview) = answer.await {
                 pane.update(cx, |pane, cx| pane.overview(&overview, cx))
@@ -1882,10 +1905,8 @@ impl GitPane {
             return;
         }
         self.synced = text.clone();
-        let _ = self.asks.send(Ask::Call {
-            method: "setDraft",
-            params: json!({ "key": self.draft_key(), "text": text }),
-        });
+        self.core
+            .call("setDraft", json!({ "key": self.draft_key(), "text": text }));
     }
 
     fn generate(&mut self, cx: &mut Context<Self>) {
@@ -2110,6 +2131,11 @@ fn side(
                 .flex_1()
                 .min_h_0()
                 .child(head(pane, cx))
+                .children(
+                    pane.out_of_reach
+                        .clone()
+                        .map(|host| crate::codehost::away_note(&host, cx).mx(px(8.))),
+                )
                 .map(|side| match pane.page {
                     Page::Changes => side.child(changes(pane, filter, cx)),
                     Page::History => side.children(filter).child(history_list(pane, cx)),

@@ -12,9 +12,8 @@ use gpui_kit::{
     UniformListScrollHandle, Window,
 };
 use serde_json::{json, Value};
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::Ask;
+use crate::core::Target;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -52,7 +51,7 @@ pub struct ProjectFiles {
 
 impl ProjectFiles {
     /// Asks the core what changed since the scan held, or for the whole list of a new project.
-    pub fn read(&mut self, project: Option<&str>, asks: &UnboundedSender<Ask>) {
+    pub fn read(&mut self, project: Option<&str>, core: &Target) {
         let Some(project) = project else {
             *self = Self::default();
             return;
@@ -65,11 +64,7 @@ impl ProjectFiles {
         }
         self.asked = Some(project.to_owned());
         let params = json!({ "project": project, "since": self.scan });
-        let _ = asks.send(Ask::Answer {
-            key: "projectFiles",
-            method: "projectFiles",
-            params,
-        });
+        core.answer("projectFiles", "projectFiles", params);
     }
 
     /// Takes the core's answer in, telling whether the list changed.
@@ -187,7 +182,7 @@ impl Workbench {
         let project = self
             .project()
             .map(|project| project.path.to_string_lossy().into_owned());
-        self.project_files.read(project.as_deref(), &self.asks);
+        self.project_files.read(project.as_deref(), &self.target());
         self.rank(cx);
     }
 

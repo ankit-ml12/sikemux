@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,6 +22,8 @@ use sikemux_wire::protocol::{
     WindowAnswer, WindowCall,
 };
 use tokio::sync::{mpsc, oneshot};
+
+use crate::hosts::Place;
 
 pub enum Update {
     /// The core's release, which the app ships with.
@@ -579,41 +583,110 @@ pub struct Part {
 pub struct Streaming {
     pub parts: mpsc::UnboundedReceiver<Part>,
     stream: u64,
-    asks: mpsc::UnboundedSender<Ask>,
+    target: Target,
 }
 
 impl Drop for Streaming {
     fn drop(&mut self) {
-        let _ = self.asks.send(Ask::Call {
-            method: "streamCancel",
-            params: json!({ "stream": self.stream }),
-        });
+        self.target
+            .call("streamCancel", json!({ "stream": self.stream }));
     }
 }
 
 /// Asks the core one of its methods whose answer streams, adding the stream's number to
 /// `params`.
-pub fn stream(
-    asks: &mpsc::UnboundedSender<Ask>,
-    method: &'static str,
-    mut params: Value,
-) -> Streaming {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let stream = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if let Some(params) = params.as_object_mut() {
-        params.insert("stream".into(), stream.into());
+pub fn stream(asks: &mpsc::UnboundedSender<Ask>, method: &'static str, params: Value) -> Streaming {
+    Target::here(asks).stream(method, params)
+}
+
+/// Where a pane's calls go: this host's core, or the core of the account host its project
+/// is on. Panes ask through it and never name a host themselves.
+#[derive(Clone)]
+pub struct Target {
+    asks: mpsc::UnboundedSender<Ask>,
+    place: Place,
+}
+
+impl Target {
+    pub fn new(asks: &mpsc::UnboundedSender<Ask>, place: Place) -> Self {
+        Self {
+            asks: asks.clone(),
+            place,
+        }
     }
-    let (sender, parts) = mpsc::unbounded_channel();
-    let _ = asks.send(Ask::Stream {
-        stream,
-        method,
-        params,
-        parts: sender,
-    });
-    Streaming {
-        parts,
-        stream,
-        asks: asks.clone(),
+
+    /// This host's core.
+    pub fn here(asks: &mpsc::UnboundedSender<Ask>) -> Self {
+        Self::new(asks, Place::This)
+    }
+
+    pub fn place(&self) -> &Place {
+        &self.place
+    }
+
+    /// The way to this host's own core, for what stays here whatever the place.
+    pub fn asks(&self) -> &mpsc::UnboundedSender<Ask> {
+        &self.asks
+    }
+
+    fn send(&self, ask: Ask) {
+        let _ = self.asks.send(match &self.place {
+            Place::This => ask,
+            Place::Account(host) => Ask::On(host.clone(), Box::new(ask)),
+        });
+    }
+
+    /// Asks one of the core's methods and waits for the answer.
+    pub fn request(
+        &self,
+        method: &'static str,
+        params: Value,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send>> {
+        match &self.place {
+            Place::This => Box::pin(request(&self.asks, method, params)),
+            Place::Account(host) => Box::pin(request_on(&self.asks, host, method, params)),
+        }
+    }
+
+    /// Keeps the core answering `watch` under `key`, here or on the place's host, wherever
+    /// it was watched before.
+    pub fn watch(&self, key: &'static str, watch: Watch) {
+        self.send(Ask::Watch(key, watch));
+    }
+
+    /// Tells the core something, with no answer waited for.
+    pub fn call(&self, method: &'static str, params: Value) {
+        self.send(Ask::Call { method, params });
+    }
+
+    /// Asks once, the answer arriving as a read under `key`.
+    pub fn answer(&self, key: &'static str, method: &'static str, params: Value) {
+        self.send(Ask::Answer {
+            key,
+            method,
+            params,
+        });
+    }
+
+    /// Asks a method whose answer streams, adding the stream's number to `params`.
+    pub fn stream(&self, method: &'static str, mut params: Value) -> Streaming {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let stream = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Some(params) = params.as_object_mut() {
+            params.insert("stream".into(), stream.into());
+        }
+        let (sender, parts) = mpsc::unbounded_channel();
+        self.send(Ask::Stream {
+            stream,
+            method,
+            params,
+            parts: sender,
+        });
+        Streaming {
+            parts,
+            stream,
+            target: self.clone(),
+        }
     }
 }
 

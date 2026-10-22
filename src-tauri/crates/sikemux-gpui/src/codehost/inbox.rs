@@ -10,10 +10,9 @@ use gpui_kit::{
 use serde_json::json;
 use sikemux_wire::codehost::Notification;
 use sikemux_wire::protocol::ProjectCodeHost;
-use tokio::sync::mpsc::UnboundedSender;
 
 use super::{ago, answer, call_of, host_label, notice, Area, Read};
-use crate::core::{request, Ask};
+use crate::core::Target;
 use crate::theme::Tokens;
 use crate::ui::{self, Button, Toggle, Variant};
 use crate::workbench::Workbench;
@@ -34,7 +33,7 @@ fn reason_label(reason: &str) -> String {
 }
 
 pub struct Inbox {
-    asks: UnboundedSender<Ask>,
+    core: Target,
     bench: WeakEntity<Workbench>,
     host: ProjectCodeHost,
     account: Option<String>,
@@ -46,14 +45,14 @@ pub struct Inbox {
 
 impl Inbox {
     pub fn new(
-        asks: UnboundedSender<Ask>,
+        core: Target,
         bench: WeakEntity<Workbench>,
         host: ProjectCodeHost,
         account: Option<String>,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut inbox = Self {
-            asks,
+            core,
             bench,
             host,
             account,
@@ -75,8 +74,7 @@ impl Inbox {
         method: &'static str,
         more: serde_json::Value,
     ) -> impl std::future::Future<Output = Result<serde_json::Value, SharedString>> + 'static {
-        let answered = request(
-            &self.asks,
+        let answered = self.core.request(
             "plugin",
             call_of(
                 &self.host.host,

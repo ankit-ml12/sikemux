@@ -16,7 +16,6 @@ use sikemux_wire::codehost::{
 use super::diffs::{Changed, Diffs};
 use super::thread::{self, Block, Post, Pushers};
 use super::{ago, branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read};
-use crate::core::request;
 use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
@@ -207,7 +206,7 @@ impl HostArea {
         opened.busy = true;
         let number = opened.number;
         let params = json!({ "project": self.project, "number": number });
-        let answer = request(&self.asks, "codeHostCheckout", params);
+        let answer = self.core.request("codeHostCheckout", params);
         cx.spawn(async move |area, cx| {
             let answer = answer.await;
             area.update(cx, |area, cx| {

@@ -27,9 +27,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use sikemux_wire::codehost::{CheckTally, Label, Outcome, PullState};
 use sikemux_wire::protocol::ProjectCodeHost;
-use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{request, stream, Ask, Watch};
+use crate::core::{Target, Watch};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui;
@@ -127,7 +126,10 @@ pub enum Said {
 
 /// The code host's areas for one project.
 pub struct HostArea {
-    asks: UnboundedSender<Ask>,
+    core: Target,
+    /// The host the areas ask, while it is out of reach: they show what it last said and
+    /// take no changes.
+    out_of_reach: Option<SharedString>,
     bench: WeakEntity<Workbench>,
     /// The project's folder, which the core's lists are asked by.
     pub project: String,
@@ -162,7 +164,7 @@ pub struct HostArea {
 
 impl HostArea {
     pub fn new(
-        asks: UnboundedSender<Ask>,
+        core: Target,
         bench: WeakEntity<Workbench>,
         project: String,
         host: ProjectCodeHost,
@@ -170,7 +172,8 @@ impl HostArea {
         branch: Option<(String, bool)>,
     ) -> Self {
         Self {
-            asks,
+            core,
+            out_of_reach: None,
             bench,
             project,
             host,
@@ -193,6 +196,25 @@ impl HostArea {
             budget: None,
             pictures: pictures::Pictures::default(),
         }
+    }
+
+    /// The host whose core the areas ask.
+    pub fn place(&self) -> &crate::hosts::Place {
+        self.core.place()
+    }
+
+    /// Hears that the areas' host went out of reach, by its name, or came back.
+    pub fn set_out_of_reach(&mut self, host: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.out_of_reach == host {
+            return;
+        }
+        let back = self.out_of_reach.is_some() && host.is_none();
+        self.out_of_reach = host;
+        if back && !self.signed_in() {
+            self.status = None;
+            self.read_status(cx);
+        }
+        cx.notify();
     }
 
     /// Shows `area`, asking the core for its lists the first time.
@@ -344,7 +366,7 @@ impl HostArea {
         }
         match &self.pull {
             Some(opened) => {
-                let mut params = self.place();
+                let mut params = self.located();
                 params["number"] = json!(opened.number);
                 self.ask_watch(pull::VIEW, "codeHostPull", params.clone());
                 self.ask_watch(pull::FILES, "codeHostPullFiles", params);
@@ -367,7 +389,7 @@ impl HostArea {
     }
 
     /// Where the core finds what is shown: the project, or the repository named outright.
-    fn place(&self) -> Value {
+    fn located(&self) -> Value {
         match &self.elsewhere {
             Some(repo) => {
                 let (owner, name) = repo.split_once('/').unwrap_or_default();
@@ -383,8 +405,17 @@ impl HostArea {
         method: &'static str,
         more: Value,
     ) -> impl Future<Output = Result<Value, SharedString>> + 'static {
-        let answered = request(&self.asks, "plugin", self.plugin_call(method, more));
+        let away = self
+            .out_of_reach
+            .as_ref()
+            .map(|host| SharedString::from(format!("{host} is out of reach")));
+        let answered = away
+            .is_none()
+            .then(|| self.core.request("plugin", self.plugin_call(method, more)));
         async move {
+            let Some(answered) = answered else {
+                return Err(away.unwrap_or_default());
+            };
             match answered.await {
                 Ok(value) => answer(&value),
                 Err(error) => Err(error.into()),
@@ -398,7 +429,9 @@ impl HostArea {
         method: &'static str,
         more: Value,
     ) -> impl Future<Output = Result<String, SharedString>> + 'static {
-        let mut streaming = stream(&self.asks, "pluginStream", self.plugin_call(method, more));
+        let mut streaming = self
+            .core
+            .stream("pluginStream", self.plugin_call(method, more));
         async move {
             let mut saved = None;
             while let Some(part) = streaming.parts.recv().await {
@@ -453,9 +486,8 @@ impl HostArea {
     }
 
     fn ask_watch(&self, key: &'static str, method: &'static str, params: Value) {
-        let _ = self
-            .asks
-            .send(Ask::Watch(key, Watch::new(method, params, &["codeHost"])));
+        self.core
+            .watch(key, Watch::new(method, params, &["codeHost"]));
     }
 }
 
@@ -546,6 +578,10 @@ impl Render for HostArea {
         let dispatch = run_actions::dispatch_sheet(self, cx);
         let menu = self.account_menu(cx);
         let note = shell::budget_note(self, cx);
+        let away = self
+            .out_of_reach
+            .clone()
+            .map(|host| away_note(&host, cx).mx(px(12.)).mt(px(10.)));
         self.fetch_pictures(cx);
         let picking = self.picking.map(|end| {
             let title = match end {
@@ -566,6 +602,7 @@ impl Render for HostArea {
             .relative()
             .flex()
             .flex_col()
+            .children(away)
             .children(note)
             .child(div().flex_1().min_h_0().child(body))
             .children(picking)
@@ -596,6 +633,23 @@ fn call_of(
         params.extend(more);
     }
     json!({ "plugin": format!("sikemux.{host}"), "method": method, "params": params })
+}
+
+/// Says that `host` is out of reach and what shows is what it last said.
+pub fn away_note(host: &str, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .px(px(12.))
+        .py(px(8.))
+        .rounded(crate::theme::RADIUS_2)
+        .border_1()
+        .border_color(t.warn.opacity(0.4))
+        .bg(t.warn.opacity(0.08))
+        .text_size(px(12.))
+        .text_color(t.text_primary)
+        .child(format!(
+            "{host} is out of reach. Showing what it last said; changes wait until it is back."
+        ))
 }
 
 /// The value inside a code-host answer, or what its failure said.
