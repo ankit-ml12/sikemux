@@ -47,6 +47,9 @@ const PEEK_CLOSE: Duration = Duration::from_millis(180);
 /// How close to the window's edge the pointer brings out a closed rail.
 const PEEK_REACH: f32 = 28.;
 
+/// The decoded pictures a long chat full of screenshots keeps loaded: about a dozen at full size.
+const PICTURE_BUDGET: usize = 256 * 1024 * 1024;
+
 /// The one store: what the core last said, and what only this window decides.
 pub struct Workbench {
     pub version: String,
@@ -332,6 +335,7 @@ impl Workbench {
         let Link { mut updates, asks } = link;
         let _ = asks.send(Ask::Remote(crate::core::RemoteAsk::Status));
         cx.defer_in(window, |bench, _, cx| crate::accounts::read(bench, cx));
+        cx.set_decoded_image_budget(PICTURE_BUDGET);
         crate::faces::install(cx);
         crate::file_icons::install(cx);
         crate::syntax::install(cx);
