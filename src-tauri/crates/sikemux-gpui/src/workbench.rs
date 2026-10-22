@@ -611,7 +611,7 @@ impl Workbench {
                             composing.returned = Some(held.unwrap_or_else(|| Sent {
                                 content: text.into(),
                                 attachments: Vec::new(),
-                                earlier: Vec::new(),
+                                context: Vec::new(),
                             }));
                         }
                         return self.parts.redraw(&self.parts.stage, cx);
@@ -921,7 +921,7 @@ impl Workbench {
             hint: SharedString::default(),
             attachments: Vec::new(),
             menu: None,
-            earlier: Vec::new(),
+            context: Vec::new(),
             refusal: None,
             preparing: None,
             send_when_ready: false,
@@ -1020,7 +1020,7 @@ impl Workbench {
                     draft.set_value(returned.content, window, cx)
                 });
                 composing.attachments = returned.attachments;
-                composing.earlier = returned.earlier;
+                composing.context = returned.context;
             }
             composing.take_arrived(window, cx);
         }
@@ -1094,7 +1094,7 @@ impl Workbench {
         let sent = Sent {
             content: draft.read(cx).content(),
             attachments: composing.attachments.clone(),
-            earlier: composing.earlier.clone(),
+            context: composing.context.clone(),
         };
         let steers = self.preferences().mid_turn_send == MidTurnSend::Steer;
         self.answer(agent, |chat, open| {

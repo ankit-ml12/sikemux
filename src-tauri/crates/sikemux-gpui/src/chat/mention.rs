@@ -156,13 +156,12 @@ impl Composing {
                 }
             }
         }
-        for (uri, title) in &self.earlier {
-            if !context.iter().any(|item: &ChatContext| &item.uri == uri) {
-                context.push(ChatContext {
-                    uri: uri.clone(),
-                    title: title.clone(),
-                    text: String::new(),
-                });
+        for item in &self.context {
+            if !context
+                .iter()
+                .any(|held: &ChatContext| held.uri == item.uri)
+            {
+                context.push(item.clone());
             }
         }
         paths.truncate(sikemux_core::acp::MAX_ATTACHMENTS);
@@ -484,8 +483,12 @@ impl Workbench {
         } = &choice
         {
             let uri = format!("sikemux://earlier/{cli}/{session}");
-            if !composing.earlier.iter().any(|(held, _)| held == &uri) {
-                composing.earlier.push((uri, title.clone()));
+            if !composing.context.iter().any(|held| held.uri == uri) {
+                composing.context.push(ChatContext {
+                    uri,
+                    title: title.clone(),
+                    text: String::new(),
+                });
             }
         }
         composing.draft.update(cx, |draft, cx| {

@@ -15,7 +15,8 @@ use gpui_kit::{
     Window,
 };
 use sikemux_core::acp::MAX_ATTACHMENTS;
-use sikemux_wire::chat::{ChatMessage, SentContext};
+use sikemux_wire::chat::ChatMessage;
+use sikemux_wire::protocol::ChatContext;
 use tokio::sync::oneshot;
 
 use super::Composing;
@@ -260,15 +261,15 @@ impl Workbench {
         .detach();
     }
 
-    /// Takes earlier chat `index` off the message.
+    /// Takes context item `index`, an earlier chat or an issue, off the message.
     pub fn forget(&mut self, agent: &str, index: usize, cx: &mut Context<Self>) {
         if let Some(composing) = self
             .chats
             .get_mut(agent)
             .and_then(|chat| chat.composer.as_mut())
         {
-            if index < composing.earlier.len() {
-                composing.earlier.remove(index);
+            if index < composing.context.len() {
+                composing.context.remove(index);
                 self.typed_draft(agent, cx);
                 cx.notify();
             }
@@ -456,16 +457,16 @@ pub fn chip(token: &InlineTokenContext, _: &mut Window, cx: &mut App) -> impl In
 }
 
 /// The files going with the message, as tiles: a picture's preview or a file's icon, its
-/// number, and a way to take it off.
+/// number, and a way to take it off; then the chats and issues it carries, as chips.
 pub fn tiles(
     attachments: &[PathBuf],
-    earlier: &[(String, String)],
+    context: &[ChatContext],
     remove: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     forget: impl Fn(usize, &mut Window, &mut App) + Clone + 'static,
     open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
     cx: &App,
 ) -> Option<impl IntoElement> {
-    if attachments.is_empty() && earlier.is_empty() {
+    if attachments.is_empty() && context.is_empty() {
         return None;
     }
     let t = Tokens::get(cx).clone();
@@ -487,16 +488,9 @@ pub fn tiles(
             .media(media(path, &t, cx).overlay(number))
             .on_remove(move |_, window, cx| remove(index, window, cx))
     });
-    let chats = earlier.iter().enumerate().map(|(index, (_, title))| {
+    let chips = context.iter().enumerate().map(|(index, item)| {
         let forget = forget.clone();
-        Attachment::new()
-            .id(SharedString::from(format!("earlier-{index}")))
-            .with_size(gpui_kit::component::Size::Small)
-            .media(
-                AttachmentMedia::new()
-                    .child(ui::icon(Icon::Message, 14.).text_color(t.text_tertiary)),
-            )
-            .content(AttachmentContent::new().title(AttachmentTitle::new(title.clone())))
+        context_chip(format!("context-{index}"), &item.uri, &item.title, &t)
             .on_remove(move |_, window, cx| forget(index, window, cx))
     });
     Some(
@@ -508,7 +502,7 @@ pub fn tiles(
             .px(px(6.))
             .pt(px(6.))
             .children(tiles)
-            .children(chats),
+            .children(chips),
     )
 }
 
@@ -574,26 +568,26 @@ fn tracked(uri: &str) -> Option<(Icon, &str)> {
     })
 }
 
-/// A context item's chip: `#12 Title` for an issue or pull request, its title for the rest.
-fn context_chip(index: usize, item: &SentContext, t: &Tokens) -> Attachment {
-    let (icon, title) = match tracked(&item.uri) {
+/// A context item's chip: `#12 Title` for an issue or pull request, its title for an
+/// earlier chat or anything else.
+fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
+    let (icon, title) = match tracked(uri) {
         Some((icon, number)) => {
-            let title = item.title.trim_start_matches("Issue ");
-            let title = title.trim_start_matches("Pull request ");
-            let title = title
+            let bare = title.trim_start_matches("Issue ");
+            let bare = bare.trim_start_matches("Pull request ");
+            let bare = bare
                 .strip_prefix(&format!("#{number}"))
-                .map_or(item.title.as_str(), |rest| {
-                    rest.trim_start_matches(':').trim_start()
-                });
-            (icon, format!("#{number} {title}").trim_end().to_owned())
+                .map_or(title, |rest| rest.trim_start_matches(':').trim_start());
+            (icon, format!("#{number} {bare}").trim_end().to_owned())
         }
-        None if item.title.is_empty() => (Icon::File, item.uri.clone()),
-        None => (Icon::File, item.title.clone()),
+        None if uri.starts_with("sikemux://earlier/") => (Icon::Message, title.to_owned()),
+        None if title.is_empty() => (Icon::File, uri.to_owned()),
+        None => (Icon::File, title.to_owned()),
     };
     Attachment::new()
-        .id(SharedString::from(format!("sent-context-{index}")))
+        .id(SharedString::from(id))
         .with_size(gpui_kit::component::Size::Small)
-        .tooltip(item.uri.clone())
+        .tooltip(uri.to_owned())
         .media(AttachmentMedia::new().child(ui::icon(icon, 13.).text_color(t.text_tertiary)))
         .content(AttachmentContent::new().title(AttachmentTitle::new(title)))
 }
@@ -636,11 +630,14 @@ pub fn sent(
             .media(tile)
             .on_click(move |_, window, cx| open(path.clone(), window, cx))
     });
-    let context = message
-        .context
-        .iter()
-        .enumerate()
-        .map(|(index, item)| context_chip(index, item, &t));
+    let context = message.context.iter().enumerate().map(|(index, item)| {
+        context_chip(
+            format!("sent-context-{}-{index}", message.id),
+            &item.uri,
+            &item.title,
+            &t,
+        )
+    });
     Some(
         div()
             .flex()

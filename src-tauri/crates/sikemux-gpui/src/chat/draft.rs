@@ -45,13 +45,8 @@ fn kept(composing: &Composing, cx: &App) -> Value {
     if !composing.attachments.is_empty() {
         extra.insert("attachments".into(), json!(composing.attachments));
     }
-    if !composing.earlier.is_empty() {
-        let earlier: Vec<Value> = composing
-            .earlier
-            .iter()
-            .map(|(uri, title)| json!({ "uri": uri, "title": title }))
-            .collect();
-        extra.insert("earlier".into(), earlier.into());
+    if !composing.context.is_empty() {
+        extra.insert("context".into(), json!(composing.context));
     }
     let mut draft = json!({ "text": content.text() });
     if !extra.is_empty() {
@@ -92,19 +87,11 @@ fn restored(draft: &Value) -> Sent {
         .flatten()
         .filter_map(|path| path.as_str().map(PathBuf::from))
         .collect();
-    let earlier = extra["earlier"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|chat| {
-            let uri = chat["uri"].as_str()?.to_owned();
-            Some((uri, chat["title"].as_str().unwrap_or_default().to_owned()))
-        })
-        .collect();
+    let context = serde_json::from_value(extra["context"].clone()).unwrap_or_default();
     Sent {
         content,
         attachments,
-        earlier,
+        context,
     }
 }
 
@@ -205,6 +192,6 @@ impl Composing {
         self.draft
             .update(cx, |input, cx| input.set_value(draft.content, window, cx));
         self.attachments = draft.attachments;
-        self.earlier = draft.earlier;
+        self.context = draft.context;
     }
 }

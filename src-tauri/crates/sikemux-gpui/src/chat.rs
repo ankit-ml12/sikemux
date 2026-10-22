@@ -408,8 +408,9 @@ pub struct Composing {
     /// The agents, files or commands offered for the word at the caret.
     pub menu: Option<mention::Menu>,
     pub mic: Entity<crate::voice::MicButton>,
-    /// Earlier chats with no name the message names, by their uri, with their title.
-    pub earlier: Vec<(String, String)>,
+    /// What the message carries besides its files: earlier chats it names, and issues and
+    /// pages put with it, such as a code host's issue to work on.
+    pub context: Vec<ChatContext>,
     /// Why the core turned down the last message, until the next is sent.
     pub refusal: Option<SharedString>,
     /// What the core is doing to start the chat in a worktree, while it does.
@@ -432,7 +433,7 @@ pub struct Composing {
 pub struct Sent {
     pub content: gpui_kit::base::input::InputContent,
     pub attachments: Vec<PathBuf>,
-    pub earlier: Vec<(String, String)>,
+    pub context: Vec<ChatContext>,
 }
 
 /// A question an agent put to the person, as the core's `questions` call lists it.
@@ -1206,7 +1207,7 @@ impl Chat {
         }
         if let Some(composing) = self.composer.as_mut() {
             composing.attachments.clear();
-            composing.earlier.clear();
+            composing.context.clear();
         }
         if self.steers() && !queue {
             let message = json!({ "text": text, "paths": paths, "context": context });
@@ -2326,7 +2327,7 @@ fn composer(
     };
     let tiles = attach::tiles(
         &composing.attachments,
-        &composing.earlier,
+        &composing.context,
         remove,
         forget,
         open,
