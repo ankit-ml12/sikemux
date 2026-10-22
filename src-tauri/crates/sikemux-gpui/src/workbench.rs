@@ -3110,10 +3110,33 @@ impl Workbench {
 
     /// The project's saved chats no agent holds, which the agent list already shows.
     pub fn recent_of(&self, project: &str) -> Vec<&RecentInfo> {
+        self.chats_of(project)
+            .into_iter()
+            .filter(|recent| recent.agent_id.is_none())
+            .collect()
+    }
+
+    /// The project's pinned chats, held by an agent or not.
+    pub fn pinned_of(&self, project: &str) -> Vec<&RecentInfo> {
+        self.chats_of(project)
+            .into_iter()
+            .filter(|recent| recent.pinned)
+            .collect()
+    }
+
+    /// The saved chat the agent holds, once the core lists it.
+    pub fn chat_of(&self, agent: &str) -> Option<&RecentInfo> {
+        self.shown()?
+            .recent
+            .iter()
+            .find(|recent| recent.agent_id.as_deref() == Some(agent))
+    }
+
+    fn chats_of(&self, project: &str) -> Vec<&RecentInfo> {
         self.shown().map_or(Vec::new(), |view| {
             view.recent
                 .iter()
-                .filter(|recent| recent.project == project && recent.agent_id.is_none())
+                .filter(|recent| recent.project == project)
                 .filter(|recent| {
                     self.all_harnesses
                         || self

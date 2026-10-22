@@ -2,11 +2,11 @@ use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
 use gpui_kit::base::{Button as BaseButton, Popover};
-use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, Context,
+    canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, Context, Entity,
     FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Transformation, Window,
 };
@@ -50,34 +50,33 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         return ssh_page(bench, alias, cx);
     }
     let project = bench.project();
-    let agents = bench.listed_agents();
+    let pins = project
+        .filter(|_| !bench.all_projects)
+        .map(|project| bench.pinned_of(&project.id))
+        .unwrap_or_default();
+    let (held, agents): (Vec<_>, Vec<_>) = bench.listed_agents().into_iter().partition(|agent| {
+        pins.iter()
+            .any(|pin| pin.agent_id.as_deref() == Some(agent.id.as_str()))
+    });
     let rows = team_rows(bench, &agents, cx);
-    let (pinned, recent): (Vec<_>, Vec<_>) = project
+    let pinned: Vec<_> = pins
+        .iter()
+        .map(|pin| {
+            match held
+                .iter()
+                .find(|agent| pin.agent_id.as_deref() == Some(agent.id.as_str()))
+            {
+                Some(agent) => agent_row(bench, agent, None, None, cx).into_any_element(),
+                None => recent_row(bench, pin, cx),
+            }
+        })
+        .collect();
+    let recent: Vec<_> = project
         .map(|project| bench.recent_of(&project.id))
         .unwrap_or_default()
         .into_iter()
-        .partition(|recent| recent.pinned);
-    let recent_row = |recent: &RecentInfo, cx: &mut Context<Workbench>| {
-        Row::new(
-            SharedString::from(format!("recent-{}", recent.id)),
-            recent.title.clone(),
-        )
-        .mark(22., ui::mark(&recent.provider, 20.))
-        .compact(bench.rail_compact())
-        .child(ui::mono(age(recent.active_at), 11., cx))
-        .on_click(cx.listener({
-            let recent = recent.clone();
-            move |bench, _, _, _| bench.resume_chat(&recent)
-        }))
-        .into_any_element()
-    };
-    let pinned: Vec<_> = pinned
-        .into_iter()
-        .map(|recent| recent_row(recent, cx))
-        .collect();
-    let recent: Vec<_> = recent
-        .into_iter()
-        .map(|recent| recent_row(recent, cx))
+        .filter(|recent| !recent.pinned || bench.all_projects)
+        .map(|recent| recent_row(bench, recent, cx))
         .collect();
     let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
         if project.is_none() {
@@ -338,6 +337,56 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             )
         })
         .into_any_element()
+}
+
+/// A saved chat no agent holds, to take up again: how long ago it ran, or a pin when it is
+/// pinned, and Pin or Unpin on a right-click.
+fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let tail = match recent.pinned {
+        true => ui::icon(Icon::Pin, 11.)
+            .text_color(t.text_tertiary)
+            .into_any_element(),
+        false => ui::mono(age(recent.active_at), 11., cx).into_any_element(),
+    };
+    let row = Row::new(
+        SharedString::from(format!("recent-{}", recent.id)),
+        recent.title.clone(),
+    )
+    .mark(22., ui::mark(&recent.provider, 20.))
+    .compact(bench.rail_compact())
+    .child(tail)
+    .on_click(cx.listener({
+        let recent = recent.clone();
+        move |bench, _, _, _| bench.resume_chat(&recent)
+    }));
+    let pin = pin_chat(&cx.entity(), recent);
+    div()
+        .id(SharedString::from(format!("recent-menu-{}", recent.id)))
+        .child(row)
+        .context_menu(move |popup, _, _| {
+            let (label, pin) = pin.clone();
+            popup.item(
+                PopupMenuItem::new(label)
+                    .icon(Icon::Pin)
+                    .on_click(move |_, window, cx| pin(window, cx)),
+            )
+        })
+        .into_any_element()
+}
+
+/// "Pin" or "Unpin" for the saved chat, and what does it.
+fn pin_chat(
+    this: &Entity<Workbench>,
+    recent: &RecentInfo,
+) -> (&'static str, Rc<dyn Fn(&mut Window, &mut App)>) {
+    let (this, id, pinned) = (this.clone(), recent.id.clone(), recent.pinned);
+    let label = if pinned { "Unpin" } else { "Pin" };
+    let pin = move |_: &mut Window, cx: &mut App| {
+        let params = serde_json::json!({ "recent": id, "pinned": !pinned });
+        this.update(cx, |bench, _| bench.call("pinChat", params));
+    };
+    (label, Rc::new(pin))
 }
 
 fn new_row(id: &'static str, glyph: Icon, label: &'static str, command: &str, cx: &App) -> Row {
@@ -634,8 +683,52 @@ fn agent_row(
     .children(counts(agent, cx));
     let lines = team_lines(team, matches!(fold, Some(Fold { open: true, .. })), cx);
     let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
+    let pin = bench
+        .chat_of(&agent.id)
+        .map(|chat| (chat.pinned, pin_chat(&cx.entity(), chat).1));
+    let close = agent.id.clone();
+    let actions = div()
+        .absolute()
+        .top_0()
+        .right(px(4.))
+        .h(px(if bench.rail_compact() { 27. } else { 28. }))
+        .pl(px(4.))
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .rounded(theme::RADIUS_2)
+        .bg(if chosen {
+            t.surface_chosen
+        } else {
+            t.surface_hover
+        })
+        .opacity(0.)
+        .group_hover(AGENT_ROW, |actions| actions.opacity(1.))
+        .children(pin.map(|(pinned, pin)| {
+            let label = format!("{} {}", if pinned { "Unpin" } else { "Pin" }, agent.title);
+            IconButton::new(
+                SharedString::from(format!("pin-{}", agent.id)),
+                Icon::Pin,
+                label,
+            )
+            .small()
+            .pressed(pinned)
+            .on_click(move |_, window, cx| pin(window, cx))
+        }))
+        .child(
+            IconButton::new(
+                SharedString::from(format!("close-{}", agent.id)),
+                Icon::Close,
+                format!("Close {}", agent.title),
+            )
+            .small()
+            .on_click(cx.listener(move |bench, _, _, _| {
+                bench.call("closeAgents", serde_json::json!({ "agentIds": [close] }))
+            })),
+        );
     div()
         .id(SharedString::from(format!("agent-menu-{}", agent.id)))
+        .group(AGENT_ROW)
         .relative()
         .when(
             matches!(team, Some(TeamLink::Member | TeamLink::Last)),
@@ -649,6 +742,7 @@ fn agent_row(
             cx.listener(|bench, _, _, cx| bench.close_card(cx)),
         )
         .child(row)
+        .child(actions)
         .children(lines)
         .children(card)
         .context_menu(move |popup, window, cx| match &menu {
@@ -656,6 +750,9 @@ fn agent_row(
             None => popup,
         })
 }
+
+/// The hover group of an agent's rail row, whose pin and close buttons show on hover.
+const AGENT_ROW: &str = "agent-row";
 
 fn counts(agent: &AgentRow, cx: &App) -> Option<impl IntoElement> {
     let t = Tokens::get(cx).clone();
