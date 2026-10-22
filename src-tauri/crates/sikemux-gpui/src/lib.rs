@@ -39,6 +39,7 @@ pub mod hosts;
 pub mod icons;
 pub mod install_pane;
 mod keymap;
+mod links;
 pub mod model_picker;
 mod new_tab;
 pub mod notifications;

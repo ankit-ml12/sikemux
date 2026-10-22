@@ -1,6 +1,7 @@
 //! A link in a message: a file the agent named shows in Finder, or in the editor when the
 //! agent runs on another host; a web page opens on the agent's desk, or with ⌘ held where
-//! the system opens it; anything else opens where the system opens it.
+//! the system opens it; Sikemux's own links are followed here; anything else opens where the
+//! system opens it.
 
 use std::path::PathBuf;
 
@@ -19,6 +20,12 @@ pub fn local_path(href: &str) -> Option<PathBuf> {
 }
 
 pub fn open(href: &str, agent: &str, bench: &WeakEntity<Workbench>, window: &Window, cx: &mut App) {
+    if href.starts_with("sikemux://") {
+        bench
+            .update(cx, |bench, cx| crate::links::follow(bench, href, cx))
+            .ok();
+        return;
+    }
     if let Some(path) = local_path(href) {
         let elsewhere = bench.upgrade().is_some_and(|bench| {
             *bench.read(cx).chat_target(agent).place() != crate::hosts::Place::This
