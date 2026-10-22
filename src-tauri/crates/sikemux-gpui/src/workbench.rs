@@ -3325,8 +3325,8 @@ impl Workbench {
                     }),
                     id: agent.id.clone(),
                     provider: agent.provider.clone(),
-                    title: agent.title.clone(),
-                    name: agent.name.clone(),
+                    title: self.title_of(agent),
+                    name: agent.name.clone().filter(|_| self.titled(agent)),
                     status: chat
                         .map(|chat| chat.status)
                         .or_else(|| session.and_then(|session| session.status))
@@ -3369,6 +3369,24 @@ impl Workbench {
         };
         rows.retain(|row| row.title.to_lowercase().contains(&self.filter_text));
         rows
+    }
+
+    /// Whether the agent has a title of its own: the person named it, or it is neither empty,
+    /// its kind nor its account's name. Until then its @name stands as its title.
+    pub fn titled(&self, agent: &sikemux_wire::protocol::WorkspaceAgent) -> bool {
+        let title = agent.title.trim();
+        let account = (agent.profile_id.as_deref())
+            .and_then(|id| self.accounts.profile(id))
+            .map(|profile| profile.name.as_str());
+        agent.renamed || !(title.is_empty() || title == agent.provider || Some(title) == account)
+    }
+
+    /// What the agent is called in its header, tab and rail row.
+    pub fn title_of(&self, agent: &sikemux_wire::protocol::WorkspaceAgent) -> String {
+        match &agent.name {
+            Some(name) if !self.titled(agent) => format!("@{name}"),
+            _ => agent.title.clone(),
+        }
     }
 
     /// The project's saved chats no agent holds, which the agent list already shows.
