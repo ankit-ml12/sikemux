@@ -1,7 +1,7 @@
 //! Changed files reviewed in one stream: a card per file with its header, and its diff
 //! under it while open, every card's rows in one virtualised list.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use gpui_kit::prelude::FluentBuilder;
@@ -164,28 +164,25 @@ impl Review {
                 ..Review::default()
             };
         }
-        let mut old: Vec<Option<Card>> = std::mem::take(&mut self.cards)
+        let mut old: HashMap<String, Card> = std::mem::take(&mut self.cards)
             .into_iter()
-            .map(Some)
+            .map(|card| (card.path.clone(), card))
             .collect();
         self.cards = wanted
             .into_iter()
             .map(|wanted| {
-                let kept = old.iter_mut().find(|card| {
-                    card.as_ref().is_some_and(|card| {
-                        card.path == wanted.path
-                            && card.file == wanted.file
-                            && card
+                let kept = old.remove(&wanted.path).filter(|card| {
+                    card.file == wanted.file
+                        && card
+                            .sections
+                            .iter()
+                            .map(|section| (section.side, &section.compared))
+                            .eq(wanted
                                 .sections
                                 .iter()
-                                .map(|section| (section.side, &section.compared))
-                                .eq(wanted
-                                    .sections
-                                    .iter()
-                                    .map(|(side, compared)| (*side, compared)))
-                    })
+                                .map(|(side, compared)| (*side, compared)))
                 });
-                kept.and_then(Option::take).unwrap_or_else(|| Card {
+                kept.unwrap_or_else(|| Card {
                     path: wanted.path,
                     file: wanted.file,
                     sections: wanted
@@ -402,9 +399,12 @@ pub fn review(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>
         crate::file_icons::language(path, cx).filter(|language| crate::syntax::knows(language))
     };
     for card in 0..pane.review.cards.len() {
+        let read = |section: &Section| matches!(section.diff, Some(Ok(_)));
+        if !pane.review.cards[card].sections.iter().any(read) {
+            continue;
+        }
+        let language = language(&pane.review.cards[card].path, cx);
         for at in 0..pane.review.cards[card].sections.len() {
-            let path = pane.review.cards[card].path.clone();
-            let language = language(&path, cx);
             let section = &mut pane.review.cards[card].sections[at];
             if let Some(Ok(diff)) = &section.diff {
                 section

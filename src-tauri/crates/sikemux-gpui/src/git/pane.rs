@@ -18,6 +18,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement, Styled, Subscription, Task, Transformation,
     WeakEntity, Window,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sikemux_core::git::log::{GitCommit, GitOverview};
 use sikemux_core::git::stash::GitStash;
@@ -329,6 +330,9 @@ pub struct GitPane {
     commit_rows: ListState,
     /// The commit whose files were last asked for, so it is asked for once.
     asked_commit: Option<String>,
+    /// The review shows the changed files the list does, so moving the selection only
+    /// focuses another of them.
+    reviewing_list: bool,
     branches: Branches,
     branch_rows: ListState,
     stashes: Vec<GitStash>,
@@ -426,6 +430,7 @@ impl GitPane {
             hashes: Vec::new(),
             commit_rows: ListState::new(0, ListAlignment::Top, px(400.)),
             asked_commit: None,
+            reviewing_list: false,
             branches: Branches::default(),
             stashes: Vec::new(),
             writers: Vec::new(),
@@ -456,8 +461,7 @@ impl GitPane {
 
     /// Takes what `git.overview` last answered for the repository.
     pub fn overview(&mut self, value: &Value, cx: &mut Context<Self>) {
-        self.overview =
-            Some(serde_json::from_value(value.clone()).map_err(|error| error.to_string()));
+        self.overview = Some(GitOverview::deserialize(value).map_err(|error| error.to_string()));
         for path in self.moved.drain(..) {
             self.moving.remove(&path);
         }
@@ -729,8 +733,11 @@ impl GitPane {
     fn follow(&mut self, cx: &mut Context<Self>) {
         match self.shown() {
             Some(Shown::Changes) => {
-                let files = self.listed_files();
-                self.review.show_changes(&self.repo, &files);
+                if self.review.commit().is_some() || !self.reviewing_list {
+                    let files = self.listed_files();
+                    self.review.show_changes(&self.repo, &files);
+                    self.reviewing_list = true;
+                }
                 let path = self.chosen().map(|(_, file)| file.path.clone());
                 self.review.focus(path.as_deref());
             }
@@ -761,7 +768,10 @@ impl GitPane {
                 })
                 .detach();
             }
-            None => self.review.show_changes(&self.repo, &[]),
+            None => {
+                self.review.show_changes(&self.repo, &[]);
+                self.reviewing_list = false;
+            }
         }
     }
 
@@ -816,6 +826,7 @@ impl GitPane {
         super::relist(&self.rows, &self.entries, &entries);
         self.entries = entries;
         self.selected = self.selected.min(self.entries.len().saturating_sub(1));
+        self.reviewing_list = false;
         self.follow(cx);
         cx.notify();
     }
