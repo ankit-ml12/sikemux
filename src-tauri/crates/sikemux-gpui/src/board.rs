@@ -666,11 +666,14 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
         };
     div()
         .flex_none()
-        .min_h(px(45.))
         .flex()
+        .flex_wrap()
         .items_center()
-        .gap(px(8.))
+        .gap_x(px(8.))
+        .gap_y(px(6.))
         .px(px(12.))
+        .pt(px(10.))
+        .pb(px(8.))
         .bg(crate::see_through::ground(t.surface, cx))
         .border_b_1()
         .border_color(t.border)
@@ -693,14 +696,20 @@ fn head(pane: &BoardPane, cx: &mut Context<BoardPane>) -> impl IntoElement {
         .child(
             header_button(
                 "board-auto",
-                match auto_count {
-                    Some(count) => format!("Auto {count}"),
-                    None => "Auto".to_owned(),
-                },
+                "Auto".to_owned(),
                 None,
                 pane.open == Some(Open::Auto),
                 Open::Auto,
             )
+            .when_some(auto_count, |button, count| {
+                button.trail(
+                    div()
+                        .opacity(0.7)
+                        .font_weight(FontWeight::NORMAL)
+                        .font_features(crate::theme::tabular())
+                        .child(count),
+                )
+            })
             .lead(div().size(px(6.)).rounded_full().bg(if auto_on {
                 t.live
             } else {

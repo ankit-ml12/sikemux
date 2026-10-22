@@ -231,6 +231,7 @@ pub struct Button {
     disabled: bool,
     pressed: bool,
     lead: Option<AnyElement>,
+    trail: Option<AnyElement>,
     tooltip: Option<SharedString>,
 }
 
@@ -257,6 +258,7 @@ impl Button {
             disabled: false,
             pressed: false,
             lead: None,
+            trail: None,
             tooltip: None,
         }
     }
@@ -281,6 +283,12 @@ impl Button {
     /// Something drawn before the label in place of an icon, such as a status dot.
     pub fn lead(mut self, lead: impl IntoElement) -> Self {
         self.lead = Some(lead.into_any_element());
+        self
+    }
+
+    /// Something drawn after the label, such as a count.
+    pub fn trail(mut self, trail: impl IntoElement) -> Self {
+        self.trail = Some(trail.into_any_element());
         self
     }
 
@@ -394,6 +402,7 @@ impl RenderOnce for Button {
             icon(icon_name, glyph).text_color(fade("glyph", if lit { hover } else { rest }))
         }))
         .child(self.label)
+        .children(self.trail)
         .children(
             self.keys
                 .map(|keys| kbd(keys, cx).font_family(crate::theme::MONO)),
