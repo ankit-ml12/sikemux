@@ -45,6 +45,7 @@ class Run:
         self.results = []
         self.app = None
         self.processes = []
+        self.preferences = {}
 
     # The world the app runs in.
 
@@ -87,7 +88,7 @@ class Run:
         version = json.loads(subprocess.run([self.core_exe, "--upgrade-info"], capture_output=True, text=True).stdout)["version"]
         (self.root / "data/preferences.json").write_text(json.dumps({
             "notificationsIntroduced": True, "keptRunningNoticeShown": True, "voiceDictation": False,
-            "onboardingComplete": True, "lastSeenVersion": version,
+            "onboardingComplete": True, "lastSeenVersion": version, **self.preferences,
         }))
         home = self.root / "home"
         (home / "Downloads").mkdir()
