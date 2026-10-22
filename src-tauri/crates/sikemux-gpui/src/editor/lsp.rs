@@ -73,14 +73,28 @@ pub(super) fn attach(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
+    let trust = project_of(bench, &path).and_then(|project| {
+        bench
+            .read("preferences")
+            .and_then(|preferences| preferences["languageServerTrust"][&project].as_bool())
+    });
+    attach_trusted(bench, path, trust, window, cx);
+}
+
+/// Opens the file with its language's server as [`attach`] does, with the person's answer
+/// for the project as `trust` rather than read from preferences that may not have caught up.
+fn attach_trusted(
+    bench: &mut Workbench,
+    path: PathBuf,
+    trust: Option<bool>,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
     let (Some((language, language_id)), Some(project)) =
         (languages(&path, cx), project_of(bench, &path))
     else {
         return;
     };
-    let trust = bench
-        .read("preferences")
-        .and_then(|preferences| preferences["languageServerTrust"][&project].as_bool());
     let asks = bench.asks.clone();
     cx.spawn_in(window, async move |bench, cx| {
         let served = core::request(&asks, "lsp.languages", json!({}))
@@ -228,7 +242,7 @@ pub(super) fn trust(
         document.notice = None;
     }
     if allowed {
-        attach(bench, path, window, cx);
+        attach_trusted(bench, path, Some(true), window, cx);
     }
 }
 
