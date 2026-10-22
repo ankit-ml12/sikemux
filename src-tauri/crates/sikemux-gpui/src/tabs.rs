@@ -1,6 +1,7 @@
 use std::f32::consts::FRAC_PI_2;
 use std::path::Path;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -12,8 +13,9 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, AnyElement, App, ClickEvent, ClipboardItem, Context, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Transformation, WeakEntity, Window, WindowControlArea,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Task, Transformation, WeakEntity, Window,
+    WindowControlArea,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
@@ -415,21 +417,22 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .find(|port| port["owner"]["executionId"] == run["executionId"])
     });
     let port_number = port.and_then(|port| port["port"].as_u64());
-    let since = running.map(|run| {
-        run["startedAt"].as_i64().map_or(0, |at| {
-            (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
-        })
-    });
     let needs_java = selected["java"]["runsOn"]
         .is_null()
         .then(|| &selected["java"]["required"])
         .filter(|required| !required.is_null())
         .map(|required| format!("needs Java {}", plain(required)));
-    let status = match (port_number, since, &failed) {
-        (Some(port), _, _) => Some((format!(":{port}"), t.text_tertiary)),
-        (None, Some(since), _) => Some((format!("{since}s"), t.text_tertiary)),
-        (None, None, Some(failed)) => Some((failed.clone(), t.danger)),
-        _ => needs_java.map(|text| (text, t.warn)),
+    let said = |text: String, color: Hsla| {
+        div()
+            .text_color(color)
+            .child(format!("· {text}"))
+            .into_any_element()
+    };
+    let status = match (port_number, running, &failed) {
+        (Some(port), _, _) => Some(said(format!(":{port}"), t.text_tertiary)),
+        (None, Some(_), _) => Some(bench.run_clock.clone().into_any_element()),
+        (None, None, Some(failed)) => Some(said(failed.clone(), t.danger)),
+        _ => needs_java.map(|text| said(text, t.warn)),
     };
     let dot = match (running, &failed) {
         (Some(_), _) if port.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
@@ -451,10 +454,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         running: running.map(|_| RunningTask {
             id: id.clone(),
             label: label.clone(),
-            meta: match (port_number, since) {
-                (Some(port), _) => format!("up · :{port}"),
-                (None, since) => format!("running · {}s", since.unwrap_or(0)),
-            },
+            started_at: running.and_then(|run| run["startedAt"].as_i64()),
             port: port_number,
         }),
         output: running
@@ -537,11 +537,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                             .whitespace_nowrap()
                             .child(label),
                     )
-                    .children(
-                        status.map(|(text, color)| {
-                            div().text_color(color).child(format!("· {text}"))
-                        }),
-                    )
+                    .children(status)
                     .child(
                         ui::icon(Icon::Chevron, 10.)
                             .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
@@ -553,6 +549,52 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             )
             .into_any_element(),
     )
+}
+
+/// How long the person's task has run, counted on the Run chip each second. It keeps its own
+/// clock and draws itself again in place, leaving the bar around it as it was.
+#[derive(Default)]
+pub struct RunClock {
+    /// When the task started, in milliseconds, while it counts.
+    started_at: Option<Option<i64>>,
+    _ticking: Option<Task<()>>,
+}
+
+impl RunClock {
+    /// Counts from `started_at` while `counting`, or stops.
+    pub fn set(&mut self, counting: bool, started_at: Option<i64>, cx: &mut Context<Self>) {
+        let next = counting.then_some(started_at);
+        if next == self.started_at {
+            return;
+        }
+        self._ticking = counting.then(|| {
+            cx.spawn(async move |this, cx| loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                if this.update(cx, |_, cx| cx.repaint()).is_err() {
+                    break;
+                }
+            })
+        });
+        self.started_at = next;
+        cx.notify();
+    }
+}
+
+impl Render for RunClock {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Tokens::get(cx);
+        let since = seconds_since(self.started_at.flatten());
+        div()
+            .text_color(t.text_tertiary)
+            .child(format!("· {since}s"))
+    }
+}
+
+/// Whole seconds since `started_at`, in milliseconds; none counts as just started.
+fn seconds_since(started_at: Option<i64>) -> i64 {
+    started_at.map_or(0, |at| {
+        (chrono::Utc::now().timestamp_millis() - at).max(0) / 1000
+    })
 }
 
 /// What the Run chip's menu lists, as it was when the chip was drawn.
@@ -570,7 +612,7 @@ struct RunMenu {
 struct RunningTask {
     id: String,
     label: String,
-    meta: String,
+    started_at: Option<i64>,
     port: Option<u64>,
 }
 
@@ -590,7 +632,11 @@ impl RunMenu {
             .max_w(px(360.))
             .max_h(px(480.));
         if let Some(running) = &self.running {
-            popup = popup.label(format!("{} · {}", running.label, running.meta));
+            let meta = match running.port {
+                Some(port) => format!("up · :{port}"),
+                None => format!("running · {}s", seconds_since(running.started_at)),
+            };
+            popup = popup.label(format!("{} · {meta}", running.label));
             if let Some(port) = running.port {
                 let url = format!("http://localhost:{port}");
                 popup = popup.item(

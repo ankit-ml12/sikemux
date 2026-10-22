@@ -117,7 +117,7 @@ pub struct Workbench {
     resizers: [FocusHandle; 2],
     pub peeking: Option<Edge>,
     unpeek: Option<Task<()>>,
-    run_clock: Option<Task<()>>,
+    pub run_clock: Entity<crate::tabs::RunClock>,
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
@@ -535,7 +535,7 @@ impl Workbench {
             trust_host: None,
             peeking: None,
             unpeek: None,
-            run_clock: None,
+            run_clock: cx.new(|_| crate::tabs::RunClock::default()),
             rail_page: RailPage::Agents,
             files: FileTree::default(),
             finder: None,
@@ -1819,18 +1819,11 @@ impl Workbench {
                         .any(|port| port["owner"]["executionId"] == run["executionId"])
                 })
         };
-        let counting = self.person_runs().0.is_some_and(|run| !listening(run));
-        if !counting {
-            self.run_clock = None;
-        } else if self.run_clock.is_none() {
-            self.run_clock = Some(cx.spawn(async move |this, cx| loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                let tick = this.update(cx, |bench, cx| bench.parts.redraw(&bench.parts.top, cx));
-                if tick.is_err() {
-                    break;
-                }
-            }));
-        }
+        let run = self.person_runs().0;
+        let counting = run.is_some_and(|run| !listening(run));
+        let started_at = run.and_then(|run| run["startedAt"].as_i64());
+        self.run_clock
+            .update(cx, |clock, cx| clock.set(counting, started_at, cx));
     }
 
     pub fn start_task(&self, task: &str) {
