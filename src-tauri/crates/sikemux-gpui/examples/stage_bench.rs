@@ -13,7 +13,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{point, px, size, AnyWindowHandle, AppContext, Entity, HeadlessAppContext, Keystroke};
+use gpui::{
+    point, px, size, AnyWindowHandle, AppContext, Entity, Focusable, HeadlessAppContext, Keystroke,
+};
 use serde_json::json;
 use sikemux_gpui::hosts::Place;
 use sikemux_gpui::workbench::Workbench;
@@ -21,6 +23,8 @@ use sikemux_gpui::{core, icons, terminal, theme, WINDOW_SIZE};
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId};
 
 const FRAME: Duration = Duration::from_micros(8_333);
+/// What the fake agent answers with a stream of that many words.
+const STREAM: &str = "stream 2000";
 const FLOOD_LINE: &str = "yes 'the quick brown fox jumps over the lazy dog'";
 const FLOOD: &str = "yes 'the quick brown fox jumps over the lazy dog' | head -n 400000";
 
@@ -44,6 +48,19 @@ impl Bench {
         self.cx.advance_clock(FRAME);
         self.cx.run_until_parked();
         self.frames.push(thread_cpu_ms() - cpu);
+    }
+
+    /// `times` frames that each do `change`, each after `idle` frames with nothing to do.
+    fn spaced(&mut self, idle: usize, times: usize, change: impl Fn(&mut Self)) {
+        let mut kept = Vec::with_capacity(times);
+        for _ in 0..times {
+            for _ in 0..idle {
+                self.frame();
+            }
+            self.after(&change);
+            kept.extend(self.frames.pop());
+        }
+        self.frames = kept;
     }
 
     /// Frames until `done` holds, at most `limit` of them, with a pause for the core between.
@@ -70,10 +87,11 @@ impl Bench {
         let total: f64 = frames.iter().sum();
         let simulated = frames.len() as f64 * FRAME.as_secs_f64();
         println!(
-            "{phase}: {} frames · frame CPU p50/p90/p99/max {:.2}/{:.2}/{:.2}/{:.2} ms · {:.1}% of one core at 120 Hz",
+            "{phase}: {} frames · frame CPU p50/p90/p95/p99/max {:.2}/{:.2}/{:.2}/{:.2}/{:.2} ms · {:.1}% of one core at 120 Hz",
             frames.len(),
             at(0.5),
             at(0.9),
+            at(0.95),
             at(0.99),
             at(1.),
             total / 1e3 / simulated.max(1e-9) * 100.,
@@ -108,6 +126,12 @@ fn agent_view(pane: &Pane) -> Option<String> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // The app's main thread runs at this priority; without it a busy machine can put the bench
+    // on its slower cores and make every number several times larger.
+    // SAFETY: it only changes the calling thread's own scheduling class.
+    unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0)
+    };
     let mut cx = HeadlessAppContext::with_platform(
         gpui_platform::bench_text_system(),
         Arc::new(icons::Icons),
@@ -324,6 +348,87 @@ fn main() -> anyhow::Result<()> {
     let whole: Vec<f64> = run.frames.iter().step_by(4).copied().collect();
     run.frames = whole;
     run.report("the whole window drawn again from scratch");
+
+    let redraw_stage = |run: &mut Bench| {
+        run.bench.update(&mut run.cx, |bench, cx| {
+            bench.parts.redraw(&bench.parts.stage, cx)
+        })
+    };
+    run.spaced(60, 20, redraw_stage);
+    run.report("the stage drawn again after half a second idle");
+    run.spaced(0, 20, redraw_stage);
+    run.report("the stage drawn again frame after frame");
+
+    let agent = run
+        .bench
+        .read_with(&run.cx, |bench, _| bench.agent().map(|agent| agent.id))
+        .expect("the chat");
+    run.cx
+        .update_window(run.window, |_, window, cx| {
+            let draft = run
+                .bench
+                .read(cx)
+                .chats
+                .get(&agent)
+                .and_then(|chat| chat.composer.as_ref())
+                .map(|composing| composing.draft.clone());
+            if let Some(draft) = draft {
+                let focus = draft.read(cx).focus_handle(cx);
+                window.focus(&focus, cx);
+            }
+        })
+        .ok();
+    let key = |run: &mut Bench| {
+        run.cx
+            .update_window(run.window, |_, window, cx| {
+                if let Ok(key) = Keystroke::parse("a") {
+                    window.dispatch_keystroke(key, cx);
+                }
+            })
+            .ok();
+    };
+    run.spaced(60, 20, key);
+    run.report("a key typed in the chat's composer after half a second idle");
+    run.spaced(0, 40, key);
+    run.report("keys typed in the chat's composer frame after frame");
+
+    run.cx
+        .update_window(run.window, |_, window, cx| {
+            for key in ["cmd-a", "backspace"] {
+                if let Ok(key) = Keystroke::parse(key) {
+                    window.dispatch_keystroke(key, cx);
+                }
+            }
+            for c in STREAM.chars() {
+                let name = if c == ' ' {
+                    "space".to_owned()
+                } else {
+                    c.to_string()
+                };
+                if let Ok(key) = Keystroke::parse(&name) {
+                    window.dispatch_keystroke(key, cx);
+                }
+            }
+            if let Ok(enter) = Keystroke::parse("enter") {
+                window.dispatch_keystroke(enter, cx);
+            }
+        })
+        .ok();
+    run.frames.clear();
+    let streaming = Instant::now();
+    while streaming.elapsed() < Duration::from_secs(8) {
+        run.frame();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    run.report("the chat answering in a stream for 8 s of wall time");
+    run.cx
+        .update_window(run.window, |_, window, cx| {
+            let focus = run.bench.read(cx).terminals.focus(id).cloned();
+            if let Some(focus) = focus {
+                window.focus(&focus, cx);
+            }
+        })
+        .ok();
 
     let started = Instant::now();
     run.bench.update(&mut run.cx, |bench, _| {
