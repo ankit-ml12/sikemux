@@ -164,6 +164,8 @@ pub struct Spec {
     pub typed: Option<Typed>,
     /// A choice beside the field that the pick reads, such as the mode an agent starts in.
     pub choice: Option<Choice>,
+    /// A button beside the field that does something the rows cannot, such as opening a folder.
+    pub aside: Option<Aside>,
     /// Drawn as the command deck: wider and taller, its rows' words in tracked capitals and
     /// their keys in keycaps.
     deck: bool,
@@ -171,6 +173,13 @@ pub struct Spec {
     on_stage: bool,
     /// Its groups are parted by hairlines rather than headed by their names.
     ruled: bool,
+}
+
+/// A button beside the palette's field: its icon, what it says it does, and what it does.
+pub struct Aside {
+    pub icon: Icon,
+    pub label: SharedString,
+    pub press: Leave,
 }
 
 /// A few words to choose between beside the palette's field, and which is chosen now.
@@ -207,6 +216,7 @@ impl Spec {
             start: None,
             typed: None,
             choice: None,
+            aside: None,
             deck: false,
             on_stage: false,
             ruled: false,
@@ -236,6 +246,20 @@ impl Spec {
 
     pub fn choice(mut self, choice: Choice) -> Self {
         self.choice = Some(choice);
+        self
+    }
+
+    pub fn aside(
+        mut self,
+        icon: Icon,
+        label: impl Into<SharedString>,
+        press: impl Fn(&mut Workbench, &mut Window, &mut Context<Workbench>) + 'static,
+    ) -> Self {
+        self.aside = Some(Aside {
+            icon,
+            label: label.into(),
+            press: Rc::new(press),
+        });
         self
     }
 
@@ -660,6 +684,19 @@ pub fn overlay(
                                             .text_color(t.text_primary),
                                     ),
                             )
+                            .children(palette.spec.aside.as_ref().map(|aside| {
+                                let press = aside.press.clone();
+                                ui::IconButton::new(
+                                    "palette-aside",
+                                    aside.icon,
+                                    aside.label.clone(),
+                                )
+                                .on_click(
+                                    cx.listener(move |bench, _, window, cx| {
+                                        press(bench, window, cx)
+                                    }),
+                                )
+                            }))
                             .children(
                                 palette
                                     .spec

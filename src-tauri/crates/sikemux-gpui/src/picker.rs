@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{Context, PathPromptOptions, Window};
 use serde_json::{json, Value};
 
 use crate::chat::tilde;
@@ -133,6 +133,31 @@ impl Workbench {
         } else {
             "no projects match"
         });
+        let spec = match picking.projects() {
+            true => spec.aside(Icon::Folder, "Open folder", move |bench, window, cx| {
+                bench.close_palette(window, cx);
+                let picked = cx.prompt_for_paths(PathPromptOptions {
+                    files: false,
+                    directories: true,
+                    multiple: false,
+                    prompt: None,
+                });
+                cx.spawn_in(window, async move |bench, cx| {
+                    let Ok(Ok(Some(paths))) = picked.await else {
+                        return;
+                    };
+                    let Some(path) = paths.first() else {
+                        return;
+                    };
+                    let key = format!("{FOLDER}{}", path.to_string_lossy());
+                    let _ = bench.update_in(cx, |bench, window, cx| {
+                        bench.open_place(&key, then, window, cx)
+                    });
+                })
+                .detach();
+            }),
+            false => spec,
+        };
         self.toggle_palette(spec, window, cx);
     }
 
