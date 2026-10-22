@@ -375,7 +375,9 @@ fn pane_header(
                 .map(|name| SharedString::from(format!("@{name}"))),
         )
         .when_some(
-            crate::worktree_head::badges(bench, &agent.id, cx),
+            in_terminal
+                .then(|| crate::worktree_head::badges(bench, &agent.id, cx))
+                .flatten(),
             |header, badges| header.action(badges),
         )
         .when(has_chat, |header| header.action(share))

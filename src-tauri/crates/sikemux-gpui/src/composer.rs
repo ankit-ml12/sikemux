@@ -38,6 +38,8 @@ pub struct Strip {
     /// chat, the folder it is in now, and the workbench that moves it.
     pub moves: Option<(String, String, Entity<Workbench>)>,
     pub worktree: Option<AnyElement>,
+    /// A worktree agent's pull request and its Remove worktree, beside the worktree.
+    pub pull: Option<AnyElement>,
     pub account: Option<AnyElement>,
 }
 
@@ -470,6 +472,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
                 )
         }))
         .children(strip.worktree)
+        .children(strip.pull)
         .child(div().flex_1())
         .children(
             strip

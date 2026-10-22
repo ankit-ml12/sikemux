@@ -2848,6 +2848,7 @@ fn strip(
             )
         }),
         worktree,
+        pull: crate::worktree_head::badges(bench, &agent.id, cx),
         account,
     }
 }
