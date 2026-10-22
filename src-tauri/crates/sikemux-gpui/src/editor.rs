@@ -92,8 +92,12 @@ pub fn install(cx: &mut App) {
         KeyBinding::new(keys("cmd-[", "ctrl-["), NavigateBack, text),
         KeyBinding::new(keys("cmd-]", "ctrl-]"), NavigateForward, text),
         KeyBinding::new(keys("cmd-d", "ctrl-d"), AddNextMatch, text),
-        // The app's own search across the project keeps ⇧⌘F, which Kit's editor takes for replace.
-        KeyBinding::new(keys("cmd-shift-f", "ctrl-shift-f"), gpui::NoAction, text),
+        // ⇧⌘F searches the project from the editor too, rather than Kit's replace.
+        KeyBinding::new(
+            keys("cmd-shift-f", "ctrl-shift-f"),
+            crate::search::FocusSearch,
+            text,
+        ),
     ]);
 }
 
