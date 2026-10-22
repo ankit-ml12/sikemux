@@ -156,6 +156,9 @@ pub struct Spec {
     pub typed: Option<Typed>,
     /// A choice beside the field that the pick reads, such as the mode an agent starts in.
     pub choice: Option<Choice>,
+    /// Drawn as the command deck: wider and taller, its rows' words in tracked capitals and
+    /// their keys in keycaps.
+    deck: bool,
 }
 
 /// A few words to choose between beside the palette's field, and which is chosen now.
@@ -184,7 +187,14 @@ impl Spec {
             start: None,
             typed: None,
             choice: None,
+            deck: false,
         }
+    }
+
+    pub fn deck(mut self) -> Self {
+        self.deck = true;
+        self.width = 680.;
+        self
     }
 
     pub fn typed(mut self, typed: impl Fn(&str) -> Option<Row> + 'static) -> Self {
@@ -476,6 +486,8 @@ pub fn overlay(
     let palette = bench.palette.as_ref()?;
     let t = Tokens::get(cx).clone();
     let count = palette.lines.len();
+    let deck = palette.spec.deck;
+    let list_pad = if deck { 6. } else { 4. };
     let close = cx.listener(|bench: &mut Workbench, _, window, cx| bench.close_palette(window, cx));
     Some(
         div()
@@ -496,8 +508,14 @@ pub fn overlay(
                 ui::float(cx)
                     .key_context("Palette Modal")
                     .w(px(palette.spec.width))
-                    .max_w(gpui_kit::relative(0.86))
-                    .max_h(gpui_kit::relative(0.62))
+                    .map(|panel| match deck {
+                        true => panel
+                            .max_w(gpui_kit::relative(0.9))
+                            .max_h(px(680.).min(window.viewport_size().height * 0.72)),
+                        false => panel
+                            .max_w(gpui_kit::relative(0.86))
+                            .max_h(gpui_kit::relative(0.62)),
+                    })
                     .flex()
                     .flex_col()
                     .overflow_hidden()
@@ -534,12 +552,19 @@ pub fn overlay(
                             .border_color(t.border)
                             .child(ui::icon(Icon::Search, 15.).text_color(t.text_tertiary))
                             .child(
-                                Input::new(&palette.input)
-                                    .appearance(false)
+                                div()
                                     .flex_1()
-                                    .p_0()
-                                    .text_size(crate::theme::ui_text(14.))
-                                    .text_color(t.text_primary),
+                                    .h(crate::theme::ui_text(20.))
+                                    .flex()
+                                    .items_center()
+                                    .child(
+                                        Input::new(&palette.input)
+                                            .appearance(false)
+                                            .flex_1()
+                                            .p_0()
+                                            .text_size(crate::theme::ui_text(14.))
+                                            .text_color(t.text_primary),
+                                    ),
                             )
                             .children(palette.spec.choice.clone().map(|choice| {
                                 let chosen = choice.chosen.clone();
@@ -582,10 +607,10 @@ pub fn overlay(
                                 ),
                             )
                             .track_scroll(&palette.scroll)
-                            .h(px(ROW_HEIGHT * count as f32 + 8.))
+                            .h(px(ROW_HEIGHT * count as f32 + 2. * list_pad))
                             .min_h_0()
                             .flex_shrink(1.)
-                            .py(px(4.))
+                            .py(px(list_pad))
                             .px(px(6.)),
                         )
                     }),
@@ -683,14 +708,39 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .and_then(|state| ui::status_mark(&row.key, state, cx))
             {
                 Some(state) => element.child(div().flex_none().child(state)),
-                None if !row.meta.is_empty() => {
-                    element.child(ui::meta(row.meta.clone(), cx).flex_none())
-                }
-                None => element,
+                None if row.meta.is_empty() => element,
+                None if palette.spec.deck => element.child(
+                    ui::text(row.meta.to_uppercase(), 10., FontWeight::SEMIBOLD)
+                        .letter_spacing(0.08)
+                        .text_color(t.text_tertiary)
+                        .flex_none(),
+                ),
+                None => element.child(ui::meta(row.meta.clone(), cx).flex_none()),
             }
         })
         .when_some(row.keys.clone(), |element, keys| {
-            element.child(ui::kbd(keys, cx).flex_none().pl(px(6.)))
+            element.child(match palette.spec.deck {
+                true => keycap(keys, selected, cx),
+                false => ui::kbd(keys, cx).flex_none().pl(px(6.)),
+            })
         })
         .into_any_element()
+}
+
+/// A shortcut in a key's box, inked as the row is.
+fn keycap(keys: SharedString, selected: bool, cx: &App) -> gpui_kit::Div {
+    let t = Tokens::get(cx);
+    ui::kbd(keys, cx)
+        .flex_none()
+        .min_w(px(40.))
+        .px(px(6.))
+        .py(px(1.))
+        .line_height(theme::ui_text(13.))
+        .flex()
+        .justify_center()
+        .border_1()
+        .border_color(t.border)
+        .bg(t.surface_sunken)
+        .rounded(theme::RADIUS_1)
+        .when(selected, |keycap| keycap.text_color(t.text_primary))
 }

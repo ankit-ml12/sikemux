@@ -227,7 +227,6 @@ impl Workbench {
     pub fn toggle_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut rows: Vec<Row> = keymap::shortcuts()
             .iter()
-            .filter(|shortcut| shortcut.id != "palette.commands")
             .filter(|shortcut| cx.build_action(shortcut.id, None).is_ok())
             .map(|shortcut| {
                 Row::new(format!("{BUILTIN}{}", shortcut.id), shortcut.label)
@@ -317,7 +316,8 @@ impl Workbench {
                 }
             },
         )
-        .empty("no commands match");
+        .empty("no commands match")
+        .deck();
         self.toggle_palette(spec, window, cx);
         self.list_more(base, cx);
     }
