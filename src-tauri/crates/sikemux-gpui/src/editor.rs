@@ -118,6 +118,11 @@ impl Editors {
     pub fn reveal(&mut self, at: OpenAt) {
         self.reveal = Some(at);
     }
+
+    /// Gives `path`'s editor the keyboard once it shows.
+    pub fn focus_when_shown(&mut self, path: &Path) {
+        self.focus = Some(path.to_owned());
+    }
 }
 
 /// Every file open in an editor, by its host and path.
@@ -126,6 +131,8 @@ pub struct Editors {
     open: HashMap<FileKey, Document>,
     /// Where a file asked to open at a line puts its cursor once it is read.
     reveal: Option<OpenAt>,
+    /// The file opened to work in, whose editor takes the keyboard once it shows.
+    focus: Option<PathBuf>,
     /// The window the editors draw in, which reading and reloading update.
     window: Option<AnyWindowHandle>,
     /// Where the editor was before each jump, and where ⌘[ came back from.
@@ -235,6 +242,17 @@ pub fn pane(
         });
         return div().size_full().into_any_element();
     };
+    if bench.editors.focus.as_deref() == Some(path.as_path()) {
+        let focused = key.clone();
+        cx.defer_in(window, move |bench, window, cx| {
+            bench.editors.focus = None;
+            if let Some(document) = bench.editors.open.get(&focused) {
+                document
+                    .state
+                    .update(cx, |state, cx| state.focus(window, cx));
+            }
+        });
+    }
     if document.loaded {
         if let Some(at) = bench.editors.reveal.clone().filter(|at| at.path == path) {
             let revealed = key.clone();

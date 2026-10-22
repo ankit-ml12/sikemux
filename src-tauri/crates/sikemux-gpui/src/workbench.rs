@@ -2043,7 +2043,8 @@ impl Workbench {
     }
 
     /// Brings the file's editor tab to the front, opening one when none shows it.
-    pub fn open_file(&self, path: &Path) {
+    pub fn open_file(&mut self, path: &Path) {
+        self.editors.focus_when_shown(path);
         self.show_file(path, false);
     }
 
