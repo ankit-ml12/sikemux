@@ -3769,18 +3769,18 @@ impl Render for Workbench {
                 bench.front_simulator(cx);
                 bench.parts.redraw(&bench.parts.stage, cx);
             }))
-            .on_action(cx.listener(|bench, _: &PreviousTab, window, cx| {
+            .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
+            .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
+            .on_action(cx.listener(|bench, _: &PreviousOfKind, window, cx| {
                 if !bench.step_desk_page(-1, window, cx) {
-                    bench.step_tab(-1, |_, _| true);
+                    bench.step_tab(-1, same_kind);
                 }
             }))
-            .on_action(cx.listener(|bench, _: &NextTab, window, cx| {
+            .on_action(cx.listener(|bench, _: &NextOfKind, window, cx| {
                 if !bench.step_desk_page(1, window, cx) {
-                    bench.step_tab(1, |_, _| true);
+                    bench.step_tab(1, same_kind);
                 }
             }))
-            .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))
-            .on_action(cx.listener(|bench, _: &NextOfKind, _, _| bench.step_tab(1, same_kind)))
             .on_action(cx.listener(|bench, _: &GoToTab1, _, _| bench.go_to_tab(Some(1))))
             .on_action(cx.listener(|bench, _: &GoToTab2, _, _| bench.go_to_tab(Some(2))))
             .on_action(cx.listener(|bench, _: &GoToTab3, _, _| bench.go_to_tab(Some(3))))
