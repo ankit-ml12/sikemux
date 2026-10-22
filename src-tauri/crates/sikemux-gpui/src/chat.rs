@@ -1338,31 +1338,30 @@ impl Chat {
     ) -> Option<Ask> {
         if let Some(composing) = self.composer.as_mut() {
             composing.refusal = None;
+            composing.attachments.clear();
+            composing.context.clear();
+            composing.tracked_context.clear();
         }
         self.recalled = None;
         if let Some(id) = self.writing.take() {
             return Some(Ask::Call {
                 method: "answerQuestion",
-                params: json!({ "id": id, "answer": text }),
+                params: json!({ "id": id, "answer": answer_text(&text, &paths, &context) }),
             });
         }
         let answering = self
             .current(open)
             .filter(|question| !question.secret && !self.is_folded(open));
         if let Some(id) = answering.map(|question| question.id.clone()) {
+            let answer = answer_text(&text, &paths, &context);
             return self.pick(
                 &id,
                 Pick {
-                    answer: Answer::Text(text.clone()),
-                    shown: text,
+                    answer: Answer::Text(answer.clone()),
+                    shown: answer,
                 },
                 open,
             );
-        }
-        if let Some(composing) = self.composer.as_mut() {
-            composing.attachments.clear();
-            composing.context.clear();
-            composing.tracked_context.clear();
         }
         if self.steers() && !queue {
             let message = json!({ "text": text, "paths": paths, "context": context });
@@ -3528,6 +3527,23 @@ fn row(
                 .child(content),
         )
         .into_any_element()
+}
+
+/// An answer to a question as one text: what was typed, the files attached to it, then any context.
+fn answer_text(text: &str, paths: &[String], context: &[ChatContext]) -> String {
+    let attached = (!paths.is_empty()).then(|| {
+        let listed: Vec<String> = paths.iter().map(|path| format!("- {path}")).collect();
+        format!("Attached:\n{}", listed.join("\n"))
+    });
+    let context = context
+        .iter()
+        .map(|item| format!("{}:\n{}", item.title, item.text));
+    std::iter::once(text.to_owned())
+        .chain(attached)
+        .chain(context)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// A question as it reads once answered: who asked, when not the chat's own agent, its words,
