@@ -291,7 +291,7 @@ fn lines(about: Vec<String>, failed: bool, cx: &App) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(2.))
-        .text_size(px(11.5))
+        .text_size(crate::theme::ui_text(11.5))
         .text_color(if failed { t.danger } else { t.text_tertiary })
         .children(about)
         .into_any_element()
@@ -427,7 +427,7 @@ fn row(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(label),
                 )

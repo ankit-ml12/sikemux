@@ -219,7 +219,7 @@ impl Render for Switcher {
                     .px(px(10.))
                     .pt(px(8.))
                     .pb(px(2.))
-                    .text_size(px(10.5))
+                    .text_size(crate::theme::ui_text(10.5))
                     .text_color(t.text_tertiary)
                     .child(if choice.project.is_some() {
                         "Open"
@@ -259,7 +259,7 @@ impl Render for Switcher {
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(12.5))
+                            .text_size(crate::theme::ui_text(12.5))
                             .text_color(if here {
                                 t.text_primary
                             } else {
@@ -272,7 +272,7 @@ impl Render for Switcher {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.text_tertiary)
                             .child(pretty(&choice.path)),
                     )
@@ -314,7 +314,7 @@ impl Render for Switcher {
                             div()
                                 .px(px(10.))
                                 .py(px(8.))
-                                .text_size(px(12.))
+                                .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
                                 .child("No matches"),
                         )

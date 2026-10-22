@@ -176,7 +176,7 @@ pub fn editor(agent: &str, editing: &Editing, looks: &Drawn) -> gpui_kit::AnyEle
         .child(
             Textarea::new(&editing.draft)
                 .appearance(false)
-                .text_size(px(13.5)),
+                .text_size(crate::theme::ui_text(13.5)),
         )
         .child(buttons)
         .into_any_element()

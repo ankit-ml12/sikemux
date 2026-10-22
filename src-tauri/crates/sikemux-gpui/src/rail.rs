@@ -321,7 +321,7 @@ fn masthead(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                     ui::text(channel, 10., FontWeight::MEDIUM)
                         .px(px(4.))
                         .py(px(1.))
-                        .line_height(px(12.))
+                        .line_height(crate::theme::ui_text(12.))
                         .border_1()
                         .border_color(t.line)
                         .rounded(RADIUS_1)
@@ -704,7 +704,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             .h(px(22.))
             .px(px(8.))
             .rounded(RADIUS_2)
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .whitespace_nowrap()
             .text_color(if on { t.text_primary } else { t.text_tertiary })
             .when(on, |chip| chip.bg(t.surface_active))
@@ -868,8 +868,8 @@ fn sign_in(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         })
         .child(
             div()
-                .text_size(px(12.))
-                .line_height(px(12. * 1.4))
+                .text_size(crate::theme::ui_text(12.))
+                .line_height(crate::theme::ui_text(12. * 1.4))
                 .text_color(t.text_secondary)
                 .child(copy),
         )

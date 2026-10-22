@@ -649,7 +649,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
             } else {
                 gpui_kit::transparent_black()
             })
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(if on { t.text_primary } else { t.text_tertiary })
             .hover(move |style| style.text_color(t.text_primary))
@@ -672,7 +672,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(ink)
             .child(glyph)
     };
@@ -686,7 +686,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                 div()
                     .w(px(28.))
                     .flex_none()
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(t.text_tertiary)
                     .child(label.to_uppercase()),
@@ -695,7 +695,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .child(Input::new(field).appearance(false)),
             )
     };
@@ -747,7 +747,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                         .w(px(14.))
                         .h(px(18.))
                         .flex_none()
-                        .text_size(px(10.))
+                        .text_size(crate::theme::ui_text(10.))
                         .text_color(if pane.replace_open {
                             t.text_primary
                         } else {
@@ -769,11 +769,16 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(Input::new(&fields.find).appearance(false)),
                 )
                 .when(pane.status == Status::Searching, |row| {
-                    row.child(div().text_size(px(10.)).text_color(t.accent).child("…"))
+                    row.child(
+                        div()
+                            .text_size(crate::theme::ui_text(10.))
+                            .text_color(t.accent)
+                            .child("…"),
+                    )
                 })
                 .child(
                     div()
@@ -814,7 +819,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .text_color(t.live)
                             .child(Input::new(&fields.replace).appearance(false)),
                     ),
@@ -851,7 +856,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                         .justify_end()
                         .items_center()
                         .gap(px(4.))
-                        .text_size(px(10.))
+                        .text_size(crate::theme::ui_text(10.))
                         .text_color(t.text_tertiary)
                         .when(pane.stale, |stats| {
                             stats.child(
@@ -912,7 +917,7 @@ fn head(pane: &SearchPane, cx: &mut Context<SearchPane>) -> impl IntoElement {
                             } else {
                                 t.border
                             })
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(if !can_replace {
                                 t.text_disabled
@@ -942,12 +947,12 @@ fn results(pane: &SearchPane, cx: &mut Context<SearchPane>) -> AnyElement {
             .gap(px(4.))
             .px(px(14.))
             .py(px(24.))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(ink)
             .child(text)
             .children(sub.map(|sub| {
                 div()
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .opacity(0.7)
                     .text_color(t.text_tertiary)
                     .child(sub)
@@ -1022,7 +1027,7 @@ fn file_header(
         .flex()
         .items_center()
         .gap(px(6.))
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .cursor_pointer()
         .hover(|row| row.bg(gpui_kit::hsla(0., 0., 1., 0.03)))
         .tooltip(ui::tooltip(if collapsed {
@@ -1043,7 +1048,7 @@ fn file_header(
             div()
                 .w(px(10.))
                 .flex_none()
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(if collapsed {
                     t.text_tertiary
                 } else {
@@ -1064,7 +1069,7 @@ fn file_header(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(t.text_tertiary)
                 .child(dir)
         }))
@@ -1072,7 +1077,7 @@ fn file_header(
             div()
                 .flex_none()
                 .ml_auto()
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(t.text_tertiary)
                 .child(file.matches.len().to_string()),
         )
@@ -1124,7 +1129,7 @@ fn hit_row(
         .flex()
         .items_center()
         .rounded(RADIUS_2)
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(if chosen {
             t.text_primary
         } else {
@@ -1159,7 +1164,7 @@ fn hit_row(
                 .flex_none()
                 .pr(px(10.))
                 .text_right()
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(if chosen {
                     t.text_primary
                 } else {
@@ -1193,7 +1198,7 @@ fn preview(pane: &SearchPane, cx: &mut Context<SearchPane>) -> AnyElement {
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_tertiary)
             .child(text.to_owned())
             .into_any_element()
@@ -1249,7 +1254,7 @@ fn preview(pane: &SearchPane, cx: &mut Context<SearchPane>) -> AnyElement {
                 .border_b_1()
                 .border_color(t.border)
                 .bg(gpui_kit::hsla(0., 0., 0., 0.22))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .hover(move |style| style.bg(t.surface_hover))
                 .on_click(cx.listener(|pane, _, window, cx| pane.open(window, cx)))
                 .child(glyph)
@@ -1261,7 +1266,7 @@ fn preview(pane: &SearchPane, cx: &mut Context<SearchPane>) -> AnyElement {
                 )
                 .child(
                     div()
-                        .text_size(px(10.))
+                        .text_size(crate::theme::ui_text(10.))
                         .text_color(t.text_tertiary)
                         .child(dir),
                 )
@@ -1331,7 +1336,7 @@ fn window_lines(shown: &Shown, hit: &SearchHit, t: &Tokens) -> AnyElement {
                     .px(px(6.))
                     .mr(px(10.))
                     .text_right()
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.ink_faint)
                     .child((start as usize + index).to_string()),
             )
@@ -1357,7 +1362,7 @@ fn window_lines(shown: &Shown, hit: &SearchHit, t: &Tokens) -> AnyElement {
         .py(px(8.))
         .overflow_y_scroll()
         .track_scroll(&scroll)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .children(rows)
         .into_any_element()
 }
@@ -1380,7 +1385,7 @@ fn foot(cx: &App) -> Div {
         .py(px(5.))
         .border_t_1()
         .border_color(t.border)
-        .text_size(px(10.5))
+        .text_size(crate::theme::ui_text(10.5))
         .text_color(t.text_tertiary)
         .child(hint("⏎", "open"))
         .child(hint("tab", "replace"))

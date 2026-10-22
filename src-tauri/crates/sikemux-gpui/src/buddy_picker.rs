@@ -183,7 +183,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 )
                 .child(
                     div()
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_tertiary)
                         .child(named),
                 ),
@@ -211,7 +211,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .gap(px(8.))
                     .rounded(theme::RADIUS_2)
                     .cursor_pointer()
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(if on { t.text_primary } else { t.text_secondary })
                     .when(on, |row| row.bg(t.surface_chosen))
                     .when(!on, |row| row.hover(|style| style.bg(t.surface_hover)))
@@ -303,7 +303,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .child(
             div()
                 .flex_1()
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child(hint),
         )

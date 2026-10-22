@@ -357,7 +357,7 @@ pub fn view(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> AnyElemen
             div()
                 .flex_1()
                 .min_w_0()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(Input::new(&field).appearance(false)),
         )
         .children(found.map(|found| ui::meta(found, cx)))
@@ -501,7 +501,7 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                 .border_1()
                 .border_color(t.border)
                 .bg(t.surface_raised)
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     let key = key.clone();
@@ -578,7 +578,7 @@ fn item_of(view: &Entity<HostArea>, log: &Log, item: Item, job: &str, cx: &App) 
                     })
                 })
                 .font_family(theme::MONO)
-                .text_size(px(11.5))
+                .text_size(crate::theme::ui_text(11.5))
                 .child(
                     div()
                         .w(px(52.))

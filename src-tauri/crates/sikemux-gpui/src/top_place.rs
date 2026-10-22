@@ -154,7 +154,7 @@ fn picker(
         .items_center()
         .gap(px(6.))
         .rounded_full()
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.text_primary)
         .hover(move |style| style.bg(t.surface_chosen))

@@ -227,7 +227,7 @@ pub fn render(
                         .bg(t.surface_sunken)
                         .child(
                             ui::kbd(keys, cx)
-                                .text_size(px(12.))
+                                .text_size(crate::theme::ui_text(12.))
                                 .when(focused, |keys| keys.text_color(t.text_primary)),
                         )
                 }))
@@ -255,7 +255,7 @@ pub fn render(
                         .mt(px(22.))
                         .flex()
                         .gap(px(11.))
-                        .text_size(px(44.))
+                        .text_size(crate::theme::ui_text(44.))
                         .font_weight(FontWeight::BOLD)
                         .letter_spacing(-0.05)
                         .line_height(relative(1.05))
@@ -267,7 +267,7 @@ pub fn render(
                     div()
                         .mt(px(12.))
                         .mb(px(32.))
-                        .text_size(px(16.))
+                        .text_size(crate::theme::ui_text(16.))
                         .line_height(relative(1.5))
                         .text_color(t.text_secondary)
                         .child(
@@ -336,7 +336,7 @@ pub fn render(
                 .px(px(22.))
                 .py(px(14.))
                 .font_family(theme::KBD)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .when(welcome.git_missing, |foot| {
                     foot.child(
@@ -375,7 +375,7 @@ fn found(bench: &Workbench, this: &Entity<Workbench>, cx: &App) -> impl IntoElem
     let muted = |text: &'static str| {
         div()
             .mt(px(12.))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_tertiary)
             .child(text)
     };
@@ -433,7 +433,7 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
         .border_1()
         .border_color(t.border)
         .rounded(theme::RADIUS_2)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .map(|chip| match missing {
             true => chip.border_dashed().text_color(t.text_tertiary),
             false => chip
@@ -456,7 +456,7 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
                 .child(agent.label.clone())
                 .children(status.map(|status| {
                     div()
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(if signed_out { t.warn } else { t.text_tertiary })
                         .child(status)
                 })),
@@ -473,7 +473,7 @@ fn chip(bench: &Workbench, agent: &Found, this: &Entity<Workbench>, cx: &App) ->
                 .border_1()
                 .border_color(t.border)
                 .rounded(theme::RADIUS_2)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_primary)
                 .cursor_pointer()
                 .hover(|button| button.bg(t.surface_hover))

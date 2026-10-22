@@ -89,7 +89,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(12.5))
+                    .text_size(crate::theme::ui_text(12.5))
                     .text_color(t.text_primary)
                     .child(repo["name"].as_str().unwrap_or_default().to_owned()),
             )
@@ -108,7 +108,7 @@ pub fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .w(px(24.))
                     .text_right()
                     .font_family(theme::MONO)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(if changes > 0 {
                         t.git_modified
                     } else {

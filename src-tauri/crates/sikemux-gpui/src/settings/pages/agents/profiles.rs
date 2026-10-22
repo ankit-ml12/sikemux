@@ -204,14 +204,14 @@ pub fn render(
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(12.5))
+                                .text_size(crate::theme::ui_text(12.5))
                                 .text_color(t.text_primary)
                                 .child(profile.name.clone()),
                         )
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{} · {}",
@@ -278,13 +278,13 @@ pub fn render(
             .border_color(t.line_soft)
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_size(crate::theme::ui_text(12.5))
                     .text_color(t.text_primary)
                     .child(label),
             )
             .children(about.map(|about| {
                 div()
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_tertiary)
                     .child(about)
             }))

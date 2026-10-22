@@ -143,7 +143,10 @@ impl RenderOnce for PaneHeader {
                             })
                             .into_any_element()
                     }))
-                    .children(self.name.map(|name| meta(name, cx).text_size(px(12.))))
+                    .children(
+                        self.name
+                            .map(|name| meta(name, cx).text_size(crate::theme::ui_text(12.))),
+                    )
                     .children(self.actions),
             )
             .child(

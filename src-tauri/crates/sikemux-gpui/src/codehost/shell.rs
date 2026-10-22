@@ -910,7 +910,7 @@ pub fn budget_note(area: &HostArea, cx: &mut Context<HostArea>) -> Option<AnyEle
             .border_1()
             .border_color(ink.opacity(0.4))
             .bg(ink.opacity(0.08))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_primary)
             .child(words)
             .into_any_element(),
@@ -1051,7 +1051,7 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
                         .border_1()
                         .border_color(t.border)
                         .bg(t.surface)
-                        .text_size(px(12.5))
+                        .text_size(crate::theme::ui_text(12.5))
                         .child(Input::new(input).appearance(false)),
                 ),
         );

@@ -181,8 +181,8 @@ impl Render for ShareForm {
         });
         let para = |text: &'static str| {
             div()
-                .text_size(px(12.5))
-                .line_height(px(18.))
+                .text_size(crate::theme::ui_text(12.5))
+                .line_height(crate::theme::ui_text(18.))
                 .text_color(t.text_secondary)
                 .child(text)
         };
@@ -321,7 +321,7 @@ impl Render for ShareForm {
             ))
             .child(para("It shows everything the agent read and ran, including the contents of files and any secrets in them."))
             .child(field)
-            .children(problem.map(|problem| div().text_size(px(12.)).text_color(t.danger).child(problem)))
+            .children(problem.map(|problem| div().text_size(crate::theme::ui_text(12.)).text_color(t.danger).child(problem)))
             .child(buttons)
     }
 }

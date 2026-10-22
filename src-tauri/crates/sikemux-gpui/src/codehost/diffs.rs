@@ -174,7 +174,7 @@ fn item_of(
                         .border_color(t.border)
                         .bg(t.surface_raised)
                         .font_family(theme::UI)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(
                             div()
                                 .min_w_0()
@@ -202,8 +202,8 @@ fn item_of(
             let path = folder.map(|folder| Path::new(folder).join(&changed.file.path));
             frame(
                 div()
-                    .text_size(px(12.))
-                    .line_height(px(19.))
+                    .text_size(crate::theme::ui_text(12.))
+                    .line_height(crate::theme::ui_text(19.))
                     .when(index == 0, |rows| rows.pt(px(6.)))
                     .when(index + 1 == diff.len(), |rows| rows.pb(px(6.)))
                     .child(row(
@@ -240,7 +240,7 @@ fn item_of(
                                 .px(px(10.))
                                 .py(px(8.))
                                 .font_family(theme::UI)
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.text_tertiary)
                                 .child(said),
                             None => end.h(px(1.)),

@@ -411,7 +411,7 @@ pub fn row(
                                 div()
                                     .ml(look.advance * 4.)
                                     .font_family(theme::UI)
-                                    .text_size(px(11.))
+                                    .text_size(crate::theme::ui_text(11.))
                                     .text_color(look.number)
                                     .child(note),
                             )
@@ -584,7 +584,7 @@ impl Render for DiffView {
         let message = |text: String, color| {
             div()
                 .p(px(12.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(color)
                 .child(text)
                 .into_any_element()

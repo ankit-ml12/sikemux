@@ -571,7 +571,7 @@ pub(super) fn branches_page(pane: &mut GitPane, cx: &mut Context<GitPane>) -> im
             page.child(
                 div()
                     .p(px(20.))
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_tertiary)
                     .child("This repository has no branches yet."),
             )
@@ -606,7 +606,7 @@ pub(super) fn branches_page(pane: &mut GitPane, cx: &mut Context<GitPane>) -> im
                         .gap(px(6.))
                         .border_1()
                         .border_color(t.border_strong)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(t.text_secondary)
                         .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
@@ -689,7 +689,7 @@ fn branch_row(
                     .justify_center()
                     .rounded_full()
                     .bg(t.surface_chosen)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_secondary)
                     .child(count.to_string())
             }))
@@ -766,7 +766,7 @@ fn branch_row(
                 .pl(px(18.))
                 .children(lines)
                 .pr(px(6.))
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .text_color(if branch.current {
                     t.text_primary
                 } else {
@@ -808,7 +808,7 @@ fn branch_row(
                         .border_1()
                         .border_color(t.warn.opacity(0.32))
                         .font_family(theme::MONO)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.warn)
                         .hover(move |style| style.bg(t.warn.opacity(0.12)))
                         .on_click(move |_, _, cx| {
@@ -824,7 +824,7 @@ fn branch_row(
                     div()
                         .flex_none()
                         .font_family(theme::MONO)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.git_renamed)
                         .child(format!("↓{behind}")),
                 );
@@ -879,7 +879,7 @@ fn branch_row(
                 .pl(px(18.))
                 .children(lines)
                 .pr(px(6.))
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .text_color(t.text_secondary)
                 .child(dot(t.git_renamed, false))
                 .child(
@@ -899,7 +899,7 @@ fn branch_row(
                     div()
                         .flex_none()
                         .font_family(theme::MONO)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_tertiary)
                         .child("tracked"),
                 );
@@ -966,7 +966,7 @@ fn pull_chip(pane: &GitPane, branch: &str, index: usize, cx: &App) -> Option<Any
             .border_1()
             .border_color(ink.opacity(0.32))
             .font_family(theme::MONO)
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .text_color(ink)
             .hover(move |style| style.bg(ink.opacity(0.12)))
             .on_click(move |_, _, cx| {
@@ -1219,7 +1219,7 @@ pub(super) fn branch_card(
                             .items_center()
                             .gap(px(8.))
                             .font_family(theme::MONO)
-                            .text_size(px(16.))
+                            .text_size(crate::theme::ui_text(16.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(t.text_primary)
                             .child(title)
@@ -1233,7 +1233,7 @@ pub(super) fn branch_card(
                                         .border_1()
                                         .border_color(t.live.opacity(0.35))
                                         .rounded(px(4.))
-                                        .text_size(px(10.))
+                                        .text_size(crate::theme::ui_text(10.))
                                         .font_weight(FontWeight::NORMAL)
                                         .text_color(t.live)
                                         .child("checked out"),
@@ -1246,7 +1246,7 @@ pub(super) fn branch_card(
                             .flex()
                             .flex_col()
                             .gap(px(4.))
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .children(facts),
                     ),
             )
@@ -1278,7 +1278,7 @@ fn card_foot(pane: &GitPane, entry: &BranchEntry, cx: &mut Context<GitPane>) -> 
             .items_center()
             .gap(px(6.))
             .rounded(RADIUS_2)
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .map(|button| {
                 if primary {
                     button.bg(t.accent).text_color(t.on_accent)

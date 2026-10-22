@@ -195,7 +195,7 @@ pub fn status_mark(code: &str, cx: &App) -> Option<Div> {
     Some(
         div()
             .font_family(theme::MONO)
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .font_weight(FontWeight::BOLD)
             .text_color(colour)
             .child(letter),
@@ -2161,7 +2161,7 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .py(px(2.))
             .border_1()
             .border_color(t.border)
-            .text_size(px(10.5))
+            .text_size(crate::theme::ui_text(10.5))
             .text_color(t.text_secondary)
             .when(disabled, |button| button.opacity(0.5))
             .hover(move |style| {
@@ -2183,12 +2183,12 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .gap(px(10.))
             .px(px(12.))
             .py(px(3.))
-            .text_size(px(11.5))
+            .text_size(crate::theme::ui_text(11.5))
             .child(
                 div()
                     .w(px(60.))
                     .flex_none()
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .text_color(t.text_tertiary)
                     .child(entry.time.clone()),
             )
@@ -2228,7 +2228,7 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 .py(px(6.))
                 .border_b_1()
                 .border_color(t.border)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .child(ui::kbd("@", cx))
                 .child(
                     div()
@@ -2238,7 +2238,7 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 )
                 .child(
                     div()
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(pane.commands.len().to_string()),
                 )
@@ -2272,7 +2272,7 @@ fn command_log(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         div()
                             .px(px(16.))
                             .py(px(14.))
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .italic()
                             .text_color(t.text_tertiary)
                             .child("log empty — every git command will appear here"),
@@ -2344,7 +2344,7 @@ fn history_list(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoEleme
             page.child(
                 div()
                     .p(px(20.))
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_tertiary)
                     .child("No commits on this branch yet."),
             )
@@ -2400,7 +2400,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(colour)
                 .child(format!("{arrow}{value}"))
         })
@@ -2423,7 +2423,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             .items_center()
             .justify_center()
             .gap(px(6.))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .font_weight(FontWeight::MEDIUM)
             .map(|button| {
                 if primary {
@@ -2481,7 +2481,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                             .border_color(t.danger.opacity(0.32))
                             .rounded(px(4.))
                             .font_family(theme::MONO)
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.danger)
                             .child("git error"),
                     )
@@ -2491,7 +2491,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(if error { t.danger } else { t.warn })
                         .child(busy)
                 }))
@@ -2609,7 +2609,7 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .font_weight(FontWeight::MEDIUM)
                         .child(branch),
                 )
@@ -2780,7 +2780,7 @@ fn filter_row(field: &Entity<InputState>, count: Option<usize>, cx: &App) -> Div
         .gap(px(8.))
         .border_b_1()
         .border_color(t.border)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(ui::icon(Icon::Search, 12.).text_color(t.text_tertiary))
         .child(
             div()
@@ -2792,7 +2792,7 @@ fn filter_row(field: &Entity<InputState>, count: Option<usize>, cx: &App) -> Div
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child(count.to_string())
         }))
@@ -2837,7 +2837,7 @@ fn changes(pane: &mut GitPane, filter: Option<Div>, cx: &mut Context<GitPane>) -
                 .flex_col()
                 .items_center()
                 .gap(px(4.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(div().text_color(colour).child(title))
                 .child(div().text_color(t.text_tertiary).child(message))
         }))
@@ -2958,12 +2958,12 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
             div()
                 .px(px(10.))
                 .py(px(9.))
-                .text_size(px(13.))
-                .line_height(px(19.5))
+                .text_size(crate::theme::ui_text(13.))
+                .line_height(crate::theme::ui_text(19.5))
                 .child(
                     Textarea::new(&pane.draft)
                         .appearance(false)
-                        .text_size(px(13.)),
+                        .text_size(crate::theme::ui_text(13.)),
                 ),
         )
         .child(
@@ -2985,7 +2985,7 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         .gap(px(6.))
                         .border_1()
                         .border_color(t.border)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .text_color(t.text_secondary)
                         .hover(move |style| {
                             style
@@ -3016,7 +3016,7 @@ fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         .border_color(t.accent)
                         .bg(t.accent)
                         .text_color(t.on_accent)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .font_weight(FontWeight::MEDIUM)
                         .when(!can_commit, |button| button.opacity(0.45))
                         .on_click(cx.listener(|pane, _, _, cx| pane.commit(cx)))
@@ -3208,7 +3208,7 @@ fn entry_row(
                     .w(px(14.))
                     .text_center()
                     .font_family(theme::MONO)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colour)
                     .tooltip(ui::tooltip(label))
@@ -3243,7 +3243,7 @@ fn entry_row(
                     gpui_kit::transparent_black()
                 })
                 .rounded(RADIUS_2)
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .text_color(t.text_secondary)
                 .when(ranged && !chosen, |row| row.bg(t.warn.opacity(0.1)))
                 .hover(move |row| row.bg(t.surface_hover).text_color(t.text_primary))
@@ -3268,7 +3268,7 @@ fn entry_row(
                                 .ml(px(6.))
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(12.))
+                                .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
                                 .child(dir)
                         })),
@@ -3471,7 +3471,7 @@ fn group_row(
                         .justify_center()
                         .rounded_full()
                         .bg(t.surface_chosen)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_secondary)
                         .child(count.to_string()),
                 ),

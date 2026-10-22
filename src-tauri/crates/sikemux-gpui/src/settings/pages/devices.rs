@@ -218,13 +218,13 @@ fn sign_in_panel(
         .p(px(16.))
         .child(
             div()
-                .text_size(px(14.))
+                .text_size(crate::theme::ui_text(14.))
                 .text_color(t.text_primary)
                 .child(title),
         )
         .child(
             div()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_secondary)
                 .child(lede),
         )
@@ -252,16 +252,16 @@ fn phone_panel(cx: &App) -> AnyElement {
                 .gap(px(6.))
                 .child(
                     div()
-                        .text_size(px(14.))
+                        .text_size(crate::theme::ui_text(14.))
                         .text_color(t.text_primary)
                         .child("Your agents, on your phone"),
                 )
-                .child(div().text_size(px(12.)).text_color(t.text_secondary).child(
+                .child(div().text_size(crate::theme::ui_text(12.)).text_color(t.text_secondary).child(
                     "Watch them work, answer what they ask and start new chats from anywhere.",
                 ))
                 .children(steps.iter().enumerate().map(|(at, step)| {
                     div()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .text_color(t.text_secondary)
                         .child(format!("{}. {step}", at + 1))
                 })),
@@ -298,7 +298,7 @@ fn phone_row(
     };
     let line = div()
         .flex()
-        .text_size(px(11.5))
+        .text_size(crate::theme::ui_text(11.5))
         .text_color(t.text_tertiary)
         .child(format!("{} · {seen}", platform_name(&device.platform)))
         .children(note.map(|(note, warn)| {
@@ -361,7 +361,7 @@ fn phone_row(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(name),
                 )
@@ -485,7 +485,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             .child(ui::Field::new(input))
             .into_any_element(),
         _ => div()
-            .text_size(px(13.))
+            .text_size(crate::theme::ui_text(13.))
             .text_color(t.text_primary)
             .child(if name.is_empty() {
                 "Unnamed host".to_owned()
@@ -568,7 +568,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
                 .child(title)
                 .child(
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .child(line),
                 ),

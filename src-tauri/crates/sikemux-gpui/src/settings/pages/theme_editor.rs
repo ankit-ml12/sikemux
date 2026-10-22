@@ -542,7 +542,7 @@ fn sample(draft: &Value) -> AnyElement {
                     draft["editor"]["fg"].as_str().unwrap_or_default(),
                 ))
                 .font_family(theme::MONO)
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(
                     div()
                         .italic()
@@ -625,7 +625,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
         .child(ui::Field::new(&editor.name))
         .child(
             div()
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child(format!("based on {}", editor.base)),
         );
@@ -688,7 +688,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
                         .gap(px(2.))
                         .child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.text_tertiary)
                                 .child(field.label),
                         )
@@ -706,7 +706,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
         .child(head)
         .child(sample(&editor.draft))
         .child(tabs)
-        .child(div().text_size(px(11.5)).text_color(t.text_tertiary).child(hint))
+        .child(div().text_size(crate::theme::ui_text(11.5)).text_color(t.text_tertiary).child(hint))
         .child(grid)
         .child(rows::note(
             "Any CSS colour works in the text box: use rgba(…) for a translucent wash. The picker sets hex.",

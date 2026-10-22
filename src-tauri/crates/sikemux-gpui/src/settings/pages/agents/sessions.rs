@@ -153,7 +153,7 @@ pub fn boundary(
                 })
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(if chosen && danger {
                             t.danger
                         } else {
@@ -163,7 +163,7 @@ pub fn boundary(
                 )
                 .child(
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .child(*detail),
                 )

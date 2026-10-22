@@ -234,14 +234,14 @@ pub fn overlay(
         .child(
             div()
                 .text_center()
-                .text_size(px(22.))
+                .text_size(crate::theme::ui_text(22.))
                 .text_color(t.text_primary)
                 .child(format!("{name} wants to connect"))
                 .child(div().child("to this computer")),
         )
         .children(account.map(|account| {
             div()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_tertiary)
                 .child(format!("Signed in as {account}"))
         }))
@@ -300,7 +300,7 @@ pub fn overlay(
                 div()
                     .absolute()
                     .bottom(px(24.))
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.text_tertiary)
                     .child("Only allow phones you own. Remove one any time in Settings › Devices."),
             )

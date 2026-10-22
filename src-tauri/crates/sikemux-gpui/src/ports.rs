@@ -392,7 +392,7 @@ pub fn chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .gap(px(5.))
             .rounded(crate::theme::RADIUS_1)
             .font_family(crate::theme::MONO)
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .text_color(t.text_tertiary)
             .tooltip(about)
             .child(ui::icon(Icon::Plug, 12.).text_color(t.text_tertiary))

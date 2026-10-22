@@ -46,7 +46,7 @@ fn mark_with(
         .when_some(words, |column, words| {
             column.child(
                 div()
-                    .text_size(px(13.))
+                    .text_size(crate::theme::ui_text(13.))
                     .text_color(t.text_secondary)
                     .child(words),
             )

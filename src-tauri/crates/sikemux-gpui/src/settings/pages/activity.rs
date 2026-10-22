@@ -226,7 +226,7 @@ fn share_row(
                 .child(
                     div()
                         .truncate()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(title),
                 )
@@ -234,7 +234,7 @@ fn share_row(
                     div()
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_tertiary)
                         .child(under)
                 })),
@@ -242,7 +242,7 @@ fn share_row(
         .child(
             div()
                 .flex_none()
-                .text_size(px(11.5))
+                .text_size(crate::theme::ui_text(11.5))
                 .text_color(t.text_tertiary)
                 .child(details),
         )
@@ -253,7 +253,7 @@ fn share_row(
                 .flex()
                 .justify_end()
                 .font_features(theme::tabular())
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .text_color(t.text_primary)
                 .child(value),
         )
@@ -349,7 +349,7 @@ fn price_form(
         .bg(t.surface_sunken)
         .child(
             div()
-                .text_size(px(11.5))
+                .text_size(crate::theme::ui_text(11.5))
                 .text_color(t.text_tertiary)
                 .child("USD per million tokens. Cache prices default to the input price."),
         )
@@ -370,7 +370,7 @@ fn price_form(
                                 .gap(px(4.))
                                 .child(
                                     div()
-                                        .text_size(px(11.))
+                                        .text_size(crate::theme::ui_text(11.))
                                         .text_color(t.text_tertiary)
                                         .child(*label),
                                 )
@@ -463,7 +463,7 @@ fn models(summary: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) 
                 div()
                     .id(SharedString::from(format!("{tag}-{id}")))
                     .cursor_pointer()
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.text_secondary)
                     .hover(|style| style.text_color(t.text_primary))
                     .child(label)
@@ -517,7 +517,7 @@ fn pricing_note(summary: &Value, cx: &App) -> AnyElement {
         .gap(px(2.))
         .px(px(14.))
         .py(px(10.))
-        .text_size(px(11.5))
+        .text_size(crate::theme::ui_text(11.5))
         .text_color(t.text_tertiary)
         .child("What these tokens would cost at API prices. Subscription plans bill separately.")
         .child(format!("{unpriced}{source}"))

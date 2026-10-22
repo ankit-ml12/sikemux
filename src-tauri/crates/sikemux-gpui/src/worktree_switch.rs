@@ -80,7 +80,7 @@ pub fn toggle(id: impl Into<SharedString>, switch: &Switch, flip: Flip, cx: &App
         .items_center()
         .gap(px(5.))
         .rounded_full()
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(if on { t.text_primary } else { t.text_tertiary })
         .when(settable, |toggle| {
             toggle.hover(move |style| {

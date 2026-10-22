@@ -138,7 +138,7 @@ pub(crate) fn button(
         .px(px(12.))
         .rounded(RADIUS_2)
         .border_1()
-        .text_size(px(13.))
+        .text_size(crate::theme::ui_text(13.))
         .font_weight(FontWeight::MEDIUM)
         .on_click(move |_, window, cx| answer(window, cx))
         .map(|button| match fill {
@@ -232,8 +232,8 @@ impl RenderOnce for Confirm {
             div()
                 .px(px(16.))
                 .py(px(14.))
-                .text_size(px(12.))
-                .line_height(px(18.))
+                .text_size(crate::theme::ui_text(12.))
+                .line_height(crate::theme::ui_text(18.))
                 .text_color(t.text_secondary)
                 .child(self.body)
                 .into_any_element(),
@@ -316,7 +316,7 @@ impl RenderOnce for Prompt {
                         .rounded(RADIUS_2)
                         .bg(t.surface_sunken)
                         .font_family(theme::MONO)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(Input::new(&self.field).appearance(false)),
                 )
                 .into_any_element(),
@@ -428,7 +428,7 @@ impl RenderOnce for Choices {
                 .justify_start()
                 .gap(px(10.))
                 .font_family(theme::MONO)
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(ink)
                 .when(choice.disabled, |row| row.opacity(0.6))
                 .when(!choice.disabled, |row| {
@@ -448,7 +448,7 @@ impl RenderOnce for Choices {
                         })
                         .rounded(px(4.))
                         .bg(t.surface)
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(if choice.destructive {
                             t.danger
@@ -461,7 +461,7 @@ impl RenderOnce for Choices {
                 .children(choice.hint.map(|hint| {
                     div()
                         .flex_none()
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(hint)
                 }))
@@ -486,7 +486,7 @@ impl RenderOnce for Choices {
                 .children(rows)
                 .into_any_element(),
             div()
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child("esc  cancel"),
             no.clone(),
@@ -543,7 +543,7 @@ impl RenderOnce for Cheatsheet {
                     .child(
                         div()
                             .mb(px(6.))
-                            .text_size(px(10.))
+                            .text_size(crate::theme::ui_text(10.))
                             .text_color(t.text_tertiary)
                             .child(title.to_uppercase()),
                     )
@@ -552,7 +552,7 @@ impl RenderOnce for Cheatsheet {
                             .flex()
                             .gap(px(12.))
                             .py(px(2.))
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .child(
                                 div()
                                     .w(px(180.))
@@ -577,7 +577,7 @@ impl RenderOnce for Cheatsheet {
                 .children(sections)
                 .into_any_element(),
             div()
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child("esc  close"),
             close.clone(),

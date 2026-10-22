@@ -274,7 +274,7 @@ impl RenderOnce for Button {
                 .px(px(12.))
                 .border_1()
                 .border_color(t.border)
-                .text_size(px(11.5))
+                .text_size(crate::theme::ui_text(11.5))
                 .text_color(t.text_secondary)
                 .hover(move |style| {
                     style
@@ -288,7 +288,7 @@ impl RenderOnce for Button {
                 .justify_center()
                 .gap(px(6.))
                 .bg(t.accent)
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.on_accent),
             Variant::Dashed => base
@@ -298,7 +298,7 @@ impl RenderOnce for Button {
                 .border_1()
                 .border_dashed()
                 .border_color(t.border)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .hover(move |style| style.text_color(t.text_primary)),
         };
@@ -530,7 +530,7 @@ impl RenderOnce for Field {
                 div()
                     .flex_1()
                     .font_family(crate::theme::MONO)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_primary)
                     .child(Input::new(&self.state).appearance(false).bordered(false)),
             )
@@ -584,7 +584,7 @@ impl RenderOnce for Toggle {
                 Hsla::transparent_black()
             })
             .when(self.pressed, |toggle| toggle.bg(t.surface_chosen))
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .font_weight(FontWeight::MEDIUM)
             .text_color(if self.pressed {
                 t.text_primary

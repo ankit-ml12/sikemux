@@ -140,7 +140,7 @@ pub fn render(
             .py(px(20.))
             .bg(t.surface_sunken)
             .font_family(theme::MONO)
-            .text_size(px(10.5))
+            .text_size(crate::theme::ui_text(10.5))
             .line_height(relative(1.55))
             .text_color(ink)
             .child(text)
@@ -157,7 +157,7 @@ pub fn render(
             .gap(px(3.))
             .p(px(8.))
             .bg(t.surface)
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(t.text_secondary)
             .child(
                 div()
@@ -278,7 +278,7 @@ pub fn render(
                     div()
                         .id("diagnostics-esc")
                         .font_family(theme::MONO)
-                        .text_size(px(10.))
+                        .text_size(crate::theme::ui_text(10.))
                         .text_color(t.text_tertiary)
                         .cursor_pointer()
                         .on_click(move |_, _, cx| this.update(cx, experience::close))
@@ -291,7 +291,7 @@ pub fn render(
                 .py(px(18.))
                 .border_b_1()
                 .border_color(t.border)
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .line_height(relative(1.6))
                 .text_color(t.text_secondary)
                 .child("A redacted operational snapshot. Terminal text, environment values, credentials, and API secrets are never included."),
@@ -324,7 +324,7 @@ pub fn render(
                 .border_t_1()
                 .border_color(t.border)
                 .children(diagnostics.saved.clone().map(|path| {
-                    div().flex_1().truncate().text_size(px(11.)).text_color(t.text_tertiary).child(format!("Saved to {path}"))
+                    div().flex_1().truncate().text_size(crate::theme::ui_text(11.)).text_color(t.text_tertiary).child(format!("Saved to {path}"))
                 }))
                 .child(button("diagnostics-reload", "Reload manifests", |bench, cx| ask(bench, Detection::Reload, cx)))
                 .child(button("diagnostics-refresh", "Refresh", |bench, cx| {

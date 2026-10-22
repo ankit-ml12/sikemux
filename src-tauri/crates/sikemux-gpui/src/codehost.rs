@@ -645,7 +645,7 @@ pub fn away_note(host: &str, cx: &App) -> Div {
         .border_1()
         .border_color(t.warn.opacity(0.4))
         .bg(t.warn.opacity(0.08))
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_primary)
         .child(format!(
             "{host} is out of reach. Showing what it last said; changes wait until it is back."
@@ -873,7 +873,7 @@ fn comments(count: u64, cx: &App) -> Option<Div> {
             .flex()
             .items_center()
             .gap(px(4.))
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .text_color(t.text_tertiary)
             .font_features(crate::theme::tabular())
             .child(ui::icon(Icon::Message, 12.).text_color(t.text_tertiary))

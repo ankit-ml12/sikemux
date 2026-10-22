@@ -70,7 +70,7 @@ fn signing(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> O
             .gap(px(8.))
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.text_tertiary)
                     .child("Finish signing in in your browser"),
             )
@@ -120,7 +120,7 @@ fn signing(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> O
                 div()
                     .max_w(px(240.))
                     .truncate()
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.danger)
                     .child(message.clone()),
             )
@@ -254,7 +254,7 @@ fn account_row(
                     .px(px(5.))
                     .rounded(theme::RADIUS_1)
                     .bg(t.surface_chosen)
-                    .text_size(px(10.5))
+                    .text_size(crate::theme::ui_text(10.5))
                     .text_color(t.text_secondary)
                     .child("In use"),
             )
@@ -277,13 +277,13 @@ fn account_row(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(label),
                 )
                 .child(
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(if known.is_some() && !signed_in {
                             t.warn
                         } else {
@@ -421,7 +421,7 @@ pub fn dialog(
                     .gap(px(6.))
                     .child(
                         div()
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child("or sign in again"),
                     )
@@ -523,13 +523,13 @@ pub fn dialog(
     let body = div()
         .px(px(20.))
         .pt(px(8.))
-        .text_size(px(13.))
+        .text_size(crate::theme::ui_text(13.))
         .text_color(t.text_secondary)
         .child(body)
         .child(
             div()
                 .pt(px(10.))
-                .text_size(px(11.5))
+                .text_size(crate::theme::ui_text(11.5))
                 .text_color(t.text_tertiary)
                 .child("Each account keeps its sign-in in a folder of its own. Chats and settings are shared between them."),
         )

@@ -38,20 +38,20 @@ pub fn section(
                 .gap(px(8.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(title),
                 )
                 .children(meta.map(|meta| {
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .child(meta)
                 })),
         )
         .children(sub.map(|sub| {
             div()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_tertiary)
                 .child(sub)
         }))
@@ -104,13 +104,13 @@ pub fn row_with(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(label.into()),
                 )
                 .children(about.map(|about| {
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .child(about)
                 })),
@@ -135,7 +135,7 @@ pub fn note(text: impl Into<SharedString>, cx: &App) -> AnyElement {
     div()
         .px(px(14.))
         .py(px(12.))
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_tertiary)
         .child(text.into())
         .into_any_element()

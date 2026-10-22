@@ -210,7 +210,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.))
+                            .text_size(crate::theme::ui_text(13.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(if chosen {
                                 t.text_primary

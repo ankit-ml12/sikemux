@@ -195,7 +195,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     .px(px(10.))
                     .pt(px(12.))
                     .pb(px(4.))
-                    .text_size(px(10.5))
+                    .text_size(crate::theme::ui_text(10.5))
                     .text_color(t.text_tertiary)
                     .child(*group),
             )
@@ -269,7 +269,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
             div()
                 .px(px(10.))
                 .py(px(8.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child("Changes save automatically"),
         );
@@ -288,7 +288,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
         .child(
             div()
                 .flex_1()
-                .text_size(px(14.))
+                .text_size(crate::theme::ui_text(14.))
                 .text_color(t.text_primary)
                 .child(title),
         )
@@ -330,7 +330,7 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                     .child(div().text_color(t.text_primary).child(entry.label))
                     .child(
                         div()
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child(format!("{} › {}", entry.page.name(), entry.section)),
                     )

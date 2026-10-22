@@ -89,7 +89,7 @@ pub fn render(
             .rounded(theme::RADIUS_2)
             .bg(t.surface_sunken)
             .font_family(theme::MONO)
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .child(text)
     };
     let path_line = |name: &'static str, value: String| {
@@ -100,62 +100,69 @@ pub fn render(
             .child(
                 div()
                     .w(px(120.))
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_tertiary)
                     .child(name),
             )
             .child(code(value))
     };
     let (refresh, install) = (this.clone(), this.clone());
-    let integration =
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .p(px(14.))
-            .child(path_line("Command", "sikemux".into()))
-            .child(path_line("Install directory", install_dir.clone()))
-            .child(
+    let integration = div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .p(px(14.))
+        .child(path_line("Command", "sikemux".into()))
+        .child(path_line("Install directory", install_dir.clone()))
+        .child(
+            div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(
+                    ui::Button::new("cli-refresh", "Refresh", ui::Variant::Outline)
+                        .icon(Icon::Refresh)
+                        .on_click(move |_, _, cx| {
+                            refresh.update(cx, |bench, cx| ask(bench, "cliInstall", cx))
+                        }),
+                )
+                .child(
+                    ui::Button::new("cli-install", button, ui::Variant::Primary)
+                        .when(state == "installed", |button| button.icon(Icon::Check))
+                        .disabled(!can_install)
+                        .on_click(move |_, _, cx| {
+                            install.update(cx, |bench, cx| ask(bench, "installCli", cx))
+                        }),
+                ),
+        )
+        .when(state == "conflict", |section| {
+            section.child(
                 div()
-                    .flex()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(
-                        ui::Button::new("cli-refresh", "Refresh", ui::Variant::Outline)
-                            .icon(Icon::Refresh)
-                            .on_click(move |_, _, cx| {
-                                refresh.update(cx, |bench, cx| ask(bench, "cliInstall", cx))
-                            }),
-                    )
-                    .child(
-                        ui::Button::new("cli-install", button, ui::Variant::Primary)
-                            .when(state == "installed", |button| button.icon(Icon::Check))
-                            .disabled(!can_install)
-                            .on_click(move |_, _, cx| {
-                                install.update(cx, |bench, cx| ask(bench, "installCli", cx))
-                            }),
-                    ),
-            )
-            .when(state == "conflict", |section| {
-                section.child(div().text_size(px(12.)).text_color(t.danger).child(format!(
+                    .text_size(crate::theme::ui_text(12.))
+                    .text_color(t.danger)
+                    .child(format!(
                     "Sikemux will not overwrite {}. Move the existing file yourself, then refresh.",
                     status["cliPath"].as_str().unwrap_or_default()
-                )))
-            })
-            .when(
-                state == "installed" && status["pathConfigured"].as_bool() == Some(false),
-                |section| {
-                    section.child(div().text_size(px(12.)).text_color(t.text_tertiary).child(
-                        format!(
+                )),
+            )
+        })
+        .when(
+            state == "installed" && status["pathConfigured"].as_bool() == Some(false),
+            |section| {
+                section.child(
+                    div()
+                        .text_size(crate::theme::ui_text(12.))
+                        .text_color(t.text_tertiary)
+                        .child(format!(
                 "Add {install_dir} to your shell’s PATH. Sikemux never edits shell startup files."
-            ),
-                    ))
-                },
-            );
+            )),
+                )
+            },
+        );
     let usage = div()
         .p(px(14.))
         .font_family(theme::MONO)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
         .flex()
         .flex_col()

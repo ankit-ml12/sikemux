@@ -96,7 +96,7 @@ pub(super) fn toolbar(
         .px(px(8.))
         .border_b_1()
         .border_color(t.border)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(choice("markdown-source", "Source", Mode::Source))
         .child(choice("markdown-preview", "Preview", Mode::Preview))
 }

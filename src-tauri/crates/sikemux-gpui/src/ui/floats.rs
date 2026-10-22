@@ -155,8 +155,8 @@ impl RenderOnce for MenuItem {
             .justify_start()
             .gap(px(10.))
             .rounded(RADIUS_2)
-            .text_size(px(12.))
-            .line_height(px(17.))
+            .text_size(crate::theme::ui_text(12.))
+            .line_height(crate::theme::ui_text(17.))
             .text_color(if self.disabled { t.text_tertiary } else { rest })
             .when(!self.disabled, |item| {
                 item.hover(move |style| style.bg(wash).text_color(hover))
@@ -216,8 +216,8 @@ impl Render for TooltipView {
                 a: 0.72,
                 ..t.border_strong
             })
-            .text_size(px(11.5))
-            .line_height(px(16.))
+            .text_size(crate::theme::ui_text(11.5))
+            .line_height(crate::theme::ui_text(16.))
             .text_color(t.text_primary)
             .child(self.text.clone())
     }

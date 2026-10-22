@@ -558,7 +558,7 @@ pub fn approvals(area: &HostArea, view: &OpenRun, cx: &mut Context<HostArea>) ->
             .border_1()
             .border_color(t.warn.opacity(0.34))
             .bg(t.warn.opacity(0.08))
-            .text_size(px(11.5))
+            .text_size(crate::theme::ui_text(11.5))
             .child(
                 ui::text("Waiting for approval", 12., FontWeight::SEMIBOLD)
                     .text_color(t.text_primary),
@@ -714,7 +714,7 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                             .flex()
                             .items_start()
                             .gap(px(8.))
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .child(div().pt(px(2.)).child(ui::icon(glyph, 13.).text_color(ink)))
                             .child(
                                 div()
@@ -734,7 +734,7 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                                     .id(("annotation-place", index))
                                     .flex_none()
                                     .font_family(theme::MONO)
-                                    .text_size(px(11.))
+                                    .text_size(crate::theme::ui_text(11.))
                                     .text_color(t.text_tertiary)
                                     .when_some(open, |place, open| {
                                         place
@@ -755,7 +755,7 @@ pub fn annotations(area: &HostArea, job: &Job, cx: &mut Context<HostArea>) -> Op
                     list.child(
                         div()
                             .id("annotations-more")
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.accent)
                             .cursor_pointer()
                             .on_click(cx.listener(|area, _, _, cx| {
@@ -795,7 +795,7 @@ pub fn file_toggle(
     Some(
         div()
             .id("run-file")
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .text_color(t.accent)
             .cursor_pointer()
             .on_click(cx.listener(move |area, _, _, cx| area.toggle_file(workflow.clone(), cx)))
@@ -830,7 +830,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
                     .py(px(6.))
                     .border_b_1()
                     .border_color(t.border)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_secondary)
                     .font_family(theme::MONO)
                     .child(file.path.clone()),
@@ -840,7 +840,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
                     .px(px(10.))
                     .py(px(8.))
                     .font_family(theme::MONO)
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.text_primary)
                     .children(
                         file.text
@@ -867,7 +867,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
                         .py(px(7.))
                         .border_b_1()
                         .border_color(t.border)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(t.text_primary)
                         .child(format!("{name} summary")),
@@ -891,7 +891,7 @@ pub fn below_graph(area: &HostArea, window: &mut Window, cx: &mut Context<HostAr
             let rest = total - SUMMARIES_FIRST;
             div()
                 .id("summaries-more")
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.accent)
                 .cursor_pointer()
                 .on_click(cx.listener(|area, _, _, cx| {
@@ -948,7 +948,7 @@ pub fn artifacts(area: &HostArea, cx: &mut Context<HostArea>) -> Div {
                         .flex()
                         .items_center()
                         .gap(px(8.))
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(ui::icon(Icon::Download, 13.).text_color(t.text_tertiary))
                         .child(
                             div()
@@ -1015,7 +1015,7 @@ pub fn dispatch_sheet(area: &HostArea, cx: &mut Context<HostArea>) -> Option<Any
         .flex()
         .flex_col()
         .gap(px(10.))
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(ui::meta("Branch or tag", cx))
         .child(
             div()

@@ -149,7 +149,7 @@ fn stepper(
             div()
                 .w(px(18.))
                 .text_center()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_primary)
                 .child(depth.to_string()),
         )
@@ -197,7 +197,7 @@ pub fn render(
                     .min_w_0()
                     .truncate()
                     .font_family(theme::MONO)
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_primary)
                     .child(pretty(&root.path)),
             )

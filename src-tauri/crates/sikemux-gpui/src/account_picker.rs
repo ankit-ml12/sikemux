@@ -120,7 +120,7 @@ pub fn picker(
         .items_center()
         .gap(px(6.))
         .rounded_full()
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_secondary)
         .when(disabled, |trigger| trigger.opacity(0.45))
         .when(!disabled, |trigger| {

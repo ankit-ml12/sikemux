@@ -117,7 +117,7 @@ impl Render for AgentReview {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(
                     div()
                         .w(px(64.))
@@ -160,7 +160,7 @@ impl Render for AgentReview {
                     .child(ui::mono(found.branch.clone(), 11.5, cx).text_color(t.text_secondary))
                     .children(found.summary.clone().map(|summary| {
                         div()
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .text_color(t.text_primary)
                             .child(summary)
                     }));
@@ -184,7 +184,7 @@ impl Render for AgentReview {
                             .truncate()
                             .cursor_pointer()
                             .font_family(theme::MONO)
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.accent)
                             .hover(|style| style.underline())
                             .on_click(cx.listener(move |review, _, window, cx| {

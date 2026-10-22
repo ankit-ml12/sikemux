@@ -97,7 +97,7 @@ impl Label {
             .flex()
             .items_center()
             .gap(px(6.))
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(t.text_disabled)
             .when(self.folds, |label| {
                 label
@@ -125,7 +125,7 @@ impl Label {
                         .ml(px(2.))
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(self.peek.join(" · ")),
                 )
@@ -178,7 +178,7 @@ fn task_row(
         .flex()
         .items_center()
         .gap(px(7.))
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(tint)
         .child(div().flex_none().child(mark))
         .child(
@@ -186,7 +186,7 @@ fn task_row(
                 .min_w_0()
                 .truncate()
                 .font_family(theme::MONO)
-                .text_size(px(10.5))
+                .text_size(crate::theme::ui_text(10.5))
                 .text_color(t.text_primary)
                 .child(name),
         )
@@ -195,7 +195,7 @@ fn task_row(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(10.5))
+                .text_size(crate::theme::ui_text(10.5))
                 .text_color(t.text_disabled)
                 .children(detail),
         )
@@ -203,7 +203,7 @@ fn task_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(t.text_disabled)
                 .child(cost)
         }))
@@ -524,7 +524,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .rounded(theme::RADIUS_1)
             .bg(Hsla { a: 0.08, ..live })
             .hover(move |button| button.bg(Hsla { a: 0.18, ..live }))
-            .text_size(px(10.5))
+            .text_size(crate::theme::ui_text(10.5))
             .text_color(t.text_primary)
             .on_click(cx.listener(move |bench, _, _, _| {
                 bench.chat_target(&agent).call(
@@ -536,7 +536,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .when(keys, |button| {
                 button.child(
                     div()
-                        .text_size(px(9.5))
+                        .text_size(crate::theme::ui_text(9.5))
                         .text_color(t.text_disabled)
                         .child("⌘↵"),
                 )
@@ -601,7 +601,7 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .text_color(t.text_secondary)
                         .child(queued_label(message)),
                 )

@@ -348,7 +348,7 @@ fn message(text: SharedString, t: &Tokens) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(13.))
+        .text_size(crate::theme::ui_text(13.))
         .text_color(t.text_tertiary)
         .child(text)
         .into_any_element()
@@ -394,7 +394,7 @@ fn bytes(bytes: Vec<u8>, t: &Tokens) -> AnyElement {
     })
     .size_full()
     .font_family(theme::MONO)
-    .text_size(px(12.))
+    .text_size(crate::theme::ui_text(12.))
     .into_any_element()
 }
 
@@ -443,7 +443,7 @@ fn bar(
         .px(px(12.))
         .border_b_1()
         .border_color(t.border)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(ui::icon(Icon::File, 14.).text_color(t.text_tertiary))
         .child(div().text_color(t.text_primary).child(name))
         .children(about.map(|about| div().text_color(t.text_tertiary).child(size(about.size))))

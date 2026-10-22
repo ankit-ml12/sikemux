@@ -209,7 +209,7 @@ impl RenderOnce for Row {
                                     .overflow_hidden()
                                     .text_ellipsis()
                                     .whitespace_nowrap()
-                                    .line_height(px(18.))
+                                    .line_height(crate::theme::ui_text(18.))
                                     .font_weight(if self.bold {
                                         FontWeight::SEMIBOLD
                                     } else {

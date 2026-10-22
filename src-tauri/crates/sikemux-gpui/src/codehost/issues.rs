@@ -554,7 +554,7 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
                         .gap(px(6.))
                         .min_w_0()
                         .whitespace_nowrap()
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(div().flex_none().child(who))
                         .children(issue.labels.iter().map(|label| label_chip(label, cx))),
@@ -680,7 +680,7 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_primary)
                     .child(ui::initials(login, "", 18., cx))
                     .child(login.clone())
@@ -727,7 +727,7 @@ fn facts(open: &OpenIssue, cx: &mut Context<HostArea>) -> AnyElement {
                         .items_center()
                         .gap(px(6.))
                         .min_w_0()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(ui::icon(glyph, 13.).text_color(ink))
                         .child(
                             div()
@@ -798,7 +798,7 @@ fn side_list(area: &HostArea, open: u64, cx: &mut Context<HostArea>) -> AnyEleme
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(12.5))
+                                .text_size(crate::theme::ui_text(12.5))
                                 .text_color(t.text_primary)
                                 .child(issue.title.clone()),
                         )
@@ -888,7 +888,7 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
                         .flex()
                         .items_center()
                         .gap(px(6.))
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(who)
                         .children(issue.labels.iter().map(|label| label_chip(label, cx))),
@@ -998,8 +998,12 @@ fn composer(
                     div()
                         .px(px(12.))
                         .py(px(8.))
-                        .text_size(px(13.))
-                        .child(Textarea::new(&draft).appearance(false).text_size(px(13.))),
+                        .text_size(crate::theme::ui_text(13.))
+                        .child(
+                            Textarea::new(&draft)
+                                .appearance(false)
+                                .text_size(crate::theme::ui_text(13.)),
+                        ),
                 )
                 .child(foot),
         )
@@ -1055,16 +1059,20 @@ fn new_issue(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                 .py(px(7.))
                                 .border_b_1()
                                 .border_color(t.border)
-                                .text_size(px(13.))
+                                .text_size(crate::theme::ui_text(13.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(Input::new(&composing.title).appearance(false)),
                         )
                         .child(
-                            div().px(px(10.)).py(px(7.)).text_size(px(12.5)).child(
-                                Textarea::new(&composing.body)
-                                    .appearance(false)
-                                    .text_size(px(12.5)),
-                            ),
+                            div()
+                                .px(px(10.))
+                                .py(px(7.))
+                                .text_size(crate::theme::ui_text(12.5))
+                                .child(
+                                    Textarea::new(&composing.body)
+                                        .appearance(false)
+                                        .text_size(crate::theme::ui_text(12.5)),
+                                ),
                         )
                         .child(
                             div()

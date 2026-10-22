@@ -196,7 +196,7 @@ fn post(
     };
     let body = if post.empty {
         div()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .italic()
             .text_color(t.text_tertiary)
             .child("No description provided.")
@@ -225,7 +225,7 @@ fn post(
                         .border_b_1()
                         .border_color(t.border)
                         .bg(t.surface_sunken.opacity(0.4))
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(
                             ui::text(author.to_owned(), 12., FontWeight::SEMIBOLD)
                                 .text_color(t.text_primary),
@@ -243,7 +243,7 @@ fn post(
                                 .rounded_full()
                                 .border_1()
                                 .border_color(t.border)
-                                .text_size(px(10.))
+                                .text_size(crate::theme::ui_text(10.))
                                 .text_color(t.text_tertiary)
                                 .child(role)
                         })),
@@ -262,7 +262,7 @@ fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> Any
         .gap(px(8.))
         .pl(px(6.))
         .min_w_0()
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
         .child(
             div()
@@ -514,7 +514,7 @@ fn pushed(
                 .gap(px(8.))
                 .pl(px(36.))
                 .min_w_0()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(ui::icon(Icon::Commit, 13.).text_color(t.text_tertiary))
                 .child(faces(Some(&author), None, 16., cx))
                 .child(
@@ -530,7 +530,7 @@ fn pushed(
                         div()
                             .id(("pushed-sha", index * 1000 + at))
                             .font_family(theme::MONO)
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.text_tertiary)
                             .cursor_pointer()
                             .hover(move |style| style.text_color(t.text_primary))

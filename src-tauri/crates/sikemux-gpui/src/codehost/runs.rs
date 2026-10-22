@@ -510,7 +510,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                         .flex()
                                         .items_center()
                                         .gap(px(6.))
-                                        .text_size(px(10.5))
+                                        .text_size(crate::theme::ui_text(10.5))
                                         .text_color(t.text_tertiary)
                                         .child(div().flex_none().child(who))
                                         .children(place),
@@ -522,7 +522,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                 .flex_col()
                                 .items_end()
                                 .gap(px(3.))
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.text_tertiary)
                                 .child(ago(started))
                                 .child(
@@ -637,7 +637,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
         .child(
             div()
                 .id("run-took")
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .font_features(theme::tabular())
                 .text_color(t.text_tertiary)
                 .tooltip(ui::tooltip(outcome_label(run.outcome)))
@@ -748,7 +748,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                 .py(px(4.))
                 .flex()
                 .gap(px(6.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_secondary)
                 .child("Jobs")
                 .child(
@@ -784,7 +784,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .cursor_pointer()
                 .when(chosen, |row| row.bg(t.surface_chosen))
                 .hover(move |row| row.bg(t.surface_hover))
@@ -808,7 +808,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                     div()
                         .flex_none()
                         .font_features(theme::tabular())
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_tertiary)
                         .child(took),
                 )
@@ -948,7 +948,7 @@ fn main(
                                 .flex()
                                 .items_center()
                                 .gap(px(6.))
-                                .text_size(px(10.5))
+                                .text_size(crate::theme::ui_text(10.5))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{} #{} · {actor} · {} {}{attempt}",
@@ -1000,7 +1000,7 @@ fn main(
                         .border_1()
                         .border_color(if on { t.border_strong } else { t.border })
                         .when(on, |chip| chip.bg(t.surface_active))
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(if on { t.text_primary } else { t.text_secondary })
                         .cursor_pointer()
                         .on_click(cx.listener(move |area, _, _, cx| {
@@ -1084,7 +1084,7 @@ fn summary(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(
                     div()
                         .font_family(theme::MONO)
@@ -1103,7 +1103,7 @@ fn summary(
                     .when(found.failed > 0, |head| {
                         head.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.danger)
                                 .child(format!("· {} failed", found.failed)),
                         )
@@ -1201,7 +1201,7 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                     .px(px(6.))
                     .flex()
                     .items_center()
-                    .text_size(px(10.5))
+                    .text_size(crate::theme::ui_text(10.5))
                     .text_color(t.text_tertiary)
                     .truncate()
                     .child(title.clone())
@@ -1233,7 +1233,7 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                     .items_center()
                     .gap(px(7.))
                     .rounded(RADIUS_2)
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(if job.is_some() {
                         t.text_primary
                     } else {
@@ -1251,7 +1251,7 @@ fn graph(found: &OpenRun, chosen: Option<&str>, cx: &mut Context<HostArea>) -> A
                     .children(took.map(|took| {
                         div()
                             .flex_none()
-                            .text_size(px(10.5))
+                            .text_size(crate::theme::ui_text(10.5))
                             .font_features(theme::tabular())
                             .text_color(t.text_tertiary)
                             .child(took)

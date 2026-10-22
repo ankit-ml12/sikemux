@@ -504,7 +504,7 @@ pub fn overlay(
                                     .appearance(false)
                                     .flex_1()
                                     .p_0()
-                                    .text_size(px(14.))
+                                    .text_size(crate::theme::ui_text(14.))
                                     .text_color(t.text_primary),
                             ),
                     )
@@ -580,7 +580,7 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
         .h(px(ROW_HEIGHT))
         .px(px(8.))
         .rounded(theme::RADIUS_2)
-        .text_size(px(13.))
+        .text_size(crate::theme::ui_text(13.))
         .text_color(ink)
         .when(selected, |element| element.bg(t.surface_chosen))
         .when(!row.disabled, |element| {

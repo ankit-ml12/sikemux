@@ -1680,7 +1680,7 @@ fn permission(agent: &str, ask: &PermissionAsk, cx: &mut Context<Workbench>) -> 
                 .rounded(theme::RADIUS_2)
                 .bg(t.line_soft)
                 .hover(move |style| style.bg(t.surface_chosen))
-                .text_size(px(10.5))
+                .text_size(crate::theme::ui_text(10.5))
                 .text_color(if allow {
                     t.text_primary
                 } else {
@@ -1779,7 +1779,7 @@ fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElem
             .flex()
             .items_center()
             .gap(px(8.))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_tertiary)
             .child(
                 ui::icon(Icon::Check, 14.)
@@ -1844,7 +1844,7 @@ fn questions(
             .flex()
             .items_center()
             .gap(px(6.))
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(t.text_disabled)
             .on_click(cx.listener(move |bench, _, _, cx| {
                 bench.answer(&agent, |chat, open| {
@@ -1865,7 +1865,7 @@ fn questions(
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .child(peek),
             )
             .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_disabled))
@@ -1902,7 +1902,7 @@ fn asking(
             } else {
                 div()
                     .font_family(theme::MONO)
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .text_color(t.text_disabled)
                     .child((ix + 1).to_string())
                     .into_any_element()
@@ -1916,7 +1916,7 @@ fn asking(
                 .items_center()
                 .gap(px(6.))
                 .rounded(theme::RADIUS_2)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .map(|tab| {
                     if on {
                         tab.bg(t.surface_chosen).text_color(t.text_primary)
@@ -1951,7 +1951,7 @@ fn asking(
             .items_center()
             .gap(px(6.))
             .rounded(theme::RADIUS_2)
-            .text_size(px(11.))
+            .text_size(crate::theme::ui_text(11.))
             .map(|send| {
                 if ready {
                     send.bg(t.surface_chosen).text_color(t.text_primary)
@@ -1971,7 +1971,7 @@ fn asking(
                     .pl(px(6.))
                     .border_l_1()
                     .border_color(t.line)
-                    .text_size(px(9.5))
+                    .text_size(crate::theme::ui_text(9.5))
                     .text_color(t.text_disabled)
                     .child("⌘↵"),
             )
@@ -2033,7 +2033,7 @@ fn asking(
         .px(px(12.))
         .pt(px(10.))
         .pb(px(4.))
-        .text_size(px(13.5))
+        .text_size(crate::theme::ui_text(13.5))
         .line_height(relative(1.5))
         .text_color(t.text_primary)
         .child(StyledText::new(asked.clone()).with_highlights([(plain..asked.len(), faint)]));
@@ -2059,7 +2059,7 @@ fn asking(
             } else {
                 div()
                     .font_family(theme::MONO)
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .child((ix + 1).to_string())
                     .into_any_element()
@@ -2070,7 +2070,10 @@ fn asking(
                 .flex_wrap()
                 .items_center()
                 .gap_x(px(8.))
-                .child(ui::text(label.to_owned(), 13., FontWeight::MEDIUM).line_height(px(19.)))
+                .child(
+                    ui::text(label.to_owned(), 13., FontWeight::MEDIUM)
+                        .line_height(crate::theme::ui_text(19.)),
+                )
                 .when(recommended, |label| {
                     label.child(
                         ui::text("recommended", 11., FontWeight::NORMAL)
@@ -2079,7 +2082,7 @@ fn asking(
                 });
             let detail = choice.detail.clone().map(|detail| {
                 div()
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .line_height(relative(1.45))
                     .text_color(t.text_tertiary)
                     .child(detail)
@@ -2105,7 +2108,8 @@ fn asking(
     }) = picked.filter(|_| !current.secret)
     {
         let key = ui::icon(Icon::Pencil, 11.).mt(px(4.)).into_any_element();
-        let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM).line_height(px(19.));
+        let typed = ui::text(shown.clone(), 13., FontWeight::MEDIUM)
+            .line_height(crate::theme::ui_text(19.));
         choices.push(
             answer_row(
                 SharedString::from(format!("question-{}-typed", current.id)),
@@ -2195,7 +2199,7 @@ fn answer_row(
                 .flex_none()
                 .flex()
                 .justify_center()
-                .line_height(px(19.))
+                .line_height(crate::theme::ui_text(19.))
                 .text_color(t.text_disabled)
                 .child(key),
         )
@@ -2231,7 +2235,7 @@ fn kept(t: &Tokens) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(px(6.))
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_tertiary)
         .child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary))
         .child("Answer kept, sent with the rest")
@@ -2273,7 +2277,7 @@ fn secret(
                             .border_color(t.line)
                             .rounded(theme::RADIUS_2)
                             .bg(t.surface_sunken)
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .child(Input::new(&field).appearance(false).bordered(false)),
                     )
                     .child(done),
@@ -2283,7 +2287,7 @@ fn secret(
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_tertiary)
                     .child(ui::icon(Icon::Shield, 12.).text_color(t.text_tertiary))
                     .child(note)
@@ -3070,7 +3074,7 @@ fn letters(
                         .flex()
                         .items_center()
                         .gap(px(7.))
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(looks.quiet)
                         .child(ui::mark(&letter.cli, 16.))
                         .child(
@@ -3100,14 +3104,14 @@ fn letters(
                     .children(asker)
                     .child(
                         div()
-                            .text_size(px(14.))
+                            .text_size(crate::theme::ui_text(14.))
                             .text_color(looks.ink)
                             .child(letter.question.clone()),
                     )
                     .child(
                         div()
                             .mt(px(6.))
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .text_color(looks.quiet)
                             .child(answered),
                     )
@@ -3140,7 +3144,7 @@ fn letters(
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .text_size(px(12.5))
+                            .text_size(crate::theme::ui_text(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(looks.quiet)
                             .child(ui::mark(&letter.cli, 17.))
@@ -3221,7 +3225,7 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
         .items_center()
         .gap(px(8.))
         .rounded(theme::RADIUS_2)
-        .text_size(px(12.5))
+        .text_size(crate::theme::ui_text(12.5))
         .font_weight(FontWeight::MEDIUM)
         .text_color(looks.quiet)
         .cursor_pointer()
@@ -3322,7 +3326,7 @@ fn subagent(
         .rounded(theme::RADIUS_2)
         .when(open, |summary| summary.rounded_b_none())
         .bg(t.surface_raised)
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .cursor_pointer()
         .hover(move |summary| summary.bg(hover))
         .on_click(move |_, _, cx| {
@@ -3348,7 +3352,7 @@ fn subagent(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(px(10.5))
+                .text_size(crate::theme::ui_text(10.5))
                 .text_color(looks.ink)
                 .child(card.name.clone()),
         )
@@ -3357,7 +3361,7 @@ fn subagent(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(10.5))
+                .text_size(crate::theme::ui_text(10.5))
                 .text_color(looks.faint)
                 .child(task),
         )
@@ -3368,7 +3372,7 @@ fn subagent(
                 .items_center()
                 .gap(px(7.))
                 .font_family(theme::MONO)
-                .text_size(px(9.5))
+                .text_size(crate::theme::ui_text(9.5))
                 .text_color(Hsla {
                     a: 0.8,
                     ..looks.faint
@@ -3406,7 +3410,7 @@ fn subagent(
         if drawn.is_empty() {
             drawn.push(
                 div()
-                    .text_size(px(10.5))
+                    .text_size(crate::theme::ui_text(10.5))
                     .text_color(looks.faint)
                     .child("No output yet.")
                     .into_any_element(),
@@ -3470,7 +3474,7 @@ fn part(
             .items_center()
             .gap(px(7.))
             .min_w_0()
-            .text_size(px(12.5))
+            .text_size(crate::theme::ui_text(12.5))
             .text_color(tint)
             .child(ui::icon(icon, 12.).text_color(tint))
             .child(div().min_w_0().truncate().child(text))

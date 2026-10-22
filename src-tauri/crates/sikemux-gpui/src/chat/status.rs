@@ -234,7 +234,7 @@ pub(super) fn trouble(
             .child(
                 div()
                     .min_w_0()
-                    .text_size(px(13.))
+                    .text_size(crate::theme::ui_text(13.))
                     .text_color(t.text_secondary)
                     .child(said),
             )
@@ -339,7 +339,7 @@ pub(super) fn plan(
         .flex()
         .items_center()
         .gap(px(5.))
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_disabled)
         .cursor_pointer()
         .child(

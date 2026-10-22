@@ -342,7 +342,7 @@ fn chip(
         .rounded(theme::RADIUS_2)
         .border_1()
         .cursor_pointer()
-        .text_size(px(11.5))
+        .text_size(crate::theme::ui_text(11.5))
         .map(|chip| match pressed {
             true => chip
                 .border_color(t.border_selected)
@@ -505,7 +505,7 @@ impl Render for Menu {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.5))
+                        .text_size(crate::theme::ui_text(12.5))
                         .text_color(t.text_primary)
                         .child(option.label.clone()),
                 )
@@ -550,7 +550,7 @@ impl Render for Menu {
                         .child(
                             div()
                                 .px(px(6.))
-                                .text_size(px(10.5))
+                                .text_size(crate::theme::ui_text(10.5))
                                 .text_color(t.text_tertiary)
                                 .child("Paid by"),
                         )
@@ -568,7 +568,7 @@ impl Render for Menu {
                             div()
                                 .px(px(10.))
                                 .py(px(8.))
-                                .text_size(px(12.))
+                                .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
                                 .child(if none_offered {
                                     "This agent offers no models to pick"

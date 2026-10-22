@@ -403,7 +403,7 @@ pub fn sheet(
                 .border_color(t.border)
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(title),
                 )
@@ -413,7 +413,7 @@ pub fn sheet(
                         .min_w_0()
                         .truncate()
                         .font_family(theme::MONO)
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .child(sheet.shown.clone()),
                 ),
@@ -438,7 +438,7 @@ pub fn sheet(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .text_color(t.text_secondary)
                         .child(state(sheet)),
                 )

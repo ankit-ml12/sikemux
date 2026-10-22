@@ -249,7 +249,7 @@ fn button(
 fn about(text: impl Into<SharedString>, failed: bool, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     div()
-        .text_size(px(11.5))
+        .text_size(crate::theme::ui_text(11.5))
         .text_color(if failed { t.danger } else { t.text_tertiary })
         .child(text.into())
         .into_any_element()
@@ -274,7 +274,7 @@ fn row(label: String, line: AnyElement, controls: impl IntoElement, t: &Tokens) 
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(label),
                 )
@@ -376,7 +376,7 @@ pub fn render(
                 .p(px(14.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child("New skill"),
                 )
@@ -388,7 +388,7 @@ pub fn render(
                         .border_1()
                         .border_color(t.line)
                         .rounded(theme::RADIUS_2)
-                        .text_size(px(12.))
+                        .text_size(crate::theme::ui_text(12.))
                         .child(Textarea::new(&fields.body).h(px(140.)).bordered(false)),
                 )
                 .child(
@@ -425,7 +425,7 @@ pub fn render(
                 .p(px(14.))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child("Install a skill"),
                 )

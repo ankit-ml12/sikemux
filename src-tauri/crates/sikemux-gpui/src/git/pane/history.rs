@@ -337,8 +337,8 @@ fn ref_badge(label: &str, cx: &App) -> Div {
         .border_color(edge)
         .rounded(RADIUS_2)
         .when_some(ground, |badge, ground| badge.bg(ground))
-        .text_size(px(10.))
-        .line_height(px(10.))
+        .text_size(crate::theme::ui_text(10.))
+        .line_height(crate::theme::ui_text(10.))
         .text_color(ink)
         .child(div().size(px(5.)).flex_none().rounded_full().bg(ink))
         .child(div().min_w_0().truncate().child(text.to_owned()))
@@ -381,7 +381,7 @@ pub fn commit_row(
         .items_center()
         .gap(px(8.))
         .rounded(RADIUS_2)
-        .text_size(px(12.5))
+        .text_size(crate::theme::ui_text(12.5))
         .text_color(if chosen {
             t.text_primary
         } else {
@@ -418,7 +418,7 @@ pub fn commit_row(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.))
+                .text_size(crate::theme::ui_text(13.))
                 .font_weight(FontWeight::MEDIUM)
                 .child(without_scope(&commit.subject).to_owned()),
         )
@@ -427,7 +427,7 @@ pub fn commit_row(
                 div()
                     .flex_none()
                     .font_family(theme::MONO)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_tertiary)
                     .child(commit.hash.clone()),
             )
@@ -436,7 +436,7 @@ pub fn commit_row(
             div()
                 .flex_none()
                 .font_family(theme::MONO)
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child(commit.date.clone()),
         )
@@ -481,7 +481,7 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
             .border_color(edge)
             .rounded(px(4.))
             .font_family(theme::MONO)
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(colour)
             .child(text)
     };
@@ -526,8 +526,8 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
         .font_family(theme::UI)
         .child(
             div()
-                .text_size(px(16.))
-                .line_height(px(21.6))
+                .text_size(crate::theme::ui_text(16.))
+                .line_height(crate::theme::ui_text(21.6))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text_primary)
                 .child(commit.subject.clone()),
@@ -538,7 +538,7 @@ pub fn commit_card(commit: &GitCommit, pushed: bool, cx: &App) -> Div {
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .child(fact(
                     "Author",
                     div()

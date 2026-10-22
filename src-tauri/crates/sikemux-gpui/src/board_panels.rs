@@ -264,7 +264,7 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
             .child(
                 Input::new(&fields.title)
                     .appearance(false)
-                    .text_size(px(15.))
+                    .text_size(crate::theme::ui_text(15.))
                     .font_weight(FontWeight::SEMIBOLD),
             )
             .into_any_element(),
@@ -273,7 +273,7 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
             .child(boxed(
                 Textarea::new(&fields.details)
                     .appearance(false)
-                    .text_size(px(12.5))
+                    .text_size(crate::theme::ui_text(12.5))
                     .into_any_element(),
             ))
             .into_any_element(),
@@ -281,7 +281,7 @@ fn text_fields(pane: &BoardPane, cx: &mut Context<BoardPane>) -> Vec<AnyElement>
             .child(boxed(
                 Textarea::new(&fields.acceptance)
                     .appearance(false)
-                    .text_size(px(12.5))
+                    .text_size(crate::theme::ui_text(12.5))
                     .into_any_element(),
             ))
             .into_any_element(),
@@ -461,7 +461,7 @@ fn card_panel(pane: &BoardPane, card: Card, cx: &mut Context<BoardPane>) -> AnyE
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.5))
+                            .text_size(crate::theme::ui_text(12.5))
                             .child(each.title.clone()),
                     )
                     .child(ui::meta(status_label(&each.status), cx))
@@ -816,7 +816,7 @@ fn messages_panel(pane: &BoardPane, cx: &mut Context<BoardPane>) -> AnyElement {
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .child(ui::text(
                                 sender(row.from.as_deref(), row.from_name.as_ref()),
                                 12.,

@@ -61,7 +61,7 @@ pub fn select(
         .rounded(RADIUS_2)
         .border_1()
         .border_color(t.border)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(if disabled {
             t.text_tertiary
         } else {

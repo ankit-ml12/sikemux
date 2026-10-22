@@ -3,11 +3,22 @@
 use std::borrow::Cow;
 
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeTokens};
-use gpui_kit::{px, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rgba, SharedString};
+use gpui_kit::{
+    px, rems, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rems, Rgba, SharedString,
+};
 use sikemux_wire::grid::TerminalColors;
 use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
 
 pub const UI: &str = "Figtree";
+
+/// The rem the interface's text is measured in before the person's text size scales it.
+pub const REM: f32 = 16.;
+
+/// A size for the interface's text, `size` points at the default text size, which grows and
+/// shrinks with the person's choice in Appearance.
+pub fn ui_text(size: f32) -> Rems {
+    rems(size / REM)
+}
 pub const MONO: &str = "JetBrainsMono NFM";
 /// The Nerd Font icon glyphs, which mono text falls back to.
 pub const MONO_ICONS: &str = "JetBrainsMono NFM Icons";

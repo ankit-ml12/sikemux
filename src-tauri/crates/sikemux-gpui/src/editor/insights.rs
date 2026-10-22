@@ -429,7 +429,7 @@ pub(super) fn bar(
         .flex()
         .flex_col()
         .font_family(theme::MONO)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(header)
         .children(body)
 }

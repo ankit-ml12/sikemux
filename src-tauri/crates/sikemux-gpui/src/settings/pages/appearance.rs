@@ -237,7 +237,7 @@ pub fn render(
                         .h(px(THEME_ROW))
                         .px(px(12.))
                         .pb(px(4.))
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(*label)
                         .child(count.to_string()),
@@ -283,7 +283,7 @@ pub fn render(
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(12.5))
+                                    .text_size(crate::theme::ui_text(12.5))
                                     .text_color(t.text_primary)
                                     .child(summary.name.clone()),
                             )
@@ -371,14 +371,14 @@ pub fn render(
                     .gap(px(2.))
                     .child(
                         div()
-                            .text_size(px(10.5))
+                            .text_size(crate::theme::ui_text(10.5))
                             .text_color(t.text_tertiary)
                             .child("Wearing"),
                     )
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.))
+                            .text_size(crate::theme::ui_text(13.))
                             .text_color(t.text_primary)
                             .child(worn.name.clone()),
                     ),
@@ -524,7 +524,7 @@ pub fn render(
                 div()
                     .w(px(44.))
                     .text_right()
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .text_color(t.text_secondary)
                     .child(shown),
             )
@@ -616,7 +616,7 @@ pub fn render(
             .child(div().flex().gap(px(2.)).children(faces))
             .child(
                 div()
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(t.text_secondary)
                     .child(name),
             )
@@ -675,7 +675,7 @@ pub fn render(
                 .rounded(theme::RADIUS_2)
                 .border_1()
                 .cursor_pointer()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.text_secondary)
                 .border_color(if mixing { t.border_selected } else { t.border })
                 .when(mixing, |chip| chip.bg(t.surface_chosen))
@@ -713,13 +713,13 @@ pub fn render(
             .border_color(t.line_soft)
             .child(
                 div()
-                    .text_size(px(13.))
+                    .text_size(crate::theme::ui_text(13.))
                     .text_color(t.text_primary)
                     .child(label),
             )
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .text_color(t.text_tertiary)
                     .child(about),
             )

@@ -242,7 +242,7 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
         Some(said) => div()
             .min_w_0()
             .truncate()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(looks.quiet)
             .child(said.clone()),
         None => div()
@@ -308,7 +308,7 @@ pub fn run(parts: &[&ChatPart], live: bool, looks: &Drawn) -> AnyElement {
     div()
         .my(px(7.))
         .font_family(theme::MONO)
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .child(div().flex().child(sum))
         .when(open, |run| {
             run.child(div().ml(px(6.)).py(px(2.)).flex().flex_col().children(rows))
@@ -355,7 +355,7 @@ fn row(call: &Call, last: bool, kind: usize, looks: &Drawn) -> AnyElement {
         .flex()
         .items_center()
         .gap(px(7.))
-        .text_size(px(10.))
+        .text_size(crate::theme::ui_text(10.))
         .text_color(looks.quiet)
         .children(call.diff.map(|diff| {
             div()
@@ -532,7 +532,7 @@ fn detail(call: &Call, looks: &Drawn) -> AnyElement {
     } else {
         call.failure.map(|failure| {
             div()
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .line_height(relative(1.55))
                 .text_color(looks.tints.failed)
                 .child(failure.to_owned())
@@ -556,8 +556,8 @@ fn boxed(looks: &Drawn) -> Div {
         .border_color(looks.tints.line_soft)
         .rounded(theme::RADIUS_2)
         .bg(looks.tints.well)
-        .text_size(px(11.))
-        .line_height(px(17.))
+        .text_size(crate::theme::ui_text(11.))
+        .line_height(crate::theme::ui_text(17.))
 }
 
 /// A command and what it printed, the way a terminal would have shown them.
@@ -616,7 +616,7 @@ fn terminal(
                 return div()
                     .px(px(9.))
                     .py(px(5.))
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .text_color(looks.faint)
                     .child("No output");
             }
@@ -641,7 +641,7 @@ fn terminal(
             .pl(px(9.))
             .flex()
             .items_center()
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(looks.faint)
             .cursor_pointer()
             .hover(move |more| more.bg(hover))
@@ -673,7 +673,7 @@ fn terminal(
             div()
                 .px(px(9.))
                 .py(px(5.))
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(looks.faint)
                 .child("The rest of the output was not kept")
                 .into_any_element(),
@@ -688,7 +688,7 @@ fn terminal(
         div()
             .px(px(9.))
             .pb(px(6.))
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(looks.tints.failed)
             .child(format!("exit {code}"))
     }))
@@ -714,7 +714,7 @@ fn diff_body(id: &str, path: &str, adds: u64, dels: u64, lines: &[DiffLine], loo
         .gap(px(8.))
         .border_b_1()
         .border_color(looks.tints.line_soft)
-        .text_size(px(10.))
+        .text_size(crate::theme::ui_text(10.))
         .text_color(looks.faint)
         .child(ui::icon(Icon::File, 12.).text_color(looks.faint))
         .child(
@@ -787,7 +787,7 @@ fn diff_gap(id: &str, gap: usize, looks: &Drawn) -> AnyElement {
         .pl(px(42.))
         .flex()
         .items_center()
-        .text_size(px(10.))
+        .text_size(crate::theme::ui_text(10.))
         .text_color(looks.faint)
         .cursor_pointer()
         .hover(move |gap| gap.bg(hover))
@@ -845,7 +845,7 @@ fn diff_line(line: &DiffLine, looks: &Drawn) -> AnyElement {
                 .pr(px(8.))
                 .flex()
                 .justify_end()
-                .text_size(px(10.))
+                .text_size(crate::theme::ui_text(10.))
                 .text_color(looks.faint)
                 .children(number.map(|n| n.to_string())),
         )

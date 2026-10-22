@@ -473,7 +473,7 @@ fn row_view(
         .justify_start()
         .gap(px(5.))
         .rounded(theme::RADIUS_2)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(ink)
         .when(active, |row| row.bg(t.surface_chosen))

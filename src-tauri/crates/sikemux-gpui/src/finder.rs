@@ -312,7 +312,7 @@ pub fn overlay(
                                     .appearance(false)
                                     .flex_1()
                                     .p_0()
-                                    .text_size(px(14.))
+                                    .text_size(crate::theme::ui_text(14.))
                                     .text_color(t.text_primary)
                                     .disabled(!project),
                             ),
@@ -365,7 +365,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
         .h(px(30.))
         .px(px(6.))
         .rounded(theme::RADIUS_2)
-        .text_size(px(13.))
+        .text_size(crate::theme::ui_text(13.))
         .text_color(if selected {
             t.text_primary
         } else {
@@ -405,7 +405,7 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
             div()
                 .flex_none()
                 .pl(px(12.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .text_color(t.text_tertiary)
                 .child(dir.to_owned()),
         )

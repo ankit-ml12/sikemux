@@ -294,7 +294,7 @@ pub fn pane(
                     .py(px(6.))
                     .border_b_1()
                     .border_color(t.border)
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .child(div().text_color(t.text_tertiary).child("Go to line"))
                     .child(
                         Input::new(input)
@@ -566,7 +566,7 @@ fn peek_panel(
         .border_t_1()
         .border_color(t.border)
         .font_family(theme::MONO)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(
             div()
                 .flex()
@@ -773,7 +773,7 @@ fn notice_bar(
         .border_b_1()
         .border_color(t.border)
         .bg(t.surface_sunken)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .child(
             div()
                 .flex_1()

@@ -93,7 +93,7 @@ pub fn overlay(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary)
                         .child(popup.title.clone()),
                 )

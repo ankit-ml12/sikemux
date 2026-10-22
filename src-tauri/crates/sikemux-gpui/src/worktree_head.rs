@@ -125,7 +125,7 @@ pub fn badges(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
             .rounded(theme::RADIUS_2)
             .border_1()
             .cursor_pointer()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .hover(|style| style.bg(t.surface_hover).border_color(t.border_strong))
     };
     let badge = pull.and_then(|pull| {

@@ -68,7 +68,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                     .border_color(t.border_strong)
                     .rounded(RADIUS_2)
                     .bg(t.surface_sunken)
-                    .text_size(px(12.))
+                    .text_size(crate::theme::ui_text(12.))
                     .when(mono, |field| field.font_family(theme::MONO))
                     .child(Input::new(input).appearance(false)),
             )
@@ -109,7 +109,7 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 )
                 .child(
                     div()
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(t.text_tertiary)
                         .child(note),
                 ),

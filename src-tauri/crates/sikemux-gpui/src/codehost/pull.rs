@@ -488,7 +488,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
                 .py(px(4.))
                 .flex()
                 .gap(px(8.))
-                .text_size(px(11.))
+                .text_size(crate::theme::ui_text(11.))
                 .font_features(theme::tabular())
                 .child(
                     div()
@@ -527,7 +527,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .cursor_pointer()
                 .hover(move |row| row.bg(t.surface_hover))
                 .tooltip(ui::tooltip(path.clone()))
@@ -544,7 +544,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(10.5))
+                        .text_size(crate::theme::ui_text(10.5))
                         .text_color(t.text_tertiary)
                         .child(dir)
                 }))
@@ -553,7 +553,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
                         .ml_auto()
                         .flex_none()
                         .font_family(theme::MONO)
-                        .text_size(px(11.))
+                        .text_size(crate::theme::ui_text(11.))
                         .text_color(ink)
                         .child(letter),
                 )
@@ -579,7 +579,7 @@ fn commits_page(opened: &Opened, cx: &App) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(ui::initials(&author, "", 18., cx))
                 .child(
                     div()
@@ -588,12 +588,15 @@ fn commits_page(opened: &Opened, cx: &App) -> AnyElement {
                         .flex()
                         .flex_col()
                         .child(div().truncate().text_color(t.text_primary).child(subject))
-                        .child(div().text_size(px(10.5)).text_color(t.text_tertiary).child(
-                            format!(
-                                "{author} · {}",
-                                commit.date.as_deref().map(ago).unwrap_or_default()
-                            ),
-                        )),
+                        .child(
+                            div()
+                                .text_size(crate::theme::ui_text(10.5))
+                                .text_color(t.text_tertiary)
+                                .child(format!(
+                                    "{author} · {}",
+                                    commit.date.as_deref().map(ago).unwrap_or_default()
+                                )),
+                        ),
                 )
                 .child(ui::mono(short, 11., cx).text_color(t.text_tertiary))
         }))
@@ -674,7 +677,7 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             .flex()
                             .items_center()
                             .gap(px(6.))
-                            .text_size(px(11.))
+                            .text_size(crate::theme::ui_text(11.))
                             .text_color(t.text_tertiary)
                             .when(!by.is_empty(), |row| {
                                 let url = pull.avatars.get(&by).map(String::as_str);
@@ -882,7 +885,7 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .text_size(px(11.5))
+                    .text_size(crate::theme::ui_text(11.5))
                     .rounded(RADIUS_2)
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
@@ -997,7 +1000,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                                 .flex()
                                 .items_center()
                                 .gap(px(6.))
-                                .text_size(px(10.5))
+                                .text_size(crate::theme::ui_text(10.5))
                                 .text_color(t.text_tertiary)
                                 .child(format!(
                                     "{author} · #{}, updated {}",
@@ -1040,7 +1043,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                         .border_1()
                         .border_color(if on { t.border_strong } else { t.border })
                         .when(on, |chip| chip.bg(t.surface_active))
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(if on { t.text_primary } else { t.text_secondary })
                         .cursor_pointer()
                         .on_click(cx.listener(move |area, _, _, cx| {
@@ -1225,8 +1228,12 @@ fn composer(
                     div()
                         .px(px(12.))
                         .py(px(8.))
-                        .text_size(px(13.))
-                        .child(Textarea::new(&draft).appearance(false).text_size(px(13.))),
+                        .text_size(crate::theme::ui_text(13.))
+                        .child(
+                            Textarea::new(&draft)
+                                .appearance(false)
+                                .text_size(crate::theme::ui_text(13.)),
+                        ),
                 )
                 .child(foot),
         )

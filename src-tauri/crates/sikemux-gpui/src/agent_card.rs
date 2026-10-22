@@ -258,7 +258,7 @@ pub fn view(
         .border_color(t.border)
         .rounded(crate::theme::RADIUS_3)
         .shadow(t.shadow_float())
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
         .on_hover(cx.listener(move |bench, inside: &bool, _, cx| {
             if *inside {
@@ -282,7 +282,7 @@ pub fn view(
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(13.))
+                                .text_size(crate::theme::ui_text(13.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(t.text_primary)
                                 .child(agent.title.clone()),

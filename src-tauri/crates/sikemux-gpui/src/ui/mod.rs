@@ -153,7 +153,7 @@ pub fn mark_box(size: f32, child: impl IntoElement) -> Div {
 /// One line of UI text that never wraps.
 pub fn text(value: impl Into<SharedString>, size: f32, weight: FontWeight) -> Div {
     div()
-        .text_size(px(size))
+        .text_size(crate::theme::ui_text(size))
         .font_weight(weight)
         .whitespace_nowrap()
         .child(value.into())
@@ -179,7 +179,7 @@ pub fn mono(value: impl Into<SharedString>, size: f32, cx: &App) -> Div {
 pub fn caps(value: &str, cx: &App) -> Div {
     text(value.to_uppercase(), 11., FontWeight::MEDIUM)
         .letter_spacing(0.2)
-        .line_height(px(16.))
+        .line_height(crate::theme::ui_text(16.))
         .text_color(Tokens::get(cx).text_tertiary)
 }
 
@@ -187,7 +187,7 @@ pub fn caps(value: &str, cx: &App) -> Div {
 pub fn kbd(keys: impl Into<SharedString>, cx: &App) -> Div {
     text(keys, 11., FontWeight::MEDIUM)
         .font_family(theme::KBD)
-        .line_height(px(11.))
+        .line_height(crate::theme::ui_text(11.))
         .text_color(Tokens::get(cx).text_tertiary)
 }
 

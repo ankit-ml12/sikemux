@@ -265,7 +265,7 @@ fn pane_header(
                 .justify_center()
                 .gap(px(3.))
                 .rounded_full()
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .text_color(t.live)
                 .tooltip(ui::tooltip(share.watching()))
                 .on_click(open_share)
@@ -296,7 +296,7 @@ fn pane_header(
                     Input::new(&retitling.input)
                         .appearance(false)
                         .p_0()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .text_color(t.text_primary),
                 )
         });
@@ -438,7 +438,7 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
                 )
                 .child(
                     ui::text(value, 20., FontWeight::SEMIBOLD)
-                        .line_height(px(22.))
+                        .line_height(crate::theme::ui_text(22.))
                         .font_features(theme::tabular())
                         .text_color(t.text_primary),
                 )
@@ -677,7 +677,7 @@ fn day_at(bounds: Bounds<Pixels>, position: Point<Pixels>) -> Option<i64> {
 
 fn small(label: String, t: &Tokens) -> Div {
     ui::text(label, 10., FontWeight::NORMAL)
-        .line_height(px(10.))
+        .line_height(crate::theme::ui_text(10.))
         .text_color(t.text_tertiary)
 }
 

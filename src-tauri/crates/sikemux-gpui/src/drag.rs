@@ -96,7 +96,7 @@ impl Render for Ghost {
             .border_1()
             .border_color(t.border)
             .bg(t.surface_overlay)
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_primary)
             .child(self.label.clone())
     }

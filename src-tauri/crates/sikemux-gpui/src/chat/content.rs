@@ -87,7 +87,7 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> An
         .items_center()
         .gap(px(7.))
         .min_w_0()
-        .text_size(px(12.5))
+        .text_size(crate::theme::ui_text(12.5))
         .text_color(looks.quiet)
         .when_some(uri, |row, uri| {
             row.cursor_pointer()

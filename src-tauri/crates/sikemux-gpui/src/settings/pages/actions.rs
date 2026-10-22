@@ -179,51 +179,52 @@ pub fn render(
             "No custom actions yet. The built-ins are already searchable from the command deck.",
             cx,
         ),
-        false => {
-            div()
-                .children(commands.iter().map(|command| {
-                    let this = this.clone();
-                    let chosen = command.id == fields.id;
-                    let picked = command.clone();
-                    let contexts = match command.contexts.is_empty() {
-                        true => "all contexts".to_owned(),
-                        false => command.contexts.join(", "),
-                    };
-                    div()
-                        .id(SharedString::from(format!("action-{}", command.id)))
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .px(px(14.))
-                        .py(px(9.))
-                        .border_b_1()
-                        .border_color(t.line_soft)
-                        .cursor_pointer()
-                        .when_else(
-                            chosen,
-                            |row| row.bg(t.surface_chosen),
-                            |row| row.hover(|style| style.bg(t.surface_hover)),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(13.))
-                                .text_color(t.text_primary)
-                                .child(command.title.clone()),
-                        )
-                        .child(div().text_size(px(11.5)).text_color(t.text_tertiary).child(
-                            format!(
+        false => div()
+            .children(commands.iter().map(|command| {
+                let this = this.clone();
+                let chosen = command.id == fields.id;
+                let picked = command.clone();
+                let contexts = match command.contexts.is_empty() {
+                    true => "all contexts".to_owned(),
+                    false => command.contexts.join(", "),
+                };
+                div()
+                    .id(SharedString::from(format!("action-{}", command.id)))
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .px(px(14.))
+                    .py(px(9.))
+                    .border_b_1()
+                    .border_color(t.line_soft)
+                    .cursor_pointer()
+                    .when_else(
+                        chosen,
+                        |row| row.bg(t.surface_chosen),
+                        |row| row.hover(|style| style.bg(t.surface_hover)),
+                    )
+                    .child(
+                        div()
+                            .text_size(crate::theme::ui_text(13.))
+                            .text_color(t.text_primary)
+                            .child(command.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_size(crate::theme::ui_text(11.5))
+                            .text_color(t.text_tertiary)
+                            .child(format!(
                                 "{} · {contexts}",
                                 placement_name(command.placement).to_lowercase()
-                            ),
-                        ))
-                        .on_click(move |_, window, cx| {
-                            let picked = picked.clone();
-                            this.update(cx, |bench, cx| load(bench, Some(picked), window, cx))
-                        })
-                        .into_any_element()
-                }))
-                .into_any_element()
-        }
+                            )),
+                    )
+                    .on_click(move |_, window, cx| {
+                        let picked = picked.clone();
+                        this.update(cx, |bench, cx| load(bench, Some(picked), window, cx))
+                    })
+                    .into_any_element()
+            }))
+            .into_any_element(),
     };
 
     let placement = {
@@ -288,13 +289,13 @@ pub fn render(
                     .gap(px(2.))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(crate::theme::ui_text(13.))
                             .text_color(t.text_primary)
                             .child(label),
                     )
                     .child(
                         div()
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child(about),
                     ),
@@ -357,7 +358,7 @@ pub fn render(
                 .border_color(t.line)
                 .rounded(theme::RADIUS_2)
                 .font_family(theme::MONO)
-                .text_size(px(12.))
+                .text_size(crate::theme::ui_text(12.))
                 .child(Textarea::new(&fields.command).h(px(96.)).bordered(false))
                 .into_any_element(),
         ))

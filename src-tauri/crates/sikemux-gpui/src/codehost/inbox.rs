@@ -262,7 +262,7 @@ impl Render for Inbox {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(12.5))
+                                    .text_size(crate::theme::ui_text(12.5))
                                     .text_color(if item.unread {
                                         t.text_primary
                                     } else {

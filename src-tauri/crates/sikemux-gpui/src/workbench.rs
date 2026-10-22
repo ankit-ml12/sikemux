@@ -783,6 +783,16 @@ impl Workbench {
                         chat.rescale(scale, cx);
                     }
                     crate::ui::grain::set(&preferences, cx);
+                    let rem = px(crate::theme::REM * preferences.ui_text_scale as f32);
+                    let window = self.window;
+                    cx.defer(move |cx| {
+                        let _ = window.update(cx, |_, window, _| {
+                            if window.rem_size() != rem {
+                                window.set_rem_size(rem);
+                                window.refresh();
+                            }
+                        });
+                    });
                     crate::see_through::set(&preferences, cx);
                     crate::experience::preferences_read(self, &preferences, cx);
                 }
@@ -3303,8 +3313,8 @@ impl Render for Workbench {
             .flex()
             .flex_col()
             .font_family(theme::UI)
-            .text_size(px(13.))
-            .line_height(px(13. * 1.45))
+            .text_size(crate::theme::ui_text(13.))
+            .line_height(crate::theme::ui_text(13. * 1.45))
             .text_color(t.text_secondary)
             .child(
                 parts.top.clone().cached(

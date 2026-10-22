@@ -372,7 +372,7 @@ pub fn pane(
             .h(px(28.))
             .px(px(8.))
             .rounded(theme::RADIUS_2)
-            .text_size(px(13.))
+            .text_size(crate::theme::ui_text(13.))
             .text_color(if on { t.text_primary } else { t.text_secondary })
             .when(on, |row| row.bg(t.surface_chosen))
             .hover(|row| row.bg(t.surface_hover))
@@ -409,14 +409,14 @@ pub fn pane(
                 .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(15.))
+                        .text_size(crate::theme::ui_text(15.))
                         .text_color(t.text_primary)
                         .truncate()
                         .child(name),
                 )
                 .child(
                     div()
-                        .text_size(px(11.5))
+                        .text_size(crate::theme::ui_text(11.5))
                         .text_color(t.text_tertiary)
                         .truncate()
                         .child(crate::chat::tilde(Path::new(folder))),
@@ -584,7 +584,7 @@ fn tasks(
                     .gap(px(2.))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(crate::theme::ui_text(13.))
                             .text_color(t.text_primary)
                             .child(text(&task["label"])),
                     )
@@ -592,7 +592,7 @@ fn tasks(
                         div()
                             .truncate()
                             .font_family(theme::MONO)
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child(text(&task["command"])),
                     ),
@@ -694,7 +694,7 @@ fn tasks(
                 .gap(px(6.))
                 .px(px(14.))
                 .py(px(7.))
-                .text_size(px(12.5))
+                .text_size(crate::theme::ui_text(12.5))
                 .text_color(t.text_secondary)
                 .hover(|row| row.bg(t.surface_hover))
                 .child(ui::icon(Icon::Chevron, 11.).when(open, |icon| {
@@ -737,7 +737,7 @@ fn tasks(
                                 .w(px(160.))
                                 .flex_none()
                                 .truncate()
-                                .text_size(px(12.5))
+                                .text_size(crate::theme::ui_text(12.5))
                                 .text_color(t.text_primary)
                                 .child(label),
                         )
@@ -747,7 +747,7 @@ fn tasks(
                                 .min_w_0()
                                 .truncate()
                                 .font_family(theme::MONO)
-                                .text_size(px(11.5))
+                                .text_size(crate::theme::ui_text(11.5))
                                 .text_color(t.text_tertiary)
                                 .child(text(&task["command"])),
                         )
@@ -861,14 +861,14 @@ fn git(
                     .children(mark.map(|mark| ui::icon(mark, 12.).text_color(t.text_secondary)))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(crate::theme::ui_text(13.))
                             .text_color(t.text_primary)
                             .child(name),
                     )
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(11.5))
+                            .text_size(crate::theme::ui_text(11.5))
                             .text_color(t.text_tertiary)
                             .child(detail),
                     )
@@ -1012,7 +1012,7 @@ fn config(
             .gap(px(8.))
             .px(px(14.))
             .py(px(6.))
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .child(
                 div()
                     .font_family(theme::MONO)

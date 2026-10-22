@@ -75,7 +75,7 @@ fn tags(release: &Release, latest: bool, cx: &mut Context<HostArea>) -> Vec<AnyE
             .rounded_full()
             .border_1()
             .border_color(ink)
-            .text_size(px(10.))
+            .text_size(crate::theme::ui_text(10.))
             .text_color(ink)
             .child(word)
             .into_any_element()
@@ -165,7 +165,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(12.5))
+                                .text_size(crate::theme::ui_text(12.5))
                                 .text_color(t.text_primary)
                                 .child(release.name.clone()),
                         )
@@ -256,7 +256,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                             .items_center()
                             .gap(px(6.))
                             .cursor_pointer()
-                            .text_size(px(12.))
+                            .text_size(crate::theme::ui_text(12.))
                             .text_color(t.text_primary)
                             .on_click(cx.listener(|area, _, _, cx| {
                                 area.releases.assets_folded = !area.releases.assets_folded;
@@ -278,7 +278,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                                 .gap(px(8.))
                                 .border_t_1()
                                 .border_color(t.border)
-                                .text_size(px(12.))
+                                .text_size(crate::theme::ui_text(12.))
                                 .cursor_pointer()
                                 .hover(move |row| row.bg(t.surface_hover))
                                 .tooltip(ui::tooltip(format!("Download {}", asset.name)))
@@ -362,7 +362,7 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
                                         .flex()
                                         .items_center()
                                         .gap(px(6.))
-                                        .text_size(px(10.5))
+                                        .text_size(crate::theme::ui_text(10.5))
                                         .text_color(t.text_tertiary)
                                         .child(format!(
                                             "{author} released this {}",

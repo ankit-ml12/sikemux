@@ -391,7 +391,7 @@ pub fn review(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(12.))
+            .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_secondary)
             .child("Nothing to review.")
             .into_any_element();
@@ -510,7 +510,7 @@ fn draw(
                     .when(at > 0, |title| title.border_t_1())
                     .bg(t.surface.opacity(0.55))
                     .font_family(crate::theme::UI)
-                    .text_size(px(10.))
+                    .text_size(crate::theme::ui_text(10.))
                     .text_color(t.text_tertiary)
                     .children(status_mark(code, cx))
                     .child(div().child(word)),
@@ -528,7 +528,7 @@ fn draw(
                 div()
                     .p(px(12.))
                     .font_family(crate::theme::UI)
-                    .text_size(px(11.))
+                    .text_size(crate::theme::ui_text(11.))
                     .text_color(colour)
                     .child(text),
             )
@@ -548,8 +548,8 @@ fn draw(
             let (expanding, wheeling) = (view.clone(), view.clone());
             body(
                 div()
-                    .text_size(px(12.))
-                    .line_height(px(19.))
+                    .text_size(crate::theme::ui_text(12.))
+                    .line_height(crate::theme::ui_text(19.))
                     .when(index == 0, |rows| rows.pt(px(8.)))
                     .when(index + 1 == diff.len(), |rows| rows.pb(px(8.)))
                     .on_scroll_wheel(move |event: &ScrollWheelEvent, window, cx| {
@@ -657,7 +657,7 @@ fn header(view: &Entity<GitPane>, review: &Review, card: usize, cx: &App) -> Any
                         .id(SharedString::from(format!("{id}-name")))
                         .min_w_0()
                         .truncate()
-                        .text_size(px(13.))
+                        .text_size(crate::theme::ui_text(13.))
                         .hover(|name| name.underline())
                         .tooltip(ui::tooltip("Open in editor"))
                         .on_click(move |_, window, cx| {

@@ -217,7 +217,7 @@ fn keycap(
         .border_1()
         .rounded(theme::RADIUS_2)
         .font_family(theme::MONO)
-        .text_size(px(11.))
+        .text_size(crate::theme::ui_text(11.))
         .cursor_pointer()
         .map(|cap| match (listening, keys.is_some()) {
             (true, _) => cap
@@ -336,13 +336,13 @@ pub fn render(
                         .pb(px(4.))
                         .child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(crate::theme::ui_text(11.))
                                 .text_color(t.text_secondary)
                                 .child(*category),
                         )
                         .child(
                             div()
-                                .text_size(px(10.5))
+                                .text_size(crate::theme::ui_text(10.5))
                                 .text_color(t.text_tertiary)
                                 .child(count.to_string()),
                         ),
@@ -395,7 +395,7 @@ pub fn render(
         .py(px(8.))
         .border_b_1()
         .border_color(t.line_soft)
-        .text_size(px(12.))
+        .text_size(crate::theme::ui_text(12.))
         .text_color(t.text_secondary)
         .child(
             div()
