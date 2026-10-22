@@ -295,6 +295,7 @@ impl RailPage {
 }
 
 /// An agent as the rails and tabs show it.
+#[derive(Clone)]
 pub struct AgentRow {
     pub id: String,
     pub provider: String,
@@ -1060,8 +1061,11 @@ impl Workbench {
             let agent = agent.clone();
             cx.new(|cx| crate::voice::MicButton::new(voice, agent, toggle, cx))
         };
+        let bench = cx.weak_entity();
+        let view = cx.new(|_| crate::chat::ComposerView { bench, agent: None });
         chat.composer = Some(Composing {
             draft,
+            view,
             secret,
             mic,
             hint: SharedString::default(),

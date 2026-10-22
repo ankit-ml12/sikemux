@@ -440,6 +440,8 @@ pub struct Chat {
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
 pub struct Composing {
     pub draft: Entity<TextareaState>,
+    /// Where the composer is drawn, apart from the chat around it.
+    pub view: Entity<ComposerView>,
     pub secret: Entity<InputState>,
     pub hint: SharedString,
     /// The files going out with the next message, its pictures named in the draft by number.
@@ -1551,44 +1553,12 @@ pub fn pane(
         .children(answered)
         .children(assumed)
         .children(stack)
-        .children(
-            composer(bench, agent, chat, cx).map(|(composer, offering)| {
-                div()
-                    .key_context("ChatComposer")
-                    .on_action(recall::<OlderPrompt>(id, true, cx))
-                    .on_action(recall::<NewerPrompt>(id, false, cx))
-                    .on_action(stop_turn(id, cx))
-                    .child(
-                        div()
-                            .when(offering, |menu| {
-                                menu.key_context("ComposerMenu")
-                                    .on_action(offered::<MenuUp>(
-                                        id,
-                                        |bench, agent, _, cx| bench.pick_choice(agent, -1, cx),
-                                        cx,
-                                    ))
-                                    .on_action(offered::<MenuDown>(
-                                        id,
-                                        |bench, agent, _, cx| bench.pick_choice(agent, 1, cx),
-                                        cx,
-                                    ))
-                                    .on_action(offered::<MenuPick>(
-                                        id,
-                                        |bench, agent, window, cx| {
-                                            bench.take_choice(agent, None, window, cx)
-                                        },
-                                        cx,
-                                    ))
-                                    .on_action(offered::<MenuClose>(
-                                        id,
-                                        |bench, agent, _, cx| bench.dismiss_menu(agent, cx),
-                                        cx,
-                                    ))
-                            })
-                            .child(composer),
-                    )
-            }),
-        )
+        .children(chat.composer.as_ref().map(|composing| {
+            composing
+                .view
+                .update(cx, |view, _| view.agent = Some(agent.clone()));
+            composing.view.clone().into_element().isolated()
+        }))
         .when(composing, |pane| pane.child(attach::drop_hint(cx)));
     let this = cx.weak_entity();
     let agent = id.to_owned();
@@ -2456,6 +2426,79 @@ fn secret(
 }
 
 /// The composer, with what this chat lets the person change.
+/// The composer of one chat as a view of its own, mounted isolated, so a key typed in it draws
+/// only it again rather than the chat around it.
+pub struct ComposerView {
+    pub bench: WeakEntity<Workbench>,
+    /// The chat's agent as the stage last drew it.
+    pub agent: Option<AgentRow>,
+}
+
+impl gpui::Render for ComposerView {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(agent) = self.agent.clone() else {
+            return div().into_any_element();
+        };
+        self.bench
+            .update(cx, |bench, cx| {
+                let chat = bench.chats.get(&agent.id)?;
+                mounted_composer(bench, &agent, chat, cx)
+            })
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| div().into_any_element())
+    }
+}
+
+/// The composer with the keys it takes: the arrows through sent prompts, Escape to stop the
+/// turn, and the menu's keys while it offers something.
+fn mounted_composer(
+    bench: &Workbench,
+    agent: &AgentRow,
+    chat: &Chat,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    let id = &agent.id;
+    composer(bench, agent, chat, cx)
+        .map(|(composer, offering)| {
+            div()
+                .key_context("ChatComposer")
+                .on_action(recall::<OlderPrompt>(id, true, cx))
+                .on_action(recall::<NewerPrompt>(id, false, cx))
+                .on_action(stop_turn(id, cx))
+                .child(
+                    div()
+                        .when(offering, |menu| {
+                            menu.key_context("ComposerMenu")
+                                .on_action(offered::<MenuUp>(
+                                    id,
+                                    |bench, agent, _, cx| bench.pick_choice(agent, -1, cx),
+                                    cx,
+                                ))
+                                .on_action(offered::<MenuDown>(
+                                    id,
+                                    |bench, agent, _, cx| bench.pick_choice(agent, 1, cx),
+                                    cx,
+                                ))
+                                .on_action(offered::<MenuPick>(
+                                    id,
+                                    |bench, agent, window, cx| {
+                                        bench.take_choice(agent, None, window, cx)
+                                    },
+                                    cx,
+                                ))
+                                .on_action(offered::<MenuClose>(
+                                    id,
+                                    |bench, agent, _, cx| bench.dismiss_menu(agent, cx),
+                                    cx,
+                                ))
+                        })
+                        .child(composer),
+                )
+        })
+        .map(IntoElement::into_any_element)
+}
+
 fn composer(
     bench: &Workbench,
     agent: &AgentRow,
