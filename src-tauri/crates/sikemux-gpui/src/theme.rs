@@ -12,14 +12,35 @@ use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
 
 pub const UI: &str = "Figtree";
 
-/// The rem the interface's text is measured in before the person's text size scales it.
-pub const REM: f32 = 16.;
+/// GPUI Kit's own text size at the default text size. The Kit sets each window's rem to its
+/// text size, so the interface's text is measured in it.
+pub const REM: f32 = 13.;
+
+/// The person's text size, as a share of the default, which GPUI Kit's text size follows.
+#[derive(Clone, Copy)]
+struct TextScale(f32);
+
+impl Global for TextScale {}
 
 /// A size for the interface's text, `size` points at the default text size, which grows and
 /// shrinks with the person's choice in Appearance.
 pub fn ui_text(size: f32) -> Rems {
     rems(size / REM)
 }
+
+/// Sizes the interface's text by `scale` from the next frame, in every window.
+pub fn set_text_scale(scale: f32, cx: &mut App) {
+    if cx
+        .try_global::<TextScale>()
+        .is_some_and(|kept| kept.0 == scale)
+    {
+        return;
+    }
+    cx.set_global(TextScale(scale));
+    KitTheme::global_mut(cx).font_size = px(REM * scale);
+    cx.refresh_windows();
+}
+
 pub const MONO: &str = "JetBrainsMono NFM";
 /// The Nerd Font icon glyphs, which mono text falls back to.
 pub const MONO_ICONS: &str = "JetBrainsMono NFM Icons";
@@ -243,10 +264,11 @@ pub fn install(cx: &mut App) {
 /// Draws with `palette` from the next frame, GPUI Kit's widgets too.
 pub fn apply(palette: &Palette, cx: &mut App) {
     let tokens = Tokens::new(palette);
+    let scale = cx.try_global::<TextScale>().map_or(1., |scale| scale.0);
     let kit = KitTheme::global_mut(cx);
     kit.font_family = SharedString::new_static(UI);
     kit.mono_font_family = SharedString::new_static(MONO);
-    kit.font_size = px(13.);
+    kit.font_size = px(REM * scale);
     kit.mono_font_size = px(11.);
     kit.radius = RADIUS_2;
     kit.radius_lg = RADIUS_4;
