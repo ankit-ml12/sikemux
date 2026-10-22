@@ -608,6 +608,7 @@ impl<R: Row> Render for Transcript<R> {
                 };
                 let id: SharedString = row.id().to_owned().into();
                 div()
+                    .w_full()
                     .flex()
                     .flex_col()
                     .child(drawn)
