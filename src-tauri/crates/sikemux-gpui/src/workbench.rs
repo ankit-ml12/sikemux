@@ -1994,10 +1994,16 @@ impl Workbench {
     pub fn launcher(&self) -> Option<&LauncherInfo> {
         let launchers = self.launchers();
         let chosen = |id: &str| launchers.iter().find(|launcher| launcher.id == id);
+        let last_kind = self.preferences().last_agent_type;
         self.launcher_choice
             .as_deref()
             .and_then(chosen)
             .or_else(|| self.project()?.launcher.as_deref().and_then(chosen))
+            .or_else(|| {
+                launchers
+                    .iter()
+                    .find(|launcher| last_kind.as_deref() == Some(launcher.provider.as_str()))
+            })
             .or(launchers.first())
     }
 
