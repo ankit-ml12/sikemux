@@ -3,12 +3,11 @@
 //! navigates, and a link the person clicks in it opens on the agent's desk.
 
 use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui_kit::{
-    div, px, AnyElement, App, Global, Hsla, IntoElement, ParentElement, SharedString, Styled,
-    Window,
+    div, px, AnyElement, App, Global, IntoElement, ParentElement, SharedString, Styled, Window,
 };
 use gpui_native_view::{native_view, NativeSurface};
 use serde_json::json;
@@ -77,7 +76,7 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
         return;
     };
     let answer = target.request("page", json!({ "id": page.id }));
-    let theme = theme_rule(Tokens::get(cx));
+    let theme = theme::page_rule(Tokens::get(cx), None);
     let (id, reader, bench, agent) = (
         page.id.clone(),
         looks.reader.clone(),
@@ -171,34 +170,4 @@ impl gpui_native_view::Surface for Shows {
     fn responder(&self) -> Option<gpui_native_view::Retained<gpui_native_view::NSView>> {
         self.view.responder()
     }
-}
-
-/// The window's colours and fonts as the custom properties pages style against.
-fn theme_rule(t: &Tokens) -> String {
-    let css = |color: Hsla| {
-        let rgba = color.to_rgb();
-        format!(
-            "rgba({},{},{},{})",
-            (rgba.r * 255.).round(),
-            (rgba.g * 255.).round(),
-            (rgba.b * 255.).round(),
-            rgba.a
-        )
-    };
-    let variables = BTreeMap::from([
-        ("--background".to_owned(), "transparent".to_owned()),
-        ("--foreground".to_owned(), css(t.text_primary)),
-        ("--muted-foreground".to_owned(), css(t.text_secondary)),
-        ("--accent".to_owned(), css(t.accent)),
-        ("--border".to_owned(), css(t.border)),
-        (
-            "--font-sans".to_owned(),
-            format!("{}, system-ui", theme::UI),
-        ),
-        (
-            "--font-mono".to_owned(),
-            format!("{}, ui-monospace", theme::MONO),
-        ),
-    ]);
-    sikemux_core::pages::theme_rule(t.dark, &variables)
 }

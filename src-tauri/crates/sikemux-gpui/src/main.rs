@@ -1,7 +1,8 @@
 use gpui_kit::{point, px, size, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
-use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
+use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
+    console::install();
     // Until this app replaces the Mac app, it keeps a core and files of its own, so it never
     // starts or upgrades the core the Mac app uses.
     if std::env::var_os(sikemux_process::vars::CONFIG_DIR).is_none() {

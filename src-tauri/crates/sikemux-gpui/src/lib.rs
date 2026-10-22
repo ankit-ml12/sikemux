@@ -19,6 +19,7 @@ pub mod codehost;
 mod command_popup;
 mod commands;
 pub mod composer;
+pub mod console;
 pub mod core;
 mod desk;
 mod diagnostics;

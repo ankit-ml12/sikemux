@@ -2,22 +2,23 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight,
+    div, px, AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, Keystroke, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use gpui_native_view::{native_view, Frame, NativeSurface, Surface};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sikemux_browser::{
     BrowserBounds, BrowserDownload, BrowserManager, BrowserShortcut, BrowserSnapshot, Host,
     ParentView,
 };
 use sikemux_core::cli::protocol::{is_browser_method, is_sim_method, HarnessRequest};
+use sikemux_process::sync::Locked;
 use sikemux_wire::protocol::{CallId, Pane, PaneKind, WindowAnswer, WindowCall};
 use tokio::sync::mpsc;
 
@@ -64,8 +65,10 @@ pub struct Desks {
     known: HashMap<String, HashSet<String>>,
     /// What each agent's desk shows: its pages, or its simulator.
     kinds: HashMap<String, DeskKind>,
+    page_files: Arc<PageFiles>,
     _hearing: Option<gpui_kit::Task<()>>,
     _activation: Subscription,
+    _theming: Subscription,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -94,12 +97,32 @@ impl Desks {
     pub fn new(window: &mut Window, cx: &mut Context<Workbench>) -> Self {
         let (heard, mut hearing) = mpsc::unbounded_channel();
         sikemux_core::runtime::set(runtime().handle().clone());
+        let home = sikemux_process::paths::config_dir();
+        let page_files = Arc::new(PageFiles {
+            folder: home
+                .as_ref()
+                .map(|home| home.join(sikemux_core::pages::FOLDER).join("tabs")),
+            theme: Mutex::new(
+                cx.try_global::<Tokens>()
+                    .map(desk_theme)
+                    .unwrap_or_default(),
+            ),
+            engine: OnceLock::new(),
+        });
         let engine = window_pointer(window).map(|view| {
             BrowserManager::new(Arc::new(DeskHost {
                 view,
                 heard,
-                home: sikemux_process::paths::config_dir(),
+                home,
+                pages: page_files.clone(),
             }))
+        });
+        if let Some(engine) = &engine {
+            let _ = page_files.engine.set(Arc::downgrade(engine));
+        }
+        let theming = cx.observe_global::<Tokens>({
+            let page_files = page_files.clone();
+            move |_, cx| *page_files.theme.locked() = desk_theme(Tokens::get(cx))
         });
         let task = engine.is_some().then(|| {
             cx.spawn_in(window, async move |this, cx| {
@@ -123,8 +146,10 @@ impl Desks {
             pages: HashMap::new(),
             known: HashMap::new(),
             kinds: HashMap::new(),
+            page_files,
             _hearing: task,
             _activation: activation,
+            _theming: theming,
         }
     }
 }
@@ -170,6 +195,7 @@ struct DeskHost {
     view: usize,
     heard: mpsc::UnboundedSender<Heard>,
     home: Option<PathBuf>,
+    pages: Arc<PageFiles>,
 }
 
 impl Host for DeskHost {
@@ -189,8 +215,8 @@ impl Host for DeskHost {
         Some(sikemux_process::paths::home()?.join("Movies"))
     }
 
-    fn page_url(&self, _agent_id: &str, _html: &str) -> Result<String, String> {
-        Err("this window cannot show an agent's page yet".into())
+    fn page_url(&self, agent_id: &str, html: &str) -> Result<String, String> {
+        self.pages.url(&draft_name(agent_id), html)
     }
 
     fn tabs_changed(&self) {
@@ -208,6 +234,59 @@ impl Host for DeskHost {
     fn shortcut(&self, shortcut: BrowserShortcut) {
         let _ = self.heard.send(Heard::Shortcut(shortcut));
     }
+}
+
+/// Where the pages agents show on their desks are kept, drawn in the window's theme.
+struct PageFiles {
+    folder: Option<PathBuf>,
+    theme: Mutex<String>,
+    engine: OnceLock<Weak<BrowserManager>>,
+}
+
+impl PageFiles {
+    /// An address for `html` in a desk tab, kept as `name` so showing it again replaces the copy.
+    fn url(&self, name: &str, html: &str) -> Result<String, String> {
+        let folder = self
+            .folder
+            .as_ref()
+            .ok_or("Sikemux has no folder to keep pages in")?;
+        std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
+        let path = folder.join(format!("{name}.html"));
+        let themed = sikemux_core::pages::themed(html, &self.theme.locked(), None);
+        std::fs::write(&path, themed).map_err(|error| error.to_string())?;
+        self.engine()?.local_file_url(&path)
+    }
+
+    fn engine(&self) -> Result<Arc<BrowserManager>, String> {
+        self.engine
+            .get()
+            .and_then(Weak::upgrade)
+            .ok_or_else(|| "the browser has stopped".into())
+    }
+
+    /// Closes the tabs showing the agent's draft, once the page it drafted is kept.
+    fn close_draft(&self, agent: &str) {
+        let (Some(folder), Ok(engine)) = (&self.folder, self.engine()) else {
+            return;
+        };
+        let draft = folder.join(format!("{}.html", draft_name(agent)));
+        let (Ok(url), Ok(strip)) = (engine.local_file_url(&draft), engine.snapshot(agent)) else {
+            return;
+        };
+        for tab in strip.tabs.into_iter().filter(|tab| tab.url == url) {
+            let _ = engine.close_tab(agent, &tab.id);
+        }
+    }
+}
+
+/// One draft per agent, which each `page_preview` replaces.
+fn draft_name(agent: &str) -> String {
+    format!("preview-{}", agent.replace(':', "-"))
+}
+
+/// A tab has nothing behind it, so its pages draw the window's surface themselves.
+fn desk_theme(t: &Tokens) -> String {
+    crate::theme::page_rule(t, Some(Hsla { a: 1., ..t.surface }))
 }
 
 /// Where a desk's page shows: the engine lays the agent's tab in front over the frame.
@@ -918,6 +997,11 @@ impl Workbench {
                 )))
             }
         };
+        match request.method.as_str() {
+            "app.console" => return answer(crate::console::read(&request.params)),
+            "page.show" => return self.show_page(request, answer),
+            _ => {}
+        }
         let run: Box<dyn FnOnce() -> Result<Value, String> + Send> =
             if is_sim_method(&request.method) {
                 let engine = Arc::clone(self.sims.engine());
@@ -941,5 +1025,42 @@ impl Workbench {
         if let Err(error) = spawned {
             eprintln!("sikemux: a tool call could not start: {error}");
         }
+    }
+
+    /// A page an agent kept: its draft's tab has done its job, and an agent in a terminal
+    /// sees the page on its desk.
+    fn show_page(
+        &self,
+        request: HarnessRequest,
+        answer: impl FnOnce(Result<Value, String>) + Send + 'static,
+    ) {
+        let Some(agent) = request.agent_id else {
+            return answer(Ok(json!({})));
+        };
+        let id = request.params["id"].as_str().unwrap_or_default().to_owned();
+        if !sikemux_core::pages::is_page_id(&id) {
+            return answer(Err("that is not a page the core keeps".into()));
+        }
+        let page = (request.params["desk"] == true)
+            .then(|| crate::core::request(&self.asks, "page", json!({ "id": id })));
+        let files = self.desks.page_files.clone();
+        spawn(async move {
+            files.close_draft(&agent);
+            let Some(page) = page else {
+                return answer(Ok(json!({})));
+            };
+            let shown = async {
+                let page = page.await?;
+                let html = page["html"].as_str().ok_or("that page is gone")?;
+                let url = files.url(&id, html)?;
+                files
+                    .engine()?
+                    .open_tab(&agent, Some(&url))
+                    .await
+                    .map_err(|error| error.to_string())?;
+                Ok(json!({}))
+            };
+            answer(shown.await);
+        });
     }
 }

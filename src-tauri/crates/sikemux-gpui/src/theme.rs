@@ -1,6 +1,7 @@
 //! DESIGN.md's tokens for the theme the core resolves, as GPUI colours.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeTokens};
 use gpui_kit::{
@@ -390,4 +391,32 @@ fn from_oklab([l, a, b]: [f32; 3]) -> Rgba {
         b: gamma(-0.004_196_086_3 * l_ - 0.703_418_6 * m_ + 1.707_614_7 * s_),
         a: 1.,
     }
+}
+
+/// The window's colours and fonts as the custom properties pages style against.
+/// `ground` is what the page draws behind itself; with none it lets what is under it show.
+pub fn page_rule(t: &Tokens, ground: Option<Hsla>) -> String {
+    let css = |color: Hsla| {
+        let rgba = color.to_rgb();
+        format!(
+            "rgba({},{},{},{})",
+            (rgba.r * 255.).round(),
+            (rgba.g * 255.).round(),
+            (rgba.b * 255.).round(),
+            rgba.a
+        )
+    };
+    let variables = BTreeMap::from([
+        (
+            "--background".to_owned(),
+            ground.map_or_else(|| "transparent".to_owned(), css),
+        ),
+        ("--foreground".to_owned(), css(t.text_primary)),
+        ("--muted-foreground".to_owned(), css(t.text_secondary)),
+        ("--accent".to_owned(), css(t.accent)),
+        ("--border".to_owned(), css(t.border)),
+        ("--font-sans".to_owned(), format!("{UI}, system-ui")),
+        ("--font-mono".to_owned(), format!("{MONO}, ui-monospace")),
+    ]);
+    sikemux_core::pages::theme_rule(t.dark, &variables)
 }
