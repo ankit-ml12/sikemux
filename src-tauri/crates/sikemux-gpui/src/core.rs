@@ -886,7 +886,7 @@ async fn run(
                                 ClientEvent::Event(Event::DeviceView { view }) => {
                                     let _ = updates.send(Update::HostView(host, Box::new(view)));
                                 }
-                                ClientEvent::Event(Event::Changed { topic, .. }) => {
+                                ClientEvent::Event(Event::Changed { topic, project, paths }) => {
                                     let changed = host_watches
                                         .get(&host)
                                         .into_iter()
@@ -894,6 +894,10 @@ async fn run(
                                         .filter(|(_, watch)| watch.topics.contains(&topic.as_str()));
                                     for (key, watch) in changed {
                                         read_on(&linked, &host, key, watch, &current, &updates);
+                                    }
+                                    if followed.contains(&topic.as_str()) {
+                                        let news = Update::Changed { topic, project, paths };
+                                        let _ = updates.send(Update::From(host, Box::new(news)));
                                     }
                                 }
                                 ClientEvent::Event(Event::Stream { stream, items, done, error }) => {
