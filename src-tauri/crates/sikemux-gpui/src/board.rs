@@ -770,40 +770,43 @@ fn lane_view(pane: &BoardPane, lane: Lane, cx: &mut Context<BoardPane>) -> AnyEl
             format!("{list} cards")
         }
     };
-    let (title, meta, select): (String, String, Option<u64>) =
-        match lane.parent.and_then(|id| pane.card(id)) {
-            Some(parent) => {
-                let under: Vec<&Card> = pane
-                    .cards()
-                    .iter()
-                    .filter(|other| other.parent == Some(parent.id))
-                    .collect();
-                let done = under.iter().filter(|other| other.status == "done").count();
-                let above = parent
-                    .parent
-                    .and_then(|above| pane.card(above))
-                    .map(|above| format!("under {}", short_title(&above.title)));
-                let meta = [
-                    Some(format!("{done} of {} done", under.len())),
-                    parent.ticket.as_ref().map(|ticket| ticket.key.clone()),
-                    above,
-                ]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" · ");
-                (parent.title.clone(), meta, Some(parent.id))
-            }
-            None => {
-                let auto = pane.board.as_ref().is_some_and(|board| board.settings.auto);
-                let meta = if auto {
-                    format!("{} · Auto picks up the open ones", count(lane.cards.len()))
-                } else {
-                    count(lane.cards.len())
-                };
-                ("On their own".to_owned(), meta, None)
-            }
-        };
+    let lead = lane.parent.and_then(|id| pane.card(id));
+    let lead_owner = lead
+        .filter(|parent| parent.owner.is_some())
+        .map(|parent| owner(parent, cx));
+    let (title, meta, select): (String, String, Option<u64>) = match lead {
+        Some(parent) => {
+            let under: Vec<&Card> = pane
+                .cards()
+                .iter()
+                .filter(|other| other.parent == Some(parent.id))
+                .collect();
+            let done = under.iter().filter(|other| other.status == "done").count();
+            let above = parent
+                .parent
+                .and_then(|above| pane.card(above))
+                .map(|above| format!("under {}", short_title(&above.title)));
+            let meta = [
+                Some(format!("{done} of {} done", under.len())),
+                parent.ticket.as_ref().map(|ticket| ticket.key.clone()),
+                above,
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+            (parent.title.clone(), meta, Some(parent.id))
+        }
+        None => {
+            let auto = pane.board.as_ref().is_some_and(|board| board.settings.auto);
+            let meta = if auto {
+                format!("{} · Auto picks up the open ones", count(lane.cards.len()))
+            } else {
+                count(lane.cards.len())
+            };
+            ("On their own".to_owned(), meta, None)
+        }
+    };
     div()
         .flex()
         .flex_col()
@@ -853,7 +856,8 @@ fn lane_view(pane: &BoardPane, lane: Lane, cx: &mut Context<BoardPane>) -> AnyEl
                             ui::text(title, 13., FontWeight::SEMIBOLD).text_color(t.text_primary),
                         )
                         .child(ui::meta(meta, cx)),
-                ),
+                )
+                .children(lead_owner),
         )
         .when(!folded, |lane_view| {
             lane_view.child(columns(pane, &lane.cards, cx))
