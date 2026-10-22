@@ -214,6 +214,7 @@ pub struct Workbench {
     pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
     /// A task its checks held back, waiting on the person.
     pub run_check: Option<crate::run_check::RunCheck>,
+    pub sharing: Option<crate::share::Sharing>,
     /// The agent in front whose worktree its header reads, by id and folder, and where it is.
     pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
     /// The core's trust questions already put to the person, by id.
@@ -570,6 +571,7 @@ impl Workbench {
             adding_task: None,
             buddy_picker: None,
             run_check: None,
+            sharing: None,
             watched_worktree: None,
             trust_asked: HashSet::new(),
             trust_host: None,
@@ -4155,6 +4157,7 @@ impl Render for Workbench {
             .children(crate::add_task::view(self, cx))
             .children(crate::buddy_picker::view(self, cx))
             .children(crate::run_check::view(self, cx))
+            .children(crate::share::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::opening(self, cx))
             .when(

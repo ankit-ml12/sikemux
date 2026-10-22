@@ -9,7 +9,8 @@ use gpui_kit::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use super::text;
+use super::{icon, text};
+use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_4};
 
@@ -70,6 +71,74 @@ pub(crate) fn sheet_of(
     no: Answer,
     cx: &mut App,
 ) -> AlertDialog {
+    let head = head(None, title, cx);
+    framed(width, head, body, foot, yes, no, cx)
+}
+
+/// A sheet with `glyph` in a tile beside its title, as the Mac's dialogs have it; its body
+/// clears the tile, at `GLYPH_INSET`, and its foot starts from [`hinted_foot`].
+pub(crate) fn marked_sheet(
+    glyph: Icon,
+    title: SharedString,
+    body: AnyElement,
+    foot: Div,
+    yes: Answer,
+    no: Answer,
+    cx: &mut App,
+) -> AlertDialog {
+    let head = head(Some(glyph), title, cx);
+    framed(px(440.), head, body, foot, yes, no, cx)
+}
+
+/// A marked sheet's foot before its buttons: at its left, the word Escape does.
+pub(crate) fn hinted_foot(escape: &'static str, cx: &App) -> Div {
+    div().child(
+        div()
+            .flex_1()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(crate::theme::ui_text(11.))
+            .text_color(Tokens::get(cx).text_disabled)
+            .child(super::kbd("esc", cx))
+            .child(escape),
+    )
+}
+
+/// How far a marked sheet's body sits in, so its text lines up with the title, not the tile.
+pub(crate) const GLYPH_INSET: f32 = 54.;
+
+fn head(glyph: Option<Icon>, title: SharedString, cx: &App) -> Div {
+    let t = Tokens::get(cx);
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .px(px(20.))
+        .pt(px(16.))
+        .children(glyph.map(|glyph| {
+            div()
+                .size(px(26.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(RADIUS_2)
+                .bg(t.surface_chosen)
+                .child(icon(glyph, 15.).text_color(t.text_primary))
+        }))
+        .child(text(title, 14., FontWeight::SEMIBOLD).text_color(t.text_primary))
+}
+
+fn framed(
+    width: Pixels,
+    head: Div,
+    body: AnyElement,
+    foot: Div,
+    yes: Answer,
+    no: Answer,
+    cx: &mut App,
+) -> AlertDialog {
     let t = Tokens::get(cx).clone();
     AlertDialog::new(cx)
         .open(true)
@@ -109,12 +178,7 @@ pub(crate) fn sheet_of(
                 .border_color(t.border)
                 .rounded(RADIUS_4)
                 .shadow(t.shadow_float())
-                .child(
-                    text(title, 14., FontWeight::SEMIBOLD)
-                        .px(px(20.))
-                        .pt(px(16.))
-                        .text_color(t.text_primary),
-                )
+                .child(head)
                 .child(body)
                 .child(
                     foot.flex()
