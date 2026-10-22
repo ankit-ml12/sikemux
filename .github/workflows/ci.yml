@@ -307,12 +307,14 @@ jobs:
         run: cargo build --features drive --bin sikemux --example fake_chat
         working-directory: src-tauri/crates/sikemux-gpui
 
+      # The checks' cores listen on sockets inside their output folders, and a socket's path must stay
+      # under 104 bytes, which the checkout's own path would pass.
       - name: Drive the desk checks
         working-directory: src-tauri/crates/sikemux-gpui
         run: >-
           python3 -I ci/desk-checks.py --app target/debug/sikemux
           --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent
-          --seed target/debug/examples/fake_chat --out window-run/desk
+          --seed target/debug/examples/fake_chat --out "$RUNNER_TEMP/w/desk"
 
       - name: Check the ground's grain, picture and see-through
         if: ${{ !cancelled() }}
@@ -320,14 +322,16 @@ jobs:
         run: >-
           python3 -I ci/ground-check.py --app target/debug/sikemux
           --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent
-          --seed target/debug/examples/fake_chat --out window-run/ground
+          --seed target/debug/examples/fake_chat --out "$RUNNER_TEMP/w/ground"
 
       - name: Upload the capture
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gpui-window
-          path: src-tauri/crates/sikemux-gpui/window-run
+          path: |
+            src-tauri/crates/sikemux-gpui/window-run
+            ${{ runner.temp }}/w
           if-no-files-found: warn
 
   # Every release also ships Linux packages, so main must keep compiling there,
