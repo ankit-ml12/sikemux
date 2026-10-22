@@ -103,6 +103,26 @@ impl Workbench {
         .detach();
     }
 
+    /// Installs Sikemux on the SSH host `alias` over the person's own ssh, in a terminal of its
+    /// strip, and signs it in to the account; its row says how it goes.
+    pub fn install_host(&mut self, alias: &str, cx: &mut Context<Self>) {
+        let (asks, alias) = (self.asks.clone(), alias.to_owned());
+        let params = json!({ "alias": alias, "work": "install" });
+        cx.spawn(async move |bench, cx| {
+            if let Err(error) = core::request(&asks, "installHost", params).await {
+                let _ = bench.update(cx, |bench, cx| {
+                    bench.notify(
+                        Notification::error(format!(
+                            "Sikemux was not installed on {alias}: {error}"
+                        )),
+                        cx,
+                    )
+                });
+            }
+        })
+        .detach();
+    }
+
     /// Puts the person on `choice`, which the rail and the tab list then follow.
     pub fn choose_host(&mut self, choice: HostChoice, cx: &mut Context<Self>) {
         match choice {
