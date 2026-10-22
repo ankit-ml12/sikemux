@@ -8,6 +8,7 @@
 //! - `ask` asks permission and says which answer it got;
 //! - `hold MS` says `holding`, waits, then says `held`, or stops early on a
 //!   cancel;
+//! - `plan` sets out a plan of three steps, one done, one under way, one to do;
 //! - `exit CODE` ends the process at once;
 //! - `who` says which account the process runs as;
 //! - `run COMMAND` runs a shell command in the session's folder, as a tool
@@ -344,6 +345,18 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 );
             }
             say("Done. The test reads the file once now.");
+            "end_turn"
+        }
+        "plan" => {
+            agent.update(
+                session_id,
+                json!({ "sessionUpdate": "plan", "entries": [
+                    { "content": "Read the code", "priority": "high", "status": "completed" },
+                    { "content": "Fix the bug", "priority": "high", "status": "in_progress" },
+                    { "content": "Run the tests", "priority": "medium", "status": "pending" },
+                ] }),
+            );
+            say("planned");
             "end_turn"
         }
         "exit" => std::process::exit(argument.unwrap_or(1) as i32),
