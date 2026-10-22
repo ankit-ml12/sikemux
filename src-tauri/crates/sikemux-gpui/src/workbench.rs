@@ -1391,11 +1391,6 @@ impl Workbench {
             "activity",
             Watch::new("activitySummary", activity, &["activity"]),
         );
-        target.watch(
-            "tasks",
-            Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
-        );
-        target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
         if let crate::hosts::Place::Account(host) = &place {
             if self.trust_host.as_ref() != Some(host) {
                 self.reads.remove("host-trust");
@@ -1403,20 +1398,35 @@ impl Workbench {
                 target.watch("host-trust", Watch::new("trustAsks", json!({}), &["trust"]));
             }
         }
-        target.watch(
-            "ports",
-            Watch::new("ports", json!({ "project": path }), &["ports"]),
-        );
         self.reads.remove("git-project-repo");
         self.git_listing = false;
-        target.watch(
-            "git-project-repo",
-            Watch::new(
-                "git.projectRepo",
-                json!({ "project": path }),
-                &["git", "preferences"],
-            ),
-        );
+        match &path {
+            Some(path) => {
+                target.watch(
+                    "tasks",
+                    Watch::new("tasks", json!({ "project": path }), &["tasks", "runs"]),
+                );
+                target.watch("runs", Watch::new("taskRuns", json!({}), &["runs"]));
+                target.watch(
+                    "ports",
+                    Watch::new("ports", json!({ "project": path }), &["ports"]),
+                );
+                target.watch(
+                    "git-project-repo",
+                    Watch::new(
+                        "git.projectRepo",
+                        json!({ "project": path }),
+                        &["git", "preferences"],
+                    ),
+                );
+            }
+            None => {
+                for key in ["tasks", "runs", "ports", "git-project-repo"] {
+                    target.unwatch(key);
+                    self.reads.remove(key);
+                }
+            }
+        }
         self.reads.remove("git-draft");
         self.files.show(path.clone().map(PathBuf::from), &target);
         self.watched_project = path;

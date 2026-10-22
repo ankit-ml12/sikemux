@@ -166,6 +166,8 @@ pub enum Detection {
 pub enum Ask {
     /// Keeps `key` answered by `watch`, in place of whatever it watched before.
     Watch(&'static str, Watch),
+    /// Stops answering `key`, wherever it was watched, dropping an answer still on its way.
+    Unwatch(&'static str),
     /// One of the core's methods, for something the person did. What it changes
     /// comes back with the next view.
     Call {
@@ -654,6 +656,11 @@ impl Target {
         self.send(Ask::Watch(key, watch));
     }
 
+    /// Stops the core answering `key`, here or on any host.
+    pub fn unwatch(&self, key: &'static str) {
+        let _ = self.asks.send(Ask::Unwatch(key));
+    }
+
     /// Tells the core something, with no answer waited for.
     pub fn call(&self, method: &'static str, params: Value) {
         self.send(Ask::Call { method, params });
@@ -879,6 +886,13 @@ async fn run(
                                 }
                                 read(&client, key, &watch, &current, &updates);
                                 watches.insert(key, watch);
+                            }
+                            Some(Ask::Unwatch(key)) => {
+                                next_generation(&current, key);
+                                watches.remove(key);
+                                for table in host_watches.values_mut() {
+                                    table.remove(key);
+                                }
                             }
                             Some(Ask::RegisterWindow) => {
                                 let client = client.clone();
