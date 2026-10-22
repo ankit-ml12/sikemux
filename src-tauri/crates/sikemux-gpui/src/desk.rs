@@ -137,6 +137,7 @@ fn runtime() -> &'static tokio::runtime::Runtime {
             .worker_threads(2)
             .thread_name("engines")
             .enable_all()
+            .on_thread_start(crate::thread_priority::initiated)
             .build()
             .expect("the browser's runtime starts")
     })

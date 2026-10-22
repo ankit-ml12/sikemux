@@ -707,8 +707,10 @@ pub fn start(home: Home) -> Link {
     std::thread::Builder::new()
         .name("core".into())
         .spawn(move || {
+            crate::thread_priority::interactive();
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
+                .on_thread_start(crate::thread_priority::interactive)
                 .build()
                 .expect("tokio runtime");
             runtime.block_on(run(home, updates_tx, asks_rx));
