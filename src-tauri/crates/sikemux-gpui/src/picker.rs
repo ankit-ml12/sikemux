@@ -184,7 +184,7 @@ impl Workbench {
         rows
     }
 
-    fn open_place(&self, key: &str, cx: &mut Context<Self>) {
+    pub(crate) fn open_place(&self, key: &str, cx: &mut Context<Self>) {
         if let Some(project) = key.strip_prefix(PROJECT) {
             self.activate_project(project);
         } else if let Some(path) = key.strip_prefix(FOLDER) {

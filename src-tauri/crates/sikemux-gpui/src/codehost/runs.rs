@@ -139,10 +139,12 @@ impl HostArea {
         .detach();
     }
 
-    pub(super) fn take_run(&mut self, value: &Value) {
+    /// Takes the run's view, answering whether it opened its failed job's log.
+    pub(super) fn take_run(&mut self, value: &Value) -> bool {
         let Some(opened) = &mut self.runs.open else {
-            return;
+            return false;
         };
+        let mut logs = false;
         let view: Result<OpenRun, SharedString> = super::answer(value);
         if let (true, Ok(view)) = (opened.pick_failed, &view) {
             if !view.jobs.is_empty() {
@@ -152,11 +154,13 @@ impl HostArea {
                         opened.job = Some(failed.clone());
                         opened.tab = Tab::Logs;
                         opened.log = Some(super::logs::Log::new(failed.clone()));
+                        logs = true;
                     }
                 }
             }
         }
         opened.view = Some(view);
+        logs
     }
 
     /// Opens run `id`, from the pull request `from` when one of its checks opened it.

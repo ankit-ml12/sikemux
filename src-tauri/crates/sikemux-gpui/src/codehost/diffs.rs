@@ -108,17 +108,17 @@ impl Diffs {
         &self,
         view: &Entity<HostArea>,
         find: impl Fn(&HostArea) -> Option<&Diffs> + 'static,
-        folder: &str,
+        folder: Option<&str>,
         window: &mut Window,
     ) -> AnyElement {
         let advance = crate::git::advance(window);
-        let (view, folder) = (view.clone(), folder.to_owned());
+        let (view, folder) = (view.clone(), folder.map(str::to_owned));
         list(self.rows.clone(), move |index, _, cx| {
             let cx = &*cx;
             let found =
                 find(view.read(cx)).and_then(|diffs| Some((diffs, *diffs.items.get(index)?)));
             match found {
-                Some((diffs, item)) => item_of(diffs, item, &folder, advance, cx),
+                Some((diffs, item)) => item_of(diffs, item, folder.as_deref(), advance, cx),
                 None => div().into_any_element(),
             }
         })
@@ -136,7 +136,14 @@ fn stat(changed: &Changed) -> (u64, u64) {
     }
 }
 
-fn item_of(diffs: &Diffs, item: Item, folder: &str, advance: Pixels, cx: &App) -> AnyElement {
+/// One item of the list; its rows open the file in the editor while it is in `folder`.
+fn item_of(
+    diffs: &Diffs,
+    item: Item,
+    folder: Option<&str>,
+    advance: Pixels,
+    cx: &App,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let frame = |inner: Div| {
         div().px(px(12.)).child(
@@ -192,7 +199,7 @@ fn item_of(diffs: &Diffs, item: Item, folder: &str, advance: Pixels, cx: &App) -
                 return div().into_any_element();
             };
             let look = RowLook::new(&t, advance, px(0.));
-            let path = Path::new(folder).join(&changed.file.path);
+            let path = folder.map(|folder| Path::new(folder).join(&changed.file.path));
             frame(
                 div()
                     .text_size(px(12.))
@@ -205,7 +212,7 @@ fn item_of(diffs: &Diffs, item: Item, folder: &str, advance: Pixels, cx: &App) -
                         index,
                         &look,
                         SharedString::from(format!("host-row-{at}-{index}")),
-                        &path,
+                        path.as_deref(),
                         |_, _| {},
                     )),
             )

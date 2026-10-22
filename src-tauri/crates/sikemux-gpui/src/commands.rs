@@ -3,7 +3,7 @@
 
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{Context, SharedString, Window};
-use serde_json::json;
+use serde_json::{json, Value};
 use sikemux_wire::protocol::{PaneKind, SessionId};
 use tokio::sync::oneshot;
 
@@ -20,9 +20,48 @@ const REMEMBERED: usize = 20;
 const BUILTIN: &str = "builtin:";
 const CUSTOM: &str = "custom:";
 const STANDALONE: &str = "standalone:";
+const OPEN_WORKTREE: &str = "worktree.open:";
+const REMOVE_WORKTREE: &str = "worktree.remove:";
 
 /// A command no shortcut does: its id, name, what it does and its category.
 type Standalone = (&'static str, &'static str, &'static str, &'static str);
+
+/// The deck's rows for each worktree of the project's repository: open it as a project, and
+/// remove it unless it is the main checkout or the one in front.
+fn worktree_rows(worktrees: &Value) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for worktree in worktrees.as_array().into_iter().flatten() {
+        let Some(path) = worktree["path"].as_str() else {
+            continue;
+        };
+        if worktree["bare"].as_bool() == Some(true) {
+            continue;
+        }
+        let current = worktree["current"].as_bool() == Some(true);
+        let branch = worktree["branch"].as_str().unwrap_or("detached");
+        let title = if current {
+            "Open current worktree".to_owned()
+        } else {
+            format!("Open worktree: {branch}")
+        };
+        rows.push(
+            Row::new(format!("{OPEN_WORKTREE}{path}"), title)
+                .meta("worktrees")
+                .also(path),
+        );
+        if !current && worktree["is_main"].as_bool() != Some(true) {
+            rows.push(
+                Row::new(
+                    format!("{REMOVE_WORKTREE}{path}"),
+                    format!("Remove worktree: {branch}"),
+                )
+                .meta("worktrees")
+                .also(path),
+            );
+        }
+    }
+    rows
+}
 
 impl Workbench {
     pub fn toggle_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -72,6 +111,7 @@ impl Workbench {
                 .unwrap_or(usize::MAX)
         };
         rows.sort_by_key(recent);
+        let base = rows.clone();
         let spec = Spec::new(
             "palette.commands",
             "type a command…",
@@ -84,11 +124,80 @@ impl Workbench {
                     bench.run_custom_command(id, cx);
                 } else if let Some(id) = row.key.strip_prefix(STANDALONE) {
                     bench.run_standalone(id, window, cx);
+                } else if let Some(path) = row.key.strip_prefix(OPEN_WORKTREE) {
+                    bench.open_place(&format!("folder:{path}"), cx);
+                } else if let Some(path) = row.key.strip_prefix(REMOVE_WORKTREE) {
+                    bench.remove_worktree_at(path.to_owned(), row.title.to_string(), cx);
                 }
             },
         )
         .empty("no commands match");
         self.toggle_palette(spec, window, cx);
+        self.list_worktrees(base, cx);
+    }
+
+    /// Adds the project's worktrees to the open deck once git lists them.
+    fn list_worktrees(&self, base: Vec<Row>, cx: &mut Context<Self>) {
+        let (Some(Strip::Project(_)), Some(repo)) = (self.strip(), self.git_repo()) else {
+            return;
+        };
+        let listed = core::request(&self.asks, "git.worktrees", json!({ "repo": repo }));
+        cx.spawn(async move |this, cx| {
+            let Ok(worktrees) = listed.await else {
+                return;
+            };
+            let _ = this.update(cx, |bench, cx| {
+                let mut rows = base;
+                rows.extend(worktree_rows(&worktrees));
+                if let Some(palette) = bench
+                    .palette
+                    .as_mut()
+                    .filter(|open| open.id() == "palette.commands")
+                {
+                    palette.refill(rows, cx);
+                }
+                bench.parts.redraw(&bench.parts.finder, cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Removes the worktree at `path` once the person agrees; git refuses a dirty one, and
+    /// the core one a project or agent still works in.
+    fn remove_worktree_at(&mut self, path: String, title: String, cx: &mut Context<Self>) {
+        let Some(repo) = self.git_repo() else {
+            return;
+        };
+        let branch = title.trim_start_matches("Remove worktree: ").to_owned();
+        self.confirm(
+            format!("Remove worktree {branch}?"),
+            "Dirty worktrees will be refused.",
+            "Remove",
+            true,
+            move |bench, yes, _, cx| {
+                if !yes {
+                    return;
+                }
+                let params = json!({ "repo": repo, "path": path, "force": false });
+                let removed = core::request(&bench.asks, "git.worktreeRemove", params);
+                let branch = branch.clone();
+                cx.spawn(async move |this, cx| {
+                    let removed = removed.await;
+                    let _ = this.update(cx, |bench, cx| {
+                        let note = match removed {
+                            Ok(_) => Notification::success(format!("Removed worktree {branch}")),
+                            Err(error) => Notification::error(format!(
+                                "Could not remove the worktree: {error}"
+                            ))
+                            .autohide(false),
+                        };
+                        bench.notify(note, cx);
+                    });
+                })
+                .detach();
+            },
+            cx,
+        );
     }
 
     fn standalone(&self) -> Vec<Standalone> {

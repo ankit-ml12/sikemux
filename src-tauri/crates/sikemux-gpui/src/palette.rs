@@ -114,6 +114,7 @@ impl Row {
 
 type Pick = Rc<dyn Fn(&Row, &mut Workbench, &mut Window, &mut Context<Workbench>)>;
 type Leave = Rc<dyn Fn(&mut Workbench, &mut Window, &mut Context<Workbench>)>;
+type Typed = Rc<dyn Fn(&str) -> Option<Row>>;
 
 /// One palette as its opener describes it.
 pub struct Spec {
@@ -132,6 +133,8 @@ pub struct Spec {
     pub cancel: Option<Leave>,
     /// The row highlighted while nothing is typed, such as the theme worn now.
     pub start: Option<SharedString>,
+    /// A row made of what is typed, offered first when no row has its key.
+    pub typed: Option<Typed>,
 }
 
 impl Spec {
@@ -151,7 +154,13 @@ impl Spec {
             browse: None,
             cancel: None,
             start: None,
+            typed: None,
         }
+    }
+
+    pub fn typed(mut self, typed: impl Fn(&str) -> Option<Row> + 'static) -> Self {
+        self.typed = Some(Rc::new(typed));
+        self
     }
 
     pub fn start(mut self, key: SharedString) -> Self {
@@ -202,6 +211,8 @@ pub struct Palette {
     scroll: UniformListScrollHandle,
     /// What had focus before the palette took it, to hand it back.
     before: Option<FocusHandle>,
+    /// The last row is the one made of what was typed.
+    typed_shown: bool,
     _typing: Subscription,
 }
 
@@ -211,6 +222,16 @@ impl Palette {
     }
 
     fn filter(&mut self, query: &str) {
+        if self.typed_shown {
+            self.spec.rows.pop();
+            self.typed_shown = false;
+        }
+        let typed = self
+            .spec
+            .typed
+            .as_ref()
+            .and_then(|typed| typed(query.trim()))
+            .filter(|row| !self.spec.rows.iter().any(|kept| kept.key == row.key));
         let rows = &self.spec.rows;
         self.lines = if query.trim().is_empty() {
             let mut lines = Vec::with_capacity(rows.len() + 4);
@@ -229,6 +250,11 @@ impl Palette {
                 .map(Line::Row)
                 .collect()
         };
+        if let Some(row) = typed {
+            self.spec.rows.push(row);
+            self.lines.insert(0, Line::Row(self.spec.rows.len() - 1));
+            self.typed_shown = true;
+        }
         let start = self
             .spec
             .start
@@ -257,6 +283,7 @@ impl Palette {
     pub fn refill(&mut self, rows: Vec<Row>, cx: &App) {
         let reached = self.highlighted();
         self.spec.rows = rows;
+        self.typed_shown = false;
         let query = self.input.read(cx).value().to_string();
         self.filter(&query);
         if let Some(line) = reached.and_then(|key| self.line_of(&key)) {
@@ -337,6 +364,7 @@ impl Workbench {
             selected: None,
             scroll: UniformListScrollHandle::new(),
             before,
+            typed_shown: false,
             _typing: typing,
         };
         palette.filter("");

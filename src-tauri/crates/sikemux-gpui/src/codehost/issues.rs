@@ -505,7 +505,7 @@ fn row(area: &HostArea, issue: &Issue, index: usize, cx: &mut Context<HostArea>)
                     .map(|login| ui::initials(login, "", 18., cx)),
             )
     });
-    let work = (issue.state == "open").then(|| {
+    let work = (issue.state == "open" && area.elsewhere.is_none()).then(|| {
         IconButton::new(("issue-work", index), Icon::Agent, "Work on this")
             .small()
             .disabled(area.issues.working.contains(&number))
@@ -591,6 +591,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .small()
                 .on_click(cx.listener(|area, _, _, cx| {
                     area.issues.open = None;
+                    area.elsewhere = None;
                     cx.notify();
                 })),
         )
@@ -855,7 +856,7 @@ fn detail(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) 
                                 .truncate(),
                         )
                         .child(div().flex_1())
-                        .when(issue.state == "open", |line| {
+                        .when(issue.state == "open" && area.elsewhere.is_none(), |line| {
                             line.child(
                                 Button::new(
                                     "issue-work-on",

@@ -145,6 +145,8 @@ pub struct HostArea {
     /// The branch of the new pull request being picked, while one is.
     picking: Option<compose::End>,
     asking: Option<Asking>,
+    /// Another repository on the host, while a pull request or issue of it is open.
+    elsewhere: Option<String>,
     /// Who is signed in to the host, once it said.
     status: Read<shell::Status>,
     asked_status: bool,
@@ -182,6 +184,7 @@ impl HostArea {
             composing: None,
             picking: None,
             asking: None,
+            elsewhere: None,
             status: None,
             asked_status: false,
             signing: None,
@@ -205,8 +208,9 @@ impl HostArea {
         }
     }
 
-    /// Opens pull request or issue `number` in `area`.
-    pub fn open_item(&mut self, area: Area, number: u64, cx: &mut Context<Self>) {
+    /// Opens pull request or issue `number` of `repo` in `area`.
+    pub fn open_item(&mut self, area: Area, number: u64, repo: String, cx: &mut Context<Self>) {
+        self.elsewhere = (repo != self.host.repo).then_some(repo);
         self.show(area, cx);
         match area {
             Area::Pulls => self.open_pull(number, cx),
@@ -232,6 +236,7 @@ impl HostArea {
         self.pulls.branch = branch;
         if elsewhere {
             self.account = account;
+            self.elsewhere = None;
             self.pull = None;
             self.composing = None;
             self.runs.open = None;
@@ -263,7 +268,9 @@ impl HostArea {
             releases::KEY => self.releases.list = Some(answer(value)),
             issues::KEY => self.issues.list = Some(answer(value)),
             runs::RUN => {
-                self.take_run(value);
+                if self.take_run(value) {
+                    self.watch();
+                }
                 self.read_extras(cx);
                 let picked = self
                     .runs
@@ -337,7 +344,8 @@ impl HostArea {
         }
         match &self.pull {
             Some(opened) => {
-                let params = json!({ "project": self.project, "number": opened.number });
+                let mut params = self.place();
+                params["number"] = json!(opened.number);
                 self.ask_watch(pull::VIEW, "codeHostPull", params.clone());
                 self.ask_watch(pull::FILES, "codeHostPullFiles", params);
             }
@@ -350,7 +358,23 @@ impl HostArea {
     }
 
     fn plugin_call(&self, method: &'static str, more: Value) -> Value {
-        call_of(&self.host, &self.account, method, more)
+        call_of(&self.host.host, self.repo(), &self.account, method, more)
+    }
+
+    /// The repository shown: the project's, or another an inbox item opened.
+    fn repo(&self) -> &str {
+        self.elsewhere.as_deref().unwrap_or(&self.host.repo)
+    }
+
+    /// Where the core finds what is shown: the project, or the repository named outright.
+    fn place(&self) -> Value {
+        match &self.elsewhere {
+            Some(repo) => {
+                let (owner, name) = repo.split_once('/').unwrap_or_default();
+                json!({ "repo": { "provider": self.host.host, "owner": owner, "name": name, "account": self.account } })
+            }
+            None => json!({ "project": self.project }),
+        }
     }
 
     /// Calls `method` of the host's plugin about the project's repository, with `more`.
@@ -412,6 +436,7 @@ impl HostArea {
         self.bench
             .update(cx, |bench, cx| {
                 bench.area = area;
+                bench.parts.redraw(&bench.parts.rail, cx);
                 cx.notify();
             })
             .ok();
@@ -552,16 +577,17 @@ impl Render for HostArea {
     }
 }
 
-/// The `plugin` call of `method` of `host`'s plugin about its repository, as `account`, with `more`.
+/// The `plugin` call of `method` of `host`'s plugin about `repo`, as `account`, with `more`.
 fn call_of(
-    host: &ProjectCodeHost,
+    host: &str,
+    repo: &str,
     account: &Option<String>,
     method: &'static str,
     more: Value,
 ) -> Value {
-    let (owner, name) = host.repo.split_once('/').unwrap_or_default();
+    let (owner, name) = repo.split_once('/').unwrap_or_default();
     let mut params = json!({
-        "provider": host.host,
+        "provider": host,
         "owner": owner,
         "name": name,
         "account": account,
@@ -569,7 +595,7 @@ fn call_of(
     if let (Some(params), Value::Object(more)) = (params.as_object_mut(), more) {
         params.extend(more);
     }
-    json!({ "plugin": format!("sikemux.{}", host.host), "method": method, "params": params })
+    json!({ "plugin": format!("sikemux.{host}"), "method": method, "params": params })
 }
 
 /// The value inside a code-host answer, or what its failure said.

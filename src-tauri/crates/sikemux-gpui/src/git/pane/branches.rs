@@ -951,6 +951,7 @@ fn pull_chip(pane: &GitPane, branch: &str, index: usize, cx: &App) -> Option<Any
         t.live
     };
     let bench = pane.bench.clone();
+    let repo = pane.host_of(cx)?.0.repo;
     Some(
         gpui_kit::base::Button::new(("branch-pull", index))
             .accessibility_label(SharedString::from(format!("Open pull request #{number}")))
@@ -972,7 +973,7 @@ fn pull_chip(pane: &GitPane, branch: &str, index: usize, cx: &App) -> Option<Any
                 cx.stop_propagation();
                 bench
                     .update(cx, |bench, cx| {
-                        bench.open_host_item(Area::Pulls, number, cx)
+                        bench.open_host_item(Area::Pulls, number, repo.clone(), cx)
                     })
                     .ok();
             })

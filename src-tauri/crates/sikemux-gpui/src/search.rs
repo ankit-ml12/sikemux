@@ -90,6 +90,8 @@ struct Shown {
     path: String,
     window: FileWindow,
     colours: Option<Arc<[LineRuns]>>,
+    /// The theme the colours are of, as `syntax::version` counts.
+    coloured_in: u64,
 }
 
 pub struct SearchPane {
@@ -366,6 +368,7 @@ impl SearchPane {
                             path,
                             window,
                             colours: None,
+                            coloured_in: 0,
                         });
                         pane.windows.truncate(WINDOWS_KEPT);
                         pane.colour_window(cx);
@@ -388,6 +391,7 @@ impl SearchPane {
             return;
         };
         let (path, start) = (shown.path.clone(), shown.window.start_line);
+        let version = syntax::version(cx);
         let task = syntax::colour_lines(&language, shown.window.doc.clone().into(), cx);
         cx.spawn(async move |pane, cx| {
             let Some(lines) = task.await else {
@@ -400,6 +404,7 @@ impl SearchPane {
                     .find(|shown| shown.path == path && shown.window.start_line == start)
                 {
                     shown.colours = Some(lines);
+                    shown.coloured_in = version;
                     cx.notify();
                 }
             })
@@ -580,6 +585,14 @@ impl Render for SearchPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         self.fields(window, cx);
+        let theme = syntax::version(cx);
+        let stale = self
+            .windows
+            .front()
+            .is_some_and(|shown| shown.colours.is_some() && shown.coloured_in != theme);
+        if stale {
+            self.colour_window(cx);
+        }
         div()
             .id("search-pane")
             .key_context("SearchPane")

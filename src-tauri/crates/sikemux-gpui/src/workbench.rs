@@ -143,8 +143,12 @@ pub struct Workbench {
     pub area: Area,
     /// The code host's areas of the project whose Git tab last showed one.
     pub host: Option<Entity<HostArea>>,
+    /// The repository picked from the list inside a project folder, by the folder.
+    git_picked: Option<(String, String)>,
+    /// The list of repositories inside the project folder shows in the Git tab.
+    git_listing: bool,
     /// A pull request or issue to open once the code host's area shows.
-    opening: Option<(Area, u64)>,
+    opening: Option<(Area, u64, String)>,
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
     pub board: Option<Entity<crate::board::BoardPane>>,
@@ -245,6 +249,7 @@ enum Asking {
         field: Option<Entity<InputState>>,
         then: Typed,
     },
+    Review(Entity<crate::agent_review::AgentReview>),
 }
 
 /// An agent's title while it is edited in place, in a field holding it.
@@ -507,6 +512,8 @@ impl Workbench {
             area: Area::Local,
             host: None,
             opening: None,
+            git_picked: None,
+            git_listing: false,
             search: None,
             board: None,
             settings: None,
@@ -702,6 +709,11 @@ impl Workbench {
             Update::Read("files.list", value) => {
                 self.files.listed(&value, &self.asks);
                 return self.parts.redraw(&self.parts.tabs, cx);
+            }
+            Update::Read("git-project-repo", value) => {
+                let was = self.git_repo();
+                self.reads.insert("git-project-repo", value);
+                return self.follow_git_repo(was, cx);
             }
             Update::Read("git-overview", value) => {
                 self.files.mark(&value);
@@ -1210,6 +1222,67 @@ impl Workbench {
         }
     }
 
+    /// The repository the Git views of the project in front open on: one picked from the
+    /// list, else the core's pick, the folder when it is one or the one chosen among those
+    /// inside it. None while the person has to pick.
+    pub(crate) fn git_repo(&self) -> Option<String> {
+        let folder = self.watched_project.as_ref()?;
+        if self.git_listing {
+            return None;
+        }
+        if let Some((at, repo)) = &self.git_picked {
+            if at == folder {
+                return Some(repo.clone());
+            }
+        }
+        let found = self.read("git-project-repo")?;
+        match found["repo"].as_str() {
+            Some(repo) => Some(repo.to_owned()),
+            None if found["repos"].is_array() => None,
+            None => Some(folder.clone()),
+        }
+    }
+
+    /// The project folder the Git views follow.
+    pub(crate) fn git_folder(&self) -> Option<&str> {
+        self.watched_project.as_deref()
+    }
+
+    /// The repositories directly inside the project folder, while it is not one itself.
+    pub(crate) fn git_repos(&self) -> Option<&Vec<Value>> {
+        self.read("git-project-repo")?["repos"].as_array()
+    }
+
+    /// Opens `repo` in the project's Git views until the project changes.
+    pub(crate) fn pick_git_repo(&mut self, repo: String, cx: &mut Context<Self>) {
+        let was = self.git_repo();
+        self.git_picked = self.watched_project.clone().map(|folder| (folder, repo));
+        self.git_listing = false;
+        self.follow_git_repo(was, cx);
+    }
+
+    /// Shows the repositories inside the project folder again.
+    pub(crate) fn list_git_repos(&mut self, cx: &mut Context<Self>) {
+        let was = self.git_repo();
+        self.git_listing = true;
+        self.follow_git_repo(was, cx);
+    }
+
+    /// Points the git overview at the repository shown, when it moved from `was`.
+    fn follow_git_repo(&mut self, was: Option<String>, cx: &mut Context<Self>) {
+        let repo = self.git_repo();
+        if let Some(repo) = repo
+            .as_ref()
+            .filter(|repo| Some(*repo) != was.as_ref() || self.read("git-overview").is_none())
+        {
+            let _ = self.asks.send(Ask::Watch(
+                "git-overview",
+                Watch::new("git.overview", json!({ "repo": repo }), &["git"]),
+            ));
+        }
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
     /// Points the watches that follow the project in front at it.
     fn watch_project(&mut self) {
         let path = self
@@ -1231,9 +1304,15 @@ impl Workbench {
             "ports",
             Watch::new("ports", json!({ "project": path }), &["ports"]),
         ));
+        self.reads.remove("git-project-repo");
+        self.git_listing = false;
         let _ = self.asks.send(Ask::Watch(
-            "git-overview",
-            Watch::new("git.overview", json!({ "repo": path }), &["git"]),
+            "git-project-repo",
+            Watch::new(
+                "git.projectRepo",
+                json!({ "project": path }),
+                &["git", "preferences"],
+            ),
         ));
         self.files.show(path.clone().map(PathBuf::from), &self.asks);
         self.watched_project = path;
@@ -1670,6 +1749,23 @@ impl Workbench {
         cx.notify();
     }
 
+    pub(crate) fn show_review(
+        &mut self,
+        review: Entity<crate::agent_review::AgentReview>,
+        cx: &mut Context<Self>,
+    ) {
+        self.asking = Some(Asking::Review(review));
+        cx.notify();
+    }
+
+    pub(crate) fn close_review(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.asking, Some(Asking::Review(_))) {
+            self.asking = None;
+            self.ask_trust(cx);
+            cx.notify();
+        }
+    }
+
     /// The question being asked, as a dialog, making a prompt's field the first time.
     fn asked(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let bench = cx.entity();
@@ -1686,6 +1782,35 @@ impl Workbench {
             }
         };
         Some(match self.asking.as_mut()? {
+            Asking::Review(review) => {
+                let t = Tokens::get(cx).clone();
+                let leaving = cx.entity();
+                div()
+                    .id("agent-review-backdrop")
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(gpui_kit::black().opacity(0.4))
+                    .occlude()
+                    .on_click(move |_, _, cx| {
+                        leaving.update(cx, |bench, cx| bench.close_review(cx));
+                    })
+                    .child(
+                        div()
+                            .id("agent-review")
+                            .occlude()
+                            .on_click(|_, _, cx| cx.stop_propagation())
+                            .bg(t.surface_overlay)
+                            .border_1()
+                            .border_color(t.border)
+                            .rounded(crate::theme::RADIUS_3)
+                            .shadow(t.shadow_float())
+                            .child(review.clone()),
+                    )
+                    .into_any_element()
+            }
             Asking::Confirm {
                 title,
                 body,
@@ -2085,7 +2210,12 @@ impl Workbench {
         let (Some((PaneKind::Git, _)), Some(project)) = (front, self.project()) else {
             return;
         };
-        let repo = project.path.to_string_lossy().into_owned();
+        let Some(repo) = self.git_repo() else {
+            return;
+        };
+        if project.path.to_string_lossy() != *self.watched_project.as_deref().unwrap_or_default() {
+            return;
+        }
         if self
             .git
             .as_ref()
@@ -2172,7 +2302,10 @@ impl Workbench {
             return;
         };
         let Some(host) = project.code_host.clone() else {
-            self.area = Area::Local;
+            if self.area != Area::Local {
+                self.area = Area::Local;
+                self.parts.redraw(&self.parts.rail, cx);
+            }
             return;
         };
         if self.area == Area::Local {
@@ -2193,8 +2326,8 @@ impl Workbench {
                 shown.update(cx, |shown, cx| {
                     shown.project_moved(&host, account, branch, cx);
                     shown.show(area, cx);
-                    if let Some((area, number)) = opening {
-                        shown.open_item(area, number, cx);
+                    if let Some((area, number, repo)) = opening {
+                        shown.open_item(area, number, repo, cx);
                     }
                 });
             }
@@ -2203,8 +2336,8 @@ impl Workbench {
                 let shown = cx.new(|_| HostArea::new(asks, bench, folder, host, account, branch));
                 shown.update(cx, |shown, cx| {
                     shown.show(area, cx);
-                    if let Some((area, number)) = opening {
-                        shown.open_item(area, number, cx);
+                    if let Some((area, number, repo)) = opening {
+                        shown.open_item(area, number, repo, cx);
                     }
                 });
                 self.host = Some(shown);
@@ -2219,9 +2352,16 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Brings the project's Git tab to the front with pull request or issue `number` open.
-    pub fn open_host_item(&mut self, area: Area, number: u64, cx: &mut Context<Self>) {
-        self.opening = Some((area, number));
+    /// Brings the project's Git tab to the front with pull request or issue `number` of the
+    /// host's repository `repo` open.
+    pub fn open_host_item(
+        &mut self,
+        area: Area,
+        number: u64,
+        repo: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.opening = Some((area, number, repo));
         self.open_area(area, cx);
     }
 

@@ -193,11 +193,20 @@ pub fn view(
         );
     }
     if let Some(branch) = branch {
+        let reviewed = agent.id.clone();
         facts.push(
             fact(
                 Some(Icon::Git),
                 ui::mono(branch, 11., cx)
+                    .id("card-branch")
                     .text_color(t.text_primary)
+                    .cursor_pointer()
+                    .hover(|link| link.underline())
+                    .tooltip(ui::tooltip("Review its work"))
+                    .on_click(cx.listener(move |bench, _, _, cx| {
+                        bench.close_card(cx);
+                        crate::agent_review::open(bench, &reviewed, cx);
+                    }))
                     .into_any_element(),
             )
             .into_any_element(),

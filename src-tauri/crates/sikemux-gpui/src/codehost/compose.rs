@@ -536,10 +536,11 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                     .text_size(px(12.))
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
-                    .on_click(cx.listener(move |area, _, _, _| {
+                    .on_click(cx.listener(move |area, _, _, cx| {
                         if let Some(composing) = &area.composing {
                             composing.diffs.reveal(&path);
                         }
+                        cx.notify();
                     }))
                     .child(ui::icon(Icon::File, 13.).text_color(t.text_tertiary))
                     .child(div().flex_none().text_color(t.text_primary).child(name))
@@ -782,7 +783,7 @@ fn main(area: &HostArea, window: &mut Window, cx: &mut Context<HostArea>) -> Any
         .child(div().flex_1().min_h_0().child(composing.diffs.list(
             &cx.entity(),
             |area| Some(&area.composing.as_ref()?.diffs),
-            &area.project,
+            Some(&area.project),
             window,
         )))
         .into_any_element()

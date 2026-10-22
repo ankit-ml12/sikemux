@@ -120,7 +120,7 @@ impl Workbench {
     }
 }
 
-fn status_word(status: AgentStatus) -> &'static str {
+pub(crate) fn status_word(status: AgentStatus) -> &'static str {
     match status {
         AgentStatus::Working => "working",
         AgentStatus::Starting => "starting",

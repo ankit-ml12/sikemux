@@ -389,6 +389,9 @@ fn view(
                 None => ui::pane(cx).into_any_element(),
             }
         }
+        PaneKind::Git if bench.git_repo().is_none() && bench.git_repos().is_some() => ui::pane(cx)
+            .child(crate::git::repos::picker(bench, cx))
+            .into_any_element(),
         PaneKind::Git => match &bench.git {
             Some(pane) => pane.clone().into_any_element(),
             None => ui::pane(cx).into_any_element(),

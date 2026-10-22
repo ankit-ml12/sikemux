@@ -6,8 +6,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Task, Window,
+    div, px, AnyElement, App, AppContext, Context, Entity, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -123,6 +123,19 @@ const BITBUCKET: Form = Form {
         },
     ],
 };
+
+/// Whether `typed` names a repository as `owner/name`.
+fn is_slug(typed: &str) -> bool {
+    let allowed = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+    };
+    typed
+        .split_once('/')
+        .is_some_and(|(owner, name)| allowed(owner) && allowed(name))
+}
 
 fn form_of(host: &str) -> &'static Form {
     match host {
@@ -579,24 +592,100 @@ impl HostArea {
             .ok();
     }
 
+    /// The repositories pinned on the host, kept with its plugin's settings.
+    fn pinned(&self, cx: &App) -> Vec<String> {
+        let Some(bench) = self.bench.upgrade() else {
+            return Vec::new();
+        };
+        let settings = bench.read(cx).preferences().plugin_settings;
+        settings
+            .get(&self.host.host)
+            .and_then(|kept| kept["pinned"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|slug| {
+                slug.as_str()
+                    .filter(|slug| is_slug(slug))
+                    .map(str::to_owned)
+            })
+            .collect()
+    }
+
+    /// Keeps the repository shown here at the top of the picker, or stops keeping it.
+    fn toggle_pin(&mut self, cx: &mut Context<Self>) {
+        let Some(bench) = self.bench.upgrade() else {
+            return;
+        };
+        let mut all = bench.read(cx).preferences().plugin_settings;
+        let mut pinned = self.pinned(cx);
+        match pinned.iter().position(|slug| *slug == self.host.repo) {
+            Some(at) => {
+                pinned.remove(at);
+            }
+            None => pinned.push(self.host.repo.clone()),
+        }
+        let mut kept = all.remove(&self.host.host).unwrap_or_else(|| json!({}));
+        if let Some(kept) = kept.as_object_mut() {
+            kept.insert("pinned".into(), json!(pinned));
+        }
+        all.insert(self.host.host.clone(), kept);
+        let params = json!({ "key": "pluginSettings", "value": all });
+        let _ = self.asks.send(Ask::Call {
+            method: "setPreference",
+            params,
+        });
+    }
+
     /// Opens the palette of the person's repositories on the host, to show another here.
     fn pick_repo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = false;
+        cx.notify();
         let mine = self.plugin("myRepos", json!({ "limit": 50 }));
         let area = cx.entity().downgrade();
         let current = self.host.repo.clone();
+        let pinned = self.pinned(cx);
+        let row = {
+            let current = current.clone();
+            move |slug: String, group: &'static str, about: String| {
+                let meta = if slug == current {
+                    "shown here".to_owned()
+                } else {
+                    about
+                };
+                Row::new(slug.clone(), slug)
+                    .meta(meta)
+                    .mark(Mark::Icon(Icon::Git))
+                    .group(group)
+            }
+        };
+        let kept: Vec<Row> = pinned
+            .iter()
+            .map(|slug| row(slug.clone(), "Pinned", "pinned".into()))
+            .collect();
+        let mut first = kept.clone();
+        first.push(Row::new("", "Reading your repositories…").disabled(true));
         let spec = Spec::new(
             "codehost.repo",
-            "choose a repository…",
-            vec![Row::new("", "Reading your repositories…").disabled(true)],
+            "search your repositories, or type owner/repo",
+            first,
             move |row, _, _, cx| {
                 let slug = row.key.to_string();
+                if slug.is_empty() {
+                    return;
+                }
                 area.update(cx, |area, cx| {
                     area.pick_code_host(move |choice| choice.repo = Some(slug), cx);
                 })
                 .ok();
             },
         )
+        .typed(|typed| {
+            is_slug(typed).then(|| {
+                Row::new(typed.to_owned(), typed.to_owned())
+                    .meta("open it")
+                    .mark(Mark::Icon(Icon::Git))
+            })
+        })
         .empty("no repositories match");
         self.bench
             .update(cx, |bench, cx| bench.toggle_palette(spec, window, cx))
@@ -606,38 +695,30 @@ impl HostArea {
             let mine: Result<Vec<RepoListing>, SharedString> = mine.await.and_then(|value| {
                 serde_json::from_value(value).map_err(|error| error.to_string().into())
             });
-            let rows = match mine {
-                Ok(mine) => mine
-                    .into_iter()
-                    .map(|repo| {
-                        let mut about: Vec<String> = Vec::new();
-                        if repo.private {
-                            about.push("private".into());
-                        }
-                        if repo.archived {
-                            about.push("archived".into());
-                        }
-                        if let Some(pushed) = repo.pushed_at.as_deref() {
-                            about.push(super::ago(pushed));
-                        }
-                        let here = repo.slug == current;
-                        Row::new(repo.slug.clone(), repo.slug)
-                            .meta(if here {
-                                "shown here".to_owned()
-                            } else {
-                                about.join(" · ")
-                            })
-                            .mark(Mark::Icon(Icon::Git))
-                            .group("Your repositories")
-                    })
-                    .collect(),
-                Err(error) => {
-                    vec![
-                        Row::new("", format!("Could not read your repositories: {error}"))
-                            .disabled(true),
-                    ]
-                }
-            };
+            let mut rows = kept;
+            match mine {
+                Ok(mine) => rows.extend(
+                    mine.into_iter()
+                        .filter(|repo| !pinned.contains(&repo.slug))
+                        .map(|repo| {
+                            let mut about: Vec<String> = Vec::new();
+                            if repo.private {
+                                about.push("private".into());
+                            }
+                            if repo.archived {
+                                about.push("archived".into());
+                            }
+                            if let Some(pushed) = repo.pushed_at.as_deref() {
+                                about.push(super::ago(pushed));
+                            }
+                            row(repo.slug, "Your repositories", about.join(" · "))
+                        }),
+                ),
+                Err(error) => rows.push(
+                    Row::new("", format!("Could not read your repositories: {error}"))
+                        .disabled(true),
+                ),
+            }
             bench
                 .update(cx, |bench, cx| {
                     if let Some(palette) = bench
@@ -684,6 +765,7 @@ impl HostArea {
                     area.update(cx, |area, cx| {
                         area.menu = false;
                         area.choose_account(Some(id), cx);
+                        cx.notify();
                     })
                     .ok();
                 }));
@@ -733,6 +815,25 @@ impl HostArea {
                 },
             ));
         }
+        let pinned = self.pinned(cx).contains(&self.host.repo);
+        let pinning = area.clone();
+        choices.push(Choice::new(
+            'p',
+            if pinned {
+                "Unpin this repository"
+            } else {
+                "Pin this repository"
+            },
+            move |_, cx| {
+                pinning
+                    .update(cx, |area, cx| {
+                        area.menu = false;
+                        area.toggle_pin(cx);
+                        cx.notify();
+                    })
+                    .ok();
+            },
+        ));
         let leaving = area.clone();
         choices.push(
             Choice::new('o', format!("Sign {login} out"), move |_, cx| {

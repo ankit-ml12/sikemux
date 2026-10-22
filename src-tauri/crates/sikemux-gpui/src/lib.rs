@@ -6,6 +6,7 @@ mod add_task;
 mod agent_card;
 mod agent_menu;
 mod agent_palette;
+pub mod agent_review;
 mod agent_setup;
 mod agents;
 mod battery;

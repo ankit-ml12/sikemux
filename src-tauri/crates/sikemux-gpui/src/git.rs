@@ -30,6 +30,7 @@ pub use pane::{FocusGit, GitPane};
 pub use sikemux_core::git::diff::DiffKind;
 
 mod pane;
+pub mod repos;
 mod review;
 
 /// A diff side longer than this is drawn without colours.
@@ -340,7 +341,7 @@ pub fn row(
     index: usize,
     look: &RowLook,
     id: SharedString,
-    file: &Path,
+    file: Option<&Path>,
     expand: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Div {
     let DiffRow(kind, number, text) = &diff.rows[index];
@@ -364,12 +365,11 @@ pub fn row(
         _ => None,
     };
     let digits = look.advance * diff.digits as f32;
-    let open = OpenAt {
+    let open = file.map(|file| OpenAt {
         path: file.to_owned(),
         line: diff.target(index),
         column: None,
-    };
-    let opens = format!("Open at line {}", open.line + 1);
+    });
     div()
         .h(ROW_HEIGHT)
         .w_full()
@@ -386,9 +386,14 @@ pub fn row(
                 .bg(look.gutter)
                 .text_right()
                 .text_color(tint.filter(|_| look.tinted).unwrap_or(look.number))
-                .cursor_pointer()
-                .tooltip(ui::tooltip(opens))
-                .on_click(move |_, window, cx| window.dispatch_action(open.boxed_clone(), cx))
+                .when_some(open, |gutter, open| {
+                    gutter
+                        .cursor_pointer()
+                        .tooltip(ui::tooltip(format!("Open at line {}", open.line + 1)))
+                        .on_click(move |_, window, cx| {
+                            window.dispatch_action(open.boxed_clone(), cx)
+                        })
+                })
                 .child(number.to_string()),
         )
         .child(
@@ -623,7 +628,7 @@ impl Render for DiffView {
                 index,
                 &look,
                 SharedString::from(format!("diff-row-{index}")),
-                &file,
+                Some(&file),
                 move |_, cx| expanding.update(cx, |view, cx| view.expand(cx)),
             )
             .into_any_element()

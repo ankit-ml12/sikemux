@@ -1889,6 +1889,9 @@ impl GitPane {
     }
 
     fn generate(&mut self, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
         let before = self.draft.read(cx).value().to_string();
         self.generating = true;
         let (provider, label, model) = match self.writer() {
@@ -2332,6 +2335,25 @@ fn history_list(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoEleme
         )
 }
 
+/// The way back to the repositories inside the project folder, while one of them is open.
+fn other_repos(pane: &GitPane, cx: &mut Context<GitPane>) -> Option<impl IntoElement> {
+    let bench = pane.bench.upgrade()?;
+    let inside = bench
+        .read(cx)
+        .git_folder()
+        .is_some_and(|folder| folder != pane.repo && bench.read(cx).git_repos().is_some());
+    inside.then(|| {
+        ui::IconButton::new(
+            "git-other-repos",
+            Icon::Chevron,
+            "Other repositories in this folder",
+        )
+        .turned(std::f32::consts::PI)
+        .small()
+        .on_click(move |_, _, cx| bench.update(cx, |bench, cx| bench.list_git_repos(cx)))
+    })
+}
+
 fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let status = match &pane.overview {
@@ -2417,6 +2439,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                 .items_center()
                 .gap(px(4.))
                 .min_w_0()
+                .children(other_repos(pane, cx))
                 .child(branch_switch(pane, branch, cx))
                 .children(count(ahead, t.live, "↑"))
                 .children(count(behind, t.warn, "↓"))

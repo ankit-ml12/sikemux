@@ -356,7 +356,9 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         _ => "Merge",
     };
     let url = view.map(|view| view.pull.url.clone());
-    let checkout = view.and_then(|view| view.checkout.clone());
+    let checkout = view
+        .and_then(|view| view.checkout.clone())
+        .filter(|_| area.elsewhere.is_none());
     let current = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
     let here = checkout.is_some() && checkout == current;
     let open = view.is_some_and(|view| view.pull.state == "open");
@@ -380,6 +382,7 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .small()
                 .on_click(cx.listener(|area, _, _, cx| {
                     area.pull = None;
+                    area.elsewhere = None;
                     area.watch();
                     cx.notify();
                 })),
@@ -885,7 +888,9 @@ fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
                     .cursor_pointer()
                     .hover(move |row| row.bg(t.surface_hover))
                     .on_click(cx.listener(move |area, _, _, cx| {
-                        area.open_run(id.clone(), Some(number), cx)
+                        if area.elsewhere.is_none() {
+                            area.open_run(id.clone(), Some(number), cx)
+                        }
                     }))
                     .child(ui::status_of_run(outcome_word(run.outcome), 13., cx))
                     .child(
@@ -1114,7 +1119,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
             Some(Ok(diffs)) => diffs.list(
                 &view,
                 |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
-                &area.project,
+                area.elsewhere.is_none().then_some(area.project.as_str()),
                 window,
             ),
         },

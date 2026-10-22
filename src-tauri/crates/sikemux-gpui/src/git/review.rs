@@ -573,7 +573,7 @@ fn draw(
                         index,
                         &look,
                         SharedString::from(format!("review-{card}-{at}-{index}")),
-                        &file,
+                        Some(&file),
                         move |_, cx| {
                             expanding.update(cx, |pane, cx| {
                                 pane.review.expand(card, at);

@@ -78,7 +78,13 @@ impl Inbox {
         let answered = request(
             &self.asks,
             "plugin",
-            call_of(&self.host, &self.account, method, more),
+            call_of(
+                &self.host.host,
+                &self.host.repo,
+                &self.account,
+                method,
+                more,
+            ),
         );
         async move {
             match answered.await {
@@ -120,9 +126,10 @@ impl Inbox {
             _ => None,
         };
         match (area, item.number) {
-            (Some(area), Some(number)) if item.repo == self.host.repo => {
+            (Some(area), Some(number)) => {
+                let repo = item.repo.clone();
                 self.bench
-                    .update(cx, |bench, cx| bench.open_host_item(area, number, cx))
+                    .update(cx, |bench, cx| bench.open_host_item(area, number, repo, cx))
                     .ok();
             }
             _ => {
