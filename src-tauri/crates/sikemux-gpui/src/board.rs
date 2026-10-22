@@ -589,6 +589,7 @@ impl Render for BoardPane {
         let panel = crate::board_panels::panel(self, cx);
         div()
             .id("board")
+            .key_context("AgentBoard")
             .track_focus(&self.focus)
             .size_full()
             .flex()
