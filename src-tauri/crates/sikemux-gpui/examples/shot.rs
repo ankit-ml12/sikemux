@@ -5,6 +5,7 @@
 //!     [--scroll pixels]           scrolls the side rail down that far first
 //!     [--files]                   shows the tab rail's Files page
 //!     [--size 900x700]            draws the window at that size in points
+//!     [--motion on|off]           animates or holds still whatever macOS's Reduce Motion says
 //!     [--then step…]              then does each step in turn: "click x,y", "dclick x,y", "rclick x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
 //!                                 "swipe x,y pixels" or "swipe x,y pixels hold" for a sideways trackpad swipe,
@@ -17,7 +18,9 @@
 //!                                 the chosen host, a trust question, the front chat's tool details held and
 //!                                 open); "open-tool" opens the front chat's first tool call; "host this",
 //!                                 "host host:<key>" or "host ssh:<alias>" chooses the host in front, as a
-//!                                 click on its row does
+//!                                 click on its row does; "film N prefix" saves N frames at least 16 ms apart,
+//!                                 as prefix-00.png on, straight after the step before it, printing when each
+//!                                 was drawn
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -35,6 +38,7 @@ use sikemux_wire::protocol::AccountInfo;
 
 /// How often a wait lets the app run, moving its clock on as far, so its timers fire as they would.
 const STEP: Duration = Duration::from_millis(50);
+const FRAME: Duration = Duration::from_millis(16);
 
 fn main() -> anyhow::Result<()> {
     let out = std::env::args().nth(1).unwrap_or_else(|| "shot.png".into());
@@ -56,6 +60,7 @@ fn main() -> anyhow::Result<()> {
         })
         .unwrap_or(WINDOW_SIZE);
     let files = std::env::args().any(|arg| arg == "--files");
+    let motion = option("--motion").map(|motion| motion == "on");
     let scroll: Option<f32> = option("--scroll").and_then(|pixels| pixels.parse().ok());
     let steps: Vec<String> = std::env::args()
         .skip_while(|arg| arg != "--then")
@@ -147,7 +152,15 @@ fn main() -> anyhow::Result<()> {
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
     }
     cx.capture_screenshot(window.into())?.save(&out)?;
-    for step in steps {
+    // The app takes macOS's setting again as its window shows or comes forward, so this wins
+    // before every step and frame.
+    let hold_motion = |cx: &mut HeadlessAppContext| {
+        if let Some(motion) = motion {
+            cx.update(|cx| cx.set_reduce_motion(!motion));
+        }
+    };
+    for (at, step) in steps.iter().enumerate() {
+        hold_motion(&mut cx);
         let (verb, rest) = step.split_once(' ').unwrap_or((step.as_str(), ""));
         cx.update_window(window.into(), |_, window, cx| -> anyhow::Result<()> {
             match verb {
@@ -377,10 +390,36 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         })??;
-        let pause = if verb == "wait" {
-            rest.parse().unwrap_or(1.)
-        } else {
-            0.3
+        if verb == "film" {
+            let (count, prefix) = rest
+                .split_once(' ')
+                .ok_or_else(|| anyhow::anyhow!("film N prefix"))?;
+            let began = Instant::now();
+            for frame in 0..count.trim().parse::<usize>()? {
+                hold_motion(&mut cx);
+                std::thread::sleep(FRAME);
+                cx.advance_clock(FRAME);
+                cx.run_until_parked();
+                // Offscreen there is no display link to run what asked for the next frame.
+                cx.update_window(window.into(), |_, window, cx| {
+                    window.simulate_next_frame(cx);
+                })?;
+                cx.run_until_parked();
+                cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
+                let drawn = began.elapsed().as_millis();
+                cx.capture_screenshot(window.into())?
+                    .save(format!("{prefix}-{frame:02}.png"))?;
+                println!("film {prefix}-{frame:02}.png drawn {drawn} ms in");
+            }
+            continue;
+        }
+        let filmed = steps
+            .get(at + 1)
+            .is_some_and(|next| next.starts_with("film "));
+        let pause = match verb {
+            "wait" => rest.parse().unwrap_or(1.),
+            _ if filmed => 0.,
+            _ => 0.3,
         };
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs_f64(pause) {
