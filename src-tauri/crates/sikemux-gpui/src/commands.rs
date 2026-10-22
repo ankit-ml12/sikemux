@@ -25,9 +25,47 @@ const REMOVE_WORKTREE: &str = "worktree.remove:";
 const RUN_TASK: &str = "task.run:";
 const RESTART_TASK: &str = "task.restart:";
 const STOP_TASK: &str = "task.stop:";
+const START_PREVIEW: &str = "project.preview.start:";
+const OPEN_PREVIEW: &str = "project.preview.open:";
+const CONFIG_INVALID: &str = "project.config.invalid";
 
 /// A command no shortcut does: its id, name, what it does and its category.
 type Standalone = (&'static str, &'static str, &'static str, &'static str);
+
+/// The deck's rows for the preview the project's `sikemux.json` checks in: start its command,
+/// and open its address.
+fn preview_rows(config: &Value, project: &str) -> Vec<Row> {
+    if config["status"] != "valid" {
+        return Vec::new();
+    }
+    let preview = &config["config"]["preview"];
+    let url = preview["url"].as_str();
+    let mut rows = Vec::new();
+    if preview["command"]
+        .as_str()
+        .is_some_and(|command| !command.is_empty())
+    {
+        let detail = url.map_or_else(
+            || "Run the checked-in preview command".to_owned(),
+            |url| format!("Serve {url}"),
+        );
+        rows.push(
+            Row::new(format!("{START_PREVIEW}{project}"), "Start project preview")
+                .meta("Project · Preview")
+                .also(&detail)
+                .also("Project · Preview"),
+        );
+    }
+    if let Some(url) = url {
+        rows.push(
+            Row::new(format!("{OPEN_PREVIEW}{url}"), "Open project preview")
+                .meta("Project · Preview")
+                .also(url)
+                .also("Project · Preview"),
+        );
+    }
+    rows
+}
 
 /// The deck's rows for each worktree of the project's repository: open it as a project, and
 /// remove it unless it is the main checkout or the one in front.
@@ -67,24 +105,53 @@ fn worktree_rows(worktrees: &Value) -> Vec<Row> {
 }
 
 impl Workbench {
-    /// The project's tasks to run, and the one running to restart or stop.
-    fn task_rows(&self) -> Vec<Row> {
-        let Some(tasks) = self.read("tasks").and_then(|read| read["tasks"].as_array()) else {
-            return Vec::new();
-        };
-        let mut rows: Vec<Row> = tasks
-            .iter()
-            .filter_map(|task| {
-                let (id, label) = (task["id"].as_str()?, task["label"].as_str()?);
-                let cwd = task["cwd"].as_str().unwrap_or_default();
-                Some(
-                    Row::new(format!("{RUN_TASK}{id}"), label.to_owned())
-                        .meta("Tasks")
-                        .also(&format!("Run task from {cwd}"))
-                        .also("Tasks"),
+    /// What is wrong with the project's `sikemux.json`, each as where in the file and why.
+    fn config_errors(&self) -> Vec<String> {
+        self.read("tasks")
+            .filter(|read| read["configStatus"] == "invalid")
+            .and_then(|read| read["configErrors"].as_array())
+            .into_iter()
+            .flatten()
+            .map(|error| {
+                format!(
+                    "{} {}",
+                    error["path"].as_str().unwrap_or_default(),
+                    error["message"].as_str().unwrap_or_default()
                 )
             })
-            .collect();
+            .collect()
+    }
+
+    /// The project's tasks to run, and the one running to restart or stop.
+    fn task_rows(&self) -> Vec<Row> {
+        let Some(read) = self.read("tasks") else {
+            return Vec::new();
+        };
+        let mut rows = Vec::new();
+        if read["configStatus"] == "invalid" {
+            let first = read["configErrors"][0]["message"]
+                .as_str()
+                .unwrap_or("sikemux.json is invalid");
+            rows.push(
+                Row::new(CONFIG_INVALID, "Project config needs attention")
+                    .meta("Project · sikemux.json")
+                    .also(first)
+                    .also("Project · sikemux.json"),
+            );
+        }
+        let Some(tasks) = read["tasks"].as_array() else {
+            return rows;
+        };
+        rows.extend(tasks.iter().filter_map(|task| {
+            let (id, label) = (task["id"].as_str()?, task["label"].as_str()?);
+            let cwd = task["cwd"].as_str().unwrap_or_default();
+            Some(
+                Row::new(format!("{RUN_TASK}{id}"), label.to_owned())
+                    .meta("Tasks")
+                    .also(&format!("Run task from {cwd}"))
+                    .also("Tasks"),
+            )
+        }));
         let Some(running) = self.person_runs().0 else {
             return rows;
         };
@@ -179,6 +246,16 @@ impl Workbench {
                     bench.start_task(task);
                 } else if let Some(execution) = row.key.strip_prefix(STOP_TASK) {
                     bench.stop_run(execution);
+                } else if let Some(project) = row.key.strip_prefix(START_PREVIEW) {
+                    bench.start_preview(project, cx);
+                } else if let Some(url) = row.key.strip_prefix(OPEN_PREVIEW) {
+                    cx.open_url(url);
+                } else if row.key.as_ref() == CONFIG_INVALID {
+                    let errors = bench.config_errors().join(" · ");
+                    bench.notify(
+                        Notification::error(format!("sikemux.json: {errors}")).autohide(false),
+                        cx,
+                    );
                 } else if let Some(path) = row.key.strip_prefix(REMOVE_WORKTREE) {
                     bench.remove_worktree_at(path.to_owned(), row.title.to_string(), cx);
                 }
@@ -186,24 +263,34 @@ impl Workbench {
         )
         .empty("no commands match");
         self.toggle_palette(spec, window, cx);
-        self.list_worktrees(base, cx);
+        self.list_more(base, cx);
     }
 
-    /// Adds the project's worktrees to the open deck once git lists them.
-    fn list_worktrees(&self, base: Vec<Row>, cx: &mut Context<Self>) {
-        let (Some(Strip::Project(_)), Some(repo)) = (self.strip(), self.git_repo()) else {
+    /// Adds the project's preview and its worktrees to the open deck once the core and git
+    /// say what they are.
+    fn list_more(&self, base: Vec<Row>, cx: &mut Context<Self>) {
+        let (Some(Strip::Project(_)), Some(project)) = (self.strip(), self.project()) else {
             return;
         };
+        let (id, folder) = (
+            project.id.clone(),
+            project.path.to_string_lossy().into_owned(),
+        );
+        let target = self.target();
+        let config = target.request("projectConfig", json!({ "project": folder }));
         let listed = self
-            .target()
-            .request("git.worktrees", json!({ "repo": repo }));
+            .git_repo()
+            .map(|repo| target.request("git.worktrees", json!({ "repo": repo })));
         cx.spawn(async move |this, cx| {
-            let Ok(worktrees) = listed.await else {
-                return;
+            let config = config.await.ok();
+            let worktrees = match listed {
+                Some(listed) => listed.await.ok(),
+                None => None,
             };
             let _ = this.update(cx, |bench, cx| {
                 let mut rows = base;
-                rows.extend(worktree_rows(&worktrees));
+                rows.extend(config.iter().flat_map(|config| preview_rows(config, &id)));
+                rows.extend(worktrees.iter().flat_map(worktree_rows));
                 if let Some(palette) = bench
                     .palette
                     .as_mut()
@@ -387,6 +474,26 @@ impl Workbench {
         self.recent_commands.retain(|known| *known != key);
         self.recent_commands.insert(0, key);
         self.recent_commands.truncate(REMEMBERED);
+    }
+
+    /// Starts the project's checked-in preview in a terminal of its own; the core asks the
+    /// person to trust `sikemux.json` first when they have not.
+    fn start_preview(&self, project: &str, cx: &mut Context<Self>) {
+        let started = self
+            .target()
+            .request("startPreview", json!({ "project": project }));
+        cx.spawn(async move |this, cx| {
+            if let Err(error) = started.await {
+                let _ = this.update(cx, |bench, cx| {
+                    bench.notify(
+                        Notification::error(format!("The project preview did not start: {error}"))
+                            .autohide(false),
+                        cx,
+                    )
+                });
+            }
+        })
+        .detach();
     }
 
     /// Runs one of the person's commands in the project in front, telling them

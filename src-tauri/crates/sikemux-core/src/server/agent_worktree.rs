@@ -177,6 +177,31 @@ fn failure_note(modules: &[Value]) -> Option<String> {
 }
 
 /// The `agentReview` call.
+/// Whether the agent's branch is merged into the one it was cut from: it has commits of its
+/// own, and that branch has every one of them.
+pub(crate) async fn merged(core: &Arc<Core>, params: WorktreeParams) -> CoreResult<bool> {
+    let (_, worktree) = worktree_of(core, &params.agent_id)?;
+    let Some(base) = worktree.base.clone() else {
+        return Ok(false);
+    };
+    blocking(move || {
+        let moved = Git::at(&worktree.repo)
+            .text(&["rev-parse", &worktree.branch])
+            .is_ok_and(|tip| tip.trim() != worktree.start_sha);
+        let unmerged = Git::at(&worktree.repo)
+            .text(&[
+                "rev-list",
+                "--count",
+                &format!("{base}..{}", worktree.branch),
+            ])
+            .ok()
+            .and_then(|text| text.trim().parse::<usize>().ok())
+            .unwrap_or(1);
+        Ok(moved && unmerged == 0)
+    })
+    .await
+}
+
 pub(crate) async fn review(core: &Arc<Core>, params: WorktreeParams) -> CoreResult<Review> {
     let (_, worktree) = worktree_of(core, &params.agent_id)?;
     let summary = board::agent_card(core, &params.agent_id)

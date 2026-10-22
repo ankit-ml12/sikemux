@@ -76,6 +76,7 @@ pub mod voice;
 mod welcome;
 mod whats_new;
 pub mod workbench;
+mod worktree_head;
 pub mod worktree_switch;
 
 /// The window's size when it first opens.

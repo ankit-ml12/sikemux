@@ -176,6 +176,8 @@ pub struct Workbench {
     /// The task the person is writing in the Add a task dialog, while it is open.
     pub adding_task: Option<crate::add_task::AddTask>,
     pub buddy_picker: Option<crate::buddy_picker::BuddyPicker>,
+    /// The agent in front whose worktree its header reads, by id and folder, and where it is.
+    pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
     /// The core's trust questions already put to the person, by id.
     trust_asked: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
@@ -503,6 +505,7 @@ impl Workbench {
             rail_slide: crate::track::Slide::default(),
             adding_task: None,
             buddy_picker: None,
+            watched_worktree: None,
             trust_asked: HashSet::new(),
             trust_host: None,
             peeking: None,
@@ -631,6 +634,7 @@ impl Workbench {
                 crate::notifications::kept_running(self, cx);
                 self.note_place();
                 self.watch_project();
+                self.watch_worktree();
                 self.watch_picture();
                 self.watch_ci();
                 self.close_chats();
@@ -1703,6 +1707,11 @@ impl Workbench {
         self.reads.get(key)
     }
 
+    /// Forgets what was read under `key`, so nothing shows the answer of what it watched before.
+    pub(crate) fn forget_read(&mut self, key: &str) {
+        self.reads.remove(key);
+    }
+
     /// Shows `note` in the window's notifications.
     pub fn notify(&self, note: Notification, cx: &mut Context<Self>) {
         let window = self.window;
@@ -2129,14 +2138,22 @@ impl Workbench {
     }
 
     /// Removes an agent's worktree once the person knows what that loses: uncommitted
-    /// changes, and commits only its branch has.
-    pub fn remove_worktree(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let (asks, agent) = (self.asks.clone(), agent.to_owned());
+    /// changes, and commits only its branch has, which a merged pull request already keeps.
+    pub fn remove_worktree(
+        &mut self,
+        agent: &str,
+        pull_merged: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let agent = agent.to_owned();
+        let cost = self
+            .chat_target(&agent)
+            .request("worktreeRemoval", json!({ "agentId": agent }));
         cx.spawn_in(window, async move |bench, cx| {
-            let cost =
-                crate::core::request(&asks, "worktreeRemoval", json!({ "agentId": agent })).await;
+            let cost = cost.await;
             let _ = bench.update_in(cx, |bench, window, cx| match cost {
-                Ok(cost) => bench.confirm_removal(agent, &cost, window, cx),
+                Ok(cost) => bench.confirm_removal(agent, &cost, pull_merged, window, cx),
                 Err(error) => window.push_notification(
                     Notification::error(format!("Could not remove the worktree: {error}")),
                     cx,
@@ -2150,6 +2167,7 @@ impl Workbench {
         &mut self,
         agent: String,
         cost: &Value,
+        pull_merged: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2169,7 +2187,7 @@ impl Workbench {
         let branch = cost["branch"].as_str().unwrap_or_default().to_owned();
         let path = cost["path"].as_str().unwrap_or_default().to_owned();
         let dirty = cost["dirtyFiles"].as_u64().unwrap_or(0);
-        let unmerged = cost["unmergedCommits"].as_u64().unwrap_or(0) > 0;
+        let unmerged = !pull_merged && cost["unmergedCommits"].as_u64().unwrap_or(0) > 0;
         let named = branch.clone();
         let then_branch = move |bench: &mut Workbench,
                                 discard: bool,

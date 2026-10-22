@@ -326,6 +326,10 @@ fn pane_header(
                 .as_ref()
                 .map(|name| SharedString::from(format!("@{name}"))),
         )
+        .when_some(
+            crate::worktree_head::badges(bench, &agent.id, cx),
+            |header, badges| header.action(badges),
+        )
         .action(share)
         .action(more)
         .controls(

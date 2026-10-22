@@ -156,6 +156,7 @@ calls! { core, client, params;
     },
     "createAgentWorktree": Person => answer(super::sandbox::for_agent(&core, parse(params)?).await?),
     "agentReview": Watch => answer(super::agent_worktree::review(&core, parse(params)?).await?),
+    "worktreeMerged": Watch => answer(super::agent_worktree::merged(&core, parse(params)?).await?),
     "worktreeRemoval": Person => answer(super::agent_worktree::removal(&core, parse(params)?).await?),
     "removeAgentWorktree": Person => answer(super::agent_worktree::remove(&core, parse(params)?).await?),
     "agentWorktreeAt": Full => answer(super::sandbox::at(parse(params)?).await?),
@@ -464,6 +465,10 @@ calls! { core, client, params;
     "projectConfig": Person => {
         let params: ProjectParams = parse(params)?;
         answer(super::tasks::project_config(&core, params.project).await?)
+    },
+    "startPreview": Person => {
+        let params: ProjectParams = parse(params)?;
+        answer(super::tasks::start_preview(&core, params.project).await?)
     },
     "trustProject": Person => {
         let params: TrustProjectParams = parse(params)?;

@@ -446,6 +446,31 @@ pub(crate) async fn project_config(core: &Arc<Core>, project: String) -> CoreRes
     .await
 }
 
+/// Starts the preview command `project`'s `sikemux.json` checks in, in a terminal tab of its
+/// own, once the person trusts the file. Answers the tab.
+pub(crate) async fn start_preview(core: &Arc<Core>, project: String) -> CoreResult<String> {
+    let info = core
+        .workspaces
+        .project_info(&project)
+        .ok_or("that project is not on this host")?;
+    let config = {
+        let path = info.path.clone();
+        blocking(move || Ok(config::load(&path))).await?
+    };
+    let ConfigLoad::Valid { config, .. } = config else {
+        return Err("sikemux.json is not valid".into());
+    };
+    let command = config
+        .preview
+        .and_then(|preview| preview.command)
+        .filter(|command| !command.is_empty())
+        .ok_or("sikemux.json has no preview command")?;
+    if !config_trusted(core, &info.path, None).await {
+        return Err("sikemux.json was not trusted".into());
+    }
+    super::spare::command_terminal(core, info.id, "Project preview".into(), command).await
+}
+
 /// The person trusts `sikemux.json` as it is now on this host.
 pub(crate) async fn trust_project(
     core: &Arc<Core>,
