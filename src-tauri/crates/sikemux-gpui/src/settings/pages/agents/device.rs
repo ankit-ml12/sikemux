@@ -8,6 +8,7 @@ use serde_json::Value;
 use sikemux_wire::notch::{NotchDisplays, NotchFullScreen, NotchOpenWith, NotchPeeks};
 
 use crate::settings::rows::{self, Choice};
+use crate::voice::Phase;
 use crate::workbench::Workbench;
 
 pub struct Fields {
@@ -237,22 +238,31 @@ pub fn render(
 ) -> Vec<AnyElement> {
     let preferences = bench.preferences();
     let dictating = preferences.voice_dictation;
+    let (phase, downloading) = {
+        let voice = bench.voice.read(cx);
+        (voice.phase(), voice.downloading())
+    };
+    let model: SharedString = match (dictating, phase, downloading) {
+        (_, Phase::Unsupported, _) => "Not available on this host.".into(),
+        (false, _, _) => "Parakeet by NVIDIA, run on the Neural Engine. About 600 MB, downloaded when you turn dictation on.".into(),
+        (true, Phase::Preparing, Some(fraction)) => {
+            format!("Downloading… {}%", (fraction * 100.).round()).into()
+        }
+        (true, Phase::Preparing, None) => {
+            "Preparing for the Neural Engine. The first time takes about half a minute.".into()
+        }
+        (true, Phase::Off, _) => "Not loaded.".into(),
+        (true, _, _) => "Ready. Speech never leaves this host.".into(),
+    };
     let voice = div()
         .child(rows::row(
             "Dictate with right Option",
             Some("Hold right ⌥ and speak. Letting go types what you said into the focused agent or terminal."),
-            rows::switch("voice-dictation", "voiceDictation", dictating, this),
+            rows::switch("voice-dictation", "voiceDictation", dictating, this)
+                .disabled(phase == Phase::Unsupported),
             cx,
         ))
-        .child(rows::row(
-            "Speech model",
-            Some(match dictating {
-                true => "Not loaded.",
-                false => "Parakeet by NVIDIA, run on the Neural Engine. About 600 MB, downloaded when you turn dictation on.",
-            }),
-            div(),
-            cx,
-        ));
+        .child(rows::row_with(None, "Speech model", Some(model), div(), cx));
 
     let notch = &preferences.notch;
     let on = notch.enabled;

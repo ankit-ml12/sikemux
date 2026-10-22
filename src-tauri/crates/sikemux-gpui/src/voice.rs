@@ -79,6 +79,15 @@ pub struct Dictation {
 impl EventEmitter<Heard> for Dictation {}
 
 impl Dictation {
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+
+    /// How much of the speech model is down, while it downloads.
+    pub fn downloading(&self) -> Option<f64> {
+        self.downloading
+    }
+
     /// Turns dictation on or off as the person's preference says.
     pub fn follow(&mut self, on: bool, cx: &mut Context<Self>) {
         match (on, self.voice.is_some()) {

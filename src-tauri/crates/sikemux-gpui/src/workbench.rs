@@ -57,7 +57,7 @@ pub struct Workbench {
     pub slow_start: bool,
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
-    _voice_heard: [Subscription; 2],
+    _voice_heard: [Subscription; 3],
     /// The project the per-project watches were last made for, by path.
     watched_project: Option<String>,
     pub battery: Option<Battery>,
@@ -412,6 +412,11 @@ impl Workbench {
             cx.observe_window_activation(window, |bench, window, cx| {
                 if !window.is_window_active() {
                     bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx));
+                }
+            }),
+            cx.observe(&voice, |bench, _, cx| {
+                if bench.settings.is_some() {
+                    bench.parts.redraw(&bench.parts.stage, cx);
                 }
             }),
         ];
