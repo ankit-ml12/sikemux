@@ -3238,6 +3238,22 @@ impl Looks {
                 let files = files.clone();
                 move |name: &str, cx: &mut App| files::Files::kind_of(&files, name, cx)
             })),
+            file_icon: Some(Rc::new(
+                |name: &str, kind, size, _: &mut Window, cx: &mut App| {
+                    let (icon, glyph) = match kind {
+                        gpui_transcript::FileKind::Folder => (None, crate::icons::Icon::Folder),
+                        gpui_transcript::FileKind::File => {
+                            (crate::file_icons::icon(name, cx), crate::icons::Icon::File)
+                        }
+                    };
+                    Some(match icon {
+                        Some(icon) => gpui_kit::img(icon).size(size).into_any_element(),
+                        None => crate::ui::icon(glyph, f32::from(size))
+                            .text_color(Tokens::get(cx).text_tertiary)
+                            .into_any_element(),
+                    })
+                },
+            )),
             on_file: Some(Rc::new({
                 let (bench, agent, files) = (bench.clone(), agent.clone(), files.clone());
                 move |name: &str, kind, press, window: &mut Window, cx: &mut App| {

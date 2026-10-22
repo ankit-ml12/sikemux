@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    combine_highlights, div, img, point, px, relative, rgb, rgba, size, AnyElement, App,
+    canvas, combine_highlights, div, img, point, px, relative, rgb, rgba, size, AnyElement, App,
     AvailableSpace, Bounds, ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight,
     GlobalElementId, HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText,
     IntoElement, LayoutId, MouseButton, ParentElement, Pixels, Point, SharedString, Stateful,
@@ -56,6 +56,12 @@ pub enum FilePress {
 pub type FileOf = Rc<dyn Fn(&str, &mut App) -> Option<FileKind>>;
 /// What reaching for a file does, by its name as written.
 pub type OnFile = Rc<dyn Fn(&str, FileKind, FilePress, &mut Window, &mut App)>;
+/// The icon drawn inside the text before a file's name, by its name as written, `size` square.
+pub type FileIcon = Rc<dyn Fn(&str, FileKind, Pixels, &mut Window, &mut App) -> Option<AnyElement>>;
+
+/// A file's icon beside its name, in ems of the text it sits in, and the space after it.
+const FILE_ICON_EMS: f32 = 0.95;
+const FILE_ICON_SPACE_EMS: f32 = 0.3;
 
 /// How markdown looks and what it does when clicked. The defaults are Sikemux's dark theme.
 #[derive(Clone)]
@@ -87,6 +93,8 @@ pub struct Style {
     /// Draws the names that are files the host holds as files, and opens them.
     pub file_of: Option<FileOf>,
     pub on_file: Option<OnFile>,
+    /// Draws each file's icon inside the text, just before its name.
+    pub file_icon: Option<FileIcon>,
     pub fence: Option<DrawFence>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
@@ -136,6 +144,7 @@ impl Default for Style {
             on_link: None,
             file_of: None,
             on_file: None,
+            file_icon: None,
             fence: None,
             code: None,
             image: None,
@@ -556,11 +565,27 @@ impl Draw<'_> {
             Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
             None => own,
         };
+        let icon_size = style.text_size * FILE_ICON_EMS;
+        let mut gaps: Vec<(usize, Pixels)> = match &style.file_icon {
+            Some(_) => files
+                .iter()
+                .map(|(range, _, _)| {
+                    (
+                        range.start,
+                        icon_size + style.text_size * FILE_ICON_SPACE_EMS,
+                    )
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        gaps.sort_by_key(|(at, _)| *at);
+        gaps.dedup_by_key(|(at, _)| *at);
         let text = StyledText::new(rich.text.clone())
             .with_highlights(looks)
             .with_font_family_overrides(
                 mono.map(|(range, _)| (range.clone(), style.mono.family.clone())),
-            );
+            )
+            .with_gaps(gaps);
         let layout = text.layout().clone();
         let links: Vec<&(Range<usize>, SharedString)> = rich
             .links
@@ -582,6 +607,49 @@ impl Draw<'_> {
                     }
                 })
                 .into_any_element()
+        };
+        let inner = match (&style.file_icon, files.is_empty()) {
+            (Some(file_icon), false) => {
+                let (file_icon, named, layout) = (file_icon.clone(), files.clone(), layout.clone());
+                div()
+                    .relative()
+                    .child(inner)
+                    .child(
+                        canvas(
+                            move |_, window, cx| {
+                                let line = layout.line_height();
+                                named
+                                    .iter()
+                                    .filter_map(|(range, name, kind)| {
+                                        let at = layout.gap_origin(range.start)?;
+                                        let mut icon =
+                                            file_icon(name, *kind, icon_size, window, cx)?;
+                                        let top = (line - icon_size) / 2.;
+                                        icon.prepaint_as_root(
+                                            point(at.x, at.y + top),
+                                            size(
+                                                AvailableSpace::Definite(icon_size),
+                                                AvailableSpace::Definite(icon_size),
+                                            ),
+                                            window,
+                                            cx,
+                                        );
+                                        Some(icon)
+                                    })
+                                    .collect::<Vec<_>>()
+                            },
+                            |_, mut icons, window, cx| {
+                                for icon in &mut icons {
+                                    icon.paint(window, cx);
+                                }
+                            },
+                        )
+                        .absolute()
+                        .inset_0(),
+                    )
+                    .into_any_element()
+            }
+            _ => inner,
         };
         let inner = match (&style.on_file, files.is_empty()) {
             (Some(on_file), false) => {
