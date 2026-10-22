@@ -53,7 +53,8 @@ actions!(
         CloseGoToLine,
         NavigateBack,
         NavigateForward,
-        ClosePeek
+        ClosePeek,
+        AddNextMatch
     ]
 );
 
@@ -90,6 +91,7 @@ pub fn install(cx: &mut App) {
         KeyBinding::new(keys("cmd-h", "ctrl-h"), Replace, text),
         KeyBinding::new(keys("cmd-[", "ctrl-["), NavigateBack, text),
         KeyBinding::new(keys("cmd-]", "ctrl-]"), NavigateForward, text),
+        KeyBinding::new(keys("cmd-d", "ctrl-d"), AddNextMatch, text),
         // The app's own search across the project keeps ⇧⌘F, which Kit's editor takes for replace.
         KeyBinding::new(keys("cmd-shift-f", "ctrl-shift-f"), gpui::NoAction, text),
     ]);
@@ -157,6 +159,8 @@ struct Document {
     served: Option<lsp::Served>,
     /// The places a symbol leads to when there is more than one.
     peek: Option<Peek>,
+    /// The selection ⌘D started from, and where the match it last added ends.
+    next_match: Option<(std::ops::Range<usize>, usize)>,
     /// Whether it shows its text or, for markdown, how it reads, and that rendering.
     mode: preview::Mode,
     rendered: Option<Rc<gpui_transcript::Markdown>>,
@@ -280,6 +284,12 @@ pub fn pane(
             }),
         )
         .on_action(window.listener_for(&this, |bench, _: &ClosePeek, _, cx| close_peeks(bench, cx)))
+        .on_action({
+            let key = key.clone();
+            window.listener_for(&this, move |bench, _: &AddNextMatch, _, cx| {
+                add_next_match(bench, &key, cx)
+            })
+        })
         .on_action({
             let key = key.clone();
             window.listener_for(&this, move |bench, _: &GoToLine, window, cx| {
@@ -471,6 +481,52 @@ fn step(bench: &mut Workbench, back: bool, cx: &mut Context<Workbench>) {
         }
     }
     show(bench, to, cx);
+}
+
+/// ⌘D, as on the Mac: with nothing selected it selects the word at the cursor, and with text
+/// selected it adds the next place that text appears, coming round from the top, until every
+/// place is selected.
+fn add_next_match(bench: &mut Workbench, key: &FileKey, cx: &mut Context<Workbench>) {
+    let Some(document) = bench.editors.open.get_mut(key) else {
+        return;
+    };
+    let state = document.state.clone();
+    let text = state.read(cx).value().to_string();
+    let selected = state.read(cx).selected_range();
+    if selected.is_empty() {
+        document.next_match = None;
+        let word = |letter: char| letter.is_alphanumeric() || letter == '_';
+        let start = text[..selected.start]
+            .char_indices()
+            .rev()
+            .take_while(|(_, letter)| word(*letter))
+            .last()
+            .map_or(selected.start, |(at, _)| at);
+        let end = text[selected.start..]
+            .char_indices()
+            .find(|(_, letter)| !word(*letter))
+            .map_or(text.len(), |(at, _)| selected.start + at);
+        if start < end {
+            state.update(cx, |state, cx| state.set_selected_range(start..end, cx));
+        }
+        return;
+    }
+    let after = match &document.next_match {
+        Some((origin, after)) if *origin == selected => *after,
+        _ => selected.end,
+    };
+    let needle = &text[selected.clone()];
+    let found = text
+        .get(after..)
+        .and_then(|rest| rest.find(needle))
+        .map(|at| after + at)
+        .or_else(|| text.find(needle));
+    let Some(at) = found.filter(|at| *at != selected.start) else {
+        return;
+    };
+    let added = at..at + needle.len();
+    document.next_match = Some((selected, added.end));
+    state.update(cx, |state, cx| state.add_selection(added, cx));
 }
 
 /// Lists the places a symbol leads to under the editor of `path`, and reads
@@ -889,6 +945,7 @@ fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
             goto: None,
             served: None,
             peek: None,
+            next_match: None,
             mode: preview::first_mode(&key.path),
             rendered: None,
             gutter: gutter::Gutter::default(),
