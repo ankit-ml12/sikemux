@@ -859,8 +859,8 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
     "workspace.inspect with the window closed",
   );
   if (
-    "windows" in inspected ||
-    !inspected.note ||
+    !Array.isArray(inspected.windows) ||
+    !inspected.note?.includes("No Sikemux window is open") ||
     !inspected.runs.some((run) => run.executionId === started.executionId)
   )
     fail(`inspect with the window closed: ${JSON.stringify(inspected)}`);
