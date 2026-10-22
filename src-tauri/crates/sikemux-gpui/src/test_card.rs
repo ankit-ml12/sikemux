@@ -7,8 +7,8 @@ use gpui_kit::base::Popover;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    anchored, deferred, div, point, px, Anchor, AnchoredPositionMode, AnyElement, Context,
-    FontWeight, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
+    anchored, deferred, div, px, Anchor, AnyElement, Context, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, StatefulInteractiveElement, Styled,
 };
 use serde_json::{json, Value};
 
@@ -109,21 +109,28 @@ pub fn card(
             failure_card(bench, finished, output, cx)
         }
     };
-    Some(
-        deferred(
-            anchored()
-                .position_mode(AnchoredPositionMode::Local)
-                .position(point(px(0.), px(30.)))
-                .anchor(Anchor::TopRight)
-                .snap_to_window()
-                .child(body),
-        )
-        .with_priority(1)
-        .into_any_element(),
-    )
+    Some(under_chip(body))
 }
 
-fn frame(cx: &mut Context<Workbench>) -> gpui_kit::Stateful<gpui_kit::Div> {
+/// `body` hanging under the Run chip, over what is beneath it.
+pub(crate) fn under_chip(body: AnyElement) -> AnyElement {
+    div()
+        .absolute()
+        .top(px(30.))
+        .right_0()
+        .child(
+            deferred(
+                anchored()
+                    .anchor(Anchor::TopRight)
+                    .snap_to_window()
+                    .child(body),
+            )
+            .with_priority(1),
+        )
+        .into_any_element()
+}
+
+pub(crate) fn frame(cx: &mut Context<Workbench>) -> gpui_kit::Stateful<gpui_kit::Div> {
     ui::float(cx)
         .id("run-card")
         .w(px(380.))
@@ -135,6 +142,15 @@ fn frame(cx: &mut Context<Workbench>) -> gpui_kit::Stateful<gpui_kit::Div> {
 }
 
 fn head(title: AnyElement, cx: &mut Context<Workbench>) -> impl IntoElement {
+    head_closing(title, Workbench::close_run_card, cx)
+}
+
+/// A card's title with the × that closes it by `close`.
+pub(crate) fn head_closing(
+    title: AnyElement,
+    close: fn(&mut Workbench),
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -143,8 +159,8 @@ fn head(title: AnyElement, cx: &mut Context<Workbench>) -> impl IntoElement {
         .child(
             IconButton::new("run-card-close", Icon::Close, "Close")
                 .small()
-                .on_click(cx.listener(|bench, _, _, cx| {
-                    bench.close_run_card();
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    close(bench);
                     cx.notify();
                 })),
         )

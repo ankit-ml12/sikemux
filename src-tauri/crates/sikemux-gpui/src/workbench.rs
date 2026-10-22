@@ -4185,7 +4185,6 @@ impl Render for Workbench {
             .children(asked)
             .children(crate::add_task::view(self, cx))
             .children(crate::buddy_picker::view(self, cx))
-            .children(crate::run_check::view(self, cx))
             .children(crate::share::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::opening(self, cx))

@@ -2,18 +2,17 @@
 //! Mac's Run chip shows it: what is missing, then Run anyway, or Install and run or Fix and run
 //! when the core can set right what is missing.
 
-use std::rc::Rc;
-
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, Window,
+    div, px, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Styled, Window,
 };
 use serde_json::{json, Value};
 
 use crate::icons::Icon;
 use crate::theme::Tokens;
-use crate::ui::{self, dialog};
+use crate::ui::{self, Variant};
 use crate::workbench::Workbench;
 
 /// What an agent asked to find the project's tasks is told, after the line naming the project.
@@ -137,9 +136,13 @@ impl Workbench {
     }
 }
 
-/// The card, while a task waits on its checks.
-pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
-    let check = bench.run_check.as_ref()?;
+/// The card under the Run chip of the project at `project`, while one of its tasks waits on
+/// its checks.
+pub fn card(bench: &Workbench, project: &str, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let check = bench
+        .run_check
+        .as_ref()
+        .filter(|check| check.project == project)?;
     let t = Tokens::get(cx).clone();
     let failed = |item: &&Value| item["ok"] != true;
     let installs = check
@@ -153,90 +156,89 @@ pub fn view(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .iter()
             .filter(failed)
             .any(|item| item["kind"] == "port" && !item["freePort"].is_null());
-    let body = div()
-        .px(px(20.))
-        .py(px(12.))
-        .flex()
-        .flex_col()
-        .gap(px(10.))
-        .children(check.checks.iter().map(|item| {
-            let ok = item["ok"] == true;
-            div()
-                .flex()
-                .items_start()
-                .gap(px(8.))
-                .child(
-                    ui::icon(if ok { Icon::Check } else { Icon::Close }, 11.)
-                        .mt(px(2.))
-                        .text_color(if ok { t.live } else { t.danger }),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .min_w_0()
-                        .child(
-                            div()
-                                .text_size(crate::theme::ui_text(12.))
-                                .text_color(t.text_primary)
-                                .child(item["title"].as_str().unwrap_or_default().to_owned()),
+    let title = ui::text(
+        format!("{} can't start yet", check.label),
+        12.,
+        FontWeight::SEMIBOLD,
+    )
+    .text_color(t.text_primary)
+    .into_any_element();
+    let items = check.checks.iter().map(|item| {
+        let ok = item["ok"] == true;
+        div()
+            .flex()
+            .items_start()
+            .gap(px(8.))
+            .pt(px(8.))
+            .border_t_1()
+            .border_color(t.border)
+            .child(
+                ui::icon(if ok { Icon::Check } else { Icon::Close }, 11.)
+                    .mt(px(2.))
+                    .text_color(if ok { t.live } else { t.danger }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .min_w_0()
+                    .child(
+                        ui::text(
+                            item["title"].as_str().unwrap_or_default().to_owned(),
+                            12.,
+                            FontWeight::NORMAL,
                         )
-                        .child(
-                            div()
-                                .text_size(crate::theme::ui_text(11.))
-                                .text_color(t.text_tertiary)
-                                .child(item["detail"].as_str().unwrap_or_default().to_owned()),
-                        ),
-                )
-        }))
-        .into_any_element();
-    let this = cx.entity();
-    let close: dialog::Answer =
-        Rc::new(move |_, cx| this.update(cx, |bench, cx| bench.close_run_check(cx)));
-    let run = |how: How| -> dialog::Answer {
-        let (this, project, task) = (cx.entity(), check.project.clone(), check.task.clone());
-        Rc::new(move |_, cx| {
-            this.update(cx, |bench, cx| {
-                bench.run_task(project.clone(), task.clone(), how, cx)
-            })
+                        .whitespace_normal()
+                        .text_color(t.text_primary),
+                    )
+                    .child(
+                        ui::text(
+                            item["detail"].as_str().unwrap_or_default().to_owned(),
+                            11.5,
+                            FontWeight::NORMAL,
+                        )
+                        .whitespace_normal()
+                        .text_color(t.text_tertiary),
+                    ),
+            )
+    });
+    let run = |how: How| {
+        let (project, task) = (check.project.clone(), check.task.clone());
+        cx.listener(move |bench: &mut Workbench, _, _, cx| {
+            bench.run_task(project.clone(), task.clone(), how, cx)
         })
     };
-    let anyway = run(How::Anyway);
-    let fix = run(How::Fixed);
-    let yes = if fixable { fix.clone() } else { anyway.clone() };
-    let foot = div()
-        .child(dialog::button(
-            "run-check-anyway",
-            "Run anyway".into(),
-            (!fixable).then_some(t.accent),
-            anyway,
-            cx,
-        ))
-        .when(fixable, |foot| {
+    let actions = div()
+        .flex()
+        .justify_end()
+        .gap(px(6.))
+        .child(
+            ui::Button::new("run-check-anyway", "Run anyway", Variant::Outline)
+                .disabled(check.fixing)
+                .on_click(run(How::Anyway)),
+        )
+        .when(fixable, |actions| {
             let label = match (check.fixing, installs) {
                 (true, _) => "Fixing…",
                 (false, true) => "Install and run",
                 (false, false) => "Fix and run",
             };
-            foot.child(dialog::button(
-                "run-check-fix",
-                SharedString::from(label),
-                Some(t.accent),
-                fix,
-                cx,
-            ))
+            actions.child(
+                ui::Button::new("run-check-fix", label, Variant::Primary)
+                    .disabled(check.fixing)
+                    .on_click(run(How::Fixed)),
+            )
         });
-    Some(
-        dialog::sheet_of(
-            px(440.),
-            format!("{} can't start yet", check.label).into(),
-            body,
-            foot,
-            yes,
-            close,
+    let body = crate::test_card::frame(cx)
+        .on_mouse_down_out(cx.listener(|bench, _, _, cx| bench.close_run_check(cx)))
+        .child(crate::test_card::head_closing(
+            title,
+            |bench| bench.run_check = None,
             cx,
-        )
-        .into_any_element(),
-    )
+        ))
+        .children(items)
+        .child(actions)
+        .into_any_element();
+    Some(crate::test_card::under_chip(body))
 }

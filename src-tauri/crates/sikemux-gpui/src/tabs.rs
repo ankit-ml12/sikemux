@@ -459,9 +459,11 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
         .or(last.filter(|_| failed.is_some()))
         .and_then(|run| run["ptyId"].as_u64())
         .map(|session| (session, label.clone()));
-    let card = finished
-        .as_ref()
-        .and_then(|finished| crate::test_card::card(bench, finished, output.clone(), cx));
+    let card = crate::run_check::card(bench, project, cx).or_else(|| {
+        finished
+            .as_ref()
+            .and_then(|finished| crate::test_card::card(bench, finished, output.clone(), cx))
+    });
     let why = finished
         .as_ref()
         .filter(|finished| crate::test_card::offers_why(bench, finished))
