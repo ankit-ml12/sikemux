@@ -309,6 +309,7 @@ pub fn run(
         .items_center()
         .gap(px(8.))
         .max_w_full()
+        .font_family(theme::UI)
         .rounded(theme::RADIUS_2)
         .cursor_pointer()
         .hover(move |sum| sum.bg(hover).text_color(ink))
@@ -321,7 +322,13 @@ pub fn run(
                     .child(format!("{count} calls")),
             )
         })
-        .children(time.map(|time| div().flex_none().text_color(looks.quiet).child(time)))
+        .children(time.map(|time| {
+            div()
+                .flex_none()
+                .font_family(theme::MONO)
+                .text_color(looks.quiet)
+                .child(time)
+        }))
         .child(div().flex_none().opacity(0.7).child(chevron(
             format!("run-chevron:{key}"),
             open,
