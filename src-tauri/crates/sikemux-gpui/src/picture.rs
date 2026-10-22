@@ -89,6 +89,70 @@ impl Asset for Fetched {
     }
 }
 
+/// A picture decoded to no more than `longest` pixels along its longer side, for drawing it
+/// small: a screenshot holds tens of megabytes decoded, and as much again as its texture.
+#[derive(Clone, Hash)]
+struct Thumb {
+    picture: Shrunk,
+    longest: u32,
+}
+
+#[derive(Clone, Hash)]
+enum Shrunk {
+    File(PathBuf),
+    Sent(Arc<Image>),
+}
+
+/// GPUI's loader for a thumbnail, which decodes the picture whole once and keeps only its
+/// shrunk copy.
+enum Thumbnail {}
+
+impl Asset for Thumbnail {
+    type Source = Thumb;
+    type Output = Result<Arc<RenderImage>, ImageCacheError>;
+
+    fn load(
+        thumb: Thumb,
+        _: &mut App,
+    ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
+        async move { shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into())) }
+    }
+}
+
+fn shrink(thumb: &Thumb) -> Result<Arc<RenderImage>, String> {
+    let read;
+    let bytes = match &thumb.picture {
+        Shrunk::File(path) => {
+            read = std::fs::read(path).map_err(|error| error.to_string())?;
+            read.as_slice()
+        }
+        Shrunk::Sent(image) => image.bytes.as_slice(),
+    };
+    let decoded = image::load_from_memory(bytes).map_err(|error| error.to_string())?;
+    let fitted = match decoded.width().max(decoded.height()) > thumb.longest {
+        true => decoded.thumbnail(thumb.longest, thumb.longest),
+        false => decoded,
+    };
+    let mut pixels = fitted.into_rgba8();
+    for pixel in pixels.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    Ok(Arc::new(RenderImage::new([image::Frame::new(pixels)])))
+}
+
+/// Whether a picture of this kind is shown from a shrunk copy when drawn small. Animations and
+/// drawings are not: a thumbnail would hold one still frame, and a drawing costs little.
+fn shrinks(format: ImageFormat) -> bool {
+    matches!(
+        format,
+        ImageFormat::Png
+            | ImageFormat::Jpeg
+            | ImageFormat::Webp
+            | ImageFormat::Bmp
+            | ImageFormat::Tiff
+    )
+}
+
 impl From<PathBuf> for Picture {
     fn from(path: PathBuf) -> Self {
         Picture::File(path)
@@ -146,6 +210,29 @@ impl Picture {
         }
     }
 
+    /// The picture as `img` draws it no larger than `longest` points: from a copy decoded at
+    /// twice that, for a sharp screen, where it would otherwise be decoded whole.
+    pub fn source_at(&self, longest: Pixels) -> ImageSource {
+        let picture = match self {
+            Picture::File(path) if format_of(path).is_some_and(shrinks) => {
+                Shrunk::File(path.clone())
+            }
+            Picture::Sent { image, .. } if shrinks(image.format) => Shrunk::Sent(image.clone()),
+            _ => return self.source(),
+        };
+        let thumb = Thumb {
+            picture,
+            longest: (f32::from(longest) * 2.).ceil() as u32,
+        };
+        ImageSource::Custom(Arc::new(move |window, cx| {
+            let image = window.use_asset::<Thumbnail>(&thumb, cx);
+            if let Some(Ok(image)) = &image {
+                cx.decoded_image_drawn::<Thumbnail>(&thumb, image);
+            }
+            image
+        }))
+    }
+
     pub fn source(&self) -> ImageSource {
         match self {
             Picture::File(path) => path.clone().into(),
@@ -160,6 +247,16 @@ impl Picture {
     }
 }
 
+/// What kind of picture the file at `path` holds, by its name.
+fn format_of(path: &Path) -> Option<ImageFormat> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "jpg" => Some(ImageFormat::Jpeg),
+        "tif" => Some(ImageFormat::Tiff),
+        other => ImageFormat::from_mime_type(&format!("image/{other}")),
+    }
+}
+
 /// A picture in a transcript at its own size, no larger than `width` by `height`, which
 /// opens over the window when clicked.
 pub fn thumb(
@@ -170,7 +267,7 @@ pub fn thumb(
     bench: WeakEntity<Workbench>,
     quiet: Hsla,
 ) -> Div {
-    let source = picture.source();
+    let source = picture.source_at(width.max(height));
     let clickable = div()
         .id(id)
         .max_w(width)

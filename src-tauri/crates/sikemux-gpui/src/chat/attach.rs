@@ -604,7 +604,8 @@ fn file_name(path: &Path) -> SharedString {
 /// A picture's preview, or the icon of a file's kind.
 fn media(path: &Path, t: &Tokens, cx: &App) -> AttachmentMedia {
     let media = if is_image(path) {
-        AttachmentMedia::new().src(path.to_path_buf())
+        AttachmentMedia::new()
+            .src(crate::picture::Picture::File(path.to_path_buf()).source_at(px(96.)))
     } else {
         let icon = crate::file_icons::icon(&file_name(path), cx)
             .map(|icon| gpui_kit::img(icon).size(px(28.)).into_any_element());
