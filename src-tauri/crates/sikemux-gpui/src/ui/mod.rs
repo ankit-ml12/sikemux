@@ -21,7 +21,7 @@ pub use dock::{DockMenu, DockRow};
 pub use find_bar::FindBar;
 pub use floats::{float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
-pub use pane::{pane, PaneHeader};
+pub use pane::{pane, PaneHeader, AGENT_INSET};
 pub use select::{select, Pick};
 
 use gpui_kit::prelude::FluentBuilder;

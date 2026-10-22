@@ -96,6 +96,7 @@ pub fn agent_view(
         .and_then(|agent| bench.agent_terminal(&agent.id))
     {
         return ui::pane(cx)
+            .p(px(ui::AGENT_INSET))
             .child(div().size_full().pt(px(40.)).child(terminal::pane(
                 bench,
                 &cx.entity(),
@@ -121,11 +122,13 @@ pub fn agent_view(
                 .unwrap_or_else(|| welcome(bench, Some(agent), cx).into_any_element())
         });
         return ui::pane(cx)
+            .p(px(ui::AGENT_INSET))
             .child(chat::pane(bench, agent, chat, welcome, cx))
             .children(header)
             .into_any_element();
     }
     ui::pane(cx)
+        .p(px(ui::AGENT_INSET))
         .child(
             div()
                 .size_full()

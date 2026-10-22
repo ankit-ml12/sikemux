@@ -10,6 +10,9 @@ use smallvec::SmallVec;
 use super::{mark_box, meta, text};
 use crate::theme::{Tokens, RADIUS_3};
 
+/// How far an agent pane's contents sit inside its frame, as on the Mac.
+pub const AGENT_INSET: f32 = 6.;
+
 /// A pane's frame. Panes paint no ground of their own: the shell's shows through.
 pub fn pane(cx: &App) -> Div {
     div()
@@ -40,7 +43,8 @@ pub fn pill(cx: &App) -> Div {
 }
 
 /// An agent pane's header, two pills floating over what the pane shows: what it
-/// is with its actions, then its controls and anything beside them.
+/// is with its actions, then its controls and anything beside them. It sits as far
+/// in from the frame's top as from its sides, as on the Mac.
 #[derive(IntoElement)]
 pub struct PaneHeader {
     mark: Option<AnyElement>,
@@ -113,9 +117,9 @@ impl RenderOnce for PaneHeader {
         let primary = Tokens::get(cx).text_primary;
         div()
             .absolute()
-            .top(px(2.))
-            .left(px(6.))
-            .right(px(4.))
+            .top(px(AGENT_INSET + 2.))
+            .left(px(AGENT_INSET + 6.))
+            .right(px(AGENT_INSET + 4.))
             .flex()
             .items_center()
             .justify_between()
