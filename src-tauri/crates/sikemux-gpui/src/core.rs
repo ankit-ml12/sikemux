@@ -231,6 +231,12 @@ pub enum RemoteAsk {
         access: DeviceAccess,
     },
     Revoke(String),
+    /// Answers a phone waiting to connect.
+    Answer {
+        id: String,
+        allow: bool,
+        access: DeviceAccess,
+    },
 }
 
 pub enum ChatAsk {
@@ -796,6 +802,7 @@ async fn run(
                                         RemoteAsk::Enable(enabled) => client.set_remote_access(enabled).await,
                                         RemoteAsk::Access { device, access } => client.set_device_access(device, access).await,
                                         RemoteAsk::Revoke(device) => client.revoke_device(device).await,
+                                        RemoteAsk::Answer { id, allow, access } => client.answer_pairing(id, allow, access).await,
                                     };
                                     let _ = updates.send(match status {
                                         Ok(status) => Update::Remote(Box::new(status)),

@@ -66,6 +66,8 @@ pub struct Workbench {
     pub experience: Option<crate::experience::Experience>,
     /// A custom command running in a terminal over the window.
     pub command_popup: Option<crate::command_popup::Popup>,
+    /// The question over the window while a phone waits to connect.
+    pub pairing: crate::pairing::Pairing,
     /// Whether this window has looked for what kept running while Sikemux was closed.
     pub kept_running_told: bool,
     /// Each open project settings tab's state, by the project's folder.
@@ -288,6 +290,7 @@ pub struct AgentRow {
 impl Workbench {
     pub fn new(link: Link, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let Link { mut updates, asks } = link;
+        let _ = asks.send(Ask::Remote(crate::core::RemoteAsk::Status));
         cx.defer_in(window, |bench, _, cx| crate::accounts::read(bench, cx));
         crate::faces::install(cx);
         crate::file_icons::install(cx);
@@ -298,6 +301,7 @@ impl Workbench {
         crate::chat::install(cx);
         crate::terminal::install(cx);
         crate::command_popup::install(cx);
+        crate::pairing::install(cx);
         crate::editor::install(cx);
         crate::search::install(cx);
         crate::settings::install(cx);
@@ -424,6 +428,7 @@ impl Workbench {
             command_popup: None,
             project_settings: HashMap::new(),
             kept_running_told: false,
+            pairing: crate::pairing::Pairing::new(cx),
             shown: Default::default(),
             picture: None,
             picture_hash: None,
@@ -748,6 +753,7 @@ impl Workbench {
             Update::Remote(status) => {
                 self.remote = Some(*status);
                 crate::settings::remote_moved(self, cx);
+                crate::pairing::remote_moved(self, cx);
                 return self.parts.redraw(&self.parts.stage, cx);
             }
             Update::WindowCall(call_id, call) => self.answer_window_call(call_id, call),
@@ -2600,7 +2606,8 @@ impl Parts {
             ),
             over: part(
                 |bench, window, cx| {
-                    crate::command_popup::overlay(bench, window, cx)
+                    crate::pairing::overlay(bench, window, cx)
+                        .or_else(|| crate::command_popup::overlay(bench, window, cx))
                         .unwrap_or_else(|| crate::experience::draw(bench, window, cx))
                 },
                 true,

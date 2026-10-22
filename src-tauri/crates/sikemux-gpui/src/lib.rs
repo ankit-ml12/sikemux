@@ -35,6 +35,7 @@ mod keymap;
 pub mod model_picker;
 mod new_tab;
 pub mod notifications;
+mod pairing;
 mod palette;
 mod panes;
 mod picker;
