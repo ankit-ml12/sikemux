@@ -11,7 +11,8 @@
 //!                                 a place or drop them there, "copy-image file.png", or "share" to open the
 //!                                 share dialog of the chat in front; "press x,y", "hold x,y" and
 //!                                 "release x,y" drag the pointer with its button down, and
-//!                                 "clipboard" prints the text copied
+//!                                 "clipboard" prints the text copied; "state" prints one line of what
+//!                                 the window shows (Settings, any modal, the front view, the focus, the tabs)
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -228,6 +229,11 @@ fn main() -> anyhow::Result<()> {
                     let copied = cx.read_from_clipboard().and_then(|item| item.text());
                     println!("clipboard: {copied:?}");
                 }
+                "state" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        println!("{}", state(bench.read(cx), &window.context_stack()));
+                    }
+                }
                 "type" => {
                     for letter in rest.chars() {
                         let key = if letter == ' ' {
@@ -355,4 +361,48 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// One line of what the window shows, for a check to match without looking: its keys stay in
+/// this order, and new ones go at the end.
+fn state(bench: &workbench::Workbench, stack: &[gpui::KeyContext]) -> String {
+    let names = |context: &gpui::KeyContext| -> Vec<String> {
+        context
+            .primary()
+            .into_iter()
+            .chain(context.secondary())
+            .filter(|entry| entry.value.is_none())
+            .map(|entry| entry.key.to_string())
+            .collect()
+    };
+    let modal = stack
+        .iter()
+        .rev()
+        .find(|context| context.contains("Modal"))
+        .and_then(|context| names(context).into_iter().find(|name| name != "Modal"));
+    let focus = stack
+        .last()
+        .and_then(|context| names(context).into_iter().next());
+    let tab = bench.focused_kind().map(|kind| format!("{kind:?}"));
+    let tabs = bench.strip().map_or(0, |strip| bench.tabs(&strip).len());
+    let settings = if bench.settings.is_some() { "open" } else { "closed" };
+    let shown = |name: Option<String>| name.map_or_else(|| "none".to_owned(), |name| kebab(&name));
+    format!(
+        "state settings={settings} modal={} tab={} focus={} tabs={tabs}",
+        shown(modal),
+        shown(tab),
+        shown(focus),
+    )
+}
+
+/// `ProjectSwitcher` as `project-switcher`.
+fn kebab(name: &str) -> String {
+    let mut kebab = String::new();
+    for (at, letter) in name.chars().enumerate() {
+        if letter.is_uppercase() && at > 0 {
+            kebab.push('-');
+        }
+        kebab.extend(letter.to_lowercase());
+    }
+    kebab
 }

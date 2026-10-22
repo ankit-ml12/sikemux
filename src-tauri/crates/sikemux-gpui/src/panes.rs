@@ -613,7 +613,7 @@ impl Workbench {
     }
 
     /// What the view in focus in the tab in front shows, else its first.
-    pub(crate) fn focused_kind(&self) -> Option<PaneKind> {
+    pub fn focused_kind(&self) -> Option<PaneKind> {
         let tab = self.tab()?;
         match view_in(&tab.pane, &self.focused_view()?)? {
             Pane::View { kind, .. } => Some(*kind),
