@@ -282,7 +282,9 @@ impl<R: Row> Transcript<R> {
 
     fn apply(&mut self, cx: &mut Context<Self>) {
         let was_empty = self.rows.is_empty();
-        for change in std::mem::take(&mut self.queue) {
+        let changes = std::mem::take(&mut self.queue);
+        let changed = !changes.is_empty();
+        for change in changes {
             let end = self.rows.len();
             match change {
                 Change::Put(row) => match self.position(row.id()) {
@@ -344,6 +346,9 @@ impl<R: Row> Transcript<R> {
         }
         if self.rows.is_empty() != was_empty {
             cx.emit(EmptyChanged(self.rows.is_empty()));
+        }
+        if changed {
+            cx.emit(RowsChanged);
         }
     }
 
@@ -450,6 +455,11 @@ impl<R: Row> Transcript<R> {
 pub struct EmptyChanged(pub bool);
 
 impl<R: Row> EventEmitter<EmptyChanged> for Transcript<R> {}
+
+/// Changes pushed to the rows were applied, as they are when the transcript draws.
+pub struct RowsChanged;
+
+impl<R: Row> EventEmitter<RowsChanged> for Transcript<R> {}
 
 impl<R: Row> EventEmitter<FoundChanged> for Transcript<R> {}
 

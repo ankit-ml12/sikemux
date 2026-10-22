@@ -20,7 +20,8 @@ use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 /// The line under the last row while a turn runs: what the agent is doing, and for how
-/// long. It keeps its own clock, so the ticking second redraws this line alone.
+/// long. Each second it ticks re-renders the views it sits in as well, as GPUI redraws a
+/// view's parents with it; the rows are a view of their own and are not drawn again.
 pub struct Activity {
     provider: String,
     label: Option<SharedString>,

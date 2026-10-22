@@ -19,7 +19,7 @@ use gpui_kit::{
 };
 use gpui_transcript::{
     AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row,
-    Style, Transcript,
+    RowsChanged, Style, Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -374,8 +374,9 @@ pub struct Chat {
     looks: Rc<Looks>,
     /// The chat's text size, as a share of its designed size.
     scale: f32,
-    /// The stage draws the welcome in an empty chat's place, so it hears when that changes.
-    _emptied: Subscription,
+    /// The stage draws the welcome in an empty chat's place, and the activity line reads the
+    /// last row, so both hear when the rows change.
+    _rows: [Subscription; 2],
     /// The stage draws the find bar's count and the way back to the latest rows, so it hears
     /// when what was found changes and when the reader scrolls away from the end.
     _found: [Subscription; 2],
@@ -523,6 +524,7 @@ impl Chat {
     ) -> Chat {
         let reader = cx.new(|_| Reading::default());
         let stage = bench.clone();
+        let chat = agent.clone();
         let looks = Rc::new(Looks::new(
             Tokens::get(cx),
             provider,
@@ -576,6 +578,18 @@ impl Chat {
                 })
             },
         ];
+        let rows_changed = {
+            let stage = stage.clone();
+            cx.subscribe(&transcript, move |_, _: &RowsChanged, cx| {
+                stage
+                    .update(cx, |bench, cx| {
+                        if let Some(chat) = bench.chats.get(&chat) {
+                            chat.follow_activity(cx);
+                        }
+                    })
+                    .ok();
+            })
+        };
         let emptied = cx.subscribe(&transcript, move |_, _: &EmptyChanged, cx| {
             stage
                 .update(cx, |bench, cx| bench.parts.redraw(&bench.parts.stage, cx))
@@ -589,7 +603,7 @@ impl Chat {
             finding: None,
             plan_open: false,
             activity_line: cx.new(|_| status::Activity::new(provider)),
-            _emptied: emptied,
+            _rows: [emptied, rows_changed],
             head: Map::new(),
             state: None,
             head_moved: false,
@@ -695,6 +709,12 @@ impl Chat {
                 cx.notify();
             }
         });
+        self.follow_activity(cx);
+    }
+
+    /// Says on the line under the last row what the agent is doing, from the head and the
+    /// rows as they stand; the rows land only when the transcript draws, so this runs again then.
+    fn follow_activity(&self, cx: &mut App) {
         let doing = self.activity(cx);
         self.activity_line
             .update(cx, |activity, cx| activity.set(doing, cx));
