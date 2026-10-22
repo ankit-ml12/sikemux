@@ -2,8 +2,11 @@
 //! finished: a macOS notification that brings the agent forward when clicked, and the
 //! Dock icon's bounce and badge.
 
+use std::collections::HashSet;
+
+use gpui_kit::component::notification::Notification;
 use gpui_kit::Context;
-use sikemux_wire::protocol::{AgentGroup, DeviceView};
+use sikemux_wire::protocol::{AgentGroup, DeviceView, Pane, PaneKind, SessionKind};
 use tokio::sync::oneshot;
 
 use crate::workbench::Workbench;
@@ -93,6 +96,65 @@ pub fn introduce(bench: &Workbench, cx: &mut Context<Workbench>) {
     }
     crate::settings::set(bench, "notificationsIntroduced", true);
     test(cx);
+}
+
+/// Says once, the first time Sikemux opens onto terminals, tasks or chats that ran on while it
+/// was closed, how to stop them.
+pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    if bench.kept_running_told {
+        return;
+    }
+    let (Some(view), Some(preferences)) = (&bench.view, bench.read("preferences")) else {
+        return;
+    };
+    let unshown = preferences["keptRunningNoticeShown"] == false;
+    let mut shown = HashSet::new();
+    let layout = &view.layout;
+    let strips = layout
+        .projects
+        .values()
+        .chain(layout.hosts.values())
+        .chain(std::iter::once(&layout.terminals));
+    for strip in strips {
+        for tab in &strip.tabs {
+            terminals_in(&tab.pane, &mut shown);
+        }
+    }
+    let running = |kind: SessionKind| {
+        view.sessions
+            .iter()
+            .filter(move |session| session.kind == kind && session.running)
+    };
+    let terminals = running(SessionKind::Terminal)
+        .filter(|session| shown.contains(session.id.to_string().as_str()))
+        .count();
+    let kept = terminals + running(SessionKind::Task).count() + view.chats.len();
+    bench.kept_running_told = true;
+    if !unshown || kept == 0 {
+        return;
+    }
+    crate::settings::set(bench, "keptRunningNoticeShown", true);
+    bench.notify(
+        Notification::info(
+            "Your terminals and agents kept running while Sikemux was closed. Use Quit and Stop Everything (⌥⌘Q) to stop them.",
+        )
+        .autohide(false),
+        cx,
+    );
+}
+
+fn terminals_in<'a>(pane: &'a Pane, found: &mut HashSet<&'a str>) {
+    match pane {
+        Pane::View {
+            kind: PaneKind::Terminal,
+            target,
+            ..
+        } => {
+            found.insert(target);
+        }
+        Pane::View { .. } => {}
+        Pane::Split { panes, .. } => panes.iter().for_each(|pane| terminals_in(pane, found)),
+    }
 }
 
 /// How many agents wait on the person: those asking for something, and those that finished

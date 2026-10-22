@@ -66,6 +66,8 @@ pub struct Workbench {
     pub experience: Option<crate::experience::Experience>,
     /// A custom command running in a terminal over the window.
     pub command_popup: Option<crate::command_popup::Popup>,
+    /// Whether this window has looked for what kept running while Sikemux was closed.
+    pub kept_running_told: bool,
     /// Each open project settings tab's state, by the project's folder.
     pub project_settings: HashMap<String, crate::project_settings::ProjectSettings>,
     pub shown: crate::experience::Shown,
@@ -421,6 +423,7 @@ impl Workbench {
             experience: None,
             command_popup: None,
             project_settings: HashMap::new(),
+            kept_running_told: false,
             shown: Default::default(),
             picture: None,
             picture_hash: None,
@@ -548,6 +551,7 @@ impl Workbench {
                 );
                 crate::editor::keep(self);
                 crate::notifications::badge(self);
+                crate::notifications::kept_running(self, cx);
                 self.note_place();
                 self.watch_project();
                 self.watch_picture();
@@ -697,6 +701,7 @@ impl Workbench {
                 }
                 self.reads.insert("preferences", value);
                 crate::notifications::introduce(self, cx);
+                crate::notifications::kept_running(self, cx);
             }
             Update::Read("drafts", value) => {
                 if let Some(pane) = &self.git {
