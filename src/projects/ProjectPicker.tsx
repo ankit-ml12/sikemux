@@ -15,6 +15,7 @@ export function ProjectPicker({
     onPick,
     className,
     title,
+    opens,
 }: {
     host: string | undefined;
     /** The chosen project's folder. */
@@ -22,6 +23,7 @@ export function ProjectPicker({
     onPick: (choice: ProjectChoice) => void;
     className?: string;
     title?: string;
+    opens?: "above" | "below";
 }) {
     const home = useStore((s) => s.home);
     const roots = useStore((s) => s.projectRoots);
@@ -53,6 +55,7 @@ export function ProjectPicker({
             options={options}
             icon={projectMark()}
             menuWidth={300}
+            opens={opens}
             search="Find a project"
             onOpenChange={setOpen}
             onChange={(path) => {

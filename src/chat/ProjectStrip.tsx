@@ -61,6 +61,7 @@ export function ProjectStrip({
                     host={host}
                     value={project}
                     title={prettyPath(project, home)}
+                    opens="above"
                     onPick={(choice) => {
                         if (choice.path !== project) void cmd.moveAgentToProject(agentId, choice.path);
                     }}

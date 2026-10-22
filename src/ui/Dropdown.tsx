@@ -31,6 +31,7 @@ export function Dropdown({
     disabled,
     align = "left",
     menuWidth,
+    opens = "below",
     search,
     checkAtEnd,
     anchor,
@@ -48,6 +49,8 @@ export function Dropdown({
     disabled?: boolean;
     align?: "left" | "right";
     menuWidth?: number;
+    /** The side the menu opens on while it fits there. */
+    opens?: "above" | "below";
     /** Puts a filter box at the top of the menu, with this placeholder. */
     search?: string;
     /** Puts the chosen option's tick at the end of its row instead of before its icon. */
@@ -118,7 +121,7 @@ export function Dropdown({
             const desired = Math.min(menu.scrollHeight, 280);
             const below = window.innerHeight - rect.bottom - 12;
             const above = rect.top - 12;
-            const up = below < desired && above > below;
+            const up = opens === "above" ? above >= desired || above > below : below < desired && above > below;
             const maxHeight = Math.max(24, Math.min(280, up ? above : below));
             setPosition({
                 width,
@@ -135,7 +138,7 @@ export function Dropdown({
             window.removeEventListener("resize", place);
             window.removeEventListener("scroll", place, true);
         };
-    }, [open, menuWidth, align, shown.length]);
+    }, [open, menuWidth, align, opens, shown.length]);
     useEffect(() => {
         if (open) menuRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView?.({ block: "nearest" });
     }, [index, open]);
