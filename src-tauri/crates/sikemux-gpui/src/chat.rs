@@ -29,7 +29,7 @@ use sikemux_wire::chat::{
     SubagentState, WorkFold,
 };
 use sikemux_wire::protocol::{
-    AgentStatus, ChatAttachment, ChatContext, ChatMark, MidTurnSend, WorkspaceAgent,
+    AgentStatus, ChatAttachment, ChatContext, ChatMark, ConfigPicker, MidTurnSend, WorkspaceAgent,
     DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE,
 };
 
@@ -2754,8 +2754,18 @@ fn composer(
         };
         composer = composer.model_menu(picked, cx.entity());
     }
-    if model.is_some() || head.is_some_and(|head| head.effort.is_some()) {
-        composer = composer.pickers(model, head.and_then(|head| head.effort.clone()), pick);
+    let effort = head.and_then(|head| head.effort.clone()).or_else(|| {
+        let driver = kind.and_then(|kind| kind["chat"].as_str());
+        matches!(driver, Some("claude" | "codex")).then(|| ConfigPicker {
+            id: "effort".into(),
+            current: saved
+                .and_then(|saved| saved.effort.clone())
+                .unwrap_or_else(|| "Effort".into()),
+            choices: Vec::new(),
+        })
+    });
+    if model.is_some() || effort.is_some() {
+        composer = composer.pickers(model, effort, pick);
     }
     if kind.is_some_and(|kind| kind["bypass"] == true) {
         let on = head.is_some_and(|head| head.permission_mode == "bypass");
