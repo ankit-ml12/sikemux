@@ -133,6 +133,7 @@ pub struct Workbench {
     pub host: Option<Entity<HostArea>>,
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
+    pub board: Option<Entity<crate::board::BoardPane>>,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
     /// The agent whose title is being edited in place in its header.
@@ -365,6 +366,7 @@ impl Workbench {
         let _ = asks.send(Ask::Follow("git"));
         let _ = asks.send(Ask::Follow("files"));
         let _ = asks.send(Ask::Follow("lsp"));
+        let _ = asks.send(Ask::Follow("boards"));
         let _ = asks.send(Ask::Follow("agentSignIn"));
         let _ = asks.send(Ask::Follow("agentAccounts"));
         cx.spawn(async move |this, cx| loop {
@@ -451,6 +453,7 @@ impl Workbench {
             area: Area::Local,
             host: None,
             search: None,
+            board: None,
             settings: None,
             focus: cx.focus_handle(),
             window: window.window_handle(),
@@ -718,6 +721,11 @@ impl Workbench {
                     crate::editor::changed(self, paths.as_deref().unwrap_or_default(), cx);
                     if let Some(search) = &self.search {
                         search.update(cx, |search, cx| search.changed(cx));
+                    }
+                }
+                if topic == "boards" {
+                    if let Some(board) = &self.board {
+                        board.update(cx, |board, cx| board.changed(cx));
                     }
                 }
                 if topic == "lsp" {
@@ -2027,6 +2035,24 @@ impl Workbench {
         self.search = Some(cx.new(|cx| SearchPane::new(asks, project, cx)));
     }
 
+    /// Makes the board pane when the project's board tab comes to the front.
+    fn board_pane(&mut self, cx: &mut Context<Self>) {
+        let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
+        let (Some((PaneKind::Board, _)), Some(project)) = (front, self.project()) else {
+            return;
+        };
+        let folder = project.path.to_string_lossy().into_owned();
+        if self
+            .board
+            .as_ref()
+            .is_some_and(|pane| pane.read(cx).folder == folder)
+        {
+            return;
+        }
+        let (asks, bench) = (self.asks.clone(), cx.entity().downgrade());
+        self.board = Some(cx.new(|cx| crate::board::BoardPane::new(asks, folder, bench, cx)));
+    }
+
     /// Brings the project's Search tab to the front with the keyboard in its find field,
     /// opening one when it has none.
     fn open_search(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2472,6 +2498,7 @@ impl Parts {
                     bench.git_pane(window, cx);
                     bench.host_area(cx);
                     bench.search_pane(cx);
+                    bench.board_pane(cx);
                     crate::desk::prepare(bench, window, cx);
                     home::stage(bench, window, cx)
                 },

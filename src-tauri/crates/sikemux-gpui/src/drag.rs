@@ -68,6 +68,13 @@ pub struct DraggedProject {
     pub label: SharedString,
 }
 
+/// A card dragged to another column of its board.
+#[derive(Clone)]
+pub struct DraggedCard {
+    pub id: u64,
+    pub label: SharedString,
+}
+
 /// A file or folder dragged out of the tree.
 #[derive(Clone)]
 pub struct DraggedPath {
@@ -95,7 +102,7 @@ impl Render for Ghost {
     }
 }
 
-fn ghost(label: SharedString, cx: &mut App) -> Entity<Ghost> {
+pub(crate) fn ghost(label: SharedString, cx: &mut App) -> Entity<Ghost> {
     cx.new(|_| Ghost { label })
 }
 

@@ -103,6 +103,7 @@ const RENAMES = {
     Status: "CardStatus",
     Ticket: "CardTicket",
     CardView: "BoardCard",
+    Column: "BoardColumn",
     BoardView: "ProjectBoard",
   },
   [`${CORE}/server/board/auto.rs`]: {

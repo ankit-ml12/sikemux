@@ -453,6 +453,13 @@ pub struct Question {
     secret_note: Option<String>,
 }
 
+impl Question {
+    /// Who asked and what, while `agent_id` waits on the person's answer.
+    pub(crate) fn open_from(&self, agent_id: &str) -> Option<(&str, &str)> {
+        (self.agent_id == agent_id && self.state == "open").then_some((&self.name, &self.text))
+    }
+}
+
 #[derive(Clone, Deserialize)]
 struct Choice {
     label: String,

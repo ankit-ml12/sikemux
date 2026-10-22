@@ -424,6 +424,7 @@ calls! { core, client, params;
     "answerQuestion": Full => answer(questions::answer(&core, parse(params)?).await?),
     "answerQuestions": Full => answer(questions::answer_all(&core, parse(params)?).await?),
     "agentMessages": Watch, any_program => answer(agent_messages(&core, parse(params)?).await?),
+    "agentMessageRows": Watch, any_program => answer(agent_message_rows(&core, parse(params)?).await?),
     "boards": Watch, any_program => answer(board::boards(&core)),
     "board": Watch, any_program => answer(board::board(&core, params).await?),
     "boardAdd": Full => answer(board::person_add(&core, params).await?),
@@ -721,6 +722,22 @@ async fn agent_messages(core: &Arc<Core>, params: AgentMessagesParams) -> CoreRe
         let project = project_of(&path, &core.workspaces.project_paths());
         let entries = messages::logged(&core, &project, params.limit);
         Ok(json!({ "project": project, "entries": entries }))
+    })
+    .await
+}
+
+/// The project's messages between agents folded into one row each, newest first.
+async fn agent_message_rows(core: &Arc<Core>, params: AgentMessagesParams) -> CoreResult<Value> {
+    let path = Path::new(&params.project);
+    if !path.is_absolute() {
+        return Err("project must be the project's absolute path".into());
+    }
+    let path = path.to_owned();
+    let core = core.clone();
+    blocking(move || {
+        let project = project_of(&path, &core.workspaces.project_paths());
+        let rows = super::messages::logged_rows(&core, &project);
+        Ok(json!({ "project": project, "rows": rows }))
     })
     .await
 }
