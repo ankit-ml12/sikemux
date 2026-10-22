@@ -156,7 +156,7 @@ impl Workbench {
         });
     }
 
-    fn keep_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
+    pub fn keep_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats
             .get_mut(agent)

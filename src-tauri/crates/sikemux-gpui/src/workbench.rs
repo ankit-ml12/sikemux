@@ -1272,6 +1272,7 @@ impl Workbench {
             chat.sent(agent, text, outgoing, primary == steers, open)
         });
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
+        self.keep_draft(agent, cx);
         cx.notify();
     }
 
