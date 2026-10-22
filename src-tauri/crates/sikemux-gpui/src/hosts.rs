@@ -1,10 +1,17 @@
 //! The host the person is on (ADR 0018): this one, another host on the account, or an SSH host
 //! without Sikemux. The rail, the top bar and the tab list follow the one chosen.
 
-use gpui_kit::{Context, SharedString};
+use std::time::Duration;
+
+use gpui_kit::{AppContext, Context, SharedString, WeakEntity, Window};
 use serde_json::Value;
 
+use crate::core;
 use crate::workbench::{Strip, Workbench};
+
+/// How often a reached host's load is read again while the window is in front; the core sends
+/// no news of it.
+const LOAD_EVERY: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum HostChoice {
@@ -88,4 +95,50 @@ impl Workbench {
         }
         cx.notify();
     }
+}
+
+/// Keeps each reached host's load fresh while the window is in front.
+pub fn watch_loads(window: &mut Window, cx: &mut Context<Workbench>) {
+    cx.spawn_in(window, async move |bench, cx| loop {
+        let Ok(hosts) = bench.update_in(cx, |bench, window, _| {
+            if window.is_window_active() {
+                bench.hosts_reached.iter().cloned().collect()
+            } else {
+                Vec::new()
+            }
+        }) else {
+            break;
+        };
+        for host in hosts {
+            read_load(&bench, host, cx).await;
+        }
+        cx.background_executor().timer(LOAD_EVERY).await;
+    })
+    .detach();
+}
+
+/// Reads how busy `host` is now, for its row.
+pub fn read_load_now(host: String, cx: &mut Context<Workbench>) {
+    cx.spawn(async move |bench, cx| read_load(&bench, host, cx).await)
+        .detach();
+}
+
+async fn read_load(bench: &WeakEntity<Workbench>, host: String, cx: &mut impl AppContext) {
+    let Ok(asks) = bench.update(cx, |bench, _| bench.asks.clone()) else {
+        return;
+    };
+    let Ok(load) = core::request_on(&asks, &host, "hostLoad", Value::Null).await else {
+        return;
+    };
+    let cpu = load["cpu"].as_u64().unwrap_or_default();
+    let label = match load["memoryUsed"].as_u64() {
+        Some(bytes) => format!("{cpu}% · {:.1} GB", bytes as f64 / 1024f64.powi(3)),
+        None => format!("{cpu}%"),
+    };
+    let _ = bench.update(cx, |bench, cx| {
+        if bench.hosts_reached.contains(&host) {
+            bench.host_loads.insert(host, label.into());
+            bench.parts.redraw(&bench.parts.rail, cx);
+        }
+    });
 }

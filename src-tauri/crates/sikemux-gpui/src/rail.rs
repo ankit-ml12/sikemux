@@ -143,6 +143,10 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .as_str()
                 .and_then(|id| bench.host_views.get(id))
                 .map_or(0, |view| view.workspace.agents.len());
+            let load = host["id"]
+                .as_str()
+                .and_then(|id| bench.host_loads.get(id))
+                .filter(|_| reach == "connected");
             let detail = match reach {
                 "away" if linked => Some("out of reach".to_owned()),
                 "connecting" if linked => Some("connecting".to_owned()),
@@ -167,7 +171,14 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                     ui::icon(Icon::Server, 14.).text_color(if linked { t.host } else { t.ssh }),
                 )
                 .quiet()
-                .when_some(detail, |row, detail| row.detail(detail))
+                .when_some(
+                    match (load, detail) {
+                        (Some(load), Some(detail)) => Some(format!("{load} · {detail}")),
+                        (Some(load), None) => Some(load.to_string()),
+                        (None, detail) => detail,
+                    },
+                    |row, detail| row.detail(detail),
+                )
                 .status(Some(ui::dot(tone, cx)))
                 .into_any_element()
         })

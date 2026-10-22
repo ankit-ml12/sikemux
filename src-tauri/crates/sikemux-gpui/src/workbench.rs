@@ -154,6 +154,8 @@ pub struct Workbench {
     pub host_views: HashMap<String, DeviceView>,
     /// The account's other hosts this app is connected to now, by key.
     pub hosts_reached: HashSet<String>,
+    /// How busy each reached host was when last read, as its row shows it.
+    pub host_loads: HashMap<String, SharedString>,
     /// Why this app reaches none of the account's other hosts, when it cannot.
     pub hosts_unavailable: Option<String>,
     /// The stage's tabs while they move between one another.
@@ -401,6 +403,7 @@ impl Workbench {
             }
         })
         .detach();
+        crate::hosts::watch_loads(window, cx);
         let voice = cx.new(|_| crate::voice::Dictation::default());
         let voice_heard = [
             cx.subscribe_in(&voice, window, |bench, _, heard, window, cx| {
@@ -451,6 +454,7 @@ impl Workbench {
             asking: None,
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
+            host_loads: HashMap::new(),
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
             rail_slide: crate::track::Slide::default(),
@@ -526,9 +530,11 @@ impl Workbench {
             }
             Update::HostReach(host, reached) => {
                 if reached {
-                    self.hosts_reached.insert(host);
+                    self.hosts_reached.insert(host.clone());
+                    crate::hosts::read_load_now(host, cx);
                 } else {
                     self.hosts_reached.remove(&host);
+                    self.host_loads.remove(&host);
                 }
             }
             Update::HostsUnavailable(reason) => self.hosts_unavailable = Some(reason),
@@ -542,6 +548,7 @@ impl Workbench {
                 };
                 self.host_views.retain(|id, _| linked(id));
                 self.hosts_reached.retain(linked);
+                self.host_loads.retain(|id, _| linked(id));
                 self.reads.insert("hosts", value);
             }
             Update::View(view) => {
