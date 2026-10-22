@@ -634,7 +634,15 @@ export interface AgentShown {
    * its CLI's logo.
    */
   face?: AgentFace;
+  /**
+   * Its place on its lead's team, which the agents listed after a lead
+   * belong to; none for an agent on its own.
+   */
+  team?: TeamLink;
 }
+
+/** Where an agent sits on its team: the lead heads it, the last worker ends it. */
+export type TeamLink = 'head' | 'member' | 'last';
 
 /**
  * Several agents shown as one: the group of the one that wants the person

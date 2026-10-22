@@ -789,6 +789,17 @@ impl Workspaces {
     }
 
     /// The project of every agent in the workspace, by agent id.
+    /// Each worker's lead, by the worker's id.
+    pub(crate) fn agent_leads(&self) -> HashMap<String, String> {
+        self.published
+            .locked()
+            .saved
+            .agents
+            .iter()
+            .filter_map(|kept| Some((kept.agent.id.clone(), kept.agent.lead.clone()?)))
+            .collect()
+    }
+
     pub(crate) fn agent_projects(&self) -> HashMap<String, String> {
         self.published
             .locked()

@@ -197,6 +197,19 @@ pub(crate) struct Shown {
     /// The face it wears, as the workspace's agent does; none while it shows
     /// its CLI's logo.
     pub face: Option<crate::protocol::AgentFace>,
+    /// Its place on its lead's team, which the agents listed after a lead
+    /// belong to; none for an agent on its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team: Option<TeamLink>,
+}
+
+/// Where an agent sits on its team: the lead heads it, the last worker ends it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TeamLink {
+    Head,
+    Member,
+    Last,
 }
 
 impl Shown {
@@ -221,6 +234,7 @@ impl Shown {
             background: false,
             active_at: None,
             face: None,
+            team: None,
         }
     }
 
@@ -807,7 +821,7 @@ fn ranked(mut items: Vec<Item>) -> Vec<Item> {
 
 /// The inbox, from the chats and terminals the device view lists.
 pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> View {
-    let mut listed = shown(core, chats, sessions);
+    let mut listed = in_teams(shown(core, chats, sessions), &core.workspaces.agent_leads());
     let mut faces = core.agent_faces();
     for agent in &mut listed {
         agent.face = faces.remove(&agent.agent_id);
@@ -829,6 +843,74 @@ pub(crate) fn view(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) ->
         agents: listed,
         ..view_of(core, &agents(core, chats, sessions), sessions)
     }
+}
+
+/// The agents in the order given, but each lead's workers right after it, in the same
+/// order, and theirs after them. A worker whose lead is not listed stands on its own.
+fn in_teams(agents: Vec<Shown>, leads: &HashMap<String, String>) -> Vec<Shown> {
+    let lead_of: Vec<Option<usize>> = {
+        let at: HashMap<&str, usize> = agents
+            .iter()
+            .enumerate()
+            .map(|(ix, agent)| (agent.agent_id.as_str(), ix))
+            .collect();
+        agents
+            .iter()
+            .enumerate()
+            .map(|(ix, agent)| {
+                let lead = leads.get(&agent.agent_id)?;
+                at.get(lead.as_str()).copied().filter(|&lead| lead != ix)
+            })
+            .collect()
+    };
+    let mut workers = vec![Vec::new(); agents.len()];
+    for (ix, lead) in lead_of.iter().enumerate() {
+        if let Some(lead) = lead {
+            workers[*lead].push(ix);
+        }
+    }
+    fn gather(lead: usize, workers: &[Vec<usize>], placed: &mut [bool], team: &mut Vec<usize>) {
+        placed[lead] = true;
+        team.push(lead);
+        for &worker in &workers[lead] {
+            if !placed[worker] {
+                gather(worker, workers, placed, team);
+            }
+        }
+    }
+    let mut placed = vec![false; agents.len()];
+    let mut order = Vec::with_capacity(agents.len());
+    for ix in 0..agents.len() {
+        if placed[ix] || lead_of[ix].is_some() {
+            continue;
+        }
+        let mut team = Vec::new();
+        gather(ix, &workers, &mut placed, &mut team);
+        let last = team.len() - 1;
+        order.extend(team.into_iter().enumerate().map(|(at, member)| {
+            let link = match at {
+                _ if last == 0 => None,
+                0 => Some(TeamLink::Head),
+                at if at == last => Some(TeamLink::Last),
+                _ => Some(TeamLink::Member),
+            };
+            (member, link)
+        }));
+    }
+    order.extend(
+        (0..agents.len())
+            .filter(|&ix| !placed[ix])
+            .map(|ix| (ix, None)),
+    );
+    let mut agents: Vec<Option<Shown>> = agents.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter_map(|(ix, link)| {
+            let mut agent = agents[ix].take()?;
+            agent.team = link;
+            Some(agent)
+        })
+        .collect()
 }
 
 fn shown(core: &Core, chats: &[ChatInfo], sessions: &[SessionInfo]) -> Vec<Shown> {
