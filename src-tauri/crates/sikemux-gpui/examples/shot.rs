@@ -13,7 +13,8 @@
 //!                                 "release x,y" drag the pointer with its button down, and
 //!                                 "clipboard" prints the text copied; "state" prints one line of what
 //!                                 the window shows (Settings, any modal, the front view, the focus, the tabs,
-//!                                 the chosen host, a trust question)
+//!                                 the chosen host, a trust question); "host this", "host host:<key>" or
+//!                                 "host ssh:<alias>" chooses the host in front, as a click on its row does
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -233,6 +234,16 @@ fn main() -> anyhow::Result<()> {
                 "state" => {
                     if let Some(bench) = bench.borrow().clone() {
                         println!("{}", state(bench.read(cx), &window.context_stack()));
+                    }
+                }
+                "host" => {
+                    let choice = match rest.split_once(':') {
+                        Some(("host", key)) => sikemux_gpui::hosts::HostChoice::Account(key.into()),
+                        Some(("ssh", alias)) => sikemux_gpui::hosts::HostChoice::Ssh(alias.into()),
+                        _ => sikemux_gpui::hosts::HostChoice::This,
+                    };
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.update(cx, |bench, cx| bench.choose_host(choice, cx));
                     }
                 }
                 "type" => {
