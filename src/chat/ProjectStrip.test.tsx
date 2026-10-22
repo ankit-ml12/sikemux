@@ -20,7 +20,9 @@ const initial = getState();
 const toggle = vi.fn();
 
 function renderStrip(state: Parameters<typeof ProjectStrip>[0]["worktree"]["state"] = { kind: "choosing", on: false }) {
-    return render(<ProjectStrip agentId="agent-1" cwd="/work/app" worktree={{ state, toggle }} />);
+    return render(
+        <ProjectStrip agentId="agent-1" host={undefined} cwd="/work/app" started={false} worktree={{ state, toggle }} pull={null} account={null} />,
+    );
 }
 
 beforeEach(() => {

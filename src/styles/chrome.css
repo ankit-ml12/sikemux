@@ -139,19 +139,19 @@
 }
 
 /* Hosts and projects keep the colours the side rail gives them. */
-.tb-place-mark {
+.place-mark {
     display: inline-flex;
 }
 
-.tb-place-mark.project {
+.place-mark.project {
     color: var(--live);
 }
 
-.tb-place-mark.host-sikemux {
+.place-mark.host-sikemux {
     color: color-mix(in oklab, var(--acc) 80%, var(--ink-dim));
 }
 
-.tb-place-mark.host-ssh {
+.place-mark.host-ssh {
     color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
 }
 

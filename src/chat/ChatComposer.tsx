@@ -1,9 +1,7 @@
-import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { errorText } from "../lib/format";
 import { dialogsApi } from "../api/dialogs";
-import { AccountPicker, ComposerPickers } from "./ComposerPickers";
-import { ChatHeaderSlot } from "./headerSlot";
+import { ComposerPickers } from "./ComposerPickers";
 import type { SessionConfig } from "./sessionConfig";
 import { basename, joinPath } from "../lib/paths";
 import { animate } from "../lib/motion";
@@ -133,13 +131,6 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
 }
 
 const TrackedSource = lazy(() => import("./TrackedSource"));
-const WorktreeToggle = lazy(() => import("./ChatWorktree").then(({ WorktreeToggle }) => ({ default: WorktreeToggle })));
-
-/** Shows what holds for the whole chat in the pane's header, or in place where the chat has none. */
-function InChatHeader({ children }: { children: ReactNode }) {
-    const slot = useContext(ChatHeaderSlot);
-    return slot ? createPortal(children, slot) : <>{children}</>;
-}
 
 function Chip({
     title,
@@ -779,21 +770,6 @@ export function ChatComposer({
                         }
                     />
                 )}
-                <InChatHeader>
-                    {(worktree?.state.kind === "preparing" || worktree?.state.kind === "in") && (
-                        <Suspense fallback={null}>
-                            <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
-                        </Suspense>
-                    )}
-                    {agentLocked && profile && (
-                        <AccountPicker
-                            agent={agent}
-                            profile={profile}
-                            running={running}
-                            disabled={connection !== "ready" || changingPermissions || changingConfig}
-                        />
-                    )}
-                </InChatHeader>
                 <ComposerPickers
                     agent={agent}
                     profile={profile}

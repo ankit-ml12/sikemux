@@ -189,12 +189,11 @@ describe("ChatComposer Worktree switch", () => {
         expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
     });
 
-    it("holds the message back while the worktree is being set up", async () => {
+    it("holds the message back while the worktree is being set up", () => {
         const editor = renderComposer({ state: { kind: "preparing", step: "Running Install" }, toggle });
         type(editor, "hello");
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(mocks.onSend).not.toHaveBeenCalled();
-        expect((await screen.findByRole("button", { name: "worktree" })).title).toBe("Running Install…");
     });
 });
 

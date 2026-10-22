@@ -4,7 +4,8 @@ import { chooseHost, setUpOverSsh, SSH_WORK, sshSetUp, THIS_HOST, type HostChoic
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
-import { IconChevron, IconDownload, IconFolder, IconLaptop, IconLogIn, IconPower, IconServer } from "../ui/Icons";
+import { IconChevron, IconDownload, IconLogIn, IconPower } from "../ui/Icons";
+import { hostMark, projectMark } from "../hosts/placeMarks";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const keyOf = (choice: HostChoice) => (choice.kind === "core" ? `core:${choice.host ?? ""}` : `ssh:${choice.alias}`);
@@ -13,22 +14,6 @@ function choiceOf(key: string): HostChoice {
     const [kind, rest] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
     return kind === "ssh" ? { kind: "ssh", alias: rest } : rest ? { kind: "core", host: rest } : THIS_HOST;
 }
-
-/** A host's mark in the side rail's colour for its kind: this host, one on the account, or an SSH host. */
-function hostMark(choice: HostChoice) {
-    if (choice.kind === "core" && !choice.host) return <IconLaptop size={13} />;
-    return (
-        <span className={`tb-place-mark ${choice.kind === "core" ? "host-sikemux" : "host-ssh"}`}>
-            <IconServer size={13} />
-        </span>
-    );
-}
-
-const PROJECT_MARK = (
-    <span className="tb-place-mark project">
-        <IconFolder size={13} />
-    </span>
-);
 
 /** Where an SSH host without a running Sikemux has no projects: the one thing that sets it up (ADR 0019). */
 function SetUpOffer({ alias }: { alias: string }) {
@@ -100,7 +85,7 @@ export function TopBarPlace() {
         () =>
             projects.map((entry) => {
                 const [id, name] = entry.split("\n");
-                return { value: id, label: name, icon: PROJECT_MARK };
+                return { value: id, label: name, icon: projectMark() };
             }),
         [projects],
     );
@@ -130,7 +115,7 @@ export function TopBarPlace() {
                             label="Project"
                             value={activeId}
                             options={projectOptions}
-                            icon={PROJECT_MARK}
+                            icon={projectMark()}
                             search={projectOptions.length > 8 ? "Find a project" : undefined}
                             onChange={cmd.selectSession}
                         />

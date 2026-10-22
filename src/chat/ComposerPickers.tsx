@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AgentIcon, IconChevron } from "../ui/Icons";
+import { AgentIcon, IconChevron, IconUser } from "../ui/Icons";
 import { agentLabel, hasAccounts, type AccountAgentType, type ChatAgentType } from "../agents/catalog";
 import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
 import { accountName, accountsOf, moveChat } from "../agents/accounts";
@@ -286,6 +286,7 @@ export function AccountPicker({
                     const box = trigger.current!.getBoundingClientRect();
                     setMenu({ x: box.right, y: box.top - 6 });
                 }}>
+                <IconUser size={12} />
                 <span>{name}</span>
                 <IconChevron size={10} />
             </button>

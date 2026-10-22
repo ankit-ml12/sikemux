@@ -37,6 +37,8 @@ import { useChatQuestions } from "./useChatQuestions";
 import { ResumeActions } from "./ResumeActions";
 import { ChatFailureActions, NetworkFailureActions, type SignInMethod } from "./ChatFailureActions";
 import LiveStack from "./LiveStack";
+import { ProjectStrip } from "./ProjectStrip";
+import { AccountPicker } from "./ComposerPickers";
 import QuestionRows from "./QuestionRows";
 import { QuestionDock, questionTitle } from "./QuestionDock";
 
@@ -74,7 +76,7 @@ function heldTranscript(shown: ChatState, next: ChatState): ChatState {
 
 const ChatFind = lazy(() => import("./ChatFind"));
 const WorktreeNote = lazy(() => import("./ChatWorktree").then(({ WorktreeNote }) => ({ default: WorktreeNote })));
-const ProjectStrip = lazy(() => import("./ProjectStrip").then(({ ProjectStrip }) => ({ default: ProjectStrip })));
+const WorktreeHeader = lazy(() => import("./WorktreeHeader"));
 
 /* Memoised so switching tabs, which renders every window of the project again, leaves each chat as it was. */
 export const AgentChatPane = memo(function AgentChatPane({
@@ -441,11 +443,31 @@ export const AgentChatPane = memo(function AgentChatPane({
                                         }}
                                     />
                                 )}
-                                {!started && !agent.worktree && worktree.step === null && (
-                                    <Suspense fallback={null}>
-                                        <ProjectStrip agentId={agent.id} cwd={cwd} worktree={worktree} />
-                                    </Suspense>
-                                )}
+                                <ProjectStrip
+                                    agentId={agent.id}
+                                    host={agent.host}
+                                    cwd={cwd}
+                                    started={started}
+                                    worktree={worktree}
+                                    pull={
+                                        agent.worktree && (
+                                            <Suspense fallback={null}>
+                                                <WorktreeHeader agentId={agent.id} worktree={agent.worktree} visible={visible} />
+                                            </Suspense>
+                                        )
+                                    }
+                                    account={
+                                        agentLockedRef.current &&
+                                        profile && (
+                                            <AccountPicker
+                                                agent={agent}
+                                                profile={profile}
+                                                running={state.running}
+                                                disabled={state.connection !== "ready" || changingPermissions || changingConfig}
+                                            />
+                                        )
+                                    }
+                                />
                                 <ChatComposer
                                     agent={agent}
                                     profile={profile}
