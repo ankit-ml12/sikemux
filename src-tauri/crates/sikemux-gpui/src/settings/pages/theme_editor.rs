@@ -229,16 +229,17 @@ fn fields(
             let picked = cx.subscribe_in(
                 &picker,
                 window,
-                move |_, _, event: &ColorPickerEvent, window, cx| {
+                move |bench, _, event: &ColorPickerEvent, window, cx| {
                     let ColorPickerEvent::Change(Some(color)) = event else {
                         return;
                     };
                     let value = hex(*color);
                     text_of.update(cx, |text, cx| {
                         if text.value().as_ref() != value {
-                            text.set_value(value, window, cx);
+                            text.set_value(value.clone(), window, cx);
                         }
                     });
+                    set(bench, key, colour, value, cx);
                 },
             );
             Field {
