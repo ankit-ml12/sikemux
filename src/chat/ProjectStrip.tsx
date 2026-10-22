@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useProjectRepo } from "../git/projectRepo";
 import { fuzzyScore, isSubstringMatch } from "../lib/fuzzy";
 import { leavingMenu } from "../lib/motion";
@@ -8,6 +8,8 @@ import { useResource, useResourceEnabled } from "../state/resources";
 import { gitOverviewR, projectRootsScanR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { IconChevron, IconFolder, IconGit } from "../ui/Icons";
+import { THIS_HOST, hostName } from "../hosts/hosts";
+import { hostMark, projectMark } from "../hosts/placeMarks";
 import { WorktreeToggle } from "./ChatWorktree";
 import type { WorktreeSwitchState } from "./worktreeSwitch";
 import "../styles/chat/project-strip.css";
@@ -125,19 +127,31 @@ function ProjectSwitcher({ agentId, cwd, onClose }: { agentId: string; cwd: stri
 }
 
 /**
- * Where a new chat will run, docked above its composer until the first
- * message. The project name opens a switcher that moves the chat elsewhere.
+ * Where the chat runs, docked on its composer: the host, the project and the branch or worktree on the left, the
+ * account on the right. Until the first message the project opens a switcher that moves the chat elsewhere.
  */
 export function ProjectStrip({
     agentId,
+    host,
+    project,
     cwd,
+    started,
     worktree,
+    pull,
+    account,
 }: {
     agentId: string;
+    host: string | undefined;
+    /** The project's own folder, which a chat in a worktree does not run in. */
+    project: string;
     cwd: string;
+    started: boolean;
     worktree: { state: WorktreeSwitchState; toggle: () => void };
+    pull: ReactNode;
+    account: ReactNode;
 }) {
     const home = useStore((s) => s.home);
+    const hostLabel = useStore((s) => hostName(s, host) ?? "This host");
     const repo = useProjectRepo(cwd).repo ?? cwd;
     const branch = useResource(gitOverviewR, repo).data?.status?.branch;
     const [open, setOpen] = useState(false);
@@ -153,54 +167,68 @@ export function ProjectStrip({
         return () => document.removeEventListener("pointerdown", outside);
     }, [open]);
 
+    const name = basename(project) || project;
+    const where = worktree.state.kind === "hidden" || worktree.state.kind === "choosing" ? null : worktree.state;
     return (
         <div className="chat-project-strip">
-            <div
-                className="chat-project"
-                ref={root}
-                onBlur={(event) => {
-                    // WebKit hands focus to nobody when a button is clicked, so a blur
-                    // with no new target is a click on our own menu, not a click away.
-                    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-                }}>
-                <button
-                    ref={trigger}
-                    type="button"
-                    className="chat-project-trigger"
-                    aria-label="Project"
-                    aria-haspopup="listbox"
-                    aria-expanded={open}
-                    onClick={() => setOpen(!open)}>
-                    <IconFolder size={12} />
-                    <span>{basename(cwd) || cwd}</span>
-                    <IconChevron size={10} />
-                </button>
-                {open && (
-                    <ProjectSwitcher
-                        agentId={agentId}
-                        cwd={cwd}
-                        onClose={() => {
-                            setOpen(false);
-                            trigger.current?.focus();
-                        }}
-                    />
-                )}
-            </div>
-            <span className="chat-project-path" title={cwd}>
-                {ltr(prettyPath(cwd, home))}
+            <span className="chat-project-host" title={hostLabel}>
+                {hostMark(host ? { kind: "core", host } : THIS_HOST, 12)}
+                <span>{hostLabel}</span>
             </span>
-            {branch && (
-                <span className="chat-project-branch">
-                    <IconGit size={11} />
-                    {branch}
+            <IconChevron size={10} className="chat-project-sep" />
+            {started ? (
+                <span className="chat-project-trigger static" title={prettyPath(project, home)}>
+                    {projectMark(12)}
+                    <span>{name}</span>
                 </span>
+            ) : (
+                <div
+                    className="chat-project"
+                    ref={root}
+                    onBlur={(event) => {
+                        // WebKit hands focus to nobody when a button is clicked, so a blur
+                        // with no new target is a click on our own menu, not a click away.
+                        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+                    }}>
+                    <button
+                        ref={trigger}
+                        type="button"
+                        className="chat-project-trigger"
+                        aria-label="Project"
+                        aria-haspopup="listbox"
+                        aria-expanded={open}
+                        title={prettyPath(project, home)}
+                        onClick={() => setOpen(!open)}>
+                        {projectMark(12)}
+                        <span>{name}</span>
+                        <IconChevron size={10} />
+                    </button>
+                    {open && (
+                        <ProjectSwitcher
+                            agentId={agentId}
+                            cwd={cwd}
+                            onClose={() => {
+                                setOpen(false);
+                                trigger.current?.focus();
+                            }}
+                        />
+                    )}
+                </div>
             )}
-            {worktree.state.kind === "choosing" && (
-                <>
-                    <span className="chat-project-divider" aria-hidden="true" />
-                    <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />
-                </>
+            {where ? (
+                <WorktreeToggle state={where} onToggle={worktree.toggle} />
+            ) : (
+                branch && (
+                    <span className="chat-project-branch" title={branch}>
+                        <IconGit size={11} />
+                        <span>{branch}</span>
+                    </span>
+                )
             )}
+            {worktree.state.kind === "choosing" && <WorktreeToggle state={worktree.state} onToggle={worktree.toggle} />}
+            {pull}
+            <span className="chat-project-spacer" />
+            {account}
         </div>
     );
 }

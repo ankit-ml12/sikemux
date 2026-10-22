@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
-import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
+import { selectedAgentRuntimeProfiles, selectedProviderProfile } from "../agents/agentProfiles";
 import { agentLabel, agentSupportsChat, chatAgentTypes, featuredAgentTypes, type AgentType } from "../agents/catalog";
 import { leavingMenu } from "../lib/motion";
 import { useResource } from "../state/resources";
@@ -17,6 +17,8 @@ export interface AgentChoicesProps {
     type: Agent["type"];
     profile?: ProviderProfile;
     onSwitch: (type: AgentType, profileId?: string) => void;
+    /** One row for each agent rather than each account, where the account is picked elsewhere. */
+    perAgent?: boolean;
     /** A choice before the agents that leaves the pick to Sikemux, pressed when nothing is picked. */
     any?: { label: string; chosen: boolean; onPick: () => void };
 }
@@ -24,7 +26,7 @@ export interface AgentChoicesProps {
 /* The featured agents install their adapter on first use, so they are offered
    whether or not their CLI is found yet. The rest need their own CLI. */
 /** The agents a chat that has not started yet can move to, over the model list. */
-function AgentChoices({ type: current, profile, onSwitch, any }: AgentChoicesProps) {
+function AgentChoices({ type: current, profile, onSwitch, perAgent = false, any }: AgentChoicesProps) {
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
@@ -36,10 +38,18 @@ function AgentChoices({ type: current, profile, onSwitch, any }: AgentChoicesPro
         const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
         const owned = profiles.filter((item) => item.provider === type);
         if (owned.length === 0) return [{ value: type, label, icon }];
+        if (perAgent) {
+            const account = selectedProviderProfile(type, profiles, { ...defaultProviderProfileSelection(), ...profileSelections }) ?? owned[0];
+            return [{ value: type === current ? type : account.id, label, icon }];
+        }
         return owned.map((item) => ({ value: item.id, label: item.name, icon }));
     });
     const builtin = defaultProviderProfileSelection()[current];
-    const agentValue = any?.chosen ? null : (profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : current));
+    const agentValue = any?.chosen
+        ? null
+        : perAgent
+          ? current
+          : (profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : current));
     return (
         <div className="chat-picker-agents" role="group" aria-label="Agent">
             {any && (

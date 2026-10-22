@@ -29,7 +29,7 @@ describe("composer pickers", () => {
         setState({ providerProfiles: [{ id: "work", name: "Work Claude", provider: "claude", accent: "#fff" }] });
         render(<ComposerPickers agent={{ id: "a", type: "codex", title: "Codex" }} onAgent={mocks.onAgent} disabled={false} onConfig={() => {}} />);
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
-        fireEvent.click(screen.getByRole("button", { name: /Work Claude/ }));
+        fireEvent.click(screen.getByRole("button", { name: "Claude" }));
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
     });
 
