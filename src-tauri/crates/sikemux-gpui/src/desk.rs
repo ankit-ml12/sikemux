@@ -1134,13 +1134,21 @@ fn simulator_desk(
 impl Workbench {
     /// Answers a call the core hands this window: an agent's browser tools run on the
     /// engine, on a thread of their own, since most answers wait on a page.
-    pub fn answer_window_call(&self, call_id: CallId, call: WindowCall) {
+    pub fn answer_window_call(
+        &mut self,
+        call_id: CallId,
+        call: WindowCall,
+        cx: &mut Context<Self>,
+    ) {
         let asks = self.asks.clone();
-        let answer = move |answer: Result<Value, String>| {
+        let answer: crate::opening::Answer = Box::new(move |answer: Result<Value, String>| {
             let _ = asks.send(Ask::AnswerWindow(call_id, WindowAnswer::from(answer)));
-        };
-        let WindowCall::Harness { request } = call else {
-            return answer(Err("this window cannot open that yet".into()));
+        });
+        let request = match call {
+            WindowCall::Open { request } => {
+                return self.open_from_cli(call_id, request, answer, cx)
+            }
+            WindowCall::Harness { request } => request,
         };
         let request: HarnessRequest = match serde_json::from_value(request) {
             Ok(request) => request,
@@ -1153,6 +1161,7 @@ impl Workbench {
         match request.method.as_str() {
             "app.console" => return answer(crate::console::read(&request.params)),
             "page.show" => return self.show_page(request, answer),
+            "ui.open" => return self.ui_open(request, answer, cx),
             _ => {}
         }
         let run: Box<dyn FnOnce() -> Result<Value, String> + Send> =

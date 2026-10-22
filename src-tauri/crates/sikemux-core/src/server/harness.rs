@@ -620,11 +620,48 @@ async fn dispatch(
         "workspace.inspect" => inspect(core, request).await,
         "page.show" => show_page(core, request).await,
         "ui.open" => {
+            let mut request = request;
             let kind = text(&request.params, "kind")?.map(str::to_owned);
+            if kind.as_deref() == Some("file") {
+                let path = required_text(&request.params, "path")?.to_owned();
+                let project = request.project.clone();
+                let resolved =
+                    blocking(move || Ok(crate::files::confine_to_project(&project, &path)))
+                        .await
+                        .map_err(|error| error.to_string())?;
+                match resolved {
+                    Ok(Some(path)) if path.is_file() => {
+                        request.params["path"] = path.to_string_lossy().into_owned().into();
+                    }
+                    _ => return Err("File must be inside the project".into()),
+                }
+            }
             if kind.as_deref() == Some("terminal") {
                 let execution_id = required_text(&request.params, "executionId")?;
-                core.harness
+                let run = core
+                    .harness
                     .read(|state| state.run(&request.project, execution_id))?;
+                if let Some(session) = run.pty_id {
+                    request.params["session"] = session.into();
+                    request.params["title"] = run.label.unwrap_or(run.task_id).into();
+                }
+            }
+            if kind.as_deref() == Some("preview") {
+                if request.agent_id.is_none() {
+                    return Err("Opening a preview requires a Sikemux agent session".into());
+                }
+                let project = PathBuf::from(&request.project);
+                let config = blocking(move || Ok(crate::tasks::config::load(&project)))
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let url = match config {
+                    crate::tasks::config::ConfigLoad::Valid { config, .. } => {
+                        config.preview.and_then(|preview| preview.url)
+                    }
+                    _ => None,
+                };
+                let url = url.ok_or("No preview URL is configured in sikemux.json")?;
+                request.params["url"] = url.into();
             }
             let project = request.project.clone();
             let value = forward(core, request).await?;

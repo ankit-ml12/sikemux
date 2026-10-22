@@ -74,6 +74,8 @@ pub struct Workbench {
     pub pairing: crate::pairing::Pairing,
     /// Whether this window has looked for what kept running while Sikemux was closed.
     pub kept_running_told: bool,
+    /// Each waiting `sikemux open --wait`, with the tabs it opened that are still open.
+    pub(crate) open_waits: Vec<(sikemux_wire::protocol::CallId, HashMap<String, bool>)>,
     /// Each open project settings tab's state, by the project's folder.
     pub project_settings: HashMap<String, crate::project_settings::ProjectSettings>,
     pub shown: crate::experience::Shown,
@@ -191,7 +193,7 @@ pub struct Workbench {
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     /// The window the store draws, for what is said in it from outside a draw.
-    window: AnyWindowHandle,
+    pub(crate) window: AnyWindowHandle,
     pub parts: Parts,
     pub panes: crate::panes::Panes,
     pub desks: crate::desk::Desks,
@@ -489,6 +491,7 @@ impl Workbench {
             command_popup: None,
             project_settings: HashMap::new(),
             kept_running_told: false,
+            open_waits: Vec::new(),
             pairing: crate::pairing::Pairing::new(cx),
             shown: Default::default(),
             picture: None,
@@ -655,6 +658,7 @@ impl Workbench {
                     &self.asks,
                 );
                 crate::editor::keep(self);
+                self.settle_open_waits();
                 crate::notifications::badge(self);
                 crate::notifications::kept_running(self, cx);
                 self.note_place();
@@ -926,7 +930,7 @@ impl Workbench {
                 crate::pairing::remote_moved(self, cx);
                 return self.parts.redraw(&self.parts.stage, cx);
             }
-            Update::WindowCall(call_id, call) => self.answer_window_call(call_id, call),
+            Update::WindowCall(call_id, call) => self.answer_window_call(call_id, call, cx),
             Update::Changed {
                 topic,
                 project,

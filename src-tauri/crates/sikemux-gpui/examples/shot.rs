@@ -78,6 +78,13 @@ fn main() -> anyhow::Result<()> {
             },
         )
     })?;
+    // Offscreen, the window never comes to the front, which is when the app takes the core's
+    // calls, so it takes them from the start.
+    if let Some(bench) = bench.borrow().clone() {
+        cx.update(|cx| {
+            let _ = bench.read(cx).asks.send(core::Ask::RegisterWindow);
+        });
+    }
     if files {
         if let Some(bench) = bench.borrow().clone() {
             cx.update(|cx| {

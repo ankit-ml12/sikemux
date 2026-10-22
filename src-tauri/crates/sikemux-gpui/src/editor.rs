@@ -111,6 +111,13 @@ impl FileKey {
     }
 }
 
+impl Editors {
+    /// Puts the cursor at `at` once its file is read.
+    pub fn reveal(&mut self, at: OpenAt) {
+        self.reveal = Some(at);
+    }
+}
+
 /// Every file open in an editor, by its host and path.
 #[derive(Default)]
 pub struct Editors {

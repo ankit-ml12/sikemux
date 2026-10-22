@@ -229,6 +229,8 @@ pub enum Ask {
     /// Makes this window the one the core hands its calls to, as when it comes to the front.
     RegisterWindow,
     AnswerWindow(CallId, WindowAnswer),
+    /// Every tab a waiting `sikemux open` opened has closed.
+    WindowOpenClosed(CallId),
     /// Starts a chat with `launcher`'s agent in `project` and brings its tab to the front,
     /// answering the new agent's id to `started` when it is there.
     StartChat {
@@ -951,6 +953,7 @@ async fn run(
                                 });
                             }
                             Some(Ask::AnswerWindow(call_id, answer)) => client.answer_window(call_id, answer),
+                            Some(Ask::WindowOpenClosed(call_id)) => client.window_open_closed(call_id),
                             Some(Ask::Follow(topic)) => {
                                 if !followed.contains(&topic) {
                                     followed.push(topic);

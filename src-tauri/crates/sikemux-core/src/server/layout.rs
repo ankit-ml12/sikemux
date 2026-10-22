@@ -4,11 +4,14 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
+use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 
+use crate::cli::protocol::{CliOpenTarget, CliTargetKind};
 use crate::protocol::{Layout, Pane, PaneKind, SessionId, SessionInfo, SplitDir, Tab, Workspace};
 
 use super::kept::Kept;
@@ -507,6 +510,9 @@ pub(crate) struct OpenTab {
     /// Opens it to look at, in place of the strip's tab opened that way.
     #[serde(default)]
     preview: bool,
+    /// Opens it in front of its strip but leaves the strip in front where it is.
+    #[serde(default)]
+    behind: bool,
 }
 
 /// Brings the tab showing `target` to the front, opening one at the end of
@@ -554,7 +560,9 @@ pub(crate) fn open_tab(core: &Core, params: OpenTab) -> CoreResult<String> {
             }
         };
         strip.active = Some(id.clone());
-        bring_forward(layout, &params.at);
+        if !params.behind {
+            bring_forward(layout, &params.at);
+        }
         Ok(id)
     })
 }
@@ -671,6 +679,7 @@ pub(crate) fn show_terminal(
             target: id.to_string(),
             title,
             preview: false,
+            behind: false,
         },
     )
 }
@@ -927,6 +936,81 @@ pub(crate) async fn choose_host(core: &Arc<Core>, params: HostParams) -> CoreRes
         }
         Ok(())
     })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct OpenPaths {
+    targets: Vec<CliOpenTarget>,
+    /// Opens the files without bringing their projects forward.
+    #[serde(default)]
+    behind: bool,
+}
+
+/// Opens what `sikemux open` or an agent's `ui_open` names: a folder's project, or a file
+/// in its project's editor, in the project holding it, else in the target's project root
+/// made a project. Answers each target's project and tab, or why it did not open.
+pub(crate) async fn open_paths(core: &Arc<Core>, params: OpenPaths) -> CoreResult<Value> {
+    let mut answers = Vec::new();
+    for target in params.targets {
+        answers.push(match open_path(core, &target, params.behind).await {
+            Ok((project, tab)) => json!({ "targetId": target.id, "project": project, "tab": tab }),
+            Err(error) => json!({ "targetId": target.id, "error": error.to_string() }),
+        });
+    }
+    Ok(Value::Array(answers))
+}
+
+async fn open_path(
+    core: &Arc<Core>,
+    target: &CliOpenTarget,
+    behind: bool,
+) -> CoreResult<(String, Option<String>)> {
+    let project = owning_project(core, Path::new(&target.path), &target.project_root).await?;
+    match target.kind {
+        CliTargetKind::Directory => {
+            if !behind {
+                activate_project(
+                    core,
+                    ProjectParams {
+                        project: project.clone(),
+                    },
+                )?;
+            }
+            Ok((project, None))
+        }
+        CliTargetKind::File => {
+            let tab = open_tab(
+                core,
+                OpenTab {
+                    at: At::project(&project),
+                    kind: PaneKind::Files,
+                    target: target.path.clone(),
+                    title: None,
+                    preview: false,
+                    behind,
+                },
+            )?;
+            Ok((project, Some(tab)))
+        }
+    }
+}
+
+async fn owning_project(core: &Arc<Core>, path: &Path, root: &str) -> CoreResult<String> {
+    let projects = core.workspace_view().projects;
+    let paths: Vec<_> = projects
+        .iter()
+        .map(|project| project.path.clone())
+        .collect();
+    let owner = super::names::project_of(path, &paths);
+    let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    if let Some(project) = projects
+        .iter()
+        .find(|project| canonical(&project.path).to_string_lossy() == owner)
+    {
+        return Ok(project.id.clone());
+    }
+    let params = super::workspace::AddProjectParams::at(root.into());
+    Ok(super::workspace::add_project(core, params).await?.id)
 }
 
 pub(crate) fn activate_project(core: &Core, params: ProjectParams) -> CoreResult<()> {

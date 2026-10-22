@@ -214,6 +214,7 @@ calls! { core, client, params;
     "renameTab": Full => answer(super::layout::rename_tab(&core, parse(params)?)?),
     "duplicateTab": Full => answer(super::layout::duplicate_tab(&core, parse(params)?).await?),
     "activateProject": Full => answer(super::layout::activate_project(&core, parse(params)?)?),
+    "openPaths": Person => answer(super::layout::open_paths(&core, parse(params)?).await?),
     "chooseHost": Full => answer(super::layout::choose_host(&core, parse(params)?).await?),
     "splitPane": Full => answer(super::layout::split_pane(&core, parse(params)?)?),
     "closePane": Full => answer(super::layout::close_pane(&core, parse(params)?)?),

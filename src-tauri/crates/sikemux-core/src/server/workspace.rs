@@ -1716,6 +1716,14 @@ pub(crate) struct AddProjectParams {
 }
 
 impl AddProjectParams {
+    pub(crate) fn at(path: PathBuf) -> Self {
+        Self {
+            path,
+            name: None,
+            id: None,
+        }
+    }
+
     pub(crate) fn named(path: PathBuf, name: String) -> Self {
         Self {
             path,
