@@ -1,6 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type Ref } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { agentHandle } from "../agents/AgentLabel";
-import { HostLabel } from "./RemoteRows";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
@@ -10,15 +9,19 @@ import type { AgentShown } from "../api/generated/wire";
 import { activeAgentId, hasChat, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
 import { AgentFace } from "../buddies/Buddy";
-import { IconAgent, IconClose, IconPin } from "../ui/Icons";
+import { IconAgent, IconChevron, IconClose, IconPin } from "../ui/Icons";
 import { RailEmpty } from "./RailEmpty";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
-import { AgentRowProject, AgentRowTree } from "./AgentRowTree";
+import { AgentRowProject } from "./AgentRowTree";
+import { AgentRowCard, useRowCard } from "./AgentRowCard";
+import { AgentReview } from "./AgentReview";
 import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
-import { drawTeamLines } from "./teams";
+import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { inCoreOrder, useInbox } from "./useInbox";
+import { runningChats, usePlace } from "./HostLists";
+import { hostName } from "../hosts/hosts";
 
 interface OpenAgentRow {
     id: string;
@@ -30,8 +33,11 @@ interface OpenAgentRow {
     sessionCwd: string;
 }
 
-/** Every agent open in any project, in the order the core lists them. */
-export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
+/**
+ * Every agent open in any project on `host` (none for this one), in the order the core lists them, then the chats
+ * running there that this app does not show yet.
+ */
+export function AllProjectsAgents({ showEmpty, host }: { showEmpty: boolean; host: string | undefined }) {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
     const windows = useStore((s) => s.windows);
@@ -39,13 +45,16 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
     const agents = useStore((s) => s.agents);
     const agentStatus = useStore((s) => s.agentStatus);
     const { inbox } = useInbox();
+    const place = usePlace();
+    const where = useStore((s) => hostName(s, host));
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [menu, setMenu] = useState<{ agentId: string; sessionId: string; x: number; y: number } | null>(null);
 
     const open = useMemo(() => {
         const rows: OpenAgentRow[] = [];
-        for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents }))
+        for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents })) {
+            if (agent.host !== host) continue;
             rows.push({
                 id: agentId,
                 lead: agent.lead,
@@ -55,29 +64,37 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                 sessionId: session.id,
                 sessionCwd: session.cwd,
             });
+        }
         return rows;
-    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus]);
+    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus, host]);
 
+    const { folded, toggle } = useTeamFolds();
+    const workers = useMemo(() => inbox.remoteAgents.filter((worker) => worker.hostId === host), [inbox.remoteAgents, host]);
     const teams = useMemo(
-        () => inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), inbox.remoteAgents)),
-        [open, inbox.agents, inbox.remoteAgents],
+        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), workers)), folded, toggle),
+        [open, inbox.agents, workers, folded, toggle],
     );
-
-    const root = useRef<HTMLDivElement>(null);
-    useLayoutEffect(() => {
-        if (root.current) drawTeamLines(root.current);
-    });
+    const running = host ? runningChats(place, agents, host, new Set(workers.map((worker) => worker.agentId))) : [];
 
     const menuAgent = menu && agents[menu.agentId];
     const menuSession = menu && sessions[menu.sessionId];
 
-    if (open.length === 0)
-        return showEmpty && <RailEmpty icon={<IconAgent size={20} />} title="No agents open" shortcut="agent.new" doing="start one" />;
+    if (open.length + workers.length + running.length === 0)
+        return (
+            showEmpty && (
+                <RailEmpty
+                    icon={<IconAgent size={20} />}
+                    title={where ? `No chats on ${where}` : "No agents open"}
+                    shortcut="agent.new"
+                    doing="start one"
+                />
+            )
+        );
 
     return (
-        <div ref={root} className="agent-all-projects">
+        <div className="agent-all-projects">
             <Panel variant="group" className="agent-group">
-                {teams.map(({ agent: row, link }) =>
+                {teams.map(({ agent: row, link, fold }) =>
                     isRemoteWorker(row) ? (
                         <RemoteAgentRow key={row.id} agent={row.remote} link={link} />
                     ) : (
@@ -86,6 +103,7 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                             agent={row.agent}
                             display={row.display}
                             link={link}
+                            fold={fold}
                             active={row.id === shownAgentId}
                             project={{ name: row.sessionName, sessionId: row.sessionId }}
                             sessionCwd={row.sessionCwd}
@@ -107,6 +125,7 @@ export function AllProjectsAgents({ showEmpty }: { showEmpty: boolean }) {
                         />
                     ),
                 )}
+                {running}
             </Panel>
             {menuAgent && menuSession && (
                 <AgentContextMenu
@@ -127,10 +146,10 @@ export function OpenAgentRow({
     agent,
     display,
     link,
+    fold,
     active,
     project,
     sessionCwd,
-    hostShown = true,
     title,
     wrap,
     onOpen = () => cmd.revealAgent(agent.id),
@@ -140,11 +159,11 @@ export function OpenAgentRow({
     agent: Agent;
     display: AgentShown | undefined;
     link?: TeamLink;
+    /** On a lead's row, whether its team shows and how to fold it. */
+    fold?: TeamFold;
     active: boolean;
     project?: { name: string; sessionId: string };
     sessionCwd: string;
-    /** Whether the row says which other host the agent runs on; a host's own list leaves it out. */
-    hostShown?: boolean;
     title?: ReactNode;
     wrap?: { ref: Ref<HTMLDivElement>; "data-agent-id": string; "data-session": string };
     onOpen?: () => void;
@@ -152,8 +171,20 @@ export function OpenAgentRow({
     onContextMenu?: (event: MouseEvent) => void;
 }) {
     const glyph = <AgentFace agent={agent} size={18} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
+    const card = useRowCard();
+    const [reviewAt, setReviewAt] = useState<DOMRect | null>(null);
     return (
-        <div className={teamWrapClass(link)} {...wrap}>
+        <div className={teamWrapClass(link, fold?.open)} {...wrap} onMouseEnter={card.enter} onMouseLeave={card.leave} onMouseDown={card.close}>
+            {fold && (
+                <button
+                    type="button"
+                    className="team-fold"
+                    aria-expanded={fold.open}
+                    aria-label={`${fold.open ? "Hide" : "Show"} the agents ${agent.title} started`}
+                    onClick={fold.toggle}>
+                    <IconChevron size={11} />
+                </button>
+            )}
             {title ? (
                 <div className={`agent-row${active ? " active" : ""}`}>
                     {glyph}
@@ -162,7 +193,10 @@ export function OpenAgentRow({
             ) : (
                 <button
                     className={`agent-row${project ? " two-line" : ""}${active ? " active" : ""}`}
-                    onClick={onOpen}
+                    onClick={() => {
+                        fold?.toggle();
+                        onOpen();
+                    }}
                     onDoubleClick={onDoubleClick}
                     onContextMenu={onContextMenu}>
                     {glyph}
@@ -170,8 +204,8 @@ export function OpenAgentRow({
                         <span className="agent-title">{agent.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
-                    {hostShown && <HostLabel host={agent.host} />}
                     {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
+                    {fold && !fold.open && <span className="team-count">+{fold.count}</span>}
                     <BackgroundCounts display={display} />
                 </button>
             )}
@@ -186,7 +220,22 @@ export function OpenAgentRow({
                     <IconClose size={11} />
                 </button>
             </Tooltip>
-            <AgentRowTree agentId={agent.id} worktree={agent.worktree} runsOn={link === "head" || link === "member"} />
+            {card.anchor && !title && (
+                <AgentRowCard
+                    agent={agent}
+                    project={project?.name}
+                    anchor={card.anchor}
+                    onStay={card.stay}
+                    onLeave={card.leave}
+                    onReview={(at) => {
+                        card.close();
+                        setReviewAt(at);
+                    }}
+                />
+            )}
+            {reviewAt && agent.worktree && (
+                <AgentReview agentId={agent.id} worktree={agent.worktree} anchor={reviewAt} onClose={() => setReviewAt(null)} />
+            )}
         </div>
     );
 }

@@ -22,27 +22,32 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Status {
+    running: bool,
+    /// Missing from releases before the probe, and while the core is stopped.
     core_id: Option<String>,
     account: Option<String>,
     /// The host's own name, which it signed in to the account under.
     name: Option<String>,
 }
 
-/// Whose the host is, beside this host's account.
+/// What the SSH host's Sikemux is, beside this host's account.
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum SshAccount {
+pub enum Found {
     Same,
     SignedOut,
     Other,
+    Stopped,
+    /// A release too old to say which host it is.
+    Outdated,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Probed {
-    /// The host's key, which the account knows it by.
-    key: String,
-    account: SshAccount,
+    /// The host's key, which the account knows it by, when it says.
+    key: Option<String>,
+    found: Found,
 }
 
 /// Asks the SSH host `alias` whether it runs Sikemux, and which host it is,
@@ -74,20 +79,34 @@ pub async fn host_probe(
     let output = tokio::time::timeout(PROBE_TIMEOUT, ssh.output())
         .await
         .map_err(|_| AppError::Other(format!("{alias} did not answer in time")))??;
-    let Some(Status {
+    // Any status that reads means Sikemux is there, running or not.
+    let Ok(status) = serde_json::from_slice::<Status>(&output.stdout) else {
+        return Ok(None);
+    };
+    if !status.running {
+        return Ok(Some(Probed {
+            key: status.core_id,
+            found: Found::Stopped,
+        }));
+    }
+    let Status {
         core_id: Some(key),
         account,
         name,
-    }) = serde_json::from_slice(&output.stdout).ok()
+        ..
+    } = status
     else {
-        return Ok(None);
+        return Ok(Some(Probed {
+            key: None,
+            found: Found::Outdated,
+        }));
     };
     let core = manager.client().await?;
     let own = core.remote_status().await.map_err(core_error)?.owner;
-    let account = match account {
-        None => SshAccount::SignedOut,
-        Some(account) if Some(&account) == own.as_ref() => SshAccount::Same,
-        Some(_) => SshAccount::Other,
+    let found = match account {
+        None => Found::SignedOut,
+        Some(account) if Some(&account) == own.as_ref() => Found::Same,
+        Some(_) => Found::Other,
     };
     if let Some(hosts) = app.try_state::<Hosts>() {
         if let Ok(host) = hosts.by_id(&key) {
@@ -107,5 +126,8 @@ pub async fn host_probe(
             }
         }
     }
-    Ok(Some(Probed { key, account }))
+    Ok(Some(Probed {
+        key: Some(key),
+        found,
+    }))
 }

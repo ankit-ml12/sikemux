@@ -609,12 +609,52 @@ jobs:
           if-no-files-found: error
           path: src-tauri/target/host/*.tar.gz
 
+  sign-host:
+    name: Sign the Linux host cores
+    needs: [plan, build-host]
+    if: ${{ !cancelled() && needs.build-host.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch the Linux host cores
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sikemux-host-*-${{ github.ref_name }}
+          merge-multiple: true
+          path: src-tauri/target/host
+
+      - name: Sign them
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/sign-host.sh "${{ needs.plan.outputs.version }}"
+
+      - name: Keep the signatures on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: host-signatures-${{ github.ref_name }}
+          if-no-files-found: error
+          path: src-tauri/target/host/*.tar.gz.sig
+
   publish:
     name: Publish
-    needs: [plan, verify, build-linux, build-host, pushed-checks, checks]
+    needs: [plan, verify, build-linux, build-host, sign-host, pushed-checks, checks]
     if: >-
       !cancelled() && needs.verify.result == 'success' && needs.build-linux.result == 'success' &&
-      needs.build-host.result == 'success' &&
+      needs.build-host.result == 'success' && needs.sign-host.result == 'success' &&
       needs.pushed-checks.result == 'success' &&
       (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success')
     runs-on: ubuntu-latest
@@ -643,6 +683,12 @@ jobs:
         with:
           pattern: sikemux-host-*-${{ github.ref_name }}
           merge-multiple: true
+          path: src-tauri/target/host
+
+      - name: Fetch their signatures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: host-signatures-${{ github.ref_name }}
           path: src-tauri/target/host
 
       - name: Publish

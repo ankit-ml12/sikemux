@@ -1,4 +1,4 @@
-import { Fragment, memo, useContext, useMemo, useState, type ReactNode } from "react";
+import { memo, useContext, useMemo, useState, type ReactNode } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentMark } from "../agents/AgentMark";
+import * as cmd from "../state/commands";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
@@ -276,6 +277,34 @@ function SentTime({ at, took }: { at: number; took: number | null }) {
     );
 }
 
+/** A teammate's message, headed like the agent's own "Worked for" line. */
+function TeammateLetter({ id, letter }: { id: string; letter: AgentLetter }) {
+    return (
+        <div className="chat-letter" title={letter.agentId}>
+            <div className="chat-letter-top">
+                <span className="chat-letter-head">
+                    <span className="chat-work-mark" aria-hidden="true">
+                        <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
+                    </span>
+                    <span>
+                        Message from{" "}
+                        <button
+                            type="button"
+                            className="chat-letter-name"
+                            title={`Open ${letter.name}`}
+                            onClick={() => letter.agentId && cmd.revealAgent(letter.agentId)}>
+                            {letter.name}
+                        </button>
+                    </span>
+                </span>
+            </div>
+            <div className="chat-markdown">
+                <FoldedMarkdown id={id} text={letter.text} live={false} tree={letter.tree?.blocks as MdElement[] | undefined} />
+            </div>
+        </div>
+    );
+}
+
 function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
     return (
         <article className="chat-message agent-letter">
@@ -286,24 +315,7 @@ function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[];
                             <AnsweredQuestion letter={letter} />
                         </div>
                     ) : (
-                        <Fragment key={index}>
-                            <div className="chat-letter-from" title={letter.agentId}>
-                                <span className="chat-letter-rule" />
-                                <AgentMark agentId={letter.agentId} cli={letter.cli} />
-                                <span>
-                                    Message from <b>{letter.name}</b>
-                                </span>
-                                <span className="chat-letter-rule" />
-                            </div>
-                            <div className="chat-markdown">
-                                <FoldedMarkdown
-                                    id={`${id}-letter-${index}`}
-                                    text={letter.text}
-                                    live={false}
-                                    tree={letter.tree?.blocks as MdElement[] | undefined}
-                                />
-                            </div>
-                        </Fragment>
+                        <TeammateLetter key={index} id={`${id}-letter-${index}`} letter={letter} />
                     ),
                 )}
                 <div className="chat-message-meta">

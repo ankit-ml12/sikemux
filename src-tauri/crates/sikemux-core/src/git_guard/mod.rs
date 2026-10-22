@@ -94,7 +94,7 @@ fn refused(
                     let verb = if names.len() == 1 { "works" } else { "work" };
                     format!("{} also {verb} in this checkout", listed(&names))
                 }
-                None => "other agents may work in this checkout too".to_owned(),
+                None => "Sikemux could not confirm in time that no other agent works in this checkout, as happens when the machine is very busy. Run it again in a moment".to_owned(),
             };
             Some(format!(
                 "Sikemux refused `{shown}`: it {why}, and {who}. {SWEEP_HELP}"

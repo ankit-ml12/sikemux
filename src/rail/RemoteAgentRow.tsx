@@ -23,8 +23,9 @@ export function isRemoteWorker(row: TeamMember): row is RemoteWorker {
     return "remote" in row;
 }
 
-export function teamWrapClass(link: TeamLink | undefined): string {
-    return `agent-row-wrap${link === "head" ? " chain-head" : link ? ` chain${link === "last" ? " chain-last" : ""}` : ""}`;
+/** A lead's row heads its team's group, and its workers hang under it on the group's spine. */
+export function teamWrapClass(link: TeamLink | undefined, open = true): string {
+    return `agent-row-wrap${link === "head" ? ` team-head${open ? " open" : ""}` : link ? ` team-member${link === "last" ? " team-last" : ""}` : ""}`;
 }
 
 /** A worker on a linked host, in its lead's team. It has no chat here to open. */

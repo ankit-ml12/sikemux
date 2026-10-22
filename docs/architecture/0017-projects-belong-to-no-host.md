@@ -1,7 +1,9 @@
 # ADR 0017: Projects belong to no host, and each chat runs where the person picks
 
-- Status: Accepted
+- Status: Superseded by [ADR 0019](./0019-projects-belong-to-their-host.md)
 - Decision date: 2026-10-20
+- Amended: 2026-10-21, by [ADR 0018](./0018-the-account-is-the-trust.md): the person chooses a host
+  as they choose a project, and the tab rail lists what runs on that host
 
 ## Context
 

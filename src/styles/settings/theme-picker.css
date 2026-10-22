@@ -6,7 +6,9 @@
 }
 .theme-pick-current {
     display: grid;
-    grid-template-columns: minmax(160px, 240px) minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+    grid-auto-columns: auto;
+    grid-auto-flow: column;
     align-items: center;
     gap: var(--space-3);
     overflow: hidden;

@@ -925,6 +925,7 @@ const WINDOW_ICONS: Record<CoreWindowRole, (props: IconProps) => ReactNode> = {
     shared: IconEye,
     board: IconBoard,
     "project-settings": IconSettings,
+    install: IconDownload,
 };
 
 export function WindowIcon({ role, size }: { role: WindowRole; size?: number }) {

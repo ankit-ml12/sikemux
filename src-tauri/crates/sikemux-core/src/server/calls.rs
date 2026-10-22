@@ -417,6 +417,7 @@ calls! { core, client, params;
     "hosts": Watch => answer(super::hosts::rows(&core)),
     "hostInstalledFrom": Person => answer(super::hosts::installed_from(&core, parse(params)?)?),
     "linkHost": Person => answer(super::hosts::link_host(&core, parse(params)?).await?),
+    "openOnHost": Person => answer(super::hosts::open::open_on(&core, parse(params)?).await?),
     "requireApproval": Person => answer(json!({ "requireApproval": core.remote.requires_approval() })),
     "setRequireApproval": Person => answer(remote::set_require_approval(&core, parse(params)?)?),
     "questions": Watch, any_program => answer(questions::views(&core)),

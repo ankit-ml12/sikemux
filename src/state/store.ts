@@ -185,12 +185,14 @@ export interface ViewState {
     openSshHosts: readonly import("../hosts/hosts").HostRow[];
     /** What each of those hosts last showed this app, by its id. */
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
-    /** What each of this host's projects is known by on every host, by project folder, as its core works it out. */
-    projectIdentities: Readonly<Record<string, string>>;
     /** What asking each SSH host found, by its alias, for those that run Sikemux. */
     sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
-    /** The host chosen in the side rail, chosen only while the session it was chosen over is still in front. */
-    chosenHost: import("../hosts/hosts").ChosenHost | null;
+    /** The SSH hosts being set up now, by alias. */
+    sshWork: Readonly<Record<string, import("../hosts/hosts").SshWork>>;
+    /** The host chosen under Hosts, beside the chosen project: where the tab rail looks and new work starts. */
+    chosenHost: import("../hosts/hosts").HostChoice;
+    /** The session last in front on each host, which choosing that host again puts back. */
+    lastOnHost: Readonly<Record<string, string>>;
 
     pendingUpdate: PendingUpdate | null;
     /** The chats a waiting update waits on before it installs. */
@@ -301,9 +303,10 @@ export const useStore = create<StoreState>(() => {
         hosts: [],
         openSshHosts: [],
         hostViews: {},
-        projectIdentities: {},
-        chosenHost: null,
+        chosenHost: { kind: "core" },
+        lastOnHost: {},
         sshProbes: {},
+        sshWork: {},
         pendingUpdate: null,
         updateBlockers: [],
         lastUpdateCheck: null,

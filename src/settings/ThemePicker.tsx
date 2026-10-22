@@ -48,6 +48,8 @@ function Chip({ theme }: { theme: ThemeSummary }) {
     );
 }
 
+export type PictureSource = "wallpaper" | "paneImage";
+
 export function ThemePicker({
     summaries,
     themeId,
@@ -56,7 +58,8 @@ export function ThemePicker({
     onCustomize,
     onEdit,
     onFromWallpaper,
-    readingWallpaper,
+    onFromPaneImage,
+    readingPicture,
 }: {
     summaries: readonly ThemeSummary[];
     themeId: string;
@@ -65,7 +68,8 @@ export function ThemePicker({
     onCustomize: (id: string) => void;
     onEdit: (theme: Theme) => void;
     onFromWallpaper: () => void;
-    readingWallpaper: boolean;
+    onFromPaneImage?: () => void;
+    readingPicture: PictureSource | null;
 }) {
     const [query, setQuery] = useState("");
     const [tone, setTone] = useState<Tone>("all");
@@ -156,11 +160,21 @@ export function ThemePicker({
                 <button
                     className="settings-btn"
                     onClick={onFromWallpaper}
-                    disabled={readingWallpaper}
+                    disabled={readingPicture !== null}
                     title="Build a theme from the colours of your desktop wallpaper"
                     type="button">
-                    <IconImage size={12} /> {readingWallpaper ? "Reading…" : "From wallpaper"}
+                    <IconImage size={12} /> {readingPicture === "wallpaper" ? "Reading…" : "From wallpaper"}
                 </button>
+                {onFromPaneImage && (
+                    <button
+                        className="settings-btn"
+                        onClick={onFromPaneImage}
+                        disabled={readingPicture !== null}
+                        title="Build a theme from the colours of your pane image"
+                        type="button">
+                        <IconImage size={12} /> {readingPicture === "paneImage" ? "Reading…" : "From pane image"}
+                    </button>
+                )}
                 <button
                     className="settings-btn"
                     onClick={() => (currentIsCustom ? onEdit(current) : onCustomize(current.id))}

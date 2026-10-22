@@ -15,11 +15,11 @@ import { RailEmpty } from "./RailEmpty";
 import { NewRow } from "./RailNewRow";
 import { RailToggle } from "./RailToggle";
 import { useSessionName } from "../terminal/railNames";
-import { NewOnHost, remoteTerminalRows, useRemoteCopies } from "./RemoteRows";
-import { HostScopeTabs, ScopeTabs } from "./ScopeTabs";
+import { NewOnHost, remoteTerminalRows, useHostProject } from "./RemoteRows";
+import { ScopeTabs } from "./ScopeTabs";
 import { HostTerminals } from "./HostLists";
 import { TabRow, useTabMenu } from "./TabRow";
-import { chosenHostOf } from "../hosts/hosts";
+import { hostName } from "../hosts/hosts";
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -55,77 +55,74 @@ function useProjectSession(): Session | undefined {
 export function TerminalsPage() {
     const session = useProjectSession();
     const sessionName = useSessionName(session);
-    const host = useStore(chosenHostOf);
-    const activeSessionId = useStore((s) => s.activeSessionId);
+    const host = useStore((s) => s.chosenHost);
+    const remoteHost = host.kind === "core" ? host.host : undefined;
+    const hostLabel = useStore((s) => hostName(s, remoteHost));
     const scope = useStore((s) => s.tabRailScope);
-    const sessions = useStore((s) => s.sessions);
-    const sessionOrder = useStore((s) => s.sessionOrder);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windows = useStore((s) => s.windows);
     const titles = useStore((s) => s.terminalTitles);
     const closeShortcut = useShortcutLabel("pane.close");
     const menu = useTabMenu();
-    const copies = useRemoteCopies(session);
+    const place = useHostProject(session);
 
-    const shown = scope === "all" ? sessionOrder.map((id) => sessions[id]).filter((s) => s?.kind === "project") : session && !host ? [session] : [];
-    const tabs = shown.flatMap((owner) =>
-        (windowsBySession[owner.id] ?? EMPTY_IDS).flatMap((id) => {
-            const win = windows[id];
-            const home = win?.role === "term" ? collectPanes(win.root).find((pane) => pane.kind === "terminal") : undefined;
-            return win && home ? [{ win, owner, home, label: terminalLabel(win, home, titles) }] : [];
-        }),
-    );
-    const remoteTerminals =
-        scope === "project" && session && !host
-            ? remoteTerminalRows({ sessionId: session.id, copies, open: new Set(tabs.flatMap(({ home }) => home.ptyId ?? [])) })
-            : [];
+    if (!session) {
+        return (
+            <>
+                <PageHeader label="Terminals" />
+                <RailEmpty icon={<IconTerminal size={20} />} title="No project open" shortcut="project.open" doing="open one" />
+            </>
+        );
+    }
+
+    const tabs = (windowsBySession[session.id] ?? EMPTY_IDS).flatMap((id) => {
+        const win = windows[id];
+        const home = win?.role === "term" ? collectPanes(win.root).find((pane) => pane.kind === "terminal") : undefined;
+        return win && home && home.host === remoteHost ? [{ win, home, label: terminalLabel(win, home, titles) }] : [];
+    });
+    const remoteTerminals = remoteTerminalRows({
+        sessionId: session.id,
+        place: place?.host.id === remoteHost ? place : undefined,
+        open: new Set(tabs.flatMap(({ home }) => home.ptyId ?? [])),
+    });
 
     return (
         <>
             <PageHeader label="Terminals" />
-            {!session && !host ? (
-                <RailEmpty icon={<IconTerminal size={20} />} title="No project open" shortcut="project.open" doing="open one" />
-            ) : (
-                <>
-                    <div className="tab-rail-top">
-                        <div className="agent-actions">
-                            <NewOnHost />
-                            <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
-                        </div>
-                        {host ? (
-                            <HostScopeTabs host={host} />
-                        ) : (
-                            session && <ScopeTabs scope={scope} name={sessionName} onChange={cmd.setTabRailScope} />
-                        )}
-                    </div>
-                    <div className="rail-scroll">
-                        {host && scope === "project" ? (
-                            <HostTerminals choice={host} />
-                        ) : tabs.length === 0 && remoteTerminals.length === 0 ? (
-                            <RailEmpty icon={<IconTerminal size={20} />} title="No terminals open" shortcut="terminal.new" doing="start one" />
-                        ) : (
-                            <Panel variant="group" className="agent-group">
-                                {tabs.map(({ win, owner, home, label }) => (
-                                    <TabRow
-                                        key={win.id}
-                                        tab={{ id: win.id }}
-                                        icon={<IconTerminal size={15} />}
-                                        glyph="term"
-                                        label={label}
-                                        host={home.host}
-                                        project={scope === "all" ? { name: owner.name, sessionId: owner.id } : undefined}
-                                        active={owner.id === activeSessionId && owner.activeWindowId === win.id}
-                                        onMenu={(event) =>
-                                            menu.open(event, windowTabMenu(owner.id, getState().windows[win.id] ?? win, closeShortcut))
-                                        }
-                                    />
-                                ))}
-                                {remoteTerminals}
-                            </Panel>
-                        )}
-                    </div>
-                </>
-            )}
+            <div className="tab-rail-top">
+                <div className="agent-actions">
+                    <NewOnHost />
+                    <NewRow icon={<IconPlus size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+                </div>
+                <ScopeTabs scope={scope} name={sessionName} onChange={cmd.setTabRailScope} />
+            </div>
+            <div className="rail-scroll">
+                {scope === "all" || host.kind === "ssh" ? (
+                    <HostTerminals choice={host} />
+                ) : tabs.length === 0 && remoteTerminals.length === 0 ? (
+                    <RailEmpty
+                        icon={<IconTerminal size={20} />}
+                        title={hostLabel ? `No terminals in ${sessionName} on ${hostLabel}` : "No terminals open"}
+                        shortcut="terminal.new"
+                        doing="start one"
+                    />
+                ) : (
+                    <Panel variant="group" className="agent-group">
+                        {tabs.map(({ win, label }) => (
+                            <TabRow
+                                key={win.id}
+                                tab={{ id: win.id }}
+                                icon={<IconTerminal size={15} />}
+                                glyph="term"
+                                label={label}
+                                active={session.activeWindowId === win.id}
+                                onMenu={(event) => menu.open(event, windowTabMenu(session.id, getState().windows[win.id] ?? win, closeShortcut))}
+                            />
+                        ))}
+                        {remoteTerminals}
+                    </Panel>
+                )}
+            </div>
             {menu.shown}
         </>
     );

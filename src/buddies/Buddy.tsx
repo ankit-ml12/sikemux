@@ -3,7 +3,7 @@ import { useStore } from "../state/store";
 import { AgentIcon } from "../ui/Icons";
 import type { Agent } from "../state/types";
 import { buddyStateOfGroup, type BuddyPack, type BuddyShape, type BuddyState } from "./catalogue";
-import { drawnFace, wearsBuddy } from "./faces";
+import { drawnFace } from "./faces";
 import { bodyMotion, buddyBox, buddyMarkup } from "./render";
 import "./buddies.css";
 
@@ -71,7 +71,7 @@ export const AgentBuddy = memo(function AgentBuddy({
     );
 });
 
-/** The agent's buddy when buddies are on or the person named it, otherwise its harness logo, each in its own wrapper. */
+/** The agent's buddy when buddies are on, otherwise its harness logo, each in its own wrapper. */
 export function AgentFace({
     agent,
     size,
@@ -79,7 +79,7 @@ export function AgentFace({
     logoClass,
     buddyClass,
 }: {
-    agent: Pick<Agent, "id" | "type" | "buddy" | "name">;
+    agent: Pick<Agent, "id" | "type" | "buddy">;
     size: number;
     logoSize: number;
     logoClass: string;
@@ -87,7 +87,7 @@ export function AgentFace({
 }) {
     const face = useStore((s) => s.faces[agent.id]);
     const on = useStore((s) => s.faceStyle.on);
-    const wears = face === undefined ? wearsBuddy(on, !!agent.name) : face !== null;
+    const wears = face === undefined ? on : face !== null;
     return wears ? (
         <span className={buddyClass}>
             <AgentBuddy agent={agent} size={size} />

@@ -12,13 +12,15 @@ import { makeWindow, withActiveSession } from "./shared";
 import { takeSpareShell, type SpareShell } from "../../terminal/spareShell";
 import type { PaneNode } from "../types";
 import { openAgentPalette, openPicker } from "./ui";
-import { chosenHostOf, copyOn, keepHostChosen, newRemoteTerminal, newSshTerminalOn, newWorkHost } from "../../hosts/hosts";
+import { hostProjectOf, newRemoteTerminal, newSshTerminalOn, newWorkHost, openInstallPane } from "../../hosts/hosts";
 
 /** Starts the agent launched last, or the first one installed, in the project in front. */
 export async function startAgent(): Promise<void> {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (session?.kind !== "project" && !chosenHostOf(st)) {
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") return openInstallPane(here.alias);
+    if (session?.kind !== "project" && !here.host) {
         continueInPickedProject(() => void startAgent());
         return;
     }
@@ -41,7 +43,9 @@ export async function startAgent(): Promise<void> {
 /** The agent picker, after a project to hold it when there is none in front. */
 export function chooseAgent(): void {
     const st = getState();
-    if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") openInstallPane(here.alias);
+    else if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
     else continueInPickedProject(openAgentPalette);
 }
 
@@ -69,13 +73,12 @@ export function newTerminal(): void {
     const here = newWorkHost(st);
     if (here.kind === "ssh") return newSshTerminalOn(here.alias);
     if (here.host) {
-        const copy = session ? copyOn(st, session, here.host) : undefined;
-        return newRemoteTerminal(copy && session ? session.id : null, here.host, copy?.project.path ?? "");
+        const place = session?.host === here.host ? hostProjectOf(st, session) : undefined;
+        return newRemoteTerminal(place && session ? session.id : null, here.host, place?.project.path ?? "");
     }
-    if (session?.kind === "project" && !session.host) {
+    if ((session?.kind === "project" || session?.kind === "command") && !session.host) {
         void takeSpareShell(session).then((spare) => (spare ? openSpareShell(spare) : newWindow()));
-    } else if (session?.kind === "command" && !session.host) newWindow();
-    else keepHostChosen(createCommandSession);
+    } else createCommandSession();
 }
 
 function openSpareShell(spare: SpareShell): void {

@@ -7,12 +7,14 @@ import { getIpcTransport } from "../api/transport";
 import { agentLabel, isAgentType } from "../agents/catalog";
 import { agentWindow } from "../state/agentWindow";
 import { makeWindow } from "../state/commands/shared";
-import { createSshSession } from "../state/commands/sessions";
+import { createProjectSession, createSshSession } from "../state/commands/sessions";
+import { remoteApi } from "../api/remote";
 import { offerResumableSessions } from "../terminal/sessionResume";
 import { agentWindowId, ownerSessionId } from "../state/selectors";
 import { collectPanes } from "../state/layout";
 import { getState, mutate, setState, useStore, type StoreState } from "../state/store";
 import { notify, reportError, swallow } from "../state/toast";
+import { confirmDialog } from "../state/dialog";
 import { accountApi } from "../api/account";
 import type { Agent, PaneNode, Session } from "../state/types";
 import type { Draft } from "immer";
@@ -36,17 +38,20 @@ export const hostsApi = {
     list: () => coreCall<HostRow[]>("hosts"),
 };
 
-/** What asking an SSH host found: which host it is, and whether it is on this host's account, signed out, or another's. */
+/**
+ * What asking an SSH host found of the Sikemux there: on this host's account, signed out, on another account, its core
+ * stopped, or a release too old to say which host it is; and the host's key when it said.
+ */
 export interface SshProbe {
-    readonly key: string;
-    readonly account: "same" | "signedOut" | "other";
+    readonly key: string | null;
+    readonly found: "same" | "signedOut" | "other" | "stopped" | "outdated";
 }
 
 /**
  * Runs `command` on the SSH host `alias` over the person's own SSH, in a terminal tab of its SSH session where a
  * password ssh or sudo asks for is typed, and resolves once the host is on the account.
  */
-async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in", title: string): Promise<void> {
+async function signInOverSsh(alias: string, command: "host_install" | "host_sign_in" | "host_update", title: string): Promise<void> {
     const controller = new AbortController();
     const done = new Promise<void>((resolve, reject) => {
         void getIpcTransport()
@@ -82,13 +87,70 @@ async function signInOverSsh(alias: string, command: "host_install" | "host_sign
     await done;
 }
 
-/** Installs Sikemux on the SSH host `alias` and signs it in to the account. */
-export const installHere = (alias: string): Promise<void> => signInOverSsh(alias, "host_install", "Install Sikemux");
+/** Setting an SSH host up: installing Sikemux, signing in, starting or updating the Sikemux it has. */
+export type SshWork = "installing" | "signing in" | "starting" | "updating";
 
-/** Signs the SSH host `alias`, which runs Sikemux but is off the account, in to it. */
-export async function signInHere(alias: string): Promise<void> {
-    await signInOverSsh(alias, "host_sign_in", "Sign in");
-    await probeSshHost(alias);
+/** How each way of setting an SSH host up is offered, and what a row says while it runs. */
+export const SSH_WORK: Readonly<Record<SshWork, { offer: string; running: string }>> = {
+    installing: { offer: "Install Sikemux", running: "installing" },
+    "signing in": { offer: "Sign in", running: "signing in" },
+    starting: { offer: "Start Sikemux", running: "starting" },
+    updating: { offer: "Update Sikemux", running: "updating" },
+};
+
+/** What setting up an SSH host takes, from what asking it found: installing only where there is no Sikemux at all. */
+export function setUpFor(probe: SshProbe | undefined): SshWork | null {
+    if (!probe) return "installing";
+    return ({ signedOut: "signing in", stopped: "starting", outdated: "updating", same: null, other: null } as const)[probe.found];
+}
+
+export function sshSetUp(state: Pick<StoreState, "sshProbes">, alias: string): SshWork | null {
+    return setUpFor(state.sshProbes[alias]);
+}
+
+/** What a host row says of the Sikemux found on its SSH host, when that is not running on this host's account. */
+export function sshFoundLabel(probe: SshProbe | undefined): string | null {
+    if (!probe) return null;
+    return ({ signedOut: "not signed in", other: "on another account", stopped: "stopped", outdated: "older release", same: null } as const)[
+        probe.found
+    ];
+}
+
+/** Sets the SSH host `alias` up, once at a time for every place that offers it, then asks it again what it is. */
+export function setUpOverSsh(alias: string, work: SshWork): void {
+    if (getState().sshWork[alias]) return;
+    setState({ sshWork: { ...getState().sshWork, [alias]: work } });
+    const run: Record<SshWork, () => Promise<unknown>> = {
+        installing: () => signInOverSsh(alias, "host_install", "Install Sikemux"),
+        "signing in": () => signInOverSsh(alias, "host_sign_in", "Sign in"),
+        starting: () => invoke("host_start", { alias }),
+        updating: () => signInOverSsh(alias, "host_update", "Update Sikemux"),
+    };
+    void run[work]()
+        .then(() => probeSshHost(alias))
+        .catch(reportError(`${SSH_WORK[work].offer} on ${alias}`))
+        .finally(() => {
+            const { [alias]: _, ...others } = getState().sshWork;
+            setState({ sshWork: others });
+        });
+}
+
+/** The Install Sikemux pane for the SSH host `alias`, a tab of its SSH session (ADR 0019). */
+export function openInstallPane(alias: string): void {
+    createSshSession(alias);
+    mutate((d) => {
+        const session = d.sessions[d.activeSessionId];
+        if (session?.kind !== "ssh") return;
+        const open = (d.windowsBySession[session.id] ?? []).find((id) => d.windows[id]?.role === "install");
+        if (open) {
+            session.activeWindowId = open;
+            return;
+        }
+        const window = makeWindow("", "Install Sikemux", { kind: "install-sikemux", role: "install" });
+        d.windows[window.id] = window;
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), window.id];
+        session.activeWindowId = window.id;
+    });
 }
 
 /** Asks the SSH host `alias` whether it runs Sikemux and which host it is, keeping the answer for its row. */
@@ -98,8 +160,8 @@ async function probeSshHost(alias: string): Promise<void> {
     setState({ sshProbes: probed ? { ...others, [alias]: probed } : others });
 }
 
-/** One project's folder on another host. */
-export interface RemoteCopy {
+/** A project on another host, as that host shows it. */
+export interface HostProject {
     readonly host: HostEntry;
     readonly project: ProjectInfo;
     readonly view: DeviceView;
@@ -115,54 +177,36 @@ function inFolder(path: string | null | undefined, folder: string): boolean {
     return !!path && (path === folder || path.startsWith(folder.endsWith("/") ? folder : `${folder}/`));
 }
 
-/**
- * The copies of `session`'s project on the other hosts the app reaches. A project is one repository wherever it is
- * (ADR 0017): its copies are the projects whose identity, which each core works out the same way, matches. A project
- * only another host holds is its own copy.
- */
-export function remoteCopiesOf(state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities">, session: Session): RemoteCopy[] {
-    const copies: RemoteCopy[] = [];
-    const identity = session.host ? undefined : state.projectIdentities[session.cwd];
-    for (const host of state.hosts) {
-        const view = state.hostViews[host.id];
-        if (!view) continue;
-        for (const project of view.workspace.projects) {
-            const same = session.host ? session.host === host.id && project.path === session.cwd : !!identity && project.identity === identity;
-            if (same) copies.push({ host, project, view });
-        }
-    }
-    return copies;
+/** The project a session on another host is, as that host shows it. */
+export function hostProjectOf(state: Pick<StoreState, "hosts" | "hostViews">, session: Session): HostProject | undefined {
+    const host = session.kind === "project" && session.host ? state.hosts.find((candidate) => candidate.id === session.host) : undefined;
+    const view = host && state.hostViews[host.id];
+    const project = view?.workspace.projects.find((candidate) => candidate.path === session.cwd);
+    return host && view && project ? { host, project, view } : undefined;
 }
 
-/** The chats running in a copy, newest attention first. */
-export function chatsIn(copy: RemoteCopy): ChatInfo[] {
-    return copy.view.chats.filter((chat) => inFolder(chat.cwd, copy.project.path));
+/** The chats running in a project on another host, newest attention first. */
+export function chatsIn(place: HostProject): ChatInfo[] {
+    return place.view.chats.filter((chat) => inFolder(chat.cwd, place.project.path));
 }
 
-/** The plain terminals running in a copy. */
-export function terminalsIn(copy: RemoteCopy): SessionInfo[] {
-    return copy.view.sessions.filter(
-        (session) => session.kind === "terminal" && session.running && !session.agentId && session.project === copy.project.id,
+/** The plain terminals running in a project on another host. */
+export function terminalsIn(place: HostProject): SessionInfo[] {
+    return place.view.sessions.filter(
+        (session) => session.kind === "terminal" && session.running && !session.agentId && inFolder(session.project, place.project.path),
     );
 }
 
-/** Where a new chat or terminal on `host` starts in `session`: its copy of the project there, if it has one. */
-export function copyOn(state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities">, session: Session, host: string): RemoteCopy | undefined {
-    return remoteCopiesOf(state, session).find((copy) => copy.host.id === host);
-}
-
-/** The project a new chat on `host` starts in: `session`'s copy there, else the first open project with one. */
-export function projectCopyOn(
-    state: Pick<StoreState, "hosts" | "hostViews" | "projectIdentities" | "sessionOrder" | "sessions">,
+/** The project a new chat on `host` starts in: `session` when it is one of that host's, else the host's first. */
+export function projectOnHost(
+    state: Pick<StoreState, "hosts" | "hostViews" | "sessionOrder" | "sessions">,
     host: string,
     session: Session | undefined,
-): { session: Session; copy: RemoteCopy } | undefined {
-    const candidates = session
-        ? [session, ...state.sessionOrder.map((id) => state.sessions[id])]
-        : state.sessionOrder.map((id) => state.sessions[id]);
+): { session: Session; project: HostProject } | undefined {
+    const candidates = [session, ...state.sessionOrder.map((id) => state.sessions[id])];
     for (const candidate of candidates) {
-        const copy = candidate?.kind === "project" ? copyOn(state, candidate, host) : undefined;
-        if (copy) return { session: candidate, copy };
+        const project = candidate?.host === host ? hostProjectOf(state, candidate) : undefined;
+        if (candidate && project) return { session: candidate, project };
     }
     return undefined;
 }
@@ -170,57 +214,90 @@ export function projectCopyOn(
 /** A host the side rail chooses: this one or one on the account, by its core's key (none for this one), or an SSH host by its alias. */
 export type HostChoice = { readonly kind: "core"; readonly host?: string } | { readonly kind: "ssh"; readonly alias: string };
 
-/** A chosen host, with the session that was in front when it was chosen or that it brought forward since. */
-export type ChosenHost = HostChoice & { readonly over: string };
+export const THIS_HOST: HostChoice = { kind: "core" };
 
-/** The host chosen in the side rail, while the session it was chosen over is still in front. */
-export function chosenHostOf(state: Pick<StoreState, "chosenHost" | "activeSessionId">): HostChoice | undefined {
-    return state.chosenHost?.over === state.activeSessionId ? state.chosenHost : undefined;
-}
-
-export function sameHost(a: HostChoice | undefined, b: HostChoice): boolean {
-    if (!a) return false;
+export function sameHost(a: HostChoice, b: HostChoice): boolean {
     return a.kind === "core" ? b.kind === "core" && a.host === b.host : b.kind === "ssh" && a.alias === b.alias;
 }
 
-/** Chooses a host's row in the side rail as a project's row is chosen; what is in front stays. */
+/** What the rail keeps per host, such as the session last in front there. */
+function hostKey(choice: HostChoice): string {
+    return choice.kind === "core" ? `core:${choice.host ?? ""}` : `ssh:${choice.alias}`;
+}
+
+/** The host a session belongs to; none for one, such as a plugin's, that runs on no host in particular. */
+function hostOfSession(session: Session): HostChoice | undefined {
+    if (session.kind === "ssh") return { kind: "ssh", alias: session.name };
+    if (session.kind === "project" || session.kind === "command") return hostOf(session.host);
+    return undefined;
+}
+
+/** The first session open on `choice`, its projects before anything else. */
+function firstOn(state: Pick<StoreState, "sessionOrder" | "sessions">, choice: HostChoice): string | undefined {
+    const on = state.sessionOrder.filter((id) => {
+        const host = state.sessions[id] && hostOfSession(state.sessions[id]);
+        return !!host && sameHost(host, choice);
+    });
+    return on.find((id) => state.sessions[id]?.kind === "project") ?? on[0];
+}
+
+/**
+ * Chooses a host under Hosts, and puts in front what was last in front there, else its first project, else nothing:
+ * each host has its own projects (ADR 0019).
+ */
 export function chooseHost(choice: HostChoice): void {
+    const state = getState();
+    const last = state.lastOnHost[hostKey(choice)];
+    const back = last && state.sessions[last] ? last : firstOn(state, choice);
+    // An SSH host without Sikemux is a shell: choosing it shows a terminal there, opening one when none is.
+    if (choice.kind === "ssh" && !back) return createSshSession(choice.alias);
     mutate((d) => {
-        d.chosenHost = { ...choice, over: d.activeSessionId };
+        d.chosenHost = choice;
+        d.activeSessionId = back ?? "";
+        d.zoomedPaneId = null;
         d.settingsOpen = false;
         d.pickerOpen = false;
     });
+    if (choice.kind === "ssh" && back && (state.windowsBySession[back] ?? []).length === 0) newSshTerminalOn(choice.alias);
 }
 
-/** Brings `sessionId` forward for something opened from a host, keeping that host chosen. */
+/** The chosen host follows the session in front, which that host then keeps as the one last in front there. */
+function followSessionInFront(): void {
+    const { activeSessionId, sessions, chosenHost, lastOnHost } = getState();
+    const session = sessions[activeSessionId];
+    const host = session && hostOfSession(session);
+    if (!host) return;
+    const key = hostKey(host);
+    if (sameHost(host, chosenHost) && lastOnHost[key] === activeSessionId) return;
+    setState({ chosenHost: sameHost(host, chosenHost) ? chosenHost : host, lastOnHost: { ...lastOnHost, [key]: activeSessionId } });
+}
+
+/** Brings `sessionId` forward. */
 export function bringForward(d: Draft<StoreState>, sessionId: string): void {
-    if (d.chosenHost?.over === d.activeSessionId) d.chosenHost.over = sessionId;
     d.activeSessionId = sessionId;
     d.zoomedPaneId = null;
 }
 
-const THIS_HOST: HostChoice = { kind: "core" };
+/** Where new chats and terminals start, which its row under Hosts shows chosen. */
+export function newWorkHost(state: Pick<StoreState, "chosenHost">): HostChoice {
+    return state.chosenHost;
+}
 
-/**
- * Where new chats and terminals start: the chosen host, else the host of the chat or terminal in front, else this one.
- * Its row under Hosts says "here".
- */
-export function newWorkHost(state: Pick<StoreState, "chosenHost" | "sessions" | "activeSessionId" | "windows" | "agents">): HostChoice {
-    const chosen = chosenHostOf(state);
-    if (chosen) return chosen;
-    const session = state.sessions[state.activeSessionId];
-    const window = session && state.windows[session.activeWindowId];
-    const pane = window && collectPanes(window.root).find((candidate) => candidate.id === window.activePaneId);
-    if (session?.kind === "ssh") return pane?.kind === "terminal" ? { kind: "ssh", alias: session.name } : THIS_HOST;
-    const host = pane?.host ?? (pane && state.agents[pane.id]?.host) ?? session?.host;
+/** The host a chat or terminal tab runs on, as the Hosts group chooses it. */
+export function hostOf(host: string | undefined): HostChoice {
     return host ? { kind: "core", host } : THIS_HOST;
 }
 
-/** Runs `open`, keeping a host chosen before it chosen over whatever it brings forward. */
-export function keepHostChosen(open: () => void): void {
-    const chosen = chosenHostOf(getState());
-    open();
-    if (chosen) setState({ chosenHost: { ...chosen, over: getState().activeSessionId } });
+/** The chosen host while its row is there, else this host: an account host taken off it, or an SSH host closed. */
+function settleChosenHost(): void {
+    const { chosenHost, hosts, sessions } = getState();
+    const installed = chosenHost.kind === "ssh" && hosts.find((host) => host.ssh === chosenHost.alias);
+    if (installed) return chooseHost({ kind: "core", host: installed.id });
+    const there =
+        chosenHost.kind === "core"
+            ? !chosenHost.host || hosts.some((host) => host.id === chosenHost.host)
+            : Object.values(sessions).some((session) => session.kind === "ssh" && session.name === chosenHost.alias);
+    if (!there) chooseHost(THIS_HOST);
 }
 
 /** Another login on the SSH host `alias`, as a tab of its session, which its row under Hosts means is open. */
@@ -257,26 +334,15 @@ function hostSession(d: Draft<StoreState>, host: string): Draft<Session> {
     return d.sessions[id];
 }
 
-/**
- * Where something at `path` on `host` belongs here: the project there that holds it, and the session open here for
- * that project, which is null when none is and it opens in the host's own.
- */
+/** The project on `host` that holds `path`, and the session open here for it, if any. */
 export function placeOn(
-    state: Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "projectIdentities">,
+    state: Pick<StoreState, "hostViews" | "sessions">,
     host: string,
     path: string | null | undefined,
 ): { project: ProjectInfo | undefined; sessionId: string | null } {
     const project = state.hostViews[host]?.workspace.projects.find((candidate) => inFolder(path, candidate.path));
-    const sessionId =
-        project &&
-        state.sessionOrder.find((id) => {
-            const session = state.sessions[id];
-            if (session?.kind !== "project") return false;
-            return session.host
-                ? id === remoteSessionId(host, project.id)
-                : !!project.identity && state.projectIdentities[session.cwd] === project.identity;
-        });
-    return { project, sessionId: sessionId ?? null };
+    const sessionId = project ? remoteSessionId(host, project.id) : null;
+    return { project, sessionId: sessionId && state.sessions[sessionId] ? sessionId : null };
 }
 
 /** Opens a terminal on another host outside any project, in the session that host keeps. */
@@ -311,18 +377,12 @@ export function hostName(state: Pick<StoreState, "hosts">, id: string | undefine
 }
 
 /**
- * Gives every project only another host holds a row of its own, and drops those of hosts the app left or projects that
- * now have a copy here. They stay out of this host's core's workspace.
+ * Gives every project another host shows a session of its own, listed under that host (ADR 0019), and drops those of
+ * hosts the app left or projects they closed. They stay out of this host's core's workspace.
  */
 function placeRemoteProjects(): void {
     const state = getState();
     const sessions = Object.values(state.sessions);
-    const here = new Set(
-        sessions.flatMap((session) => {
-            const identity = session.kind === "project" && !session.host ? state.projectIdentities[session.cwd] : undefined;
-            return identity ? [identity] : [];
-        }),
-    );
     const wanted = new Map<string, { host: string; project: ProjectInfo }>();
     // A host whose view has not come yet keeps the rows it had.
     const unseen = new Set<string>();
@@ -332,11 +392,9 @@ function placeRemoteProjects(): void {
             unseen.add(host.id);
             continue;
         }
-        for (const project of view.workspace.projects) {
-            if (!project.identity || !here.has(project.identity)) wanted.set(remoteSessionId(host.id, project.id), { host: host.id, project });
-        }
+        for (const project of view.workspace.projects) wanted.set(remoteSessionId(host.id, project.id), { host: host.id, project });
     }
-    const stale = sessions.filter((session) => session.host && !unseen.has(session.host) && !wanted.has(session.id));
+    const stale = sessions.filter((session) => session.kind === "project" && session.host && !unseen.has(session.host) && !wanted.has(session.id));
     const missing = [...wanted].filter(([id]) => !state.sessions[id]);
     const renamed = [...wanted].filter(([id, { project }]) => state.sessions[id] && state.sessions[id].name !== project.name);
     if (stale.length === 0 && missing.length === 0 && renamed.length === 0) return;
@@ -346,14 +404,12 @@ function placeRemoteProjects(): void {
             delete d.windowsBySession[session.id];
             delete d.sessions[session.id];
             d.sessionOrder = d.sessionOrder.filter((id) => id !== session.id);
-            if (d.activeSessionId === session.id) d.activeSessionId = d.sessionOrder[0] ?? "";
+            if (d.activeSessionId === session.id) d.activeSessionId = "";
         }
         for (const [id, { host, project }] of missing) {
-            const window = remoteTerminalWindow(host, project.path);
-            d.sessions[id] = { id, name: project.name, kind: "project", cwd: project.path, pinned: false, activeWindowId: window.id, host };
+            d.sessions[id] = { id, name: project.name, kind: "project", cwd: project.path, pinned: false, activeWindowId: "", host };
             d.sessionOrder.push(id);
-            d.windows[window.id] = window;
-            d.windowsBySession[id] = [window.id];
+            d.windowsBySession[id] = [];
         }
         for (const [id, { project }] of renamed) d.sessions[id].name = project.name;
     });
@@ -436,17 +492,61 @@ export function openRemoteChat(
 }
 
 /** Starts a chat with `type` in a copy on another host, on that host's own sign-in, and opens it here. */
-export async function startRemoteChat(sessionId: string, copy: RemoteCopy, type: string): Promise<void> {
-    const launcher = copy.view.workspace.launchers.find((candidate) => candidate.provider === type);
+export async function startRemoteChat(sessionId: string, place: HostProject, type: string): Promise<void> {
+    const launcher = place.view.workspace.launchers.find((candidate) => candidate.provider === type);
     if (!launcher) {
-        notify("info", `${agentLabel(type)} isn't set up on ${copy.host.name}`);
+        notify("info", `${agentLabel(type)} isn't set up on ${place.host.name}`);
         return;
     }
     const begun = await coreRequest<{ agentId: string }>(
-        { op: "startChat", launcher: launcher.id, project: copy.project.id, permissionMode: null, model: null, effort: null },
-        copy.host.id,
+        { op: "startChat", launcher: launcher.id, project: place.project.id, permissionMode: null, model: null, effort: null },
+        place.host.id,
     );
-    openRemoteChat(sessionId, copy.host.id, { agentId: begun.agentId, provider: type, title: null, name: null, cwd: copy.project.path });
+    openRemoteChat(sessionId, place.host.id, { agentId: begun.agentId, provider: type, title: null, name: null, cwd: place.project.path });
+}
+
+/** How long the app waits for a host to show a project it was asked to open, after it answered. */
+const OPENED_WAIT_MS = 30_000;
+
+/** A Sikemux host a project can be opened on: one on the account by its key, or this one. */
+export interface OpenTarget {
+    readonly id: string | undefined;
+    readonly name: string;
+}
+
+/**
+ * Opens `session`'s project on the Sikemux host `target` (ADR 0019): that host opens a checkout it has of the same
+ * repository, or clones it from its remote with its own sign-in, or takes it from the project's host when it cannot.
+ * Only committed work goes; uncommitted changes stay where they are. Then the person is on that host, in that project.
+ */
+export async function openOnHost(session: Session, target: OpenTarget): Promise<void> {
+    const confirmed = await confirmDialog({
+        title: `Open ${session.name} on ${target.name}?`,
+        body: `${target.name} clones it from its remote, or takes it from where it is when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay there.`,
+        confirmLabel: "Open",
+    });
+    if (!confirmed) return;
+    notify("info", `Opening ${session.name} on ${target.name}…`);
+    const key = target.id ?? (await remoteApi.status()).coreId;
+    const opened = await coreCall<{ project: string; path: string }>("openOnHost", { path: session.cwd, host: key }, session.host);
+    if (!target.id) return createProjectSession(opened.path);
+    const host = target.id;
+    const id = remoteSessionId(host, opened.project);
+    const shown = await new Promise<boolean>((resolve) => {
+        if (getState().sessions[id]) return resolve(true);
+        const timer = window.setTimeout(() => {
+            stop();
+            resolve(false);
+        }, OPENED_WAIT_MS);
+        const stop = useStore.subscribe((state) => {
+            if (!state.sessions[id]) return;
+            window.clearTimeout(timer);
+            stop();
+            resolve(true);
+        });
+    });
+    if (!shown) throw new Error(`${target.name} opened it but has not shown it here yet`);
+    mutate((d) => bringForward(d, id));
 }
 
 /** Says when a device or host joins the account, with one tap to take it off again (ADR 0018). */
@@ -512,6 +612,10 @@ export function startHosts(): () => void {
     const controller = new AbortController();
     const transport = getIpcTransport();
     noticeNewDevices(controller.signal);
+    const front = getState().sessions[getState().activeSessionId];
+    const frontHost = front && hostOfSession(front);
+    if (frontHost && !sameHost(frontHost, THIS_HOST)) chooseHost(THIS_HOST);
+    else followSessionInFront();
     probeSshHosts(controller.signal);
     const setHosts = (rows: HostRow[]) => {
         const hosts = rows.filter((row): row is HostEntry => row.id !== null);
@@ -544,7 +648,8 @@ export function startHosts(): () => void {
         .catch(swallow("follow other hosts' views"));
     void hostsApi.list().then(setHosts).catch(swallow("list other hosts"));
     const stopFollowing = useStore.subscribe((state, previous) => {
-        if (state.projectIdentities !== previous.projectIdentities) placeRemoteProjects();
+        if (state.activeSessionId !== previous.activeSessionId || state.sessions !== previous.sessions) followSessionInFront();
+        if (state.hosts !== previous.hosts || state.sessions !== previous.sessions) settleChosenHost();
     });
     return () => {
         controller.abort();

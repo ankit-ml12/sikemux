@@ -50,9 +50,9 @@ import { TreeContextMenu, type CtxItem } from "./FileTree";
 import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
 import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
-import { HostLabel } from "./RemoteRows";
 import { HostRows } from "./HostsGroup";
-import { chosenHostOf } from "../hosts/hosts";
+import { openOnHost, type HostEntry } from "../hosts/hosts";
+import { reportError } from "../state/toast";
 
 /* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
 const LINE_ICON_SIZE = 13;
@@ -296,7 +296,6 @@ const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
                                 <IconFolder size={LINE_ICON_SIZE} />
                             </span>
                             <span className="proj-name">{s.name}</span>
-                            <HostLabel host={s.host} />
                             {agentBadge}
                         </button>
                     </Tooltip>
@@ -382,7 +381,6 @@ const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
                             <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
-                        <HostLabel host={s.host} />
                         {agentBadge}
                     </button>
                 </Tooltip>
@@ -474,10 +472,20 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
 
 type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
-function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined): CtxItem[] {
+function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined, hosts: readonly HostEntry[]): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
+    const elsewhere = [
+        ...(session.host ? [{ id: undefined, name: "This host", reach: "connected" }] : []),
+        ...hosts.filter((host) => host.id !== session.host),
+    ];
     return [
         { label: "Project settings", icon: <IconSettings size={13} />, run: () => cmd.openProjectSettings(session.id) },
+        ...elsewhere.map((host) => ({
+            label: `Open on ${host.name}`,
+            icon: <IconServer size={13} />,
+            disabled: host.reach !== "connected",
+            run: () => void openOnHost(session, host).catch(reportError(`Open ${session.name} on ${host.name}`)),
+        })),
         { sep: true },
         ...spaces.map((space) => ({
             label: space.name,
@@ -561,9 +569,8 @@ export const SideRail = memo(function SideRail() {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
-    const hostChosen = useStore((s) => !!chosenHostOf(s));
     const keybindingOverrides = useStore(keybindingOverridesOf);
-    const activeSessionId = settingsOpen || hostChosen ? "" : rawActiveSessionId;
+    const activeSessionId = settingsOpen ? "" : rawActiveSessionId;
     const kb = (id: KeybindingActionId) => keybindingLabelForAction(keybindingOverrides, id);
     const sessions = sessionOrder.map((id) => sessionsById[id]);
     const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
@@ -588,11 +595,13 @@ export const SideRail = memo(function SideRail() {
         event.preventDefault();
         setMenu({ x: event.clientX, y: event.clientY, items });
     };
-    const allProjects = inGroup("project");
+    const chosenHost = useStore((s) => s.chosenHost);
+    // Each host has its own projects (ADR 0019); an SSH host without Sikemux has none.
+    const allProjects = inGroup("project").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
     const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
-    const commands = inGroup("command").filter((session) => !session.host);
+    const commands = inGroup("command").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const plugins = inGroup("plugins");
     const enabledPlugins = useInstalledPlugins();
     // Every enabled plugin always has a row; its session is only made on the first click.
@@ -796,7 +805,7 @@ export const SideRail = memo(function SideRail() {
             selectProject: (id) => handlers.current.selectProject(id),
             openSpaceMenu: (event, session) => {
                 const { openMenu, spaces, projectSpaces } = handlers.current;
-                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd]));
+                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd], getState().hosts));
             },
             jumpToWindow: (sessionId, winId) => handlers.current.jumpToWindow(sessionId, winId),
             kb: (id) => keybindingLabelForAction(keybindingOverrides, id),

@@ -1,4 +1,4 @@
-# ADR 0019: The desktop and the web are one GPUI app that only draws what the core sends
+# ADR 0020: The desktop and the web are one GPUI app that only draws what the core sends
 
 - Status: Accepted
 - Decision date: 2026-10-21

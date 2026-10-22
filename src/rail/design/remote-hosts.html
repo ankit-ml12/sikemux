@@ -31,10 +31,10 @@ figure{margin:0} figcaption{color:var(--text-tertiary);font-size:var(--text-2xs)
 </style></head><body>
 <header>
 <h1>Other hosts in the app</h1>
-<p>The app reaches every host on the account (ADR 0017, 0018). Their chats and terminals sit under the project they belong to, beside this host's, with a quiet <em>on &lt;host&gt;</em> only when they run elsewhere. A project only another host holds gets its own row. The new rows start on the host of the focused chat or terminal and name it when it is not this one; the hosts themselves are one group in the side rail (hosts-group.html).</p>
+<p>The app reaches every host on the account (ADR 0018, 0019). Projects belong to their host: with test-ec2 chosen under Hosts, the side rail lists test-ec2's projects and the tab rail its chats and terminals, so nothing needs an <em>on &lt;host&gt;</em> note. The new rows start on the chosen host and name it when it is not this one; the hosts themselves are one group in the side rail (hosts-group.html).</p>
 </header>
 
-<figure><figcaption>Tab rail, agents page, project <b>sikemux</b>, focused on a chat on test-ec2</figcaption>
+<figure><figcaption>Tab rail, agents page, test-ec2 chosen, its project <b>sikemux</b></figcaption>
 <div class="rail">
   <div class="onhost">on test-ec2</div>
   <div class="row"><span class="glyph">+</span><span class="title">New chat</span><span class="kbd">⌘N</span></div>
@@ -42,20 +42,19 @@ figure{margin:0} figcaption{color:var(--text-tertiary);font-size:var(--text-2xs)
   <div class="row"><span class="glyph">◎</span><span class="title">New browser</span></div>
   <div class="rule"></div>
   <div class="row active"><span class="glyph claude">✳</span><span class="title">Fix the flaky upload test</span><span class="name">@Otter</span></div>
-  <div class="row"><span class="glyph claude">✳</span><span class="title">Wire the host chip<span class="host">on test-ec2</span></span><span class="name">@Kite</span></div>
-  <div class="row"><span class="glyph claude">✳</span><span class="title">Bump dependencies<span class="host">on test-ec2</span></span><span class="name">@Wren</span></div>
+  <div class="row"><span class="glyph claude">✳</span><span class="title">Wire the host chip</span><span class="name">@Kite</span></div>
+  <div class="row"><span class="glyph claude">✳</span><span class="title">Bump dependencies</span><span class="name">@Wren</span></div>
 </div></figure>
 
-<figure><figcaption>Tab rail, terminals page</figcaption>
+<figure><figcaption>Tab rail, terminals page, same project</figcaption>
 <div class="rail">
-  <div class="row"><span class="glyph term">›_</span><span class="title">zsh · ~/proj/pers/sikemux</span></div>
-  <div class="row"><span class="glyph term">›_</span><span class="title">bash · ~/sikemux<span class="host">on test-ec2</span></span></div>
+  <div class="row"><span class="glyph term">›_</span><span class="title">bash · ~/sikemux</span></div>
 </div></figure>
 
-<figure><figcaption>Side rail: a project only test-ec2 holds</figcaption>
+<figure><figcaption>Side rail, Projects: test-ec2's own</figcaption>
 <div class="rail">
   <div class="row active"><span class="glyph">▣</span><span class="title proj">sikemux</span></div>
-  <div class="row"><span class="glyph">▣</span><span class="title proj">infra<span class="host">on test-ec2</span></span></div>
+  <div class="row"><span class="glyph">▣</span><span class="title proj">infra</span></div>
 </div></figure>
 
 <figure></figure>

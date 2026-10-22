@@ -331,9 +331,12 @@ mod systemd {
 
     /// Restarted only after a crash, so Quit and Stop Everything or a second
     /// core finding one running stays stopped.
+    /// The service is the only thing that starts this core, so it never
+    /// stops for being idle.
     pub(super) fn render(_label: &str, launch: &CoreLaunch, path_env: Option<&str>) -> String {
         let command: Vec<String> = launch
             .command()
+            .chain(["--no-idle-exit".to_owned()])
             .map(|arg| quote(&arg.replace('$', "$$")))
             .collect();
         let environment = path_env

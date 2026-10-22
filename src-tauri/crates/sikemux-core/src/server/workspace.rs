@@ -1704,6 +1704,16 @@ pub(crate) struct AddProjectParams {
     id: Option<String>,
 }
 
+impl AddProjectParams {
+    pub(crate) fn named(path: PathBuf, name: String) -> Self {
+        Self {
+            path,
+            name: Some(name),
+            id: None,
+        }
+    }
+}
+
 /// Makes a folder on this host a project, so agents can be started in it from
 /// any device, with or without the app.
 pub(crate) async fn add_project(

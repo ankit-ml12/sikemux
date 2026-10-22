@@ -42,6 +42,7 @@ shopt -u nullglob
 [[ ${#RPMS[@]} -eq 1 ]] || fail "expected exactly one rpm, found ${#RPMS[@]}"
 [[ ${#APPIMAGES[@]} -eq 1 ]] || fail "expected exactly one AppImage, found ${#APPIMAGES[@]}"
 [[ ${#HOSTS[@]} -eq 2 ]] || fail "expected the x86_64 and aarch64 host cores, found ${#HOSTS[@]}"
+HOST_SIGS=("${HOSTS[@]/%/.sig}")
 DMG="${DMGS[0]}"
 VOICE="${VOICES[0]}"
 SIM="${SIMS[0]}"
@@ -49,13 +50,16 @@ DEB="${DEBS[0]}"
 RPM="${RPMS[0]}"
 APPIMAGE="${APPIMAGES[0]}"
 INSTALLER="$ROOT/scripts/install.sh"
-for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "$INSTALLER" "$MANIFEST"; do
+for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$MANIFEST"; do
   [[ -s "$file" ]] || fail "$file is missing or empty"
 done
 [[ "$(node -p "require('$MANIFEST').version")" == "$VERSION" ]] || fail "$MANIFEST is not for v$VERSION"
+for host in "${HOSTS[@]}"; do
+  node scripts/verify-updater-signature.mjs "$host" "$host.sig" || fail "$host is not signed by the updater key"
+done
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "$INSTALLER" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "$INSTALLER")
+STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).

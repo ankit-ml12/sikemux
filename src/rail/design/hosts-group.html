@@ -47,9 +47,9 @@
   .scope span { display:flex; align-items:center; justify-content:center; gap: 6px; height: 22px; border-radius: 5px; color: var(--low); }
   .scope span.on { background: var(--lift); color: var(--ink); }
   .scope svg.i { width: 13px; height: 13px; }
-  .row.here { color: var(--ink); }
+  .row.chosen { color: var(--ink); }
   .row .tag { color: var(--low); font-size: 11px; }
-  .row:not(.here) { color: var(--mid); }
+  .row:not(.chosen) { color: var(--mid); }
   .trow { display:flex; align-items:center; gap: 9px; padding: 4px 8px; border-radius: 6px; color: var(--ink); font-size: 12.5px; min-width: 0; }
   .trow.chosen { background: var(--lift); }
   .trow .txt { display:grid; min-width: 0; }
@@ -171,42 +171,34 @@
   </div>
 </div>
 
-<h3>4 · A host is chosen as a project is</h3>
-<p class="why">Clicking a host's row chooses it with the same lift a project gets, and only one row in the side rail is chosen at a time. The tab rail then lists every chat and terminal running on that host, from every project, each with its project under it; its scope tabs read <b>test-ec2 | All projects</b>. Choosing a project still lists its chats from every host (ADR 0017). On an SSH-only host the list is its open SSH terminals. Opening a row keeps the host chosen.</p>
+<h3>4 · You are always on one host, and in one project</h3>
+<p class="why">The Hosts group keeps its own chosen row beside the chosen project, <b>This host</b> until you choose another; both show the lift at once. Projects belong to their host (ADR 0019): <b>Projects</b> lists the chosen host's, and choosing a host puts back the project last open there. The tab rail keeps <b>&lt;project&gt; | All projects</b> and lists what runs on that host: the project's chats and terminals, or every project's. New chats and terminals start on the chosen host, and opening a chat on another host from the inbox, a notification or search chooses that host. The app starts on This host.</p>
 <div class="pair">
   <div>
-    <div class="cap new">Side rail · test-ec2 chosen</div>
+    <div class="cap new">Side rail · test-ec2 chosen, its own sikemux in front</div>
     <div class="rail">
       <div class="glabel">PROJECTS<span class="rule"></span></div>
-      <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
+      <div class="row chosen"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
       <div class="row"><svg class="i"><use href="#folder"/></svg><span class="proj">infra</span></div>
       <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
       <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
-      <div class="row chosen here"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="tag">here</span><span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
+      <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>nginx<span class="end"><span class="dot"></span></span></div>
     </div>
-    <div class="cap new" style="margin-top:14px">Side rail · sikemux chosen, a chat on this host in front</div>
-    <div class="rail">
-      <div class="glabel">PROJECTS<span class="rule"></span></div>
-      <div class="row chosen here"><svg class="i"><use href="#folder"/></svg><span class="proj">sikemux</span></div>
-      <div class="glabel" style="margin-top:10px">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
-      <div class="row"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="meta">4% · 1.1 GB</span><span class="end">2 agents<span class="dot"></span></span></div>
-    </div>
-    <div class="note">The host where ⌘N and ⌘T start says <b>here</b>: its name in full ink and a small tag, never the chosen lift. Focus a chat on test-ec2 and the tag moves to test-ec2.</div>
+    <div class="note">On an SSH-only host the tab rail lists its open SSH terminals, in either scope.</div>
   </div>
   <div>
-    <div class="cap new">Tab rail · agents page</div>
+    <div class="cap new">Tab rail · agents page, sikemux on test-ec2</div>
     <div class="rail">
       <div class="mhead">on <b>test-ec2</b></div>
       <div class="mrow"><svg class="i"><use href="#plus"/></svg>New chat<span class="k">⌘N</span></div>
       <div class="mrow"><svg class="i"><use href="#term"/></svg>New terminal<span class="k">⌘T</span></div>
       <div class="mrow"><svg class="i"><use href="#globe"/></svg>New browser<span class="k">⌘⇧T</span></div>
-      <div class="scope"><span class="on"><svg class="i"><use href="#server"/></svg>test-ec2</span><span>All projects</span></div>
-      <div class="trow chosen"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Wire the host chip</b><small><svg class="i"><use href="#folder"/></svg>sikemux</small></span><span class="end">@Kite</span></div>
-      <div class="trow"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Rotate the deploy keys</b><small><svg class="i"><use href="#folder"/></svg>infra</small></span><span class="end">@Wren</span></div>
+      <div class="scope"><span class="on"><svg class="i"><use href="#folder"/></svg>sikemux</span><span>All projects</span></div>
+      <div class="trow chosen"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Wire the host chip</b></span><span class="end">@Kite</span></div>
+      <div class="trow"><svg class="i claude"><use href="#plus"/></svg><span class="txt"><b>Bump dependencies</b></span><span class="end">@Wren</span></div>
     </div>
-    <div class="note">The terminals page lists the host's terminals the same way. With nothing running there: <b>No chats on test-ec2</b>, ⌘N to start one.</div>
+    <div class="note">All projects lists every project's chats on test-ec2, each with its project under it. A project with nothing there: <b>No chats in infra on test-ec2</b>, ⌘N to start one.</div>
   </div>
 </div>
 
@@ -217,7 +209,7 @@
     <div class="cap">Before · test-ec2 counted twice</div>
     <div class="rail">
       <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row"><svg class="i core"><use href="#server"/></svg>ip-10-0-16-158<span class="end">out of reach<span class="dot off"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>test-ec2<span class="end"><span class="dot"></span></span></div>
     </div>
@@ -226,7 +218,7 @@
     <div class="cap new">After · one row, signed out, ⋯ open</div>
     <div class="rail" style="height: 250px;">
       <div class="glabel">HOSTS<span class="rule"></span><span class="k">⌘⇧S</span></div>
-      <div class="row here"><svg class="i"><use href="#laptop"/></svg>This host<span class="tag">here</span><span class="end">3 agents<span class="dot"></span></span></div>
+      <div class="row"><svg class="i"><use href="#laptop"/></svg>This host<span class="end">3 agents<span class="dot"></span></span></div>
       <div class="row chosen"><svg class="i core"><use href="#server"/></svg>test-ec2<span class="end">not signed in<span class="dot off"></span></span></div>
       <div class="row"><svg class="i ssh"><use href="#server"/></svg>build-box<span class="end">on another account<span class="dot off"></span></span></div>
       <div class="menu float" style="left: 118px; top: 74px;">
@@ -238,6 +230,57 @@
       </div>
     </div>
     <div class="note">With no key the SSH config offers, or no Sikemux there, nothing changes: the SSH row stays and offers <b>Install Sikemux here</b>. A host on another account offers nothing.</div>
+  </div>
+</div>
+
+<h3>6 · An SSH host without Sikemux is a shell</h3>
+<p class="why">Choosing an SSH host that does not run Sikemux shows a terminal on it, opening one when none is (ADR 0019). It has no projects, so the top bar offers <b>Install Sikemux on nginx</b> where the project picker sits. Chats, agents and panes that need a core are not offered: ⌘N and the new-pane menu hold an SSH terminal and an <b>Install Sikemux</b> pane, which says what installing adds and runs the installer over that SSH connection, as the row's ⋯ does. Once it is installed and signed in, the host is a Sikemux host, chosen as it was.</p>
+<div class="pair">
+  <div>
+    <div class="cap new">Top bar · nginx chosen</div>
+    <div class="menu" style="display:flex; gap:6px; align-items:center; padding:6px 8px;">
+      <div class="mrow hot"><svg class="i ssh"><use href="#server"/></svg>nginx</div>
+      <span style="color:var(--low)">›</span>
+      <div class="mrow hot"><svg class="i"><use href="#down"/></svg>Install Sikemux on nginx</div>
+    </div>
+    <div class="cap new" style="margin-top:14px">New-pane menu · nginx chosen</div>
+    <div class="menu">
+      <div class="mrow hot"><svg class="i"><use href="#term"/></svg>Terminal<span class="on">Another login on nginx</span></div>
+      <div class="mrow"><svg class="i"><use href="#down"/></svg>Install Sikemux<span class="k">⌘N</span></div>
+    </div>
+  </div>
+  <div>
+    <div class="cap new">The Install Sikemux pane</div>
+    <div class="rail" style="text-align:center; padding:28px 22px;">
+      <svg class="i" style="width:22px;height:22px;color:var(--low)"><use href="#down"/></svg>
+      <div style="font-weight:600; margin:8px 0 4px;">Install Sikemux on nginx</div>
+      <div class="note" style="margin:0 auto 12px; max-width:300px;">With Sikemux, nginx runs agents that keep working while you are away, your phone reaches it, and its projects, chats and files open here without SSH. The installer runs over your SSH in a new tab, where you type sudo's password if it asks.</div>
+      <div class="mrow hot" style="display:inline-flex;">Install Sikemux</div>
+    </div>
+    <div class="note">Install is offered only where there is no <code>sikemux</code> at all. Where there is, the same places offer what it needs: <b>Sign in</b> when it is signed out, <b>Start Sikemux</b> when its core is stopped (the row says "stopped"), <b>Update Sikemux</b> for a release too old to say which host it is (the row says "older release"), and nothing on another account. Each asks the host again when it is done.</div>
+  </div>
+</div>
+
+<h3>7 · Open a project on another host</h3>
+<p class="why">A project's ⋯ offers <b>Open on &lt;host&gt;</b> for each other Sikemux host, This host included for a server's project (ADR 0019). That host opens a checkout it has of the same repository; otherwise it clones it beside most of its projects, else in its home folder, under a new name when that one is taken, from the remote with its own sign-in, or from a bundle this host sends when it cannot reach the remote or lacks the commit. Only committed work goes over. Then you are on that host, in that project.</p>
+<div class="pair">
+  <div>
+    <div class="cap new">⋯ on sikemux</div>
+    <div class="menu">
+      <div class="mrow"><svg class="i"><use href="#pen"/></svg>Project settings</div>
+      <div class="mrow hot"><svg class="i core"><use href="#server"/></svg>Open on test-ec2</div>
+      <div class="mrow" style="color:var(--low)"><svg class="i core"><use href="#server"/></svg>Open on staging<span class="on">out of reach</span></div>
+      <hr>
+      <div class="mrow"><svg class="i"><use href="#folder"/></svg>No Space</div>
+    </div>
+  </div>
+  <div>
+    <div class="cap new">The confirmation</div>
+    <div class="rail" style="padding:16px 18px;">
+      <div style="font-weight:600; margin-bottom:6px;">Open sikemux on test-ec2?</div>
+      <div class="note" style="margin:0 0 12px;">test-ec2 clones it from its remote, or takes it from here when it cannot reach the remote. Only what is committed goes over; uncommitted changes stay here.</div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;"><div class="mrow">Cancel</div><div class="mrow hot">Open</div></div>
+    </div>
   </div>
 </div>
 

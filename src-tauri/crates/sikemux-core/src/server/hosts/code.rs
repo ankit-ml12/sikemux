@@ -23,6 +23,8 @@ use super::team::{Role, Tree};
 const MAX_PATCH_BYTES: usize = 6 * 1024 * 1024;
 const MAX_TIPS: usize = 64;
 const CLONES: &str = "host-projects";
+/// Set in a clone made to open a project from another host until it is checked out.
+const OPENING: &str = "sikemux.opening";
 
 /// The lead's checkout, as a worker on another host starts from it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -254,6 +256,154 @@ fn tips(repo: &Path) -> Vec<String> {
     )
     .map(|out| out.lines().map(str::to_owned).collect())
     .unwrap_or_default()
+}
+
+/// Where a project the person opened on this host from another one lives, or
+/// the commits a bundle should leave out.
+pub(crate) enum Opened {
+    Ready(PathBuf),
+    Needs(Vec<String>),
+}
+
+/// The folder name a project takes here: its repository's, else its own.
+fn folder_name(code: &Code) -> String {
+    let from_remote = code.remote.as_deref().and_then(|remote| {
+        let last = remote.trim_end_matches('/').rsplit(['/', ':']).next()?;
+        Some(last.trim_end_matches(".git").to_owned())
+    });
+    let name: String = from_remote
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| code.project.clone())
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .collect();
+    match name.trim_matches('.') {
+        "" => "project".into(),
+        name => name.to_owned(),
+    }
+}
+
+/// Whether `dir` is a checkout whose `origin` is `remote`.
+fn has_origin(dir: &Path, remote: &str) -> bool {
+    git(dir, &["remote", "get-url", "origin"]).is_ok_and(|origin| {
+        crate::git::remote::normalized_remote(&origin)
+            == crate::git::remote::normalized_remote(remote)
+    })
+}
+
+/// Where a project opened from another host goes: beside most of this host's
+/// projects, else in the home folder, under a new name when its own is taken.
+fn opened_dir(core: &Core, code: &Code) -> Result<PathBuf, String> {
+    let mut parents: Vec<PathBuf> = core
+        .workspaces
+        .project_paths()
+        .into_iter()
+        .filter_map(|path| path.parent().map(Path::to_path_buf))
+        .collect();
+    parents.sort();
+    let parent = parents
+        .chunk_by(|a, b| a == b)
+        .max_by_key(|same| same.len())
+        .map(|same| same[0].clone())
+        .or_else(sikemux_process::paths::home)
+        .ok_or("this host has no home folder to clone into")?;
+    let name = folder_name(code);
+    (1..100)
+        .map(|n| {
+            parent.join(if n == 1 {
+                name.clone()
+            } else {
+                format!("{name}-{n}")
+            })
+        })
+        .find(|dir| {
+            !dir.exists()
+                || code
+                    .remote
+                    .as_deref()
+                    .is_some_and(|remote| has_origin(dir, remote))
+        })
+        .ok_or_else(|| {
+            format!(
+                "{} already has too many folders named {name}",
+                parent.display()
+            )
+        })
+}
+
+/// Opens the person's project from another host here (ADR 0019): a checkout
+/// of the same `origin` as it is, else a clone from the remote with this
+/// host's own sign-in, else a copy from `bundle`, at the commit sent and on
+/// its branch. Only committed work comes over.
+pub(crate) fn open_project(
+    core: &Core,
+    code: &Code,
+    bundle: Option<&Path>,
+) -> Result<Opened, String> {
+    if !is_commit_id(&code.commit) {
+        return Err("the project's commit is not a commit id".into());
+    }
+    if let Some(repo) = code
+        .remote
+        .as_deref()
+        .and_then(|remote| project_with(core, remote))
+    {
+        return Ok(Opened::Ready(repo));
+    }
+    let dir = opened_dir(core, code)?;
+    // A clone this made before it had the commit is still its own to check out.
+    let reused = dir.exists() && git(&dir, &["config", "--get", OPENING]).is_err();
+    if !dir.exists() {
+        if let (Some(remote), None) = (&code.remote, bundle) {
+            let parent = dir
+                .parent()
+                .ok_or("the folder to clone into has no parent")?;
+            let target = dir.to_string_lossy().into_owned();
+            let ssh = sikemux_process::user_environment::var("GIT_SSH_COMMAND")
+                .unwrap_or_else(|| "ssh -o BatchMode=yes -o ConnectTimeout=20".into());
+            let cloned = git_with(
+                parent,
+                &["clone", "--quiet", "--", remote, &target],
+                &[("GIT_SSH_COMMAND", &ssh)],
+                SLOW,
+            )
+            .and_then(|_| git(&dir, &["config", OPENING, "true"]));
+            if cloned.is_err() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+        if !dir.exists() {
+            let Some(_) = bundle else {
+                return Ok(Opened::Needs(Vec::new()));
+            };
+            std::fs::create_dir_all(&dir)
+                .map_err(|error| format!("could not make {}: {error}", dir.display()))?;
+            git(&dir, &["init", "--quiet"])?;
+            git(&dir, &["config", OPENING, "true"])?;
+            if let Some(remote) = &code.remote {
+                let _ = git(&dir, &["remote", "add", "origin", remote]);
+            }
+        }
+    }
+    if !has_commit(&dir, &code.commit) {
+        let Some(bundle) = bundle else {
+            return Ok(Opened::Needs(tips(&dir)));
+        };
+        let incoming = format!("refs/sikemux/incoming/{}", uuid::Uuid::new_v4().simple());
+        fetch(&dir, bundle, &incoming)?;
+        let _ = git(&dir, &["update-ref", "-d", &incoming]);
+        if !has_commit(&dir, &code.commit) {
+            return Err("the bundle did not hold the project's commit".into());
+        }
+    }
+    if !reused {
+        match &code.branch {
+            Some(branch) => git(&dir, &["checkout", "--quiet", "-B", branch, &code.commit])?,
+            None => git(&dir, &["checkout", "--quiet", "--detach", &code.commit])?,
+        };
+        git(&dir, &["config", "--unset", OPENING])?;
+    }
+    Ok(Opened::Ready(dir))
 }
 
 /// Where a worker's code was cut and the folder it works in, or the commits

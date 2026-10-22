@@ -11,7 +11,7 @@ import type { AgentUsage } from "../api/agents";
 import { useStore } from "../state/store";
 import { activeAgentId, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
-import { AgentIcon, IconAgent, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconDownload, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { inTeams, type TeamLink } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
@@ -29,17 +29,17 @@ import { AGENT_SETUP_SECTION } from "../settings/AgentSetupSection";
 import { usagePeak } from "./usageFormat";
 import { AllProjectsAgents, OpenAgentRow } from "./AllProjectsAgents";
 import { RecentChatList } from "./RecentChatList";
-import { HostScopeTabs, ScopeTabs } from "./ScopeTabs";
+import { ScopeTabs } from "./ScopeTabs";
 import { NewRow } from "./RailNewRow";
 import { RailPages } from "./RailPages";
 import { FilesPage, TerminalsPage } from "./ProjectPages";
-import { drawTeamLines } from "./teams";
+import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
 import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
-import { NewOnHost, remoteChatRows, useRemoteCopies } from "./RemoteRows";
-import { chosenHostOf } from "../hosts/hosts";
-import { HostChats } from "./HostLists";
+import { NewOnHost, remoteChatRows, useHostProject } from "./RemoteRows";
+import { hostName, openInstallPane } from "../hosts/hosts";
+import { HostTerminals } from "./HostLists";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { preferencesOf } from "../state/preferences";
 
@@ -102,12 +102,15 @@ export function TabRailBody() {
     const pageVisible = usePageVisible();
     const session = useStore((s) => s.sessions[s.activeSessionId]);
     const sessionName = useSessionName(session);
-    const host = useStore(chosenHostOf);
+    const host = useStore((s) => s.chosenHost);
+    const remoteHost = host.kind === "core" ? host.host : undefined;
+    const local = host.kind === "core" && !remoteHost;
+    const hostLabel = useStore((s) => hostName(s, remoteHost));
     const agentStatus = useStore((s) => s.agentStatus);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
-    const copies = useRemoteCopies(session?.kind === "project" ? session : undefined);
+    const place = useHostProject(session?.kind === "project" ? session : undefined);
     const pinnedChats = useStore((s) => s.pinnedChats);
     const profiles = useStore((s) => s.providerProfiles);
     const profileSelections = useStore((s) => s.selectedProviderProfileIds);
@@ -133,6 +136,7 @@ export function TabRailBody() {
     const [query, setQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
     const [renamingId, setRenamingId] = useState<string | null>(null);
+    const { folded, toggle: toggleTeam } = useTeamFolds();
     const [menu, setMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
     const [pinMenu, setPinMenu] = useState<{ pin: PinnedChat; x: number; y: number } | null>(null);
     const searchRef = useRef<HTMLInputElement>(null);
@@ -188,7 +192,7 @@ export function TabRailBody() {
     const recentProjects = useMemo(() => (scope === "all" ? projectCwds : cwd ? [cwd] : []), [scope, projectCwds, cwd]);
     const needle = query.trim().toLowerCase();
     const recent = useRecentChats({
-        enabled: isProject && !host && recentProviders.length > 0 && recentProjects.length > 0,
+        enabled: isProject && local && recentProviders.length > 0 && recentProjects.length > 0,
         providers: recentProviders,
         projects: recentProjects,
         open: openChats,
@@ -224,7 +228,6 @@ export function TabRailBody() {
      */
     useLayoutEffect(() => {
         const scroll = scrollRef.current;
-        if (scroll) drawTeamLines(scroll);
         const last = seen.current;
         const wraps = scroll ? [...scroll.querySelectorAll<HTMLElement>(".agent-row-wrap[data-agent-id]:not(.is-leaving)")] : [];
         const ids = new Set(wraps.map((w) => w.dataset.agentId ?? ""));
@@ -275,7 +278,7 @@ export function TabRailBody() {
             agents={availableAgents}
             type={selectedType}
             setType={setType}
-            searchOpen={isProject && !host && searchOpen}
+            searchOpen={isProject && local && searchOpen}
             onToggleSearch={toggleSearch}
             usagePeaks={usagePeaks}
             canOpenPalette={catalogAgents.length > 0}
@@ -307,15 +310,26 @@ export function TabRailBody() {
         </div>
     );
 
-    if (host) {
+    if (host.kind === "ssh") {
         return (
             <>
                 {header}
                 <div className="tab-rail-top">
-                    {actions}
-                    <HostScopeTabs host={host} />
+                    <div className="agent-actions">
+                        <NewOnHost />
+                        <NewRow icon={<IconTerminal size={15} />} title="New terminal" shortcut="terminal.new" onClick={cmd.newTerminal} />
+                        <NewRow
+                            icon={<IconDownload size={15} />}
+                            title="Install Sikemux"
+                            shortcut="agent.new"
+                            onClick={() => openInstallPane(host.alias)}
+                        />
+                    </div>
+                    {session?.kind === "project" && <ScopeTabs scope={scope} name={session.name} onChange={cmd.setTabRailScope} />}
                 </div>
-                <div className="rail-scroll">{scope === "all" ? <AllProjectsAgents showEmpty /> : <HostChats choice={host} />}</div>
+                <div className="rail-scroll">
+                    <HostTerminals choice={host} />
+                </div>
                 {accounts}
             </>
         );
@@ -325,8 +339,11 @@ export function TabRailBody() {
 
     const sessionAgents = agentIdsOf({ windowsBySession, windows: windowsById }, session.id)
         .map((id) => agentsById[id])
-        .filter(Boolean) as Agent[];
-    const pins = pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => hasChat(a, pin)) }));
+        .filter((agent): agent is Agent => agent?.host === remoteHost);
+    const pins = local
+        ? pinnedChats.filter((pin) => pin.project === session.cwd).map((pin) => ({ pin, agent: sessionAgents.find((a) => hasChat(a, pin)) }))
+        : [];
+    const workers = inbox.remoteAgents.filter((worker) => worker.hostId === remoteHost);
     const opens = inCoreOrder(
         sessionAgents.filter((a) => !pins.some(({ pin }) => hasChat(a, pin))),
         inbox.agents,
@@ -334,12 +351,13 @@ export function TabRailBody() {
 
     const menuAgent = menu ? agentsById[menu.agentId] : undefined;
 
-    const openRow = (a: Agent, link?: TeamLink) => (
+    const openRow = (a: Agent, link?: TeamLink, fold?: TeamFold) => (
         <OpenAgentRow
             key={a.id}
             agent={a}
             display={agentStatus[a.id]}
             link={link}
+            fold={fold}
             active={activeAgentId({ windows: windowsById }, session) === a.id}
             sessionCwd={session.cwd}
             wrap={{ ref: leaveRow, "data-agent-id": a.id, "data-session": session.id }}
@@ -381,9 +399,13 @@ export function TabRailBody() {
         );
     }
 
-    const remoteChats = remoteChatRows({ sessionId: session.id, copies, open: new Set(Object.keys(agentsById)) });
+    const remoteChats = remoteChatRows({
+        sessionId: session.id,
+        place: place?.host.id === remoteHost ? place : undefined,
+        open: new Set([...Object.keys(agentsById), ...workers.map((worker) => worker.agentId)]),
+    });
     const noRecents = recent.chats.length === 0 && recent.status !== "loading";
-    const noContent = pins.length === 0 && opens.length === 0 && remoteChats.length === 0 && noRecents;
+    const noContent = pins.length === 0 && opens.length === 0 && workers.length === 0 && remoteChats.length === 0 && noRecents;
 
     return (
         <>
@@ -410,27 +432,29 @@ export function TabRailBody() {
                 <ScopeTabs scope={scope} name={sessionName} waitingElsewhere={waitingElsewhere} onChange={cmd.setTabRailScope} />
             </div>
             <div className="rail-scroll" ref={scrollRef} onScroll={onRailScroll}>
-                {scope === "all" && <AllProjectsAgents showEmpty={noRecents} />}
+                {scope === "all" && <AllProjectsAgents showEmpty={noRecents} host={remoteHost} />}
                 {scope === "project" && noContent && (
                     <RailEmpty
                         icon={catalog.status === "loading" || !needle ? <IconAgent size={20} /> : <IconSearch size={20} />}
-                        {...(catalog.status === "loading"
-                            ? { title: "Looking for agents…" }
-                            : availableAgents.length === 0
-                              ? {
-                                    title: "No agents set up",
-                                    action: { label: "Set one up", onClick: () => cmd.openSettings("agents", AGENT_SETUP_SECTION) },
-                                }
-                              : needle
-                                ? { title: "No chats match", message: "Try another filter" }
-                                : { title: "No agents yet", shortcut: "agent.new" as const, doing: "start one" })}
+                        {...(hostLabel
+                            ? { title: `No chats in ${session.name} on ${hostLabel}`, shortcut: "agent.new" as const, doing: "start one" }
+                            : catalog.status === "loading"
+                              ? { title: "Looking for agents…" }
+                              : availableAgents.length === 0
+                                ? {
+                                      title: "No agents set up",
+                                      action: { label: "Set one up", onClick: () => cmd.openSettings("agents", AGENT_SETUP_SECTION) },
+                                  }
+                                : needle
+                                  ? { title: "No chats match", message: "Try another filter" }
+                                  : { title: "No agents yet", shortcut: "agent.new" as const, doing: "start one" })}
                     />
                 )}
 
-                {scope === "project" && (opens.length > 0 || remoteChats.length > 0) && (
+                {scope === "project" && (opens.length > 0 || workers.length > 0 || remoteChats.length > 0) && (
                     <Panel variant="group" className="agent-group">
-                        {inTeams(withRemoteWorkers(opens, inbox.remoteAgents)).map(({ agent: a, link }) =>
-                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link),
+                        {foldTeams(inTeams(withRemoteWorkers(opens, workers)), folded, toggleTeam).map(({ agent: a, link, fold }) =>
+                            isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link, fold),
                         )}
                         {remoteChats}
                     </Panel>
@@ -491,7 +515,7 @@ export function TabRailBody() {
                     />
                 )}
 
-                <RecentChatList recent={recent} providers={availableAgents} />
+                {local && <RecentChatList recent={recent} providers={availableAgents} />}
             </div>
             {accounts}
         </>

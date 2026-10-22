@@ -39,7 +39,7 @@ import { selectSession } from "./sessions";
 import { retitlePinnedChat } from "./settings";
 import { keepOpenedProjectInView, openProjectSession, withActiveSession } from "./shared";
 import { closeWindowsById } from "./tabs";
-import { bringForward, hostTitle, newWorkHost, projectCopyOn, startRemoteChat, type HostChoice } from "../../hosts/hosts";
+import { bringForward, hostTitle, newWorkHost, openInstallPane, projectOnHost, startRemoteChat, type HostChoice } from "../../hosts/hosts";
 import type { Inbox } from "../../api/generated/wire";
 
 /** Providers list a session under at most this many characters. */
@@ -127,16 +127,16 @@ export function addAgent(type: AgentType, resumeId?: string, title?: string, opt
     const target = st.sessions[options.sessionId ?? st.activeSessionId];
     const here = chatHost(st, target);
     if (here.kind === "ssh") {
-        notify("info", `${here.alias} is reached over SSH only; Install Sikemux there to start chats on it`);
+        openInstallPane(here.alias);
         return false;
     }
     if (here.host) {
-        const place = projectCopyOn(st, here.host, target);
+        const place = projectOnHost(st, here.host, target);
         if (!place) {
             notify("info", `${hostTitle(st, here)} has no project open in this app yet`);
             return false;
         }
-        void startRemoteChat(place.session.id, place.copy, type).catch(swallow(`start a chat on ${place.copy.host.name}`));
+        void startRemoteChat(place.session.id, place.project, type).catch(swallow(`start a chat on ${place.project.host.name}`));
         return true;
     }
     const home =
@@ -448,7 +448,7 @@ export function selectAgent(id: string): void {
     });
 }
 
-/** Open an agent that lives in some other project, switching to it on the way. */
+/** Open an agent that lives in some other project or on another host, choosing them on the way. */
 export function revealAgent(id: string): void {
     const state = getState();
     const windowId = agentWindowId(state, id);

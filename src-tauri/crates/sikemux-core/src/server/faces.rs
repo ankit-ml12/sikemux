@@ -60,10 +60,10 @@ fn hash(text: &str) -> u32 {
     h
 }
 
-/// The face `agent` wears under `style`, or none while it shows its logo:
-/// every agent wears one while faces are on, and one with a name always does.
+/// The face `agent` wears under `style`, or none while faces are off and it
+/// shows its logo.
 fn face(style: &FaceStyle, agent: &WorkspaceAgent) -> Option<AgentFace> {
-    if !style.on && agent.name.is_none() {
+    if !style.on {
         return None;
     }
     let packs = &catalogue().packs;

@@ -1,37 +1,27 @@
 import { useMemo } from "react";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { hostTitle, openRemoteChat, openRemoteTerminal, placeOn, showTab, type HostChoice } from "../hosts/hosts";
-import * as cmd from "../state/commands";
 import { collectPanes } from "../state/layout";
-import { activeAgentId, agentWindowId, openAgents, terminalLabel } from "../state/selectors";
+import { terminalLabel } from "../state/selectors";
 import { getState, useStore, type StoreState } from "../state/store";
-import { IconAgent, IconTerminal } from "../ui/Icons";
+import { IconTerminal } from "../ui/Icons";
 import { Panel } from "../ui/Panel";
 import { windowTabMenu } from "../workspace/tabMenus";
-import { OpenAgentRow } from "./AllProjectsAgents";
 import { TabRow, useTabMenu } from "./TabRow";
 import { RailEmpty } from "./RailEmpty";
 import { RemoteChatRow, RemoteTerminalRow } from "./RemoteRows";
 
-function showAgent(id: string): void {
-    const windowId = agentWindowId(getState(), id);
-    if (!windowId) return;
-    showTab(windowId);
-    cmd.selectAgent(id);
-}
+export type Place = Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "windowsBySession" | "windows">;
 
-type Place = Pick<StoreState, "hostViews" | "sessionOrder" | "sessions" | "projectIdentities" | "windowsBySession" | "windows">;
-
-function usePlace(): Place {
+export function usePlace(): Place {
     const hostViews = useStore((s) => s.hostViews);
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
-    const projectIdentities = useStore((s) => s.projectIdentities);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const windows = useStore((s) => s.windows);
     return useMemo(
-        () => ({ hostViews, sessionOrder, sessions, projectIdentities, windowsBySession, windows }),
-        [hostViews, sessionOrder, sessions, projectIdentities, windowsBySession, windows],
+        () => ({ hostViews, sessionOrder, sessions, windowsBySession, windows }),
+        [hostViews, sessionOrder, sessions, windowsBySession, windows],
     );
 }
 
@@ -103,42 +93,12 @@ export function HostTerminals({ choice }: { choice: HostChoice }) {
     );
 }
 
-/** Every chat on the chosen host, from every project; an SSH host has none, so its terminals. */
-export function HostChats({ choice }: { choice: HostChoice }) {
-    const place = usePlace();
-    const agents = useStore((s) => s.agents);
-    const agentStatus = useStore((s) => s.agentStatus);
-    const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
-    const name = useStore((s) => hostTitle(s, choice));
-
-    if (choice.kind === "ssh") return <HostTerminals choice={choice} />;
-    const host = choice.host;
-    const open = [...openAgents({ ...place, agents })].filter(({ agent }) => agent.host === host);
-    const running = host ? (place.hostViews[host]?.chats ?? []).filter((chat) => !agents[chat.agentId]) : [];
-
-    if (open.length + running.length === 0)
-        return <RailEmpty icon={<IconAgent size={20} />} title={`No chats on ${name}`} shortcut="agent.new" doing="start one" />;
-    return (
-        <Panel variant="group" className="agent-group">
-            {open.map(({ agentId, agent, session }) => (
-                <OpenAgentRow
-                    key={agentId}
-                    agent={agent}
-                    display={agentStatus[agentId]}
-                    active={agentId === shownAgentId}
-                    project={session.kind === "project" ? { name: session.name, sessionId: session.id } : undefined}
-                    sessionCwd={session.cwd}
-                    hostShown={false}
-                    onOpen={() => showAgent(agentId)}
-                />
-            ))}
-            {host &&
-                running.map((chat) => {
-                    const { project, sessionId } = placeOn(place, host, chat.cwd);
-                    return (
-                        <RemoteChatRow key={chat.agentId} chat={chat} project={project?.name} onOpen={() => openRemoteChat(sessionId, host, chat)} />
-                    );
-                })}
-        </Panel>
-    );
+/** The chats running on `host` that this app does not show yet, from every project, leaving out those in `shown`. */
+export function runningChats(place: Place, agents: StoreState["agents"], host: string, shown: ReadonlySet<string>) {
+    return (place.hostViews[host]?.chats ?? [])
+        .filter((chat) => !agents[chat.agentId] && !shown.has(chat.agentId))
+        .map((chat) => {
+            const { project, sessionId } = placeOn(place, host, chat.cwd);
+            return <RemoteChatRow key={chat.agentId} chat={chat} project={project?.name} onOpen={() => openRemoteChat(sessionId, host, chat)} />;
+        });
 }

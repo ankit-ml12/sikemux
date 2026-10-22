@@ -240,7 +240,7 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 0 9px 0 7px;
+    padding: 0 8px;
     border: 0;
     background-color: transparent;
     color: var(--text-secondary);

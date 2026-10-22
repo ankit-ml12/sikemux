@@ -155,12 +155,11 @@ function localSpace(space: SpaceInfo): ProjectSpace {
 /** What the store holds of the workspace's projects, spaces, pins and defaults, as the core sent them. */
 export function sharedFromCore(
     workspace: Workspace,
-): Pick<StoreState, "spaces" | "projectSpaces" | "codeHosts" | "projectIdentities" | "pinnedChats" | "defaultAgentPermissionMode"> {
+): Pick<StoreState, "spaces" | "projectSpaces" | "codeHosts" | "pinnedChats" | "defaultAgentPermissionMode"> {
     return {
         spaces: workspace.spaces.map(localSpace),
         projectSpaces: Object.fromEntries(workspace.projects.flatMap((project) => (project.space ? [[project.path, project.space]] : []))),
         codeHosts: Object.fromEntries(workspace.projects.map((project) => [project.path, project.codeHosts ?? {}])),
-        projectIdentities: Object.fromEntries(workspace.projects.flatMap((project) => (project.identity ? [[project.path, project.identity]] : []))),
         pinnedChats: workspace.pinned.flatMap((chat) => localPinned(chat) ?? []),
         defaultAgentPermissionMode: workspace.permissionMode === "bypass" ? "bypass" : "workspace-write",
     };

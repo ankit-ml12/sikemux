@@ -1,7 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PtyDirectCommand } from "../state/types/domain";
 
 const mocks = vi.hoisted(() => ({
     exited: null as null | ((event: { payload: { id: number; code: number | null } }) => void),
@@ -12,9 +11,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../terminal/TerminalPane", () => ({
-    TerminalPane: ({ directCommand, onPtySession }: { directCommand: PtyDirectCommand; onPtySession: (id: number) => void }) => {
+    TerminalPane: ({ startup, onPtySession }: { startup: string; onPtySession: (id: number) => void }) => {
         useEffect(() => onPtySession(7), [onPtySession]);
-        return <pre data-testid="terminal">{directCommand.args.join(" ")}</pre>;
+        return <pre data-testid="terminal">{startup}</pre>;
     },
 }));
 vi.mock("../api/transport", () => ({
@@ -47,7 +46,9 @@ describe("installing an agent", () => {
         render(<AgentInstallHost />);
         act(() => installAgent("hermes"));
 
-        expect(await screen.findByTestId("terminal")).toHaveTextContent("-c curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash");
+        expect(await screen.findByTestId("terminal")).toHaveTextContent(
+            "exec /bin/bash -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'",
+        );
         expect(screen.getByRole("dialog", { name: "Install Hermes" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
 
@@ -90,16 +91,12 @@ describe("installing an agent", () => {
     it("runs the agent's own sign-in on the account its profile names", () => {
         const signIn = (configPath: string | null) =>
             sheetCommand({ kind: "signIn", type: "claude", program: "/opt/bin/claude", configPath }, "/Users/me");
-        expect(signIn(null)).toEqual({ direct: { program: "/opt/bin/claude", args: ["auth", "login"] }, shown: "claude auth login" });
-        expect(signIn("~/.claude-work").direct).toEqual({
-            program: "/usr/bin/env",
-            args: ["CLAUDE_CONFIG_DIR=/Users/me/.claude-work", "/opt/bin/claude", "auth", "login"],
-        });
-        expect(signIn("/x/work/settings.json").direct.args[0]).toBe("CLAUDE_CONFIG_DIR=/x/work");
-        expect(sheetCommand({ kind: "signIn", type: "opencode", program: "/bin/opencode", configPath: "/ignored" }, "/Users/me").direct).toEqual({
-            program: "/bin/opencode",
-            args: ["auth", "login"],
-        });
+        expect(signIn(null)).toEqual({ startup: "exec /opt/bin/claude auth login", shown: "claude auth login" });
+        expect(signIn("~/.claude-work").startup).toBe("exec /usr/bin/env CLAUDE_CONFIG_DIR=/Users/me/.claude-work /opt/bin/claude auth login");
+        expect(signIn("/x/work/settings.json").startup).toBe("exec /usr/bin/env CLAUDE_CONFIG_DIR=/x/work /opt/bin/claude auth login");
+        expect(sheetCommand({ kind: "signIn", type: "opencode", program: "/bin/opencode", configPath: "/ignored" }, "/Users/me").startup).toBe(
+            "exec /bin/opencode auth login",
+        );
     });
 
     it("says the agent is signed in once its sign-in succeeds", async () => {
@@ -123,7 +120,7 @@ describe("installing an agent", () => {
                 { kind: "signIn", type: "grok", program: "/g/grok", configPath: null, method: { args: ["login", "--web"], env: [["GROK_X", "1"]] } },
                 "/Users/me",
             ),
-        ).toEqual({ direct: { program: "/usr/bin/env", args: ["GROK_X=1", "/g/grok", "login", "--web"] }, shown: "grok login --web" });
+        ).toEqual({ startup: "exec /usr/bin/env GROK_X=1 /g/grok login --web", shown: "grok login --web" });
 
         render(<AgentInstallHost />);
         act(() => signInAgent({ type: "grok", command: "/g/grok", configPath: null }, { method: { args: ["login"], env: [] }, retry: "grok-1" }));

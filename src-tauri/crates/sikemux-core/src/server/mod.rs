@@ -121,6 +121,8 @@ use connection::{ClientConn, ClientId};
 use session::Session;
 
 pub const DEFAULT_IDLE_EXIT: Duration = Duration::from_secs(5 * 60);
+/// For a core a service runs, which nothing would start again once it left.
+pub const NEVER_IDLE_EXIT: Duration = Duration::from_millis(u64::MAX);
 const MAX_ACTIVE_SESSIONS: usize = 256;
 const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);

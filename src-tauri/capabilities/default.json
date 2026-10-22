@@ -37,6 +37,8 @@
     "allow-pty-sessions",
     "allow-host-install",
     "allow-host-sign-in",
+    "allow-host-update",
+    "allow-host-start",
     "allow-host-probe",
     "allow-share-access",
     "allow-share-viewer-hello",

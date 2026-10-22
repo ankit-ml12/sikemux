@@ -1,6 +1,8 @@
 import { RunChip } from "../tasks/RunChip";
 import { useProjectRepo } from "../git/projectRepo";
-import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import type { BuiltPlugin } from "../plugins/enabled";
+import { TopBarPlace } from "./TopBarPlace";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
 import { useNow } from "../hooks/useNow";
@@ -59,13 +61,13 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
  * reads. Asking for a status of its own made the backend do the recursive
  * untracked walk a second time on every file change, for one chip.
  */
-/** The chip for the repository the project's Git views use, which may sit inside the project folder. */
-function ProjectGitChip({ project }: { project: string }) {
+/** The chip for the repository the project's Git views use, which may sit inside the project folder, with its code host's CI beside it. */
+function ProjectGitChip({ project, children }: { project: string; children?: ReactNode }) {
     const { repo } = useProjectRepo(project);
-    return repo ? <GitChip repo={repo} /> : null;
+    return repo ? <GitChip repo={repo}>{children}</GitChip> : null;
 }
 
-function GitChip({ repo }: { repo: string }) {
+function GitChip({ repo, children }: { repo: string; children?: ReactNode }) {
     const res = useResource(gitOverviewR, repo);
     const remote = useResource(remoteRepoR, repo).data ?? null;
     const host = remote ? codeHost(remote.provider) : undefined;
@@ -105,6 +107,7 @@ function GitChip({ repo }: { repo: string }) {
                     </button>
                 </Tooltip>
             </span>
+            {children}
             <span className="tb-sep" />
         </>
     );
@@ -162,23 +165,23 @@ export const TopBar = memo(function TopBar() {
 
     const isProject = !!session && session.kind === "project";
     if (!session) return null;
+    const pluginItem = ({ id, TopBarItem }: BuiltPlugin) =>
+        TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null;
 
     return (
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
-
-            <div className="tb-center" {...LEAVES_SETTINGS}>
-                <WorkspaceTabs />
-            </div>
+            <div className="tb-grow" />
+            <TopBarPlace />
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
                 <VoicePill />
-                {isProject && session.cwd && <ProjectGitChip project={session.cwd} />}
+                {isProject && session.cwd && (
+                    <ProjectGitChip project={session.cwd}>{plugins.filter(({ id }) => codeHost(id)).map(pluginItem)}</ProjectGitChip>
+                )}
                 {isProject && session.cwd && <RunChip sessionId={session.id} project={session.cwd} />}
                 {isProject && session.cwd && <PortsChip sessionId={session.id} />}
-                {plugins.map(({ id, TopBarItem }) =>
-                    TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null,
-                )}
+                {plugins.filter(({ id }) => !codeHost(id)).map(pluginItem)}
                 <BatteryChip />
                 <ClockChip />
                 <div className="tb-toggles">
@@ -190,5 +193,16 @@ export const TopBar = memo(function TopBar() {
                 </div>
             </div>
         </header>
+    );
+});
+
+/** The project's tabs on a row of their own under the top bar, edge to edge; its empty stretch drags the window like the bar does. */
+export const TabRow = memo(function TabRow() {
+    const hasSession = useStore((s) => !!s.sessions[s.activeSessionId]);
+    if (!hasSession) return null;
+    return (
+        <div className="tab-row" onMouseDown={startWindowDragFromTopBar} {...LEAVES_SETTINGS}>
+            <WorkspaceTabs />
+        </div>
     );
 });

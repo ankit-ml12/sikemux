@@ -14,6 +14,7 @@ mod code;
 mod join;
 mod link;
 mod listed;
+pub(crate) mod open;
 mod outbox;
 pub(crate) mod route;
 pub(crate) mod spawn;

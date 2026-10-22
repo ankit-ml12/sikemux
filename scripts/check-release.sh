@@ -12,7 +12,7 @@ else
   PNPM=(corepack pnpm)
 fi
 
-bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/mac-entitlements.sh scripts/verify-release.sh scripts/publish-release.sh scripts/icons.sh scripts/check-release.sh
+bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/mac-entitlements.sh scripts/verify-release.sh scripts/publish-release.sh scripts/sign-host.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
@@ -71,8 +71,9 @@ if (!pkg.scripts?.["build:linux"]?.includes("tauri.sidecar.conf.json")) fail("Li
 if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workflow does not build the Linux packages");
 if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
 if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
-if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}"')) fail("releases do not publish the Linux host core");
-if (!publish.includes('"${HOSTS[@]}" "$INSTALLER"')) fail("releases do not publish the installer made for their files");
+if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}"')) fail("releases do not publish the Linux host core and its signatures");
+if (!publish.includes('"${HOST_SIGS[@]}" "$INSTALLER"')) fail("releases do not publish the installer made for their files");
+if (!releaseWorkflow.includes("scripts/sign-host.sh")) fail("the Release workflow does not sign the Linux host core");
 if (!releaseWorkflow.includes("scripts/smoke-host-install.sh")) fail("the Release workflow does not install the host core with its own installer");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-host"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");

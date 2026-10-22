@@ -62,12 +62,11 @@ textarea:focus,
     background: color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 
+/* Its chips centre on the line macOS puts the window buttons on, set by trafficLightPosition in tauri.macos.conf.json;
+   the two move together. */
 .top-bar {
-    height: 34px;
-}
-
-.tb-center {
-    padding-left: 20px;
+    box-sizing: border-box;
+    height: 36px;
 }
 
 .tb-right {
@@ -1373,13 +1372,11 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
 }
 
 /* ---- Top bar -------------------------------------------------------------
- * The bar shares the shell's ground with the gutter around the frame, so
- * there is no bar — just window chrome sitting above the surfaces. The gutter
- * underneath is the separation; a rule there would be a second one.
+ * The bar wears the rails' surface and their border across the window's top.
  */
 .top-bar {
-    border-bottom: 0;
-    background: transparent;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) var(--panel-solidity), transparent);
 }
 
 /* ---- Surface vs gutter ---------------------------------------------------
@@ -1485,11 +1482,8 @@ html.is-transparent .rail-peek-panel > .workspace-rail {
     overflow: hidden;
 }
 
-/* The shell keeps the darkest tone so the gutter always reads as a recess,
- * and carries the top edge of the frame so the gutter runs all the way round
- * rather than stopping where the bar meets the window. */
+/* The shell keeps the darkest tone so the gutter always reads as a recess. */
 .shell {
-    padding-top: var(--space-1h);
     background: color-mix(in srgb, var(--surface-sunken) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 

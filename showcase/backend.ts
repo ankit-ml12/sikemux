@@ -809,11 +809,8 @@ export class ShowcaseBackend implements IpcTransport {
       this.startAgent(agentId, agent?.type ?? "claude");
       return null;
     });
-    this.onCore(
-      ["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"],
-      constant([]),
-    );
-    this.onCore(["agentNameTheme"], constant({ theme: "nature" }));
+    this.onCore(["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"], constant([]));
+    this.onCore(["agentNameTheme"], constant({ theme: "anime" }));
     this.onCore(["setAgentNameTheme"], ({ params }) => params);
     this.onCore(["tasks"], ({ params }) => ({
       project: (params as { project: string }).project,

@@ -192,7 +192,6 @@ export function RunChip({ sessionId, project }: { sessionId: string; project: st
                             onClick={() => (runningRun ? stopTaskRun(runningRun) : void runProjectTask(project, selected))}
                             aria-label={primaryLabel}>
                             {running ? <IconStop size={11} /> : <IconRun size={11} />}
-                            {running ? "Stop" : "Run"}
                         </button>
                     </Tooltip>
                     <button

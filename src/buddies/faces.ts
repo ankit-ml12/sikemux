@@ -2,9 +2,6 @@ import type { AgentFace } from "../api/generated/wire";
 import type { Agent } from "../state/types";
 import { packById, resolveBuddy, type BuddyPack, type BuddyShape, type BuddyStyle } from "./catalogue";
 
-/** Whether an agent the core has not listed yet wears a face rather than its CLI's logo: always once named, otherwise while faces are on. */
-export const wearsBuddy = (on: boolean, named: boolean): boolean => on || named;
-
 export interface DrawnFace {
     pack: BuddyPack;
     shape: BuddyShape;
