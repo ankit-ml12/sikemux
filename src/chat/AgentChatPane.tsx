@@ -458,15 +458,13 @@ export const AgentChatPane = memo(function AgentChatPane({
                                         )
                                     }
                                     account={
-                                        agentLockedRef.current &&
-                                        profile && (
-                                            <AccountPicker
-                                                agent={agent}
-                                                profile={profile}
-                                                running={state.running}
-                                                disabled={state.connection !== "ready" || changingPermissions || changingConfig}
-                                            />
-                                        )
+                                        <AccountPicker
+                                            agent={agent}
+                                            profile={profile}
+                                            started={agentLockedRef.current}
+                                            running={state.running}
+                                            disabled={state.connection !== "ready" || changingPermissions || changingConfig}
+                                        />
                                     }
                                 />
                                 <ChatComposer

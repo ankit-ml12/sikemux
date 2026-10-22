@@ -10,7 +10,9 @@ import { fetchResource, peekResource } from "../state/resources";
 import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { swallow } from "../state/toast";
-import type { Agent, ProviderProfile } from "../state/types";
+import { DEFAULT_PROVIDER_PROFILE_SELECTION, type Agent, type ProviderProfile } from "../state/types";
+import { selectedProviderProfile } from "../agents/agentProfiles";
+import * as cmd from "../state/commands";
 import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
 import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
 
@@ -209,9 +211,9 @@ interface Movable {
     usage?: AgentUsage;
 }
 
-/** The person's other accounts with this chat's provider that can take the
-    chat over: signed in, and keeping chats where this one does. */
-function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movable[], (fresh: boolean) => void] {
+/** The person's other accounts with this chat's provider that can take the chat over: signed in, and once it has
+    started, keeping chats where this one does. */
+function useMovable(agent: Agent, profile: ProviderProfile | undefined, started: boolean): [Movable[], (fresh: boolean) => void] {
     const profiles = useStore((s) => s.providerProfiles);
     const [movable, setMovable] = useState<Movable[]>([]);
     const provider = hasAccounts(agent.type) ? agent.type : undefined;
@@ -233,41 +235,52 @@ function useMovable(agent: Agent, profile: ProviderProfile | undefined): [Movabl
                 const sessions = rows.find((row) => row?.account.id === profile.id)?.status.sessions;
                 setMovable(
                     rows.flatMap((row) =>
-                        row && row.status.signedIn && sessions && row.status.sessions === sessions
+                        row && row.status.signedIn && (!started || (sessions && row.status.sessions === sessions))
                             ? [{ account: row.account, usage: row.usage }]
                             : [],
                     ),
                 );
             });
         },
-        [provider, profile, accounts],
+        [provider, profile, accounts, started],
     );
     useEffect(() => load(false), [load]);
     return [movable, load];
 }
 
-/** Moves a chat that has started to another of the person's accounts, even in
-    the middle of a turn. Its menu is the rail's, without signing in or out. */
+/** Which of the person's accounts the chat runs on. A chat that has started moves there, even in the middle of a
+    turn; one that has not simply starts there. Its menu is the rail's, without signing in or out. */
 export function AccountPicker({
     agent,
-    profile,
+    profile: chosen,
+    started,
     running,
     disabled,
 }: {
     agent: Agent;
-    profile: ProviderProfile;
+    profile: ProviderProfile | undefined;
+    started: boolean;
     running: boolean;
     disabled: boolean;
 }) {
-    const [movable, load] = useMovable(agent, profile);
+    const profile = useStore(
+        (s) =>
+            chosen ??
+            selectedProviderProfile(agent.type, s.providerProfiles, { ...DEFAULT_PROVIDER_PROFILE_SELECTION, ...s.selectedProviderProfileIds }),
+    );
+    const [movable, load] = useMovable(agent, profile, started);
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const trigger = useRef<HTMLButtonElement>(null);
     const provider = agent.type as AccountAgentType;
-    if (!movable.some((row) => row.account.id !== profile.id)) return null;
+    if (!profile || !movable.some((row) => row.account.id !== profile.id)) return null;
     const name = accountName(profile, peekResource(agentAccountR, provider, profile.configPath));
+    const move = (account: ProviderProfile) =>
+        started
+            ? moveChat(agent, account)
+            : cmd.configureEmptyAgent(agent.id, agent.type as ChatAgentType, account.id, agent.model, agent.modelProvider);
     const items: CtxItem[] = movable.map(({ account, usage }) => ({
         ...accountItem(provider, account, account.id === profile.id, usage),
-        run: account.id === profile.id ? undefined : () => moveChat(agent, account),
+        run: account.id === profile.id ? undefined : () => move(account),
     }));
     return (
         <div className="chat-picker">
@@ -359,7 +372,7 @@ export function ComposerPickers({
                         icon={model ? agentIcon : undefined}
                         agents={
                             model && !agentLocked
-                                ? { type: agent.type, profile, onSwitch: (type, profileId) => relaunch(type, profileId) }
+                                ? { type: agent.type, profile, perAgent: true, onSwitch: (type, profileId) => relaunch(type, profileId) }
                                 : undefined
                         }
                         payers={

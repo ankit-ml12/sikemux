@@ -75,7 +75,7 @@ describe("composer pickers", () => {
             />,
         );
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
-        fireEvent.click(screen.getByRole("button", { name: /Work Claude/ }));
+        fireEvent.click(screen.getByRole("button", { name: "Claude" }));
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
     });
 
