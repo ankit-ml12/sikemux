@@ -1764,10 +1764,17 @@ impl Workbench {
 
     pub(crate) fn close_review(&mut self, cx: &mut Context<Self>) {
         if matches!(self.asking, Some(Asking::Review(_))) {
-            self.asking = None;
-            self.ask_trust(cx);
+            self.take_asking(cx);
             cx.notify();
         }
+    }
+
+    /// Takes the question being asked away, however it was answered; a trust question that
+    /// came in behind it is asked next.
+    fn take_asking(&mut self, cx: &mut Context<Self>) -> Option<Asking> {
+        let bench = cx.entity();
+        cx.defer(move |cx| bench.update(cx, |bench, cx| bench.ask_trust(cx)));
+        self.asking.take()
     }
 
     /// The question being asked, as a dialog, making a prompt's field the first time.
@@ -1777,10 +1784,9 @@ impl Workbench {
             let bench = bench.clone();
             move |window: &mut Window, cx: &mut App| {
                 bench.update(cx, |bench, cx| {
-                    if let Some(Asking::Confirm { then, .. }) = bench.asking.take() {
+                    if let Some(Asking::Confirm { then, .. }) = bench.take_asking(cx) {
                         then(bench, yes, window, cx);
                     }
-                    bench.ask_trust(cx);
                     cx.notify();
                 })
             }
@@ -1848,7 +1854,7 @@ impl Workbench {
                 crate::ui::Prompt::new(title.clone(), &field)
                     .on_yes(move |typed, window, cx| {
                         typing.update(cx, |bench, cx| {
-                            if let Some(Asking::Prompt { then, .. }) = bench.asking.take() {
+                            if let Some(Asking::Prompt { then, .. }) = bench.take_asking(cx) {
                                 then(bench, typed.trim().to_owned(), window, cx);
                             }
                             cx.notify();
@@ -1856,7 +1862,7 @@ impl Workbench {
                     })
                     .on_no(move |_, cx| {
                         giving_up.update(cx, |bench, cx| {
-                            bench.asking = None;
+                            bench.take_asking(cx);
                             cx.notify();
                         })
                     })
