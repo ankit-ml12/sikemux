@@ -255,7 +255,7 @@ export function Dropdown({
                     disabled={disabled || options.length === 0}
                     onClick={(event) => {
                         event.stopPropagation();
-                        if (open) close();
+                        if (open) close(event.detail > 0);
                         else setOpen(true);
                     }}
                     onKeyDown={(event) => {
