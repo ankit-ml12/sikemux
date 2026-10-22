@@ -498,6 +498,8 @@ pub struct Question {
     state: String,
     via_note: Option<String>,
     secret_note: Option<String>,
+    /// The person's answer, once answered; none for a secret.
+    answer: Option<String>,
     /// The account host whose agent asks, by its key; none for this host's own.
     #[serde(skip)]
     pub(crate) host: Option<String>,
@@ -1479,6 +1481,21 @@ pub fn pane(
         .filter(|question| question.of(&agent.id, "assumed"))
         .map(|question| assumption(question, cx))
         .collect();
+    let answered: Vec<_> = bench
+        .questions
+        .iter()
+        .filter(|question| question.of(&agent.id, "answered"))
+        .map(|question| {
+            let card = answered_question(
+                None,
+                &question.text,
+                question.answer.as_deref().unwrap_or_default(),
+                question.secret,
+                Tokens::get(cx),
+            );
+            column().child(div().w_full().max_w(px(756.)).pt(px(12.)).child(card))
+        })
+        .collect();
     let mut groups: Vec<AnyElement> = questions(&agent.id, chat, &open, cx).into_iter().collect();
     groups.extend(live::subagents(agent, chat, cx));
     groups.extend(live::tasks(agent, chat, cx));
@@ -1514,6 +1531,7 @@ pub fn pane(
         .children(status::plan(agent, chat, cx))
         .children(status::trouble(agent, chat, cx))
         .children(permissions)
+        .children(answered)
         .children(assumed)
         .children(stack)
         .children(
@@ -3143,6 +3161,70 @@ fn row(
         .into_any_element()
 }
 
+/// A question as it reads once answered: who asked, when not the chat's own agent, its words,
+/// and the answer, or only that it was answered when the answer is a secret.
+fn answered_question(
+    asker: Option<(&str, &str)>,
+    question: &str,
+    answer: &str,
+    secret: bool,
+    t: &Tokens,
+) -> gpui_kit::Div {
+    let bold = HighlightStyle {
+        color: Some(t.text_primary),
+        font_weight: Some(FontWeight::SEMIBOLD),
+        ..Default::default()
+    };
+    let asker = asker.map(|(cli, name)| {
+        div()
+            .h(px(22.))
+            .flex()
+            .items_center()
+            .gap(px(7.))
+            .text_size(crate::theme::ui_text(11.))
+            .text_color(t.text_tertiary)
+            .child(ui::mark(cli, 16.))
+            .child(
+                StyledText::new(format!("{name} asked you"))
+                    .with_highlights([(0..name.len(), bold)]),
+            )
+    });
+    let answered = if secret {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .child(ui::icon(Icon::Shield, 12.).text_color(t.text_disabled))
+            .child("Answered, kept private")
+            .into_any_element()
+    } else {
+        div()
+            .flex()
+            .flex_wrap()
+            .gap_x(px(4.))
+            .child("You answered:")
+            .child(div().text_color(t.text_primary).child(answer.to_owned()))
+            .into_any_element()
+    };
+    div()
+        .flex()
+        .flex_col()
+        .children(asker)
+        .child(
+            div()
+                .text_size(crate::theme::ui_text(14.))
+                .text_color(t.text_primary)
+                .child(question.to_owned()),
+        )
+        .child(
+            div()
+                .mt(px(6.))
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_tertiary)
+                .child(answered),
+        )
+}
+
 /// Messages other agents sent and the person's answers to questions, which the core hands
 /// the agent as one message: each drawn as what it is rather than as the text the agent reads.
 fn letters(
@@ -3152,68 +3234,21 @@ fn letters(
     window: &mut Window,
     cx: &mut App,
 ) -> gpui_kit::Div {
-    let bold = HighlightStyle {
-        color: Some(looks.ink),
-        font_weight: Some(FontWeight::SEMIBOLD),
-        ..Default::default()
-    };
     let drawn = row
         .message
         .letters
         .iter()
         .enumerate()
         .map(|(ix, letter)| match letter.kind {
-            LetterKind::Answer => {
-                let asked = format!("{} asked you", letter.name);
-                let asker = (letter.agent_id != looks.agent).then(|| {
-                    div()
-                        .h(px(22.))
-                        .flex()
-                        .items_center()
-                        .gap(px(7.))
-                        .text_size(crate::theme::ui_text(11.))
-                        .text_color(looks.quiet)
-                        .child(ui::mark(&letter.cli, 16.))
-                        .child(
-                            StyledText::new(asked).with_highlights([(0..letter.name.len(), bold)]),
-                        )
-                });
-                let answered = if letter.secret {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .child(ui::icon(Icon::Shield, 12.).text_color(looks.faint))
-                        .child("Answered, kept private")
-                        .into_any_element()
-                } else {
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_x(px(4.))
-                        .child("You answered:")
-                        .child(div().text_color(looks.ink).child(letter.text.clone()))
-                        .into_any_element()
-                };
-                div()
-                    .flex()
-                    .flex_col()
-                    .children(asker)
-                    .child(
-                        div()
-                            .text_size(crate::theme::ui_text(14.))
-                            .text_color(looks.ink)
-                            .child(letter.question.clone()),
-                    )
-                    .child(
-                        div()
-                            .mt(px(6.))
-                            .text_size(crate::theme::ui_text(12.))
-                            .text_color(looks.quiet)
-                            .child(answered),
-                    )
-                    .into_any_element()
-            }
+            LetterKind::Answer => answered_question(
+                (letter.agent_id != looks.agent)
+                    .then_some((letter.cli.as_str(), letter.name.as_str())),
+                &letter.question,
+                &letter.text,
+                letter.secret,
+                Tokens::get(cx),
+            )
+            .into_any_element(),
             LetterKind::Message => {
                 let (bench, agent) = (looks.bench.clone(), letter.agent_id.clone());
                 let name = div()
