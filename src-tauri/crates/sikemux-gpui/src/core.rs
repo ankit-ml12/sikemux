@@ -35,6 +35,9 @@ pub enum Update {
     Read(&'static str, Value),
     /// The core turned down what was asked under the key.
     Refused(&'static str, String),
+    /// Show this agent and come to the front, as the notch or a request held while no window
+    /// was open asks.
+    FocusAgent(String),
     /// The core turned down something the person did, saying why.
     Failed(String),
     Terminal(SessionId, Screenful),
@@ -912,6 +915,9 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Notice { title, body, agent_id })) => {
                                 let _ = updates.send(Update::Notice { title, body, agent: agent_id });
+                            }
+                            Some(ClientEvent::Event(Event::FocusAgent { agent_id })) => {
+                                let _ = updates.send(Update::FocusAgent(agent_id));
                             }
                             Some(ClientEvent::Event(Event::Network { change })) => {
                                 let _ = updates.send(Update::Network(change));

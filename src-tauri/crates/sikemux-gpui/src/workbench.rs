@@ -962,6 +962,10 @@ impl Workbench {
             Update::Notice { title, body, agent } => {
                 return crate::notifications::notice(self, title, body, agent, cx);
             }
+            Update::FocusAgent(agent) => {
+                cx.activate(true);
+                return self.open_agent(&agent);
+            }
             Update::AccountDevice { key, name } => return self.new_account_device(key, name, cx),
             Update::Network(change) => {
                 return self
