@@ -72,7 +72,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
     match page {
         RailPage::Files => {
             return page_body()
-                .child(page_header("Files", cx))
+                .child(page_header("Files", bench, cx))
                 .child(crate::files::page(bench, cx))
                 .into_any_element();
         }
@@ -222,6 +222,32 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
 }
 
 fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
+    header_frame(
+        picker(bench, cx),
+        [
+            IconButton::new("search", Icon::Search, "Filter recent chats")
+                .pressed(bench.filter.is_some())
+                .on_click(cx.listener(|bench, _, window, cx| {
+                    bench.toggle_filter(window, cx);
+                    cx.notify();
+                }))
+                .into_any_element(),
+            IconButton::new("start-agent", Icon::Plus, "Choose agent")
+                .on_click(|_, window, cx| crate::keymap::dispatch("agent.choose", window, cx))
+                .into_any_element(),
+        ],
+        bench,
+        cx,
+    )
+}
+
+/// A rail page's head: what the page is, its own buttons, then the one that hides the rail.
+fn header_frame(
+    title: impl IntoElement,
+    buttons: impl IntoIterator<Item = AnyElement>,
+    bench: &Workbench,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     div()
         .flex_none()
@@ -238,38 +264,20 @@ fn header(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
                 .items_center()
                 .justify_between()
                 .gap(px(8.))
-                .child(picker(bench, cx))
+                .child(title)
                 .child(
-                    div()
-                        .flex()
-                        .gap(px(2.))
-                        .child(
-                            IconButton::new("search", Icon::Search, "Filter recent chats")
-                                .pressed(bench.filter.is_some())
-                                .on_click(cx.listener(|bench, _, window, cx| {
-                                    bench.toggle_filter(window, cx);
-                                    cx.notify();
-                                })),
+                    div().flex().gap(px(2.)).children(buttons).child(
+                        IconButton::new(
+                            "hide-tab-rail",
+                            Icon::PanelRight,
+                            if bench.tab_rail_open {
+                                "Hide agents rail"
+                            } else {
+                                "Keep agents rail open"
+                            },
                         )
-                        .child(
-                            IconButton::new("start-agent", Icon::Plus, "Choose agent").on_click(
-                                |_, window, cx| crate::keymap::dispatch("agent.choose", window, cx),
-                            ),
-                        )
-                        .child(
-                            IconButton::new(
-                                "hide-tab-rail",
-                                Icon::PanelRight,
-                                if bench.tab_rail_open {
-                                    "Hide agents rail"
-                                } else {
-                                    "Keep agents rail open"
-                                },
-                            )
-                            .on_click(
-                                cx.listener(|bench, _, _, cx| bench.toggle_rail(Edge::End, cx)),
-                            ),
-                        ),
+                        .on_click(cx.listener(|bench, _, _, cx| bench.toggle_rail(Edge::End, cx))),
+                    ),
                 ),
         )
 }
@@ -1293,17 +1301,14 @@ fn pages(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
 }
 
 /// A rail page's title bar.
-fn page_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+fn page_header(
+    title: impl Into<SharedString>,
+    bench: &Workbench,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    div()
-        .flex_none()
-        .min_h(px(40.))
-        .px(px(14.))
-        .flex()
-        .items_center()
-        .border_b_1()
-        .border_color(t.line_soft)
-        .child(ui::text(title, 13., FontWeight::SEMIBOLD).text_color(t.text_primary))
+    let title = ui::text(title, 12., FontWeight::MEDIUM).text_color(t.text_primary);
+    header_frame(title, [], bench, cx)
 }
 
 /// A rail page with nothing to list: a faint mark, what is missing, and the key that fills it.
@@ -1385,7 +1390,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
         }
     });
     page_body()
-        .child(page_header("Terminals", cx))
+        .child(page_header("Terminals", bench, cx))
         .child(
             div()
                 .flex_none()
@@ -1479,7 +1484,7 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
         )
     });
     page_body()
-        .child(page_header(alias.clone(), cx))
+        .child(page_header(alias.clone(), bench, cx))
         .child(
             div()
                 .flex_none()
