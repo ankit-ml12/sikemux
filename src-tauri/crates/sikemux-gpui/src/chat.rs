@@ -1486,6 +1486,16 @@ pub fn pane(
         ),
     };
     let list = chat.transcript.read(cx).list().clone();
+    // The scrollbar shows whenever its list moves, and a list following the latest rows moves
+    // with every streamed line; only a reader who scrolled up has a thumb, as on the Mac.
+    let scrollbar = chat.transcript.read(cx).away().then(|| {
+        div()
+            .absolute()
+            .top_0()
+            .right_0()
+            .bottom_0()
+            .child(Scrollbar::vertical(&list))
+    });
     let rows = div()
         .flex_1()
         .min_h_0()
@@ -1495,14 +1505,7 @@ pub fn pane(
                 .clone()
                 .cached(StyleRefinement::default().size_full()),
         )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .right_0()
-                .bottom_0()
-                .child(Scrollbar::vertical(&list)),
-        )
+        .children(scrollbar)
         .children(
             chat.finding
                 .as_ref()
