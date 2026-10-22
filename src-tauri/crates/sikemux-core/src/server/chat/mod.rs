@@ -1959,6 +1959,29 @@ pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
     }
 }
 
+/// Whether the core put `agent_id`'s chat to sleep while idle, so a message to it must
+/// start it again first.
+pub(crate) fn asleep(core: &Core, agent_id: &str) -> bool {
+    core.chats.get(agent_id).is_none()
+        && core
+            .workspaces
+            .agent(agent_id)
+            .is_some_and(|agent| agent.asleep)
+}
+
+/// Readies `agent_id`'s chat for a message from any client: wakes it when it sleeps, and
+/// opens again the earlier chats `context` names.
+pub(crate) async fn wake_for_message(
+    core: &Arc<Core>,
+    agent_id: &str,
+    context: &mut [ChatContext],
+) -> CoreResult<()> {
+    if asleep(core, agent_id) {
+        super::launching::wake_chat(core, agent_id.to_owned()).await?;
+    }
+    mentions::wake(core, agent_id, context).await
+}
+
 pub(crate) fn prompt(
     core: &Core,
     agent_id: &str,

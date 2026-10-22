@@ -819,11 +819,11 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                if chat::mentions::wakes(&context) {
+                if chat::asleep(&core, &agent_id) || chat::mentions::wakes(&context) {
                     tokio::spawn(async move {
                         let mut context = context;
                         let result =
-                            match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                            match chat::wake_for_message(&core, &agent_id, &mut context).await {
                                 Ok(()) => {
                                     chat::prompt(&core, &agent_id, message_id, text, paths, context)
                                 }
@@ -845,7 +845,8 @@ async fn run_requests(
             } => {
                 tokio::spawn(async move {
                     let mut context = context;
-                    let result = match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                    let result = match chat::wake_for_message(&core, &agent_id, &mut context).await
+                    {
                         Ok(()) => {
                             chat::edit(&core, &agent_id, message_id, text, paths, context).await
                         }
@@ -862,7 +863,8 @@ async fn run_requests(
             } => {
                 tokio::spawn(async move {
                     let mut context = context;
-                    let result = match chat::mentions::wake(&core, &agent_id, &mut context).await {
+                    let result = match chat::wake_for_message(&core, &agent_id, &mut context).await
+                    {
                         Ok(()) => chat::steer(&core, &agent_id, text, paths, context).await,
                         Err(error) => Err(error),
                     };
