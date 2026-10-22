@@ -35,7 +35,7 @@ pub(crate) struct HostRow {
     ssh: Option<String>,
     /// What is being done to an SSH host from here: installing, updating or signing in.
     #[serde(skip_serializing_if = "Option::is_none")]
-    setup: Option<super::install::Setup>,
+    setup: Option<super::install::SetupRow>,
 }
 
 /// Linked hosts in the order they were linked, then the SSH hosts a terminal
@@ -63,11 +63,11 @@ pub(crate) fn rows(core: &Core) -> Vec<HostRow> {
             platform: Some(link.platform),
         })
         .collect();
-    let mut setups: BTreeMap<String, super::install::Setup> =
-        super::install::setups(core).into_iter().collect();
+    let mut setups: BTreeMap<String, super::install::SetupRow> =
+        super::install::rows(core).into_iter().collect();
     let mut open: BTreeMap<String, Reach> = BTreeMap::new();
-    for alias in setups.keys() {
-        open.insert(alias.clone(), Reach::Connecting);
+    for (alias, setup) in &setups {
+        open.insert(alias.clone(), setup.reach());
     }
     for (alias, link) in core.ssh_links() {
         if rows.iter().any(|row| row.ssh.as_deref() == Some(&alias)) {

@@ -430,6 +430,10 @@ fn write_to_program(
     target: &session::Session,
     bytes: Vec<u8>,
 ) {
+    if client.peer != Peer::App && super::hosts::install::guards(core, target.id) {
+        client.respond(request_id, Err(super::hosts::install::GUARDED.into()));
+        return;
+    }
     agent::note_input(core, target, &bytes);
     if let Some(agent) = target
         .agent

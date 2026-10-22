@@ -23,6 +23,12 @@ const INSTALL_WAIT: Duration = Duration::from_secs(15 * 60);
 const CODE_LETTERS: &str = "BCDFGHJKLMNPQRSTVWXZ";
 /// What `sikemux login` prints in front of the code.
 const CODE_LINE: &str = "enter the code";
+/// Why something other than the person's own app window cannot type into a set-up terminal.
+pub(crate) const GUARDED: &str =
+    "only the Sikemux window may type here while this terminal waits for a sign-in code";
+/// How long, and how often, to look again for a code printed after the words in front of it.
+const CODE_SETTLE: Duration = Duration::from_millis(200);
+const CODE_SETTLE_TRIES: usize = 10;
 
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,15 +40,34 @@ pub(crate) enum Work {
     SignIn,
 }
 
-/// What is being done to an SSH host from here, as its row shows it.
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// What is being done to an SSH host from here, kept until the next set-up of that host so a
+/// caller that asks late still hears how it ended.
 pub(crate) struct Setup {
     work: Work,
-    /// Why it stopped, once it has; none while it runs.
+    /// Which set-up of the host this is, so a late end never settles a newer one.
+    run: u64,
+    /// The terminal it runs in, while it waits for the sign-in code. Only the person's own
+    /// app window may type there until then, as anything shown on it counts as the code.
+    guarded: Option<SessionId>,
+    ended: watch::Sender<Option<Result<(), String>>>,
+}
+
+/// A set-up as the host's row shows it: running, or why it stopped.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetupRow {
+    work: Work,
     problem: Option<String>,
-    #[serde(skip)]
-    done: Arc<watch::Sender<Option<Result<(), String>>>>,
+}
+
+impl SetupRow {
+    /// Connecting while it runs; out of reach once it has stopped short.
+    pub(crate) fn reach(&self) -> super::listed::Reach {
+        match self.problem {
+            None => super::listed::Reach::Connecting,
+            Some(_) => super::listed::Reach::Away,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -81,47 +106,63 @@ pub(crate) async fn install_host(core: &Arc<Core>, params: InstallParams) -> Cor
         )
         .into());
     }
-    if core
-        .hosts
-        .setups
-        .locked()
-        .get(&alias)
-        .is_some_and(|setup| setup.problem.is_none())
-    {
-        return Err(format!("{alias} is already being set up").into());
-    }
+    let run = {
+        let mut setups = core.hosts.setups.locked();
+        if setups
+            .get(&alias)
+            .is_some_and(|setup| setup.ended.borrow().is_none())
+        {
+            return Err(format!("{alias} is already being set up").into());
+        }
+        let run = setups.get(&alias).map_or(0, |setup| setup.run + 1);
+        setups.insert(
+            alias.clone(),
+            Setup {
+                work: params.work,
+                run,
+                guarded: None,
+                ended: watch::channel(None).0,
+            },
+        );
+        run
+    };
+    core.changes.changed(Topic::Hosts, None, None);
     let remote = match params.work {
         Work::Install => installer(),
         Work::Update => format!("{} && {}", installer(), over_ssh("restart")),
         Work::SignIn => over_ssh("login"),
     };
     let startup = format!("ssh -t -- {alias} {}", single_quoted(&remote));
-    let id = spare::setup_shell(core, &alias, startup).await?;
-    let tab = super::super::layout::show_ssh_terminal(core, alias.clone(), id)?;
-    let (done, _) = watch::channel(None);
-    core.hosts.setups.locked().insert(
-        alias.clone(),
-        Setup {
-            work: params.work,
-            problem: None,
-            done: Arc::new(done),
-        },
-    );
-    core.changes.changed(Topic::Hosts, None, None);
-    tokio::spawn(finish(core.clone(), id, alias, needs_code));
+    let started = async {
+        let id = spare::setup_shell(core, &alias, startup).await?;
+        if let Some(setup) = core.hosts.setups.locked().get_mut(&alias) {
+            setup.guarded = needs_code.then_some(id);
+        }
+        let tab = super::super::layout::show_ssh_terminal(core, alias.clone(), id)?;
+        CoreResult::Ok((id, tab))
+    }
+    .await;
+    let (id, tab) = match started {
+        Ok(started) => started,
+        Err(error) => {
+            settle(core, &alias, run, Err(error.to_string()));
+            return Err(error);
+        }
+    };
+    tokio::spawn(finish(core.clone(), id, alias, run, needs_code));
     Ok(json!({ "terminal": id, "tab": tab }))
 }
 
-/// Waits for the set-up running on `alias` to end, and answers how it went.
+/// Waits for the latest set-up of `alias` to end, and answers how it went.
 pub(crate) async fn host_setup(core: &Arc<Core>, params: AliasParams) -> CoreResult<Value> {
-    let mut done = core
+    let mut ended = core
         .hosts
         .setups
         .locked()
         .get(&params.alias)
-        .map(|setup| setup.done.subscribe())
-        .ok_or("nothing is being set up on that host")?;
-    let ended = done
+        .map(|setup| setup.ended.subscribe())
+        .ok_or("nothing has been set up on that host")?;
+    let ended = ended
         .wait_for(Option::is_some)
         .await
         .map_err(|_| "the set-up was dropped")?
@@ -132,51 +173,96 @@ pub(crate) async fn host_setup(core: &Arc<Core>, params: AliasParams) -> CoreRes
     })
 }
 
-/// The set-up runs, by alias, for the hosts' rows.
-pub(crate) fn setups(core: &Core) -> Vec<(String, Setup)> {
+/// The set-ups that are running or stopped short, by alias, for the hosts' rows.
+pub(crate) fn rows(core: &Core) -> Vec<(String, SetupRow)> {
     core.hosts
         .setups
         .locked()
         .iter()
-        .map(|(alias, setup)| (alias.clone(), setup.clone()))
+        .filter_map(|(alias, setup)| {
+            let problem = match &*setup.ended.borrow() {
+                None => None,
+                Some(Err(problem)) => Some(problem.clone()),
+                Some(Ok(())) => return None,
+            };
+            Some((
+                alias.clone(),
+                SetupRow {
+                    work: setup.work,
+                    problem,
+                },
+            ))
+        })
         .collect()
 }
 
-async fn finish(core: Arc<Core>, id: SessionId, alias: String, needs_code: bool) {
-    let ended = approve_shown_code(&core, id, &alias, needs_code).await;
-    let mut setups = core.hosts.setups.locked();
-    match &ended {
-        Ok(()) => {
-            if let Some(setup) = setups.remove(&alias) {
-                setup.done.send_replace(Some(Ok(())));
-            }
-        }
-        Err(problem) => {
-            if let Some(setup) = setups.get_mut(&alias) {
-                setup.problem = Some(problem.clone());
-                setup.done.send_replace(Some(Err(problem.clone())));
-            }
-        }
+/// Whether only the person's own app window may type into `session` now: it is a set-up
+/// terminal still waiting for its sign-in code.
+pub(crate) fn guards(core: &Core, session: SessionId) -> bool {
+    core.hosts
+        .setups
+        .locked()
+        .values()
+        .any(|setup| setup.guarded == Some(session))
+}
+
+/// Ends set-up `run` of `alias`, unless a newer one has begun.
+fn settle(core: &Core, alias: &str, run: u64, ended: Result<(), String>) {
+    if let Some(setup) = core
+        .hosts
+        .setups
+        .locked()
+        .get_mut(alias)
+        .filter(|setup| setup.run == run)
+    {
+        setup.guarded = None;
+        setup.ended.send_replace(Some(ended));
     }
-    drop(setups);
     core.changes.changed(Topic::Hosts, None, None);
+}
+
+async fn finish(core: Arc<Core>, id: SessionId, alias: String, run: u64, needs_code: bool) {
+    let ended = approve_shown_code(&core, id, &alias, run, needs_code).await;
+    settle(&core, &alias, run, ended);
 }
 
 async fn approve_shown_code(
     core: &Arc<Core>,
     id: SessionId,
     alias: &str,
+    run: u64,
     needs_code: bool,
 ) -> Result<(), String> {
-    let shown = core
-        .session(id)
-        .map(|session| session::line_shown(&session, CODE_LINE.to_owned()))
-        .ok_or("the set-up terminal ended")?;
-    let line = tokio::time::timeout(INSTALL_WAIT, shown)
-        .await
-        .map_err(|_| "setting it up took too long".to_owned())?
-        .unwrap_or_default();
-    let Some(code) = line.as_deref().and_then(sign_in_code) else {
+    let session = core.session(id).ok_or("the set-up terminal ended")?;
+    let line = tokio::time::timeout(
+        INSTALL_WAIT,
+        session::line_shown(&session, CODE_LINE.to_owned()),
+    )
+    .await
+    .map_err(|_| "setting it up took too long".to_owned())?
+    .unwrap_or_default();
+    let mut code = line.as_deref().and_then(sign_in_code);
+    // The code can reach the screen a moment after the words in front of it.
+    for _ in 0..CODE_SETTLE_TRIES {
+        if code.is_some() || line.is_none() {
+            break;
+        }
+        tokio::time::sleep(CODE_SETTLE).await;
+        let shown = session::line_shown(&session, CODE_LINE.to_owned())
+            .await
+            .unwrap_or_default();
+        code = shown.as_deref().and_then(sign_in_code);
+    }
+    if let Some(setup) = core
+        .hosts
+        .setups
+        .locked()
+        .get_mut(alias)
+        .filter(|setup| setup.run == run)
+    {
+        setup.guarded = None;
+    }
+    let Some(code) = code else {
         return if needs_code {
             Err("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())
         } else {
