@@ -2,7 +2,6 @@
 //! the draft, each picture also named in the draft where it belongs, as `[Image #n]`.
 
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use gpui_kit::base::input::{InlineToken, InlineTokenContext};
 use gpui_kit::component::attachment::{
@@ -669,7 +668,7 @@ fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
 pub fn sent(
     message: &ChatMessage,
     open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
-    file: Rc<dyn Fn(&str, FilePress, &mut Window, &mut App)>,
+    file: super::files::FilePressed,
     cx: &App,
 ) -> Option<Div> {
     if message.attachments.is_empty() && message.context.is_empty() {

@@ -18,8 +18,8 @@ use gpui_kit::{
     Subscription, Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
-    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FilePress, FoundChanged, Markdown,
-    Pen, Row, RowsChanged, Style, Transcript,
+    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row,
+    RowsChanged, Style, Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -3187,7 +3187,7 @@ fn spread(lines: &[syntax::LineRuns], code: &str, plain: Hsla) -> CodeRuns {
 
 impl Looks {
     /// What reaching for a file the chat names does, once its host says the file is there.
-    fn file_pressed(&self) -> Rc<dyn Fn(&str, FilePress, &mut Window, &mut App)> {
+    fn file_pressed(&self) -> files::FilePressed {
         let (bench, agent, files) = (self.bench.clone(), self.agent.clone(), self.files.clone());
         Rc::new(move |name, press, window, cx| {
             if let Some(kind) = files::Files::kind_of(&files, name, cx) {

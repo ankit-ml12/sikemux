@@ -4,7 +4,7 @@
 
 mod autolink;
 mod doc;
-mod paths;
+pub mod paths;
 mod url;
 
 pub use doc::{diff, Doc, Op, Patch};

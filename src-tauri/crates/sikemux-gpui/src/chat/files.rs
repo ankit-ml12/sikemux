@@ -16,6 +16,7 @@ use gpui_transcript::{FileKind, FilePress};
 use serde_json::{json, Value};
 
 use sikemux_core::cli::protocol::{CliOpenTarget, CliTargetKind};
+use sikemux_markdown::paths::{has_scheme, is_file_name, is_windows_drive};
 
 use super::Reading;
 use crate::core::Target;
@@ -84,50 +85,10 @@ fn normalized(path: &str) -> String {
     path.replace('\\', "/").trim_end_matches('/').to_owned()
 }
 
-fn is_windows_drive(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'/' | b'\\')
-}
-
-fn has_scheme(text: &str) -> bool {
-    let Some(colon) = text.find(':') else {
-        return false;
-    };
-    let scheme = text[..colon].as_bytes();
-    scheme.len() >= 2
-        && scheme[0].is_ascii_alphabetic()
-        && scheme[1..]
-            .iter()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'.' | b'-'))
-}
-
 /// A bare name only refers to a file when it carries an extension or is one a project
 /// spells out in full; anything else needs a separator.
 fn looks_relative(body: &str) -> bool {
-    const EXTENSIONLESS: [&str; 9] = [
-        "makefile",
-        "dockerfile",
-        "license",
-        "readme",
-        "changelog",
-        "procfile",
-        "justfile",
-        "rakefile",
-        "gemfile",
-    ];
-    if body.contains('/') || body.contains('\\') || body.starts_with('.') {
-        return true;
-    }
-    let extension = body
-        .rfind('.')
-        .map(|dot| &body[dot + 1..])
-        .is_some_and(|ext| {
-            (1..=8).contains(&ext.len()) && ext.bytes().all(|b| b.is_ascii_alphanumeric())
-        });
-    extension || EXTENSIONLESS.contains(&body.to_lowercase().as_str())
+    body.contains('/') || body.contains('\\') || body.starts_with('.') || is_file_name(body)
 }
 
 fn file_uri_path(uri: &str) -> Option<String> {
@@ -140,10 +101,10 @@ fn file_uri_path(uri: &str) -> Option<String> {
         .filter(|host| !host.eq_ignore_ascii_case("localhost"))
     {
         Some(host) => Some(format!("//{host}{path}")),
-        None if path.len() > 2 && path.as_bytes()[0] == b'/' && is_windows_drive(&path[1..]) => {
-            Some(path[1..].to_owned())
-        }
-        None => Some(path),
+        None => match path.strip_prefix('/').filter(|rest| is_windows_drive(rest)) {
+            Some(drive) => Some(drive.to_owned()),
+            None => Some(path),
+        },
     }
 }
 
@@ -329,6 +290,9 @@ async fn ask(files: Rc<RefCell<Files>>, cx: &mut gpui_kit::AsyncApp) {
         }
     }
 }
+
+/// What reaching for a file the chat names does, given its name as written.
+pub type FilePressed = Rc<dyn Fn(&str, FilePress, &mut Window, &mut App)>;
 
 /// What reaching for the file `name` of `agent`'s chat does: a click opens it on the agent's
 /// desk, two clicks open it in the editor, and the menu offers what the file tree's does.
