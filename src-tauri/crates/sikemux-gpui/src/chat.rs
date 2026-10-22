@@ -207,7 +207,11 @@ impl ChatRow {
         merge(&mut whole, fields);
         if let Ok(message) = serde_json::from_value(whole) {
             self.message = message;
-            self.read_docs();
+            // A part's own tree is the one it arrived with; its text's later patches live only
+            // in its doc, so the docs are read again only when the parts themselves changed.
+            if fields.get("parts").is_some() || fields.get("letters").is_some() {
+                self.read_docs();
+            }
         }
     }
 }
