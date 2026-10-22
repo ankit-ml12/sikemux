@@ -28,6 +28,7 @@ const STOP_TASK: &str = "task.stop:";
 const START_PREVIEW: &str = "project.preview.start:";
 const OPEN_PREVIEW: &str = "project.preview.open:";
 const CONFIG_INVALID: &str = "project.config.invalid";
+const ACTION: &str = "project.action:";
 
 /// A command no shortcut does: its id, name, what it does and its category.
 type Standalone = (&'static str, &'static str, &'static str, &'static str);
@@ -65,6 +66,35 @@ fn preview_rows(config: &Value, project: &str) -> Vec<Row> {
         );
     }
     rows
+}
+
+/// The deck's rows for the project's `sikemux.json` actions, each run once the person trusts
+/// the file.
+fn action_rows(config: &Value) -> Vec<Row> {
+    if config["status"] != "valid" {
+        return Vec::new();
+    }
+    let path = config["path"].as_str().unwrap_or("sikemux.json");
+    let actions = config["config"]["actions"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    actions
+        .iter()
+        .filter_map(|action| {
+            let id = action["id"].as_str()?;
+            let label = action["label"].as_str().unwrap_or(id);
+            let detail = action["description"]
+                .as_str()
+                .filter(|detail| !detail.is_empty())
+                .map_or_else(|| format!("Run from {path}"), str::to_owned);
+            Some(
+                Row::new(format!("{ACTION}{id}"), label)
+                    .meta("Project · sikemux.json")
+                    .also(&detail)
+                    .also("Project · sikemux.json"),
+            )
+        })
+        .collect()
 }
 
 /// The deck's rows for each worktree of the project's repository: open it as a project, and
@@ -234,6 +264,8 @@ impl Workbench {
                     keymap::dispatch(id, window, cx);
                 } else if let Some(id) = row.key.strip_prefix(CUSTOM) {
                     bench.run_custom_command(id, cx);
+                } else if let Some(id) = row.key.strip_prefix(ACTION) {
+                    bench.run_command(json!({ "action": id }), row.title.to_string(), cx);
                 } else if let Some(id) = row.key.strip_prefix(STANDALONE) {
                     bench.run_standalone(id, window, cx);
                 } else if let Some(path) = row.key.strip_prefix(OPEN_WORKTREE) {
@@ -295,6 +327,7 @@ impl Workbench {
             let _ = this.update(cx, |bench, cx| {
                 let mut rows = base;
                 rows.extend(config.iter().flat_map(|config| preview_rows(config, &id)));
+                rows.extend(config.iter().flat_map(action_rows));
                 rows.extend(worktrees.iter().flat_map(worktree_rows));
                 if let Some(palette) = bench
                     .palette
@@ -504,21 +537,27 @@ impl Workbench {
     /// Runs one of the person's commands in the project in front, telling them
     /// what one in the background printed.
     fn run_custom_command(&self, id: &str, cx: &mut Context<Self>) {
-        let Some(Strip::Project(project)) = self.strip() else {
-            return;
-        };
         let title = self
             .preferences()
             .custom_commands
             .into_iter()
             .find(|command| command.id == id)
             .map_or_else(|| id.to_owned(), |command| command.title);
+        self.run_command(json!({ "id": id }), title, cx);
+    }
+
+    /// Runs `which`, a custom command's id or a `sikemux.json` action's, in the project in
+    /// front, telling the person what one in the background printed.
+    fn run_command(&self, which: Value, title: String, cx: &mut Context<Self>) {
+        let Some(Strip::Project(project)) = self.strip() else {
+            return;
+        };
         let tab = self.tab().map(|tab| tab.id.clone());
-        let ran = core::request(
-            &self.asks,
-            "runCustomCommand",
-            json!({ "project": project, "id": id, "tab": tab, "pane": self.focused_view() }),
-        );
+        let mut params = json!({ "project": project, "tab": tab, "pane": self.focused_view() });
+        if let (Some(params), Some(which)) = (params.as_object_mut(), which.as_object()) {
+            params.extend(which.clone());
+        }
+        let ran = core::request(&self.asks, "runCustomCommand", params);
         cx.spawn(async move |this, cx| {
             let ran = ran.await;
             let _ = this.update(cx, |bench, cx| match ran {
