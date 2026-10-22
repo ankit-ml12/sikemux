@@ -61,6 +61,16 @@ fn name(path: &str) -> String {
         .unwrap_or_else(|| path.to_owned())
 }
 
+/// The folder a project's folder sits in.
+fn parent(path: &str) -> &str {
+    path.trim_end_matches('/')
+        .rsplit_once('/')
+        .map_or(
+            path,
+            |(parent, _)| if parent.is_empty() { "/" } else { parent },
+        )
+}
+
 fn pretty(path: &str) -> String {
     let home = sikemux_process::paths::home()
         .map(|home| home.to_string_lossy().into_owned())
@@ -272,9 +282,10 @@ impl Render for Switcher {
                             .flex_1()
                             .min_w_0()
                             .truncate()
+                            .font_family(crate::theme::MONO)
                             .text_size(crate::theme::ui_text(11.))
                             .text_color(t.text_tertiary)
-                            .child(pretty(&choice.path)),
+                            .child(pretty(parent(&choice.path))),
                     )
                     .when(here, |row| {
                         row.child(ui::icon(Icon::Check, 12.).text_color(t.text_secondary))
@@ -302,7 +313,13 @@ impl Render for Switcher {
             .border_color(t.border)
             .rounded(theme::RADIUS_3)
             .shadow(t.shadow_float())
-            .child(ui::Field::new(&self.query).icon(Icon::Search))
+            .child(
+                div()
+                    .mx(px(-6.))
+                    .mt(px(-6.))
+                    .mb(px(2.))
+                    .child(ui::Field::new(&self.query).icon(Icon::Search).flush()),
+            )
             .child(
                 div()
                     .id("project-choices")

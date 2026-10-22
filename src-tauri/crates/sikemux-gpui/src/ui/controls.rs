@@ -541,6 +541,7 @@ impl RenderOnce for Segmented {
 pub struct Field {
     state: Entity<InputState>,
     icon: Option<Icon>,
+    flush: bool,
 }
 
 impl Field {
@@ -548,7 +549,14 @@ impl Field {
         Self {
             state: state.clone(),
             icon: None,
+            flush: false,
         }
+    }
+
+    /// A row across the top of a dropdown, over a hairline, with no box or ring.
+    pub fn flush(mut self) -> Self {
+        self.flush = true;
+        self
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
@@ -560,32 +568,37 @@ impl Field {
 impl RenderOnce for Field {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx);
-        div()
-            .h(px(34.))
-            .px(px(10.))
-            .flex()
-            .items_center()
-            .gap(px(7.))
-            .border_1()
-            .border_color(t.line)
-            .rounded(RADIUS_2)
-            .bg(Hsla {
-                a: 0.62,
-                ..t.line_soft
-            })
-            .text_color(t.text_tertiary)
-            .children(
-                self.icon
-                    .map(|glyph| icon(glyph, 12.).text_color(t.text_tertiary)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(crate::theme::MONO)
-                    .text_size(crate::theme::ui_text(11.))
-                    .text_color(t.text_primary)
-                    .child(Input::new(&self.state).appearance(false).bordered(false)),
-            )
+        let field = div().flex().items_center().gap(px(7.));
+        match self.flush {
+            true => field
+                .h(px(32.))
+                .px(px(12.))
+                .border_b_1()
+                .border_color(t.border),
+            false => field
+                .h(px(34.))
+                .px(px(10.))
+                .border_1()
+                .border_color(t.line)
+                .rounded(RADIUS_2)
+                .bg(Hsla {
+                    a: 0.62,
+                    ..t.line_soft
+                }),
+        }
+        .text_color(t.text_tertiary)
+        .children(
+            self.icon
+                .map(|glyph| icon(glyph, 12.).text_color(t.text_tertiary)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .font_family(crate::theme::MONO)
+                .text_size(crate::theme::ui_text(11.))
+                .text_color(t.text_primary)
+                .child(Input::new(&self.state).appearance(false).bordered(false)),
+        )
     }
 }
 
