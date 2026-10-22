@@ -111,6 +111,56 @@ pub enum Piece {
 }
 
 impl Node {
+    /// The table written back as markdown, so it pastes into a doc or another agent as a
+    /// table; none for a node that is not one.
+    pub fn table_source(&self) -> Option<String> {
+        let Kind::Table(table) = &self.kind else {
+            return None;
+        };
+        let row = |cells: &[Node]| {
+            let cells: Vec<String> = cells.iter().map(Node::inline_source).collect();
+            format!("| {} |", cells.join(" | "))
+        };
+        let rule = |align: &TextAlign| match align {
+            TextAlign::Center => ":---:",
+            TextAlign::Right => "---:",
+            TextAlign::Left => "---",
+        };
+        let head = table.head.as_deref().map_or_else(
+            || format!("| {} |", vec![""; table.align.len()].join(" | ")),
+            row,
+        );
+        let rules: Vec<&str> = table.align.iter().map(rule).collect();
+        let lines = [head, format!("| {} |", rules.join(" | "))]
+            .into_iter()
+            .chain(self.children.iter().map(|line| row(&line.children)));
+        Some(lines.collect::<Vec<_>>().join("\n"))
+    }
+
+    /// A cell's content as the markdown that wrote it.
+    fn inline_source(&self) -> String {
+        let inner = || {
+            self.children
+                .iter()
+                .map(Node::inline_source)
+                .collect::<String>()
+        };
+        match &self.kind {
+            Kind::Text => self.text.replace('|', "\\|"),
+            Kind::InlineCode => format!("`{}`", self.text.replace('|', "\\|")),
+            Kind::Strong => format!("**{}**", inner()),
+            Kind::Emphasis => format!("*{}*", inner()),
+            Kind::Strike => format!("~~{}~~", inner()),
+            Kind::Link(href) => format!("[{}]({href})", inner()),
+            Kind::Image { src, alt } => format!("![{alt}]({src})"),
+            Kind::Break => "<br>".to_owned(),
+            Kind::FootnoteRef(n) => format!("[^{n}]"),
+            _ => inner(),
+        }
+    }
+}
+
+impl Node {
     /// The node's content as it is drawn, worked out once until a patch reaches inside it.
     pub fn flow(&self) -> &[Piece] {
         self.flow.get_or_init(|| {

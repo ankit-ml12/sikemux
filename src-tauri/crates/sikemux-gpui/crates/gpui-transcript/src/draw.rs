@@ -653,17 +653,8 @@ impl Draw<'_> {
                     .unwrap_or(0) as f32
             })
             .collect();
-        let source: Vec<String> = rows
-            .iter()
-            .map(|(row, _)| {
-                (0..longest.len())
-                    .map(|x| text(row, x).unwrap_or_default())
-                    .collect::<Vec<_>>()
-                    .join("\t")
-            })
-            .collect();
         let copy = self
-            .copy(source.join("\n").into())
+            .copy(node.table_source().unwrap_or_default().into())
             .absolute()
             .top(px(4.))
             .right(px(8.));
