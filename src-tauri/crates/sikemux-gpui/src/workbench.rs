@@ -1524,12 +1524,12 @@ impl Workbench {
 
     /// Whether a push from a watch carries what the window already holds, so nothing in it
     /// moved and nothing need draw again. An answer to a request always counts, as what asked
-    /// waits for it, and so does trust, whose question waits for a push when another is open.
+    /// waits for it.
     fn holds(&self, update: &Update) -> bool {
         match update {
             Update::Read(
                 key @ ("hosts" | "plugins" | "catalog" | "preferences" | "tasks" | "usage" | "ci"
-                | "shares" | "update" | "runs" | "ports" | "drafts"),
+                | "shares" | "update" | "runs" | "ports" | "trust" | "drafts"),
                 value,
             ) => self.reads.get(key) == Some(value),
             Update::HostView(host, view) => self.host_views.get(host) == Some(&**view),
