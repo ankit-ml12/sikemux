@@ -21,6 +21,20 @@ const manifestPath = resolve(
 const drawingsDir = resolve(root, "src-tauri/crates/sikemux-gpui/assets/faces");
 const check = process.argv.includes("--check");
 const STATES = ["idle", "working", "waiting", "done", "error"];
+// The art repeats an attribute on some elements. WebKit, which draws it on the Mac,
+// keeps the first; an SVG parser refuses the whole drawing. Keep the first here too.
+const firstOfEachAttribute = (markup) =>
+  markup.replace(
+    /<([a-zA-Z][\w:-]*)((?:\s+[\w:.-]+="[^"]*")*)(\s*\/?)>/g,
+    (_, name, attributes, end) => {
+      const seen = new Set();
+      const kept = attributes.replace(
+        /\s+([\w:.-]+)="[^"]*"/g,
+        (attribute, key) => (seen.has(key) ? "" : (seen.add(key), attribute)),
+      );
+      return `<${name}${kept}${end}>`;
+    },
+  );
 
 const server = await createServer({
   root,
@@ -100,10 +114,9 @@ try {
         Object.fromEntries(
           STATES.map((state) => [
             state,
-            buddyMarkup(pack, shape, color, state, "face", FULL_BOX).replace(
-              "<svg ",
-              '<svg xmlns="http://www.w3.org/2000/svg" ',
-            ),
+            firstOfEachAttribute(
+              buddyMarkup(pack, shape, color, state, "face", FULL_BOX),
+            ).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '),
           ]),
         ),
       );
