@@ -1,21 +1,24 @@
 //! An agent's desk, beside it in its tab: the pages its browser holds, one in front.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
+use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight, Hsla,
-    InteractiveElement, IntoElement, Keystroke, ParentElement, SharedString,
+    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight,
+    Hsla, InteractiveElement, IntoElement, Keystroke, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use gpui_native_view::{native_view, Frame, NativeSurface, Surface};
 use serde_json::{json, Value};
 use sikemux_browser::{
-    BrowserBounds, BrowserDownload, BrowserManager, BrowserShortcut, BrowserSnapshot, Host,
-    ParentView,
+    BrowserBounds, BrowserDownload, BrowserManager, BrowserShortcut, BrowserSnapshot,
+    DownloadState, Host, ParentView,
 };
 use sikemux_core::cli::protocol::{is_browser_method, is_sim_method, HarnessRequest};
 use sikemux_process::sync::Locked;
@@ -66,6 +69,8 @@ pub struct Desks {
     /// What each agent's desk shows: its pages, or its simulator.
     kinds: HashMap<String, DeskKind>,
     page_files: Arc<PageFiles>,
+    /// The agent whose address ⌘L asked for, focused once its desk has drawn it.
+    address_wanted: Option<String>,
     _hearing: Option<gpui_kit::Task<()>>,
     _activation: Subscription,
     _theming: Subscription,
@@ -91,6 +96,7 @@ enum Heard {
     Tabs,
     Downloaded(BrowserDownload),
     Shortcut(BrowserShortcut),
+    Acting(String),
 }
 
 impl Desks {
@@ -147,6 +153,7 @@ impl Desks {
             known: HashMap::new(),
             kinds: HashMap::new(),
             page_files,
+            address_wanted: None,
             _hearing: task,
             _activation: activation,
             _theming: theming,
@@ -227,8 +234,8 @@ impl Host for DeskHost {
         let _ = self.heard.send(Heard::Downloaded(download.clone()));
     }
 
-    fn acting(&self, _agent_id: &str) {
-        let _ = self.heard.send(Heard::Tabs);
+    fn acting(&self, agent_id: &str) {
+        let _ = self.heard.send(Heard::Acting(agent_id.to_owned()));
     }
 
     fn shortcut(&self, shortcut: BrowserShortcut) {
@@ -323,18 +330,20 @@ impl Workbench {
     fn hear(&mut self, heard: Heard, window: &mut Window, cx: &mut Context<Self>) {
         match heard {
             Heard::Tabs => self.read_strips(),
-            Heard::Downloaded(download) => {
-                eprintln!("sikemux: a page saved {}", download.path);
-            }
+            Heard::Downloaded(download) => self.notify(downloaded(&download), cx),
             Heard::Shortcut(shortcut) => {
-                let mut keys = String::from("cmd-");
-                if shortcut.shift {
-                    keys.push_str("shift-");
-                }
-                keys.push_str(&shortcut.key.to_lowercase());
-                if let Ok(keystroke) = Keystroke::parse(&keys) {
+                let shift = if shortcut.shift { "Shift+" } else { "" };
+                let keys = crate::keymap::keystroke(&format!("Meta+{shift}{}", shortcut.code));
+                if let Some(keystroke) = keys.and_then(|keys| Keystroke::parse(&keys).ok()) {
+                    if let Some(page) = self.desks.pages.get(&shortcut.agent_id) {
+                        page.focus.focus(window, cx);
+                    }
                     window.dispatch_keystroke(keystroke, cx);
                 }
+            }
+            Heard::Acting(agent) => {
+                self.read_strips();
+                self.show_pages(&agent);
             }
         }
         self.parts.redraw(&self.parts.stage, cx);
@@ -412,6 +421,15 @@ impl Workbench {
         self.desks.kinds.insert(agent.to_owned(), kind);
     }
 
+    /// Turns the agent's desk to its pages, bringing the desk out if it is closed, so the
+    /// person sees what the agent does there.
+    fn show_pages(&mut self, agent: &str) {
+        self.show_kind(agent, DeskKind::Pages);
+        if !self.desk_open_anywhere(agent) {
+            self.reveal_desk(agent);
+        }
+    }
+
     /// The desk view of `agent` in `tab`, by id.
     pub fn desk_of(&self, tab: &str, agent: &str) -> Option<String> {
         let strip = self.strip()?;
@@ -449,24 +467,63 @@ impl Workbench {
         Some((tab.id.clone(), view, agent))
     }
 
-    pub fn toggle_front_desk(&mut self) {
-        if let Some((tab, view, agent)) = self.front_agent() {
+    /// The agent in front, else the project's agent that worked last, brought to the front;
+    /// with neither, the person hears that a desk belongs to an agent.
+    fn nearest_agent(&self, cx: &mut Context<Self>) -> Option<(String, String, String)> {
+        if let Some(front) = self.front_agent() {
+            return Some(front);
+        }
+        let project = self.project().map(|project| project.id.clone());
+        let placed = project
+            .map(|project| self.agents_of(&project))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|agent| {
+                Some((
+                    agent.active_at,
+                    agent.id.clone(),
+                    self.agent_place(&agent.id)?,
+                ))
+            })
+            .max_by_key(|(active_at, ..)| *active_at);
+        let Some((_, agent, (strip, tab, view))) = placed else {
+            self.notify(
+                Notification::info("Start an agent first — the desk and its browser belong to one"),
+                cx,
+            );
+            return None;
+        };
+        self.activate_tab(&strip, &tab);
+        Some((tab, view, agent))
+    }
+
+    /// The agent whose desk holds the keys.
+    fn focused_desk(&self, window: &Window, cx: &App) -> Option<String> {
+        self.desks.pages.iter().find_map(|(agent, page)| {
+            let address = page.address.read(cx).focus_handle(cx);
+            (page.focus.is_focused(window) || address.is_focused(window)).then(|| agent.clone())
+        })
+    }
+
+    pub fn toggle_front_desk(&mut self, cx: &mut Context<Self>) {
+        if let Some((tab, view, agent)) = self.nearest_agent(cx) {
             self.toggle_desk(&tab, &view, &agent);
         }
     }
 
-    /// The front agent's desk, turned to its simulator.
-    pub fn front_simulator(&mut self) {
-        if let Some((_, _, agent)) = self.front_agent() {
+    /// The nearest agent's desk, turned to its simulator.
+    pub fn front_simulator(&mut self, cx: &mut Context<Self>) {
+        if let Some((_, _, agent)) = self.nearest_agent(cx) {
             self.show_simulator(&agent);
         }
     }
 
-    /// A new page on the front agent's desk, which opens if it is closed.
-    pub fn new_front_page(&mut self) {
-        let Some((tab, view, agent)) = self.front_agent() else {
+    /// A new page on the nearest agent's desk, which opens if it is closed.
+    pub fn new_front_page(&mut self, cx: &mut Context<Self>) {
+        let Some((tab, view, agent)) = self.nearest_agent(cx) else {
             return;
         };
+        self.show_kind(&agent, DeskKind::Pages);
         if let (None, Some(strip)) = (self.desk_of(&tab, &agent), self.strip()) {
             self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
         }
@@ -481,15 +538,12 @@ impl Workbench {
         (kind == DeskKind::Pages).then_some(agent)
     }
 
-    /// Closes what the front desk shows, its page or its simulator, and says whether it had one
-    /// to close; with neither, ⌘W closes the tab as it would anywhere else.
-    pub fn close_shown_page(&mut self) -> bool {
-        let Some((tab, _, agent)) = self.front_agent() else {
+    /// Closes what the desk holding the keys shows, its page or its simulator, and says whether
+    /// it had one to close; elsewhere, ⌘W closes the tab as it would anywhere else.
+    pub fn close_shown_page(&mut self, window: &Window, cx: &App) -> bool {
+        let Some(agent) = self.focused_desk(window, cx) else {
             return false;
         };
-        if self.desk_of(&tab, &agent).is_none() {
-            return false;
-        }
         match self.desks.kinds.get(&agent).copied().unwrap_or_default() {
             DeskKind::Simulator => {
                 self.show_kind(&agent, DeskKind::Pages);
@@ -512,18 +566,44 @@ impl Workbench {
         }
     }
 
-    /// Puts the front desk's address in the person's hands, all of it selected to type over.
-    pub fn focus_front_address(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(page) = self
-            .front_pages()
-            .and_then(|agent| self.desks.pages.get(&agent))
-        else {
+    /// Puts the nearest desk's address in the person's hands, all of it selected to type over,
+    /// opening the desk on its pages, with a blank one when it has none.
+    pub fn focus_front_address(&mut self, cx: &mut Context<Self>) {
+        let Some((tab, view, agent)) = self.nearest_agent(cx) else {
             return;
         };
-        page.address.update(cx, |address, cx| {
-            address.focus(window, cx);
-            address.select_all(window, cx);
-        });
+        self.show_kind(&agent, DeskKind::Pages);
+        if let (None, Some(strip)) = (self.desk_of(&tab, &agent), self.strip()) {
+            self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
+        }
+        self.open_first_page(&agent);
+        self.desks.address_wanted = Some(agent);
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Steps through the pages of the desk holding the keys, and says whether one does.
+    pub fn step_desk_page(&self, by: i32, window: &Window, cx: &App) -> bool {
+        let Some(agent) = self.focused_desk(window, cx).filter(|agent| {
+            self.desks.kinds.get(agent).copied().unwrap_or_default() == DeskKind::Pages
+        }) else {
+            return false;
+        };
+        let Some(strip) = self
+            .desks
+            .strips
+            .get(&agent)
+            .filter(|strip| !strip.tabs.is_empty())
+        else {
+            return false;
+        };
+        let at = strip
+            .tabs
+            .iter()
+            .position(|tab| Some(&tab.id) == strip.active_tab_id.as_ref())
+            .unwrap_or(0) as i32;
+        let next = &strip.tabs[(at + by).rem_euclid(strip.tabs.len() as i32) as usize].id;
+        self.with_engine(|engine| engine.switch_tab(&agent, next));
+        true
     }
 
     pub fn reload_front_page(&self) {
@@ -657,6 +737,15 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             },
         );
     }
+    if let Some(agent) = bench.desks.address_wanted.clone() {
+        if let Some(page) = bench.desks.pages.get(&agent) {
+            page.address.update(cx, |address, cx| {
+                address.focus(window, cx);
+                address.select_all(window, cx);
+            });
+            bench.desks.address_wanted = None;
+        }
+    }
     let shown: Vec<(String, String)> = bench
         .desks
         .pages
@@ -679,6 +768,70 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
                 .update(cx, |address, cx| address.set_value(url, window, cx));
         }
     }
+}
+
+/// What a page's download says: it started, failed, or finished with a way to keep the file.
+fn downloaded(download: &BrowserDownload) -> Notification {
+    let held = PathBuf::from(&download.path);
+    let name = held.file_name().map_or_else(
+        || download.url.clone(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    match download.state {
+        DownloadState::Started => Notification::info(format!("Downloading {name}")),
+        DownloadState::Failed => {
+            Notification::error(format!("Download of {name} failed")).autohide(false)
+        }
+        DownloadState::Finished => {
+            Notification::success(format!("Downloaded {name}")).action(move |_, _, cx| {
+                let (note, held) = (cx.entity(), held.clone());
+                Button::new("keep-download")
+                    .label("Keep in Downloads")
+                    .on_click(move |_, window, cx| {
+                        match keep_download(&held) {
+                            Ok(kept) => cx.reveal_path(&kept),
+                            Err(error) => window.push_notification(
+                                Notification::error(format!("The download was not kept: {error}")),
+                                cx,
+                            ),
+                        }
+                        note.update(cx, |note, cx| note.dismiss(window, cx));
+                    })
+            })
+        }
+    }
+}
+
+/// Moves a file a page saved from the browser's own folder into Downloads, beside what is
+/// there. A link keeps the file as macOS marked it on download and never replaces another.
+fn keep_download(held: &Path) -> Result<PathBuf, String> {
+    let downloads = sikemux_process::paths::home()
+        .ok_or("this account has no home folder")?
+        .join("Downloads");
+    let name = held
+        .file_name()
+        .ok_or("the download has no name")?
+        .to_string_lossy()
+        .into_owned();
+    let (stem, extension) = match name.rfind('.') {
+        Some(dot) if dot > 0 => name.split_at(dot),
+        _ => (name.as_str(), ""),
+    };
+    for n in 1..=100 {
+        let kept = match n {
+            1 => downloads.join(&name),
+            n => downloads.join(format!("{stem} ({n}){extension}")),
+        };
+        match std::fs::hard_link(held, &kept) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(held);
+                return Ok(kept);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err(format!("Downloads already has 100 files named like {name}"))
 }
 
 fn shown_address(url: &str) -> String {

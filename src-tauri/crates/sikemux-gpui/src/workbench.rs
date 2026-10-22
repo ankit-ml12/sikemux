@@ -3398,20 +3398,26 @@ impl Render for Workbench {
                 }),
             )
             .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
-            .on_action(cx.listener(|bench, _: &ToggleDesk, _, _| bench.toggle_front_desk()))
-            .on_action(cx.listener(|bench, _: &NewPage, _, _| bench.new_front_page()))
-            .on_action(cx.listener(|bench, _: &FocusAddress, window, cx| {
-                bench.focus_front_address(window, cx)
-            }))
+            .on_action(cx.listener(|bench, _: &ToggleDesk, _, cx| bench.toggle_front_desk(cx)))
+            .on_action(cx.listener(|bench, _: &NewPage, _, cx| bench.new_front_page(cx)))
+            .on_action(cx.listener(|bench, _: &FocusAddress, _, cx| bench.focus_front_address(cx)))
             .on_action(cx.listener(|bench, _: &ReloadPage, _, _| bench.reload_front_page()))
             .on_action(cx.listener(|bench, _: &PageBack, _, _| bench.step_front_page(-1)))
             .on_action(cx.listener(|bench, _: &PageForward, _, _| bench.step_front_page(1)))
             .on_action(cx.listener(|bench, _: &NewSimulator, _, cx| {
-                bench.front_simulator();
+                bench.front_simulator(cx);
                 bench.parts.redraw(&bench.parts.stage, cx);
             }))
-            .on_action(cx.listener(|bench, _: &PreviousTab, _, _| bench.step_tab(-1, |_, _| true)))
-            .on_action(cx.listener(|bench, _: &NextTab, _, _| bench.step_tab(1, |_, _| true)))
+            .on_action(cx.listener(|bench, _: &PreviousTab, window, cx| {
+                if !bench.step_desk_page(-1, window, cx) {
+                    bench.step_tab(-1, |_, _| true);
+                }
+            }))
+            .on_action(cx.listener(|bench, _: &NextTab, window, cx| {
+                if !bench.step_desk_page(1, window, cx) {
+                    bench.step_tab(1, |_, _| true);
+                }
+            }))
             .on_action(cx.listener(|bench, _: &PreviousOfKind, _, _| bench.step_tab(-1, same_kind)))
             .on_action(cx.listener(|bench, _: &NextOfKind, _, _| bench.step_tab(1, same_kind)))
             .on_action(cx.listener(|bench, _: &GoToTab1, _, _| bench.go_to_tab(Some(1))))
@@ -3423,7 +3429,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|bench, _: &GoToTab7, _, _| bench.go_to_tab(Some(7))))
             .on_action(cx.listener(|bench, _: &GoToTab8, _, _| bench.go_to_tab(Some(8))))
             .on_action(cx.listener(|bench, _: &GoToLastTab, _, _| bench.go_to_tab(None)))
-            .on_action(cx.listener(|bench, _: &CloseTab, _, cx| bench.close_front(cx)))
+            .on_action(cx.listener(|bench, _: &CloseTab, window, cx| bench.close_front(window, cx)))
             .on_action(cx.listener(|bench, _: &FocusMode, _, cx| bench.toggle_focus_mode(cx)))
             .on_action(
                 cx.listener(|bench, _: &SplitRow, _, cx| bench.split_front(SplitDir::Row, cx)),

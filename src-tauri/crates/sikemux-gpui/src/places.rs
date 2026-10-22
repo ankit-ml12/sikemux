@@ -179,8 +179,8 @@ impl Workbench {
 
     /// Closes the view in front: a desk's page, the focused view of a split tab, else the tab.
     /// It asks first when that would stop an agent mid-turn or lose a file's unsaved changes.
-    pub fn close_front(&mut self, cx: &mut Context<Self>) {
-        if self.close_shown_page() {
+    pub fn close_front(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.close_shown_page(window, cx) {
             return self.parts.redraw(&self.parts.stage, cx);
         }
         let (Some(strip), Some(tab)) = (self.strip(), self.tab().cloned()) else {

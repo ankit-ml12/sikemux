@@ -167,6 +167,10 @@ pub fn install(cx: &mut App) {
 
 /// Binds every command to the person's keys, else its default. It runs again whenever the
 /// preferences change; keys a command no longer uses stop doing anything.
+/// Commands that act on a desk's page only while the keys are in it, leaving the same keys to
+/// the editor and everything else.
+const PAGE_ONLY: [&str; 3] = ["browser.reload", "browser.back", "browser.forward"];
+
 pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
     let keymap = cx.global::<Keymap>();
     let mut bound = BTreeMap::new();
@@ -181,10 +185,15 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
         let Ok(action) = cx.build_action(shortcut.id, None) else {
             continue;
         };
+        let context = PAGE_ONLY
+            .contains(&shortcut.id)
+            .then(|| gpui::KeyBindingContextPredicate::parse("BrowserPage").ok())
+            .flatten()
+            .map(std::rc::Rc::new);
         if let Ok(binding) = KeyBinding::load(
             &gpui_keys,
             action,
-            None,
+            context,
             false,
             None,
             &gpui::DummyKeyboardMapper,
@@ -324,7 +333,8 @@ pub fn reserved(keys: &str) -> Option<&'static str> {
 }
 
 /// A binding in the table's spelling, `Meta+Shift+KeyP`, as GPUI writes it, `cmd-shift-p`.
-fn keystroke(keys: &str) -> Option<String> {
+/// Keys in the table's spelling, such as Meta+Shift+BracketLeft, as GPUI spells them.
+pub(crate) fn keystroke(keys: &str) -> Option<String> {
     let parts: Option<Vec<String>> = keys
         .split('+')
         .map(|part| {
