@@ -440,6 +440,9 @@ pub struct Markdown {
     /// and the tree waits for a whole one.
     units: Option<usize>,
     pub(crate) width: Rc<Cell<Option<Pixels>>>,
+    /// The width the blocks took the first time they were all laid out, as wide as their
+    /// longest line where nothing stretched them.
+    pub(crate) natural: Rc<Cell<Option<Pixels>>>,
     /// Each fold the reader turned from how it was written, by block and its place in the block.
     pub(crate) turned: Rc<RefCell<HashSet<(usize, u32)>>>,
     /// Where its first block was placed in the window when last drawn.

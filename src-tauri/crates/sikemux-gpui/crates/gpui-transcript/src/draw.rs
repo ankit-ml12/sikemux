@@ -188,6 +188,7 @@ impl Pen {
                 .as_ref()
                 .map_or(0, |selecting| selecting.place_of(doc)),
             width: doc.width.clone(),
+            natural: doc.natural.clone(),
             turned: doc.turned.clone(),
             top: doc.top.clone(),
         };
@@ -214,6 +215,7 @@ impl Pen {
                 if let Some(first) = bounds.first() {
                     blocks.width.set(Some(first.size.width));
                     blocks.top.set(Some(first.top()));
+                    blocks.natural.set(Some(first.size.width));
                 }
             })
             .id(id)
@@ -229,6 +231,7 @@ struct Blocks {
     selecting: Option<Rc<Selecting>>,
     doc: usize,
     width: Rc<Cell<Option<Pixels>>>,
+    natural: Rc<Cell<Option<Pixels>>>,
     turned: Rc<RefCell<HashSet<(usize, u32)>>>,
     top: Rc<Cell<Option<Pixels>>>,
 }
@@ -304,13 +307,15 @@ impl Element for Tall {
         let gaps = blocks.style.gap * blocks.blocks.len().saturating_sub(1) as f32;
         let height = heights.fold(gaps, |sum, height| sum + height);
         // A parent that sizes itself to its content, as a sent message's bubble does, asks for
-        // a width; the blocks were last laid out at `width`, so that is what they need.
+        // a width. Answering with the width it was last given would narrow it by the parent's
+        // padding every frame, so it is the width the blocks first took, as far as there is room.
+        let natural = blocks.natural.get().unwrap_or(width);
         let layout = window.request_measured_layout(
             gpui::Style::default(),
             move |known, available, _, _| {
                 let room = match available.width {
-                    AvailableSpace::Definite(room) => room.min(width),
-                    _ => width,
+                    AvailableSpace::Definite(room) => room.min(natural),
+                    _ => natural,
                 };
                 size(known.width.unwrap_or(room), known.height.unwrap_or(height))
             },
