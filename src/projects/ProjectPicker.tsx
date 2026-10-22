@@ -6,6 +6,7 @@ import { projectRootsScanR } from "../state/resources.defs";
 import { useStore } from "../state/store";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { IconFolder } from "../ui/Icons";
+import { dirname } from "../lib/paths";
 import { projectChoices, type ProjectChoice } from "./projectChoices";
 
 /** The projects open on a host, then on this host the folders found under the project roots. */
@@ -39,7 +40,8 @@ export function ProjectPicker({
             choices.map((choice) => ({
                 value: choice.path,
                 label: choice.name,
-                detail: choice.sub,
+                detail: dirname(choice.sub),
+                className: "inline-detail",
                 icon: choice.sessionId ? projectMark() : <IconFolder size={13} />,
                 group: choice.sessionId ? "Open" : "Found on disk",
             })),
@@ -57,6 +59,7 @@ export function ProjectPicker({
             menuWidth={300}
             opens={opens}
             search="Find a project"
+            checkAtEnd
             onOpenChange={setOpen}
             onChange={(path) => {
                 const choice = choices.find((candidate) => candidate.path === path);
