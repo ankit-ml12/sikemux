@@ -55,6 +55,7 @@ pub mod project_switcher;
 mod rail;
 pub mod search;
 mod see_through;
+mod send_to;
 pub mod settings;
 mod share;
 mod sim_frame;

@@ -4,10 +4,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, Entity, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled,
+    div, px, AnyElement, ClipboardItem, Context, Entity, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled,
 };
 use serde_json::{json, Value};
 
@@ -15,6 +16,7 @@ use super::{go, OpenAt};
 use crate::core;
 use crate::hosts::Place as Host;
 use crate::icons::Icon;
+use crate::send_to;
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
@@ -43,8 +45,12 @@ struct Problem {
     line: u32,
     character: u32,
     severity: u8,
+    /// The severity as the language server named it, or "problem" without one.
+    kind: &'static str,
     message: SharedString,
     code: Option<SharedString>,
+    /// What reported it, such as the server or its checker.
+    source: Option<SharedString>,
 }
 
 #[derive(Default)]
@@ -105,24 +111,30 @@ pub(super) fn diagnostics_changed(
 
 fn problem(diagnostic: &Value) -> Problem {
     let start = &diagnostic["range"]["start"];
-    let severity = match diagnostic["severity"].as_str() {
-        Some("error") => 0,
-        Some("warning") => 1,
-        Some("information") => 2,
-        _ => 3,
+    let (severity, kind) = match diagnostic["severity"].as_str() {
+        Some("error") => (0, "error"),
+        Some("warning") => (1, "warning"),
+        Some("information") => (2, "information"),
+        Some("hint") => (3, "hint"),
+        _ => (3, "problem"),
+    };
+    let text = |value: &Value| match value {
+        Value::String(text) => Some(text.clone().into()),
+        Value::Number(number) => Some(number.to_string().into()),
+        _ => None,
     };
     Problem {
         line: start["line"].as_u64().unwrap_or(0) as u32,
         character: start["character"].as_u64().unwrap_or(0) as u32,
         severity,
+        kind,
         message: diagnostic["message"]
             .as_str()
             .unwrap_or_default()
             .to_owned()
             .into(),
-        code: diagnostic["code"]
-            .as_str()
-            .map(|code| code.to_owned().into()),
+        code: text(&diagnostic["code"]),
+        source: text(&diagnostic["source"]),
     }
 }
 
@@ -339,7 +351,8 @@ pub(super) fn bar(
                         problem.line + 1,
                         problem.character + 1
                     );
-                    row(this, ("problem", index), at, &t)
+                    row(this, ("problem", index), at.clone(), &t)
+                        .context_menu(problem_menu(this, at, problem, project))
                         .child(
                             div()
                                 .size(px(7.))
@@ -432,6 +445,99 @@ pub(super) fn bar(
         .text_size(crate::theme::ui_text(12.))
         .child(header)
         .children(body)
+}
+
+/// What a right click on a problem offers: going to it, copying what it says, or handing it to
+/// an agent, as the Mac's does.
+fn problem_menu(
+    this: &Entity<Workbench>,
+    at: OpenAt,
+    problem: &Problem,
+    project: Option<&Path>,
+) -> impl Fn(
+    gpui_kit::component::menu::PopupMenu,
+    &mut gpui_kit::Window,
+    &mut Context<gpui_kit::component::menu::PopupMenu>,
+) -> gpui_kit::component::menu::PopupMenu
+       + 'static {
+    let this = this.clone();
+    let message = problem.message.clone();
+    let delivery = delivery(problem, &at, project);
+    move |popup, window, cx| {
+        let (go_to, at) = (this.clone(), at.clone());
+        let message = message.clone();
+        let (sender, delivery) = (this.clone(), delivery.clone());
+        let choices = send_to::choices(this.read(cx));
+        popup
+            .item(
+                PopupMenuItem::new("Go to Problem")
+                    .icon(Icon::Editor)
+                    .on_click(move |_, _, cx| {
+                        let at = at.clone();
+                        go_to.update(cx, |bench, cx| go(bench, at, cx))
+                    }),
+            )
+            .item(
+                PopupMenuItem::new("Copy Message")
+                    .icon(Icon::Copy)
+                    .on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(message.to_string()))
+                    }),
+            )
+            .separator()
+            .submenu_with_icon(
+                Some(Icon::Message.into()),
+                "Send to Agent…",
+                window,
+                cx,
+                move |mut menu, _, _| {
+                    for choice in &choices {
+                        let (sender, delivery) = (sender.clone(), delivery.clone());
+                        let to = choice.to.clone();
+                        menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
+                            move |_, window, cx| {
+                                let (to, text) = (to.clone(), delivery.clone());
+                                sender.update(cx, |bench, cx| {
+                                    send_to::send(bench, to, async move { Some(text) }, window, cx)
+                                })
+                            },
+                        ));
+                    }
+                    menu
+                },
+            )
+    }
+}
+
+/// A problem as an agent is told it: what it is, where, and what reported it, then its message.
+fn delivery(problem: &Problem, at: &OpenAt, project: Option<&Path>) -> String {
+    let file = project
+        .and_then(|project| at.path.strip_prefix(project).ok())
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .or_else(|| at.path.file_name().map(Path::new))
+        .unwrap_or(&at.path);
+    let mut kind = problem.kind.to_owned();
+    if let Some(first) = kind.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    let source: Vec<&str> = [problem.source.as_deref(), problem.code.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+    let from = match source.is_empty() {
+        true => String::new(),
+        false => format!(" from {}", source.join(" ")),
+    };
+    let message = match problem.message.contains('\n') {
+        true => send_to::code_fence(&problem.message),
+        false => problem.message.to_string(),
+    };
+    format!(
+        "{kind} at {}:{}:{}{from}:\n\n{message}\n",
+        file.display(),
+        problem.line + 1,
+        problem.character + 1,
+    )
 }
 
 /// A row that takes the editor to `at` when clicked.

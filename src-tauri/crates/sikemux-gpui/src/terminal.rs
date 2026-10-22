@@ -35,6 +35,7 @@ use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Menu, MenuItem};
+use crate::send_to::{self, Choice, Recipient};
 use crate::workbench::Workbench;
 
 const PAGE: u64 = 256;
@@ -681,7 +682,7 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
                 bench: this.clone(),
                 id,
                 selection: terminal.selection,
-                choices: terminal.menu_agents.then(|| choices(bench)),
+                choices: terminal.menu_agents.then(|| send_to::choices(bench)),
             };
             pane = pane.child(deferred(anchored().position(position).child(menu)).with_priority(1));
         }
@@ -1667,44 +1668,6 @@ struct TerminalMenu {
     choices: Option<Vec<Choice>>,
 }
 
-/// An agent a selection can go to: one open in the project, or a new chat.
-#[derive(Clone)]
-struct Choice {
-    label: SharedString,
-    provider: String,
-    to: Recipient,
-}
-
-#[derive(Clone)]
-enum Recipient {
-    Agent(String),
-    NewChat { launcher: String, project: String },
-}
-
-/// The project's agents, then a new chat with each agent there is.
-fn choices(bench: &Workbench) -> Vec<Choice> {
-    let Some(project) = bench.project() else {
-        return Vec::new();
-    };
-    let open = bench
-        .agents_of(&project.id)
-        .into_iter()
-        .map(|agent| Choice {
-            label: agent.title.into(),
-            provider: agent.provider,
-            to: Recipient::Agent(agent.id),
-        });
-    let fresh = bench.launchers().iter().map(|launcher| Choice {
-        label: format!("New {} chat", launcher.label).into(),
-        provider: launcher.provider.clone(),
-        to: Recipient::NewChat {
-            launcher: launcher.id.clone(),
-            project: project.id.clone(),
-        },
-    });
-    open.chain(fresh).collect()
-}
-
 /// Puts the selected text in an agent's composer, under a line saying which
 /// terminal it came from, and brings the agent forward.
 fn send_selection(
@@ -1745,38 +1708,13 @@ fn send_selection(
             reply,
         },
     ));
-    let agent = match to {
-        Recipient::Agent(agent) => Task::ready(Some(agent)),
-        Recipient::NewChat { launcher, project } => {
-            let (started, agent) = oneshot::channel();
-            bench
-                .target()
-                .start_chat(launcher, project, None, Some(started));
-            cx.background_spawn(async move { agent.await.ok() })
-        }
+    let text = async move {
+        let text = text.await.ok()?;
+        Some(format!("{heading}\n\n{}\n", send_to::code_fence(&text)))
     };
-    cx.spawn_in(window, async move |bench, cx| {
-        let (Ok(text), Some(agent)) = (text.await, agent.await) else {
-            return;
-        };
-        let delivery = format!("{heading}\n\n{}\n", code_fence(&text));
-        let _ = bench.update_in(cx, |bench, window, cx| {
-            bench.deliver(&agent, delivery, window, cx)
-        });
-    })
-    .detach();
+    send_to::send(bench, to, text, window, cx);
 }
 
-/// `text` in a fenced code block whose fence no run of backticks in it can close.
-fn code_fence(text: &str) -> String {
-    let longest = text
-        .split(|character| character != '`')
-        .map(str::len)
-        .max()
-        .unwrap_or(0);
-    let fence = "`".repeat((longest + 1).max(3));
-    format!("{fence}\n{}\n{fence}", text.trim_end_matches('\n'))
-}
 
 impl RenderOnce for TerminalMenu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
