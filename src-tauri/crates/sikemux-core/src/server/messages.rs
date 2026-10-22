@@ -1678,16 +1678,7 @@ fn ready_terminal(core: &Core, agent_id: &str) -> Result<Arc<Session>, &'static 
 /// it does not; Enter is held back from a permission prompt that came up
 /// meanwhile.
 fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Queued>) {
-    let plain: String = joined(&texts)
-        .chars()
-        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
-        .collect();
-    let pastes = terminal.screen.locked().terminal.bracketed_paste();
-    let typed = if pastes {
-        format!("\x1b[200~{plain}\x1b[201~")
-    } else {
-        plain.replace('\n', " ")
-    };
+    let typed = session::pasted(&terminal, &joined(&texts));
     core.harness.mailbox.change(|state| {
         state.delivering.insert(agent_id.to_owned());
         state.pasted.insert(
@@ -1699,7 +1690,7 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Qu
         );
     });
     agent::note_input(core, &terminal, b"\r");
-    session::queue_input(&terminal, typed.into_bytes(), Box::new(drop));
+    session::queue_input(&terminal, typed, session::Typist::Other, Box::new(drop));
     let (core, agent_id) = (core.clone(), agent_id.to_owned());
     tokio::spawn(async move {
         tokio::time::sleep(ENTER_AFTER_PASTE).await;
@@ -1707,7 +1698,12 @@ fn paste(core: &Arc<Core>, agent_id: &str, terminal: Arc<Session>, texts: Vec<Qu
             unpasted(&core, &agent_id);
             return;
         }
-        session::queue_input(&terminal, b"\r".to_vec(), Box::new(drop));
+        session::queue_input(
+            &terminal,
+            b"\r".to_vec(),
+            session::Typist::Other,
+            Box::new(drop),
+        );
         if let Some(pasted) = core
             .harness
             .mailbox

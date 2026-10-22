@@ -421,6 +421,15 @@ async fn read_requests(
     }
 }
 
+/// Who `client` types as: the person's own app, or anyone else.
+pub(crate) fn typist(client: &ClientConn) -> session::Typist {
+    if client.peer == Peer::App {
+        session::Typist::App
+    } else {
+        session::Typist::Other
+    }
+}
+
 /// Writes to a session's program in the order writes arrived, and tells
 /// its agent's status a line was submitted.
 fn write_to_program(
@@ -430,8 +439,8 @@ fn write_to_program(
     target: &session::Session,
     bytes: Vec<u8>,
 ) {
-    if client.peer != Peer::App && super::hosts::install::guards(core, target.id) {
-        client.respond(request_id, Err(super::hosts::install::GUARDED.into()));
+    if !target.may_type(typist(client)) {
+        client.respond(request_id, Err(session::SETUP_LOCKED.into()));
         return;
     }
     agent::note_input(core, target, &bytes);
@@ -451,6 +460,7 @@ fn write_to_program(
     session::queue_input(
         target,
         bytes,
+        typist(client),
         Box::new(move |result| {
             reply_to.respond(
                 request_id,

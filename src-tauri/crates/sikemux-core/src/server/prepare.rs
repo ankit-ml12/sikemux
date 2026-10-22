@@ -92,6 +92,8 @@ pub(crate) struct PreparedLaunch {
     pub ssh: bool,
     pub initial_prompt_submitted: bool,
     pub continues: Option<Continuation>,
+    /// It sets a host up, so only the person's own app types into it.
+    pub setup: bool,
 }
 
 /// The command the app's `pty_spawn` builds, minus the parts only the app can
@@ -216,6 +218,9 @@ pub(crate) fn prepare_terminal(
             .as_ref()
             .is_some_and(|context| context.initial_prompt_submitted),
         continues,
+        setup: context
+            .as_ref()
+            .is_some_and(|context| context.session_kind == "setup"),
     })
 }
 
@@ -299,5 +304,6 @@ pub(crate) fn prepare_task(
         ssh: false,
         initial_prompt_submitted: false,
         continues: None,
+        setup: false,
     })
 }

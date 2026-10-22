@@ -369,11 +369,12 @@ calls! { core, client, params;
     "typeWhenReady": Full => {
         let params: TypeWhenReadyParams = parse(params)?;
         let session = core.session(params.id).ok_or("that terminal is not on this host")?;
-        if client.peer != Peer::App && super::hosts::install::guards(&core, session.id) {
-            return Err(super::hosts::install::GUARDED.into());
+        let typist = super::connection::typist(client);
+        if !session.may_type(typist) {
+            return Err(super::session::SETUP_LOCKED.into());
         }
         if let Some(draft) = super::session::typable(&params.draft) {
-            super::session::type_when_ready(&session, draft);
+            super::session::type_when_ready(&session, draft, typist);
         }
         answer(json!({}))
     },

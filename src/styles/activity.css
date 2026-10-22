@@ -173,7 +173,7 @@
 .activity-legend .activity-cell {
     width: 10px;
 }
-.activity-legend span:first-child {
+.activity-legend span:first-of-type {
     margin-right: var(--space-1);
 }
 .activity-legend span:last-child {

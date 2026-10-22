@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
     activityApi,
     type ActivityModel,
@@ -56,6 +56,19 @@ function plural(count: number, word: string): string {
     return `${WHOLE.format(count)} ${word}${count === 1 ? "" : "s"}`;
 }
 
+/** Tokens the agents read and wrote, leaving out what they read again from cache. */
+export function burntTokens(totals: ActivityTotals): number {
+    return totals.input + totals.cacheWrite + totals.output;
+}
+
+export function tokensText(count: number): string {
+    return COMPACT.format(count);
+}
+
+export function dayText(day: number): string {
+    return LONG_DATE.format(dayDate(day));
+}
+
 function metricText(metric: Metric, value: number): string {
     if (metric === "agentMs") return value > 0 ? `${duration(value)} of agent time` : "No agent time";
     if (metric === "tokens") return `${value > 0 ? COMPACT.format(value) : "No"} tokens`;
@@ -86,7 +99,7 @@ export function useActivitySummary(project?: string): { summary: ActivitySummary
     return { summary, failed };
 }
 
-export function isEmptyActivity(totals?: ActivityTotals): boolean {
+function isEmptyActivity(totals?: ActivityTotals): boolean {
     return !!totals && totals.sessions === 0 && totals.turns === 0 && totals.commits === 0;
 }
 
@@ -136,7 +149,7 @@ export function Overview({ totals }: { totals?: ActivityTotals }) {
             </div>
         );
     }
-    const tokens = totals.input + totals.cacheWrite + totals.output;
+    const tokens = burntTokens(totals);
     const started = totals.sessions - totals.resumed;
     return (
         <div className="activity-stats">
@@ -182,15 +195,25 @@ export function Calendar({
     summary,
     metric: shownMetric,
     onMetric,
+    onHover,
+    footer,
 }: {
     summary: ActivitySummary | null;
     metric?: Metric;
     onMetric?: (metric: Metric) => void;
+    /** Takes over the readout and measure choice above the calendar, to say what the hovered day holds elsewhere. */
+    onHover?: (day: number | null) => void;
+    /** Sits at the start of the legend's row. */
+    footer?: ReactNode;
 }) {
     const [ownMetric, setOwnMetric] = useState<Metric>(METRICS[0].id);
     const metric = shownMetric ?? ownMetric;
     const setMetric = onMetric ?? setOwnMetric;
-    const [hovered, setHovered] = useState<number | null>(null);
+    const [hovered, setHoveredDay] = useState<number | null>(null);
+    const setHovered = (day: number | null) => {
+        setHoveredDay(day);
+        onHover?.(day);
+    };
     const today = localDay();
     const columns = useMemo(() => calendarColumns(today), [today]);
     const byDay = useMemo(() => new Map((summary?.days ?? []).map((day) => [day.day, day])), [summary]);
@@ -207,18 +230,20 @@ export function Calendar({
 
     return (
         <div className="activity-calendar">
-            <div className="activity-calendar-bar">
-                <span className="activity-readout" aria-live="polite">
-                    {readout}
-                </span>
-                <div className="activity-metrics" role="group" aria-label="Calendar shows">
-                    {METRICS.map((item) => (
-                        <button key={item.id} type="button" aria-pressed={metric === item.id} onClick={() => setMetric(item.id)}>
-                            {item.label}
-                        </button>
-                    ))}
+            {!onHover && (
+                <div className="activity-calendar-bar">
+                    <span className="activity-readout" aria-live="polite">
+                        {readout}
+                    </span>
+                    <div className="activity-metrics" role="group" aria-label="Calendar shows">
+                        {METRICS.map((item) => (
+                            <button key={item.id} type="button" aria-pressed={metric === item.id} onClick={() => setMetric(item.id)}>
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
             <div className="activity-heatmap" onMouseLeave={() => setHovered(null)}>
                 <div className="activity-weekdays" aria-hidden="true">
                     {WEEKDAY_LABELS.map((label, index) => (
@@ -252,12 +277,13 @@ export function Calendar({
                     </div>
                 </div>
             </div>
-            <div className="activity-legend" aria-hidden="true">
-                <span>Less</span>
+            <div className="activity-legend">
+                {footer}
+                <span aria-hidden="true">Less</span>
                 {[0, 1, 2, 3, 4].map((level) => (
-                    <span key={level} className="activity-cell" data-level={level} />
+                    <span key={level} className="activity-cell" data-level={level} aria-hidden="true" />
                 ))}
-                <span>More</span>
+                <span aria-hidden="true">More</span>
             </div>
         </div>
     );

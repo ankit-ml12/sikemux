@@ -1,5 +1,5 @@
 import { useMemo, useState, type MouseEvent, type ReactNode, type Ref } from "react";
-import { agentHandle } from "../agents/AgentLabel";
+import { agentNaming } from "../agents/AgentLabel";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
@@ -172,6 +172,8 @@ export function OpenAgentRow({
 }) {
     const glyph = <AgentFace agent={agent} size={18} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
     const card = useRowCard();
+    const profiles = useStore((s) => s.providerProfiles);
+    const naming = agentNaming(agent, profiles);
     const [reviewAt, setReviewAt] = useState<DOMRect | null>(null);
     return (
         <div className={teamWrapClass(link, fold?.open)} {...wrap} onMouseEnter={card.enter} onMouseLeave={card.leave} onMouseDown={card.close}>
@@ -201,10 +203,10 @@ export function OpenAgentRow({
                     onContextMenu={onContextMenu}>
                     {glyph}
                     <span className="agent-row-text">
-                        <span className="agent-title">{agent.title}</span>
+                        <span className="agent-title">{naming.title}</span>
                         {project && <AgentRowProject name={project.name} />}
                     </span>
-                    {agent.name && <span className="agent-row-name">{agentHandle(agent.name)}</span>}
+                    {naming.handle && <span className="agent-row-name">{naming.handle}</span>}
                     {fold && !fold.open && <span className="team-count">+{fold.count}</span>}
                     <BackgroundCounts display={display} />
                 </button>

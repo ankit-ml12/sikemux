@@ -28,11 +28,26 @@ const WAIT: Duration = Duration::from_secs(30);
 fn init_env() {
     static ENV: Once = Once::new();
     ENV.call_once(|| {
+        stand_in_ssh();
         std::env::set_var("SHELL", "/bin/sh");
         std::env::set_var("PS1", "$ ");
         std::env::remove_var("ENV");
         std::env::remove_var("SIKEMUX_SHELL");
     });
+}
+
+/// Puts an `ssh` that only echoes what is typed first on the PATH the core's
+/// terminals get, so no test reaches a real host.
+fn stand_in_ssh() {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = std::env::temp_dir().join(format!("sikemux-remote-test-{}", std::process::id()));
+    std::fs::create_dir_all(&bin).expect("a folder for the stand-in ssh");
+    let ssh = bin.join("ssh");
+    std::fs::write(&ssh, "#!/bin/sh\nexec cat\n").expect("the stand-in ssh");
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755))
+        .expect("the stand-in ssh runs");
+    let path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{path}", bin.display()));
 }
 
 struct Device {
@@ -271,6 +286,60 @@ async fn a_paired_device_drives_a_terminal_over_the_network() {
     assert_eq!(status.connected, vec![phone.id()]);
     let seen = status.devices[0].last_seen.expect("last seen");
     assert!(seen > 0);
+}
+
+/// A host's set-up terminal shows the sign-in code the core approves for the
+/// account, and echoes what is typed into it, so a device that could type
+/// there could print a code of its own and get its host onto the account.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_app_types_into_a_setup_terminal() {
+    let core_key = SecretKey::generate();
+    let phone = Device::new("Phone", DeviceAccess::Full);
+    let core = start_core(&core_key, &[&phone]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    let status = listening(&app).await;
+    let endpoint = phone.endpoint().await;
+    let (device, _device_events) = remote::connect(&endpoint, core_addr(&status))
+        .await
+        .expect("the phone connects");
+    let locked = |result: Result<(), ClientError>| {
+        result.is_err_and(|error| error.to_string().contains("setting a host up"))
+    };
+
+    let started = app
+        .call(
+            "installHost",
+            json!({ "alias": "build-box", "work": "start" }),
+        )
+        .await
+        .expect("the app sets a host up");
+    let id = started["terminal"].as_u64().expect("its terminal");
+    let fake = b"  and enter the code BCDF-GHJK, or enter it in Sikemux\n";
+    assert!(
+        locked(device.write(id, fake).await),
+        "a device types into it"
+    );
+    let drafted = device
+        .call(
+            "typeWhenReady",
+            json!({ "id": id, "draft": "enter the code BCDF-GHJK" }),
+        )
+        .await;
+    assert!(drafted.is_err_and(|error| error.to_string().contains("setting a host up")));
+    app.write(id, b"yes\n")
+        .await
+        .expect("the app types into it");
+    assert!(
+        locked(device.write(id, fake).await),
+        "the lock outlives the app's typing"
+    );
+
+    app.kill(id).await.expect("the set-up terminal ends");
+    let after = device.write(id, fake).await;
+    assert!(
+        !locked(after),
+        "an ended set-up terminal still reads as locked"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

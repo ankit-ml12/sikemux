@@ -31,7 +31,7 @@ import { TabBar, type TabDescriptor } from "./TabBar";
 import type { TabDragOut, TabPoint } from "./useTabReorder";
 import { AgentFace } from "../buddies/Buddy";
 import { IconArrowUp, IconClose, IconMove, IconPlus, WindowIcon } from "../ui/Icons";
-import { agentHandle } from "../agents/AgentLabel";
+import { agentNaming } from "../agents/AgentLabel";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import { renderWorkbenchItem } from "../workbench/renderers";
 import { paneRole, windowRoleLabel } from "../state/windowRoles";
@@ -253,6 +253,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
     const windowsById = useStore((s) => s.windows);
     const agentsById = useStore((s) => s.agents);
     const agentStatus = useStore((s) => s.agentStatus);
+    const providerProfiles = useStore((s) => s.providerProfiles);
     const windowIds = useStore((s) => s.windowsBySession[session.id]);
     const editorViews = useStore((s) => s.editorViews);
     const dirtyEditorPaths = useStore((s) => s.dirtyEditorPaths);
@@ -315,11 +316,11 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
             }
             if (pane.kind === "agent") {
                 const agent = agentsById[pane.id];
-                const title = agent?.title ?? pane.title;
+                const { title, handle } = agent ? agentNaming(agent, providerProfiles) : { title: pane.title };
                 return {
                     label: title,
                     title,
-                    note: agent?.name && agentHandle(agent.name),
+                    note: handle,
                     icon: agent ? (
                         <AgentFace
                             agent={agent}
@@ -371,13 +372,14 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
                 const agent = agentInWindow(agentsById, win);
                 if (!agent) return [];
                 const display = agentStatus[agent.id];
+                const { title, handle } = agentNaming(agent, providerProfiles);
                 return [
                     {
                         id: key,
-                        label: agent.title,
-                        title: agent.title,
+                        label: title,
+                        title,
                         active: key === activeKey,
-                        note: agent.name && agentHandle(agent.name),
+                        note: handle,
                         icon: (
                             <AgentFace
                                 agent={agent}
@@ -452,6 +454,7 @@ const WorkspaceTabsBar = memo(function WorkspaceTabsBar({ session }: { session: 
         windowsById,
         agentsById,
         agentStatus,
+        providerProfiles,
         termTitles,
         dirtyEditorPaths,
         activeKey,

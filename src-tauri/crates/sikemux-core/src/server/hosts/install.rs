@@ -23,9 +23,6 @@ const INSTALL_WAIT: Duration = Duration::from_secs(15 * 60);
 const CODE_LETTERS: &str = "BCDFGHJKLMNPQRSTVWXZ";
 /// What `sikemux login` prints in front of the code.
 const CODE_LINE: &str = "enter the code";
-/// Why something other than the person's own app window cannot type into a set-up terminal.
-pub(crate) const GUARDED: &str =
-    "only the Sikemux window may type here while this terminal waits for a sign-in code";
 /// How long, and how often, to look again for a code printed after the words in front of it.
 const CODE_SETTLE: Duration = Duration::from_millis(200);
 const CODE_SETTLE_TRIES: usize = 10;
@@ -48,9 +45,6 @@ pub(crate) struct Setup {
     work: Work,
     /// Which set-up of the host this is, so a late end never settles a newer one.
     run: u64,
-    /// The terminal it runs in, while it waits for the sign-in code. Only the person's own
-    /// app window may type there until then, as anything shown on it counts as the code.
-    guarded: Option<SessionId>,
     ended: watch::Sender<Option<Result<(), String>>>,
 }
 
@@ -122,7 +116,6 @@ pub(crate) async fn install_host(core: &Arc<Core>, params: InstallParams) -> Cor
             Setup {
                 work: params.work,
                 run,
-                guarded: None,
                 ended: watch::channel(None).0,
             },
         );
@@ -138,9 +131,6 @@ pub(crate) async fn install_host(core: &Arc<Core>, params: InstallParams) -> Cor
     let startup = format!("ssh -t -- {alias} {}", single_quoted(&remote));
     let started = async {
         let id = spare::setup_shell(core, &alias, startup).await?;
-        if let Some(setup) = core.hosts.setups.locked().get_mut(&alias) {
-            setup.guarded = needs_code.then_some(id);
-        }
         let tab = super::super::layout::show_ssh_terminal(core, alias.clone(), id)?;
         CoreResult::Ok((id, tab))
     }
@@ -199,16 +189,6 @@ pub(crate) fn rows(core: &Core) -> Vec<(String, SetupRow)> {
         .collect()
 }
 
-/// Whether only the person's own app window may type into `session` now: it is a set-up
-/// terminal still waiting for its sign-in code.
-pub(crate) fn guards(core: &Core, session: SessionId) -> bool {
-    core.hosts
-        .setups
-        .locked()
-        .values()
-        .any(|setup| setup.guarded == Some(session))
-}
-
 /// Ends set-up `run` of `alias`, unless a newer one has begun.
 fn settle(core: &Core, alias: &str, run: u64, ended: Result<(), String>) {
     if let Some(setup) = core
@@ -218,14 +198,13 @@ fn settle(core: &Core, alias: &str, run: u64, ended: Result<(), String>) {
         .get_mut(alias)
         .filter(|setup| setup.run == run)
     {
-        setup.guarded = None;
         setup.ended.send_replace(Some(ended));
     }
     core.changes.changed(Topic::Hosts, None, None);
 }
 
 async fn finish(core: Arc<Core>, id: SessionId, alias: String, run: u64, needs_code: bool) {
-    let ended = approve_shown_code(&core, id, &alias, run, needs_code).await;
+    let ended = approve_shown_code(&core, id, &alias, needs_code).await;
     settle(&core, &alias, run, ended);
     super::probe::ask(&core, &alias, true);
 }
@@ -234,7 +213,6 @@ async fn approve_shown_code(
     core: &Arc<Core>,
     id: SessionId,
     alias: &str,
-    run: u64,
     needs_code: bool,
 ) -> Result<(), String> {
     let session = core.session(id).ok_or("the set-up terminal ended")?;
@@ -257,15 +235,7 @@ async fn approve_shown_code(
             .unwrap_or_default();
         code = shown.as_deref().and_then(sign_in_code);
     }
-    if let Some(setup) = core
-        .hosts
-        .setups
-        .locked()
-        .get_mut(alias)
-        .filter(|setup| setup.run == run)
-    {
-        setup.guarded = None;
-    }
+    session.end_setup();
     let Some(code) = code else {
         return if needs_code {
             Err("it ended without a sign-in code; a host already signed in to your account shows under Hosts as it is".into())

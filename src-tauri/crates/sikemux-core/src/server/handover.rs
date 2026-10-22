@@ -114,6 +114,9 @@ struct SessionRecord {
     task_output_end: Option<u64>,
     agent: Option<AgentRecord>,
     shell_files: Option<PathBuf>,
+    /// The terminal was setting a host up, which the next core keeps locked.
+    #[serde(default)]
+    setup: bool,
 }
 
 fn blob_path(directory: &Path, id: SessionId, kind: &str) -> PathBuf {
@@ -180,6 +183,7 @@ fn capture(session: &Session, directory: &Path) -> CoreResult<SessionRecord> {
         task_output_end,
         agent: session.agent.as_ref().map(AgentActivity::record),
         shell_files: session.shell_files().map(Path::to_path_buf),
+        setup: session.in_setup(),
     })
 }
 
@@ -707,6 +711,7 @@ fn adopt_session(
             shell_integration: record
                 .shell_files
                 .map(|files| ShellLaunchIntegration::adopt(Some(files))),
+            setup: record.setup,
         },
         io,
         Box::new(child),
@@ -748,6 +753,7 @@ fn adopt_bare(
             task_log: None,
             agent: None,
             shell_integration: None,
+            setup: false,
         },
         io,
         Box::new(AdoptedChild::new(pid, None)),

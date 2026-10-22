@@ -107,10 +107,26 @@ pub(crate) struct Session {
     title_pending: AtomicBool,
     /// Callers waiting for a line containing some text to show on the screen.
     line_waiters: Mutex<Vec<LineWaiter>>,
-    /// A draft to type once the shell shows its prompt.
-    typed_at_prompt: Mutex<Option<String>>,
+    /// A draft to type once the shell shows its prompt, and who typed it.
+    typed_at_prompt: Mutex<Option<(String, Typist)>>,
+    /// Setting a host up over SSH: its output carries the sign-in code the core
+    /// approves for the account, so only the person's own app types into it.
+    setup: AtomicBool,
     _capacity_permit: CapacityPermit,
 }
+
+/// Who types into a terminal: the person's own app on this host, the terminal
+/// answering its program's own queries, or anyone else, the core's own typing
+/// included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Typist {
+    App,
+    Terminal,
+    Other,
+}
+
+pub(crate) const SETUP_LOCKED: &str =
+    "this terminal is setting a host up, and only the Sikemux window types into it";
 
 /// Programs that animate their title, such as a spinner, send at most one
 /// change per this long.
@@ -133,6 +149,7 @@ pub(crate) struct SessionParts {
     pub task_log: Option<OutputLog>,
     pub agent: Option<AgentActivity>,
     pub shell_integration: Option<ShellLaunchIntegration>,
+    pub setup: bool,
 }
 
 impl Session {
@@ -177,9 +194,23 @@ impl Session {
             title_pending: AtomicBool::new(false),
             line_waiters: Mutex::new(Vec::new()),
             typed_at_prompt: Mutex::new(None),
+            setup: AtomicBool::new(parts.setup),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
+    }
+
+    pub(crate) fn may_type(&self, typist: Typist) -> bool {
+        typist != Typist::Other || !self.in_setup()
+    }
+
+    pub(crate) fn in_setup(&self) -> bool {
+        self.setup.load(Ordering::Acquire)
+    }
+
+    /// The core has read the sign-in code, or the set-up ended without one.
+    pub(crate) fn end_setup(&self) {
+        self.setup.store(false, Ordering::Release);
     }
 
     pub(crate) fn owner(&self) -> &Owner {
@@ -394,6 +425,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         ssh,
         initial_prompt_submitted,
         continues,
+        setup,
     } = launch;
     let carried = continues
         .as_ref()
@@ -474,6 +506,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             task_log: (kind == SessionKind::Task).then(OutputLog::default),
             agent,
             shell_integration,
+            setup,
         },
         io,
         child.into_inner(),
@@ -567,11 +600,36 @@ async fn write_input(session: Weak<Session>, mut jobs: mpsc::UnboundedReceiver<I
     }
 }
 
+/// `text` as typed into `session` to arrive as one paste: between paste
+/// markers when its program has turned bracketed paste on, else on one line,
+/// since a bare newline would send it.
+pub(crate) fn pasted(session: &Session, text: &str) -> Vec<u8> {
+    let plain: String = text
+        .chars()
+        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
+        .collect();
+    let screen = session.screen.locked();
+    if screen.terminal.bracketed_paste() {
+        screen
+            .terminal
+            .encode(&TerminalInput::Paste { text: plain })
+    } else {
+        plain.replace('\n', " ").into_bytes()
+    }
+}
+
 pub(crate) fn queue_input(
     session: &Session,
     bytes: Vec<u8>,
+    typist: Typist,
     reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
 ) {
+    if !session.may_type(typist) {
+        return reply(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            SETUP_LOCKED,
+        )));
+    }
     if let Err(mpsc::error::SendError(job)) = session.input.send(InputJob { bytes, reply }) {
         (job.reply)(Err(std::io::Error::other("session closed")));
     }
@@ -726,6 +784,7 @@ pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
 /// screen lock, so an attach knows whether its snapshot came after it.
 pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitStatus>) {
     let exited_at = stamp_exited(session);
+    session.end_setup();
     let (code, signal) = match status {
         Some(status) => {
             let exit = TaskProcessExit::from_status(Some(status));
@@ -875,7 +934,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
 /// anything already on its way in.
 fn reply_to_program(session: &Session, replies: Vec<u8>) {
     if !replies.is_empty() {
-        queue_input(session, replies, Box::new(|_| ()));
+        queue_input(session, replies, Typist::Terminal, Box::new(|_| ()));
     }
 }
 
@@ -946,26 +1005,16 @@ fn at_prompt(screen: &Screen) -> bool {
 
 fn type_waiting(session: &Session) {
     let draft = session.typed_at_prompt.locked().take();
-    if let Some(draft) = draft {
-        type_draft(session, &draft);
+    if let Some((draft, typist)) = draft {
+        type_draft(session, &draft, typist);
     }
 }
 
 /// Types `draft` to sit at the prompt unsent: pasted when the program has
 /// turned bracketed paste on, else on one line, since a bare newline would
 /// send it.
-fn type_draft(session: &Session, draft: &str) {
-    let bytes = {
-        let screen = session.screen.locked();
-        if screen.terminal.bracketed_paste() {
-            screen.terminal.encode(&TerminalInput::Paste {
-                text: draft.to_owned(),
-            })
-        } else {
-            draft.replace(['\r', '\n'], " ").into_bytes()
-        }
-    };
-    queue_input(session, bytes, Box::new(|_| {}));
+fn type_draft(session: &Session, draft: &str, typist: Typist) {
+    queue_input(session, pasted(session, draft), typist, Box::new(|_| {}));
 }
 
 /// `draft` as it can be typed into a terminal; none when nothing is left.
@@ -978,13 +1027,13 @@ pub(crate) fn typable(draft: &str) -> Option<String> {
 /// Types `draft` into the session once it is ready for it: at its shell's
 /// prompt, or a moment after it starts when the core cannot see a prompt.
 /// How it is typed is decided then, by what the program has turned on.
-pub(crate) fn type_when_ready(session: &Arc<Session>, draft: String) {
+pub(crate) fn type_when_ready(session: &Arc<Session>, draft: String, typist: Typist) {
     let screen = session.screen.locked();
     if session.shell_protocol && at_prompt(&screen) {
         drop(screen);
-        return type_draft(session, &draft);
+        return type_draft(session, &draft, typist);
     }
-    *session.typed_at_prompt.locked() = Some(draft);
+    *session.typed_at_prompt.locked() = Some((draft, typist));
     drop(screen);
     let wait = if session.shell_protocol {
         PROMPT_WAIT
@@ -1014,7 +1063,12 @@ pub(crate) fn reconnect_ssh(session: &Session) {
     };
     if session.shell_at_prompt() {
         let command = format!("{}\r", super::ssh::startup(host));
-        queue_input(session, command.into_bytes(), Box::new(|_| {}));
+        queue_input(
+            session,
+            command.into_bytes(),
+            Typist::Other,
+            Box::new(|_| {}),
+        );
     }
 }
 

@@ -5,7 +5,7 @@
     z-index: 0;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     width: calc(min(100%, 820px) - var(--chat-step) * 2);
     min-width: 0;
     margin: 0 auto;
@@ -20,8 +20,8 @@
     border-radius: 0;
 }
 
-.chat-project {
-    position: relative;
+.chat-project-strip .dd {
+    flex: 0 1 auto;
     min-width: 0;
 }
 
@@ -32,7 +32,7 @@
     gap: 6px;
     min-width: 0;
     max-width: 180px;
-    padding: 0 6px 0 8px;
+    padding: 0 8px;
     color: var(--ink-dim);
     font-size: var(--text-xs);
 }
@@ -54,19 +54,28 @@
     color: var(--ink-faint);
 }
 
+.chat-project-divider {
+    flex: none;
+    width: 1px;
+    height: 14px;
+    margin: 0 6px;
+    background: var(--border);
+}
+
 .chat-project-spacer {
     flex: 1;
 }
 
-.chat-project-trigger {
+.chat-project-strip .chat-project-trigger {
     display: flex;
     align-items: center;
     gap: 7px;
     min-width: 0;
     max-width: 240px;
     height: 26px;
-    padding: 0 9px 0 8px;
+    padding: 0 8px;
     border: 1px solid transparent;
+    background: none;
     color: var(--ink);
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
@@ -87,31 +96,13 @@
     flex: none;
 }
 
-.chat-project-trigger > svg:last-child {
-    flex: none;
-    transform: rotate(90deg);
-    color: var(--ink-faint);
-}
-
-.chat-project-trigger:not(.static):hover {
+.chat-project-strip .chat-project-trigger:not(.static):hover {
+    border-color: transparent;
     background: var(--surface-hover);
 }
 
-.chat-project-trigger[aria-expanded="true"] {
+.chat-project-strip .chat-project-trigger[aria-expanded="true"] {
     background: var(--surface-chosen);
-}
-
-/* Cut from the start, so the folder the path ends in stays on screen. */
-.project-switcher small {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--ink-faint);
-    font-family: var(--mono);
-    font-size: calc(10.5px * var(--chat-text-em, 1));
-    text-align: left;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
 }
 
 .chat-project-branch {
@@ -136,7 +127,7 @@
 .chat-project-strip .worktree-toggle {
     --control-h: 22px;
     flex: none;
-    padding: 0 9px;
+    padding: 0 8px;
     border-color: transparent;
     background: none;
     font-family: var(--mono);
@@ -154,66 +145,8 @@
     background: var(--surface-hover);
 }
 
-.project-switcher {
-    bottom: calc(100% + 8px);
-    left: 0;
-    right: auto;
-    width: 340px;
-    max-width: min(360px, calc(100vw - 64px));
-}
-
-.project-switcher-group {
-    padding: 8px 10px 4px;
-    color: var(--ink-faint);
-    font-size: var(--text-3xs);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-}
-
-.project-switcher .chat-picker-options > div > button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 7px 10px;
-    border: 1px solid transparent;
-    color: var(--ink);
-    text-align: left;
-}
-
-.project-switcher .chat-picker-options > div > button > svg {
-    flex: none;
-    color: var(--ink-faint);
-}
-
-.project-switcher .chat-picker-options > div > button.open > svg {
-    color: var(--live);
-}
-
-.project-switcher strong {
-    flex: none;
-    max-width: 60%;
-    overflow: hidden;
-    font-size: var(--text-xs);
-    font-weight: var(--weight-medium);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.project-switcher small {
-    flex: 1;
-}
-
-.project-switcher .chat-picker-options > div > button.highlighted {
-    background: var(--surface-hover);
-}
-
-.project-switcher .chat-picker-options > div > button[aria-selected="true"] {
-    background: var(--surface-chosen);
-}
-
 .chat-project-strip .chat-picker-trigger {
     height: 26px;
-    padding: 0 9px 0 8px;
+    padding: 0 8px;
     font-size: var(--text-xs);
 }

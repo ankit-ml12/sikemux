@@ -5,7 +5,8 @@ import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
 import { IconChevron, IconDownload, IconLogIn, IconPower } from "../ui/Icons";
-import { hostMark, projectMark } from "../hosts/placeMarks";
+import { hostMark } from "../hosts/placeMarks";
+import { ProjectPicker } from "../projects/ProjectPicker";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 
 const keyOf = (choice: HostChoice) => (choice.kind === "core" ? `core:${choice.host ?? ""}` : `ssh:${choice.alias}`);
@@ -49,16 +50,11 @@ export function TopBarPlace() {
     const sshAliases = useStore(
         useShallow((s) => [...new Set(s.sessionOrder.flatMap((id) => (s.sessions[id]?.kind === "ssh" ? [s.sessions[id].name] : [])))]),
     );
-    const projects = useStore(
-        useShallow((s) =>
-            s.sessionOrder.flatMap((id) => {
-                const session = s.sessions[id];
-                const onHost = session?.kind === "project" && s.chosenHost.kind === "core" && session.host === s.chosenHost.host;
-                return onHost ? [`${id}\n${session.name}`] : [];
-            }),
-        ),
-    );
-    const activeId = useStore((s) => s.activeSessionId);
+    const activeProject = useStore((s) => {
+        const session = s.sessions[s.activeSessionId];
+        const onHost = session?.kind === "project" && s.chosenHost.kind === "core" && session.host === s.chosenHost.host;
+        return onHost ? session.cwd : null;
+    });
     // An SSH host has only its set-up to offer; a host on the account offers it while its Sikemux needs it.
     const setUpAlias = useStore((s) => {
         const host = s.chosenHost;
@@ -81,16 +77,7 @@ export function TopBarPlace() {
                 .map((alias) => ({ value: keyOf({ kind: "ssh", alias }), label: alias, icon: hostMark({ kind: "ssh", alias }) })),
         ];
     }, [hosts, sshAliases]);
-    const projectOptions = useMemo<DropdownOption[]>(
-        () =>
-            projects.map((entry) => {
-                const [id, name] = entry.split("\n");
-                return { value: id, label: name, icon: projectMark() };
-            }),
-        [projects],
-    );
     const hostKey = keyOf(chosen);
-    const inProject = projectOptions.some((option) => option.value === activeId);
 
     return (
         <div className="tb-place" data-no-window-drag {...LEAVES_SETTINGS}>
@@ -105,19 +92,17 @@ export function TopBarPlace() {
             {setUpAlias ? (
                 <SetUpOffer alias={setUpAlias} />
             ) : (
-                inProject && (
+                chosen.kind === "core" &&
+                activeProject !== null && (
                     <>
                         <span className="tb-place-sep" aria-hidden="true">
                             <IconChevron size={11} />
                         </span>
-                        <Dropdown
+                        <ProjectPicker
                             className="tb-place-btn"
-                            label="Project"
-                            value={activeId}
-                            options={projectOptions}
-                            icon={projectMark()}
-                            search={projectOptions.length > 8 ? "Find a project" : undefined}
-                            onChange={cmd.selectSession}
+                            host={chosen.host}
+                            value={activeProject}
+                            onPick={(choice) => (choice.sessionId ? cmd.selectSession(choice.sessionId) : cmd.createProjectSession(choice.path))}
                         />
                     </>
                 )

@@ -65,7 +65,7 @@ async fn to_terminal(core: &Arc<Core>, agent_id: &str) -> CoreResult<Value> {
     let draft = core.drafts.take_text(&key)?;
     core.changes.changed(Topic::Drafts, None, Some(vec![key]));
     if let (Some(terminal), Some(draft)) = (core.session(pty), session::typable(&draft)) {
-        session::type_when_ready(&terminal, draft);
+        session::type_when_ready(&terminal, draft, session::Typist::Other);
     }
     core.view_changed();
     Ok(json!({ "ptyId": pty }))
