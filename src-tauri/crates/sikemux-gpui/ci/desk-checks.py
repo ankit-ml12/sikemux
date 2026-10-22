@@ -507,13 +507,15 @@ def df2(run):
 
 def d9_keep(run):
     """The download notice draws over the page and takes its click, with the rails out of the way."""
-    page_in_front(run)
-    run.drive("key cmd+b", "wait 1.5")
-    page = until(lambda: run.desk().get("pageBounds"), 5)
+    narrow = page_in_front(run)
+    run.focus_page()
+    run.drive("key cmd+b")
+    page = until(lambda: (lambda frame: frame if frame and narrow and frame[2] > narrow[2] else None)(run.desk().get("pageBounds")), 5)
+    focused = bool(page)
     keep = until(lambda: spot(run, "keep-download"), 5)
     over = bool(page and keep) and keep[0] < page[0] + page[2] and keep[0] + keep[2] > page[0] and keep[1] < page[1] + page[3] and keep[1] + keep[3] > page[1]
     if run.options.behind:
-        run.report("D9", over, f"the Keep button {keep} lies over the page {page}: {over}")
+        run.report("D9", over, f"focus mode widened the page {focused}; the Keep button {keep} lies over the page {page}: {over}")
         run.leave("DK7 Keep", "keeping reveals the file in Finder, which would come up over the person's work")
     else:
         downloads = run.root / "home/Downloads/file.zip"
@@ -523,7 +525,8 @@ def d9_keep(run):
         marked = kept and "com.apple.quarantine" in subprocess.run(["xattr", "-l", downloads], capture_output=True, text=True).stdout
         run.report("D9", over and bool(kept), f"the Keep button {keep} lies over the page {page}: {over}; its click kept the file {bool(kept)}")
         run.report("DK7 Keep", bool(kept) and marked, f"kept in Downloads {bool(kept)}, still quarantined {marked}")
-    run.drive("key cmd+b", "wait 1")
+    if focused:
+        run.drive("key cmd+b", "wait 1")
 
 
 def one_desk(run):
