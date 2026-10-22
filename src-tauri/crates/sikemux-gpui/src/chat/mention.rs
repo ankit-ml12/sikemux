@@ -236,8 +236,7 @@ impl Workbench {
     /// first, then every other project's.
     fn mates(&self, agent: &str, needle: &str) -> Vec<Choice> {
         let own = self
-            .view
-            .as_ref()
+            .shown()
             .and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent))
             .map(|saved| saved.project.clone());
         let mut projects: Vec<(&str, Option<String>)> = Vec::new();
@@ -278,7 +277,7 @@ impl Workbench {
         needle: String,
         cx: &mut Context<Self>,
     ) -> Option<Task<()>> {
-        let view = self.view.as_ref()?;
+        let view = self.shown()?;
         let own = view
             .workspace
             .agents
@@ -304,9 +303,9 @@ impl Workbench {
             .filter(|kind| kind["available"] != false)
             .filter_map(|kind| Some(kind["type"].as_str()?.to_owned()))
             .collect();
-        let asks = self.asks.clone();
+        let target = self.chat_target(agent);
         let ask = move |method, params| {
-            let answer = crate::core::request(&asks, method, params);
+            let answer = target.request(method, params);
             async move { answer.await.unwrap_or_default() }
         };
         let closed = ask("closedAgents", json!({ "cwd": cwd }));
@@ -381,7 +380,7 @@ impl Workbench {
             .map(|project| project.path.to_string_lossy().into_owned());
         if self.project_files.project != project || self.project_files.files.is_empty() {
             self.project_files
-                .read(project.as_deref(), &crate::core::Target::here(&self.asks));
+                .read(project.as_deref(), &self.chat_target(agent));
         }
         let files = self.project_files.files.clone();
         let ranking = cx.background_spawn(async move { ranked_entries(&needle, &files) });

@@ -33,7 +33,7 @@ use sikemux_wire::protocol::{
 };
 
 use crate::composer::{Composer, Strip};
-use crate::core::{Ask, ChatAsk};
+use crate::core::{Ask, ChatAsk, Target};
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset, ToggleYolo};
 use crate::picture::Picture;
@@ -47,7 +47,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 mod attach;
 mod content;
-mod draft;
+pub(crate) mod draft;
 mod edit;
 mod find;
 mod link;
@@ -386,6 +386,8 @@ pub struct Chat {
     plan_open: bool,
     /// The line under the last row saying what the agent is doing.
     activity_line: Entity<status::Activity>,
+    /// The core of the host the agent runs on, which every ask of the chat goes to.
+    pub target: Target,
     head: Map<String, Value>,
     /// The head as last changed, read once for each change.
     state: Option<ChatHead>,
@@ -519,7 +521,7 @@ impl Chat {
         agent: String,
         provider: &str,
         bench: WeakEntity<Workbench>,
-        asks: UnboundedSender<Ask>,
+        target: Target,
         cx: &mut App,
     ) -> Chat {
         let reader = cx.new(|_| Reading::default());
@@ -529,7 +531,7 @@ impl Chat {
             Tokens::get(cx),
             provider,
             reader.clone(),
-            (bench.clone(), asks),
+            (bench.clone(), target.asks().clone()),
             agent.clone(),
         ));
         let (kept_looks, text) = (looks.clone(), looks.styles.borrow().text.clone());
@@ -603,6 +605,7 @@ impl Chat {
             finding: None,
             plan_open: false,
             activity_line: cx.new(|_| status::Activity::new(provider)),
+            target,
             _rows: [emptied, rows_changed],
             head: Map::new(),
             state: None,
@@ -1569,7 +1572,7 @@ fn pressed<A: gpui::Action, F: Fn(&A) -> Press + 'static>(
             let chat = bench.chats.get_mut(&agent)?;
             let (taken, ask) = chat.press(press(action), &open);
             if let Some(ask) = ask {
-                let _ = bench.asks.send(ask);
+                bench.chat_target(&agent).ask(ask);
             }
             taken.then(|| cx.notify())
         });
@@ -1791,14 +1794,14 @@ fn assumption(question: &Question, cx: &mut Context<Workbench>) -> impl IntoElem
             )
             .child("·")
             .child(
-                word(format!("fine-{fine}"), "Fine", &t).on_click(cx.listener(
+                word(format!("fine-{fine}"), "Fine", &t).on_click(cx.listener({
+                    let agent = agent.clone();
                     move |bench, _, _, _| {
-                        let _ = bench.asks.send(Ask::Call {
-                            method: "answerQuestion",
-                            params: json!({ "id": fine, "fine": true }),
-                        });
-                    },
-                )),
+                        bench
+                            .chat_target(&agent)
+                            .call("answerQuestion", json!({ "id": fine, "fine": true }));
+                    }
+                })),
             )
             .child(
                 word(format!("change-{change}"), "Change", &t).on_click(cx.listener(
@@ -2328,7 +2331,7 @@ fn composer(
                 .ok();
         })
     };
-    let saved = bench.view.as_ref().and_then(|view| {
+    let saved = bench.shown().and_then(|view| {
         view.workspace
             .agents
             .iter()
@@ -2437,6 +2440,7 @@ fn composer(
             locked: !fresh,
             set: pick.clone(),
             moving,
+            target: bench.chat_target(&agent.id),
         };
         composer = composer.model_menu(picked, cx.entity());
     }
@@ -2487,7 +2491,9 @@ fn strip(
             .current(&agent.provider)
             .map(|profile| profile.id.clone())
     });
-    let account = on.and_then(|on| {
+    // The accounts listed are this host's, and moving a chat to one is this host's to do.
+    let here = *bench.chat_target(&agent.id).place() == crate::hosts::Place::This;
+    let account = on.filter(|_| here).and_then(|on| {
         let chat = crate::account_picker::Chat {
             agent: &agent.id,
             provider: &agent.provider,
@@ -2525,7 +2531,7 @@ impl Workbench {
     /// Starts `agent`, which has not started yet, again as `patch` changes it, titled `title`
     /// unless the person named it.
     pub fn start_as(&self, agent: &str, mut patch: Value, title: &str) {
-        let renamed = self.view.as_ref().is_some_and(|view| {
+        let renamed = self.shown().is_some_and(|view| {
             view.workspace
                 .agents
                 .iter()
@@ -2544,8 +2550,7 @@ impl Workbench {
     /// Lets `agent` run without asking, or has it ask again, when its kind of agent can.
     pub fn toggle_yolo(&self, agent: &str) {
         let Some(saved) = self
-            .view
-            .as_ref()
+            .shown()
             .and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent))
         else {
             return;
@@ -2576,7 +2581,7 @@ fn answering(
 ) -> Option<AnyElement> {
     let id = chat.writing.as_ref()?;
     let question = bench.questions.iter().find(|question| &question.id == id)?;
-    let provider = bench.view.as_ref().and_then(|view| {
+    let provider = bench.shown().and_then(|view| {
         view.workspace
             .agents
             .iter()

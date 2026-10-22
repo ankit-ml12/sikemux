@@ -11,7 +11,6 @@ use gpui_kit::{App, Context, Window};
 use serde_json::{json, Value};
 
 use super::{Composing, Sent};
-use crate::core::Ask;
 use crate::workbench::Workbench;
 
 /// How long typing rests before the draft is kept.
@@ -108,6 +107,20 @@ fn held(drafts: &Value, agent: &str) -> Value {
     held
 }
 
+/// Whether the chat runs on another host, whose core keeps its draft.
+pub fn is_elsewhere(chat: &super::Chat) -> bool {
+    *chat.target.place() != crate::hosts::Place::This
+}
+
+/// The read the drafts of chats here, or of chats on the host in front, arrive under.
+pub fn read_key(elsewhere: bool) -> &'static str {
+    if elsewhere {
+        "host-drafts"
+    } else {
+        "drafts"
+    }
+}
+
 impl Workbench {
     /// Keeps `agent`'s draft once the person pauses.
     pub fn typed_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
@@ -144,15 +157,15 @@ impl Workbench {
         if let Some(extra) = draft.get("extra") {
             params["extra"] = extra.clone();
         }
-        let _ = self.asks.send(Ask::Call {
-            method: "setDraft",
-            params,
-        });
+        self.chat_target(agent).call("setDraft", params);
     }
 
     /// Takes the drafts the core keeps into every open composer that has not moved on.
-    pub fn drafts(&mut self, drafts: &Value, cx: &mut Context<Self>) {
+    pub fn drafts(&mut self, drafts: &Value, elsewhere: bool, cx: &mut Context<Self>) {
         for (agent, chat) in &mut self.chats {
+            if is_elsewhere(chat) != elsewhere {
+                continue;
+            }
             let Some(composing) = chat.composer.as_mut() else {
                 continue;
             };

@@ -69,14 +69,14 @@ pub(super) fn page(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut 
 
 /// Asks the core for the page, then shows it in a view of its own.
 fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
-    let Some(asks) = looks
+    let Some(target) = looks
         .bench
         .upgrade()
-        .map(|bench| bench.read(cx).asks.clone())
+        .map(|bench| bench.read(cx).chat_target(&looks.agent))
     else {
         return;
     };
-    let answer = crate::core::request(&asks, "page", json!({ "id": page.id }));
+    let answer = target.request("page", json!({ "id": page.id }));
     let theme = theme_rule(Tokens::get(cx));
     let (id, reader, bench, agent) = (
         page.id.clone(),

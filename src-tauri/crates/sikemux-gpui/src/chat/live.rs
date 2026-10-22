@@ -15,7 +15,7 @@ use sikemux_wire::chat::{
 
 use super::tools::word;
 use super::Chat;
-use crate::core::{Ask, ChatAsk};
+use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -527,10 +527,10 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
             .text_size(px(10.5))
             .text_color(t.text_primary)
             .on_click(cx.listener(move |bench, _, _, _| {
-                let _ = bench.asks.send(Ask::Call {
-                    method: "steerQueued",
-                    params: json!({ "agentId": agent, "ids": ids, "message": null }),
-                });
+                bench.chat_target(&agent).call(
+                    "steerQueued",
+                    json!({ "agentId": agent, "ids": ids, "message": null }),
+                );
             }))
             .child(label.to_owned())
             .when(keys, |button| {
@@ -577,10 +577,9 @@ pub fn queued(agent: &str, chat: &Chat, cx: &mut Context<Workbench>) -> Option<A
                 .text_color(t.text_disabled)
                 .hover(move |drop| drop.bg(Hsla { a: 0.16, ..danger }).text_color(danger))
                 .on_click(cx.listener(move |bench, _, _, _| {
-                    let _ = bench.asks.send(Ask::Call {
-                        method: "dropQueued",
-                        params: json!({ "agentId": agent, "ids": [id] }),
-                    });
+                    bench
+                        .chat_target(&agent)
+                        .call("dropQueued", json!({ "agentId": agent, "ids": [id] }));
                 }))
                 .child(ui::icon(Icon::Close, 10.).text_color(t.text_disabled));
             div()

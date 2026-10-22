@@ -16,8 +16,7 @@ impl Workbench {
     /// The worktree switch `agent`'s composer strip shows, and what flipping it does.
     pub fn worktree_switch(&self, agent: &str, cx: &Context<Self>) -> Option<(Switch, Flip)> {
         let saved = self
-            .view
-            .as_ref()
+            .shown()
             .and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent))?;
         let project = self
             .projects()
@@ -71,8 +70,7 @@ impl Workbench {
         };
         composing.preparing = Some("Creating worktree".into());
         composing.refusal = None;
-        let made = crate::core::request(
-            &self.asks,
+        let made = self.chat_target(agent).request(
             "createAgentWorktree",
             json!({ "agentId": agent, "message": message }),
         );
@@ -127,7 +125,7 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let moved = self.view.as_ref().is_some_and(|view| {
+        let moved = self.shown().is_some_and(|view| {
             view.workspace
                 .agents
                 .iter()

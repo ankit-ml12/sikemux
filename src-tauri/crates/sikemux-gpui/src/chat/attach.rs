@@ -7,12 +7,12 @@ use gpui_kit::base::input::{InlineToken, InlineTokenContext};
 use gpui_kit::component::attachment::{
     Attachment, AttachmentContent, AttachmentMedia, AttachmentTitle,
 };
-use gpui_kit::component::Sizable;
+use gpui_kit::component::{Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, App, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths, FontWeight,
-    Hsla, InteractiveElement, IntoElement, ParentElement, PathPromptOptions, SharedString, Styled,
-    Window,
+    div, px, App, AppContext, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths,
+    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathPromptOptions,
+    SharedString, Styled, Window,
 };
 use sikemux_core::acp::MAX_ATTACHMENTS;
 use sikemux_wire::chat::ChatMessage;
@@ -20,8 +20,9 @@ use sikemux_wire::protocol::ChatContext;
 use tokio::sync::oneshot;
 
 use super::Composing;
-use crate::core::{Ask, ChatAsk};
+use crate::core::ChatAsk;
 use crate::drag::DraggedPath;
+use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
@@ -46,6 +47,9 @@ fn is_screenshot_thumbnail(path: &Path) -> bool {
 }
 
 const IMAGE: &str = "image:";
+
+/// The largest file sent to another host for a chat there.
+const MAX_KEPT: u64 = 50_000_000;
 
 /// The glyph a tag in the draft wears: a picture's, a named agent's, or a file's or folder's.
 fn mark(id: &str, tint: Hsla, cx: &App) -> gpui_kit::AnyElement {
@@ -187,7 +191,9 @@ impl Composing {
 }
 
 impl Workbench {
-    /// Hands the next message of `agent`'s chat files the person chose.
+    /// Hands the next message of `agent`'s chat files the person chose on this host. A chat
+    /// on another host cannot read them where they are, so they go to its core to keep, as a
+    /// screenshot's thumbnail does, which is gone once the drop is over.
     pub fn attach(
         &mut self,
         agent: &str,
@@ -195,23 +201,26 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let elsewhere = *self.chat_target(agent).place() != Place::This;
         let (keep, paths): (Vec<PathBuf>, Vec<PathBuf>) = paths
             .into_iter()
-            .partition(|path| is_screenshot_thumbnail(path));
-        for path in keep {
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    let name = path.file_name().map_or_else(
-                        || "screenshot.png".to_owned(),
-                        |name| name.to_string_lossy().into_owned(),
-                    );
-                    self.keep(agent, name, "image/png", bytes, window, cx);
-                }
-                Err(error) => eprintln!(
-                    "sikemux: the dropped screenshot {} does not read: {error}",
-                    path.display()
-                ),
-            }
+            .partition(|path| elsewhere || is_screenshot_thumbnail(path));
+        if !keep.is_empty() {
+            self.keep_files(agent, keep, window, cx);
+        }
+        self.attach_there(agent, paths, window, cx);
+    }
+
+    /// Hands the next message of `agent`'s chat files that are already where the agent runs.
+    fn attach_there(
+        &mut self,
+        agent: &str,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if paths.is_empty() {
+            return;
         }
         let Some(composing) = self
             .chats
@@ -223,6 +232,61 @@ impl Workbench {
         composing.attach(paths, window, cx);
         self.typed_draft(agent, cx);
         cx.notify();
+    }
+
+    /// Reads files off the window's thread and has the chat's core keep each, attaching it
+    /// once the core says where it went; one too large to send is said so.
+    fn keep_files(
+        &self,
+        agent: &str,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let agent = agent.to_owned();
+        let read = cx.background_spawn(async move {
+            paths
+                .into_iter()
+                .map(|path| {
+                    let size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+                    let bytes = (size <= MAX_KEPT).then(|| std::fs::read(&path));
+                    (path, bytes)
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            for (path, bytes) in read.await {
+                let name = path.file_name().map_or_else(
+                    || "screenshot.png".to_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                match bytes {
+                    Some(Ok(bytes)) => {
+                        let mime = if is_screenshot_thumbnail(&path) || is_image(&path) {
+                            "image/png"
+                        } else {
+                            "application/octet-stream"
+                        };
+                        this.update_in(cx, |bench, window, cx| {
+                            bench.keep(&agent, name, mime, bytes, window, cx)
+                        })
+                        .ok();
+                    }
+                    Some(Err(error)) => {
+                        eprintln!("sikemux: {} does not read: {error}", path.display())
+                    }
+                    None => {
+                        let note = format!(
+                            "{name} is over {} MB, too large to send to the host the chat runs on",
+                            MAX_KEPT / 1_000_000
+                        );
+                        cx.update(|window, cx| window.push_notification(note, cx))
+                            .ok();
+                    }
+                }
+            }
+        })
+        .detach();
     }
 
     /// Asks the core to keep a file that lives nowhere the agent can read, and attaches it
@@ -244,14 +308,12 @@ impl Workbench {
             bytes,
             kept,
         };
-        if self.asks.send(Ask::Chat(ask)).is_err() {
-            return;
-        }
+        self.ask_chat(ask);
         let agent = agent.to_owned();
         cx.spawn_in(window, async move |this, cx| match answer.await {
             Ok(Ok(path)) => {
                 this.update_in(cx, |bench, window, cx| {
-                    bench.attach(&agent, vec![path], window, cx)
+                    bench.attach_there(&agent, vec![path], window, cx)
                 })
                 .ok();
             }

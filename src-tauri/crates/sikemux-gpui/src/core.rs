@@ -338,6 +338,28 @@ pub enum ChatAsk {
     },
 }
 
+impl ChatAsk {
+    /// The agent whose chat this is about.
+    pub fn agent(&self) -> &str {
+        match self {
+            ChatAsk::Attach { agent, .. }
+            | ChatAsk::Restart { agent }
+            | ChatAsk::Move { agent, .. }
+            | ChatAsk::Detach { agent }
+            | ChatAsk::History { agent, .. }
+            | ChatAsk::Prompt { agent, .. }
+            | ChatAsk::Keep { agent, .. }
+            | ChatAsk::Cancel { agent }
+            | ChatAsk::Edit { agent, .. }
+            | ChatAsk::Permission { agent, .. }
+            | ChatAsk::Mode { agent, .. }
+            | ChatAsk::Config { agent, .. }
+            | ChatAsk::StopTask { agent, .. }
+            | ChatAsk::Detail { agent, .. } => agent,
+        }
+    }
+}
+
 pub struct Link {
     pub updates: mpsc::UnboundedReceiver<Update>,
     pub asks: mpsc::UnboundedSender<Ask>,
@@ -629,6 +651,11 @@ impl Target {
     /// The way to this host's own core, for what stays here whatever the place.
     pub fn asks(&self) -> &mpsc::UnboundedSender<Ask> {
         &self.asks
+    }
+
+    /// Sends `ask` to the place's core.
+    pub fn ask(&self, ask: Ask) {
+        self.send(ask);
     }
 
     fn send(&self, ask: Ask) {

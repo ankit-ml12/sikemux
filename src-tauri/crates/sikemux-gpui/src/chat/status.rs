@@ -175,8 +175,7 @@ impl Workbench {
     /// A new chat with the same agent and account, in the same project.
     fn start_over(&mut self, agent: &str) {
         let Some(saved) = self
-            .view
-            .as_ref()
+            .shown()
             .and_then(|view| view.workspace.agents.iter().find(|saved| saved.id == agent))
         else {
             return;
@@ -198,10 +197,8 @@ impl Workbench {
     }
 
     fn account_call(&self, method: &'static str, agent: &str) {
-        let _ = self.asks.send(Ask::Call {
-            method,
-            params: json!({ "agentId": agent }),
-        });
+        self.chat_target(agent)
+            .call(method, json!({ "agentId": agent }));
     }
 }
 

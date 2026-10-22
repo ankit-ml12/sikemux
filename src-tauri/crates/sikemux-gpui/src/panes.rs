@@ -367,7 +367,7 @@ fn preview(side: Side, cx: &App) -> impl IntoElement {
         })
 }
 
-/// A chat or terminal of another host, which this app does not show yet.
+/// A desk of another host, which this app does not show yet.
 fn elsewhere(bench: &Workbench, host: &str, cx: &mut Context<Workbench>) -> AnyElement {
     let name = bench
         .host_choices()
@@ -391,9 +391,7 @@ fn view(
     window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    if let (crate::hosts::Place::Account(host), PaneKind::Agent | PaneKind::Desk) =
-        (bench.place(), kind)
-    {
+    if let (crate::hosts::Place::Account(host), PaneKind::Desk) = (bench.place(), kind) {
         return elsewhere(bench, &host, cx);
     }
     match kind {

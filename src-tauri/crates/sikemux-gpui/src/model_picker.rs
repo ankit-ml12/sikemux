@@ -64,6 +64,8 @@ pub struct Picked {
     pub locked: bool,
     pub set: Set,
     pub moving: Move,
+    /// The core of the host the chat runs on, whose providers it can pay with.
+    pub target: core::Target,
 }
 
 /// A connected provider the agent can run on, with the models it serves.
@@ -141,7 +143,7 @@ impl Menu {
         });
         if !picked.locked {
             Self::read_routes(
-                bench.read(cx).asks.clone(),
+                picked.target.clone(),
                 picked.provider.clone(),
                 picked.model_provider.clone(),
                 cx,
@@ -160,13 +162,13 @@ impl Menu {
 
     /// Reads the connected providers the agent can run on, asking each keyed one for its models.
     fn read_routes(
-        asks: tokio::sync::mpsc::UnboundedSender<core::Ask>,
+        target: core::Target,
         agent: String,
         current: Option<String>,
         cx: &mut Context<Self>,
     ) {
         cx.spawn(async move |menu, cx| {
-            let Ok(providers) = core::request(&asks, "modelProviders", json!({})).await else {
+            let Ok(providers) = target.request("modelProviders", json!({})).await else {
                 return;
             };
             let mut routes = Vec::new();
@@ -180,7 +182,8 @@ impl Menu {
                 let id = provider["id"].as_str().unwrap_or_default().to_owned();
                 let models = match provider["models"].as_array() {
                     Some(models) => models.clone(),
-                    None => core::request(&asks, "modelProviderModels", json!({ "id": id }))
+                    None => target
+                        .request("modelProviderModels", json!({ "id": id }))
                         .await
                         .ok()
                         .and_then(|served| served["models"].as_array().cloned())
@@ -277,8 +280,7 @@ impl Menu {
         };
         let bench = bench.read(cx);
         let installed: Vec<String> = bench
-            .view
-            .as_ref()
+            .shown()
             .map(|view| {
                 view.workspace
                     .launchers

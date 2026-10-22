@@ -793,9 +793,9 @@ impl Workbench {
                 }
                 self.reads.insert("git-draft", value);
             }
-            Update::Read("drafts", value) => {
-                self.drafts(&value, cx);
-                self.reads.insert("drafts", value);
+            Update::Read(key @ ("drafts" | "host-drafts"), value) => {
+                self.drafts(&value, key == "host-drafts", cx);
+                self.reads.insert(key, value);
             }
             Update::Read("catalog", value) => {
                 if let Some(pane) = &self.git {
@@ -898,14 +898,19 @@ impl Workbench {
     }
 
     pub fn ask_chat(&self, ask: ChatAsk) {
-        let _ = self.asks.send(Ask::Chat(ask));
+        self.chat_target(ask.agent()).ask(Ask::Chat(ask));
+    }
+
+    /// Where `agent`'s chat asks: the core of the host the agent runs on.
+    pub fn chat_target(&self, agent: &str) -> Target {
+        self.chats.get(agent).map_or_else(
+            || Target::new(&self.asks, self.place()),
+            |chat| chat.target.clone(),
+        )
     }
 
     /// Holds the chat of the agent the tab in front shows, attaching to it the first time.
     fn open_chat(&mut self, cx: &mut Context<Self>) {
-        if self.place() != crate::hosts::Place::This {
-            return;
-        }
         let Some(AgentRow {
             id: agent,
             provider,
@@ -921,7 +926,7 @@ impl Workbench {
             agent.clone(),
             &provider,
             cx.weak_entity(),
-            self.asks.clone(),
+            Target::new(&self.asks, self.place()),
             cx,
         );
         chat.rescale(self.preferences().chat_text_scale as f32, cx);
@@ -1012,8 +1017,8 @@ impl Workbench {
             _keeping: Task::ready(()),
             _heard: [sending, keeping],
         });
-        if let (Some(composing), Some(drafts)) = (chat.composer.as_mut(), self.reads.get("drafts"))
-        {
+        let key = crate::chat::draft::read_key(crate::chat::draft::is_elsewhere(chat));
+        if let (Some(composing), Some(drafts)) = (chat.composer.as_mut(), self.reads.get(key)) {
             composing.start_from(drafts, &agent, window, cx);
         }
         self.watch_drafts();
@@ -1220,16 +1225,16 @@ impl Workbench {
             .get_mut(agent)
             .and_then(|chat| change(chat, &open))
         {
-            let _ = self.asks.send(ask);
+            self.chat_target(agent).ask(ask);
         }
     }
 
     /// Whether the agent asks before it acts, kept for its next session and changed in the one running.
     pub fn switch_mode(&self, agent: &str, mode: &str) {
-        let _ = self.asks.send(Ask::Call {
-            method: "updateAgent",
-            params: json!({ "agentId": agent, "patch": { "permissionMode": mode } }),
-        });
+        self.chat_target(agent).call(
+            "updateAgent",
+            json!({ "agentId": agent, "patch": { "permissionMode": mode } }),
+        );
         self.ask_chat(ChatAsk::Mode {
             agent: agent.to_owned(),
             mode: mode.to_owned(),
@@ -1441,16 +1446,24 @@ impl Workbench {
     /// Keeps the core answering the drafts on show: the commit message of the project in
     /// front, and every open chat's.
     fn watch_drafts(&self) {
-        let keys: Vec<String> = self
-            .chats
-            .iter()
-            .filter(|(_, chat)| chat.composer.is_some())
-            .map(|(agent, _)| crate::chat::draft_key(agent))
-            .collect();
-        let _ = self.asks.send(Ask::Watch(
-            "drafts",
-            Watch::new("drafts", json!({ "keys": keys }), &["drafts"]),
-        ));
+        let keys = |elsewhere: bool| -> Vec<String> {
+            self.chats
+                .iter()
+                .filter(|(_, chat)| {
+                    chat.composer.is_some() && crate::chat::draft::is_elsewhere(chat) == elsewhere
+                })
+                .map(|(agent, _)| crate::chat::draft_key(agent))
+                .collect()
+        };
+        let watch = |keys: Vec<String>| Watch::new("drafts", json!({ "keys": keys }), &["drafts"]);
+        let _ = self.asks.send(Ask::Watch("drafts", watch(keys(false))));
+        let there = keys(true);
+        let place = self.place();
+        if there.is_empty() || place == crate::hosts::Place::This {
+            Target::here(&self.asks).unwatch("host-drafts");
+        } else {
+            Target::new(&self.asks, place).watch("host-drafts", watch(there));
+        }
     }
 
     /// Keeps the core checking the CI of the repository in front while its host is signed in.
@@ -2195,7 +2208,9 @@ impl Workbench {
     ) {
         let params =
             json!({ "agentId": agent, "discardChanges": discard, "deleteBranch": delete_branch });
-        let removing = crate::core::request(&self.asks, "removeAgentWorktree", params);
+        let removing = self
+            .chat_target(&agent)
+            .request("removeAgentWorktree", params);
         cx.spawn_in(window, async move |_, cx| {
             let removed = removing.await;
             let _ = cx.update(|window, cx| {
