@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::ChatContext;
 
 use super::Composing;
+use crate::finder::ProjectFiles;
 use crate::icons::Icon;
 use crate::ui::{self, DockMenu, DockRow};
 use crate::workbench::Workbench;
@@ -574,9 +575,24 @@ fn ranked_entries(needle: &str, files: &Arc<Vec<String>>) -> Vec<Choice> {
 }
 
 /// The menu over the draft of `agent`'s chat, while it offers anything.
-pub fn dock(agent: &str, menu: &Menu, cx: &mut Context<Workbench>) -> Option<DockMenu> {
+pub fn dock(
+    agent: &str,
+    menu: &Menu,
+    files: &ProjectFiles,
+    cx: &mut Context<Workbench>,
+) -> Option<DockMenu> {
     if menu.choices.is_empty() {
-        return None;
+        let blank = menu.typed.needle.is_empty();
+        return match menu.typed.trigger {
+            '@' if blank => Some(DockMenu::empty("No other agent yet")),
+            '@' => Some(DockMenu::empty("No agent or earlier chat matches")),
+            '+' if files.project.is_none() => {
+                Some(DockMenu::empty("Open a project to pick its files"))
+            }
+            '+' if files.files.is_empty() => Some(DockMenu::empty("Reading the project's files…")),
+            '+' => Some(DockMenu::empty("Nothing in the project matches")),
+            _ => None,
+        };
     }
     let this = cx.weak_entity();
     let tint = crate::theme::Tokens::get(cx).text_tertiary;

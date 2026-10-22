@@ -62,11 +62,26 @@ impl DockRow {
 pub struct DockMenu {
     rows: Vec<DockRow>,
     selected: usize,
+    /// What the menu says while it has no rows.
+    empty: Option<SharedString>,
 }
 
 impl DockMenu {
     pub fn new(rows: Vec<DockRow>, selected: usize) -> Self {
-        Self { rows, selected }
+        Self {
+            rows,
+            selected,
+            empty: None,
+        }
+    }
+
+    /// A menu with nothing to offer, saying why.
+    pub fn empty(text: impl Into<SharedString>) -> Self {
+        Self {
+            rows: Vec::new(),
+            selected: 0,
+            empty: Some(text.into()),
+        }
     }
 }
 
@@ -140,6 +155,16 @@ impl RenderOnce for DockMenu {
                 .into_any_element();
             heading.into_iter().chain([line])
         });
+        let empty = self.empty.map(|text| {
+            div()
+                .min_h(px(30.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .text_size(px(10.5))
+                .text_color(t.text_tertiary)
+                .child(text)
+        });
         div()
             .absolute()
             .left(px(19.))
@@ -157,5 +182,6 @@ impl RenderOnce for DockMenu {
             .bg(t.surface_composer)
             .occlude()
             .children(rows)
+            .children(empty)
     }
 }
