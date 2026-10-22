@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
 
 use crate::codehost::{Area, OpenArea};
+use crate::hosts::HostChoice;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::tabs;
@@ -392,6 +393,15 @@ fn project_menu(
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     let bench_entity = cx.weak_entity();
     let (id, current) = (project.id.clone(), project.space.clone());
+    let path = project.path.clone();
+    let others: Vec<(String, SharedString)> = bench
+        .host_choices()
+        .into_iter()
+        .filter_map(|option| match option.choice {
+            HostChoice::Account(key) => Some((key, option.label)),
+            _ => None,
+        })
+        .collect();
     let spaces: Vec<(String, String, Option<Icon>)> =
         bench.view.as_ref().map_or(Vec::new(), |view| {
             view.workspace
@@ -433,6 +443,26 @@ fn project_menu(
                 .icon(Icon::Settings)
                 .on_click(settings),
         );
+        if !others.is_empty() {
+            popup = popup.separator();
+        }
+        for (host, label) in &others {
+            let (bench, path, host, label) = (
+                bench_entity.clone(),
+                path.clone(),
+                host.clone(),
+                label.clone(),
+            );
+            popup = popup.item(
+                PopupMenuItem::new(format!("Open on {label}"))
+                    .icon(Icon::Server)
+                    .on_click(move |_, _, cx| {
+                        let _ = bench.update(cx, |bench, cx| {
+                            bench.open_on(&path, &host, label.clone(), cx)
+                        });
+                    }),
+            );
+        }
         if !spaces.is_empty() {
             popup = popup.separator();
         }

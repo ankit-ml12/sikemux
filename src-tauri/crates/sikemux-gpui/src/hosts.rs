@@ -1,10 +1,12 @@
 //! The host the person is on (ADR 0018): this one, another host on the account, or an SSH host
 //! without Sikemux. The rail, the top bar and the tab list follow the one chosen.
 
+use std::path::Path;
 use std::time::Duration;
 
+use gpui_kit::component::notification::Notification;
 use gpui_kit::{AppContext, Context, SharedString, WeakEntity, Window};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::core;
 use crate::workbench::{Strip, Workbench};
@@ -74,6 +76,31 @@ impl Workbench {
             Some(Strip::Host(alias)) => HostChoice::Ssh(alias),
             _ => HostChoice::This,
         }
+    }
+
+    /// Opens the project at `path` on the account host `host`, which clones it from its remote
+    /// or takes it from this host as a bundle, then puts the person on that host.
+    pub fn open_on(
+        &mut self,
+        path: &Path,
+        host: &str,
+        label: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        let (asks, host) = (self.asks.clone(), host.to_owned());
+        let params = json!({ "path": path, "host": host });
+        self.notify(Notification::info(format!("Opening on {label}…")), cx);
+        cx.spawn(async move |bench, cx| {
+            let opened = core::request(&asks, "openOnHost", params).await;
+            let _ = bench.update(cx, |bench, cx| match opened {
+                Ok(_) => bench.choose_host(HostChoice::Account(host), cx),
+                Err(error) => bench.notify(
+                    Notification::error(format!("It did not open on {label}: {error}")),
+                    cx,
+                ),
+            });
+        })
+        .detach();
     }
 
     /// Puts the person on `choice`, which the rail and the tab list then follow.
