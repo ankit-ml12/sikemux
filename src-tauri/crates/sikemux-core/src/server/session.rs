@@ -604,11 +604,14 @@ async fn write_input(session: Weak<Session>, mut jobs: mpsc::UnboundedReceiver<I
 /// markers when its program has turned bracketed paste on, else on one line,
 /// since a bare newline would send it.
 pub(crate) fn pasted(session: &Session, text: &str) -> Vec<u8> {
+    pasted_on(&session.screen.locked(), text)
+}
+
+fn pasted_on(screen: &Screen, text: &str) -> Vec<u8> {
     let plain: String = text
         .chars()
         .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
         .collect();
-    let screen = session.screen.locked();
     if screen.terminal.bracketed_paste() {
         screen
             .terminal
@@ -896,7 +899,7 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     let retitled = screen.take_title_change().is_some();
     answer_line_waiters(session, &screen);
     if at_prompt(&screen) {
-        type_waiting(session);
+        type_waiting(session, &screen);
     }
     drop(screen);
     session.frames.notify.notify_one();
@@ -1003,18 +1006,18 @@ fn at_prompt(screen: &Screen) -> bool {
         .is_some_and(|shell| matches!(shell.phase(), ShellPhase::Prompt | ShellPhase::Input))
 }
 
-fn type_waiting(session: &Session) {
+fn type_waiting(session: &Session, screen: &Screen) {
     let draft = session.typed_at_prompt.locked().take();
     if let Some((draft, typist)) = draft {
-        type_draft(session, &draft, typist);
+        type_draft(session, screen, &draft, typist);
     }
 }
 
 /// Types `draft` to sit at the prompt unsent: pasted when the program has
 /// turned bracketed paste on, else on one line, since a bare newline would
 /// send it.
-fn type_draft(session: &Session, draft: &str, typist: Typist) {
-    queue_input(session, pasted(session, draft), typist, Box::new(|_| {}));
+fn type_draft(session: &Session, screen: &Screen, draft: &str, typist: Typist) {
+    queue_input(session, pasted_on(screen, draft), typist, Box::new(|_| {}));
 }
 
 /// `draft` as it can be typed into a terminal; none when nothing is left.
@@ -1030,8 +1033,7 @@ pub(crate) fn typable(draft: &str) -> Option<String> {
 pub(crate) fn type_when_ready(session: &Arc<Session>, draft: String, typist: Typist) {
     let screen = session.screen.locked();
     if session.shell_protocol && at_prompt(&screen) {
-        drop(screen);
-        return type_draft(session, &draft, typist);
+        return type_draft(session, &screen, &draft, typist);
     }
     *session.typed_at_prompt.locked() = Some((draft, typist));
     drop(screen);
@@ -1044,7 +1046,7 @@ pub(crate) fn type_when_ready(session: &Arc<Session>, draft: String, typist: Typ
     tokio::spawn(async move {
         tokio::time::sleep(wait).await;
         if let Some(session) = session.upgrade() {
-            type_waiting(&session);
+            type_waiting(&session, &session.screen.locked());
         }
     });
 }
