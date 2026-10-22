@@ -342,7 +342,7 @@ impl Workbench {
         crate::project_switcher::install(cx);
         crate::model_picker::install(cx);
         crate::ui::grain::animate(window, cx);
-        crate::ui::moving_face::follow(window, cx);
+        crate::ui::clock::follow(window, cx);
         let (power_changed, mut power) = mpsc::unbounded_channel();
         crate::battery::watch(move || {
             let _ = power_changed.send(());

@@ -19,6 +19,7 @@ use crate::core::ChatAsk;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
+use crate::ui::shimmer::shimmer;
 use crate::workbench::{AgentRow, Workbench};
 
 /// The groups, one above another, ending on the composer's top border in its fill.
@@ -165,7 +166,7 @@ fn task_row(
     tint: Hsla,
     mark: AnyElement,
     name: String,
-    detail: Option<String>,
+    detail: Option<AnyElement>,
     cost: Option<String>,
     end: Option<AnyElement>,
 ) -> Div {
@@ -280,7 +281,10 @@ pub fn subagents(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> 
             tint,
             ui::mark(&agent.provider, 16.),
             card.name.clone(),
-            Some(activity),
+            Some(shimmer(
+                SharedString::from(format!("subagent-{}", card.session_id)),
+                activity,
+            )),
             cost([tokens(card.tokens), calls]),
             Some(working),
         )
@@ -400,7 +404,13 @@ pub fn tasks(agent: &AgentRow, chat: &Chat, cx: &mut Context<Workbench>) -> Vec<
                         tint,
                         mark,
                         task.name.clone(),
-                        task_detail(task),
+                        task_detail(task).map(|detail| match task.state {
+                            TaskState::Running => shimmer(
+                                SharedString::from(format!("task-{}", task.async_task_id)),
+                                detail,
+                            ),
+                            _ => detail.into_any_element(),
+                        }),
                         agents,
                         stop,
                     )
@@ -492,7 +502,7 @@ fn workflow_agent(
         tints.agent,
         mark,
         worker.label.clone(),
-        detail,
+        detail.map(IntoElement::into_any_element),
         cost([tokens(worker.tokens), calls]),
         end.map(IntoElement::into_any_element),
     )

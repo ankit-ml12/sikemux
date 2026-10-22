@@ -1,6 +1,7 @@
 //! The shared component set. Screens are built from these; one a screen needs
 //! that is missing belongs here, once.
 
+pub mod clock;
 mod controls;
 pub(crate) mod dialog;
 mod dock;
@@ -11,6 +12,7 @@ mod lists;
 pub mod moving_face;
 mod pane;
 mod select;
+pub mod shimmer;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
