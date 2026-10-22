@@ -364,6 +364,8 @@ pub struct Chat {
     _found: [Subscription; 2],
     /// The find bar over the transcript, while it is open.
     pub finding: Option<find::Finding>,
+    /// The reader opened the agent's plan.
+    plan_open: bool,
     /// The line under the last row saying what the agent is doing.
     activity_line: Entity<status::Activity>,
     head: Map<String, Value>,
@@ -567,6 +569,7 @@ impl Chat {
             scale: 1.,
             _found: found,
             finding: None,
+            plan_open: false,
             activity_line: cx.new(|_| status::Activity::new(provider)),
             _emptied: emptied,
             head: Map::new(),
@@ -1378,6 +1381,7 @@ pub fn pane(
         })
         .child(rows)
         .child(chat.activity_line.clone())
+        .children(status::plan(agent, chat, cx))
         .children(status::trouble(agent, chat, cx))
         .children(permissions)
         .children(assumed)

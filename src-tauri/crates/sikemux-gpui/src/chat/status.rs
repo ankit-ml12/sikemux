@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Context, Div, FontWeight, IntoElement, ParentElement, Render,
-    SharedString, Styled, Task, Window,
+    div, px, AnyElement, App, Context, Div, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window,
 };
 use serde_json::json;
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
@@ -320,4 +320,85 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as u64)
+}
+
+/// How much of a plan is shown before the rest is cut, so a runaway plan cannot slow the chat.
+const MOST_PLAN: usize = 120_000;
+
+/// The plan the agent keeps for the turn, folded behind its name until the reader opens it.
+pub(super) fn plan(
+    agent: &AgentRow,
+    chat: &Chat,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    let plan = chat.state.as_ref()?.plan.as_ref()?;
+    let t = Tokens::get(cx).clone();
+    let open = chat.plan_open;
+    let this = cx.weak_entity();
+    let agent = agent.id.clone();
+    let summary = div()
+        .id("chat-plan")
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .text_size(px(11.))
+        .text_color(t.text_disabled)
+        .cursor_pointer()
+        .child(
+            ui::icon(Icon::Chevron, 10.)
+                .when(open, |chevron| {
+                    chevron.with_transformation(gpui_kit::Transformation::rotate(
+                        gpui_kit::radians(std::f32::consts::FRAC_PI_2),
+                    ))
+                })
+                .text_color(t.text_disabled),
+        )
+        .child("Plan")
+        .on_click(move |_, _, cx| {
+            this.update(cx, |bench, cx| {
+                if let Some(chat) = bench.chats.get_mut(&agent) {
+                    chat.plan_open = !chat.plan_open;
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            })
+            .ok();
+        });
+    let shown = open.then(|| {
+        let mut text = match plan {
+            serde_json::Value::String(text) => text.clone(),
+            plan => serde_json::to_string_pretty(plan).unwrap_or_default(),
+        };
+        if text.len() > MOST_PLAN {
+            let cut = text.floor_char_boundary(MOST_PLAN);
+            text.truncate(cut);
+            text.push_str("\n… output truncated");
+        }
+        div()
+            .id("chat-plan-text")
+            .mt(px(8.))
+            .max_h(px(420.))
+            .overflow_y_scroll()
+            .px(px(12.))
+            .py(px(11.))
+            .border_1()
+            .border_color(t.line_soft)
+            .rounded(crate::theme::RADIUS_2)
+            .child(
+                ui::mono(text, 11., cx)
+                    .whitespace_normal()
+                    .text_color(t.text_tertiary),
+            )
+    });
+    Some(
+        centred(
+            div()
+                .px(px(22.))
+                .py(px(6.))
+                .flex()
+                .flex_col()
+                .child(summary)
+                .children(shown),
+        )
+        .into_any_element(),
+    )
 }
