@@ -232,10 +232,19 @@ impl RenderOnce for Row {
                 detail
             }))
             .children(self.trailing)
-            .children(
-                self.status
-                    .map(|status| div().absolute().right(px(4.)).child(mark_box(20., status))),
-            )
+            .children(self.status.map(|status| {
+                div()
+                    .absolute()
+                    .right(px(4.))
+                    .top_0()
+                    .map(|slot| match two_lines {
+                        true => slot.h(px(28.)),
+                        false => slot.bottom_0(),
+                    })
+                    .flex()
+                    .items_center()
+                    .child(mark_box(20., status))
+            }))
     }
 }
 
@@ -468,34 +477,43 @@ impl RenderOnce for Tab {
                     )
                     .children(self.note.map(|note| meta(note, cx))),
             )
-            .child(div().size(px(20.)).mr(px(8.)).flex_none().map(|slot| {
-                match closing {
-                    Some(close) => slot.child(
-                        BaseButton::new(close_id)
-                            .group(CLOSE)
-                            .accessibility_label(SharedString::from(format!("Close {label}")))
-                            .size(px(20.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(RADIUS_2)
-                            .text_color(t.text_tertiary)
-                            .hover(move |style| {
-                                style.text_color(t.danger).bg(gpui_kit::Hsla {
-                                    a: 0.18,
-                                    ..t.danger
+            .child(
+                div()
+                    .size(px(20.))
+                    .mr(px(8.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .map(|slot| match closing {
+                        Some(close) => slot.child(
+                            BaseButton::new(close_id)
+                                .group(CLOSE)
+                                .accessibility_label(SharedString::from(format!("Close {label}")))
+                                .size(px(20.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(RADIUS_2)
+                                .text_color(t.text_tertiary)
+                                .hover(move |style| {
+                                    style.text_color(t.danger).bg(gpui_kit::Hsla {
+                                        a: 0.18,
+                                        ..t.danger
+                                    })
                                 })
-                            })
-                            .on_click(move |event, window, cx| close(event, window, cx))
-                            .child(
-                                icon(Icon::Close, 11.)
-                                    .text_color(t.text_tertiary)
-                                    .group_hover(CLOSE, move |style| style.text_color(t.danger)),
-                            ),
-                    ),
-                    None => slot.children(self.tail),
-                }
-            }))
+                                .on_click(move |event, window, cx| close(event, window, cx))
+                                .child(
+                                    icon(Icon::Close, 11.)
+                                        .text_color(t.text_tertiary)
+                                        .group_hover(CLOSE, move |style| {
+                                            style.text_color(t.danger)
+                                        }),
+                                ),
+                        ),
+                        None => slot.children(self.tail),
+                    }),
+            )
     }
 }
 
