@@ -899,10 +899,11 @@ async fn run_requests(
                 }
             }
             Request::Call { method, params } => {
-                tokio::spawn(async move {
+                let device = client.peer.device_id();
+                tokio::spawn(super::layout::asked_by(device, async move {
                     let result = calls::call(core, &client, &method, params).await;
                     client.respond(request_id, result.map(|result| Response::Called { result }));
-                });
+                }));
             }
             Request::AcpCancel { agent_id } => {
                 let result = chat::cancel(&core, &agent_id);

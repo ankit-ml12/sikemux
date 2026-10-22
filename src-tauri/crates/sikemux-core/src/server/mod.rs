@@ -414,7 +414,9 @@ pub(crate) struct Core {
     /// Answers in parts on the connections that asked for them.
     pub(crate) streams: streams::Streams,
     /// The view paired devices were last sent, as sent.
-    device_view: Mutex<Vec<u8>>,
+    /// The view each client was last sent: by the device with what it has in front of its
+    /// own, or under none for every other client.
+    device_view: Mutex<HashMap<Option<String>, Vec<u8>>>,
     /// The app's terminal theme, which programs asking for colours are told.
     terminal_colors: Mutex<sikemux_wire::grid::TerminalColors>,
     /// The person's theme resolved, kept until their preferences change.
@@ -510,7 +512,7 @@ impl Core {
             preferences: preferences::Prefs::new(data_dir),
             drafts: drafts::Drafts::new(data_dir),
             streams: streams::Streams::default(),
-            device_view: Mutex::new(Vec::new()),
+            device_view: Mutex::default(),
             terminal_colors: Mutex::default(),
             palette: Mutex::new(themes::default_palette()),
         });
@@ -917,8 +919,9 @@ impl Core {
         workspace
     }
 
-    /// The view devices are sent, and whether anything in it moves by itself.
-    fn device_view_frame(&self) -> Option<(Vec<u8>, bool)> {
+    /// The view `device` is sent, or every client without a front of its own, and whether
+    /// anything in it moves by itself.
+    fn device_view_frame(&self, device: Option<&str>) -> Option<(Vec<u8>, bool)> {
         let (chats, sessions) = self.ranked_infos();
         let moving = chats.iter().any(|chat| {
             chat.group == AgentGroup::Working
@@ -933,7 +936,7 @@ impl Core {
         let recent = self.workspaces.recent(&chats);
         let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
         let workspace = self.workspace_view();
-        let layout = Box::new(layout::view(self, &workspace, &sessions));
+        let layout = Box::new(layout::view(self, &workspace, &sessions, device));
         let view = DeviceView {
             workspace,
             sessions,
@@ -967,24 +970,34 @@ impl Core {
         if devices.is_empty() {
             return false;
         }
+        let fronted = layout::fronted(self);
         let mut last = self.device_view.locked();
-        let Some((frame, moving)) = self.device_view_frame() else {
-            return false;
-        };
-        if *last != frame {
-            let shared: Arc<[u8]> = frame.as_slice().into();
-            for client in devices {
-                client.send(shared.clone());
+        let mut frames: HashMap<Option<String>, Option<Arc<[u8]>>> = HashMap::new();
+        let mut moving = false;
+        for client in devices {
+            let key = client.peer.device_id().filter(|id| fronted.contains(id));
+            let frame = frames.entry(key.clone()).or_insert_with(|| {
+                let (frame, moves) = self.device_view_frame(key.as_deref())?;
+                moving |= moves;
+                if last.get(&key) == Some(&frame) {
+                    return None;
+                }
+                let shared: Arc<[u8]> = frame.as_slice().into();
+                last.insert(key.clone(), frame);
+                Some(shared)
+            });
+            if let Some(frame) = frame {
+                client.send(frame.clone());
             }
-            *last = frame;
         }
+        last.retain(|key, _| frames.contains_key(key));
         moving
     }
 
     /// A device that just connected starts from the whole view.
     pub(crate) fn send_device_view(&self, client: &ClientConn) {
         let _last = self.device_view.locked();
-        if let Some((frame, _)) = self.device_view_frame() {
+        if let Some((frame, _)) = self.device_view_frame(client.peer.device_id().as_deref()) {
             client.send(frame.into());
         }
     }

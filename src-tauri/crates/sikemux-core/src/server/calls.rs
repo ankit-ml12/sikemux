@@ -213,6 +213,7 @@ calls! { core, client, params;
     "renameTab": Full => answer(super::layout::rename_tab(&core, parse(params)?)?),
     "duplicateTab": Full => answer(super::layout::duplicate_tab(&core, parse(params)?).await?),
     "activateProject": Full => answer(super::layout::activate_project(&core, parse(params)?)?),
+    "chooseHost": Full => answer(super::layout::choose_host(&core, parse(params)?).await?),
     "splitPane": Full => answer(super::layout::split_pane(&core, parse(params)?)?),
     "closePane": Full => answer(super::layout::close_pane(&core, parse(params)?)?),
     "resizeSplit": Full => answer(super::layout::resize_split(&core, parse(params)?)?),

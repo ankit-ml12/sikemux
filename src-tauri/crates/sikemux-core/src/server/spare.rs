@@ -381,6 +381,14 @@ pub(crate) struct SshParams {
     host: String,
 }
 
+impl SshParams {
+    pub(crate) fn new(host: &str) -> Self {
+        Self {
+            host: host.to_owned(),
+        }
+    }
+}
+
 /// Opens a terminal tab connected to `host`, by its alias in the person's
 /// SSH config, and brings the host to the front. Answers the tab's id.
 pub(crate) async fn open_ssh_terminal(core: &Arc<Core>, params: SshParams) -> CoreResult<String> {

@@ -1948,6 +1948,10 @@ pub struct Layout {
     /// Whether the terminals' strip is in front instead of a project or host.
     #[serde(default)]
     pub terminals_in_front: bool,
+    /// The account's other host the person is on, by its key, whose own projects and tabs
+    /// are shown instead of this host's; none while they are on this host or an SSH host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen_host: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

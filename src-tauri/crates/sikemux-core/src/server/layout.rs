@@ -2,7 +2,8 @@
 //! same ones. Agents' tabs follow the workspace: a new agent gets a tab at the
 //! end of its project's strip, and a tab goes once nothing it shows is left.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
@@ -19,6 +20,78 @@ const MAX_TABS: usize = 64;
 pub(crate) struct Layouts {
     layout: Mutex<Layout>,
     kept: Kept,
+    /// What each paired device has in front, by its id, once it moved anything there. The
+    /// tabs are the same for every client; what is in front is each one's own.
+    fronts: Mutex<HashMap<String, Front>>,
+}
+
+tokio::task_local! {
+    /// The paired device whose request is being answered, so a layout edit it causes moves
+    /// only what that device has in front.
+    static ASKER: Option<String>;
+}
+
+/// Answers `request` for `device`, or for this host's own clients when there is none.
+pub(crate) async fn asked_by<F: Future>(device: Option<String>, request: F) -> F::Output {
+    ASKER.scope(device, request).await
+}
+
+fn asker() -> Option<String> {
+    ASKER.try_with(Clone::clone).ok().flatten()
+}
+
+/// The project, host, strip and tabs a client has in front.
+#[derive(Clone, Default)]
+struct Front {
+    active_project: Option<String>,
+    active_host: Option<String>,
+    chosen_host: Option<String>,
+    terminals_in_front: bool,
+    active: BTreeMap<String, Option<String>>,
+}
+
+impl Front {
+    fn of(layout: &Layout) -> Self {
+        let projects = layout
+            .projects
+            .iter()
+            .map(|(id, strip)| (format!("project:{id}"), strip.active.clone()));
+        let hosts = layout
+            .hosts
+            .iter()
+            .map(|(alias, strip)| (format!("ssh:{alias}"), strip.active.clone()));
+        Self {
+            active_project: layout.active_project.clone(),
+            active_host: layout.active_host.clone(),
+            chosen_host: layout.chosen_host.clone(),
+            terminals_in_front: layout.terminals_in_front,
+            active: projects
+                .chain(hosts)
+                .chain([("terminals".to_owned(), layout.terminals.active.clone())])
+                .collect(),
+        }
+    }
+
+    fn lay_over(&self, layout: &mut Layout) {
+        layout.active_project = self.active_project.clone();
+        layout.active_host = self.active_host.clone();
+        layout.chosen_host = self.chosen_host.clone();
+        layout.terminals_in_front = self.terminals_in_front;
+        let front = |key: String| self.active.get(&key).cloned();
+        for (id, strip) in &mut layout.projects {
+            if let Some(active) = front(format!("project:{id}")) {
+                strip.active = active;
+            }
+        }
+        for (alias, strip) in &mut layout.hosts {
+            if let Some(active) = front(format!("ssh:{alias}")) {
+                strip.active = active;
+            }
+        }
+        if let Some(active) = front("terminals".to_owned()) {
+            layout.terminals.active = active;
+        }
+    }
 }
 
 impl Layouts {
@@ -27,13 +100,40 @@ impl Layouts {
         Self {
             layout: Mutex::new(kept.load()),
             kept,
+            fronts: Mutex::default(),
         }
     }
 }
 
-/// The layout as clients are sent it, fitted to the workspace and sessions.
-pub(crate) fn view(core: &Core, workspace: &Workspace, sessions: &[SessionInfo]) -> Layout {
-    fitted(core.layouts.layout.locked().clone(), workspace, sessions)
+/// The layout as `device` is sent it, or this host's own clients when there is none, fitted
+/// to the workspace and sessions.
+pub(crate) fn view(
+    core: &Core,
+    workspace: &Workspace,
+    sessions: &[SessionInfo],
+    device: Option<&str>,
+) -> Layout {
+    let mut layout = core.layouts.layout.locked().clone();
+    if let Some(front) = device.and_then(|device| core.layouts.fronts.locked().get(device).cloned())
+    {
+        front.lay_over(&mut layout);
+    }
+    on_linked_host(core, fitted(layout, workspace, sessions))
+}
+
+/// The paired devices with what they have in front of their own.
+pub(crate) fn fronted(core: &Core) -> HashSet<String> {
+    core.layouts.fronts.locked().keys().cloned().collect()
+}
+
+/// The layout, with the chosen host dropped once it is no longer linked with this one.
+fn on_linked_host(core: &Core, mut layout: Layout) -> Layout {
+    if let Some(chosen) = &layout.chosen_host {
+        if !core.remote.links().iter().any(|link| &link.id == chosen) {
+            layout.chosen_host = None;
+        }
+    }
+    layout
 }
 
 fn fitted(mut layout: Layout, workspace: &Workspace, sessions: &[SessionInfo]) -> Layout {
@@ -345,13 +445,33 @@ fn tab(id: String, kind: PaneKind, target: String) -> Tab {
 }
 
 /// Changes the layout as clients see it now, keeps it and tells them.
+/// An edit a paired device asked for moves only what it has in front; the tabs it opens,
+/// closes or moves change for everyone.
 fn edit<T>(core: &Core, change: impl FnOnce(&mut Layout) -> CoreResult<T>) -> CoreResult<T> {
     let workspace = core.workspace_view();
     let sessions = core.session_infos();
+    let device = asker();
     let answer = {
         let mut kept = core.layouts.layout.locked();
-        let mut layout = fitted(kept.clone(), &workspace, &sessions);
+        let mut fronts = core.layouts.fronts.locked();
+        let shared = on_linked_host(core, fitted(kept.clone(), &workspace, &sessions));
+        let mut layout = shared.clone();
+        if let Some(front) = device.as_ref().and_then(|device| fronts.get(device)) {
+            front.lay_over(&mut layout);
+        }
         let answer = change(&mut layout)?;
+        if let Some(device) = device {
+            fronts.insert(device, Front::of(&layout));
+            Front::of(&shared).lay_over(&mut layout);
+        }
+        let paired: HashSet<String> = core
+            .remote
+            .status()
+            .devices
+            .into_iter()
+            .map(|paired| paired.id)
+            .collect();
+        fronts.retain(|device, _| paired.contains(device));
         *kept = layout;
         core.layouts.kept.save(&*kept);
         answer
@@ -481,6 +601,7 @@ fn strip_at<'a>(
 
 /// Puts the strip `at` names in front.
 fn bring_forward(layout: &mut Layout, at: &At) {
+    layout.chosen_host = None;
     layout.terminals_in_front = at.terminals;
     match (&at.host, at.terminals) {
         (_, true) => layout.active_host = None,
@@ -517,6 +638,7 @@ pub(crate) fn show_ssh_terminal(core: &Core, host: String, id: SessionId) -> Cor
         strip.tabs.push(opened);
         strip.active = Some(tab_id.clone());
         layout.active_host = Some(host);
+        layout.chosen_host = None;
         layout.terminals_in_front = false;
         Ok(tab_id)
     })
@@ -659,7 +781,7 @@ pub(crate) async fn duplicate_tab(core: &Arc<Core>, params: TabParams) -> CoreRe
         return Err("only a project's tabs are copied".into());
     }
     let project = &params.at.project;
-    let source = view(core, &core.workspace_view(), &core.session_infos())
+    let source = view(core, &core.workspace_view(), &core.session_infos(), None)
         .projects
         .get(project)
         .and_then(|strip| strip.tabs.iter().find(|tab| tab.id == params.tab))
@@ -760,6 +882,51 @@ pub(crate) fn move_tab(core: &Core, params: TabParams) -> CoreResult<()> {
 #[derive(Deserialize)]
 pub(crate) struct ProjectParams {
     project: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct HostParams {
+    /// "this", "host:<key>" for another host on the account, or "ssh:<alias>".
+    host: String,
+}
+
+/// Puts the asking client on a host: this one, another on the account, or an SSH host, whose
+/// strip comes forward, opening a terminal there when it has none.
+pub(crate) async fn choose_host(core: &Arc<Core>, params: HostParams) -> CoreResult<()> {
+    if let Some(alias) = params.host.strip_prefix("ssh:") {
+        let has_tabs = core
+            .layouts
+            .layout
+            .locked()
+            .hosts
+            .get(alias)
+            .is_some_and(|strip| !strip.tabs.is_empty());
+        if !has_tabs {
+            super::spare::open_ssh_terminal(core, super::spare::SshParams::new(alias)).await?;
+        }
+    }
+    edit(core, |layout| {
+        layout.terminals_in_front = false;
+        match params.host.split_once(':') {
+            None if params.host == "this" => {
+                layout.chosen_host = None;
+                layout.active_host = None;
+            }
+            Some(("host", key)) => {
+                if !core.remote.links().iter().any(|link| link.id == key) {
+                    return Err("that host is not linked with this one".into());
+                }
+                layout.chosen_host = Some(key.to_owned());
+                layout.active_host = None;
+            }
+            Some(("ssh", alias)) => {
+                layout.chosen_host = None;
+                layout.active_host = Some(alias.to_owned());
+            }
+            _ => return Err("that is not a host".into()),
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn activate_project(core: &Core, params: ProjectParams) -> CoreResult<()> {
