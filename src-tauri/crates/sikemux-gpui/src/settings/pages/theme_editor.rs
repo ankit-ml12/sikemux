@@ -349,9 +349,26 @@ pub fn edit(bench: &mut Workbench, id: &str, window: &mut Window, cx: &mut Conte
     open(bench, theme.clone(), theme, false, window, cx);
 }
 
-/// Works out a theme from the colours of the desktop wallpaper, and opens it to edit.
-pub fn from_wallpaper(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
-    let Some(path) = wallpaper::path() else {
+/// A picture a theme can be drawn from.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Picture {
+    Wallpaper,
+    PaneImage,
+}
+
+/// Works out a theme from the colours of the desktop wallpaper or the pane image, and opens
+/// it to edit.
+pub fn from_picture(
+    bench: &mut Workbench,
+    picture: Picture,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let path = match picture {
+        Picture::Wallpaper => wallpaper::path(),
+        Picture::PaneImage => bench.preferences().pane_image.map(std::path::PathBuf::from),
+    };
+    let Some(path) = path else {
         return;
     };
     if let Some(appearance) = bench
@@ -359,7 +376,7 @@ pub fn from_wallpaper(bench: &mut Workbench, window: &mut Window, cx: &mut Conte
         .as_mut()
         .and_then(|settings| settings.pages.appearance.as_mut())
     {
-        appearance.reading_wallpaper = true;
+        appearance.reading = Some(picture);
     }
     bench.parts.redraw(&bench.parts.stage, cx);
     let asks = bench.asks.clone();
@@ -370,7 +387,11 @@ pub fn from_wallpaper(bench: &mut Workbench, window: &mut Window, cx: &mut Conte
             .await;
         let theme = match read {
             Some((name, pixels)) => {
-                let asked = json!({ "name": format!("{name} wallpaper"), "pixels": pixels });
+                let name = match picture {
+                    Picture::Wallpaper => format!("{name} wallpaper"),
+                    Picture::PaneImage => name,
+                };
+                let asked = json!({ "name": name, "pixels": pixels });
                 core::request(&asks, "themeFromPixels", asked).await.ok()
             }
             None => None,
@@ -381,7 +402,7 @@ pub fn from_wallpaper(bench: &mut Workbench, window: &mut Window, cx: &mut Conte
                 .as_mut()
                 .and_then(|settings| settings.pages.appearance.as_mut())
             {
-                appearance.reading_wallpaper = false;
+                appearance.reading = None;
             }
             if let Some(original) = theme {
                 let mut draft = original.clone();

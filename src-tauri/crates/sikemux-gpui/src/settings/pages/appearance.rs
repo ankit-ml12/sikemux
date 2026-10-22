@@ -36,7 +36,8 @@ pub struct Fields {
     blur: Entity<SliderState>,
     /// The theme being edited, when one is.
     pub editor: Option<super::theme_editor::Editor>,
-    pub reading_wallpaper: bool,
+    /// The picture a theme is being drawn from, while it is read.
+    pub reading: Option<super::theme_editor::Picture>,
     _watching: Vec<Subscription>,
 }
 
@@ -125,7 +126,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             opacity,
             blur,
             editor: None,
-            reading_wallpaper: false,
+            reading: None,
             _watching: vec![typing, moved_strength, moved_opacity, moved_blur],
         });
     }
@@ -352,9 +353,33 @@ pub fn render(
     let worn = themes
         .iter()
         .find(|summary| summary.id == preferences.theme_id);
+    let has_pane_image = preferences.pane_image.is_some();
     let current = worn.map(|worn| {
+        use super::theme_editor::Picture;
         let custom = worn.source == ThemeSource::Custom;
-        let (from, change, id) = (this.clone(), this.clone(), worn.id.clone());
+        let (change, id) = (this.clone(), worn.id.clone());
+        let from = |picture: Picture, label: &'static str| {
+            let this = this.clone();
+            ui::Button::new(
+                match picture {
+                    Picture::Wallpaper => "theme-from-wallpaper",
+                    Picture::PaneImage => "theme-from-pane-image",
+                },
+                if fields.reading == Some(picture) {
+                    "Reading…"
+                } else {
+                    label
+                },
+                ui::Variant::Outline,
+            )
+            .icon(Icon::Image)
+            .disabled(fields.reading.is_some())
+            .on_click(move |_, window, cx| {
+                this.update(cx, |bench, cx| {
+                    super::theme_editor::from_picture(bench, picture, window, cx)
+                })
+            })
+        };
         div()
             .flex()
             .items_center()
@@ -383,24 +408,10 @@ pub fn render(
                             .child(worn.name.clone()),
                     ),
             )
-            .child(
-                ui::Button::new(
-                    "theme-from-wallpaper",
-                    if fields.reading_wallpaper {
-                        "Reading…"
-                    } else {
-                        "From wallpaper"
-                    },
-                    ui::Variant::Outline,
-                )
-                .icon(Icon::Image)
-                .disabled(fields.reading_wallpaper)
-                .on_click(move |_, window, cx| {
-                    from.update(cx, |bench, cx| {
-                        super::theme_editor::from_wallpaper(bench, window, cx)
-                    })
-                }),
-            )
+            .child(from(Picture::Wallpaper, "From wallpaper"))
+            .when(has_pane_image, |row| {
+                row.child(from(Picture::PaneImage, "From pane image"))
+            })
             .child(
                 ui::Button::new(
                     "theme-change",
