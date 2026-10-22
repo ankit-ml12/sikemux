@@ -77,7 +77,13 @@ pub fn follow(window: &mut Window, cx: &App) {
         true => WindowBackgroundAppearance::Transparent,
         false => WindowBackgroundAppearance::Opaque,
     });
-    blur(window, if clear { wanted.blur } else { 0 });
+    let radius = if clear { wanted.blur } else { 0 };
+    blur(window, radius);
+    #[cfg(feature = "drive")]
+    crate::drive::trace(format_args!(
+        "see-through opacity {} blur {radius}",
+        wanted.opacity
+    ));
 }
 
 /// Blurs the desktop behind the window by `radius`, a plain gaussian as Terminal and

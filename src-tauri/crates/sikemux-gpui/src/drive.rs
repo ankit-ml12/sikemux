@@ -20,6 +20,14 @@ use tokio::sync::mpsc;
 
 const SETTLE: Duration = Duration::from_millis(60);
 const FRAME: Duration = Duration::from_millis(16);
+/// As long as a person holds a click: GPUI listens for the release only once a frame has
+/// drawn after the press.
+const PRESS: Duration = Duration::from_millis(80);
+
+/// Whether the test app opens without taking the person's keys, for checks run while they work.
+pub fn stays_behind() -> bool {
+    std::env::var_os("SIKEMUX_GPUI_DRIVE_BEHIND").is_some()
+}
 
 /// Listens for step files while the test bundle runs, and answers each with what it did.
 pub fn listen(window: AnyWindowHandle, cx: &mut App) {
@@ -95,6 +103,7 @@ async fn run(line: &str, window: AnyWindowHandle, cx: &mut AsyncApp) -> Result<(
             let clicks = if verb == "double" { 2 } else { 1 };
             for count in 1..=clicks {
                 input(window, cx, down(position, button, count))?;
+                cx.background_executor().timer(PRESS).await;
                 input(window, cx, up(position, button, count))?;
             }
             Ok(())

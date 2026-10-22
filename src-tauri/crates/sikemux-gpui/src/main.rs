@@ -39,6 +39,12 @@ fn main() {
             .expect("window opens");
             #[cfg(feature = "drive")]
             sikemux_gpui::drive::listen(_window, cx);
-            cx.activate(true);
+            #[cfg(feature = "drive")]
+            let behind = sikemux_gpui::drive::stays_behind();
+            #[cfg(not(feature = "drive"))]
+            let behind = false;
+            if !behind {
+                cx.activate(true);
+            }
         });
 }
