@@ -12,7 +12,7 @@ mod pulls;
 mod releases;
 mod run_actions;
 mod runs;
-mod shell;
+pub(crate) mod shell;
 mod thread;
 
 use std::future::Future;

@@ -3043,9 +3043,6 @@ impl Workbench {
             }
             return;
         };
-        if self.area == Area::Local {
-            return;
-        }
         let (folder, branch) = (
             project.path.to_string_lossy().into_owned(),
             crate::codehost::branch_of(project),
@@ -3085,7 +3082,7 @@ impl Workbench {
     }
 
     /// Brings the project's Git tab to the front showing `area`.
-    fn open_area(&mut self, area: Area, cx: &mut Context<Self>) {
+    pub(crate) fn open_area(&mut self, area: Area, cx: &mut Context<Self>) {
         self.area = area;
         self.open_git();
         cx.notify();

@@ -733,7 +733,7 @@ impl HostArea {
     }
 
     /// The menu of who is signed in, to switch accounts or repositories.
-    pub(super) fn account_menu(&mut self, cx: &mut Context<Self>) -> Option<ui::Choices> {
+    pub(crate) fn account_menu(&mut self, cx: &mut Context<Self>) -> Option<ui::Choices> {
         if !self.menu {
             return None;
         }
@@ -874,7 +874,7 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let host = host_label(&area.host.host);
     let Some(login) = area.login().map(str::to_owned) else {
-        return div().into_any_element();
+        return sign_in_chip(area, cx);
     };
     div()
         .id("host-account")
@@ -888,6 +888,48 @@ pub fn account(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         )))
         .on_click(cx.listener(|area, _, _, cx| area.open_menu(cx)))
         .child(area.face(Some(&login), area.avatar(), 20., cx))
+        .into_any_element()
+}
+
+/// Sign in, split as the Run button is: the host's logo in a cell of its own on the plain
+/// ground, a hairline, then the words. It opens Pull requests, which asks for the sign-in.
+fn sign_in_chip(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let host = host_label(&area.host.host).to_owned();
+    let logo = match area.host.host.as_str() {
+        "github" => Icon::Github,
+        _ => Icon::Git,
+    };
+    let bench = area.bench.clone();
+    div()
+        .id("host-sign-in")
+        .flex_none()
+        .h(px(28.))
+        .flex()
+        .rounded(RADIUS_2)
+        .overflow_hidden()
+        .border_1()
+        .border_color(t.border)
+        .bg(t.surface)
+        .cursor_pointer()
+        .text_size(crate::theme::ui_text(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.text_secondary)
+        .hover(move |chip| chip.bg(t.surface_hover).text_color(t.text_primary))
+        .tooltip(ui::tooltip(format!("Sign in to {host}")))
+        .on_click(move |_, _, cx| {
+            let _ = bench.update(cx, |bench, cx| bench.open_area(super::Area::Pulls, cx));
+        })
+        .child(
+            div()
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .border_r_1()
+                .border_color(t.border)
+                .child(ui::picture(logo, 12., t.text_secondary)),
+        )
+        .child(div().px(px(10.)).flex().items_center().child("Sign in"))
         .into_any_element()
 }
 

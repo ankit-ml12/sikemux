@@ -2158,6 +2158,7 @@ impl Render for GitPane {
                     .child(div().flex_1().min_h_0().child(reviewed)),
             )
             .children(asking)
+            .children(host_menu(self, cx))
     }
 }
 
@@ -2548,6 +2549,7 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         .text_color(if error { t.danger } else { t.warn })
                         .child(busy)
                 }))
+                .children(host_account(pane, cx))
                 .child(more_menu(pane, cx)),
         )
         .child(
@@ -2729,6 +2731,19 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
             }
             menu
         })
+}
+
+/// The project's code host account, lent by its areas: the person's face and its menu, or
+/// Sign in while signed out.
+fn host_account(pane: &GitPane, cx: &mut Context<GitPane>) -> Option<AnyElement> {
+    let host = pane.bench.upgrade()?.read(cx).host.clone()?;
+    Some(host.update(cx, |area, cx| crate::codehost::shell::account(area, cx)))
+}
+
+/// The code host's account menu, while the person has it open from the head.
+fn host_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> Option<ui::Choices> {
+    let host = pane.bench.upgrade()?.read(cx).host.clone()?;
+    host.update(cx, |area, cx| area.account_menu(cx))
 }
 
 /// The head's menu of everything else: remotes, stashes, and the pane's own tools.
