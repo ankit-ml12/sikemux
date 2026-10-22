@@ -1,13 +1,13 @@
 //! Which releases updates come from and when they were last checked, and whether anonymous
 //! usage is shared.
 
+use gpui_kit::component::notification::Notification;
 use gpui_kit::{
     div, px, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
 };
 use serde_json::json;
 use sikemux_wire::protocol::UpdateChannel;
 
-use crate::core::Ask;
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::ui;
@@ -74,14 +74,7 @@ pub fn render(
                 let this = this.clone();
                 ui::Button::new("update-check", "Check now", ui::Variant::Outline)
                     .disabled(busy)
-                    .on_click(move |_, _, cx| {
-                        this.update(cx, |bench, _| {
-                            let _ = bench.asks.send(Ask::Call {
-                                method: "updateCheck",
-                                params: json!({}),
-                            });
-                        })
-                    })
+                    .on_click(move |_, _, cx| this.update(cx, check_now))
             };
             div()
                 .child(rows::row(
@@ -163,4 +156,28 @@ pub fn render(
             cx,
         ),
     ]
+}
+
+/// A check the person asked for, which says how it went, as on the Mac.
+fn check_now(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let checked = crate::core::request(&bench.asks, "updateCheck", json!({}));
+    cx.spawn(async move |bench, cx| {
+        let note = match checked.await {
+            Ok(status) => {
+                let channel = status["checked"]["channel"].as_str().unwrap_or("stable");
+                match status["available"]["version"].as_str() {
+                    None => Notification::info(format!(
+                        "Sikemux is up to date on the {channel} channel."
+                    )),
+                    Some(version) if status["state"] == "idle" => {
+                        Notification::success(format!("Update v{version} is ready to install."))
+                    }
+                    Some(_) => return,
+                }
+            }
+            Err(error) => Notification::error(error),
+        };
+        let _ = bench.update(cx, |bench, cx| bench.notify(note, cx));
+    })
+    .detach();
 }
