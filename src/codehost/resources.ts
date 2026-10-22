@@ -9,7 +9,6 @@ import {
     type CommitAuthor,
     type TimelineItem,
     type Artifact,
-    type PendingApproval,
     type RepoListing,
     type RepoRef,
     type RateLimit,
@@ -81,12 +80,6 @@ export const artifactsR = resource({
     kind: "host.artifacts",
     fetch: (repo: RepoRef, runId: string): Promise<Artifact[]> => hostApi(repo.provider).artifacts(repo, runId),
     staleAfterMs: 60_000,
-});
-
-export const approvalsR = resource({
-    kind: "host.approvals",
-    fetch: (repo: RepoRef, runId: string): Promise<PendingApproval[]> => hostApi(repo.provider).pendingApprovals(repo, runId),
-    staleAfterMs: 15_000,
 });
 
 export const timelineR = resource({

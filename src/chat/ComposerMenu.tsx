@@ -2,7 +2,6 @@ import { Fragment, useLayoutEffect, useMemo, type ReactNode, type RefObject } fr
 import { AgentStateIndicator } from "../agents/AgentStateIndicator";
 import { AgentFace } from "../buddies/Buddy";
 import type { TrackedItem } from "../codehost/tracked";
-import type { RepoRef } from "../codehost/types";
 import { formatAge } from "../lib/format";
 import { dirname } from "../lib/paths";
 import { useResourceEnabled } from "../state/resources";
@@ -36,7 +35,7 @@ export type MenuPick =
     | { kind: "mate"; mate: Mate }
     | { kind: "earlier"; earlier: EarlierChat; uri: string }
     | { kind: "entry"; entry: ProjectEntry }
-    | { kind: "tracked"; item: TrackedItem; repo: RepoRef };
+    | { kind: "tracked"; item: TrackedItem };
 
 /** How the composer's keys drive the menu while it is open. */
 export interface MenuKeys {
@@ -83,7 +82,7 @@ function trackedRows(tracked: TrackedMatches, prefix: string): MenuRow[] {
     if (tracked.state !== "ready") return [];
     return tracked.matches.map((item) => ({
         key: `${item.kind}-${item.number}`,
-        pick: { kind: "tracked", item, repo: tracked.repo },
+        pick: { kind: "tracked", item },
         content: (
             <>
                 <span className="chat-menu-mark" data-kind={item.kind}>

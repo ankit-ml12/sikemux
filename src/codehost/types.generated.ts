@@ -230,6 +230,12 @@ export interface OpenPull {
     checks: CheckTally | null;
     /** The runs on its head commit. */
     runs: ListedRun[];
+    /**
+     * The local branch checking it out makes: its own branch when it lives on
+     * the repository, else `pr-<number>` from the host's ref for it. None when
+     * it comes from a fork the host keeps no ref for.
+     */
+    checkout?: string;
 }
 
 export type ReviewVerdict = "approved" | "changesRequested";
@@ -256,6 +262,8 @@ export interface OpenRun {
     timing: RunTiming | null;
     /** The jobs that may have written a summary, once the run is over. */
     summaries: string[];
+    /** The deployments it waits on someone to approve, while it waits. */
+    approvals?: PendingApproval[];
 }
 
 export interface ListedJob {
@@ -337,6 +345,18 @@ export interface Billable {
     runner: string;
     totalMs: number;
     jobs: number;
+}
+
+export interface PendingApproval {
+    environmentId: number;
+    environment: string;
+    waitMinutes: number;
+    /**
+     * False when somebody else has to sign this off, which is worth saying
+     * rather than offering a button that will be refused.
+     */
+    canApprove: boolean;
+    reviewers: string[];
 }
 
 /**
@@ -522,18 +542,6 @@ export interface Artifact {
 export interface SavedArtifact {
     path: string;
     bytes: number;
-}
-
-export interface PendingApproval {
-    environmentId: number;
-    environment: string;
-    waitMinutes: number;
-    /**
-     * False when somebody else has to sign this off, which is worth saying
-     * rather than offering a button that will be refused.
-     */
-    canApprove: boolean;
-    reviewers: string[];
 }
 
 export interface Comment {

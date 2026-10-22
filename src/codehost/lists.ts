@@ -4,8 +4,21 @@ import type { PluginFailure } from "../api/plugins";
 import { isSignedOutFailure } from "../plugin-api/backend";
 import { resourceKind } from "../plugin-api/identity";
 import { invalidate, resource } from "../state/resources";
+import type { PromptContext } from "../api/acp";
 import type { DiffRow } from "../api/git";
-import type { ChangedFile, IssueList, OpenJobLog, OpenPull, OpenRun, PullList, ReleaseList, RepoRef, RunList, TrackedItem } from "./types";
+import type {
+    ChangedFile,
+    IssueList,
+    OpenJobLog,
+    OpenPull,
+    OpenRun,
+    PullList,
+    ReleaseList,
+    RepoRef,
+    RunList,
+    TrackedItem,
+    TrackedKind,
+} from "./types";
 
 type Answer<T> = { value: T } | { failed: PluginFailure & { plugin: string } };
 
@@ -96,6 +109,34 @@ export const pullFilesR = resource({
     kind: "host.pullFiles",
     fetch: (project: string | null, repo: RepoRef, number: number): Promise<PulledFile[]> =>
         list("codeHostPullFiles", { ...placeOf(project, repo), number }),
+});
+
+/** Checks pull request `number` out in the project, answering the branch it is on. */
+export async function checkoutPull(project: string, number: number): Promise<string> {
+    const { branch } = await list<{ branch: string }>("codeHostCheckout", { project, number });
+    return branch;
+}
+
+/** An issue or pull request of the project's repository in full, as the core writes it for an agent. */
+export function loadTrackedContext(project: string, kind: TrackedKind, number: number): Promise<PromptContext> {
+    return list("codeHostTrackedContext", { project, kind, number });
+}
+
+/** What a new pull request from the project starts with, as the core works it out. */
+export interface NewPull {
+    /** The project's branch, unless others usually merge into it. */
+    head: string | null;
+    /** The branch it goes into by default. */
+    base: string | null;
+    /** The host's branches. */
+    branches: string[];
+    /** The head is on the host already. */
+    pushed: boolean;
+}
+
+export const newPullR = resource({
+    kind: "host.newPull",
+    fetch: (project: string): Promise<NewPull> => list("codeHostNewPull", { project }),
 });
 
 /** One attempt of a run, or the latest when `attempt` is null, with its jobs laid out; the core reads it again while it is going. */

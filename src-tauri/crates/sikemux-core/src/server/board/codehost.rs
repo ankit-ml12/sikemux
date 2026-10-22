@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::auto::Pull;
-use crate::protocol::{CodeHostChoice, ProjectCodeHost, ProjectPull, PullChecks};
+use crate::protocol::{
+    CiAbilities, CodeHostChoice, ProjectCodeHost, ProjectPull, PullAbilities, PullChecks,
+};
 use crate::server::names::project_of;
 use crate::server::plugins::{self, Failure};
 use crate::server::Core;
@@ -27,6 +29,15 @@ struct Host {
     run_path: &'static str,
     /// What comes before a job's number, where an address names one.
     job_path: Option<&'static str>,
+    /// Where the host keeps a pull request's head for fetching, before its
+    /// number, when it keeps one; a fork's branch is fetched from there.
+    pull_heads: Option<&'static str>,
+    /// The ways a person can merge a pull request there, in the order offered.
+    merge_methods: &'static [&'static str],
+    request_changes: bool,
+    reopen: bool,
+    mergeability: bool,
+    ci: CiAbilities,
 }
 
 const HOSTS: [Host; 3] = [
@@ -37,6 +48,26 @@ const HOSTS: [Host; 3] = [
         merges: &[Some("squash"), Some("merge"), Some("rebase")],
         run_path: "/actions/runs/",
         job_path: Some("/job/"),
+        pull_heads: Some("pull"),
+        merge_methods: &["squash", "merge", "rebase"],
+        request_changes: true,
+        reopen: true,
+        mergeability: true,
+        ci: CiAbilities {
+            attempts: true,
+            approvals: true,
+            dispatch: true,
+            annotations: true,
+            summaries: true,
+            artifacts: true,
+            billing: true,
+            workflow_file: true,
+            rerun_failed: true,
+            rerun_job: true,
+            debug_logs: true,
+            delete_runs: true,
+            delete_logs: true,
+        },
     },
     Host {
         id: "bitbucket",
@@ -45,6 +76,26 @@ const HOSTS: [Host; 3] = [
         merges: &[None],
         run_path: "/pipelines/results/",
         job_path: None,
+        pull_heads: None,
+        merge_methods: &["squash", "merge"],
+        request_changes: true,
+        reopen: false,
+        mergeability: true,
+        ci: CiAbilities {
+            attempts: false,
+            approvals: false,
+            dispatch: true,
+            annotations: false,
+            summaries: false,
+            artifacts: false,
+            billing: false,
+            workflow_file: true,
+            rerun_failed: false,
+            rerun_job: false,
+            debug_logs: false,
+            delete_runs: false,
+            delete_logs: false,
+        },
     },
     Host {
         id: "gitlab",
@@ -53,6 +104,26 @@ const HOSTS: [Host; 3] = [
         merges: &[None],
         run_path: "/-/pipelines/",
         job_path: Some("/-/jobs/"),
+        pull_heads: Some("merge-requests"),
+        merge_methods: &["merge", "squash"],
+        request_changes: false,
+        reopen: true,
+        mergeability: true,
+        ci: CiAbilities {
+            attempts: false,
+            approvals: false,
+            dispatch: true,
+            annotations: false,
+            summaries: false,
+            artifacts: false,
+            billing: false,
+            workflow_file: true,
+            rerun_failed: true,
+            rerun_job: true,
+            debug_logs: false,
+            delete_runs: true,
+            delete_logs: false,
+        },
     },
 ];
 
@@ -251,6 +322,18 @@ impl Repo {
         &self.owner
     }
 
+    /// The ref the host keeps pull request `number`'s head at, when it keeps one.
+    pub(crate) fn pull_head(&self, number: u64) -> Option<String> {
+        self.host
+            .pull_heads
+            .map(|heads| format!("{heads}/{number}/head"))
+    }
+
+    /// What the host is called, as people know it.
+    pub(crate) fn label(&self) -> &'static str {
+        self.host.label
+    }
+
     pub(crate) fn account(&self) -> Option<&str> {
         self.account.as_deref()
     }
@@ -274,16 +357,45 @@ pub(crate) async fn shown(
         sections: ["pulls", "actions", "issues", "releases"]
             .map(str::to_owned)
             .to_vec(),
+        pulls: PullAbilities {
+            merge_methods: host
+                .merge_methods
+                .iter()
+                .map(|method| (*method).to_owned())
+                .collect(),
+            request_changes: host.request_changes,
+            reopen: host.reopen,
+            mergeability: host.mergeability,
+        },
+        ci: host.ci.clone(),
     })
+}
+
+/// Branches others usually merge into, in the order one is picked as a base.
+const USUAL_BASES: [&str; 4] = ["main", "master", "develop", "trunk"];
+
+/// A branch others usually merge into, which needs no pull request of its own.
+pub(crate) fn is_usual_base(branch: &str) -> bool {
+    USUAL_BASES.contains(&branch)
+}
+
+/// The branch a new pull request from `head` goes into: a usual base among
+/// `branches`, else the first other one.
+pub(crate) fn default_base<'a>(branches: &'a [String], head: Option<&str>) -> Option<&'a str> {
+    let others = || {
+        branches
+            .iter()
+            .map(String::as_str)
+            .filter(move |branch| Some(*branch) != head)
+    };
+    USUAL_BASES
+        .iter()
+        .find_map(|usual| others().find(|branch| branch == usual))
+        .or_else(|| others().next())
 }
 
 /// The open pull request `branch` is the head of, with how the checks on its
 /// latest commit stand.
-/// A branch others usually merge into, which needs no pull request of its own.
-pub(crate) fn is_usual_base(branch: &str) -> bool {
-    matches!(branch, "main" | "master" | "develop" | "trunk")
-}
-
 pub(crate) async fn branch_pull(repo: &Repo, branch: &str) -> Result<Option<ProjectPull>, String> {
     let open = repo.call("pulls", json!({ "state": "open" })).await?;
     let Some(found) = open
@@ -603,4 +715,28 @@ pub(super) async fn merge(pull: &Pull, sha: &str) -> Result<(), String> {
         }
     }
     Err(refused.map_or_else(|| "the code host merges no way".to_owned(), String::from))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(branches: &[&str]) -> Vec<String> {
+        branches.iter().map(|branch| (*branch).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_new_pull_request_goes_into_the_branch_a_repository_usually_merges_into() {
+        let branches = names(&["feat/x", "develop", "main"]);
+        assert_eq!(default_base(&branches, Some("feat/x")), Some("main"));
+        let branches = names(&["feat/x", "master"]);
+        assert_eq!(default_base(&branches, Some("feat/x")), Some("master"));
+    }
+
+    #[test]
+    fn a_new_pull_request_never_goes_into_the_branch_its_changes_are_on() {
+        assert_eq!(default_base(&names(&["main"]), Some("main")), None);
+        let branches = names(&["feat/x", "release/1"]);
+        assert_eq!(default_base(&branches, Some("feat/x")), Some("release/1"));
+    }
 }

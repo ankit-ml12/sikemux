@@ -21,12 +21,9 @@ const api = vi.hoisted(() => ({
 const localGit = vi.hoisted(() => ({
     compare: vi.fn(),
     push: vi.fn(),
-    fetch: vi.fn(),
-    branches: vi.fn(),
-    checkoutSmart: vi.fn(),
-    checkoutRemoteBranch: vi.fn(),
-    fetchRef: vi.fn(),
 }));
+
+const checkout = vi.hoisted(() => vi.fn((_params: Record<string, unknown>) => ({ branch: "feat/run-page" })));
 
 vi.mock("../../api/git", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../api/git")>()), git: localGit }));
 
@@ -48,6 +45,8 @@ import { PullsView } from "./PullsView";
 const host = registerTestHost(api);
 const checks = new Map<number, CheckTally>();
 ciCore(api, (listed) => checks.get(listed.number) ?? null, {
+    codeHostCheckout: checkout,
+    codeHostNewPull: () => ({ head: "feat/run-page", base: "main", branches: ["main", "feat/run-page"], pushed: true }),
     codeHostPullFiles: () => [{ path: "src/run.ts", status: "added", additions: 3, deletions: 0, rows: [[1, 1, "x"]] }],
 });
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
@@ -197,7 +196,10 @@ const openDialog = async () => {
     return useDialogs.getState().dialog!;
 };
 
-function detail(extra: Partial<Pull> = {}, { on = host as CodeHost, cwd = "/repo" as string | null, projectBranch = "main", login = "me" } = {}) {
+function detail(
+    extra: Partial<Pull> & { checkout?: string | null } = {},
+    { on = host as CodeHost, cwd = "/repo" as string | null, projectBranch = "main", login = "me" } = {},
+) {
     api.pull.mockResolvedValue({ ...pull, ...extra });
     return render(
         <InHost host={on}>
@@ -256,9 +258,7 @@ describe("an open pull request", () => {
         api.mergePull.mockReset().mockResolvedValue(undefined);
         api.setPullState.mockReset().mockResolvedValue(undefined);
         api.pullReviews.mockReset().mockResolvedValue([]);
-        for (const mock of [localGit.fetch, localGit.checkoutSmart, localGit.checkoutRemoteBranch, localGit.fetchRef])
-            mock.mockReset().mockResolvedValue("ok");
-        localGit.branches.mockReset().mockResolvedValue([]);
+        checkout.mockClear();
     });
 
     it("merges only the commit the person saw, once they confirm", async () => {
@@ -322,18 +322,17 @@ describe("an open pull request", () => {
     });
 
     it("checks the branch out in the project", async () => {
-        localGit.branches.mockResolvedValue([{ name: "feat/run-page" }]);
-        detail();
+        detail({ checkout: "feat/run-page" });
         await userEvent.click(await within(leftColumn()).findByRole("button", { name: "Check out" }));
-        await waitFor(() => expect(localGit.checkoutSmart).toHaveBeenCalledWith("/repo", "feat/run-page"));
+        await waitFor(() => expect(checkout).toHaveBeenCalledWith({ project: "/repo", number: 31 }));
         await waitFor(() => expect(toasts()).toContain("success: Checked out #31"));
     });
 
     it("offers no checkout of a fork's branch on a host that cannot fetch it, nor outside the project", async () => {
-        detail({ headLabel: "someone-else:feat/run-page" });
+        detail({ headLabel: "someone-else:feat/run-page", checkout: null });
         expect(await within(leftColumn()).findByRole("button", { name: /Check out/ })).toBeDisabled();
         cleanup();
-        detail({}, { cwd: null });
+        detail({ checkout: "feat/run-page" }, { cwd: null });
         expect(await within(leftColumn()).findByRole("button", { name: /Check out/ })).toBeDisabled();
     });
 

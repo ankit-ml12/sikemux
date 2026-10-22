@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
     list: vi.fn(async () => ["src/main.ts", "src/lib/util.ts", "README.md"]),
     onSend: vi.fn((): boolean => true),
     tracked: vi.fn((): TrackedList => ({ state: "loading" })),
-    load: vi.fn(async (_repo: unknown, kind: string, number: number) => ({
+    load: vi.fn(async (_project: string, kind: string, number: number) => ({
         uri: `https://github.com/o/r/${kind === "issue" ? "issues" : "pull"}/${number}`,
         title: `#${number} Login crashes`,
         text: `Issue #${number}: Login crashes`,
@@ -165,7 +165,7 @@ describe("ChatComposer # and ! pickers", () => {
                 true,
             ),
         );
-        expect(mocks.load).toHaveBeenCalledWith(repo, "issue", 12);
+        expect(mocks.load).toHaveBeenCalledWith("/repo", "issue", 12);
     });
 });
 

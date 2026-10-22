@@ -88,6 +88,7 @@ async function listFrom(reads: Reads, method: string, params: Record<string, unk
             verdict: null,
             reviewed: false,
             merge: READINESS[pull.mergeState ?? ""] ?? "checking",
+            checkout: (pull as Pull & { checkout?: string | null }).checkout ?? null,
             runs: runs.map((run) => ({ run, unfinished: run.status !== "completed" })),
         };
     }

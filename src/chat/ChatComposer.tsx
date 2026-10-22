@@ -43,7 +43,6 @@ import type { ChatCommandInfo, ChatRows, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
 import { registerComposer } from "./draftHandoff";
 import type { PromptContext } from "../api/acp";
-import type { RepoRef } from "../codehost/types";
 import type { TrackedItem, TrackedKind } from "../codehost/tracked";
 import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
@@ -101,7 +100,7 @@ interface ComposerContext {
     uri: string;
     title: string;
     text: string | null;
-    tracked: { repo: RepoRef; kind: TrackedKind; number: number } | null;
+    tracked: { project: string; kind: TrackedKind; number: number } | null;
     earlier?: EarlierChat;
     /** How it is written in the draft; it goes with the message only while that is still there. */
     tag?: string;
@@ -122,9 +121,9 @@ function readContext(item: ComposerContext): Promise<PromptContext> {
     // The core opens an earlier chat again as the message goes, and writes what the agent is told of it.
     if (item.earlier) return Promise.resolve({ uri: item.uri, title: item.title, text: "" });
     if (!item.tracked) return Promise.reject(new Error(`${item.title} has nothing to send`));
-    const { repo, kind, number } = item.tracked;
+    const { project, kind, number } = item.tracked;
     return import("../codehost/tracked").then(({ loadTrackedContext }) =>
-        loadTrackedContext(repo, kind, number).catch((failure: unknown) => {
+        loadTrackedContext(project, kind, number).catch((failure: unknown) => {
             throw new Error(`Could not read #${number}: ${errorText(failure)}`);
         }),
     );
@@ -477,14 +476,14 @@ export function ChatComposer({
         setFileTags((current) => [...current.filter((file) => file.tag !== tag), { tag, path }]);
     };
 
-    const selectTracked = (item: TrackedItem, repo: RepoRef) => {
+    const selectTracked = (item: TrackedItem) => {
         const tag = `${item.kind === "pull" ? "!" : "#"}${item.number}`;
         writeTag(tag);
         const chosen = {
             uri: item.url,
             title: `#${item.number} ${item.title}`,
             text: null,
-            tracked: { repo, kind: item.kind, number: item.number },
+            tracked: { project: cwd, kind: item.kind, number: item.number },
             tag,
         };
         setContexts((current) => mergeContext(current, [chosen]));
@@ -503,7 +502,7 @@ export function ChatComposer({
         else if (choice.kind === "mate") selectMate(choice.mate);
         else if (choice.kind === "earlier") selectEarlier(choice.earlier, choice.uri);
         else if (choice.kind === "entry") selectEntry(choice.entry);
-        else selectTracked(choice.item, choice.repo);
+        else selectTracked(choice.item);
     };
 
     const blocked = changingConfig || changingPermissions || !permissionApplied || worktree?.state.kind === "preparing";

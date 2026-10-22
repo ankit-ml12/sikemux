@@ -138,6 +138,46 @@ export interface ProjectCodeHost {
      * `releases`, in order.
      */
     sections: string[];
+    /** What the host lets a pull request do, which clients offer accordingly. */
+    pulls: PullAbilities;
+    /** What the host's CI shows and lets a person do. */
+    ci: CiAbilities;
+}
+
+/** What a code host lets a pull request do. */
+export interface PullAbilities {
+    /** The ways it merges, `squash`, `merge` or `rebase`, in the order offered. */
+    mergeMethods: string[];
+    /** A review can ask for changes. */
+    requestChanges: boolean;
+    /** A closed one can be opened again. */
+    reopen: boolean;
+    /** It says whether one can merge cleanly. */
+    mergeability: boolean;
+}
+
+/** What a code host's CI shows of a run and lets a person do to it. */
+export interface CiAbilities {
+    /** A run keeps its earlier attempts. */
+    attempts: boolean;
+    /** A run can wait on someone approving a deployment. */
+    approvals: boolean;
+    /** A workflow can be started by hand. */
+    dispatch: boolean;
+    annotations: boolean;
+    /** Jobs write summaries of their own. */
+    summaries: boolean;
+    artifacts: boolean;
+    /** It says how many minutes a run was billed. */
+    billing: boolean;
+    workflowFile: boolean;
+    rerunFailed: boolean;
+    rerunJob: boolean;
+    /** A job can run again with its runner's debug logging on. */
+    debugLogs: boolean;
+    deleteRuns: boolean;
+    /** A run's logs can go while the run stays. */
+    deleteLogs: boolean;
 }
 
 /** A set of projects the person shows on their own. */

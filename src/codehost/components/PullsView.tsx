@@ -1,7 +1,6 @@
 import { Segmented } from "../../ui/Controls";
 import { useMemo, useState, type ReactNode } from "react";
 import { confirmDialog, copyText, notify, openUrl, reportError, swallow } from "../../plugin-api/host";
-import { checkoutPull, isOwnBranch, localBranchOf } from "../checkout";
 import { useHost } from "../registry";
 import { useResourceEnabled } from "../../plugin-api/resources";
 import {
@@ -44,7 +43,7 @@ import {
 } from "../api";
 import { errorText } from "../../lib/format";
 import { pullCommitsR, timelineR } from "../resources";
-import { pullFilesR, pullListR, pullViewR } from "../lists";
+import { checkoutPull, pullFilesR, pullListR, pullViewR } from "../lists";
 import { tallySummary, type Outcome } from "../runStatus";
 import { needsPull } from "../compose";
 import { compose, openRunFrom, setListState, showItem } from "../state";
@@ -348,19 +347,30 @@ function MergeBox({ repo, view, active, onOpenRun }: { repo: RepoRef; view: Open
 }
 
 /** Checks the pull request's branch out in this project, one of the side panel's actions. */
-function CheckoutButton({ cwd, repo, pull, current }: { cwd: string | null; repo: RepoRef; pull: Pull; current: string | null }) {
-    const host = useHost();
+function CheckoutButton({
+    cwd,
+    project,
+    pull,
+    checkout,
+    current,
+}: {
+    cwd: string | null;
+    project: string | null;
+    pull: Pull;
+    /** The local branch the core says checking it out makes, none when it cannot be. */
+    checkout: string | null;
+    current: string | null;
+}) {
     const [busy, runBusy] = useBusy();
-    const local = localBranchOf(pull, repo);
-    const here = !!local && local === current;
-    const can = !!cwd && pull.state === "open" && (isOwnBranch(pull, repo) || !!host.pullHeadRef);
+    const here = !!checkout && checkout === current;
+    const can = !!cwd && !!project && pull.state === "open" && !!checkout;
     return (
         <Tooltip
             label={
                 here
-                    ? `${local} is checked out in this project`
+                    ? `${checkout} is checked out in this project`
                     : can
-                      ? `Check out ${local ?? "the branch"} in this project`
+                      ? `Check out ${checkout} in this project`
                       : "Only an open pull request in this project's repository can be checked out"
             }>
             <button
@@ -368,11 +378,11 @@ function CheckoutButton({ cwd, repo, pull, current }: { cwd: string | null; repo
                 className="git-btn"
                 disabled={busy || here || !can}
                 onClick={() =>
-                    cwd &&
+                    project &&
                     runBusy(() =>
-                        checkoutPull(cwd, host, repo, pull)
+                        checkoutPull(project, pull.number)
                             .then(() => notify("success", `Checked out #${pull.number}`))
-                            .catch(swallow("check out the pull request")),
+                            .catch(reportError(`Could not check out #${pull.number}`)),
                     )
                 }>
                 {here ? <IconCheck size={13} /> : <IconCheckout size={13} />}
@@ -697,7 +707,7 @@ function PullColumn({
                     <ShellAccount />
                 </div>
                 <div className="git-btn-group git-side-actions pr-side-actions" role="group" aria-label="Pull request">
-                    <CheckoutButton cwd={cwd} repo={repo} pull={found} current={projectBranch} />
+                    <CheckoutButton cwd={cwd} project={project} pull={found} checkout={view.data.checkout ?? null} current={projectBranch} />
                     <button type="button" className="git-btn" onClick={() => void openUrl(found.url).catch(swallow(`open ${host.name}`))}>
                         <IconExternal size={13} />
                         {host.name}
@@ -768,8 +778,8 @@ export function PullsView({ paneId, repo, project, listState, item, composing, p
             <NewPullForm
                 paneId={paneId}
                 repo={repo}
+                project={project}
                 cwd={cwd}
-                head={projectBranch}
                 active={active}
                 onCreated={(number) => showItem(paneId, number)}
                 onCancel={() => compose(paneId, null)}

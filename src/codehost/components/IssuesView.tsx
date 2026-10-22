@@ -24,9 +24,9 @@ import { formatAgo } from "../../lib/format";
 const LIST_STATES = ["open", "closed", "all"];
 
 /** Starts a chat in the project with this issue in its input. Only offered where the issue's repository is the project's own. */
-function WorkOnThis({ repo, number, cwd, compact = false }: { repo: RepoRef; number: number; cwd: string; compact?: boolean }) {
+function WorkOnThis({ number, cwd, compact = false }: { number: number; cwd: string; compact?: boolean }) {
     const [busy, runBusy] = useBusy();
-    const start = () => runBusy(() => workOnIssue(repo, number, cwd));
+    const start = () => runBusy(() => workOnIssue(number, cwd));
     if (compact)
         return (
             <Tooltip label="Work on this">
@@ -198,7 +198,7 @@ export function IssueDetail({ repo, number, active, cwd = null }: { repo: RepoRe
                         <StateMark kind="issue" state={found.state} reason={found.stateReason} size={14} />
                         <h2 className="git-detail-title pr-headline-title">{found.title}</h2>
                         <span className="issue-head-actions">
-                            {cwd && <WorkOnThis repo={repo} number={found.number} cwd={cwd} />}
+                            {cwd && <WorkOnThis number={found.number} cwd={cwd} />}
                             <Tooltip label={`Open on ${host.name}`}>
                                 <button
                                     type="button"
@@ -314,7 +314,7 @@ export function IssuesView({ paneId, repo, project, listState, item, composing, 
                                 issue={issue}
                                 now={now}
                                 onOpen={() => showItem(paneId, issue.number)}
-                                work={cwd && issue.state === "open" && <WorkOnThis repo={repo} number={issue.number} cwd={cwd} compact />}
+                                work={cwd && issue.state === "open" && <WorkOnThis number={issue.number} cwd={cwd} compact />}
                             />
                         ))}
                     </div>

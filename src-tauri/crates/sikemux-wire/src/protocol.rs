@@ -913,6 +913,52 @@ pub struct ProjectCodeHost {
     /// The sections clients list for it: `pulls`, `actions`, `issues` and
     /// `releases`, in order.
     pub sections: Vec<String>,
+    /// What the host lets a pull request do, which clients offer accordingly.
+    #[serde(default)]
+    pub pulls: PullAbilities,
+    /// What the host's CI shows and lets a person do.
+    #[serde(default)]
+    pub ci: CiAbilities,
+}
+
+/// What a code host's CI shows of a run and lets a person do to it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CiAbilities {
+    /// A run keeps its earlier attempts.
+    pub attempts: bool,
+    /// A run can wait on someone approving a deployment.
+    pub approvals: bool,
+    /// A workflow can be started by hand.
+    pub dispatch: bool,
+    pub annotations: bool,
+    /// Jobs write summaries of their own.
+    pub summaries: bool,
+    pub artifacts: bool,
+    /// It says how many minutes a run was billed.
+    pub billing: bool,
+    pub workflow_file: bool,
+    pub rerun_failed: bool,
+    pub rerun_job: bool,
+    /// A job can run again with its runner's debug logging on.
+    pub debug_logs: bool,
+    pub delete_runs: bool,
+    /// A run's logs can go while the run stays.
+    pub delete_logs: bool,
+}
+
+/// What a code host lets a pull request do.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullAbilities {
+    /// The ways it merges, `squash`, `merge` or `rebase`, in the order offered.
+    pub merge_methods: Vec<String>,
+    /// A review can ask for changes.
+    pub request_changes: bool,
+    /// A closed one can be opened again.
+    pub reopen: bool,
+    /// It says whether one can merge cleanly.
+    pub mergeability: bool,
 }
 
 /// The open pull request a project's branch is the head of.

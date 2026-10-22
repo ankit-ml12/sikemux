@@ -83,7 +83,7 @@ describe("work on this", () => {
     it("starts an agent on an open issue from its row and from its page", async () => {
         await renderIssues("/repo");
         fireEvent.click(within(list()).getByRole("button", { name: "Work on #5" }));
-        expect(work.workOnIssue).toHaveBeenCalledWith(repo, 5, "/repo");
+        expect(work.workOnIssue).toHaveBeenCalledWith(5, "/repo");
 
         fireEvent.click(within(list()).getByText("The log jumps"));
         await act(async () => {});

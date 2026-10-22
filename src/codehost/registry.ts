@@ -172,8 +172,6 @@ export interface CodeHost {
     readonly avatarForEmail?: (email: string) => string | null;
     /** An account's picture from its name alone, for places the host named someone without sending their picture. */
     readonly avatarForLogin?: (login: string) => string | null;
-    /** The ref a pull request from a fork can be fetched by, such as GitHub's `pull/N/head`. */
-    readonly pullHeadRef?: (number: number) => string;
     /** Shown in the Git pane while nobody is signed in to this host, and to add another account. */
     readonly SignIn: ComponentType<{ onSignedIn: (account: string | null) => void }>;
 }

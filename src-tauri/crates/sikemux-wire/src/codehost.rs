@@ -57,7 +57,7 @@ pub struct RepoListing {
     pub url: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Workflow {
     pub id: String,
@@ -636,6 +636,11 @@ pub struct OpenPull {
     pub checks: Option<CheckTally>,
     /// The runs on its head commit.
     pub runs: Vec<ListedRun>,
+    /// The local branch checking it out makes: its own branch when it lives on
+    /// the repository, else `pr-<number>` from the host's ref for it. None when
+    /// it comes from a fork the host keeps no ref for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -705,6 +710,9 @@ pub struct OpenRun {
     pub timing: Option<RunTiming>,
     /// The jobs that may have written a summary, once the run is over.
     pub summaries: Vec<String>,
+    /// The deployments it waits on someone to approve, while it waits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub approvals: Vec<PendingApproval>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

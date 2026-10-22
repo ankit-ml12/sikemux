@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sikemux_process::sync::Locked;
 use sikemux_wire::codehost::{
-    ChangedFile, CheckTally, Issue, IssueList, IssuePage, Job, JobLog, ListedJob, ListedPull,
-    ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, Pull, PullCounts, PullList, PullState,
-    Release, ReleaseList, Review, ReviewVerdict, Run, RunDetail, RunList, RunPage, RunTiming,
-    TrackedItem, TrackedKind, WorkflowFile,
+    ChangedFile, CheckTally, Comment, Issue, IssueList, IssuePage, Job, JobLog, Label, ListedJob,
+    ListedPull, ListedRun, MergeReadiness, OpenPull, OpenRun, Outcome, PendingApproval, Pull,
+    PullCounts, PullList, PullState, Release, ReleaseList, Review, ReviewVerdict, Run, RunDetail,
+    RunList, RunPage, RunTiming, TrackedItem, TrackedKind, WorkflowFile,
 };
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
@@ -888,6 +888,323 @@ async fn own_runs(core: &Core, repo: &Repo, shas: HashSet<String>) -> HashMap<St
     runs
 }
 
+/// The local branch checking `pull` out makes, when it can be checked out.
+fn checkout_branch(repo: &Repo, pull: &Pull, own: bool) -> Option<String> {
+    if own {
+        return pull.head.clone();
+    }
+    repo.pull_head(pull.number)
+        .map(|_| format!("pr-{}", pull.number))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CheckoutParams {
+    project: String,
+    number: u64,
+}
+
+/// The `codeHostCheckout` call: checks pull request `number` out in the project,
+/// on its own branch when it lives on the repository, else on `pr-<number>` from
+/// the host's ref for it. Uncommitted work is kept as the git pane's checkout keeps it.
+pub(crate) async fn checkout(core: &Arc<Core>, params: CheckoutParams) -> Answer {
+    let project = project_of(Path::new(&params.project), &core.workspaces.project_paths());
+    let repo = match repo_of(core, &Place::Project(project.clone())).await {
+        Ok(repo) => repo,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let failed = |message: String| Answer::Failed(Failure::new(&repo.key(), "checkout", message));
+    let pull: Pull = match repo.call("pull", json!({ "number": params.number })).await {
+        Ok(found) => match typed(&repo, found) {
+            Ok(pull) => pull,
+            Err(failure) => return Answer::Failed(failure),
+        },
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let own = own_branch(&pull, repo.owner());
+    let Some(branch) = checkout_branch(&repo, &pull, own) else {
+        return failed(format!(
+            "{} keeps no ref to fetch a pull request from a fork",
+            repo.label()
+        ));
+    };
+    let done = if own {
+        checkout_own(project, branch.clone()).await
+    } else {
+        let source = repo.pull_head(pull.number).unwrap_or_default();
+        checkout_fetched(project, source, branch.clone()).await
+    };
+    match done {
+        Ok(()) => Answer::Value(json!({ "branch": branch })),
+        Err(error) => failed(error),
+    }
+}
+
+async fn checkout_own(project: String, branch: String) -> Result<(), String> {
+    use crate::git::{branches, remote};
+    remote::git_fetch(project.clone(), Some("origin".into())).await?;
+    let local = branches::git_branches(project.clone())
+        .await?
+        .iter()
+        .any(|found| found.name == branch);
+    if local {
+        branches::git_checkout_smart(project, branch)
+            .await
+            .map(drop)
+    } else {
+        remote::git_checkout_remote_branch(project, "origin".into(), branch.clone(), Some(branch))
+            .await
+    }
+}
+
+async fn checkout_fetched(project: String, source: String, branch: String) -> Result<(), String> {
+    use crate::git::{branches, remote};
+    remote::git_fetch_ref(project.clone(), "origin".into(), source, branch.clone()).await?;
+    branches::git_checkout_smart(project, branch)
+        .await
+        .map(drop)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct NewPullParams {
+    project: String,
+}
+
+/// The `codeHostNewPull` call: what a new pull request from the project starts
+/// with. Its head is the project's branch unless others usually merge into it,
+/// its base the branch it goes into by default; `branches` are the host's, and
+/// `pushed` says the head is on the host already.
+pub(crate) async fn new_pull(core: &Arc<Core>, params: NewPullParams) -> Answer {
+    use super::board::codehost::{default_base, is_usual_base};
+    let project = project_of(Path::new(&params.project), &core.workspaces.project_paths());
+    let repo = match repo_of(core, &Place::Project(project.clone())).await {
+        Ok(repo) => repo,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let branches: Vec<String> = match repo.call("branches", json!({})).await {
+        Ok(found) => match typed(&repo, found) {
+            Ok(branches) => branches,
+            Err(failure) => return Answer::Failed(failure),
+        },
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let head = crate::git::status::git_chip(project)
+        .await
+        .ok()
+        .map(|chip| chip.branch)
+        .filter(|branch| !branch.is_empty() && !is_usual_base(branch));
+    let base = default_base(&branches, head.as_deref()).map(str::to_owned);
+    let pushed = head
+        .as_ref()
+        .is_none_or(|head| branches.is_empty() || branches.contains(head));
+    Answer::Value(json!({ "head": head, "base": base, "branches": branches, "pushed": pushed }))
+}
+
+/// The longest description an agent's context keeps, and comment.
+const CONTEXT_BODY: usize = 12_000;
+const CONTEXT_COMMENT: usize = 2_000;
+/// The latest comments an agent's context keeps.
+const CONTEXT_COMMENTS: usize = 5;
+
+#[derive(Deserialize)]
+pub(crate) struct TrackedParams {
+    project: String,
+    kind: TrackedKind,
+    number: u64,
+}
+
+/// The `codeHostTrackedContext` call: an issue or pull request as context an
+/// agent can work from, `{uri, title, text}`.
+pub(crate) async fn tracked_context(core: &Arc<Core>, params: TrackedParams) -> Answer {
+    let project = project_of(Path::new(&params.project), &core.workspaces.project_paths());
+    let repo = match repo_of(core, &Place::Project(project)).await {
+        Ok(repo) => repo,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    match context_of(&repo, params.kind, params.number).await {
+        Ok(context) => Answer::Value(context),
+        Err(failure) => Answer::Failed(failure),
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct WorkOnParams {
+    project: String,
+    number: u64,
+}
+
+/// The `codeHostWorkOn` call: starts a chat in the project, as a new chat there
+/// starts, with the issue in its composer for the person to read and send.
+/// Answers the agent.
+pub(crate) async fn work_on(core: &Arc<Core>, params: WorkOnParams) -> Answer {
+    let folder = project_of(Path::new(&params.project), &core.workspaces.project_paths());
+    let failed = |message: &str| Answer::Failed(Failure::new("codehost", "workOn", message));
+    let repo = match repo_of(core, &Place::Project(folder.clone())).await {
+        Ok(repo) => repo,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let context = match context_of(&repo, TrackedKind::Issue, params.number).await {
+        Ok(context) => context,
+        Err(failure) => return Answer::Failed(failure),
+    };
+    let view = core.workspace_view();
+    let Some(project) = view
+        .projects
+        .iter()
+        .find(|project| project.path.to_string_lossy() == folder)
+    else {
+        return failed("Open the project to start an agent in it");
+    };
+    let Some(launcher) = project.launcher.clone() else {
+        return failed("No agent that can chat is installed");
+    };
+    let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+    let chosen = super::launching::Launch {
+        agent_id: agent_id.clone(),
+        launcher,
+        cwd: project.path.clone(),
+        permission_mode: None,
+        model: None,
+        model_provider: None,
+        effort: None,
+        resume_id: None,
+        account: None,
+        fallbacks: Vec::new(),
+    };
+    if let Err(error) = super::launching::start(core, None, chosen).await {
+        return failed(&error.to_string());
+    }
+    let key = format!("chat:{agent_id}");
+    let extra = json!({ "context": [context] });
+    if let Err(error) = core.drafts.set(&key, String::new(), Some(extra)) {
+        return failed(&error.to_string());
+    }
+    core.changes.changed(Topic::Drafts, None, Some(vec![key]));
+    let tab = json!({ "project": project.id, "kind": "agent", "target": agent_id });
+    if let Ok(tab) = serde_json::from_value(tab) {
+        let _ = super::layout::open_tab(core, tab);
+    }
+    Answer::Value(json!({ "agentId": agent_id }))
+}
+
+async fn context_of(repo: &Repo, kind: TrackedKind, number: u64) -> Result<Value, Failure> {
+    let method = match kind {
+        TrackedKind::Issue => "issue",
+        TrackedKind::Pull => "pull",
+    };
+    let (item, comments) = tokio::join!(
+        repo.call(method, json!({ "number": number })),
+        repo.call("comments", json!({ "number": number })),
+    );
+    let comments: Vec<Comment> = comments
+        .ok()
+        .and_then(|found| serde_json::from_value(found).ok())
+        .unwrap_or_default();
+    let tracked = match kind {
+        TrackedKind::Issue => Tracked::Issue(Box::new(typed(repo, item?)?)),
+        TrackedKind::Pull => Tracked::Pull(Box::new(typed(repo, item?)?)),
+    };
+    Ok(context(&tracked, &comments))
+}
+
+enum Tracked {
+    Issue(Box<Issue>),
+    Pull(Box<Pull>),
+}
+
+/// An issue or pull request as text an agent can work from: what it is, what it
+/// says, and the latest of what was said about it.
+fn context(tracked: &Tracked, comments: &[Comment]) -> Value {
+    let clip = |text: &str, limit: usize| match text.char_indices().nth(limit) {
+        Some((at, _)) => format!(
+            "{}\n\n[… cut, {} more characters]",
+            text[..at].trim_end(),
+            text.chars().count() - limit
+        ),
+        None => text.to_owned(),
+    };
+    let labelled = |labels: &[Label]| {
+        (!labels.is_empty()).then(|| {
+            let names: Vec<&str> = labels.iter().map(|label| label.name.as_str()).collect();
+            format!("Labels: {}", names.join(", "))
+        })
+    };
+    let (noun, number, title, url, body, facts) = match tracked {
+        Tracked::Issue(issue) => (
+            "Issue",
+            issue.number,
+            &issue.title,
+            &issue.url,
+            &issue.body,
+            vec![
+                Some(format!("State: {}", issue.state)),
+                labelled(&issue.labels),
+                issue
+                    .author
+                    .as_ref()
+                    .map(|author| format!("Author: @{author}")),
+            ],
+        ),
+        Tracked::Pull(pull) => {
+            let state = match state_of(pull) {
+                PullState::Open => "open",
+                PullState::Draft => "draft",
+                PullState::Closed => "closed",
+                PullState::Merged => "merged",
+            };
+            (
+                "Pull request",
+                pull.number,
+                &pull.title,
+                &pull.url,
+                &pull.body,
+                vec![
+                    Some(format!("State: {state}")),
+                    labelled(&pull.labels),
+                    pull.author
+                        .as_ref()
+                        .map(|author| format!("Author: @{author}")),
+                    pull.head
+                        .as_ref()
+                        .zip(pull.base.as_ref())
+                        .map(|(head, base)| format!("Branch: {head} → {base}")),
+                ],
+            )
+        }
+    };
+    let facts: Vec<String> = facts.into_iter().flatten().collect();
+    let body = if body.trim().is_empty() {
+        "(no description)".to_owned()
+    } else {
+        clip(body.trim(), CONTEXT_BODY)
+    };
+    let mut lines = vec![
+        format!("{noun} #{number}: {title}"),
+        facts.join(" · "),
+        format!("URL: {url}"),
+        String::new(),
+        body,
+    ];
+    let latest = &comments[comments.len().saturating_sub(CONTEXT_COMMENTS)..];
+    if !latest.is_empty() {
+        lines.push(String::new());
+        lines.push(if latest.len() < comments.len() {
+            format!("## Latest {} of {} comments", latest.len(), comments.len())
+        } else {
+            "## Comments".to_owned()
+        });
+        for comment in latest {
+            lines.push(String::new());
+            let day = comment.created_at.get(..10).unwrap_or(&comment.created_at);
+            lines.push(format!(
+                "@{}, {day}:",
+                comment.author.as_deref().unwrap_or("someone")
+            ));
+            lines.push(clip(comment.body.trim(), CONTEXT_COMMENT));
+        }
+    }
+    json!({ "uri": url, "title": format!("#{number} {title}"), "text": lines.join("\n") })
+}
+
 fn own_branch(pull: &Pull, owner: &str) -> bool {
     pull.head.is_some()
         && pull
@@ -1063,10 +1380,12 @@ async fn open_pull(repo: &Repo, number: u64) -> Result<OpenPull, Failure> {
             .unwrap_or_default(),
         None => Vec::new(),
     };
+    let own = own_branch(&pull, repo.owner());
     Ok(OpenPull {
         state: state_of(&pull),
         closes: closes(&pull.body),
-        own_branch: own_branch(&pull, repo.owner()),
+        own_branch: own,
+        checkout: checkout_branch(repo, &pull, own),
         verdict: verdict(&reviews),
         reviewed: !reviews.is_empty(),
         merge: readiness(pull.merge_state.as_deref()),
@@ -1139,13 +1458,27 @@ async fn open_run(
     };
     let RunDetail { run, jobs } = detail;
     let unfinished = unfinished(&run);
-    let (files, timing) = tokio::join!(workflow_files(core, repo, &run), async {
-        if unfinished {
-            return None;
-        }
-        let found = repo.call("runTiming", json!({ "runId": id })).await.ok()?;
-        typed::<RunTiming>(repo, found).ok()
-    });
+    let waiting = may_be_waiting(&run);
+    let (files, timing, approvals) = tokio::join!(
+        workflow_files(core, repo, &run),
+        async {
+            if unfinished {
+                return None;
+            }
+            let found = repo.call("runTiming", json!({ "runId": id })).await.ok()?;
+            typed::<RunTiming>(repo, found).ok()
+        },
+        async {
+            if !waiting {
+                return Vec::new();
+            }
+            let found = repo.call("pendingApprovals", json!({ "runId": id })).await;
+            found
+                .ok()
+                .and_then(|found| typed::<Vec<PendingApproval>>(repo, found).ok())
+                .unwrap_or_default()
+        },
+    );
     let graph = job_graph::graph_of(&jobs, &files, run.path.as_deref());
     let failed = |job: &&Job| job.outcome == Outcome::Failure;
     let summaries = summaries(&jobs, unfinished);
@@ -1158,6 +1491,7 @@ async fn open_run(
         graph,
         timing,
         summaries,
+        approvals,
         jobs: jobs
             .into_iter()
             .map(|job| ListedJob {
@@ -1171,6 +1505,13 @@ async fn open_run(
             .collect(),
         run,
     })
+}
+
+/// Only a run its host is holding has anybody to ask about approving it; asking
+/// of any other would spend a request to be told nothing waits.
+fn may_be_waiting(run: &Run) -> bool {
+    matches!(run.status.as_str(), "waiting" | "action_required")
+        || run.conclusion.as_deref() == Some("action_required")
 }
 
 /// How soon a shown run is read again. An earlier attempt is over for good,
@@ -1494,5 +1835,126 @@ mod tests {
         );
         let passed = tally(&[run(Outcome::Success), run(Outcome::Skipped)]);
         assert_eq!((passed.outcome, passed.passed), (Outcome::Success, 2));
+    }
+
+    fn headed(number: u64, head: Option<&str>, head_label: Option<&str>) -> Pull {
+        serde_json::from_value(json!({
+            "number": number, "title": "", "body": "", "state": "open", "draft": false,
+            "head": head, "headLabel": head_label, "createdAt": "", "updatedAt": "",
+            "labels": [], "reviewers": [], "assignees": [], "avatars": {}, "url": ""
+        }))
+        .expect("a pull request")
+    }
+
+    fn checks_out_as(repo: &Repo, pull: &Pull) -> Option<String> {
+        checkout_branch(repo, pull, own_branch(pull, repo.owner()))
+    }
+
+    #[test]
+    fn a_pull_request_on_the_repository_checks_out_on_its_own_branch() {
+        let repo = Repo::named("github", "nodelike", "sikemux", None).expect("a repository");
+        let pull = headed(7, Some("feat/x"), Some("nodelike:feat/x"));
+        assert!(own_branch(&pull, repo.owner()));
+        assert_eq!(checks_out_as(&repo, &pull).as_deref(), Some("feat/x"));
+    }
+
+    #[test]
+    fn a_forks_pull_request_checks_out_on_a_branch_named_after_its_number() {
+        let repo = Repo::named("github", "nodelike", "sikemux", None).expect("a repository");
+        let pull = headed(
+            49,
+            Some("feat/github-actions-plugin"),
+            Some("Sujal85526:feat/github-actions-plugin"),
+        );
+        assert!(!own_branch(&pull, repo.owner()));
+        assert_eq!(checks_out_as(&repo, &pull).as_deref(), Some("pr-49"));
+        let bitbucket =
+            Repo::named("bitbucket", "nodelike", "sikemux", None).expect("a repository");
+        assert_eq!(checks_out_as(&bitbucket, &pull), None);
+    }
+
+    #[test]
+    fn a_branch_whose_owner_the_host_did_not_say_is_the_repositorys_own() {
+        assert!(own_branch(&headed(1, Some("feat/x"), None), "nodelike"));
+        assert!(!own_branch(
+            &headed(1, None, Some("nodelike:feat/x")),
+            "nodelike"
+        ));
+    }
+
+    #[test]
+    fn only_a_run_its_host_is_holding_is_asked_about_approvals() {
+        let concluded = |conclusion: &str| {
+            let mut run = run_as("completed", Outcome::Blocked);
+            run.conclusion = Some(conclusion.to_owned());
+            run
+        };
+        assert!(may_be_waiting(&run_as("waiting", Outcome::Blocked)));
+        assert!(may_be_waiting(&run_as("action_required", Outcome::Blocked)));
+        assert!(may_be_waiting(&concluded("action_required")));
+        assert!(!may_be_waiting(&run_as("in_progress", Outcome::Running)));
+        assert!(!may_be_waiting(&concluded("success")));
+    }
+
+    fn comment(id: u64, body: &str) -> Comment {
+        serde_json::from_value(json!({
+            "id": id, "author": format!("c{id}"), "avatarUrl": null, "authorAssociation": null,
+            "body": body, "createdAt": format!("2026-09-0{id}T10:00:00Z"), "url": null
+        }))
+        .expect("a comment")
+    }
+
+    fn text_of(tracked: &Tracked, comments: &[Comment]) -> String {
+        context(tracked, comments)["text"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    #[test]
+    fn an_issues_context_has_its_facts_body_and_latest_comments() {
+        let mut found = issue(12, "2026-01-01");
+        found.title = "Login crashes".into();
+        found.body = "Steps to reproduce.".into();
+        found.author = Some("ana".into());
+        found.url = "https://github.com/o/r/issues/12".into();
+        found.labels = vec![Label {
+            name: "bug".into(),
+            color: "f00".into(),
+        }];
+        let comments: Vec<Comment> = (1..=6)
+            .map(|id| comment(id, &format!("note {id}")))
+            .collect();
+        let written = context(&Tracked::Issue(Box::new(found)), &comments);
+        assert_eq!(written["uri"], "https://github.com/o/r/issues/12");
+        assert_eq!(written["title"], "#12 Login crashes");
+        let text = written["text"].as_str().unwrap_or_default();
+        assert!(text.contains(
+            "Issue #12: Login crashes\nState: open · Labels: bug · Author: @ana\nURL: https://github.com/o/r/issues/12"
+        ));
+        assert!(text.contains("Steps to reproduce."));
+        assert!(text.contains("## Latest 5 of 6 comments"));
+        assert!(!text.contains("note 1\n"));
+        assert!(text.contains("@c6, 2026-09-06:\nnote 6"));
+    }
+
+    #[test]
+    fn a_pull_requests_context_names_its_branches() {
+        let mut found = pull(9, "", "2026-01-01");
+        found.title = "Faster boot".into();
+        found.author = Some("bo".into());
+        found.head = Some("fast".into());
+        assert!(text_of(&Tracked::Pull(Box::new(found)), &[]).contains(
+            "Pull request #9: Faster boot\nState: open · Author: @bo · Branch: fast → main"
+        ));
+    }
+
+    #[test]
+    fn a_very_long_body_is_cut_short() {
+        let mut found = issue(1, "2026-01-01");
+        found.body = "x".repeat(20_000);
+        let text = text_of(&Tracked::Issue(Box::new(found)), &[]);
+        assert!(text.len() < 13_000);
+        assert!(text.contains("8000 more characters"));
     }
 }

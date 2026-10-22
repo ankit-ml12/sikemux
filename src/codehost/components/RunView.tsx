@@ -86,7 +86,6 @@ function RunHead({
     repo,
     open,
     canWrite,
-    active,
     back,
     onBack,
     onDeleted,
@@ -94,7 +93,6 @@ function RunHead({
     repo: RepoRef;
     open: OpenRun;
     canWrite: boolean;
-    active: boolean;
     back: string;
     onBack: () => void;
     onDeleted: () => void;
@@ -186,7 +184,7 @@ function RunHead({
                     onChange={(number) => open.setAttempt(number === open.latestAttempt ? null : number)}
                 />
             )}
-            {ci.approvals && <Approvals repo={repo} runId={run.id} status={run.status} conclusion={run.conclusion} active={active} />}
+            {ci.approvals && <Approvals repo={repo} runId={run.id} pending={open.read?.approvals ?? []} />}
         </div>
     );
 }
@@ -542,7 +540,6 @@ function OpenRunView({ paneId, project, repo, runId, openJob, active, canWrite }
                         repo={repo}
                         open={open}
                         canWrite={canWrite}
-                        active={active}
                         back={backTo}
                         onBack={() => leaveRun(paneId)}
                         onDeleted={() => closeRun(paneId)}
