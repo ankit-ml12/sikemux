@@ -3626,8 +3626,10 @@ pub struct Parts {
     pub finder: Entity<Part>,
     /// The welcome or the release notes over the whole window.
     pub over: Entity<Part>,
-    /// What the project's agents did, under a chat's welcome.
+    /// The calendar of tokens burnt, under a chat's welcome.
     pub activity: Entity<crate::home::Activity>,
+    /// The tokens burnt in the project, beside the agent's face in a chat's welcome.
+    pub burn: Entity<crate::home::Activity>,
 }
 
 impl Parts {
@@ -3684,8 +3686,15 @@ impl Parts {
                 },
                 true,
             ),
-            activity: cx.new(|cx| crate::home::Activity::new(&bench, cx)),
+            activity: cx.new(|cx| crate::home::Activity::calendar(&bench, cx)),
+            burn: cx.new(|cx| crate::home::Activity::burn(&bench, cx)),
         }
+    }
+
+    /// Draws the welcome's activity again, as when the pointer moves to another day.
+    pub fn redraw_activity(&self, cx: &mut App) {
+        self.activity.update(cx, |_, cx| cx.notify());
+        self.burn.update(cx, |_, cx| cx.notify());
     }
 
     pub fn redraw(&self, part: &Entity<Part>, cx: &mut App) {

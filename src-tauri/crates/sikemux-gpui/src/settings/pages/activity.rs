@@ -560,7 +560,7 @@ pub fn render(
     let calendar = match summary {
         Some(summary) => div()
             .p(px(14.))
-            .child(home::calendar(summary, bench, cx))
+            .child(home::calendar(summary, bench, None, cx))
             .into_any_element(),
         None => div().into_any_element(),
     };

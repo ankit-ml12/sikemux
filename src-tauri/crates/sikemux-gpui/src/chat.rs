@@ -1534,16 +1534,7 @@ pub fn pane(
                         ),
                 )
         }))
-        .children(welcome.map(|welcome| {
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(welcome)
-        }));
+        .children(welcome.map(|welcome| crate::home::centred(welcome).absolute().inset_0()));
     let open: Vec<&Question> = bench
         .questions
         .iter()
