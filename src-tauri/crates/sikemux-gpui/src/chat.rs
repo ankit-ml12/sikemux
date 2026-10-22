@@ -768,6 +768,13 @@ impl Chat {
         })
     }
 
+    /// The agent's session is up and takes messages.
+    pub fn ready(&self) -> bool {
+        self.state
+            .as_ref()
+            .is_some_and(|head| head.connection == ChatConnection::Ready)
+    }
+
     pub fn running(&self) -> bool {
         self.state.as_ref().is_some_and(|head| head.running)
     }

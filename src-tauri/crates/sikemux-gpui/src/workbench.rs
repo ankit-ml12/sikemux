@@ -134,6 +134,8 @@ pub struct Workbench {
     pub asks: mpsc::UnboundedSender<Ask>,
     /// The chats of the agents with a tab open, by agent id.
     pub chats: HashMap<String, Chat>,
+    /// The chat in front and whether its session was ready when its draft last took the keys.
+    focused_chat: Option<(String, bool)>,
     /// Text handed to agents whose composer is not made yet, put in once it is.
     deliveries: HashMap<String, String>,
     /// What agents asked the person, and the assumptions they went on.
@@ -526,6 +528,7 @@ impl Workbench {
             filter_text: String::new(),
             asks,
             chats: HashMap::new(),
+            focused_chat: None,
             deliveries: HashMap::new(),
             questions: Vec::new(),
             terminals: terminal::Terminals::default(),
@@ -1138,6 +1141,10 @@ impl Workbench {
             }
             composing.take_arrived(window, cx);
         }
+        self.focus_draft(&agent, window, cx);
+        let Some(chat) = self.chats.get_mut(&agent) else {
+            return;
+        };
         let hint = SharedString::from(chat.hint(&agent, &self.questions, resumes));
         let Some(composing) = chat
             .composer
@@ -1150,6 +1157,39 @@ impl Workbench {
         composing
             .draft
             .update(cx, |draft, cx| draft.set_placeholder(hint, window, cx));
+    }
+
+    /// Puts the keys in the draft of the chat in front when it comes to the front and again
+    /// once its session is ready, unless the person is typing somewhere other than a draft or
+    /// the window itself.
+    fn focus_draft(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(chat) = self.chats.get(agent) else {
+            return;
+        };
+        let shown = (agent.to_owned(), chat.ready());
+        if self.focused_chat.as_ref() == Some(&shown) {
+            return;
+        }
+        let Some(draft) = chat
+            .composer
+            .as_ref()
+            .map(|composing| composing.draft.clone())
+        else {
+            return;
+        };
+        self.focused_chat = Some(shown);
+        let held = window.focused(cx);
+        let free = held.as_ref().is_none_or(|held| {
+            *held == self.focus
+                || self.chats.values().any(|chat| {
+                    chat.composer
+                        .as_ref()
+                        .is_some_and(|composing| composing.draft.read(cx).focus_handle(cx) == *held)
+                })
+        });
+        if free {
+            draft.read(cx).focus_handle(cx).focus(window, cx);
+        }
     }
 
     /// Sends what the person wrote: the answer to a question it answers, else words for
