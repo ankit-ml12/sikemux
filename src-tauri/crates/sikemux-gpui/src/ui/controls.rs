@@ -524,8 +524,9 @@ impl RenderOnce for Segmented {
                             .group(GROUP)
                             .selected(chosen)
                             .accessibility_label(label.clone())
-                            .when(fill || (!pill && glyph.is_some()), |segment| {
-                                segment.flex_1().min_w_0()
+                            .when(fill, |segment| segment.flex_1().min_w_0())
+                            .when(!fill && !pill && glyph.is_some(), |segment| {
+                                segment.flex_1()
                             })
                             .h_full()
                             .px(px(8.))
@@ -582,6 +583,8 @@ pub struct Field {
     state: Entity<InputState>,
     icon: Option<Icon>,
     flush: bool,
+    mono: bool,
+    hint: Option<SharedString>,
 }
 
 impl Field {
@@ -590,7 +593,21 @@ impl Field {
             state: state.clone(),
             icon: None,
             flush: false,
+            mono: false,
+            hint: None,
         }
+    }
+
+    /// For what is typed as code: a path, a command, a colour.
+    pub fn mono(mut self) -> Self {
+        self.mono = true;
+        self
+    }
+
+    /// The keys that bring the field into focus, shown at its end.
+    pub fn hint(mut self, keys: Option<SharedString>) -> Self {
+        self.hint = keys;
+        self
     }
 
     /// A row across the top of a dropdown, over a hairline, with no box or ring.
@@ -634,11 +651,16 @@ impl RenderOnce for Field {
         .child(
             div()
                 .flex_1()
-                .font_family(crate::theme::MONO)
-                .text_size(crate::theme::ui_text(11.))
+                .map(|text| match self.mono {
+                    true => text
+                        .font_family(crate::theme::MONO)
+                        .text_size(crate::theme::ui_text(12.)),
+                    false => text.text_size(crate::theme::ui_text(13.)),
+                })
                 .text_color(t.text_primary)
                 .child(Input::new(&self.state).appearance(false).bordered(false)),
         )
+        .children(self.hint.map(|keys| kbd(keys, cx).flex_none()))
     }
 }
 

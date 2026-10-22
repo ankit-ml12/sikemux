@@ -263,7 +263,7 @@ pub fn render(
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(div().flex_1().child(ui::Field::new(&fields.path)))
+                    .child(div().flex_1().child(ui::Field::new(&fields.path).mono()))
                     .child(stepper(
                         "add-depth",
                         "new".into(),

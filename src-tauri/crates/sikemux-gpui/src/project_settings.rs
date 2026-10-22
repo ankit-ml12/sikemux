@@ -808,7 +808,7 @@ fn tasks(
             } else {
                 "Saved in sikemux.json for everyone. Leave it empty for none."
             }),
-            div().w(px(240.)).child(Field::new(&settings.check)),
+            div().w(px(240.)).child(Field::new(&settings.check).mono()),
             cx,
         ),
         cx,

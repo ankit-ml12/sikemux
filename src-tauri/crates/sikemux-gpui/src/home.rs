@@ -563,7 +563,7 @@ pub(crate) fn overview(totals: &Value, cx: &App) -> impl IntoElement {
                         .font_features(theme::tabular())
                         .text_color(t.text_primary),
                 )
-                .child(ui::mono(detail, 11., cx).overflow_hidden().text_ellipsis())
+                .child(ui::mono(detail, 11., cx).whitespace_normal())
         },
     ))
 }
@@ -664,12 +664,18 @@ pub(crate) fn calendar(
         }))
         .child(grid);
     let mut last_month = None;
+    let mut last_label = -MONTH_LABEL_GAP;
     let months: Vec<Div> = (0..WEEKS)
         .filter_map(|week| {
             let first = epoch() + chrono::Duration::days(start + week * 7);
-            let label = (last_month != Some(first.month()) && week <= WEEKS - 3)
+            let label = (last_month != Some(first.month())
+                && week <= WEEKS - 3
+                && week - last_label >= MONTH_LABEL_GAP)
                 .then(|| first.format("%b").to_string());
             last_month = Some(first.month());
+            if label.is_some() {
+                last_label = week;
+            }
             label.map(|label| {
                 small(label, &t)
                     .absolute()
@@ -700,6 +706,7 @@ pub(crate) fn calendar(
                 div()
                     .min_h(px(24.))
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
                     .gap(px(12.))
@@ -770,6 +777,10 @@ pub(crate) fn calendar(
                 .child(small("More".into(), &t).ml(px(4.))),
         )
 }
+
+/// The fewest weeks between two month names over the calendar, so a month that starts a
+/// week after the last one's name drops its own rather than running into it.
+const MONTH_LABEL_GAP: i64 = 3;
 
 /// How wide the calendar is for its height, with square days of about 11px.
 const GRID_RATIO: f32 =

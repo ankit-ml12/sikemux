@@ -285,7 +285,13 @@ pub fn view(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) -> 
                         }
                     }),
                 )
-                .child(ui::Field::new(&settings.search).icon(Icon::Search)),
+                .child(ui::Field::new(&settings.search).icon(Icon::Search).hint(
+                    crate::keymap::label(if cfg!(target_os = "macos") {
+                        "Meta+F"
+                    } else {
+                        "Ctrl+F"
+                    }),
+                )),
         )
         .child(div().flex_1().min_h_0().children(nav))
         .child(

@@ -434,7 +434,7 @@ pub fn render(
                     div()
                         .flex()
                         .gap(px(8.))
-                        .child(div().flex_1().child(ui::Field::new(&fields.source)))
+                        .child(div().flex_1().child(ui::Field::new(&fields.source).mono()))
                         .child(button(
                             "skill-choose".into(),
                             "Choose folder",
@@ -445,7 +445,7 @@ pub fn render(
                         )),
                 )
                 .when(repository, |form| {
-                    form.child(ui::Field::new(&fields.subfolder))
+                    form.child(ui::Field::new(&fields.subfolder).mono())
                 })
                 .child(
                     div()

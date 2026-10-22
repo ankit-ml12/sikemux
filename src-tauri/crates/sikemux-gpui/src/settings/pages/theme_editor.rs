@@ -713,7 +713,7 @@ pub fn view(editor: &Editor, this: &Entity<Workbench>, cx: &App) -> AnyElement {
                                 .text_color(t.text_tertiary)
                                 .child(field.label),
                         )
-                        .child(ui::Field::new(&field.text)),
+                        .child(ui::Field::new(&field.text).mono()),
                 )
         }));
     div()
