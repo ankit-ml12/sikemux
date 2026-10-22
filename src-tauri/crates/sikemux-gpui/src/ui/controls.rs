@@ -215,6 +215,17 @@ pub struct Button {
     disabled: bool,
 }
 
+/// A button can open a popover; it looks the same open or closed.
+impl Selectable for Button {
+    fn selected(self, _: bool) -> Self {
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        false
+    }
+}
+
 impl Button {
     pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>, variant: Variant) -> Self {
         Self {

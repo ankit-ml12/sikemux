@@ -109,6 +109,10 @@ pub struct Workbench {
     pub agent_card: crate::agent_card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
     pub picked_tasks: HashMap<String, String>,
+    /// The run whose failed tests the person closed the card of, by execution.
+    pub tests_closed: Option<String>,
+    /// The run whose "Why?" card is open, by execution.
+    pub failure_shown: Option<String>,
     /// The space whose projects the rail shows, else every project.
     pub space: Option<String>,
     /// Which rails stay open; a closed one comes out over the stage while the pointer is at its edge.
@@ -518,6 +522,8 @@ impl Workbench {
             folded_teams: HashSet::new(),
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
+            tests_closed: None,
+            failure_shown: None,
             space: None,
             side_rail_open: true,
             tab_rail_open: true,

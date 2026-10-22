@@ -72,6 +72,7 @@ mod switcher;
 pub mod syntax;
 mod tabs;
 pub mod terminal;
+mod test_card;
 pub mod theme;
 mod theme_palette;
 mod thread_priority;

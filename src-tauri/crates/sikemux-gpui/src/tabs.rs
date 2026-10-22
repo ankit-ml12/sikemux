@@ -405,12 +405,19 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     let id = selected["id"].as_str()?.to_owned();
     let label = selected["label"].as_str()?.to_owned();
     let last = last.filter(|run| running.is_none() && run["taskId"] == id.as_str());
-    let failed =
-        last.filter(|run| run["status"] == "failed")
-            .map(|run| match run["exitCode"].as_i64() {
-                Some(code) => format!("exited {code}"),
-                None => "failed".into(),
-            });
+    let finished = last.map(|run| crate::test_card::Finished {
+        run,
+        task: selected,
+    });
+    let outcome = finished.as_ref().and_then(crate::test_card::status);
+    let failed = outcome
+        .as_ref()
+        .filter(|(_, wrong)| *wrong)
+        .map(|(text, _)| text.clone());
+    let passed = outcome
+        .as_ref()
+        .filter(|(_, wrong)| !*wrong)
+        .map(|(text, _)| text.clone());
     let port = running.and_then(|run| {
         ports
             .iter()
@@ -428,10 +435,11 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .child(format!("· {text}"))
             .into_any_element()
     };
-    let status = match (port_number, running, &failed) {
-        (Some(port), _, _) => Some(said(format!(":{port}"), t.text_tertiary)),
-        (None, Some(_), _) => Some(bench.run_clock.clone().into_any_element()),
-        (None, None, Some(failed)) => Some(said(failed.clone(), t.danger)),
+    let status = match (port_number, running, &failed, &passed) {
+        (Some(port), ..) => Some(said(format!(":{port}"), t.text_tertiary)),
+        (None, Some(_), ..) => Some(bench.run_clock.clone().into_any_element()),
+        (None, None, Some(failed), _) => Some(said(failed.clone(), t.danger)),
+        (None, None, None, Some(passed)) => Some(said(passed.clone(), t.live)),
         _ => needs_java.map(|text| said(text, t.warn)),
     };
     let dot = match (running, &failed) {
@@ -444,11 +452,42 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                 .border_color(t.warn),
         ),
         (None, Some(_)) => Some(div().size(px(7.)).rounded_full().bg(t.danger)),
+        (None, None) if passed.is_some() => Some(div().size(px(7.)).rounded_full().bg(t.live)),
         _ => None,
     };
     let execution = running
         .and_then(|run| run["executionId"].as_str())
         .map(str::to_owned);
+    let output = running
+        .or(last.filter(|_| failed.is_some()))
+        .and_then(|run| run["ptyId"].as_u64())
+        .map(|session| (session, label.clone()));
+    let card = finished
+        .as_ref()
+        .and_then(|finished| crate::test_card::card(bench, finished, output.clone(), cx));
+    let why = finished
+        .as_ref()
+        .filter(|finished| crate::test_card::offers_why(bench, finished))
+        .map(|_| {
+            let tip = if passed.is_none() && last.is_some_and(|run| run["tests"].is_object()) {
+                "Show the failed tests"
+            } else {
+                "Show why it stopped"
+            };
+            Button::new("run-why")
+                .ghost()
+                .compact()
+                .h(px(24.))
+                .px(px(8.))
+                .text_size(crate::theme::ui_text(11.))
+                .text_color(t.danger)
+                .tooltip(tip)
+                .child("Why?")
+                .on_click(cx.listener(|bench, _, _, cx| {
+                    crate::test_card::why(bench);
+                    cx.notify();
+                }))
+        });
     let menu = Rc::new(RunMenu {
         bench: cx.entity().downgrade(),
         running: running.map(|_| RunningTask {
@@ -457,10 +496,7 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             started_at: running.and_then(|run| run["startedAt"].as_i64()),
             port: port_number,
         }),
-        output: running
-            .or(last.filter(|_| failed.is_some()))
-            .and_then(|run| run["ptyId"].as_u64())
-            .map(|session| (session, label.clone())),
+        output: output.clone(),
         groups: task_groups(tasks, project),
         selected: id.clone(),
         others: ports
@@ -484,74 +520,82 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     } else {
         (Icon::Run, t.live)
     };
+    let chip = div()
+        .h(px(24.))
+        .flex()
+        .rounded(crate::theme::RADIUS_2)
+        .bg(Hsla {
+            a: 0.94,
+            ..t.surface
+        })
+        .border_1()
+        .border_color(Hsla {
+            a: 0.06,
+            ..t.text_primary
+        })
+        .child(
+            div()
+                .id("run-task")
+                .px(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_secondary)
+                .hover(move |style| style.text_color(t.text_primary).bg(t.surface_hover))
+                .tooltip(ui::tooltip(primary))
+                .on_click(cx.listener(move |bench, _, _, cx| match &execution {
+                    Some(execution) => bench.stop_run(execution),
+                    None => bench.start_task(&id, cx),
+                }))
+                .child(ui::icon(glyph, 11.).text_color(tint)),
+        )
+        .child(
+            Button::new("choose-task")
+                .ghost()
+                .compact()
+                .rounded(px(0.))
+                .h_full()
+                .max_w(px(320.))
+                .pl(px(8.))
+                .pr(px(6.))
+                .gap(px(5.))
+                .border_l_1()
+                .border_color(Hsla {
+                    a: 0.08,
+                    ..t.text_primary
+                })
+                .font_family(crate::theme::MONO)
+                .text_size(crate::theme::ui_text(11.))
+                .text_color(t.text_tertiary)
+                .children(dot)
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .child(label),
+                )
+                .children(status)
+                .child(
+                    ui::icon(Icon::Chevron, 10.)
+                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
+                        .text_color(t.text_tertiary),
+                )
+                .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
+                    menu.build(popup, window, cx)
+                }),
+        );
     Some(
         div()
-            .h(px(24.))
+            .relative()
             .flex()
-            .rounded(crate::theme::RADIUS_2)
-            .bg(Hsla {
-                a: 0.94,
-                ..t.surface
-            })
-            .border_1()
-            .border_color(Hsla {
-                a: 0.06,
-                ..t.text_primary
-            })
-            .child(
-                div()
-                    .id("run-task")
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(5.))
-                    .text_size(crate::theme::ui_text(12.))
-                    .text_color(t.text_secondary)
-                    .hover(move |style| style.text_color(t.text_primary).bg(t.surface_hover))
-                    .tooltip(ui::tooltip(primary))
-                    .on_click(cx.listener(move |bench, _, _, cx| match &execution {
-                        Some(execution) => bench.stop_run(execution),
-                        None => bench.start_task(&id, cx),
-                    }))
-                    .child(ui::icon(glyph, 11.).text_color(tint)),
-            )
-            .child(
-                Button::new("choose-task")
-                    .ghost()
-                    .compact()
-                    .rounded(px(0.))
-                    .h_full()
-                    .max_w(px(320.))
-                    .pl(px(8.))
-                    .pr(px(6.))
-                    .gap(px(5.))
-                    .border_l_1()
-                    .border_color(Hsla {
-                        a: 0.08,
-                        ..t.text_primary
-                    })
-                    .font_family(crate::theme::MONO)
-                    .text_size(crate::theme::ui_text(11.))
-                    .text_color(t.text_tertiary)
-                    .children(dot)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(label),
-                    )
-                    .children(status)
-                    .child(
-                        ui::icon(Icon::Chevron, 10.)
-                            .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
-                            .text_color(t.text_tertiary),
-                    )
-                    .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
-                        menu.build(popup, window, cx)
-                    }),
-            )
+            .items_center()
+            .gap(px(4.))
+            .child(chip)
+            .children(why)
+            .children(card)
             .into_any_element(),
     )
 }
