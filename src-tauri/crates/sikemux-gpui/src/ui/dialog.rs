@@ -4,9 +4,9 @@ use gpui_kit::base::{AlertDialog, Button as BaseButton};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Div, Entity, FontWeight, Hsla, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement,
+    IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 
 use super::text;
@@ -26,6 +26,38 @@ pub(crate) fn sheet(
     cx: &mut App,
 ) -> AlertDialog {
     sheet_of(px(440.), title, body, foot, yes, no, cx)
+}
+
+/// The keyboard a dialog holds while it shows, and where it goes back to once answered.
+struct Held {
+    focus: FocusHandle,
+    before: Option<FocusHandle>,
+}
+
+impl Held {
+    /// `answer`, then the keyboard back where it was before the dialog took it.
+    fn back(&self, answer: Answer) -> Answer {
+        let before = self.before.clone();
+        Rc::new(move |window, cx| {
+            answer(window, cx);
+            if let Some(before) = &before {
+                window.focus(before, cx);
+            }
+        })
+    }
+}
+
+/// Takes the keyboard into a dialog the first time it draws, so Enter and Escape answer it
+/// and not what is behind it.
+fn hold_focus(window: &mut Window, cx: &mut App) -> Held {
+    let held = window.use_keyed_state("dialog-focus", cx, |window, cx| {
+        let before = window.focused(cx);
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        (focus, before)
+    });
+    let (focus, before) = held.read(cx).clone();
+    Held { focus, before }
 }
 
 fn sheet_of(
@@ -175,22 +207,24 @@ impl Confirm {
 }
 
 impl RenderOnce for Confirm {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let fill = if self.destructive { t.danger } else { t.accent };
+        let held = hold_focus(window, cx);
+        let (on_yes, on_no) = (held.back(self.on_yes), held.back(self.on_no));
         let foot = div()
             .child(button(
                 "confirm-no",
                 "cancel".into(),
                 None,
-                self.on_no.clone(),
+                on_no.clone(),
                 cx,
             ))
             .child(button(
                 "confirm-yes",
                 self.yes,
                 Some(fill),
-                self.on_yes.clone(),
+                on_yes.clone(),
                 cx,
             ));
         sheet(
@@ -204,10 +238,11 @@ impl RenderOnce for Confirm {
                 .child(self.body)
                 .into_any_element(),
             foot,
-            self.on_yes,
-            self.on_no,
+            on_yes,
+            on_no,
             cx,
         )
+        .focus_handle(held.focus)
     }
 }
 
@@ -359,13 +394,14 @@ impl Choices {
 }
 
 impl RenderOnce for Choices {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
+        let held = hold_focus(window, cx);
         let keyed: Vec<(char, Answer)> = self
             .choices
             .iter()
             .filter(|choice| !choice.disabled)
-            .filter_map(|choice| Some((choice.key?, choice.pick.clone())))
+            .filter_map(|choice| Some((choice.key?, held.back(choice.pick.clone()))))
             .collect();
         let rows = self.choices.into_iter().enumerate().map(|(index, choice)| {
             let ink = if choice.disabled {
@@ -380,7 +416,7 @@ impl RenderOnce for Choices {
             } else {
                 (t.surface_hover, t.text_primary)
             };
-            let pick = choice.pick.clone();
+            let pick = held.back(choice.pick.clone());
             BaseButton::new(("choice", index))
                 .accessibility_label(choice.label.clone())
                 .disabled(choice.disabled)
@@ -430,7 +466,7 @@ impl RenderOnce for Choices {
                         .child(hint)
                 }))
         });
-        let no = self.on_no.clone();
+        let no = held.back(self.on_no.clone());
         sheet(
             self.title,
             div()
@@ -457,6 +493,7 @@ impl RenderOnce for Choices {
             no,
             cx,
         )
+        .focus_handle(held.focus)
     }
 }
 
@@ -487,7 +524,8 @@ impl Cheatsheet {
 }
 
 impl RenderOnce for Cheatsheet {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let held = hold_focus(window, cx);
         let t = Tokens::get(cx).clone();
         let count = self.sections.len();
         let sections = self
@@ -526,7 +564,7 @@ impl RenderOnce for Cheatsheet {
                             .child(div().text_color(t.text_secondary).child(*label))
                     }))
             });
-        let close = self.on_close.clone();
+        let close = held.back(self.on_close.clone());
         sheet_of(
             px(560.),
             self.title,
@@ -546,5 +584,6 @@ impl RenderOnce for Cheatsheet {
             close,
             cx,
         )
+        .focus_handle(held.focus)
     }
 }
