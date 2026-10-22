@@ -124,7 +124,10 @@ pub fn remote_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
             let going = bench.update(cx, |bench, cx| {
                 let going = bench.waiting_phone().is_some();
                 bench.pairing.ticking = going;
-                bench.parts.redraw(&bench.parts.over, cx);
+                match going {
+                    true => bench.parts.redraw(&bench.parts.over, cx),
+                    false => cx.notify(),
+                }
                 going
             });
             if !matches!(going, Ok(true)) {
@@ -133,7 +136,7 @@ pub fn remote_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         })
         .detach();
     }
-    bench.parts.redraw(&bench.parts.over, cx);
+    cx.notify();
 }
 
 /// What is left of the two minutes, as m:ss.
