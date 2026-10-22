@@ -340,11 +340,25 @@ impl Run {
     }
 
     /// Runs frames for `seconds` with `each` called every frame, and times them.
-    fn measure(&mut self, seconds: f64, mut each: impl FnMut(&mut Run, usize)) -> Measured {
+    fn measure(&mut self, seconds: f64, each: impl FnMut(&mut Run, usize)) -> Measured {
+        self.measure_while(|began, _| began.elapsed().as_secs_f64() < seconds, each)
+    }
+
+    /// Times `count` frames, doing `each` before every one, so the work done is the same however
+    /// fast the machine draws.
+    fn steps(&mut self, count: usize, each: impl FnMut(&mut Run, usize)) -> Measured {
+        self.measure_while(|_, index| index < count, each)
+    }
+
+    fn measure_while(
+        &mut self,
+        more: impl Fn(Instant, usize) -> bool,
+        mut each: impl FnMut(&mut Run, usize),
+    ) -> Measured {
         DRAWS.with_borrow_mut(Vec::clear);
         let (began, cpu) = (Instant::now(), thread_cpu_ms());
         let mut index = 0;
-        while began.elapsed().as_secs_f64() < seconds {
+        while more(began, index) {
             each(self, index);
             self.frame();
             index += 1;
@@ -639,17 +653,17 @@ fn long(run: &mut Run, driver: &Arc<Driver>) {
         filled.elapsed().as_secs_f64()
     );
     let transcript = (WINDOW_SIZE.0 / 2., WINDOW_SIZE.1 / 2.);
-    let up = run.measure(10., move |run, _| run.wheel(transcript, 6.));
+    let up = run.steps(2_000, move |run, _| run.wheel(transcript, 6.));
     println!("{}", up.line("scrolling up through the long chat"));
     run.shot("long-up");
-    let down = run.measure(10., move |run, _| run.wheel(transcript, -6.));
+    let down = run.steps(2_000, move |run, _| run.wheel(transcript, -6.));
     println!("{}", down.line("scrolling down again"));
     run.focus_draft();
     run.key("cmd-f");
     for key in ["f", "n", "space", "b", "u", "i", "l", "d"] {
         run.key(key);
     }
-    let found = run.measure(8., |run, index| {
+    let found = run.steps(600, |run, index| {
         if index % 12 == 0 {
             run.key("enter");
         }
@@ -664,7 +678,7 @@ fn long(run: &mut Run, driver: &Arc<Driver>) {
         "{}",
         streaming.line("streaming into the long chat, following the end")
     );
-    let scrolled = run.measure(10., move |run, index| {
+    let scrolled = run.steps(800, move |run, index| {
         run.wheel(transcript, if index % 240 < 120 { 4. } else { -4. })
     });
     println!("{}", scrolled.line("scrolling while it streams"));
