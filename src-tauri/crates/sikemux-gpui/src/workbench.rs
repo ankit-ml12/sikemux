@@ -66,6 +66,10 @@ pub struct Workbench {
     pub voice: Entity<crate::voice::Dictation>,
     _voice_heard: [Subscription; 4],
     _shortcuts_over_settings: Subscription,
+    /// Gives the workbench the keyboard whenever nothing in the window holds it.
+    _focus_lost: Subscription,
+    /// What the person just opened, which takes the keyboard once it shows.
+    takes_keys: Cell<Option<PendingKeys>>,
     /// The project the per-project watches were last made for, by path.
     pub(crate) watched_project: Option<String>,
     /// The host whose core those watches went to.
@@ -503,6 +507,9 @@ impl Workbench {
                     });
                 })
             },
+            _focus_lost: cx
+                .on_focus_lost(window, |bench, window, cx| bench.focus.focus(window, cx)),
+            takes_keys: Cell::new(None),
             watched_project: None,
             watched_place: crate::hosts::Place::This,
             watched_ci: None,
@@ -2907,8 +2914,44 @@ impl Workbench {
         }
     }
 
+    /// Gives the keyboard to `wants` once it shows. Only what the person opens asks for this,
+    /// never what an agent opens beside them.
+    /// The stage draws again at once, so a view already in front takes the keys too.
+    pub fn take_keys_when_shown(&self, wants: TakesKeys, cx: &mut App) {
+        let from = self.tab().map(|tab| tab.id.clone());
+        self.takes_keys.set(Some(PendingKeys { wants, from }));
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Whether `shown`, now drawn, is what waits for the keyboard. It stops waiting once claimed.
+    pub fn claims_keys(&self, shown: TakesKeys) -> bool {
+        match self.takes_keys.take() {
+            Some(pending) if pending.wants == shown => true,
+            other => {
+                self.takes_keys.set(other);
+                false
+            }
+        }
+    }
+
+    /// Stops waiting to give the keyboard away once another kind of tab comes to the front,
+    /// so what failed to open never takes the keys later.
+    fn settle_takes_keys(&self) {
+        let Some(pending) = self.takes_keys.take() else {
+            return;
+        };
+        let front = self.tab();
+        let moved = front.map(|tab| &tab.id) != pending.from.as_ref();
+        let shows = front
+            .and_then(|tab| tabs::first_view(&tab.pane))
+            .is_some_and(|(kind, _)| pending.wants.shows_in(kind));
+        if !moved || shows {
+            self.takes_keys.set(Some(pending));
+        }
+    }
+
     /// Brings forward the first terminal tab in the strip in front, else opens a terminal.
-    fn focus_terminal(&self) {
+    fn focus_terminal(&self, cx: &mut App) {
         let terminal = self.strip().and_then(|strip| {
             let tab = self.tabs(&strip).iter().find(|tab| {
                 tabs::first_view(&tab.pane).is_some_and(|(kind, _)| kind == PaneKind::Terminal)
@@ -2917,7 +2960,7 @@ impl Workbench {
         });
         match terminal {
             Some((strip, tab)) => self.activate_tab(&strip, &tab),
-            None => self.new_terminal(),
+            None => self.new_terminal(cx),
         }
     }
 
@@ -3124,18 +3167,20 @@ impl Workbench {
 
     /// Opens a terminal in the project in front, or among the terminals of no project while
     /// those are in front.
-    pub fn new_terminal(&self) {
+    pub fn new_terminal(&self, cx: &mut App) {
         match (self.strip(), self.project()) {
-            (Some(Strip::Terminals), _) => self.new_loose_terminal(),
-            (Some(Strip::Host(alias)), _) => self.open_ssh_terminal(&alias),
+            (Some(Strip::Terminals), _) => self.new_loose_terminal(cx),
+            (Some(Strip::Host(alias)), _) => self.open_ssh_terminal(&alias, cx),
             (_, Some(project)) => {
+                self.take_keys_when_shown(TakesKeys::Terminal, cx);
                 self.call_in_front("newTerminal", json!({ "project": project.id }))
             }
             _ => {}
         }
     }
 
-    pub fn new_loose_terminal(&self) {
+    pub fn new_loose_terminal(&self, cx: &mut App) {
+        self.take_keys_when_shown(TakesKeys::Terminal, cx);
         self.call("newTerminal", Strip::Terminals.with(json!({})));
     }
 
@@ -3223,7 +3268,8 @@ impl Workbench {
     }
 
     /// Opens a terminal to an SSH host, in that host's strip.
-    pub fn open_ssh_terminal(&self, alias: &str) {
+    pub fn open_ssh_terminal(&self, alias: &str, cx: &mut App) {
+        self.take_keys_when_shown(TakesKeys::Terminal, cx);
         self.call("openSshTerminal", json!({ "host": alias }));
     }
 
@@ -3541,6 +3587,26 @@ impl Render for Part {
     }
 }
 
+/// A view that takes the keyboard once it shows, after the person opened it.
+#[derive(Clone, Copy, PartialEq)]
+pub enum TakesKeys {
+    Terminal,
+}
+
+impl TakesKeys {
+    fn shows_in(self, kind: PaneKind) -> bool {
+        match self {
+            Self::Terminal => kind == PaneKind::Terminal,
+        }
+    }
+}
+
+/// A view waiting to take the keyboard, and the tab in front when it was asked for.
+struct PendingKeys {
+    wants: TakesKeys,
+    from: Option<String>,
+}
+
 /// The window's parts. A plain `cx.notify()` on the store draws them all again; output that
 /// touches one part, such as a terminal's, draws only that one.
 #[derive(Clone)]
@@ -3587,6 +3653,7 @@ impl Parts {
                     bench.search_pane(cx);
                     bench.board_pane(cx);
                     crate::desk::prepare(bench, window, cx);
+                    bench.settle_takes_keys();
                     home::stage(bench, window, cx)
                 },
                 false,
@@ -3690,9 +3757,13 @@ impl Render for Workbench {
                 cx.listener(|bench, _: &crate::places::ClosePlace, _, cx| bench.close_place(cx)),
             )
             .on_action(
-                cx.listener(|bench, _: &crate::places::LastPlace, _, _| bench.go_to_last_place()),
+                cx.listener(|bench, _: &crate::places::LastPlace, _, cx| {
+                    bench.go_to_last_place(cx)
+                }),
             )
-            .on_action(cx.listener(|bench, _: &crate::places::NextGroup, _, _| bench.next_group()))
+            .on_action(
+                cx.listener(|bench, _: &crate::places::NextGroup, _, cx| bench.next_group(cx)),
+            )
             .on_action(cx.listener(|bench, _: &ToggleYolo, _, _| bench.toggle_yolo_in_front()))
             .on_action(
                 cx.listener(|bench, _: &crate::places::FocusTerminals, _, _| {
@@ -3770,7 +3841,7 @@ impl Render for Workbench {
                 bench.toggle_finder(window, cx);
                 cx.notify();
             }))
-            .on_action(cx.listener(|bench, _: &NewTerminal, _, _| bench.new_terminal()))
+            .on_action(cx.listener(|bench, _: &NewTerminal, _, cx| bench.new_terminal(cx)))
             .on_action(cx.listener(|bench, action: &RunProjectAction, _, cx| {
                 bench.run_command(json!({ "action": action.id }), action.label.clone(), cx)
             }))
@@ -3801,7 +3872,7 @@ impl Render for Workbench {
                 }),
             )
             .on_action(cx.listener(|bench, _: &NewChat, window, cx| bench.new_chat(window, cx)))
-            .on_action(cx.listener(|bench, _: &FocusTerminal, _, _| bench.focus_terminal()))
+            .on_action(cx.listener(|bench, _: &FocusTerminal, _, cx| bench.focus_terminal(cx)))
             .on_action(cx.listener(|bench, _: &ToggleDesk, _, cx| bench.toggle_front_desk(cx)))
             .on_action(cx.listener(|bench, _: &NewPage, _, cx| bench.new_front_page(cx)))
             .on_action(cx.listener(|bench, _: &FocusAddress, _, cx| bench.focus_front_address(cx)))

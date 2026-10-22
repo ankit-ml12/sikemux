@@ -2,7 +2,7 @@
 //! a project or host, going back to the last one, jumping between projects and hosts,
 //! and bringing forward a project's files, agents, terminals or board.
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Window};
 use serde_json::json;
 use sikemux_wire::protocol::{AgentStatus, Pane, PaneKind};
 
@@ -43,15 +43,15 @@ impl Workbench {
         }
     }
 
-    pub fn go_to_last_place(&self) {
+    pub fn go_to_last_place(&self, cx: &mut App) {
         let open = self.strips_in_order();
         if let Some(last) = self.last_place.as_ref().filter(|last| open.contains(last)) {
-            self.show_strip(last);
+            self.show_strip(last, cx);
         }
     }
 
     /// The first place of the next group the rail shows: projects, hosts, then terminals.
-    pub fn next_group(&self) {
+    pub fn next_group(&self, cx: &mut App) {
         let group = |strip: &Strip| match strip {
             Strip::Project(_) => 0,
             Strip::Host(_) => 1,
@@ -64,7 +64,7 @@ impl Workbench {
             .filter(|strip| group(strip) != now)
             .min_by_key(|strip| (group(strip) + 3 - now) % 3);
         if let Some(next) = next {
-            self.show_strip(next);
+            self.show_strip(next, cx);
         }
     }
 

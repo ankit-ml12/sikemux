@@ -180,7 +180,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                         "terminal.new",
                         cx,
                     )
-                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                    .on_click(cx.listener(|bench, _, _, cx| bench.new_terminal(cx))),
                 )
                 .child(
                     new_row(
@@ -1343,7 +1343,7 @@ fn terminals_page(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement 
                         "terminal.new",
                         cx,
                     )
-                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                    .on_click(cx.listener(|bench, _, _, cx| bench.new_terminal(cx))),
                 )
                 .child(div().mt(px(8.)).child(scope_switch(bench, cx))),
         )
@@ -1437,7 +1437,7 @@ fn ssh_page(bench: &Workbench, alias: String, cx: &mut Context<Workbench>) -> An
                         "terminal.new",
                         cx,
                     )
-                    .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                    .on_click(cx.listener(|bench, _, _, cx| bench.new_terminal(cx))),
                 )
                 .child(
                     new_row(

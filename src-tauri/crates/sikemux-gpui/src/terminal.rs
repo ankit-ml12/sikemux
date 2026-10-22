@@ -36,7 +36,7 @@ use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
 use crate::send_to::{self, Choice, Recipient};
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Menu, MenuItem};
-use crate::workbench::Workbench;
+use crate::workbench::{TakesKeys, Workbench};
 
 const PAGE: u64 = 256;
 /// History lines kept around the ones in view.
@@ -746,6 +746,13 @@ fn layout(
         })
         .clone();
     let asks = bench.asks.clone();
+    if !bench.terminals.open.contains_key(&id) && bench.claims_keys(TakesKeys::Terminal) {
+        cx.defer_in(window, move |bench, window, cx| {
+            if let Some(terminal) = bench.terminals.open.get(&id) {
+                window.focus(&terminal.focus, cx);
+            }
+        });
+    }
     let terminal = bench.terminals.open.entry(id).or_insert_with(|| {
         let _ = asks.send(routed(&bench.terminals.places, id, TerminalAsk::Attach));
         let focus = cx.focus_handle();

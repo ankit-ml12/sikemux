@@ -168,7 +168,7 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
                 .child(
                     Button::new("empty-new-terminal", "New terminal", Variant::Outline)
                         .keys(hint("terminal.new"))
-                        .on_click(cx.listener(|bench, _, _, _| bench.new_terminal())),
+                        .on_click(cx.listener(|bench, _, _, cx| bench.new_terminal(cx))),
                 )
                 .child(
                     Button::new("empty-open-file", "Open file", Variant::Outline)

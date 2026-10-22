@@ -237,7 +237,7 @@ impl Workbench {
             })
             .detach();
         } else if let Some(alias) = key.strip_prefix(HOST) {
-            self.show_strip(&Strip::Host(alias.to_owned()));
+            self.show_strip(&Strip::Host(alias.to_owned()), cx);
         }
     }
 }

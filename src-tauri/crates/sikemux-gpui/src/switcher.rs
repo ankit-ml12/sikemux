@@ -3,9 +3,9 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, KeyDownEvent,
-    Modifiers, ModifiersChangedEvent, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement,
+    KeyDownEvent, Modifiers, ModifiersChangedEvent, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 
 use serde_json::json;
@@ -123,7 +123,7 @@ impl Workbench {
                 self.parts.redraw(&self.parts.finder, cx);
                 cx.notify();
             }
-            None => self.show_strip(&places[at]),
+            None => self.show_strip(&places[at], cx),
         }
     }
 
@@ -149,14 +149,14 @@ impl Workbench {
             return;
         };
         if let Some(place) = switcher.places.get(switcher.at).filter(|_| open) {
-            self.show_strip(place);
+            self.show_strip(place, cx);
         }
         self.parts.redraw(&self.parts.finder, cx);
         cx.notify();
     }
 
     /// Brings a project, or an SSH host's strip, to the front.
-    pub fn show_strip(&self, strip: &Strip) {
+    pub fn show_strip(&self, strip: &Strip, cx: &mut App) {
         match strip {
             Strip::Project(project) => self.activate_project(project),
             Strip::Host(alias) => {
@@ -167,7 +167,7 @@ impl Workbench {
                     .and_then(|layout| layout.active.clone());
                 match open {
                     Some(tab) => self.activate_tab(strip, &tab),
-                    None => self.open_ssh_terminal(alias),
+                    None => self.open_ssh_terminal(alias, cx),
                 }
             }
             Strip::Terminals => self.call("showTerminals", json!({})),

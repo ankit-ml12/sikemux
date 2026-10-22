@@ -94,7 +94,7 @@ pub fn side_rail(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEle
                             [
                                 IconButton::new("add-terminal", Icon::Plus, "New terminal")
                                     .on_click(
-                                        cx.listener(|bench, _, _, _| bench.new_loose_terminal()),
+                                        cx.listener(|bench, _, _, cx| bench.new_loose_terminal(cx)),
                                     ),
                             ],
                             cx,
@@ -143,7 +143,7 @@ fn this_host(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement
                         .on_click(move |_, _, cx| {
                             let _ = bench.update(cx, |bench, cx| {
                                 bench.choose_host(HostChoice::This, cx);
-                                bench.new_loose_terminal();
+                                bench.new_loose_terminal(cx);
                             });
                         }),
                 )
@@ -336,8 +336,9 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                                 PopupMenuItem::new("New SSH terminal")
                                     .icon(Icon::Terminal)
                                     .on_click(move |_, _, cx| {
-                                        let _ = bench
-                                            .update(cx, |bench, _| bench.open_ssh_terminal(&alias));
+                                        let _ = bench.update(cx, |bench, cx| {
+                                            bench.open_ssh_terminal(&alias, cx)
+                                        });
                                     }),
                             )
                             .item(
