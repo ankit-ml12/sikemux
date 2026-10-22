@@ -19,6 +19,8 @@ export type MdElement =
     | { t: "a"; href: string; title?: string; c: MdNode[] }
     | { t: "img"; src: string; alt: string; title?: string }
     | { t: "fnref"; n: number }
+    /** A name that could be a file, holding the words as written, between backticks when `code`. */
+    | { t: "path"; href: string; code?: boolean; c: MdNode[] }
     /** A `<details>` fold from embedded HTML. */
     | { t: "details"; summary: string; open?: boolean; c: MdNode[] };
 

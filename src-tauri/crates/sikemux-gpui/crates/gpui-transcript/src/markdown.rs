@@ -35,6 +35,8 @@ pub enum Kind {
     Strike,
     InlineCode,
     Link(SharedString),
+    /// A name that could be a file, as the message wrote it.
+    Path(SharedString),
     Image {
         src: SharedString,
         alt: SharedString,
@@ -54,6 +56,7 @@ impl Kind {
                 | Kind::Strike
                 | Kind::InlineCode
                 | Kind::Link(_)
+                | Kind::Path(_)
                 | Kind::Break
                 | Kind::FootnoteRef(_)
         )
@@ -100,6 +103,8 @@ pub struct Rich {
     pub text: SharedString,
     pub marks: Vec<(Range<usize>, Marks)>,
     pub links: Vec<(Range<usize>, SharedString)>,
+    /// The runs that name what could be files, each with the name as written.
+    pub paths: Vec<(Range<usize>, SharedString)>,
 }
 
 /// An element's content in reading order: runs of inline text, and the
@@ -250,6 +255,7 @@ struct Builder(
     String,
     Vec<(Range<usize>, Marks)>,
     Vec<(Range<usize>, SharedString)>,
+    Vec<(Range<usize>, SharedString)>,
 );
 
 impl Builder {
@@ -285,6 +291,9 @@ impl Builder {
         if let (Some(href), Kind::Link(_), true) = (link, &node.kind, self.0.len() > start) {
             self.2.push((start..self.0.len(), href.clone()));
         }
+        if let (None, Kind::Path(name), true) = (link, &node.kind, self.0.len() > start) {
+            self.3.push((start..self.0.len(), name.clone()));
+        }
     }
 
     fn finish(self) -> Rich {
@@ -292,6 +301,7 @@ impl Builder {
             text: self.0.into(),
             marks: self.1,
             links: self.2,
+            paths: self.3,
         }
     }
 }
@@ -382,6 +392,7 @@ impl From<Wire> for Node {
             "del" => Kind::Strike,
             "code" => Kind::InlineCode,
             "a" => Kind::Link(element.href),
+            "path" => Kind::Path(element.href),
             "img" => Kind::Image {
                 src: element.src,
                 alt: element.alt,

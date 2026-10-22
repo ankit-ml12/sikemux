@@ -20,6 +20,7 @@ const ANSWER: Options = Options {
     html_as_text: false,
     file_links: true,
     html_images: false,
+    file_paths: true,
 };
 
 /// A client opening a chat is sent about a screen or two of its end, so it

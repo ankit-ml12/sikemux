@@ -2,6 +2,7 @@
 //! the draft, each picture also named in the draft where it belongs, as `[Image #n]`.
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::base::input::{InlineToken, InlineTokenContext};
 use gpui_kit::component::attachment::{
@@ -11,9 +12,10 @@ use gpui_kit::component::{Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, App, AppContext, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths,
-    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathPromptOptions,
-    SharedString, Styled, Window,
+    FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    PathPromptOptions, SharedString, Styled, Window,
 };
+use gpui_transcript::FilePress;
 use sikemux_core::acp::MAX_ATTACHMENTS;
 use sikemux_wire::chat::ChatMessage;
 use sikemux_wire::protocol::ChatContext;
@@ -667,6 +669,7 @@ fn context_chip(id: String, uri: &str, title: &str, t: &Tokens) -> Attachment {
 pub fn sent(
     message: &ChatMessage,
     open: impl Fn(PathBuf, &mut Window, &mut App) + Clone + 'static,
+    file: Rc<dyn Fn(&str, FilePress, &mut Window, &mut App)>,
     cx: &App,
 ) -> Option<Div> {
     if message.attachments.is_empty() && message.context.is_empty() {
@@ -678,12 +681,34 @@ pub fn sent(
         let path = PathBuf::from(path);
         let id = SharedString::from(format!("sent-{}-{index}", message.id));
         if !is_image(&path) {
-            return Attachment::new()
-                .id(id)
-                .with_size(gpui_kit::component::Size::Small)
-                .tooltip(path.to_string_lossy().into_owned())
-                .media(media(&path, &t, cx))
-                .content(AttachmentContent::new().title(AttachmentTitle::new(file_name(&path))));
+            let (name, menu_name) = (
+                path.to_string_lossy().into_owned(),
+                path.to_string_lossy().into_owned(),
+            );
+            let (file, menu_file) = (file.clone(), file.clone());
+            return div()
+                .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    let press = if event.click_count > 1 {
+                        FilePress::OpenTwice
+                    } else {
+                        FilePress::Open
+                    };
+                    file(&name, press, window, cx);
+                })
+                .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                    menu_file(&menu_name, FilePress::Menu(event.position), window, cx);
+                })
+                .child(
+                    Attachment::new()
+                        .id(id)
+                        .with_size(gpui_kit::component::Size::Small)
+                        .tooltip(path.to_string_lossy().into_owned())
+                        .media(media(&path, &t, cx))
+                        .content(
+                            AttachmentContent::new().title(AttachmentTitle::new(file_name(&path))),
+                        ),
+                )
+                .into_any_element();
         }
         let number = index + 1;
         let tagged = written.contains(&format!("[Image #{number}]"));
@@ -699,6 +724,7 @@ pub fn sent(
             .tooltip(path.to_string_lossy().into_owned())
             .media(tile)
             .on_click(move |_, window, cx| open(path.clone(), window, cx))
+            .into_any_element()
     });
     let context = message.context.iter().enumerate().map(|(index, item)| {
         context_chip(

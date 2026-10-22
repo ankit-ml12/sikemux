@@ -158,10 +158,21 @@ impl Workbench {
         }
     }
 
-    /// Has the core open each target, each file's cursor going to its line once it is read,
-    /// and gathers what opened and the tabs the files opened in.
+    /// Has this host's core open each target, each file's cursor going to its line once it is
+    /// read, and gathers what opened and the tabs the files opened in.
     pub(crate) fn open_targets(
         &mut self,
+        targets: Vec<CliOpenTarget>,
+        behind: bool,
+    ) -> impl Future<Output = (CliOpenOutcome, HashSet<String>)> + Send + 'static {
+        let here = crate::core::Target::new(&self.asks, crate::hosts::Place::This);
+        self.open_targets_on(&here, targets, behind)
+    }
+
+    /// Has the core `target` reaches open each target, as `open_targets` does on this host's.
+    pub(crate) fn open_targets_on(
+        &mut self,
+        target: &crate::core::Target,
         targets: Vec<CliOpenTarget>,
         behind: bool,
     ) -> impl Future<Output = (CliOpenOutcome, HashSet<String>)> + Send + 'static {
@@ -175,11 +186,7 @@ impl Workbench {
             }
         }
         let ids: Vec<String> = targets.iter().map(|target| target.id.clone()).collect();
-        let asked = crate::core::request(
-            &self.asks,
-            "openPaths",
-            json!({ "targets": targets, "behind": behind }),
-        );
+        let asked = target.request("openPaths", json!({ "targets": targets, "behind": behind }));
         async move {
             let mut outcome = CliOpenOutcome::default();
             let mut tabs = HashSet::new();

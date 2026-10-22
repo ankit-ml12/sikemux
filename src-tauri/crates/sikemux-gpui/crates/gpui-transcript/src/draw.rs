@@ -10,7 +10,7 @@ use gpui::{
     combine_highlights, div, img, point, px, relative, rgb, rgba, size, AnyElement, App,
     AvailableSpace, Bounds, ClipboardItem, Div, Element, ElementId, Font, FontStyle, FontWeight,
     GlobalElementId, HighlightStyle, Hsla, InspectorElementId, InteractiveElement, InteractiveText,
-    IntoElement, LayoutId, ParentElement, Pixels, SharedString, Stateful,
+    IntoElement, LayoutId, MouseButton, ParentElement, Pixels, Point, SharedString, Stateful,
     StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, Window,
 };
 
@@ -33,6 +33,29 @@ pub type CodeColours =
     Rc<dyn Fn(Option<&SharedString>, &SharedString, &mut App) -> Option<CodeRuns>>;
 /// Draws a picture from its address and its alt text.
 pub type DrawImage = Rc<dyn Fn(&str, &str, &mut Window, &mut App) -> AnyElement>;
+
+/// What a name the message wrote turned out to be, once the host looked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileKind {
+    File,
+    Folder,
+}
+
+/// How the reader reached for a file the message names.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FilePress {
+    /// One click.
+    Open,
+    /// Two clicks.
+    OpenTwice,
+    /// The menu, where the pointer is.
+    Menu(Point<Pixels>),
+}
+
+/// Whether a name the message wrote is a file the host holds, none until the host has said.
+pub type FileOf = Rc<dyn Fn(&str, &mut App) -> Option<FileKind>>;
+/// What reaching for a file does, by its name as written.
+pub type OnFile = Rc<dyn Fn(&str, FileKind, FilePress, &mut Window, &mut App)>;
 
 /// How markdown looks and what it does when clicked. The defaults are Sikemux's dark theme.
 #[derive(Clone)]
@@ -61,6 +84,9 @@ pub struct Style {
     pub table_head: Hsla,
     pub radius: Pixels,
     pub on_link: Option<OnLink>,
+    /// Draws the names that are files the host holds as files, and opens them.
+    pub file_of: Option<FileOf>,
+    pub on_file: Option<OnFile>,
     pub fence: Option<DrawFence>,
     pub code: Option<CodeColours>,
     pub image: Option<DrawImage>,
@@ -108,6 +134,8 @@ impl Default for Style {
             table_head: rgba(0xe7e5ef0a).into(),
             radius: px(5.),
             on_link: None,
+            file_of: None,
+            on_file: None,
             fence: None,
             code: None,
             image: None,
@@ -436,7 +464,7 @@ impl Draw<'_> {
             Kind::Bullets | Kind::Numbers(_) => self.list(node, window, cx),
             Kind::Code(lang) => self.fence(node, lang.clone(), window, cx),
             Kind::Rule => div().h(px(1.)).my(px(4.)).bg(style.line).into_any_element(),
-            Kind::Table(_) => self.table(node),
+            Kind::Table(_) => self.table(node, cx),
             Kind::Footnote(n) => div()
                 .flex()
                 .gap(px(4.))
@@ -457,12 +485,12 @@ impl Draw<'_> {
     fn flow(&mut self, node: &Node, window: &mut Window, cx: &mut App) -> AnyElement {
         let pieces = node.flow();
         if let [Piece::Text(rich)] = pieces {
-            return self.rich(rich);
+            return self.rich(rich, cx);
         }
         let children: Vec<_> = pieces
             .iter()
             .map(|piece| match piece {
-                Piece::Text(rich) => self.rich(rich),
+                Piece::Text(rich) => self.rich(rich, cx),
                 Piece::Block(ix) => self.block(&node.children[*ix], *ix, window, cx),
             })
             .collect();
@@ -476,12 +504,12 @@ impl Draw<'_> {
             .into_any_element()
     }
 
-    fn rich(&mut self, rich: &Rich) -> AnyElement {
-        self.coloured(rich, None)
+    fn rich(&mut self, rich: &Rich, cx: &mut App) -> AnyElement {
+        self.coloured(rich, None, cx)
     }
 
     /// Text with `colours` beneath its own marks and the selection.
-    fn coloured(&mut self, rich: &Rich, colours: Option<CodeRuns>) -> AnyElement {
+    fn coloured(&mut self, rich: &Rich, colours: Option<CodeRuns>, cx: &mut App) -> AnyElement {
         let on = self.on;
         let style = &*on.style;
         self.texts += 1;
@@ -506,7 +534,24 @@ impl Draw<'_> {
                     .collect()
             })
             .unwrap_or_default();
+        let files: Vec<(Range<usize>, SharedString, FileKind)> = match &style.file_of {
+            Some(file_of) => rich
+                .paths
+                .iter()
+                .chain(&rich.links)
+                .filter_map(|(range, name)| Some((range.clone(), name.clone(), file_of(name, cx)?)))
+                .collect(),
+            None => Vec::new(),
+        };
         let own = highlights(rich, selected, &found, style);
+        let file_looks = files.iter().map(|(range, _, _)| {
+            let look = HighlightStyle {
+                color: Some(style.accent),
+                ..HighlightStyle::default()
+            };
+            (range.clone(), look)
+        });
+        let own: Vec<_> = combine_highlights(file_looks, own).collect();
         let looks = match colours {
             Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
             None => own,
@@ -517,13 +562,17 @@ impl Draw<'_> {
                 mono.map(|(range, _)| (range.clone(), style.mono.family.clone())),
             );
         let layout = text.layout().clone();
-        let inner = if rich.links.is_empty() {
+        let links: Vec<&(Range<usize>, SharedString)> = rich
+            .links
+            .iter()
+            .filter(|(range, _)| !files.iter().any(|(file, _, _)| file == range))
+            .collect();
+        let inner = if links.is_empty() {
             text.into_any_element()
         } else {
-            let links: Rc<[SharedString]> =
-                rich.links.iter().map(|(_, href)| href.clone()).collect();
+            let ranges = links.iter().map(|(range, _)| range.clone()).collect();
+            let links: Rc<[SharedString]> = links.iter().map(|(_, href)| href.clone()).collect();
             let on_link = style.on_link.clone();
-            let ranges = rich.links.iter().map(|(range, _)| range.clone()).collect();
             InteractiveText::new(self.id("text"), text)
                 .on_click(ranges, move |ix, window, cx| {
                     match (&on_link, links.get(ix)) {
@@ -533,6 +582,40 @@ impl Draw<'_> {
                     }
                 })
                 .into_any_element()
+        };
+        let inner = match (&style.on_file, files.is_empty()) {
+            (Some(on_file), false) => {
+                let (on_file, files, layout) = (on_file.clone(), Rc::new(files), layout.clone());
+                let pressed = move |position: Point<Pixels>, press: FilePress| {
+                    let at = layout.index_for_position(position).ok()?;
+                    let (_, name, kind) = files.iter().find(|(range, _, _)| range.contains(&at))?;
+                    Some((name.clone(), *kind, press))
+                };
+                let (press, menu) = (Rc::new(pressed), on_file.clone());
+                let menu_press = press.clone();
+                div()
+                    .child(inner)
+                    .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                        let twice = if event.click_count > 1 {
+                            FilePress::OpenTwice
+                        } else {
+                            FilePress::Open
+                        };
+                        if let Some((name, kind, press)) = press(event.position, twice) {
+                            cx.stop_propagation();
+                            on_file(&name, kind, press, window, cx);
+                        }
+                    })
+                    .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                        let asked = menu_press(event.position, FilePress::Menu(event.position));
+                        if let Some((name, kind, press)) = asked {
+                            cx.stop_propagation();
+                            menu(&name, kind, press, window, cx);
+                        }
+                    })
+                    .into_any_element()
+            }
+            _ => inner,
         };
         let Some(selecting) = &on.selecting else {
             return inner;
@@ -630,7 +713,7 @@ impl Draw<'_> {
             .text_size(style.code_size)
             .line_height(relative(1.55))
             .text_color(style.ink_dim)
-            .child(self.coloured(code, colours));
+            .child(self.coloured(code, colours, cx));
         let frame = div()
             .rounded(style.radius)
             .border_1()
@@ -656,7 +739,7 @@ impl Draw<'_> {
 
     /// A table as rows of cells. A column is as wide as its longest text,
     /// shared out when they do not all fit, so long cells wrap and every row lines up.
-    fn table(&mut self, node: &Node) -> AnyElement {
+    fn table(&mut self, node: &Node, cx: &mut App) -> AnyElement {
         let style = &*self.on.style;
         let Kind::Table(table) = &node.kind else {
             return div().into_any_element();
@@ -705,7 +788,7 @@ impl Draw<'_> {
                     .map(|(x, chars)| {
                         let content = match row.get(x).cloned().flatten() {
                             Some(rich) if head => rich.text.to_uppercase().into_any_element(),
-                            Some(rich) => self.rich(&rich),
+                            Some(rich) => self.rich(&rich, cx),
                             None => div().into_any_element(),
                         };
                         div()

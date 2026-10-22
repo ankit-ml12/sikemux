@@ -18,8 +18,8 @@ use gpui_kit::{
     Subscription, Task, Transformation, WeakEntity, Window,
 };
 use gpui_transcript::{
-    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FoundChanged, Markdown, Pen, Row,
-    RowsChanged, Style, Transcript,
+    AwayChanged, Change, CodeColours, CodeRuns, EmptyChanged, FilePress, FoundChanged, Markdown,
+    Pen, Row, RowsChanged, Style, Transcript,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -50,6 +50,7 @@ mod attach;
 mod content;
 pub(crate) mod draft;
 mod edit;
+mod files;
 mod find;
 mod link;
 mod live;
@@ -435,6 +436,8 @@ pub struct Chat {
     stopping: HashSet<String>,
     /// The questions whose answers went to the core, until it took them.
     answering: HashSet<String>,
+    /// The menu of a file a message names, while it is open.
+    file_menu: Option<files::FileMenu>,
 }
 
 /// The draft, the masked field a secret answer is typed into, and what the draft last said while empty.
@@ -658,6 +661,7 @@ impl Chat {
             replying: None,
             stopping: HashSet::new(),
             answering: HashSet::new(),
+            file_menu: None,
         }
     }
 
@@ -1426,6 +1430,24 @@ pub fn pane(
     welcome: Option<AnyElement>,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
+    if let Some(saved) = bench.shown().and_then(|view| {
+        view.workspace
+            .agents
+            .iter()
+            .find(|saved| saved.id == agent.id)
+    }) {
+        let cwd = saved.cwd.to_string_lossy();
+        (chat.looks.files.borrow_mut()).place(&cwd, &chat.target, &chat.reader);
+    }
+    let file_menu = chat.file_menu.as_ref().map(|open| {
+        gpui_kit::deferred(
+            gpui_kit::anchored()
+                .position(open.at)
+                .snap_to_window_with_margin(px(8.))
+                .child(open.menu.clone()),
+        )
+        .with_priority(1)
+    });
     let list = chat.transcript.read(cx).list().clone();
     let rows = div()
         .flex_1()
@@ -1546,6 +1568,7 @@ pub fn pane(
             question_keys(pane, id, true, &cx.weak_entity())
         })
         .child(rows)
+        .children(file_menu)
         .child(chat.activity_line.clone())
         .children(status::plan(agent, chat, cx))
         .children(status::trouble(agent, chat, cx))
@@ -2740,6 +2763,32 @@ fn strip(
 }
 
 impl Workbench {
+    /// Opens `menu` for a file the chat of `agent` names, at `at`, until it is dismissed.
+    pub fn show_file_menu(
+        &mut self,
+        agent: &str,
+        at: gpui_kit::Point<gpui_kit::Pixels>,
+        menu: Entity<gpui_kit::component::menu::PopupMenu>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(chat) = self.chats.get_mut(agent) else {
+            return;
+        };
+        let agent = agent.to_owned();
+        let dismissed = cx.subscribe(&menu, move |bench, _, _: &gpui_kit::DismissEvent, cx| {
+            if let Some(chat) = bench.chats.get_mut(&agent) {
+                chat.file_menu = None;
+            }
+            bench.parts.redraw(&bench.parts.stage, cx);
+        });
+        chat.file_menu = Some(files::FileMenu {
+            at,
+            menu,
+            _dismissed: dismissed,
+        });
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
     /// The chat in front while its question asks and nothing else holds the keys, as when the
     /// person clicked away from every field, so the question takes its keys from anywhere.
     pub fn asking_freely(&self, window: &Window) -> Option<String> {
@@ -2947,6 +2996,8 @@ struct Looks {
     agent: String,
     /// The pictures in the chat's replies, read from their bytes once, by part.
     pictures: RefCell<HashMap<SharedString, Option<Picture>>>,
+    /// What the chat's host holds of the names its messages write.
+    files: Rc<RefCell<files::Files>>,
 }
 
 #[derive(Clone)]
@@ -3084,6 +3135,16 @@ fn spread(lines: &[syntax::LineRuns], code: &str, plain: Hsla) -> CodeRuns {
 }
 
 impl Looks {
+    /// What reaching for a file the chat names does, once its host says the file is there.
+    fn file_pressed(&self) -> Rc<dyn Fn(&str, FilePress, &mut Window, &mut App)> {
+        let (bench, agent, files) = (self.bench.clone(), self.agent.clone(), self.files.clone());
+        Rc::new(move |name, press, window, cx| {
+            if let Some(kind) = files::Files::kind_of(&files, name, cx) {
+                files::pressed(&agent, &files, &bench, (name, kind, press), window, cx)
+            }
+        })
+    }
+
     fn new(
         t: &Tokens,
         provider: &str,
@@ -3091,6 +3152,7 @@ impl Looks {
         (bench, asks): (WeakEntity<Workbench>, UnboundedSender<Ask>),
         agent: String,
     ) -> Looks {
+        let files = Rc::new(RefCell::new(files::Files::default()));
         let mut mono = gpui_kit::font(theme::MONO);
         mono.fallbacks = Some(gpui_kit::FontFallbacks::from_fonts(vec![
             theme::MONO_ICONS.into()
@@ -3119,6 +3181,16 @@ impl Looks {
                 let (bench, agent) = (bench.clone(), agent.clone());
                 move |href: &str, window: &mut Window, cx: &mut App| {
                     link::open(href, &agent, &bench, window, cx)
+                }
+            })),
+            file_of: Some(Rc::new({
+                let files = files.clone();
+                move |name: &str, cx: &mut App| files::Files::kind_of(&files, name, cx)
+            })),
+            on_file: Some(Rc::new({
+                let (bench, agent, files) = (bench.clone(), agent.clone(), files.clone());
+                move |name: &str, kind, press, window: &mut Window, cx: &mut App| {
+                    files::pressed(&agent, &files, &bench, (name, kind, press), window, cx)
                 }
             })),
             image: Some(Rc::new({
@@ -3166,6 +3238,7 @@ impl Looks {
             bench,
             agent,
             pictures: RefCell::default(),
+            files,
         }
     }
 }
@@ -3295,7 +3368,7 @@ fn row(
                             .border_color(looks.line)
                             .rounded(theme::RADIUS_3)
                             .bg(looks.bubble)
-                            .children(attach::sent(message, open, cx))
+                            .children(attach::sent(message, open, looks.file_pressed(), cx))
                             .children(parts),
                     )
                     .children(meta::line(rows, ix, &group, looks, cx))

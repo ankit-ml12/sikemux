@@ -3,9 +3,10 @@
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity,
+    div, px, AnyElement, App, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity,
 };
+use gpui_transcript::FilePress;
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -42,7 +43,7 @@ pub fn image(
     .into_any_element()
 }
 
-pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> AnyElement {
+pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &mut App) -> AnyElement {
     let field = |name: &str| content[name].as_str().filter(|value| !value.is_empty());
     let picture = looks
         .pictures
@@ -82,6 +83,10 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> An
         .or(uri.as_deref())
         .unwrap_or("Resource")
         .to_owned();
+    let file = uri
+        .as_deref()
+        .is_some_and(|uri| super::files::Files::kind_of(&looks.files, uri, cx).is_some());
+    let pressed = looks.file_pressed();
     div()
         .id(id)
         .flex()
@@ -89,8 +94,23 @@ pub fn content(id: SharedString, content: &Value, looks: &Drawn, cx: &App) -> An
         .gap(px(7.))
         .min_w_0()
         .text_size(crate::theme::ui_text(12.5))
-        .text_color(looks.quiet)
-        .when_some(uri, |row, uri| {
+        .text_color(if file { looks.accent } else { looks.quiet })
+        .when_some(uri.clone().filter(|_| file), |row, uri| {
+            let menu = (uri.clone(), pressed.clone());
+            row.cursor_pointer()
+                .on_click(move |event, window, cx| {
+                    let press = if event.click_count() > 1 {
+                        FilePress::OpenTwice
+                    } else {
+                        FilePress::Open
+                    };
+                    pressed(&uri, press, window, cx)
+                })
+                .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                    (menu.1)(&menu.0, FilePress::Menu(event.position), window, cx)
+                })
+        })
+        .when_some(uri.filter(|_| !file), |row, uri| {
             row.cursor_pointer()
                 .hover(move |row| row.text_color(ink))
                 .on_click(move |_, window, cx| link::open(&uri, &agent, &bench, window, cx))

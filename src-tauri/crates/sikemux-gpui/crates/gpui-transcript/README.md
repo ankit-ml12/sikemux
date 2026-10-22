@@ -46,8 +46,10 @@ transcript, `Pen::new(style)` draws markdown without selection.
 
 Blocks arrive as JSON. Each block is an object tagged by `t` (`p`, `h`,
 `quote`, `ul`, `ol`, `li`, `pre`, `hr`, `table`, `fndef`, `details`), and
-inline content uses `em`, `strong`, `del`, `code`, `a`, `img`, `br` and
-`fnref`, with a bare string for text. A patch is `{ "n": units, "o": [op…] }`.
+inline content uses `em`, `strong`, `del`, `code`, `a`, `img`, `br`,
+`fnref` and `path`, with a bare string for text. A `path` holds a name that
+could be a file, as written; `Style::file_of` says whether it is one, and
+`Style::on_file` opens it. A patch is `{ "n": units, "o": [op…] }`.
 `n` is the text's length in UTF-16 units after the patch. Each op has a path
 `p` of child indexes, through `c`, or through a table's `rows`, then cells,
 then cell contents:

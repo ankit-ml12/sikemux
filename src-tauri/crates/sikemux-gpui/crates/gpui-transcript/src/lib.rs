@@ -14,7 +14,10 @@ mod markdown;
 mod select;
 mod transcript;
 
-pub use draw::{CodeColours, CodeRuns, DrawFence, DrawImage, Fence, OnLink, Pen, Style};
+pub use draw::{
+    CodeColours, CodeRuns, DrawFence, DrawImage, Fence, FileKind, FileOf, FilePress, OnFile,
+    OnLink, Pen, Style,
+};
 pub use find::{FoundChanged, Query};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
 pub use transcript::{init, AwayChanged, Change, Copy, EmptyChanged, Row, RowsChanged, Transcript};

@@ -22,6 +22,7 @@ const OPTIONS: Options = Options {
     html_as_text: false,
     file_links: true,
     html_images: false,
+    file_paths: false,
 };
 
 /// Whether a file's editor shows its text or the markdown it renders to.
