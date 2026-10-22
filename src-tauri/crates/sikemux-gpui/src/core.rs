@@ -433,42 +433,70 @@ impl Default for Home {
     }
 }
 
-/// Starts or takes up again a chat on `client`'s core and brings its tab to the front there.
-async fn open_chat_on(client: Arc<CoreClient>, ask: Ask) {
-    let (opened, project, started) = match ask {
+/// A new chat asked of this window's own core, until the core says it has begun.
+struct Beginning {
+    launcher: String,
+    begun: oneshot::Sender<String>,
+}
+
+/// Starts or takes up again a chat on `client`'s core and brings its tab to the front there:
+/// as soon as `begun` names the new chat, rather than once its agent's program is ready, which
+/// takes a real agent seconds.
+async fn open_chat_on(client: Arc<CoreClient>, ask: Ask, begun: Option<oneshot::Receiver<String>>) {
+    let (opened, project, started, shown) = match ask {
         Ask::StartChat {
             launcher,
             project,
             mode,
             started,
         } => {
-            let asked = Request::StartChat {
+            let asked = client.request(Request::StartChat {
                 launcher,
                 project: project.clone(),
                 permission_mode: mode,
                 model: None,
                 effort: None,
+            });
+            let (answer, shown) = {
+                let early = async {
+                    let agent = begun?.await.ok()?;
+                    open_tab(&client, &project, &agent).await;
+                    Some(agent)
+                };
+                tokio::pin!(asked, early);
+                tokio::select! {
+                    answer = &mut asked => (answer, None),
+                    shown = &mut early => (asked.await, shown),
+                }
             };
-            let begun = match client.request(asked).await {
+            let begun = match answer {
                 Ok(Response::ChatBegun { agent_id, start }) => Ok((agent_id, start)),
                 Ok(_) => Err(ClientError::UnexpectedReply),
                 Err(error) => Err(error),
             };
-            (begun, project, started)
+            (begun, project, started, shown)
         }
-        Ask::ResumeChat { recent, project } => (client.resume_chat(recent).await, project, None),
+        Ask::ResumeChat { recent, project } => {
+            (client.resume_chat(recent).await, project, None, None)
+        }
         _ => return,
     };
     match opened {
         Ok((agent, _)) => {
-            let tab = json!({ "project": project, "kind": "agent", "target": agent });
-            let _ = client.call("openTab", tab).await;
+            if shown.as_ref() != Some(&agent) {
+                open_tab(&client, &project, &agent).await;
+            }
             if let Some(started) = started {
                 let _ = started.send(agent);
             }
         }
         Err(error) => eprintln!("sikemux: the core would not open the chat: {error}"),
     }
+}
+
+async fn open_tab(client: &CoreClient, project: &str, agent: &str) {
+    let tab = json!({ "project": project, "kind": "agent", "target": agent });
+    let _ = client.call("openTab", tab).await;
 }
 
 /// Asks another host's core one of its methods, by the host's key, and waits for the answer.
@@ -891,6 +919,7 @@ async fn run(
                 let (reached_tx, mut reached) =
                     mpsc::unbounded_channel::<(String, Arc<CoreClient>)>();
                 let mut streamed: HashMap<u64, mpsc::UnboundedSender<Part>> = HashMap::new();
+                let mut beginnings: Vec<Beginning> = Vec::new();
                 loop {
                     tokio::select! {
                         settled = settled.recv() => match settled {
@@ -934,6 +963,13 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Chat { agent_id, seq, changes })) => {
                                 let _ = updates.send(Update::Chat(agent_id, ChatNews::Changes { seq, changes }));
+                            }
+                            Some(ClientEvent::Event(Event::ChatBegun { chat })) if chat.started_by.is_none() => {
+                                beginnings.retain(|beginning| !beginning.begun.is_closed());
+                                let launcher = chat.launcher.as_deref();
+                                if let Some(at) = beginnings.iter().position(|beginning| launcher == Some(&beginning.launcher)) {
+                                    let _ = beginnings.remove(at).begun.send(chat.agent_id);
+                                }
                             }
                             Some(ClientEvent::Event(Event::Stream { stream, items, done, error })) => {
                                 if let Some(parts) = streamed.get(&stream) {
@@ -1116,7 +1152,7 @@ async fn run(
                                             None => None,
                                         };
                                         match client {
-                                            Some(client) => open_chat_on(client, ask).await,
+                                            Some(client) => open_chat_on(client, ask, None).await,
                                             None => eprintln!("sikemux: {host} is out of reach, so no chat started there"),
                                         }
                                     });
@@ -1206,7 +1242,15 @@ async fn run(
                             }
                             Some(Ask::Terminal(session, ask)) => streams.ask(session, ask),
                             Some(ask @ (Ask::StartChat { .. } | Ask::ResumeChat { .. })) => {
-                                tokio::spawn(open_chat_on(client.clone(), ask));
+                                let heard = match &ask {
+                                    Ask::StartChat { launcher, .. } => {
+                                        let (begun, heard) = oneshot::channel();
+                                        beginnings.push(Beginning { launcher: launcher.clone(), begun });
+                                        Some(heard)
+                                    }
+                                    _ => None,
+                                };
+                                tokio::spawn(open_chat_on(client.clone(), ask, heard));
                             }
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;
