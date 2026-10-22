@@ -5,7 +5,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
     ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
-    RenderOnce, SharedString, Styled, Window,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smallvec::SmallVec;
 
@@ -140,11 +140,27 @@ impl MenuItem {
 }
 
 impl RenderOnce for MenuItem {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let (rest, hover, wash) = (t.text_secondary, t.text_primary, t.surface_hover);
         let on_click = self.on_click.filter(|_| !self.disabled);
-        BaseButton::new(self.id)
+        let (over, keep_over) = motion::hovered(&self.id, window, cx);
+        let lit = over && !self.disabled;
+        let fade =
+            |channel, lit_colour: Hsla, rest_colour: Hsla, window: &mut Window, cx: &mut App| {
+                let target = if lit { lit_colour } else { rest_colour };
+                motion::fade(&self.id, channel, target, motion::MENU_ITEM, window, cx)
+            };
+        let tint = fade("tint", wash, wash.opacity(0.), window, cx);
+        let ink = fade(
+            "ink",
+            hover,
+            if self.disabled { t.text_tertiary } else { rest },
+            window,
+            cx,
+        );
+        let glyph_ink = fade("glyph", hover, t.text_tertiary, window, cx);
+        BaseButton::new(self.id.clone())
             .group(GROUP)
             .disabled(self.disabled)
             .accessibility_label(self.label.clone())
@@ -158,19 +174,17 @@ impl RenderOnce for MenuItem {
             .rounded(RADIUS_2)
             .text_size(crate::theme::ui_text(12.))
             .line_height(crate::theme::ui_text(17.))
-            .text_color(if self.disabled { t.text_tertiary } else { rest })
-            .when(!self.disabled, |item| {
-                item.hover(move |style| style.bg(wash).text_color(hover))
-            })
+            .text_color(ink)
+            .bg(tint)
+            .on_hover(keep_over)
             .when_some(on_click, |item, handler| {
                 item.on_click(move |event, window, cx| handler(event, window, cx))
             })
             .children(self.icon.map(|glyph| {
-                div().min_w(px(14.)).mr(px(-2.)).child(
-                    icon(glyph, 13.)
-                        .text_color(t.text_tertiary)
-                        .group_hover(GROUP, move |style| style.text_color(hover)),
-                )
+                div()
+                    .min_w(px(14.))
+                    .mr(px(-2.))
+                    .child(icon(glyph, 13.).text_color(glyph_ink))
             }))
             .children(
                 self.mark

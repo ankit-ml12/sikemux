@@ -305,10 +305,16 @@ impl Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let on_click = self.on_click.filter(|_| !self.disabled);
-        let base = BaseButton::new(self.id)
+        let (over, keep_over) = motion::hovered(&self.id, window, cx);
+        let lit = over && !self.disabled;
+        let mut fade = |channel, target| {
+            motion::fade(&self.id, channel, target, motion::CONTROL_TINT, window, cx)
+        };
+        let base = BaseButton::new(self.id.clone())
+            .on_hover(keep_over)
             .when(self.disabled, |button| button.opacity(0.5))
             .group(GROUP)
             .accessibility_label(self.label.clone())
@@ -323,15 +329,24 @@ impl RenderOnce for Button {
                 .h(px(28.))
                 .px(px(12.))
                 .border_1()
-                .border_color(t.border)
+                .border_color(fade("edge", if lit { t.border_strong } else { t.border }))
                 .text_size(crate::theme::ui_text(11.5))
-                .text_color(t.text_secondary)
-                .hover(move |style| {
-                    style
-                        .bg(t.surface_hover)
-                        .border_color(t.border_strong)
-                        .text_color(t.text_primary)
-                }),
+                .text_color(fade(
+                    "ink",
+                    if lit {
+                        t.text_primary
+                    } else {
+                        t.text_secondary
+                    },
+                ))
+                .bg(fade(
+                    "tint",
+                    if lit {
+                        t.surface_hover
+                    } else {
+                        t.surface_hover.opacity(0.)
+                    },
+                )),
             Variant::Primary => base
                 .h(px(28.))
                 .px(px(12.))
@@ -349,8 +364,10 @@ impl RenderOnce for Button {
                 .border_dashed()
                 .border_color(t.border)
                 .text_size(crate::theme::ui_text(11.))
-                .text_color(t.text_tertiary)
-                .hover(move |style| style.text_color(t.text_primary)),
+                .text_color(fade(
+                    "ink",
+                    if lit { t.text_primary } else { t.text_tertiary },
+                )),
         };
         let (glyph, rest) = match self.variant {
             Variant::Primary => (13., t.on_accent),
@@ -374,9 +391,7 @@ impl RenderOnce for Button {
         })
         .children(self.lead)
         .children(self.icon.map(|icon_name| {
-            icon(icon_name, glyph)
-                .text_color(rest)
-                .group_hover(GROUP, move |style| style.text_color(hover))
+            icon(icon_name, glyph).text_color(fade("glyph", if lit { hover } else { rest }))
         }))
         .child(self.label)
         .children(
