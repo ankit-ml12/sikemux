@@ -481,6 +481,9 @@ pub struct Question {
     state: String,
     via_note: Option<String>,
     secret_note: Option<String>,
+    /// The account host whose agent asks, by its key; none for this host's own.
+    #[serde(skip)]
+    pub(crate) host: Option<String>,
 }
 
 impl Question {

@@ -138,8 +138,11 @@ pub struct Workbench {
     focused_chat: Option<(String, bool)>,
     /// Text handed to agents whose composer is not made yet, put in once it is.
     deliveries: HashMap<String, String>,
-    /// What agents asked the person, and the assumptions they went on.
+    /// What agents asked the person, and the assumptions they went on: this host's, then the
+    /// chosen account host's.
     pub questions: Vec<Question>,
+    /// The chosen account host's questions, apart, so this host's reading again keeps them.
+    host_questions: Vec<Question>,
     pub terminals: terminal::Terminals,
     pub editors: crate::editor::Editors,
     /// The Git pane of the project whose Git tab was last in front.
@@ -531,6 +534,7 @@ impl Workbench {
             focused_chat: None,
             deliveries: HashMap::new(),
             questions: Vec::new(),
+            host_questions: Vec::new(),
             terminals: terminal::Terminals::default(),
             editors: crate::editor::Editors::default(),
             git: None,
@@ -719,10 +723,23 @@ impl Workbench {
                     cx.restart();
                 }
             }
-            Update::Read("questions", value) => match serde_json::from_value(value) {
-                Ok(questions) => self.questions = questions,
-                Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
-            },
+            Update::Read(key @ ("questions" | "host-questions"), value) => {
+                match serde_json::from_value::<Vec<Question>>(value) {
+                    Ok(mut questions) if key == "host-questions" => {
+                        for question in &mut questions {
+                            question.host = self.trust_host.clone();
+                        }
+                        self.host_questions = questions;
+                    }
+                    Ok(questions) => {
+                        self.questions = questions;
+                        self.questions.retain(|question| question.host.is_none());
+                    }
+                    Err(error) => eprintln!("sikemux: the core's questions do not read: {error}"),
+                }
+                self.questions.retain(|question| question.host.is_none());
+                self.questions.extend(self.host_questions.iter().cloned());
+            }
             Update::Read("theme", value) => {
                 if let Ok(palette) = serde_json::from_value(value) {
                     theme::apply(&palette, cx);
@@ -1520,12 +1537,27 @@ impl Workbench {
             "activity",
             Watch::new("activitySummary", activity, &["activity"]),
         );
-        if let crate::hosts::Place::Account(host) = &place {
-            if self.trust_host.as_ref() != Some(host) {
+        match &place {
+            crate::hosts::Place::Account(host) if self.trust_host.as_ref() != Some(host) => {
                 self.reads.remove("host-trust");
                 self.trust_host = Some(host.clone());
                 target.watch("host-trust", Watch::new("trustAsks", json!({}), &["trust"]));
+                self.host_questions.clear();
+                target.watch(
+                    "host-questions",
+                    Watch::new("questions", json!({}), &["questions"]),
+                );
             }
+            crate::hosts::Place::This if self.trust_host.is_some() => {
+                for key in ["host-trust", "host-questions"] {
+                    target.unwatch(key);
+                    self.reads.remove(key);
+                }
+                self.trust_host = None;
+                self.host_questions.clear();
+                self.questions.retain(|question| question.host.is_none());
+            }
+            _ => {}
         }
         self.reads.remove("git-project-repo");
         self.git_listing = false;
