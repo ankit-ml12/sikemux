@@ -5,12 +5,12 @@
 use std::rc::Rc;
 
 use gpui_kit::base::{Popover, Selectable};
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, div, px, Anchor, AnyElement, App, AppContext, Context, Entity, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, WeakEntity, Window,
+    actions, div, px, Anchor, AnyElement, App, AppContext, Context, Entity, FontWeight,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{ConfigChoice, ConfigPicker};
@@ -315,12 +315,14 @@ impl Menu {
 }
 
 /// A row of pressable choices over the list, as the agents and who pays.
-fn chips(children: Vec<AnyElement>) -> impl IntoElement {
+fn chips(children: Vec<AnyElement>, t: &Tokens) -> impl IntoElement {
     div()
         .flex()
         .flex_wrap()
         .gap(px(4.))
-        .px(px(4.))
+        .p(px(6.))
+        .border_b_1()
+        .border_color(t.line)
         .children(children)
 }
 
@@ -478,12 +480,14 @@ impl Render for Menu {
                 .id(("model-option", at))
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .h(px(28.))
+                .gap(px(9.))
+                .py(px(7.))
                 .px(px(10.))
                 .rounded(theme::RADIUS_2)
                 .cursor_pointer()
+                .text_color(t.text_primary)
                 .when(at == self.chosen, |row| row.bg(t.surface_hover))
+                .when(option.value == current, |row| row.text_color(t.accent))
                 .on_hover({
                     let this = this.clone();
                     move |over: &bool, _, cx| {
@@ -505,12 +509,12 @@ impl Render for Menu {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(crate::theme::ui_text(12.5))
-                        .text_color(t.text_primary)
+                        .text_size(crate::theme::ui_text(12.))
+                        .font_weight(FontWeight::MEDIUM)
                         .child(option.label.clone()),
                 )
                 .when(option.value == current, |row| {
-                    row.child(ui::icon(Icon::Check, 13.).text_color(t.text_secondary))
+                    row.child(ui::icon(Icon::Check, 14.))
                 })
         });
         let empty = options.is_empty();
@@ -532,35 +536,29 @@ impl Render for Menu {
             .w(px(340.))
             .flex()
             .flex_col()
-            .gap(px(6.))
-            .p(px(6.))
+            .overflow_hidden()
             .bg(t.surface_overlay)
             .border_1()
             .border_color(t.border)
             .rounded(theme::RADIUS_3)
             .shadow(t.shadow_float())
-            .child(ui::Field::new(&self.query).icon(Icon::Search))
-            .when(!agents.is_empty(), |menu| menu.child(chips(agents)))
-            .when(!payers.is_empty(), |menu| {
-                menu.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(3.))
-                        .child(
-                            div()
-                                .px(px(6.))
-                                .text_size(crate::theme::ui_text(10.5))
-                                .text_color(t.text_tertiary)
-                                .child("Paid by"),
-                        )
-                        .child(chips(payers)),
-                )
-            })
+            .child(
+                div()
+                    .px(px(12.))
+                    .py(px(10.))
+                    .border_b_1()
+                    .border_color(t.line)
+                    .text_size(crate::theme::ui_text(12.))
+                    .text_color(t.text_primary)
+                    .child(Input::new(&self.query).appearance(false).bordered(false)),
+            )
+            .when(!agents.is_empty(), |menu| menu.child(chips(agents, &t)))
+            .when(!payers.is_empty(), |menu| menu.child(chips(payers, &t)))
             .child(
                 div()
                     .id("model-options")
-                    .max_h(px(300.))
+                    .p(px(5.))
+                    .max_h(px(320.))
                     .overflow_y_scroll()
                     .children(rows)
                     .when(empty, |list| {
