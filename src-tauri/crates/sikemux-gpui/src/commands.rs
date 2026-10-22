@@ -22,6 +22,9 @@ const CUSTOM: &str = "custom:";
 const STANDALONE: &str = "standalone:";
 const OPEN_WORKTREE: &str = "worktree.open:";
 const REMOVE_WORKTREE: &str = "worktree.remove:";
+const RUN_TASK: &str = "task.run:";
+const RESTART_TASK: &str = "task.restart:";
+const STOP_TASK: &str = "task.stop:";
 
 /// A command no shortcut does: its id, name, what it does and its category.
 type Standalone = (&'static str, &'static str, &'static str, &'static str);
@@ -64,6 +67,47 @@ fn worktree_rows(worktrees: &Value) -> Vec<Row> {
 }
 
 impl Workbench {
+    /// The project's tasks to run, and the one running to restart or stop.
+    fn task_rows(&self) -> Vec<Row> {
+        let Some(tasks) = self.read("tasks").and_then(|read| read["tasks"].as_array()) else {
+            return Vec::new();
+        };
+        let mut rows: Vec<Row> = tasks
+            .iter()
+            .filter_map(|task| {
+                let (id, label) = (task["id"].as_str()?, task["label"].as_str()?);
+                let cwd = task["cwd"].as_str().unwrap_or_default();
+                Some(
+                    Row::new(format!("{RUN_TASK}{id}"), label.to_owned())
+                        .meta("Tasks")
+                        .also(&format!("Run task from {cwd}"))
+                        .also("Tasks"),
+                )
+            })
+            .collect();
+        let Some(running) = self.person_runs().0 else {
+            return rows;
+        };
+        if let Some(task) = running["taskId"]
+            .as_str()
+            .filter(|id| tasks.iter().any(|task| task["id"] == *id))
+        {
+            rows.push(
+                Row::new(format!("{RESTART_TASK}{task}"), "Restart active task")
+                    .meta("Tasks")
+                    .also("Stop the current project task and start its current trusted definition"),
+            );
+        }
+        if let Some(execution) = running["executionId"].as_str() {
+            rows.push(
+                Row::new(format!("{STOP_TASK}{execution}"), "Stop active task")
+                    .meta("Tasks")
+                    .also("Stop only the exact terminal owned by the current project task"),
+            );
+        }
+        rows
+    }
+
     pub fn toggle_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut rows: Vec<Row> = keymap::shortcuts()
             .iter()
@@ -88,6 +132,7 @@ impl Workbench {
                         .also(category)
                 }),
         );
+        rows.extend(self.task_rows());
         if let Some(Strip::Project(_)) = self.strip() {
             let custom = self
                 .preferences()
@@ -126,6 +171,14 @@ impl Workbench {
                     bench.run_standalone(id, window, cx);
                 } else if let Some(path) = row.key.strip_prefix(OPEN_WORKTREE) {
                     bench.open_place(&format!("folder:{path}"), cx);
+                } else if let Some(task) = row
+                    .key
+                    .strip_prefix(RUN_TASK)
+                    .or_else(|| row.key.strip_prefix(RESTART_TASK))
+                {
+                    bench.start_task(task);
+                } else if let Some(execution) = row.key.strip_prefix(STOP_TASK) {
+                    bench.stop_run(execution);
                 } else if let Some(path) = row.key.strip_prefix(REMOVE_WORKTREE) {
                     bench.remove_worktree_at(path.to_owned(), row.title.to_string(), cx);
                 }
