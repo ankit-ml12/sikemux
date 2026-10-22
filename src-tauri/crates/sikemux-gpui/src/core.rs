@@ -24,6 +24,8 @@ use tokio::sync::{mpsc, oneshot};
 pub enum Update {
     /// The core's release, which the app ships with.
     Connected(String),
+    /// What another host's core sent about one of its terminals or chats, by the host's key.
+    From(String, Box<Update>),
     View(Box<DeviceView>),
     /// A watched call's latest answer, under the key it was watched as.
     Read(&'static str, Value),
@@ -476,6 +478,14 @@ fn follow_links(linked: &Option<Arc<Linked>>, client: &Arc<CoreClient>) {
 }
 
 /// What another host said next, or never while this app reaches none.
+/// `update`, as from the host it came from: none for this host.
+fn from_host(host: &Option<String>, update: Update) -> Update {
+    match host {
+        Some(host) => Update::From(host.clone(), Box::new(update)),
+        None => update,
+    }
+}
+
 /// The generation the next watch of `key` is made under, wherever it is watched.
 fn next_generation(current: &Arc<Mutex<HashMap<&'static str, u64>>>, key: &'static str) -> u64 {
     let mut current = current.lock().expect("watch generations");
@@ -675,13 +685,32 @@ async fn run(
                     }
                 }
                 follow_links(&linked, &client);
-                let mut streams = Streams::new(&client, &updates);
+                let (settle_tx, mut settled) = mpsc::unbounded_channel();
+                let mut streams = Streams::new(None, &client, &updates, &settle_tx);
+                let mut host_streams: HashMap<String, Streams> = HashMap::new();
+                let mut waiting_terminals: HashMap<String, Vec<(SessionId, TerminalAsk)>> =
+                    HashMap::new();
+                let (reached_tx, mut reached) =
+                    mpsc::unbounded_channel::<(String, Arc<CoreClient>)>();
                 let mut streamed: HashMap<u64, mpsc::UnboundedSender<Part>> = HashMap::new();
                 loop {
                     tokio::select! {
-                        settled = streams.settled.recv() => {
-                            if let Some(settled) = settled {
-                                streams.settle(settled);
+                        settled = settled.recv() => match settled {
+                            Some((None, settled)) => streams.settle(settled),
+                            Some((Some(host), settled)) => {
+                                if let Some(streams) = host_streams.get_mut(&host) {
+                                    streams.settle(settled);
+                                }
+                            }
+                            None => {}
+                        },
+                        reached = reached.recv() => {
+                            if let Some((host, client)) = reached {
+                                let mut streams = Streams::new(Some(host.clone()), &client, &updates, &settle_tx);
+                                for (session, ask) in waiting_terminals.remove(&host).unwrap_or_default() {
+                                    streams.ask(session, ask);
+                                }
+                                host_streams.insert(host, streams);
                             }
                         }
                         event = events.recv() => match event {
@@ -731,9 +760,20 @@ async fn run(
                                 for key in host_watches.get(&host).into_iter().flat_map(HashMap::keys) {
                                     let _ = updates.send(Update::Refused(key, format!("{host} is out of reach")));
                                 }
+                                host_streams.remove(&host);
+                                waiting_terminals.remove(&host);
                                 let _ = updates.send(Update::HostReach(host, false));
                             }
                             Some(Happened::Event(host, event)) => match *event {
+                                ClientEvent::Grid { stream, frame } => {
+                                    if let Some(streams) = host_streams.get_mut(&host) {
+                                        streams.frame(stream, frame);
+                                    }
+                                }
+                                ClientEvent::Event(Event::Chat { agent_id, seq, changes }) => {
+                                    let news = Update::Chat(agent_id, ChatNews::Changes { seq, changes });
+                                    let _ = updates.send(Update::From(host, Box::new(news)));
+                                }
                                 ClientEvent::Event(Event::DeviceView { view }) => {
                                     let _ = updates.send(Update::HostView(host, Box::new(view)));
                                 }
@@ -825,6 +865,48 @@ async fn run(
                                             Ok(value) => Update::Read(key, value),
                                             Err(error) => Update::Refused(key, error),
                                         });
+                                    });
+                                }
+                                Ask::Request { method, params, reply } => {
+                                    let linked = linked.clone();
+                                    tokio::spawn(async move {
+                                        let _ = reply.send(call_on(&linked, &host, method, params).await);
+                                    });
+                                }
+                                Ask::Terminal(session, ask) => match host_streams.get_mut(&host) {
+                                    Some(streams) => streams.ask(session, ask),
+                                    None => {
+                                        let first = !waiting_terminals.contains_key(&host);
+                                        waiting_terminals.entry(host.clone()).or_default().push((session, ask));
+                                        if let (true, Some(linked)) = (first, linked.clone()) {
+                                            let reached = reached_tx.clone();
+                                            tokio::spawn(async move {
+                                                match linked.client(&host).await {
+                                                    Ok(client) => drop(reached.send((host, client))),
+                                                    Err(error) => eprintln!("sikemux: {host}'s terminals are out of reach: {error}"),
+                                                }
+                                            });
+                                        }
+                                    }
+                                },
+                                Ask::Chat(ask) => {
+                                    let (linked, updates) = (linked.clone(), updates.clone());
+                                    tokio::spawn(async move {
+                                        let Some(client) = (match &linked {
+                                            Some(linked) => linked.client(&host).await.ok(),
+                                            None => None,
+                                        }) else {
+                                            return eprintln!("sikemux: {host}'s chats are out of reach");
+                                        };
+                                        let (told, mut heard) = mpsc::unbounded_channel();
+                                        let forward = tokio::spawn(async move {
+                                            while let Some(update) = heard.recv().await {
+                                                let _ = updates.send(Update::From(host.clone(), Box::new(update)));
+                                            }
+                                        });
+                                        chat(&client, ask, &told).await;
+                                        drop(told);
+                                        let _ = forward.await;
                                     });
                                 }
                                 _ => eprintln!("sikemux: that is not asked of another host"),
@@ -1152,31 +1234,38 @@ enum Settled {
 /// The terminals attached on one connection: their streams, and frames that
 /// arrived before the attach that started them was answered.
 struct Streams {
+    /// The host the terminals run on, by its key; none for this host.
+    host: Option<String>,
     client: Arc<CoreClient>,
     updates: mpsc::UnboundedSender<Update>,
     sessions: HashMap<StreamId, SessionId>,
     streams: HashMap<SessionId, StreamId>,
     early: HashMap<StreamId, Vec<Vec<u8>>>,
-    settle_tx: mpsc::UnboundedSender<Settled>,
-    settled: mpsc::UnboundedReceiver<Settled>,
+    settle_tx: mpsc::UnboundedSender<(Option<String>, Settled)>,
 }
 
 impl Streams {
-    fn new(client: &Arc<CoreClient>, updates: &mpsc::UnboundedSender<Update>) -> Self {
-        let (settle_tx, settled) = mpsc::unbounded_channel();
+    fn new(
+        host: Option<String>,
+        client: &Arc<CoreClient>,
+        updates: &mpsc::UnboundedSender<Update>,
+        settle_tx: &mpsc::UnboundedSender<(Option<String>, Settled)>,
+    ) -> Self {
         Self {
+            host,
             client: client.clone(),
             updates: updates.clone(),
             sessions: HashMap::new(),
             streams: HashMap::new(),
             early: HashMap::new(),
-            settle_tx,
-            settled,
+            settle_tx: settle_tx.clone(),
         }
     }
 
     fn send(&self, session: SessionId, screenful: Screenful) {
-        let _ = self.updates.send(Update::Terminal(session, screenful));
+        let _ = self
+            .updates
+            .send(from_host(&self.host, Update::Terminal(session, screenful)));
     }
 
     fn frame(&mut self, stream: StreamId, bytes: Vec<u8>) {
@@ -1212,10 +1301,12 @@ impl Streams {
         let stream = self.streams.get(&session).copied();
         match ask {
             TerminalAsk::Attach => {
-                let settle = self.settle_tx.clone();
+                let (settle, host) = (self.settle_tx.clone(), self.host.clone());
                 tokio::spawn(async move {
                     match client.attach(session).await {
-                        Ok(attached) => drop(settle.send(Settled::Attached(session, attached))),
+                        Ok(attached) => {
+                            drop(settle.send((host, Settled::Attached(session, attached))))
+                        }
                         Err(error) => {
                             eprintln!("sikemux: terminal {session} would not attach: {error}")
                         }
@@ -1226,10 +1317,10 @@ impl Streams {
                 let Some(stream) = self.streams.remove(&session) else {
                     return;
                 };
-                let settle = self.settle_tx.clone();
+                let (settle, host) = (self.settle_tx.clone(), self.host.clone());
                 tokio::spawn(async move {
                     let _ = client.detach(stream).await;
-                    let _ = settle.send(Settled::Detached(stream));
+                    let _ = settle.send((host, Settled::Detached(stream)));
                 });
             }
             TerminalAsk::Ack(frame) => {
@@ -1246,7 +1337,7 @@ impl Streams {
                 client.resize(session, cols, rows).await
             })),
             TerminalAsk::Lines { start, count } => {
-                let updates = self.updates.clone();
+                let (updates, host) = (self.updates.clone(), self.host.clone());
                 tokio::spawn(async move {
                     if let Some(lines) = client
                         .lines(session, start, count)
@@ -1254,15 +1345,21 @@ impl Streams {
                         .ok()
                         .and_then(|bytes| decode_lines(&bytes))
                     {
-                        let _ = updates.send(Update::Terminal(session, Screenful::Lines(lines)));
+                        let _ = updates.send(from_host(
+                            &host,
+                            Update::Terminal(session, Screenful::Lines(lines)),
+                        ));
                     }
                 });
             }
             TerminalAsk::Copy(range) => {
-                let updates = self.updates.clone();
+                let (updates, host) = (self.updates.clone(), self.host.clone());
                 tokio::spawn(async move {
                     if let Ok(text) = client.text(session, range).await {
-                        let _ = updates.send(Update::Terminal(session, Screenful::Copied(text)));
+                        let _ = updates.send(from_host(
+                            &host,
+                            Update::Terminal(session, Screenful::Copied(text)),
+                        ));
                     }
                 });
             }
@@ -1273,7 +1370,7 @@ impl Streams {
                 backwards,
                 inclusive,
             } => {
-                let updates = self.updates.clone();
+                let (updates, host) = (self.updates.clone(), self.host.clone());
                 let request = Request::TerminalFind {
                     id: session,
                     query,
@@ -1284,7 +1381,10 @@ impl Streams {
                 };
                 tokio::spawn(async move {
                     let found = client.find(request).await.unwrap_or_default();
-                    let _ = updates.send(Update::Terminal(session, Screenful::Found(found)));
+                    let _ = updates.send(from_host(
+                        &host,
+                        Update::Terminal(session, Screenful::Found(found)),
+                    ));
                 });
             }
             TerminalAsk::Clear => drop(tokio::spawn(async move { client.clear(session).await })),

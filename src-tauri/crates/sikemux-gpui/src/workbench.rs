@@ -557,6 +557,10 @@ impl Workbench {
                 self.terminals.reattach(&self.asks);
                 self.files.relist_shown(&self.asks);
             }
+            Update::From(_, update) if matches!(*update, Update::Chat(..)) => {
+                self.apply(*update, cx)
+            }
+            Update::From(..) => {}
             Update::HostView(host, view) => {
                 self.host_views.insert(host, *view);
             }
