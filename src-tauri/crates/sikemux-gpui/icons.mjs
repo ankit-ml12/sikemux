@@ -136,6 +136,11 @@ const DRAWN = {
   workflow: [ICONS, "IconWorkflow"],
   wrench: [ICONS, "IconWrench"],
   timer: [ICONS, "IconTimer"],
+  // The marks of a toast, named as GPUI Kit's notifications ask for them.
+  info: [ICONS, "IconInfoMark"],
+  "circle-check": [ICONS, "IconCheck"],
+  "circle-x": [ICONS, "IconExclamation"],
+  "triangle-alert": [ICONS, "IconWarning"],
 };
 /** Marks the app draws as pictures of their own, copied as they are. */
 const PICTURES = {

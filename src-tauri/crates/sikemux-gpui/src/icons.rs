@@ -191,6 +191,23 @@ const fn tints(svg: &[u8]) -> bool {
     false
 }
 
+/// A toast's mark for its kind, at the path GPUI Kit's notifications draw it from.
+const TOAST_MARKS: &[(&str, &[u8])] = &[
+    ("icons/info.svg", include_bytes!("../assets/icons/info.svg")),
+    (
+        "icons/circle-check.svg",
+        include_bytes!("../assets/icons/circle-check.svg"),
+    ),
+    (
+        "icons/circle-x.svg",
+        include_bytes!("../assets/icons/circle-x.svg"),
+    ),
+    (
+        "icons/triangle-alert.svg",
+        include_bytes!("../assets/icons/triangle-alert.svg"),
+    ),
+];
+
 /// The icons, compiled in.
 pub struct Icons;
 
@@ -198,6 +215,7 @@ impl AssetSource for Icons {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         Ok(FILES
             .iter()
+            .chain(TOAST_MARKS)
             .find(|(name, _)| *name == path)
             .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
@@ -205,6 +223,7 @@ impl AssetSource for Icons {
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         Ok(FILES
             .iter()
+            .chain(TOAST_MARKS)
             .filter(|(name, _)| name.starts_with(path))
             .map(|(name, _)| SharedString::from(*name))
             .collect())

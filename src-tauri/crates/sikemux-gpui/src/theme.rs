@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use gpui_kit::component::theme::{Theme as KitTheme, ThemeTokens};
 use gpui_kit::{
-    px, rems, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rems, Rgba, SharedString,
+    px, rems, Anchor, App, BoxShadow, FontFeatures, Global, Hsla, Pixels, Rems, Rgba, SharedString,
 };
 use sikemux_wire::grid::TerminalColors;
 use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
@@ -259,6 +259,10 @@ pub fn install(cx: &mut App) {
         .expect("bundled fonts load");
 
     apply(&sikemux_core::server::themes::default_palette(), cx);
+    let toasts = &mut KitTheme::global_mut(cx).notification;
+    toasts.placement = Anchor::BottomCenter;
+    toasts.width = px(520.);
+    toasts.margins.bottom = px(16.);
 }
 
 /// Draws with `palette` from the next frame, GPUI Kit's widgets too.
@@ -295,6 +299,9 @@ pub fn apply(palette: &Palette, cx: &mut App) {
     kit.primary = tokens.accent;
     kit.primary_foreground = tokens.on_accent;
     kit.danger = tokens.danger;
+    kit.info = tokens.accent;
+    kit.success = tokens.live;
+    kit.warning = tokens.warn;
     kit.scrollbar_thumb = Hsla {
         a: 0.42,
         ..tokens.text_tertiary
