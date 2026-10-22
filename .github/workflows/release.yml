@@ -651,7 +651,8 @@ jobs:
 
   publish:
     name: Publish
-    needs: [plan, verify, build-linux, build-host, sign-host, pushed-checks, checks]
+    needs:
+      [plan, verify, build-linux, build-host, sign-host, pushed-checks, checks]
     if: >-
       !cancelled() && needs.verify.result == 'success' && needs.build-linux.result == 'success' &&
       needs.build-host.result == 'success' && needs.sign-host.result == 'success' &&
