@@ -1192,16 +1192,18 @@ pub fn pane(
                         .whitespace_nowrap(),
                 )
                 .child(
-                    IconButton::new(
-                        SharedString::from(format!("desk-close-{}", page.id)),
-                        Icon::Close,
-                        "Close page",
-                    )
-                    .glyph(10.)
-                    .on_click(cx.listener(move |bench, _, _, cx| {
-                        cx.stop_propagation();
-                        bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
-                    })),
+                    div().flex_none().child(
+                        IconButton::new(
+                            SharedString::from(format!("desk-close-{}", page.id)),
+                            Icon::Close,
+                            "Close page",
+                        )
+                        .glyph(10.)
+                        .on_click(cx.listener(move |bench, _, _, cx| {
+                            cx.stop_propagation();
+                            bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
+                        })),
+                    ),
                 ),
         );
     }
@@ -1264,17 +1266,19 @@ pub fn pane(
                         .whitespace_nowrap(),
                 )
                 .child(
-                    IconButton::new(
-                        SharedString::from(format!("desk-item-close-{id}")),
-                        Icon::Close,
-                        close,
-                    )
-                    .glyph(10.)
-                    .on_click(cx.listener(move |bench, _, _, cx| {
-                        cx.stop_propagation();
-                        bench.take_off_desk(&close_agent, &close_item);
-                        bench.parts.redraw(&bench.parts.stage, cx);
-                    })),
+                    div().flex_none().child(
+                        IconButton::new(
+                            SharedString::from(format!("desk-item-close-{id}")),
+                            Icon::Close,
+                            close,
+                        )
+                        .glyph(10.)
+                        .on_click(cx.listener(move |bench, _, _, cx| {
+                            cx.stop_propagation();
+                            bench.take_off_desk(&close_agent, &close_item);
+                            bench.parts.redraw(&bench.parts.stage, cx);
+                        })),
+                    ),
                 ),
         );
     }

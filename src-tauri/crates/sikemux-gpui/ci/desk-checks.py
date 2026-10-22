@@ -47,7 +47,6 @@ class Run:
         self.app = None
         self.processes = []
         self.preferences = {}
-        self.desk_body = None
         self.sockets = None
 
     # The world the app runs in.
@@ -124,6 +123,9 @@ class Run:
         until(lambda: self.drive_socket.exists() and self.state(), 30) or sys.exit("the app's driver did not answer; see run/app.log")
         # The app must be the last client to say it is the window, or the seeding's browser calls go to a client that left.
         self.drive("register" if self.options.behind else "activate", "wait 1.5")
+        if self.options.window:
+            width, height = self.options.window.split("x")
+            self.drive(f"resize {width} {height}", "wait 1")
 
     def tear_down(self):
         for process in [self.app, *self.processes]:
@@ -169,10 +171,7 @@ class Run:
         return self.front
 
     def desk(self, agent=None):
-        desk = ((self.state() or {}).get("desks") or {}).get(agent or self.agent) or {}
-        if desk.get("pageBounds"):
-            self.desk_body = desk["pageBounds"]
-        return desk
+        return ((self.state() or {}).get("desks") or {}).get(agent or self.agent) or {}
 
     def layout(self):
         try:
@@ -502,7 +501,7 @@ def df2(run):
     desk = run.desk()
     back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
     run.report("DF2", on_page and on_file and back, f"page pill showed the page {on_page}; file pill showed the file {on_file}; its × brought the page back {back} "
-               f"(front {desk.get('front')}, items {desk.get('items')})")
+               f"(front {desk.get('front')}, items {desk.get('items')}; page pill {page}, file pill {item}, desk {spot(run, f'pane-Desk-{run.agent}')})")
 
 
 def dk7_keep(run):
@@ -554,9 +553,10 @@ def df1(run):
 
 def df3(run):
     path = str(run.root / "project/a.txt")
-    if run.desk_body:
-        left, top, width, height = run.desk_body
-        run.drive(f"click {left + width / 2:.0f} {top + height / 2:.0f}", "wait 0.5")
+    desk = spot(run, f"pane-Desk-{run.agent}")
+    if desk:
+        x, y = middle(desk)
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 0.5")
     contexts = (run.state() or {}).get("contexts", [])
     tabs = len(run.strip().get("tabs", []))
     run.drive("key cmd+w", "wait 1")
@@ -660,6 +660,7 @@ def main():
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--only", default="")
     parser.add_argument("--behind", action="store_true")
+    parser.add_argument("--window", help="WIDTHxHEIGHT in points, as a small screen clamps the window to")
     options = parser.parse_args()
     only = {name.strip() for name in options.only.split(",") if name.strip()}
     run = Run(options)

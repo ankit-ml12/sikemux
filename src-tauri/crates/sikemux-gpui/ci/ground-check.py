@@ -130,6 +130,7 @@ def main():
     for name, preferences, opaque in CASES:
         options.out = str(out / name)
         options.only = ""
+        options.window = None
         run = desk.Run(options)
         run.preferences = {key: str(out / "picture.png") if value == "PICTURE" else value for key, value in preferences.items()}
         try:
