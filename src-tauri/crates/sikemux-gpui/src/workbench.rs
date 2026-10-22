@@ -121,6 +121,10 @@ pub struct Workbench {
     /// The strip's tabs as drawn last, for telling those that have just opened and closed.
     pub(crate) strip_seen:
         std::cell::RefCell<crate::motion::ListMemory<sikemux_wire::protocol::Tab>>,
+    /// Where the strip's tabs were drawn, for the chosen surface to glide between them.
+    pub(crate) strip_glide: std::cell::RefCell<crate::motion::GlideTrack>,
+    /// Where the rail's agent rows were drawn, for the chosen surface to glide between them.
+    pub(crate) rail_glide: std::cell::RefCell<crate::motion::GlideTrack>,
     /// The card beside the agent row the pointer rests on.
     pub agent_card: crate::agent_card::Card,
     /// The task each project's Run button starts, when the person chose one, by project path.
@@ -557,6 +561,8 @@ impl Workbench {
             folded_teams: HashSet::new(),
             rail_seen: Default::default(),
             strip_seen: Default::default(),
+            strip_glide: Default::default(),
+            rail_glide: Default::default(),
             agent_card: crate::agent_card::Card::default(),
             picked_tasks: HashMap::new(),
             rail_frame: Rc::default(),

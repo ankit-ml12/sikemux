@@ -3,7 +3,7 @@
 //! What the Mac stills while macOS asks for less motion is stilled here too; the few it lets
 //! move anyway, here as there, say so with `Ease::moves_when_reduced`.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,9 +12,9 @@ use gpui_kit::base::animation::cubic_bezier;
 use gpui_kit::base::motion::Interpolate;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, Animation, AnyElement, App, Bounds, Element, ElementId, GlobalElementId,
+    div, px, radians, Animation, AnyElement, App, Bounds, Div, Element, ElementId, GlobalElementId,
     Hsla, InspectorElementId, InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels,
-    Rgba, SharedString, Styled, Svg, Transformation, Window,
+    Point, Rgba, SharedString, Styled, Svg, Transformation, Window,
 };
 
 /// How a value moves to a new target: over how long, on which curve, and whether it moves
@@ -581,6 +581,98 @@ pub fn departing(
     })
 }
 
+/// A selection gliding from the item it was on to the one it is on now, as tabs and the rail's
+/// agent rows do on the Mac: the list draws a copy of the chosen surface moving between the
+/// two, under its items, while the chosen item hides its own until the copy lands.
+#[derive(Default)]
+pub struct GlideTrack {
+    /// Where the list's container and each item were drawn last, in the window.
+    origin: Rc<Cell<Point<Pixels>>>,
+    drawn: Rc<RefCell<Vec<Bounds<Pixels>>>>,
+    ids: Vec<String>,
+    chosen: Option<String>,
+    glide: Option<(Bounds<Pixels>, Bounds<Pixels>, Instant)>,
+}
+
+/// A tab's or an agent row's selection moving to another.
+pub const GLIDE: Ease = Ease::new(180, Curve::OUT);
+
+impl GlideTrack {
+    /// Takes the chosen item, and answers whether it hides its own surface while the copy
+    /// glides onto it from where the last one was drawn.
+    pub fn choose(&mut self, chosen: Option<String>, reduced: bool) -> bool {
+        if chosen != self.chosen && !reduced {
+            let drawn = self.drawn.borrow();
+            let at = |id: &Option<String>| {
+                let ix = self.ids.iter().position(|each| Some(each) == id.as_ref())?;
+                drawn.get(ix).copied()
+            };
+            self.glide = at(&self.chosen)
+                .zip(at(&chosen))
+                .map(|(from, to)| (from, to, Instant::now()));
+        }
+        if self
+            .glide
+            .is_some_and(|(_, _, since)| since.elapsed() >= GLIDE.duration)
+        {
+            self.glide = None;
+        }
+        self.chosen = chosen;
+        self.glide.is_some()
+    }
+
+    /// Takes the list's items in the order they are drawn, after `choose`.
+    pub fn set_order(&mut self, ids: Vec<String>) {
+        self.ids = ids;
+    }
+
+    /// The gliding copy, drawn with `surface`, to put first in the list's container; none
+    /// while nothing glides.
+    pub fn copy(&self, surface: impl FnOnce(Div) -> Div + 'static) -> Option<AnyElement> {
+        let (from, to, since) = self.glide?;
+        let origin = self.origin.get();
+        Some(
+            with_window(move |window, _| {
+                window.request_animation_frame();
+                let through = GLIDE
+                    .at((since.elapsed().as_secs_f32() / GLIDE.duration.as_secs_f32()).min(1.));
+                let at = from.interpolate(&to, through);
+                surface(
+                    div()
+                        .absolute()
+                        .left(at.origin.x - origin.x)
+                        .top(at.origin.y - origin.y)
+                        .w(at.size.width)
+                        .h(at.size.height),
+                )
+                .into_any_element()
+            })
+            .into_any_element(),
+        )
+    }
+
+    /// Keeps where the list's container was drawn: give it to the `on_children_prepainted` of
+    /// the element holding the container, with the container its first child.
+    pub fn keep_origin(&self) -> impl Fn(Vec<Bounds<Pixels>>, &mut Window, &mut App) + 'static {
+        let origin = self.origin.clone();
+        move |bounds, _, _| {
+            if let Some(container) = bounds.first() {
+                origin.set(container.origin);
+            }
+        }
+    }
+
+    /// Keeps where each item was drawn: give it to the container's `on_children_prepainted`,
+    /// with `skip` children before the items, such as the gliding copy.
+    pub fn keep_items(
+        &self,
+        skip: usize,
+    ) -> impl Fn(Vec<Bounds<Pixels>>, &mut Window, &mut App) + 'static {
+        let drawn = self.drawn.clone();
+        move |bounds, _, _| *drawn.borrow_mut() = bounds.into_iter().skip(skip).collect()
+    }
+}
+
 /// What a list drew last and in which view of it: the items that have just come into it, and
 /// copies of those that have just left it, with where they were, to draw on their way out.
 pub struct ListMemory<T> {
@@ -763,6 +855,14 @@ impl<T: Interpolate> Following<T> {
         };
         self.from.interpolate(&self.to, ease.at(t))
     }
+}
+
+/// `to` blended over `from` by `share`, as a transition between them blends.
+pub fn blend(from: Hsla, to: Hsla, share: f32) -> Hsla {
+    Paint(from.into())
+        .interpolate(&Paint(to.into()), share)
+        .0
+        .into()
 }
 
 /// A colour blended as CSS blends one in a transition: in sRGB, weighted by its alpha, so a

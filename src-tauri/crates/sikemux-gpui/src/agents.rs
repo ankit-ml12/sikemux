@@ -89,7 +89,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         pins.iter()
             .any(|pin| pin.agent_id.as_deref() == Some(agent.id.as_str()))
     });
-    let rows = team_rows(bench, &agents, cx);
+    let (copy, rows) = team_rows(bench, &agents, cx);
     let pinned: Vec<_> = pins
         .iter()
         .map(|pin| {
@@ -97,7 +97,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .iter()
                 .find(|agent| pin.agent_id.as_deref() == Some(agent.id.as_str()))
             {
-                Some(agent) => agent_row(bench, agent, None, None, cx).into_any_element(),
+                Some(agent) => agent_row(bench, agent, None, None, false, cx).into_any_element(),
                 None => recent_row(bench, pin, cx),
             }
         })
@@ -207,7 +207,20 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
                 .pb(px(16.))
                 .overflow_y_scroll()
                 .children(empty)
-                .child(div().flex().flex_col().gap(px(2.)).children(rows))
+                .child({
+                    let glide = bench.rail_glide.borrow();
+                    let skip = usize::from(copy.is_some());
+                    div().on_children_prepainted(glide.keep_origin()).child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.))
+                            .children(copy)
+                            .children(rows)
+                            .on_children_prepainted(glide.keep_items(skip)),
+                    )
+                })
                 .when(!pinned.is_empty(), |scroll| {
                     scroll.child(Group::new("Pinned", "").children(pinned))
                 })
@@ -468,7 +481,12 @@ fn team_rows(
     bench: &Workbench,
     agents: &[AgentRow],
     cx: &mut Context<Workbench>,
-) -> Vec<AnyElement> {
+) -> (Option<AnyElement>, Vec<AnyElement>) {
+    let chosen = bench.agent().map(|agent| agent.id.clone());
+    let glided = bench
+        .rail_glide
+        .borrow_mut()
+        .choose(chosen, cx.reduce_motion());
     let teams = bench.filter_text.is_empty();
     let remote = if teams {
         remote_workers(bench)
@@ -520,7 +538,7 @@ fn team_rows(
             }
         };
         shown.push((agent.id.clone(), agent.clone()));
-        let row = agent_row(bench, agent, team, fold, cx);
+        let row = agent_row(bench, agent, team, fold, glided, cx);
         drawn.push((agent.id.clone(), row.into_any_element()));
         if team.is_some() && !folded && !continues(ix + 1) {
             for worker in remote_of(&team_members) {
@@ -540,6 +558,7 @@ fn team_rows(
         .max(crate::motion::ARRIVE_SLIDE.duration);
     let mut seen = bench.rail_seen.borrow_mut();
     let (arriving, left) = seen.update(view, shown, usize::MAX, lasting);
+    let mut order: Vec<String> = drawn.iter().map(|(id, _)| id.clone()).collect();
     let mut rows: Vec<AnyElement> = drawn
         .into_iter()
         .map(|(id, row)| match arriving.contains(&id) {
@@ -551,12 +570,17 @@ fn team_rows(
         })
         .collect();
     for gone in left {
-        let row = agent_row(bench, &gone.item, None, None, cx);
+        let row = agent_row(bench, &gone.item, None, None, false, cx);
         let key = SharedString::from(format!("depart:{}", gone.id));
         let row = crate::motion::departing(key, gone.since, crate::motion::ROW_DEPARTURE, row);
         rows.insert(gone.at.min(rows.len()), row.into_any_element());
+        order.insert(gone.at.min(order.len()), gone.id.clone());
     }
-    rows
+    let mut glide = bench.rail_glide.borrow_mut();
+    glide.set_order(order);
+    let chosen = Tokens::get(cx).surface_chosen;
+    let copy = glide.copy(move |copy| copy.rounded(theme::RADIUS_2).bg(chosen));
+    (copy, rows)
 }
 
 /// The spine and tick that hang a team's rows under its lead.
@@ -679,6 +703,7 @@ fn agent_row(
     agent: &AgentRow,
     team: Option<TeamLink>,
     fold: Option<Fold>,
+    glided: bool,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
@@ -730,6 +755,7 @@ fn agent_row(
     )
     .mark(22., mark)
     .chosen(chosen)
+    .glided(glided && chosen)
     .compact(bench.rail_compact())
     .when_some(project.clone(), |row, project| {
         row.subtitle(

@@ -29,6 +29,8 @@ pub struct Row {
     quiet: bool,
     bold: bool,
     chosen: bool,
+    /// The chosen surface is a copy gliding onto the row, which draws none of its own yet.
+    glided: bool,
     compact: bool,
     subtitle: Option<AnyElement>,
     detail: Option<SharedString>,
@@ -48,6 +50,7 @@ impl Row {
             quiet: false,
             bold: false,
             chosen: false,
+            glided: false,
             compact: false,
             subtitle: None,
             detail: None,
@@ -85,6 +88,11 @@ impl Row {
 
     pub fn chosen(mut self, chosen: bool) -> Self {
         self.chosen = chosen;
+        self
+    }
+
+    pub fn glided(mut self, glided: bool) -> Self {
+        self.glided = glided;
         self
     }
 
@@ -138,18 +146,21 @@ impl RenderOnce for Row {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let (over, keep_over) = motion::hovered(&self.id, window, cx);
-        let lit = self.chosen || over;
-        let tint = match (self.chosen, over) {
-            (true, _) => t.surface_chosen,
-            (false, true) => t.surface_hover,
-            (false, false) => t.surface_hover.opacity(0.),
+        let hovered = ElementId::NamedChild(Arc::new(self.id.clone()), "hover".into());
+        let lit = motion::follow(
+            hovered,
+            if over && !self.chosen { 1. } else { 0. },
+            motion::ROW_TINT,
+            window,
+            cx,
+        );
+        let (rest, rest_ink) = match (self.chosen, self.glided) {
+            (true, false) => (t.surface_chosen, t.text_primary),
+            (true, true) => (t.surface_chosen.opacity(0.), t.text_primary),
+            (false, _) => (t.surface_hover.opacity(0.), t.text_secondary),
         };
-        let tint = motion::fade(&self.id, "tint", tint, motion::ROW_TINT, window, cx);
-        let ink = match lit {
-            true => t.text_primary,
-            false => t.text_secondary,
-        };
-        let ink = motion::fade(&self.id, "ink", ink, motion::ROW_TINT, window, cx);
+        let tint = motion::blend(rest, t.surface_hover, lit);
+        let ink = motion::blend(rest_ink, t.text_primary, lit);
         let two_lines = self.subtitle.is_some();
         let right = if self.status.is_some() {
             28.
@@ -334,6 +345,8 @@ pub struct Tab {
     note: Option<SharedString>,
     tail: Option<AnyElement>,
     active: bool,
+    /// The chosen surface is a copy gliding onto the tab, which draws none of its own yet.
+    glided: bool,
     /// A preview tab, which the next file opened replaces, draws its label slanted.
     italic: bool,
     on_click: Option<OnClick>,
@@ -349,6 +362,7 @@ impl Tab {
             note: None,
             tail: None,
             active: false,
+            glided: false,
             italic: false,
             on_click: None,
             on_close: None,
@@ -382,6 +396,11 @@ impl Tab {
         self
     }
 
+    pub fn glided(mut self, glided: bool) -> Self {
+        self.glided = glided;
+        self
+    }
+
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -407,13 +426,21 @@ impl RenderOnce for Tab {
         let t = Tokens::get(cx).clone();
         let (over, keep_over) = motion::hovered(&self.id, window, cx);
         let closing = self.on_close.clone().filter(|_| over);
-        let (tint, ink) = match (over, self.active) {
-            (true, _) => (t.surface_hover, t.text_secondary),
-            (false, true) => (t.surface_chosen, t.text_primary),
-            (false, false) => (crate::see_through::pill(t.surface, cx), t.text_tertiary),
+        let (rest, rest_ink) = match (self.active, self.glided) {
+            (true, false) => (t.surface_chosen, t.text_primary),
+            (true, true) => (t.surface_chosen.opacity(0.), t.text_primary),
+            (false, _) => (crate::see_through::pill(t.surface, cx), t.text_tertiary),
         };
-        let tint = motion::fade(&self.id, "tint", tint, motion::PILL_TINT, window, cx);
-        let ink = motion::fade(&self.id, "ink", ink, motion::PILL_TINT, window, cx);
+        let hovered = ElementId::NamedChild(Arc::new(self.id.clone()), "hover".into());
+        let lit = motion::follow(
+            hovered,
+            if over { 1. } else { 0. },
+            motion::PILL_TINT,
+            window,
+            cx,
+        );
+        let tint = motion::blend(rest, t.surface_hover, lit);
+        let ink = motion::blend(rest_ink, t.text_secondary, lit);
         let close_id = ElementId::NamedChild(Arc::new(self.id.clone()), "close".into());
         let label = self.label.clone();
         let edge = gpui_kit::Hsla {

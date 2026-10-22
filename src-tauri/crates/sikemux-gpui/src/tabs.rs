@@ -52,7 +52,7 @@ fn strip_with_tabs(bench: &Workbench) -> Option<Strip> {
 /// project's tabs on a row of their own from the window's left edge to its right.
 pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
-    let tabs: Option<Vec<_>> = strip_with_tabs(bench).map(|strip| strip_tabs(bench, &strip, cx));
+    let tabs = strip_with_tabs(bench).map(|strip| strip_tabs(bench, &strip, cx));
     let bar = div()
         .id("top-bar")
         .relative()
@@ -109,8 +109,11 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                     .on_click(cx.listener(|bench, _, _, cx| bench.toggle_focus_mode(cx))),
                 ),
         );
-    let row = tabs.map(|tabs| {
+    let row = tabs.map(|(copy, tabs)| {
+        let glide = bench.strip_glide.borrow();
+        let skip = usize::from(copy.is_some());
         div()
+            .on_children_prepainted(glide.keep_origin())
             .id("tab-row")
             .h(px(TAB_ROW_HEIGHT))
             .flex()
@@ -128,7 +131,10 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                     .flex()
                     .items_center()
                     .gap(px(4.))
-                    .children(tabs),
+                    .relative()
+                    .children(copy)
+                    .children(tabs)
+                    .on_children_prepainted(glide.keep_items(skip)),
             )
             .child(
                 IconButton::new("new-tab", Icon::Plus, "New tab")
@@ -853,8 +859,13 @@ fn plain(value: &Value) -> String {
 }
 
 /// The strip's tabs: one just opened widens into its place, and one just closed narrows away,
-/// unless the strip changed most of its tabs at once, as another project's does.
-fn strip_tabs(bench: &Workbench, strip: &Strip, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
+/// unless the strip changed most of its tabs at once, as another project's does. The chosen
+/// surface glides to the tab brought to the front; that copy comes first.
+fn strip_tabs(
+    bench: &Workbench,
+    strip: &Strip,
+    cx: &mut Context<Workbench>,
+) -> (Option<AnyElement>, Vec<AnyElement>) {
     let front = bench.tab().map(|tab| tab.id.clone());
     let listed = bench.tabs(strip);
     let shown = listed
@@ -867,11 +878,20 @@ fn strip_tabs(bench: &Workbench, strip: &Strip, cx: &mut Context<Workbench>) -> 
         .max(motion::TAB_DEPARTURE.close.duration);
     let mut seen = bench.strip_seen.borrow_mut();
     let (arriving, left) = seen.update(format!("{strip:?}"), shown, 2, lasting);
+    let mut order: Vec<String> = listed.iter().map(|tab| tab.id.clone()).collect();
+    for gone in left {
+        order.insert(gone.at.min(order.len()), gone.id.clone());
+    }
+    let mut glide = bench.strip_glide.borrow_mut();
+    let glided = glide.choose(front.clone(), cx.reduce_motion());
+    glide.set_order(order);
+    let chosen = Tokens::get(cx).surface_chosen;
+    let copy = glide.copy(move |copy| copy.rounded(crate::theme::RADIUS_2).bg(chosen));
     let mut drawn: Vec<AnyElement> = listed
         .iter()
         .map(|tab| {
             let active = front.as_deref() == Some(tab.id.as_str());
-            let drawn = strip_tab(bench, strip, tab, active, cx);
+            let drawn = strip_tab(bench, strip, tab, active, glided && active, cx);
             match arriving.contains(&tab.id) {
                 true => {
                     let key = SharedString::from(format!("tab-arrive:{}", tab.id));
@@ -882,12 +902,12 @@ fn strip_tabs(bench: &Workbench, strip: &Strip, cx: &mut Context<Workbench>) -> 
         })
         .collect();
     for gone in left {
-        let tab = strip_tab(bench, strip, &gone.item, false, cx);
+        let tab = strip_tab(bench, strip, &gone.item, false, false, cx);
         let key = SharedString::from(format!("tab-depart:{}", gone.id));
         let tab = motion::departing(key, gone.since, motion::TAB_DEPARTURE, tab);
         drawn.insert(gone.at.min(drawn.len()), tab.into_any_element());
     }
-    drawn
+    (copy, drawn)
 }
 
 fn strip_tab(
@@ -895,6 +915,7 @@ fn strip_tab(
     strip: &Strip,
     tab: &LayoutTab,
     active: bool,
+    glided: bool,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
@@ -905,6 +926,7 @@ fn strip_tab(
         label(bench, tab),
     )
     .active(active)
+    .glided(glided)
     .italic(tab.preview)
     .on_click(cx.listener({
         let (strip, tab) = (strip.clone(), tab_id.clone());
