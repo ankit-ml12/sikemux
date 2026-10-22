@@ -33,6 +33,9 @@ const CHANGE_READS: usize = 5;
 /// How many reads, a step apart, to wait for Home to bring the Home Screen up from an app:
 /// it always does, but a busy device starts leaving the app late. Six seconds.
 const HOME_READS: usize = 20;
+/// How many pictures, a step apart, to wait for a turn to come round: three seconds.
+const TURN_READS: usize = 20;
+const TURN_STEP: Duration = Duration::from_millis(150);
 /// A swipe that starts this close to an edge is sent as a system gesture, as the helper decides.
 const EDGE: f64 = 10.0;
 const MAX_ELEMENTS: usize = 200;
@@ -312,6 +315,7 @@ pub(super) async fn run(
                     json!({ "udid": device.udid, "orientation": orientation }),
                 )
                 .await?;
+            turned(manager, &device).await?;
             settled_state(manager, agent_id, None, Report::Full).await
         }
         other => Err(format!("unknown simulator method {other}")),
@@ -922,6 +926,31 @@ pub(super) fn app_size(reply: &Value) -> Option<(f64, f64)> {
         .find(|element| element["type"] == "Application")?["frame"];
     let size = frame["width"].as_f64().zip(frame["height"].as_f64())?;
     (size.0 > 0.0 && size.1 > 0.0).then_some(size)
+}
+
+/// Waits for the picture on screen to stop moving after a turn. The app reports its turned
+/// layout as soon as the turn begins, but the screen comes round for a moment more, and a touch
+/// sent before it has is dropped.
+async fn turned(manager: &SimulatorManager, device: &Device) -> Result<(), String> {
+    let mut last = None;
+    for _ in 0..TURN_READS {
+        if near_deadline() {
+            break;
+        }
+        let shot = manager
+            .request(
+                "screenshot",
+                json!({ "udid": device.udid, "format": "jpeg", "pointSize": true }),
+            )
+            .await?;
+        let picture = shot["jpeg"].clone();
+        if last.as_ref() == Some(&picture) {
+            break;
+        }
+        last = Some(picture);
+        pause(TURN_STEP).await?;
+    }
+    Ok(())
 }
 
 /// Reads the screen until two reads agree, so an animation has finished before
