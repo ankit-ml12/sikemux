@@ -26,7 +26,9 @@ const APP_DATA_DIR: &str = if cfg!(debug_assertions) {
 };
 
 pub(super) fn app_data_dir(data_dir: Option<&Path>) -> Option<&Path> {
-    data_dir.filter(|dir| dir.file_name() == Some(APP_DATA_DIR.as_ref()))
+    data_dir.filter(|dir| {
+        !sikemux_process::paths::TRYOUT && dir.file_name() == Some(APP_DATA_DIR.as_ref())
+    })
 }
 
 fn app_state_file() -> Option<PathBuf> {

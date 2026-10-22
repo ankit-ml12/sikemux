@@ -14,7 +14,7 @@ fn failed(error: impl std::fmt::Display) -> KeychainError {
 
 /// The folder the try-out keeps its secrets under, fixed when it is built so
 /// nothing at run time can move them.
-pub(crate) const TRYOUT_FOLDER: Option<&str> = option_env!("SIKEMUX_TRYOUT_SECRETS");
+pub(crate) const TRYOUT_FOLDER: Option<&str> = sikemux_process::paths::TRYOUT_SECRETS;
 
 pub(crate) fn home_root() -> KeychainResult<PathBuf> {
     if let Some(folder) = TRYOUT_FOLDER {

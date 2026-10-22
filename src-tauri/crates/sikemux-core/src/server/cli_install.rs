@@ -48,7 +48,7 @@ enum DestinationState {
 /// The executable the command links to: this core's own, which is the CLI.
 /// Tests point it elsewhere with `SIKEMUX_SIDECAR_PATH`.
 fn cli_executable() -> Option<PathBuf> {
-    if let Some(path) = env::var_os("SIKEMUX_SIDECAR_PATH").map(PathBuf::from) {
+    if let Some(path) = sikemux_process::paths::env_path("SIKEMUX_SIDECAR_PATH") {
         return path.is_file().then_some(path);
     }
     let name = if cfg!(windows) {

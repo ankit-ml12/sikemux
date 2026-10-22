@@ -57,8 +57,8 @@ pub const SOCKET_ENV: &str = "SIKEMUX_CORE_SOCKET";
 /// `~/.config/sikemux/core.sock`, or `core.dev.sock` in debug builds, unless
 /// `SIKEMUX_CORE_SOCKET` names another path.
 pub fn default_socket_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os(SOCKET_ENV).filter(|path| !path.is_empty()) {
-        return Some(PathBuf::from(path));
+    if let Some(path) = sikemux_process::paths::env_path(SOCKET_ENV) {
+        return Some(path);
     }
     sikemux_process::paths::config_file("core", "sock")
 }
