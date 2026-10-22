@@ -234,16 +234,21 @@ impl Dictation {
         }
         if self.recording {
             self.finish(cx);
-        } else if self.starting.is_none() {
+        } else if self.starting.is_none() && self.phase != Phase::Transcribing {
             self.target = Some(Target::Chat(agent.to_owned()));
             self.start_when_ready(cx);
         }
         false
     }
 
-    /// Right ⌥ went down on its own, with the keyboard in `target`.
+    /// Right ⌥ went down on its own, with the keyboard in `target`. Not while the last
+    /// recording is still being written out, which goes where that one was started.
     pub fn begin_hold(&mut self, target: Option<Target>, cx: &mut Context<Self>) {
-        if self.voice.is_none() || self.starting.is_some() || self.recording {
+        if self.voice.is_none()
+            || self.starting.is_some()
+            || self.recording
+            || self.phase == Phase::Transcribing
+        {
             return;
         }
         (self.held, self.target) = (true, target);
