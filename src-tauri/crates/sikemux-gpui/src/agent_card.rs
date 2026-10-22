@@ -278,6 +278,7 @@ pub fn view(
                 .child(ui::agent_mark(agent, 22., cx))
                 .child(
                     div()
+                        .flex_1()
                         .flex()
                         .flex_col()
                         .min_w_0()
@@ -289,7 +290,12 @@ pub fn view(
                                 .text_color(t.text_primary)
                                 .child(agent.title.clone()),
                         )
-                        .child(div().text_color(t.text_tertiary).child(who.join(" · "))),
+                        .child(
+                            div()
+                                .truncate()
+                                .text_color(t.text_tertiary)
+                                .child(who.join(" · ")),
+                        ),
                 ),
         )
         .when(!facts.is_empty(), |card| {

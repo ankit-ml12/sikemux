@@ -699,7 +699,10 @@ fn agent_row(
                 .child(ui::meta(project, cx)),
         )
     })
-    .status(ui::status_mark(agent.status, cx))
+    .status(
+        ui::status_mark(agent.status, cx)
+            .map(|mark| mark.group_hover(AGENT_ROW, |mark| mark.opacity(0.))),
+    )
     .on_click(cx.listener({
         let id = id.clone();
         move |bench, _, _, cx| {
@@ -791,7 +794,7 @@ fn agent_row(
         .child(row)
         .child(actions)
         .children(lines)
-        .children(card)
+        .children(card.map(|card| div().absolute().top_0().left_0().child(card)))
         .context_menu(move |popup, window, cx| match &menu {
             Some(menu) => menu.build(popup, window, cx),
             None => popup,
