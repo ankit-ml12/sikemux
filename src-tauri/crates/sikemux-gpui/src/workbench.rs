@@ -839,10 +839,23 @@ impl Workbench {
                     return self.terminals.redraw(key, cx);
                 }
             }
-            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if *topic == "files") => {
-                if let Update::Changed { paths, .. } = *update {
+            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if topic == "files" || topic == "git") => {
+                if let Update::Changed {
+                    topic,
+                    project,
+                    paths,
+                } = *update
+                {
                     let place = Place::Account(host);
-                    crate::editor::changed(self, &place, paths.as_deref().unwrap_or_default(), cx);
+                    if topic == "files" {
+                        crate::editor::changed(
+                            self,
+                            &place,
+                            paths.as_deref().unwrap_or_default(),
+                            cx,
+                        );
+                    }
+                    self.project_changed(&place, &topic, project, paths, cx);
                 }
             }
             Update::From(..) => {}
@@ -863,17 +876,6 @@ impl Workbench {
                 project,
                 paths,
             } => {
-                let root = self
-                    .files
-                    .root
-                    .as_ref()
-                    .map(|root| root.to_string_lossy().into_owned());
-                if topic == "git" && (project.is_none() || project == root) {
-                    self.files.changed(paths.as_deref(), &self.target());
-                    if self.finder.is_some() {
-                        self.project_files.read(root.as_deref(), &self.target());
-                    }
-                }
                 if topic == "files" {
                     crate::editor::changed(
                         self,
@@ -881,10 +883,8 @@ impl Workbench {
                         paths.as_deref().unwrap_or_default(),
                         cx,
                     );
-                    if let Some(search) = &self.search {
-                        search.update(cx, |search, cx| search.changed(cx));
-                    }
                 }
+                self.project_changed(&Place::This, &topic, project.clone(), paths.clone(), cx);
                 if topic == "boards" {
                     if let Some(board) = &self.board {
                         board.update(cx, |board, cx| board.changed(cx));
@@ -1291,6 +1291,37 @@ impl Workbench {
             .and_then(|chat| chat.earlier(agent))
         {
             self.ask_chat(ask);
+        }
+    }
+
+    /// Reads the file tree, the finder's list and search again when `topic` moved on
+    /// `place`, while the project in front is on that host.
+    fn project_changed(
+        &mut self,
+        place: &Place,
+        topic: &str,
+        project: Option<String>,
+        paths: Option<Vec<String>>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.place() != *place {
+            return;
+        }
+        let root = self
+            .files
+            .root
+            .as_ref()
+            .map(|root| root.to_string_lossy().into_owned());
+        if topic == "git" && (project.is_none() || project == root) {
+            self.files.changed(paths.as_deref(), &self.target());
+            if self.finder.is_some() {
+                self.project_files.read(root.as_deref(), &self.target());
+            }
+        }
+        if topic == "files" {
+            if let Some(search) = &self.search {
+                search.update(cx, |search, cx| search.changed(cx));
+            }
         }
     }
 
