@@ -1052,6 +1052,16 @@ pub(crate) struct SplitPane {
 /// answers the id of the view it added, or of the first moved one.
 pub(crate) fn split_pane(core: &Core, params: SplitPane) -> CoreResult<String> {
     edit(core, |layout| {
+        if let (None, Some(PaneKind::Desk), Some(agent)) =
+            (&params.from_tab, params.kind, &params.target)
+        {
+            if let Some((project, tab, view)) = desk_of(layout, agent) {
+                if let Some(strip) = layout.projects.get_mut(&project) {
+                    strip.active = Some(tab);
+                }
+                return Ok(view);
+            }
+        }
         let strip = strip_at(layout, &params.at)?;
         let new = match (&params.from_tab, params.kind, &params.target) {
             (Some(from), _, _) => {
@@ -1088,6 +1098,30 @@ pub(crate) fn split_pane(core: &Core, params: SplitPane) -> CoreResult<String> {
         strip.active = Some(params.tab.clone());
         Ok(added)
     })
+}
+
+/// Where the agent's desk already shows, as its project, tab and view: an agent has one desk.
+fn desk_of(layout: &Layout, agent: &str) -> Option<(String, String, String)> {
+    layout.projects.iter().find_map(|(project, strip)| {
+        strip.tabs.iter().find_map(|tab| {
+            view_holding(&tab.pane, PaneKind::Desk, agent)
+                .map(|view| (project.clone(), tab.id.clone(), view))
+        })
+    })
+}
+
+fn view_holding(pane: &Pane, kind: PaneKind, target: &str) -> Option<String> {
+    match pane {
+        Pane::View {
+            id,
+            kind: held,
+            target: held_target,
+            ..
+        } => (*held == kind && held_target == target).then(|| id.clone()),
+        Pane::Split { panes, .. } => panes
+            .iter()
+            .find_map(|pane| view_holding(pane, kind, target)),
+    }
 }
 
 fn first_view_id(pane: &Pane) -> String {
