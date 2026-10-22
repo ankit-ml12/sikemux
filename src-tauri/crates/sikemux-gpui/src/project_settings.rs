@@ -645,28 +645,18 @@ fn tasks(
         (Some(_), false) => div().children(mine_rows).into_any_element(),
     };
     let adding = this.clone();
-    let mut sections = vec![div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(rows::section(
-            "Your tasks",
-            None,
-            Some("Commands the run button and agents start. For the team goes in sikemux.json, which you commit; Only me stays in .sikemux/, which Git ignores.".into()),
-            false,
-            mine_body,
-            cx,
-        ))
-        .child(
-            div().child(
-                Button::new("project-add-task", "Add a task", Variant::Outline)
-                    .icon(Icon::Plus)
-                    .on_click(move |_, window, cx| {
-                        adding.update(cx, |bench, cx| bench.add_task(window, cx))
-                    }),
-            ),
-        )
-        .into_any_element()];
+    let add = Button::new("project-add-task", "Add a task", Variant::Outline)
+        .icon(Icon::Plus)
+        .on_click(move |_, window, cx| adding.update(cx, |bench, cx| bench.add_task(window, cx)));
+    let mut sections = vec![rows::section_with(
+        "Your tasks",
+        None,
+        Some(add.into_any_element()),
+        Some("Commands the run button and agents start. For the team goes in sikemux.json, which you commit; Only me stays in .sikemux/, which Git ignores.".into()),
+        false,
+        mine_body,
+        cx,
+    )];
     let found: Vec<&Value> = all.iter().filter(|task| !own(task)).collect();
     if !found.is_empty() {
         let words = settings.filter.read(cx).value().trim().to_lowercase();

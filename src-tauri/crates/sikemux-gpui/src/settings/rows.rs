@@ -23,6 +23,19 @@ pub fn section(
     body: impl IntoElement,
     cx: &App,
 ) -> AnyElement {
+    section_with(title, meta, None, sub, flash, body, cx)
+}
+
+/// A section as [`section`] draws it, with `action` at the far end of its heading.
+pub fn section_with(
+    title: &'static str,
+    meta: Option<SharedString>,
+    action: Option<AnyElement>,
+    sub: Option<SharedString>,
+    flash: bool,
+    body: impl IntoElement,
+    cx: &App,
+) -> AnyElement {
     let t = Tokens::get(cx);
     div()
         .flex()
@@ -34,20 +47,27 @@ pub fn section(
         .child(
             div()
                 .flex()
-                .items_baseline()
-                .gap(px(8.))
+                .items_center()
+                .gap(px(12.))
                 .child(
                     div()
-                        .text_size(crate::theme::ui_text(13.))
-                        .text_color(t.text_primary)
-                        .child(title),
+                        .flex()
+                        .items_baseline()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(crate::theme::ui_text(13.))
+                                .text_color(t.text_primary)
+                                .child(title),
+                        )
+                        .children(meta.map(|meta| {
+                            div()
+                                .text_size(crate::theme::ui_text(11.5))
+                                .text_color(t.text_tertiary)
+                                .child(meta)
+                        })),
                 )
-                .children(meta.map(|meta| {
-                    div()
-                        .text_size(crate::theme::ui_text(11.5))
-                        .text_color(t.text_tertiary)
-                        .child(meta)
-                })),
+                .children(action.map(|action| div().flex_1().flex().justify_end().child(action))),
         )
         .children(sub.map(|sub| {
             div()
