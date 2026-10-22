@@ -51,12 +51,10 @@ pub fn stage(bench: &Workbench, window: &Window, cx: &mut Context<Workbench>) ->
             .child(ui::pane(cx).child(empty_stage(cx)))
             .into_any_element();
     }
-    let shown = match bench.tab() {
-        Some(tab) => crate::track::stage(bench, tab, window, cx),
-        None => ui::pane(cx)
-            .child(centred(welcome(bench, None, cx)).size_full())
-            .into_any_element(),
+    let Some(tab) = bench.tab() else {
+        return div().flex_1().min_w_0().into_any_element();
     };
+    let shown = crate::track::stage(bench, tab, window, cx);
     div()
         .flex_1()
         .min_w_0()
