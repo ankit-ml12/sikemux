@@ -2666,7 +2666,7 @@ fn composer(
             tiles,
             on_add,
             Rc::new(attach::on_paste(&agent.id, cx)),
-            attach::chip,
+            attach::chip(cx.weak_entity()),
         )
         .strip(strip)
         .dictation(
@@ -3093,6 +3093,15 @@ struct Styles {
 }
 
 impl Looks {
+    /// The agent's mark as the rail draws it, its face when it wears one, else its CLI's.
+    fn mark_of(&self, agent: &str, cli: &str, size: f32, cx: &App) -> AnyElement {
+        let row = (self.bench.upgrade()).and_then(|bench| bench.read(cx).agent_by_id(agent));
+        match row {
+            Some(row) => ui::agent_mark(&row, size, cx),
+            None => ui::mark(cli, size),
+        }
+    }
+
     /// Sets the prose to `scale` times its designed size, and answers the replies' style.
     fn rescale(&self, scale: f32) -> Rc<Style> {
         let scaled = |style: &Rc<Style>| Rc::new(style.scaled(scale));
@@ -3411,7 +3420,7 @@ fn row(
             Shown::Run(calls) => tools::run(&calls, live && at + 1 == count, looks),
         })
         .collect();
-    let summary = opens.map(|fold| work(fold, !folded, looks));
+    let summary = opens.map(|fold| work(fold, !folded, looks, cx));
     let carried = !message.attachments.is_empty() || !message.context.is_empty();
     let lost = (ix == 0 && looks.reading.earlier_lost).then(|| {
         div()
@@ -3639,7 +3648,7 @@ fn letters(
                             .text_size(crate::theme::ui_text(12.5))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(looks.quiet)
-                            .child(ui::mark(&letter.cli, 17.))
+                            .child(looks.mark_of(&letter.agent_id, &letter.cli, 17., cx))
                             .child(div().flex().gap(px(4.)).child("Message from").child(name)),
                     )
                     .child(div().h(px(1.)).bg(looks.rule));
@@ -3693,7 +3702,7 @@ fn outlives(part: &ChatPart) -> bool {
 }
 
 /// The line a finished turn folds behind: who worked, for how long, with how many tool calls.
-fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
+fn work(fold: &WorkFold, open: bool, looks: &Drawn, cx: &App) -> AnyElement {
     let verb = if fold.thought { "Thought" } else { "Worked" };
     let worked = fold.took.map_or_else(
         || verb.to_owned(),
@@ -3722,7 +3731,7 @@ fn work(fold: &WorkFold, open: bool, looks: &Drawn) -> AnyElement {
         .text_color(looks.quiet)
         .cursor_pointer()
         .hover(move |toggle| toggle.bg(hover).text_color(ink))
-        .child(ui::mark(&looks.provider, 17.))
+        .child(looks.mark_of(&looks.agent, &looks.provider, 17., cx))
         .child(worked)
         .children(calls)
         .child(

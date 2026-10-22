@@ -12,7 +12,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, App, AppContext, Axis, ClipboardEntry, ClipboardItem, Context, Div, ExternalPaths,
     FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    PathPromptOptions, SharedString, Styled, Window,
+    PathPromptOptions, SharedString, Styled, WeakEntity, Window,
 };
 use gpui_transcript::FilePress;
 use sikemux_core::acp::MAX_ATTACHMENTS;
@@ -52,12 +52,18 @@ const IMAGE: &str = "image:";
 /// The largest file sent to another host for a chat there.
 const MAX_KEPT: u64 = 50_000_000;
 
-/// The glyph a tag in the draft wears: a picture's, a named agent's, or a file's or folder's.
-fn mark(id: &str, tint: Hsla, cx: &App) -> gpui_kit::AnyElement {
+/// The glyph a tag in the draft wears: a picture's, a named agent's face or mark, or a file's
+/// or folder's.
+fn mark(id: &str, tint: Hsla, bench: &WeakEntity<Workbench>, cx: &App) -> gpui_kit::AnyElement {
     if id.starts_with(IMAGE) {
         return ui::icon(Icon::Image, 12.)
             .text_color(tint)
             .into_any_element();
+    }
+    let named =
+        (id.strip_prefix("agent:")).and_then(|agent| bench.upgrade()?.read(cx).agent_by_id(agent));
+    if let Some(agent) = named {
+        return ui::agent_mark(&agent, 12., cx);
     }
     if id.starts_with("agent:") || id.starts_with("earlier:") {
         return ui::icon(Icon::Agent, 12.)
@@ -482,7 +488,18 @@ pub fn drop_hint(cx: &App) -> Div {
 }
 
 /// A tag in the draft, set on the line like a word of it.
-pub fn chip(token: &InlineTokenContext, _: &mut Window, cx: &mut App) -> impl IntoElement {
+/// A tag in the draft as a chip, with the glyph `mark` gives it.
+pub fn chip(
+    bench: WeakEntity<Workbench>,
+) -> impl Fn(&InlineTokenContext, &mut Window, &mut App) -> gpui_kit::AnyElement {
+    move |token, _, cx| drawn_chip(token, &bench, cx).into_any_element()
+}
+
+fn drawn_chip(
+    token: &InlineTokenContext,
+    bench: &WeakEntity<Workbench>,
+    cx: &mut App,
+) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let selected = token.is_selected();
     div().h(token.line_height()).flex().items_center().child(
@@ -515,7 +532,7 @@ pub fn chip(token: &InlineTokenContext, _: &mut Window, cx: &mut App) -> impl In
             })
             .text_size(crate::theme::ui_text(12.))
             .text_color(t.text_primary)
-            .child(mark(token.token().id(), t.text_tertiary, cx))
+            .child(mark(token.token().id(), t.text_tertiary, bench, cx))
             .child(
                 div()
                     .min_w_0()

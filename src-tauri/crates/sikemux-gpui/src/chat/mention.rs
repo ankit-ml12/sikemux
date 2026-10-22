@@ -794,6 +794,7 @@ pub fn dock(
     let mut shown_project: Option<&str> = None;
     let mut shown_kind = None;
     let rows = menu.choices.iter().enumerate().map(|(index, choice)| {
+        let looked = this.clone();
         let (this, agent) = (this.clone(), agent.to_owned());
         let choose = Rc::new(move |window: &mut Window, cx: &mut App| {
             this.update(cx, |bench, cx| {
@@ -803,18 +804,25 @@ pub fn dock(
         });
         match choice {
             Choice::Mate {
+                id,
                 name,
                 title,
                 project,
                 provider,
-                ..
             } => {
                 let group = (project.as_deref() != shown_project)
                     .then(|| project.clone().map(SharedString::from))
                     .flatten();
                 shown_project = project.as_deref();
                 DockRow::new(format!("@{name}"), choose)
-                    .mark(ui::mark(provider, 13.))
+                    .mark(
+                        (looked.upgrade())
+                            .and_then(|bench| bench.read(cx).agent_by_id(id))
+                            .map_or_else(
+                                || ui::mark(provider, 13.),
+                                |agent| ui::agent_mark(&agent, 13., cx),
+                            ),
+                    )
                     .detail(title.clone())
                     .group(group)
             }

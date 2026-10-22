@@ -3293,6 +3293,17 @@ impl Workbench {
     }
 
     /// The project's agents in the order the core ranks them for the person.
+    /// The agent `id` as the rails draw it, in whichever project it is.
+    pub fn agent_by_id(&self, id: &str) -> Option<AgentRow> {
+        let project = (self.shown()?.workspace.agents.iter())
+            .find(|agent| agent.id == id)?
+            .project
+            .clone();
+        self.agents_of(&project)
+            .into_iter()
+            .find(|agent| agent.id == id)
+    }
+
     pub fn agents_of(&self, project: &str) -> Vec<AgentRow> {
         let Some(view) = self.shown() else {
             return Vec::new();
