@@ -1,8 +1,18 @@
 //! A project's code host as the Git tab shows it in place of the local workbench: its
 //! pull requests, CI runs, issues and releases, as the core lists them.
 
+mod compose;
+mod diffs;
+pub mod inbox;
+mod issues;
+mod logs;
+mod pictures;
 mod pull;
 mod pulls;
+mod releases;
+mod run_actions;
+mod runs;
+mod shell;
 mod thread;
 
 use std::future::Future;
@@ -19,7 +29,7 @@ use sikemux_wire::codehost::{CheckTally, Label, Outcome, PullState};
 use sikemux_wire::protocol::ProjectCodeHost;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::{request, Ask, Watch};
+use crate::core::{request, stream, Ask, Watch};
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::ui;
@@ -127,7 +137,25 @@ pub struct HostArea {
     area: Area,
     pulls: pulls::Pulls,
     pull: Option<pull::Opened>,
+    runs: runs::Runs,
+    releases: releases::Releases,
+    issues: issues::Issues,
+    /// A new pull request being written, while one is.
+    composing: Option<compose::NewPull>,
+    /// The branch of the new pull request being picked, while one is.
+    picking: Option<compose::End>,
     asking: Option<Asking>,
+    /// Who is signed in to the host, once it said.
+    status: Read<shell::Status>,
+    asked_status: bool,
+    /// The sign-in form, while it shows.
+    signing: Option<shell::SignIn>,
+    /// The account menu is open.
+    menu: bool,
+    /// The host's accounts, read as the menu opens.
+    accounts: Vec<shell::Listed>,
+    budget: Option<shell::Budget>,
+    pictures: pictures::Pictures,
 }
 
 impl HostArea {
@@ -148,12 +176,28 @@ impl HostArea {
             area: Area::Local,
             pulls: pulls::Pulls::new(branch),
             pull: None,
+            runs: runs::Runs::new(),
+            releases: releases::Releases::default(),
+            issues: issues::Issues::default(),
+            composing: None,
+            picking: None,
             asking: None,
+            status: None,
+            asked_status: false,
+            signing: None,
+            menu: false,
+            accounts: Vec::new(),
+            budget: None,
+            pictures: pictures::Pictures::default(),
         }
     }
 
     /// Shows `area`, asking the core for its lists the first time.
     pub fn show(&mut self, area: Area, cx: &mut Context<Self>) {
+        if !self.asked_status {
+            self.asked_status = true;
+            self.read_status(cx);
+        }
         if self.area != area {
             self.area = area;
             self.watch();
@@ -161,18 +205,44 @@ impl HostArea {
         }
     }
 
+    /// Opens pull request or issue `number` in `area`.
+    pub fn open_item(&mut self, area: Area, number: u64, cx: &mut Context<Self>) {
+        self.show(area, cx);
+        match area {
+            Area::Pulls => self.open_pull(number, cx),
+            Area::Issues => self.open_issue(number, cx),
+            _ => {}
+        }
+    }
+
     /// Takes what the project's repository on its host now is, and where its branch stands.
     pub fn project_moved(
         &mut self,
         host: &ProjectCodeHost,
+        account: Option<String>,
         branch: Option<(String, bool)>,
         cx: &mut Context<Self>,
     ) {
-        if &self.host != host || self.pulls.branch != branch {
-            self.host = host.clone();
-            self.pulls.branch = branch;
-            cx.notify();
+        let elsewhere =
+            self.host.host != host.host || self.host.repo != host.repo || self.account != account;
+        if &self.host == host && self.pulls.branch == branch && !elsewhere {
+            return;
         }
+        self.host = host.clone();
+        self.pulls.branch = branch;
+        if elsewhere {
+            self.account = account;
+            self.pull = None;
+            self.composing = None;
+            self.runs.open = None;
+            self.issues = issues::Issues::default();
+            self.pulls.list = None;
+            self.runs.list = None;
+            self.releases = releases::Releases::default();
+            self.status = None;
+            self.read_status(cx);
+        }
+        cx.notify();
     }
 
     /// Takes a watched list's answer, under the key it was watched by.
@@ -189,12 +259,79 @@ impl HostArea {
                     opened.take_files(answer(value));
                 }
             }
+            runs::LIST => self.runs.list = Some(answer(value)),
+            releases::KEY => self.releases.list = Some(answer(value)),
+            issues::KEY => self.issues.list = Some(answer(value)),
+            runs::RUN => {
+                self.take_run(value);
+                self.read_extras(cx);
+                let picked = self
+                    .runs
+                    .open
+                    .as_ref()
+                    .and_then(|opened| {
+                        let view = opened.view.as_ref()?.as_ref().ok()?;
+                        let job = opened.job.as_ref()?;
+                        view.jobs.iter().find(|listed| &listed.job.id == job)
+                    })
+                    .map(|listed| listed.job.clone());
+                if let Some(job) = picked {
+                    self.read_annotations(&job, cx);
+                }
+            }
+            logs::KEY => {
+                let Some(opened) = &mut self.runs.open else {
+                    return;
+                };
+                let job = opened
+                    .view
+                    .as_ref()
+                    .and_then(|view| view.as_ref().ok())
+                    .and_then(|view| {
+                        view.jobs
+                            .iter()
+                            .find(|listed| Some(&listed.job.id) == opened.job.as_ref())
+                    })
+                    .map(|listed| listed.job.clone());
+                if let (Some(log), Some(job)) = (&mut opened.log, job) {
+                    log.take(value, &job);
+                }
+            }
             _ => return,
         }
         cx.notify();
     }
 
     fn watch(&self) {
+        if !self.signed_in() {
+            return;
+        }
+        if self.area == Area::Actions {
+            self.watch_runs();
+            let shown = self
+                .runs
+                .open
+                .as_ref()
+                .filter(|opened| opened.tab == runs::Tab::Logs)
+                .and_then(|opened| Some((&opened.id, opened.job.as_ref()?)));
+            if let Some((run, job)) = shown {
+                let params = json!({ "project": self.project, "runId": run, "jobId": job });
+                self.ask_watch(logs::KEY, "codeHostJobLog", params);
+            }
+            return;
+        }
+        if self.area == Area::Issues {
+            self.watch_issues();
+            return;
+        }
+        if self.area == Area::Releases {
+            self.ask_watch(
+                releases::KEY,
+                "codeHostReleases",
+                json!({ "project": self.project }),
+            );
+            return;
+        }
         if self.area != Area::Pulls {
             return;
         }
@@ -212,29 +349,49 @@ impl HostArea {
         }
     }
 
+    fn plugin_call(&self, method: &'static str, more: Value) -> Value {
+        call_of(&self.host, &self.account, method, more)
+    }
+
     /// Calls `method` of the host's plugin about the project's repository, with `more`.
     fn plugin(
         &self,
         method: &'static str,
         more: Value,
     ) -> impl Future<Output = Result<Value, SharedString>> + 'static {
-        let (owner, name) = self.host.repo.split_once('/').unwrap_or_default();
-        let mut params = json!({
-            "provider": self.host.host,
-            "owner": owner,
-            "name": name,
-            "account": self.account,
-        });
-        if let (Some(params), Value::Object(more)) = (params.as_object_mut(), more) {
-            params.extend(more);
-        }
-        let call = json!({ "plugin": format!("sikemux.{}", self.host.host), "method": method, "params": params });
-        let answered = request(&self.asks, "plugin", call);
+        let answered = request(&self.asks, "plugin", self.plugin_call(method, more));
         async move {
             match answered.await {
                 Ok(value) => answer(&value),
                 Err(error) => Err(error.into()),
             }
+        }
+    }
+
+    /// Downloads a file through `method` of the host's plugin, answering where it was saved.
+    fn download(
+        &self,
+        method: &'static str,
+        more: Value,
+    ) -> impl Future<Output = Result<String, SharedString>> + 'static {
+        let mut streaming = stream(&self.asks, "pluginStream", self.plugin_call(method, more));
+        async move {
+            let mut saved = None;
+            while let Some(part) = streaming.parts.recv().await {
+                if let Some(error) = part.error {
+                    let message = error["message"].as_str().map(str::to_owned);
+                    return Err(message.unwrap_or_else(|| error.to_string()).into());
+                }
+                saved = part
+                    .items
+                    .iter()
+                    .find_map(|item| item["saved"]["path"].as_str().map(str::to_owned))
+                    .or(saved);
+                if part.done {
+                    break;
+                }
+            }
+            saved.ok_or_else(|| "the download ended without saving anything".into())
         }
     }
 
@@ -247,6 +404,22 @@ impl HostArea {
         self.bench
             .update(cx, |bench, cx| bench.notify(note, cx))
             .ok();
+    }
+
+    /// Shows `area`, here and in the rail.
+    fn set_area(&mut self, area: Area, cx: &mut Context<Self>) {
+        self.area = area;
+        self.bench
+            .update(cx, |bench, cx| {
+                bench.area = area;
+                cx.notify();
+            })
+            .ok();
+    }
+
+    fn choose(&mut self, end: compose::End, cx: &mut Context<Self>) {
+        self.picking = Some(end);
+        cx.notify();
     }
 
     fn ask(&mut self, asking: Asking, cx: &mut Context<Self>) {
@@ -264,12 +437,23 @@ impl HostArea {
 impl Render for HostArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = match self.area {
+            _ if shell::needs_sign_in(self) => shell::sign_in(self, window, cx),
+            Area::Pulls if self.composing.is_some() => compose::view(self, window, cx),
             Area::Pulls if self.pull.is_some() => pull::view(self, window, cx),
             Area::Pulls => div()
                 .id("host-list")
                 .size_full()
                 .overflow_y_scroll()
                 .child(pulls::list(self, cx))
+                .into_any_element(),
+            Area::Releases => releases::view(self, window, cx),
+            Area::Issues => issues::view(self, window, cx),
+            Area::Actions if self.runs.open.is_some() => runs::view(self, window, cx),
+            Area::Actions => div()
+                .id("host-runs")
+                .size_full()
+                .overflow_y_scroll()
+                .child(runs::list(self, cx))
                 .into_any_element(),
             area => notice(
                 format!("{} is not here yet", area.label(&self.host)),
@@ -303,8 +487,89 @@ impl Render for HostArea {
                 .ok();
             })
         });
-        div().size_full().relative().child(body).children(asking)
+        let workflows = self.runs.picking.then(|| {
+            let no = cx.entity().downgrade();
+            ui::Choices::new(
+                "Which workflow's runs to show",
+                runs::workflow_choices(self, cx),
+            )
+            .on_no(move |_, cx| {
+                no.update(cx, |area, cx| {
+                    area.runs.picking = false;
+                    cx.notify();
+                })
+                .ok();
+            })
+        });
+        let more = self
+            .runs
+            .open
+            .as_ref()
+            .is_some_and(|opened| opened.extras.more)
+            .then(|| {
+                let no = cx.entity().downgrade();
+                ui::Choices::new("Run", run_actions::more_choices(self, cx)).on_no(move |_, cx| {
+                    no.update(cx, |area, cx| {
+                        if let Some(opened) = &mut area.runs.open {
+                            opened.extras.more = false;
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                })
+            });
+        let dispatch = run_actions::dispatch_sheet(self, cx);
+        let menu = self.account_menu(cx);
+        let note = shell::budget_note(self, cx);
+        self.fetch_pictures(cx);
+        let picking = self.picking.map(|end| {
+            let title = match end {
+                compose::End::Head => "The branch with the changes",
+                compose::End::Base => "The branch the changes land in",
+            };
+            let no = cx.entity().downgrade();
+            ui::Choices::new(title, compose::choices(self, end, cx)).on_no(move |_, cx| {
+                no.update(cx, |area, cx| {
+                    area.picking = None;
+                    cx.notify();
+                })
+                .ok();
+            })
+        });
+        div()
+            .size_full()
+            .relative()
+            .flex()
+            .flex_col()
+            .children(note)
+            .child(div().flex_1().min_h_0().child(body))
+            .children(picking)
+            .children(menu)
+            .children(workflows)
+            .children(more)
+            .children(dispatch)
+            .children(asking)
     }
+}
+
+/// The `plugin` call of `method` of `host`'s plugin about its repository, as `account`, with `more`.
+fn call_of(
+    host: &ProjectCodeHost,
+    account: &Option<String>,
+    method: &'static str,
+    more: Value,
+) -> Value {
+    let (owner, name) = host.repo.split_once('/').unwrap_or_default();
+    let mut params = json!({
+        "provider": host.host,
+        "owner": owner,
+        "name": name,
+        "account": account,
+    });
+    if let (Some(params), Value::Object(more)) = (params.as_object_mut(), more) {
+        params.extend(more);
+    }
+    json!({ "plugin": format!("sikemux.{}", host.host), "method": method, "params": params })
 }
 
 /// The value inside a code-host answer, or what its failure said.
@@ -462,12 +727,16 @@ fn elapsed(started: &str, finished: Option<&str>) -> String {
     let to = finished
         .and_then(parse)
         .map_or_else(chrono::Utc::now, |to| to.with_timezone(&chrono::Utc));
-    let seconds = (to.timestamp() - from.timestamp()).max(0);
+    duration((to.timestamp() - from.timestamp()).max(0) as u64)
+}
+
+/// A length of time in words, from its seconds.
+fn duration(seconds: u64) -> String {
     match seconds {
         0..60 => format!("{seconds}s"),
-        60..3600 if seconds % 60 == 0 => format!("{}m", seconds / 60),
+        60..3600 if seconds.is_multiple_of(60) => format!("{}m", seconds / 60),
         60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
-        _ if seconds / 60 % 60 == 0 => format!("{}h", seconds / 3600),
+        _ if (seconds / 60).is_multiple_of(60) => format!("{}h", seconds / 3600),
         _ => format!("{}h {}m", seconds / 3600, seconds / 60 % 60),
     }
 }

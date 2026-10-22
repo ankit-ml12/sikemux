@@ -1,13 +1,10 @@
 //! One pull request opened from the list: its files, commits, checks and merge in the
 //! side column, and its conversation or every changed file's diff beside them.
 
-use std::path::Path;
-
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, AnyElement, App, Context, Div, Entity, FontWeight, InteractiveElement,
-    IntoElement, ListAlignment, ListState, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    div, px, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -16,12 +13,15 @@ use sikemux_wire::codehost::{
     ChangedFile, MergeReadiness, OpenPull, Outcome, PullCommit, ReviewVerdict,
 };
 
+use super::diffs::{Changed, Diffs};
 use super::thread::{self, Block, Post, Pushers};
 use super::{ago, branch_chip, outcome_word, pull_mark, tally_summary, HostArea, Read};
-use crate::git::{row, Colours, Diff, RowLook};
+use crate::core::request;
+use crate::git::Diff;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Segmented, Variant};
+use gpui_kit::component::input::{Textarea, TextareaState};
 
 pub const VIEW: &str = "host-pull";
 pub const FILES: &str = "host-pull-files";
@@ -41,11 +41,14 @@ pub enum Tab {
     Files,
 }
 
-const METHODS: [(&str, &str); 3] = [
-    ("squash", "Squash"),
-    ("merge", "Merge commit"),
-    ("rebase", "Rebase"),
-];
+fn method_label(method: &str) -> &str {
+    match method {
+        "squash" => "Squash",
+        "merge" => "Merge commit",
+        "rebase" => "Rebase",
+        other => other,
+    }
+}
 
 /// A changed file as the core answers it: the file, and its patch as a diff's rows.
 #[derive(Deserialize)]
@@ -55,23 +58,10 @@ struct Pulled {
     rows: Vec<DiffRow>,
 }
 
-pub struct Changed {
-    pub file: ChangedFile,
-    pub diff: Diff,
-    pub colours: Colours,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Item {
-    Header(usize),
-    Row(usize, usize),
-    End(usize),
-}
-
 pub struct Opened {
     pub number: u64,
     pub view: Read<OpenPull>,
-    pub files: Read<Vec<Changed>>,
+    pub files: Read<Diffs>,
     pub commits: Option<Vec<PullCommit>>,
     pub thread: Read<Vec<Block>>,
     /// The description, kept as markdown while it reads the same.
@@ -80,8 +70,10 @@ pub struct Opened {
     pub tab: Tab,
     pub method: usize,
     pub busy: bool,
-    rows: ListState,
-    items: Vec<Item>,
+    /// The comment being written, made once the conversation first shows.
+    draft: Option<Entity<TextareaState>>,
+    /// The review or comment on its way, while one is.
+    sending: Option<&'static str>,
 }
 
 impl Opened {
@@ -97,8 +89,8 @@ impl Opened {
             tab: Tab::Conversation,
             method: 0,
             busy: false,
-            rows: ListState::new(0, ListAlignment::Top, px(600.)),
-            items: Vec::new(),
+            draft: None,
+            sending: None,
         }
     }
 
@@ -112,7 +104,8 @@ impl Opened {
                     Some(pull.created_at.clone()),
                     None,
                     &pull.body,
-                );
+                )
+                .pictured(pull.avatar_url.clone());
                 self.opening = Some((pull.body.clone(), post));
             }
         }
@@ -121,42 +114,21 @@ impl Opened {
 
     pub fn take_files(&mut self, files: Result<Vec<serde_json::Value>, SharedString>) {
         self.files = Some(files.map(|files| {
-            files
-                .into_iter()
-                .filter_map(|file| serde_json::from_value::<Pulled>(file).ok())
-                .map(|pulled| Changed {
-                    file: pulled.file,
-                    diff: Diff::new(pulled.rows),
-                    colours: Colours::default(),
-                })
-                .collect()
+            Diffs::new(
+                files
+                    .into_iter()
+                    .filter_map(|file| serde_json::from_value::<Pulled>(file).ok())
+                    .map(|pulled| Changed::new(pulled.file, Some(Diff::new(pulled.rows))))
+                    .collect(),
+            )
         }));
-        self.lay_out();
     }
 
-    fn lay_out(&mut self) {
-        let mut items = Vec::new();
-        if let Some(Ok(files)) = &self.files {
-            for (at, changed) in files.iter().enumerate() {
-                items.push(Item::Header(at));
-                items.extend((0..changed.diff.len()).map(|index| Item::Row(at, index)));
-                items.push(Item::End(at));
-            }
-        }
-        crate::git::relist(&self.rows, &self.items, &items);
-        self.items = items;
-    }
-
-    /// Scrolls the diffs to `path`'s and shows them.
+    /// Shows the diffs, scrolled to `path`'s.
     fn focus(&mut self, path: &str) {
         self.tab = Tab::Files;
-        let Some(Ok(files)) = &self.files else {
-            return;
-        };
-        if let Some(at) = files.iter().position(|changed| changed.file.path == path) {
-            if let Some(item) = self.items.iter().position(|item| *item == Item::Header(at)) {
-                self.rows.scroll_to_reveal_item(item);
-            }
+        if let Some(Ok(diffs)) = &self.files {
+            diffs.reveal(path);
         }
     }
 }
@@ -197,14 +169,15 @@ impl HostArea {
     }
 
     fn merge(&mut self, cx: &mut Context<Self>) {
+        let methods = &self.host.pulls.merge_methods;
         let Some((number, sha, method)) = self.pull.as_ref().and_then(|opened| {
             let view = opened.view.as_ref()?.as_ref().ok()?;
             let sha = view.pull.head_sha.clone().unwrap_or_default();
-            Some((opened.number, sha, METHODS[opened.method].0))
+            Some((opened.number, sha, methods.get(opened.method)?.clone()))
         }) else {
             return;
         };
-        let params = json!({ "number": number, "method": method, "headSha": sha });
+        let params = json!({ "number": number, "method": method, "sha": sha });
         self.write("mergePull", params, format!("Merged #{number}"), cx);
     }
 
@@ -224,6 +197,92 @@ impl HostArea {
             said,
             cx,
         );
+    }
+
+    /// Checks the pull request out in the project, as the core does it.
+    fn checkout(&mut self, cx: &mut Context<Self>) {
+        let Some(opened) = &mut self.pull else {
+            return;
+        };
+        opened.busy = true;
+        let number = opened.number;
+        let params = json!({ "project": self.project, "number": number });
+        let answer = request(&self.asks, "codeHostCheckout", params);
+        cx.spawn(async move |area, cx| {
+            let answer = answer.await;
+            area.update(cx, |area, cx| {
+                if let Some(opened) = &mut area.pull {
+                    opened.busy = false;
+                }
+                let checked = answer
+                    .map_err(SharedString::from)
+                    .and_then(|value| super::answer::<serde_json::Value>(&value));
+                let said = match checked {
+                    Ok(_) => super::Said::Done(format!("Checked out #{number}").into()),
+                    Err(error) => super::Said::Failed(
+                        format!("Could not check out #{number}: {error}").into(),
+                    ),
+                };
+                area.say(said, cx);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Sends what was written as a comment, or with a review's verdict.
+    fn send(&mut self, event: Option<&'static str>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(opened) = &mut self.pull else {
+            return;
+        };
+        let Some(draft) = opened.draft.clone() else {
+            return;
+        };
+        let body = draft.read(cx).value().trim().to_owned();
+        let number = opened.number;
+        opened.sending = Some(event.unwrap_or("comment"));
+        let (method, more, done) = match event {
+            None => (
+                "addComment",
+                json!({ "number": number, "body": body, "of": "pull" }),
+                "Comment added".to_owned(),
+            ),
+            Some(event) => {
+                let done = match event {
+                    "APPROVE" => format!("Approved #{number}"),
+                    "REQUEST_CHANGES" => format!("Asked for changes on #{number}"),
+                    _ => format!("Reviewed #{number}"),
+                };
+                (
+                    "reviewPull",
+                    json!({ "number": number, "event": event, "body": body }),
+                    done,
+                )
+            }
+        };
+        let answer = self.plugin(method, more);
+        cx.spawn_in(window, async move |area, cx| {
+            let answer = answer.await;
+            area.update_in(cx, |area, window, cx| {
+                if let Some(opened) = &mut area.pull {
+                    opened.sending = None;
+                }
+                match answer {
+                    Ok(_) => {
+                        draft.update(cx, |draft, cx| draft.set_value("", window, cx));
+                        area.read_pull_extras(number, cx);
+                        area.say(super::Said::Done(done.into()), cx);
+                    }
+                    Err(error) => area.say(super::Said::Failed(error), cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+        cx.notify();
     }
 
     /// Asks the host to change the pull request, saying `done` once it has.
@@ -263,33 +322,9 @@ pub fn view(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>
     };
     let t = Tokens::get(cx).clone();
     let left = side(area, cx);
-    let language = |path: &str, cx: &App| {
-        crate::file_icons::language(path, cx).filter(|language| crate::syntax::knows(language))
-    };
     if opened.tab == Tab::Files {
-        let paths: Vec<(usize, Option<String>)> = match &opened.files {
-            Some(Ok(files)) => files
-                .iter()
-                .enumerate()
-                .map(|(at, changed)| (at, language(&changed.file.path, cx)))
-                .collect(),
-            _ => Vec::new(),
-        };
-        for (at, language) in paths {
-            let Some(Some(Ok(files))) = area.pull.as_mut().map(|opened| opened.files.as_mut())
-            else {
-                break;
-            };
-            let changed = &mut files[at];
-            changed.colours.ask(
-                &changed.diff,
-                language.as_deref(),
-                cx,
-                move |area: &mut HostArea| {
-                    let files = area.pull.as_mut()?.files.as_mut()?.as_mut().ok()?;
-                    Some(&mut files.get_mut(at)?.colours)
-                },
-            );
+        if let Some(Some(Ok(diffs))) = area.pull.as_mut().map(|opened| opened.files.as_mut()) {
+            diffs.colour(cx, |area| area.pull.as_mut()?.files.as_mut()?.as_mut().ok());
         }
     }
     let right = main(area, window, cx);
@@ -321,6 +356,17 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         _ => "Merge",
     };
     let url = view.map(|view| view.pull.url.clone());
+    let checkout = view.and_then(|view| view.checkout.clone());
+    let current = area.pulls.branch.as_ref().map(|(branch, _)| branch.clone());
+    let here = checkout.is_some() && checkout == current;
+    let open = view.is_some_and(|view| view.pull.state == "open");
+    let checkout_label = if here {
+        "Checked out"
+    } else if opened.busy {
+        "Checking out…"
+    } else {
+        "Check out"
+    };
     let head = div()
         .px(px(10.))
         .pt(px(10.))
@@ -345,8 +391,15 @@ fn side(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .pb(px(10.))
         .flex()
         .gap(px(6.))
+        .flex_wrap()
         .child(
-            Button::new("pull-on-host", format!("Open on {host}"), Variant::Outline)
+            Button::new("pull-checkout", checkout_label, Variant::Outline)
+                .icon(if here { Icon::Check } else { Icon::Checkout })
+                .disabled(here || !open || checkout.is_none() || opened.busy)
+                .on_click(cx.listener(|area, _, _, cx| area.checkout(cx))),
+        )
+        .child(
+            Button::new("pull-on-host", host.to_owned(), Variant::Outline)
                 .icon(Icon::Globe)
                 .disabled(url.is_none())
                 .on_click(move |_, _, cx| {
@@ -420,7 +473,7 @@ fn files_page(opened: &Opened, cx: &mut Context<HostArea>) -> AnyElement {
         Some(Err(error)) => {
             return super::notice("Could not read the files", Some(error.clone()), cx)
         }
-        Some(Ok(files)) => files,
+        Some(Ok(diffs)) => &diffs.files,
     };
     let added: u64 = files.iter().map(|changed| changed.file.additions).sum();
     let removed: u64 = files.iter().map(|changed| changed.file.deletions).sum();
@@ -622,7 +675,9 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             .text_size(px(11.))
                             .text_color(t.text_tertiary)
                             .when(!by.is_empty(), |row| {
-                                row.child(ui::initials(&by, "", 16., cx)).child(by.clone())
+                                let url = pull.avatars.get(&by).map(String::as_str);
+                                row.child(area.face(Some(&by), url, 16., cx))
+                                    .child(by.clone())
                             })
                             .child(when)
                             .children(sha.map(|sha| {
@@ -667,11 +722,13 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                             .text_color(t.text_primary),
                     )
                     .child(div().flex_1())
-                    .child(
-                        Button::new("pull-reopen", "Reopen", Variant::Outline)
-                            .disabled(opened.busy)
-                            .on_click(cx.listener(|area, _, _, cx| area.set_state(true, cx))),
-                    ),
+                    .when(area.host.pulls.reopen, |row| {
+                        row.child(
+                            Button::new("pull-reopen", "Reopen", Variant::Outline)
+                                .disabled(opened.busy)
+                                .on_click(cx.listener(|area, _, _, cx| area.set_state(true, cx))),
+                        )
+                    }),
             )
             .children(checks)
             .into_any_element();
@@ -685,15 +742,15 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         None => part(Outcome::Queued, "No reviews yet", None, cx),
     };
     let readiness = if pull.draft {
-        part(
+        Some(part(
             Outcome::Queued,
             "This is a draft",
             Some(format!(
                 "Mark it ready for review on {host} before merging."
             )),
             cx,
-        )
-    } else {
+        ))
+    } else if area.host.pulls.mergeability {
         let (outcome, title, detail) = match view.merge {
             MergeReadiness::Conflicts => (
                 Outcome::Failure,
@@ -719,7 +776,9 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 None,
             ),
         };
-        part(outcome, title, detail, cx)
+        Some(part(outcome, title, detail, cx))
+    } else {
+        None
     };
     let dirty = pull.merge_state.as_deref() == Some("dirty");
     let number = pull.number;
@@ -736,9 +795,13 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .child(
                     Segmented::words(
                         "merge-method",
-                        METHODS
+                        area.host
+                            .pulls
+                            .merge_methods
                             .iter()
-                            .map(|(_, label)| (SharedString::from(*label), None))
+                            .map(|method| {
+                                (SharedString::from(method_label(method).to_owned()), None)
+                            })
                             .collect(),
                         opened.method,
                     )
@@ -786,13 +849,13 @@ fn merge_page(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         });
     card.child(verdict)
         .children(checks)
-        .child(readiness)
+        .children(readiness)
         .child(actions)
         .into_any_element()
 }
 
 /// The runs on the pull request's head commit, one row each under how they stand.
-fn checks(view: &OpenPull, cx: &App) -> Option<Div> {
+fn checks(view: &OpenPull, cx: &mut Context<HostArea>) -> Option<Div> {
     let t = Tokens::get(cx).clone();
     let tally = view.checks.as_ref().filter(|_| !view.runs.is_empty())?;
     let summary = tally_summary(tally);
@@ -803,19 +866,27 @@ fn checks(view: &OpenPull, cx: &App) -> Option<Div> {
     };
     Some(
         part(tally.outcome, title, None, cx).child(div().pt(px(4.)).flex().flex_col().children(
-            view.runs.iter().map(|listed| {
+            view.runs.iter().enumerate().map(|(index, listed)| {
                 let run = &listed.run;
+                let (id, number) = (run.id.clone(), view.pull.number);
                 let took = super::elapsed(
                     run.started_at.as_deref().unwrap_or(&run.created_at),
                     (!listed.unfinished).then_some(run.updated_at.as_str()),
                 );
                 div()
+                    .id(("pull-check", index))
                     .h(px(24.))
                     .pl(px(22.))
                     .flex()
                     .items_center()
                     .gap(px(8.))
                     .text_size(px(11.5))
+                    .rounded(RADIUS_2)
+                    .cursor_pointer()
+                    .hover(move |row| row.bg(t.surface_hover))
+                    .on_click(cx.listener(move |area, _, _, cx| {
+                        area.open_run(id.clone(), Some(number), cx)
+                    }))
                     .child(ui::status_of_run(outcome_word(run.outcome), 13., cx))
                     .child(
                         div()
@@ -887,7 +958,7 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
             div()
                 .flex()
                 .gap(px(12.))
-                .child(ui::initials(&author, "", 36., cx))
+                .child(area.face(Some(&author), pull.avatar_url.as_deref(), 36., cx))
                 .child(
                     div()
                         .flex_1()
@@ -996,12 +1067,24 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                 Some(Ok(blocks)) => &blocks[..],
                 _ => &[],
             };
+            let avatars = &pull.avatars;
+            let shown: &HostArea = area;
+            let faces = |login: Option<&str>, url: Option<&str>, size: f32, cx: &App| match url {
+                Some(_) => shown.face(login, url, size, cx),
+                None => {
+                    let known = login
+                        .and_then(|login| avatars.get(login))
+                        .map(String::as_str);
+                    shown.face(login, known, size, cx)
+                }
+            };
             let mut column = div().id("pull-thread").size_full().overflow_y_scroll();
             column = column.child(thread::thread(
                 opening,
                 blocks,
                 &pushers,
                 base.as_deref(),
+                &faces,
                 window,
                 cx,
             ));
@@ -1012,9 +1095,29 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
                     cx,
                 ));
             }
-            column.into_any_element()
+            let review = (pull.state == "open").then(|| {
+                let mine = area
+                    .login()
+                    .is_some_and(|login| pull.author.as_deref() == Some(login));
+                (mine, area.host.pulls.request_changes)
+            });
+            column
+                .child(composer(area, review, window, cx))
+                .into_any_element()
         }
-        Tab::Files => diffs(&view, area, window, cx),
+        Tab::Files => match &opened.files {
+            None => super::notice("Loading files", None, cx),
+            Some(Err(error)) => super::notice("Could not read the files", Some(error.clone()), cx),
+            Some(Ok(diffs)) if diffs.files.is_empty() => {
+                super::notice("No files changed.", None, cx)
+            }
+            Some(Ok(diffs)) => diffs.list(
+                &view,
+                |area| area.pull.as_ref()?.files.as_ref()?.as_ref().ok(),
+                &area.project,
+                window,
+            ),
+        },
     };
     div()
         .size_full()
@@ -1025,145 +1128,103 @@ fn main(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostArea>) ->
         .into_any_element()
 }
 
-fn diffs(view: &Entity<HostArea>, area: &HostArea, window: &mut Window, cx: &App) -> AnyElement {
-    let opened = area.pull.as_ref().expect("a pull request is open");
-    match &opened.files {
-        None => return super::notice("Loading files", None, cx),
-        Some(Err(error)) => {
-            return super::notice("Could not read the files", Some(error.clone()), cx)
-        }
-        Some(Ok(files)) if files.is_empty() => return super::notice("No files changed.", None, cx),
-        Some(Ok(_)) => {}
-    }
-    let advance = crate::git::advance(window);
-    let view = view.clone();
-    let project = area.project.clone();
-    list(opened.rows.clone(), move |index, _, cx| {
-        let cx = &*cx;
-        let area = view.read(cx);
-        let Some(opened) = &area.pull else {
-            return div().into_any_element();
-        };
-        let (Some(Ok(files)), Some(item)) = (&opened.files, opened.items.get(index).copied())
-        else {
-            return div().into_any_element();
-        };
-        diff_item(files, item, &project, advance, cx)
-    })
-    .size_full()
-    .font_family(theme::MONO)
-    .into_any_element()
-}
-
-fn diff_item(
-    files: &[Changed],
-    item: Item,
-    project: &str,
-    advance: gpui_kit::Pixels,
-    cx: &App,
+/// Where a comment or review is written, with what can be sent: `review` says whether
+/// the pull request is the person's own, and whether the host takes asking for changes.
+fn composer(
+    area: &mut HostArea,
+    review: Option<(bool, bool)>,
+    window: &mut Window,
+    cx: &mut Context<HostArea>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let frame = |inner: Div| {
-        div().px(px(12.)).child(
-            inner
-                .border_l_1()
-                .border_r_1()
-                .border_color(t.border)
-                .bg(t.surface),
-        )
+    let host = super::host_label(&area.host.host).to_owned();
+    let Some(opened) = area.pull.as_mut() else {
+        return div().into_any_element();
     };
-    match item {
-        Item::Header(at) => {
-            let file = &files[at].file;
-            div()
-                .px(px(12.))
-                .pt(px(12.))
-                .child(
-                    div()
-                        .h(px(30.))
-                        .px(px(10.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .rounded_t(RADIUS_2)
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.surface_raised)
-                        .font_family(theme::UI)
-                        .text_size(px(12.))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_color(t.text_primary)
-                                .child(file.path.clone()),
-                        )
-                        .children(file.previous_path.as_ref().map(|from| {
-                            div()
-                                .text_color(t.text_tertiary)
-                                .child(format!("from {from}"))
-                        }))
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .text_color(t.live)
-                                .child(format!("+{}", file.additions)),
-                        )
-                        .child(
-                            div()
-                                .text_color(t.danger)
-                                .child(format!("−{}", file.deletions)),
-                        ),
-                )
-                .into_any_element()
-        }
-        Item::Row(at, index) => {
-            let changed = &files[at];
-            let look = RowLook::new(&t, advance, px(0.));
-            let path = Path::new(project).join(&changed.file.path);
-            frame(
-                div()
-                    .text_size(px(12.))
-                    .line_height(px(19.))
-                    .when(index == 0, |rows| rows.pt(px(6.)))
-                    .when(index + 1 == changed.diff.len(), |rows| rows.pb(px(6.)))
-                    .child(row(
-                        &changed.diff,
-                        &changed.colours,
-                        index,
-                        &look,
-                        SharedString::from(format!("pull-row-{at}-{index}")),
-                        &path,
-                        |_, _| {},
-                    )),
-            )
-            .into_any_element()
-        }
-        Item::End(at) => {
-            let empty = files[at].diff.is_empty();
-            div()
-                .px(px(12.))
-                .child(
-                    div()
-                        .when(empty, |end| {
-                            end.px(px(10.))
-                                .py(px(8.))
-                                .font_family(theme::UI)
-                                .text_size(px(11.))
-                                .text_color(t.text_tertiary)
-                                .child(files[at].file.note.clone().unwrap_or_else(|| {
-                                    "The host shows no diff for this file.".into()
-                                }))
-                        })
-                        .when(!empty, |end| end.h(px(1.)))
-                        .border_b_1()
-                        .border_l_1()
-                        .border_r_1()
-                        .border_color(t.border)
-                        .rounded_b(RADIUS_2)
-                        .bg(t.surface),
-                )
-                .into_any_element()
-        }
+    let placeholder = if review.is_some() {
+        "Leave a comment or a review"
+    } else {
+        "Leave a comment"
+    };
+    let draft = opened
+        .draft
+        .get_or_insert_with(|| {
+            cx.new(|cx| {
+                TextareaState::new(window, cx)
+                    .auto_grow(3, 12)
+                    .placeholder(placeholder)
+            })
+        })
+        .clone();
+    let written = !draft.read(cx).value().trim().is_empty();
+    let sending = opened.sending;
+    let busy = sending.is_some();
+    let mut foot = div()
+        .px(px(10.))
+        .py(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .border_t_1()
+        .border_color(t.border);
+    if let Some((true, _)) = review {
+        foot = foot.child(ui::meta(
+            format!("{host} does not let you approve your own pull request."),
+            cx,
+        ));
     }
+    foot = foot.child(div().flex_1());
+    if let Some((false, request_changes)) = review {
+        if request_changes {
+            foot = foot.child(
+                Button::new("review-changes", "Request changes", Variant::Outline)
+                    .disabled(busy || !written)
+                    .on_click(cx.listener(|area, _, window, cx| {
+                        area.send(Some("REQUEST_CHANGES"), window, cx)
+                    })),
+            );
+        }
+        let approving = if sending == Some("APPROVE") {
+            "Approving…"
+        } else {
+            "Approve"
+        };
+        foot = foot.child(
+            Button::new("review-approve", approving, Variant::Outline)
+                .disabled(busy)
+                .on_click(
+                    cx.listener(|area, _, window, cx| area.send(Some("APPROVE"), window, cx)),
+                ),
+        );
+    }
+    let commenting = if sending == Some("comment") {
+        "Sending…"
+    } else {
+        "Comment"
+    };
+    foot = foot.child(
+        Button::new("review-comment", commenting, Variant::Primary)
+            .disabled(busy || !written)
+            .on_click(cx.listener(|area, _, window, cx| area.send(None, window, cx))),
+    );
+    div()
+        .px(px(16.))
+        .pb(px(16.))
+        .pl(px(56.))
+        .child(
+            div()
+                .rounded(RADIUS_2)
+                .border_1()
+                .border_color(t.border)
+                .bg(t.surface)
+                .child(
+                    div()
+                        .px(px(12.))
+                        .py(px(8.))
+                        .text_size(px(13.))
+                        .child(Textarea::new(&draft).appearance(false).text_size(px(13.))),
+                )
+                .child(foot),
+        )
+        .into_any_element()
 }

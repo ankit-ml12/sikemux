@@ -29,7 +29,7 @@ pub enum Listed {
 }
 
 impl Listed {
-    const EVERY: [Self; 3] = [Self::Open, Self::Closed, Self::All];
+    pub(super) const EVERY: [Self; 3] = [Self::Open, Self::Closed, Self::All];
 
     pub fn word(self) -> &'static str {
         match self {
@@ -39,7 +39,7 @@ impl Listed {
         }
     }
 
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Self::Open => "Open",
             Self::Closed => "Closed",
@@ -88,16 +88,24 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
         .iter()
         .position(|listed| *listed == pulls.state)
         .unwrap_or_default();
-    let head = list_head(Area::Pulls, &area.host, cx).child(
-        ui::Segmented::words("pull-state", words, chosen).on_select(cx.listener(
-            |area, index: &usize, _, cx| {
-                area.pulls.state = Listed::EVERY[*index];
-                area.pulls.list = None;
-                area.watch();
-                cx.notify();
-            },
-        )),
-    );
+    let head = list_head(Area::Pulls, &area.host, cx)
+        .child(
+            ui::Segmented::words("pull-state", words, chosen).on_select(cx.listener(
+                |area, index: &usize, _, cx| {
+                    area.pulls.state = Listed::EVERY[*index];
+                    area.pulls.list = None;
+                    area.watch();
+                    cx.notify();
+                },
+            )),
+        )
+        .child(div().flex_1())
+        .child(
+            ui::IconButton::new("pull-new", Icon::Plus, "New pull request")
+                .small()
+                .on_click(cx.listener(|area, _, window, cx| area.compose(window, cx))),
+        )
+        .child(super::shell::account(area, cx));
     let listed = matches!(pulls.list, Some(Ok(_)));
     let offer = pulls
         .branch
@@ -119,6 +127,11 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 .text_color(t.text_secondary)
                 .child(branch_chip(branch, t.text_primary, cx))
                 .child("has no pull request yet.")
+                .child(div().flex_1())
+                .child(
+                    ui::Button::new("pull-offer", "Open one", ui::Variant::Primary)
+                        .on_click(cx.listener(|area, _, window, cx| area.compose(window, cx))),
+                )
         });
     let body = match &pulls.list {
         None => notice("Loading pull requests", None, cx),
@@ -137,7 +150,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                 list.pulls
                     .iter()
                     .enumerate()
-                    .map(|(index, listed)| row(listed, index, cx)),
+                    .map(|(index, listed)| row(area, listed, index, cx)),
             )
             .into_any_element(),
     };
@@ -153,7 +166,12 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
 /// One pull request: who opened it, its state and title, then its number, age,
 /// branches and checks, with its reviewers, the issues it closes and its comments at
 /// the end.
-fn row(listed: &ListedPull, index: usize, cx: &mut Context<HostArea>) -> AnyElement {
+fn row(
+    area: &HostArea,
+    listed: &ListedPull,
+    index: usize,
+    cx: &mut Context<HostArea>,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let pull = &listed.pull;
     let author = pull.author.as_deref().unwrap_or("someone");
@@ -205,11 +223,14 @@ fn row(listed: &ListedPull, index: usize, cx: &mut Context<HostArea>) -> AnyElem
                 "Reviewers: {}",
                 pull.reviewers.join(", ")
             )))
-            .children(
-                pull.reviewers
-                    .iter()
-                    .map(|login| ui::initials(login, "", 18., cx)),
-            )
+            .children(pull.reviewers.iter().map(|login| {
+                area.face(
+                    Some(login),
+                    pull.avatars.get(login).map(String::as_str),
+                    18.,
+                    cx,
+                )
+            }))
     });
     let closes = (!listed.closes.is_empty()).then(|| {
         let numbers: Vec<String> = listed
@@ -243,7 +264,7 @@ fn row(listed: &ListedPull, index: usize, cx: &mut Context<HostArea>) -> AnyElem
             let number = pull.number;
             cx.listener(move |area, _, _, cx| area.open_pull(number, cx))
         })
-        .child(ui::initials(author, "", 28., cx))
+        .child(area.face(Some(author), pull.avatar_url.as_deref(), 28., cx))
         .child(
             div()
                 .flex_1()

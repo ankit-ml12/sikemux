@@ -131,6 +131,8 @@ pub struct Workbench {
     pub area: Area,
     /// The code host's areas of the project whose Git tab last showed one.
     pub host: Option<Entity<HostArea>>,
+    /// A pull request or issue to open once the code host's area shows.
+    opening: Option<(Area, u64)>,
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
     pub board: Option<Entity<crate::board::BoardPane>>,
@@ -461,6 +463,7 @@ impl Workbench {
             git: None,
             area: Area::Local,
             host: None,
+            opening: None,
             search: None,
             board: None,
             settings: None,
@@ -2124,21 +2127,30 @@ impl Workbench {
             crate::codehost::branch_of(project),
         );
         let area = self.area;
+        let account = project
+            .code_hosts
+            .get(&host.host)
+            .and_then(|choice| choice.account.clone());
+        let opening = self.opening.take();
         match &self.host {
             Some(shown) if shown.read(cx).project == folder => {
                 shown.update(cx, |shown, cx| {
-                    shown.project_moved(&host, branch, cx);
+                    shown.project_moved(&host, account, branch, cx);
                     shown.show(area, cx);
+                    if let Some((area, number)) = opening {
+                        shown.open_item(area, number, cx);
+                    }
                 });
             }
             _ => {
                 let (asks, bench) = (self.asks.clone(), cx.entity().downgrade());
-                let account = project
-                    .code_hosts
-                    .get(&host.host)
-                    .and_then(|choice| choice.account.clone());
                 let shown = cx.new(|_| HostArea::new(asks, bench, folder, host, account, branch));
-                shown.update(cx, |shown, cx| shown.show(area, cx));
+                shown.update(cx, |shown, cx| {
+                    shown.show(area, cx);
+                    if let Some((area, number)) = opening {
+                        shown.open_item(area, number, cx);
+                    }
+                });
                 self.host = Some(shown);
             }
         }
@@ -2149,6 +2161,12 @@ impl Workbench {
         self.area = area;
         self.open_git();
         cx.notify();
+    }
+
+    /// Brings the project's Git tab to the front with pull request or issue `number` open.
+    pub fn open_host_item(&mut self, area: Area, number: u64, cx: &mut Context<Self>) {
+        self.opening = Some((area, number));
+        self.open_area(area, cx);
     }
 
     /// Brings the project's Git tab to the front, opening one when it has none.

@@ -24,6 +24,7 @@ pub struct Post {
     pub at: Option<String>,
     /// A review's verdict in capitals, when the post is a review.
     pub review: Option<String>,
+    pub avatar: Option<String>,
     pub body: Rc<Markdown>,
     pub empty: bool,
 }
@@ -41,11 +42,20 @@ impl Post {
             association,
             at,
             review,
+            avatar: None,
             body: Rc::new(crate::editor::preview::render(body)),
             empty: body.trim().is_empty(),
         }
     }
+
+    pub fn pictured(mut self, avatar: Option<String>) -> Self {
+        self.avatar = avatar;
+        self
+    }
 }
+
+/// Someone's picture by their login and, when the host gave one, its address.
+pub type Faces<'a> = &'a dyn Fn(Option<&str>, Option<&str>, f32, &App) -> AnyElement;
 
 /// One step of the thread: a post, commits pushed together, or something that happened.
 pub enum Block {
@@ -68,20 +78,26 @@ pub fn blocks(items: Vec<TimelineItem>) -> Vec<Block> {
                 Some(Block::Commits(commits)) => commits.push(item),
                 _ => blocks.push(Block::Commits(vec![item])),
             },
-            "commented" => blocks.push(Block::Post(Post::new(
-                item.actor,
-                item.association,
-                item.at,
-                None,
-                item.body.as_deref().unwrap_or_default(),
-            ))),
-            "reviewed" if worded => blocks.push(Block::Post(Post::new(
-                item.actor,
-                item.association,
-                item.at,
-                Some(item.state.as_deref().unwrap_or("commented").to_uppercase()),
-                item.body.as_deref().unwrap_or_default(),
-            ))),
+            "commented" => blocks.push(Block::Post(
+                Post::new(
+                    item.actor,
+                    item.association,
+                    item.at,
+                    None,
+                    item.body.as_deref().unwrap_or_default(),
+                )
+                .pictured(item.avatar_url),
+            )),
+            "reviewed" if worded => blocks.push(Block::Post(
+                Post::new(
+                    item.actor,
+                    item.association,
+                    item.at,
+                    Some(item.state.as_deref().unwrap_or("commented").to_uppercase()),
+                    item.body.as_deref().unwrap_or_default(),
+                )
+                .pictured(item.avatar_url),
+            )),
             _ => blocks.push(Block::Event(Box::new(item))),
         }
     }
@@ -111,6 +127,7 @@ pub fn thread(
     blocks: &[Block],
     pushers: &Pushers,
     base: Option<&str>,
+    faces: Faces,
     window: &mut Window,
     cx: &mut App,
 ) -> Div {
@@ -120,13 +137,13 @@ pub fn thread(
     )));
     let mut thread = div().flex().flex_col().gap(px(14.)).px(px(16.)).py(px(16.));
     if let Some(opening) = opening {
-        thread = thread.child(post(&pen, "post-opening", opening, window, cx));
+        thread = thread.child(post(&pen, "post-opening", opening, faces, window, cx));
     }
     for (index, block) in blocks.iter().enumerate() {
         thread = thread.child(match block {
-            Block::Post(said) => post(&pen, ("post", index), said, window, cx),
-            Block::Commits(commits) => pushed(index, commits, pushers, cx),
-            Block::Event(item) => event(item, base, cx),
+            Block::Post(said) => post(&pen, ("post", index), said, faces, window, cx),
+            Block::Commits(commits) => pushed(index, commits, pushers, faces, cx),
+            Block::Event(item) => event(item, base, faces, cx),
         });
     }
     thread
@@ -165,6 +182,7 @@ fn post(
     pen: &Pen,
     id: impl Into<gpui_kit::ElementId>,
     post: &Post,
+    faces: Faces,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
@@ -189,7 +207,7 @@ fn post(
     div()
         .flex()
         .gap(px(12.))
-        .child(ui::initials(author, "", 28., cx))
+        .child(faces(Some(author), post.avatar.as_deref(), 28., cx))
         .child(
             div()
                 .flex_1()
@@ -269,14 +287,14 @@ fn line(glyph: Icon, ink: Option<Hsla>, words: Vec<AnyElement>, cx: &App) -> Any
         .into_any_element()
 }
 
-fn who(login: Option<&str>, cx: &App) -> AnyElement {
+fn who(login: Option<&str>, url: Option<&str>, faces: Faces, cx: &App) -> AnyElement {
     let t = Tokens::get(cx);
     let login = login.unwrap_or("someone");
     div()
         .flex()
         .items_center()
         .gap(px(5.))
-        .child(ui::initials(login, "", 16., cx))
+        .child(faces(Some(login), url, 16., cx))
         .child(ui::text(login.to_owned(), 12., FontWeight::SEMIBOLD).text_color(t.text_primary))
         .into_any_element()
 }
@@ -299,9 +317,9 @@ fn chip(words: impl Into<SharedString>, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-fn event(item: &TimelineItem, base: Option<&str>, cx: &App) -> AnyElement {
+fn event(item: &TimelineItem, base: Option<&str>, faces: Faces, cx: &App) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let actor = who(item.actor.as_deref(), cx);
+    let actor = who(item.actor.as_deref(), item.avatar_url.as_deref(), faces, cx);
     let when = dim(item.at.as_deref().map(ago).unwrap_or_default(), cx);
     let short = item
         .sha
@@ -330,7 +348,7 @@ fn event(item: &TimelineItem, base: Option<&str>, cx: &App) -> AnyElement {
             vec![
                 actor,
                 dim("requested a review from", cx),
-                who(Some(&subject), cx),
+                who(Some(&subject), None, faces, cx),
             ],
         ),
         "review_request_removed" => (
@@ -339,7 +357,7 @@ fn event(item: &TimelineItem, base: Option<&str>, cx: &App) -> AnyElement {
             vec![
                 actor,
                 dim("removed the review request for", cx),
-                who(Some(&subject), cx),
+                who(Some(&subject), None, faces, cx),
             ],
         ),
         "head_ref_force_pushed" => {
@@ -403,7 +421,7 @@ fn event(item: &TimelineItem, base: Option<&str>, cx: &App) -> AnyElement {
             (
                 Icon::User,
                 None,
-                vec![actor, dim(done, cx), who(Some(&subject), cx)],
+                vec![actor, dim(done, cx), who(Some(&subject), None, faces, cx)],
             )
         }
         "renamed" => (
@@ -445,7 +463,13 @@ fn event(item: &TimelineItem, base: Option<&str>, cx: &App) -> AnyElement {
 }
 
 /// Commits pushed together: who pushed them and when, then each by its message.
-fn pushed(index: usize, commits: &[TimelineItem], pushers: &Pushers, cx: &App) -> AnyElement {
+fn pushed(
+    index: usize,
+    commits: &[TimelineItem],
+    pushers: &Pushers,
+    faces: Faces,
+    cx: &App,
+) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let pusher = |commit: &TimelineItem| {
         commit
@@ -462,7 +486,7 @@ fn pushed(index: usize, commits: &[TimelineItem], pushers: &Pushers, cx: &App) -
         }
     }
     let count = commits.len();
-    let mut words = vec![who(authors.first().map(String::as_str), cx)];
+    let mut words = vec![who(authors.first().map(String::as_str), None, faces, cx)];
     if authors.len() > 1 {
         words.push(dim("and others", cx));
     }
@@ -492,7 +516,7 @@ fn pushed(index: usize, commits: &[TimelineItem], pushers: &Pushers, cx: &App) -
                 .min_w_0()
                 .text_size(px(12.))
                 .child(ui::icon(Icon::Commit, 13.).text_color(t.text_tertiary))
-                .child(ui::initials(&author, "", 16., cx))
+                .child(faces(Some(&author), None, 16., cx))
                 .child(
                     div()
                         .flex_1()

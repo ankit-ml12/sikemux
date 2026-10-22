@@ -176,6 +176,12 @@ impl Diff {
         self.rows.len()
     }
 
+    /// How many lines it adds and how many it takes out.
+    pub fn stat(&self) -> (u64, u64) {
+        let count = |kind| self.rows.iter().filter(|row| row.0 == kind).count() as u64;
+        (count(ROW_ADDED), count(ROW_DELETED))
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }

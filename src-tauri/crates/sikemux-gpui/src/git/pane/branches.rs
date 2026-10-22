@@ -8,11 +8,15 @@ use gpui_kit::{
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Transformation,
 };
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 use sikemux_core::git::branches::GitBranch;
 use sikemux_core::git::remote::{GitRemote, GitRemoteBranch};
+use sikemux_wire::codehost::{PullList, PullState};
 
 use super::{row_button, tree_lines, GitPane, Pick, ROW_HEIGHT};
+use crate::codehost::Area;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Menu, MenuItem};
@@ -55,6 +59,16 @@ pub(super) struct Branches {
     pub(super) local_folded: bool,
     pub(super) chosen: usize,
     pub(super) entries: Vec<BranchEntry>,
+    /// The open pull request of each branch of the repository's own, by branch.
+    pub(super) pulls: HashMap<String, Opened>,
+}
+
+/// A branch's open pull request: its number, title and whether it is a draft.
+#[derive(Clone, PartialEq)]
+pub(super) struct Opened {
+    number: u64,
+    title: String,
+    draft: bool,
 }
 
 impl GitPane {
@@ -149,6 +163,41 @@ impl GitPane {
         if let Some(remote) = self.branches.open.clone() {
             self.read_remote_branches(remote, cx);
         }
+        self.read_branch_pulls(cx);
+    }
+
+    /// Reads which branches have an open pull request on the code host, if there is one.
+    fn read_branch_pulls(&mut self, cx: &mut Context<Self>) {
+        if self.host_of(cx).is_none() {
+            return;
+        }
+        let params = json!({ "project": self.repo, "state": "open" });
+        let answer = crate::core::request(&self.asks, "codeHostPulls", params);
+        cx.spawn(async move |pane, cx| {
+            let list: Option<PullList> = answer
+                .await
+                .ok()
+                .and_then(|answer| serde_json::from_value(answer.get("value")?.clone()).ok());
+            let pulls = list
+                .into_iter()
+                .flat_map(|list| list.pulls)
+                .filter(|listed| listed.own_branch)
+                .filter_map(|listed| {
+                    let opened = Opened {
+                        number: listed.pull.number,
+                        title: listed.pull.title,
+                        draft: listed.state == PullState::Draft,
+                    };
+                    Some((listed.pull.head?, opened))
+                })
+                .collect();
+            pane.update(cx, |pane, cx| {
+                pane.branches.pulls = pulls;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn read_remote_branches(&mut self, remote: String, cx: &mut Context<Self>) {
@@ -737,7 +786,8 @@ fn branch_row(
                         .min_w_0()
                         .truncate()
                         .child(branch.name.clone()),
-                );
+                )
+                .children(pull_chip(pane, &branch.name, index, cx));
             if branch.current && ahead > 0 {
                 let pushing = view.clone();
                 row = row.child(
@@ -838,6 +888,11 @@ fn branch_row(
                         .min_w_0()
                         .truncate()
                         .child(branch.name.clone()),
+                )
+                .children(
+                    (remote == "origin")
+                        .then(|| pull_chip(pane, &branch.name, index, cx))
+                        .flatten(),
                 );
             if branch.tracked_by.is_some() && !hovered {
                 row = row.child(
@@ -883,6 +938,48 @@ fn branch_row(
             row.into_any_element()
         }
     }
+}
+
+/// A branch's open pull request beside it, which opens it in the Git tab's pull requests.
+fn pull_chip(pane: &GitPane, branch: &str, index: usize, cx: &App) -> Option<AnyElement> {
+    let t = Tokens::get(cx).clone();
+    let opened = pane.branches.pulls.get(branch)?;
+    let number = opened.number;
+    let ink = if opened.draft {
+        t.text_tertiary
+    } else {
+        t.live
+    };
+    let bench = pane.bench.clone();
+    Some(
+        gpui_kit::base::Button::new(("branch-pull", index))
+            .accessibility_label(SharedString::from(format!("Open pull request #{number}")))
+            .tooltip(ui::tooltip(format!("#{number} {}", opened.title)))
+            .h(px(20.))
+            .px(px(6.))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(3.))
+            .rounded(RADIUS_2)
+            .border_1()
+            .border_color(ink.opacity(0.32))
+            .font_family(theme::MONO)
+            .text_size(px(11.))
+            .text_color(ink)
+            .hover(move |style| style.bg(ink.opacity(0.12)))
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                bench
+                    .update(cx, |bench, cx| {
+                        bench.open_host_item(Area::Pulls, number, cx)
+                    })
+                    .ok();
+            })
+            .child(ui::icon(Icon::PullRequest, 10.).text_color(ink))
+            .child(format!("#{number}"))
+            .into_any_element(),
+    )
 }
 
 fn branch_more(view: &Entity<GitPane>, branch: &GitBranch, into: &str) -> impl IntoElement {
