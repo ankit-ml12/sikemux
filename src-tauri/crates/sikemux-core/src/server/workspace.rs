@@ -429,7 +429,11 @@ fn choice_of(
 }
 
 fn recent_id(chat: &Recent) -> String {
-    format!("{}:{}", chat.provider, chat.session_id)
+    chat_id(&chat.provider, &chat.session_id)
+}
+
+fn chat_id(provider: &str, session: &str) -> String {
+    format!("{provider}:{session}")
 }
 
 /// Whether the agent of `provider` on `session` holds the recent chat.
@@ -682,6 +686,29 @@ impl Workspaces {
             saved.pinned = pinned;
             Ok(())
         })
+    }
+
+    /// Pins or unpins the recent chat named `recent`, as `recent` lists it.
+    fn pin_chat(&self, recent: &str, pinned: bool) -> CoreResult<()> {
+        let mut pins = self.published.locked().saved.pinned.clone();
+        pins.retain(|pin| chat_id(&pin.provider, &pin.session_id) != recent);
+        if pinned {
+            let chat = self
+                .published
+                .locked()
+                .recent
+                .iter()
+                .find(|chat| recent_id(chat) == recent)
+                .map(|chat| PinnedChat {
+                    provider: chat.provider.clone(),
+                    session_id: chat.session_id.clone(),
+                    title: chat.title.clone(),
+                    project: chat.cwd.clone(),
+                })
+                .ok_or("that chat is not among the recent ones")?;
+            pins.push(chat);
+        }
+        self.set_pinned(pins)
     }
 
     /// Keeps the mode agents start in, and says whether it changed.
@@ -1874,6 +1901,18 @@ pub(crate) struct PinnedParams {
 
 pub(crate) fn set_pinned_chats(core: &Core, params: PinnedParams) -> CoreResult<()> {
     core.workspaces.set_pinned(params.chats)?;
+    core.view_changed();
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PinParams {
+    recent: String,
+    pinned: bool,
+}
+
+pub(crate) fn pin_chat(core: &Core, params: PinParams) -> CoreResult<()> {
+    core.workspaces.pin_chat(&params.recent, params.pinned)?;
     core.view_changed();
     Ok(())
 }
