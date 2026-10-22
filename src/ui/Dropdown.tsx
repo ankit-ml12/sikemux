@@ -60,7 +60,10 @@ export function Dropdown({
     const [ownOpen, setOwnOpen] = useState(false);
     const anchored = anchor !== undefined;
     const open = anchored ? !!openWhen && !!anchor : ownOpen;
-    const setOpen = (next: boolean) => (anchored ? onOpenChange?.(next) : setOwnOpen(next));
+    const setOpen = (next: boolean) => {
+        if (!anchored) setOwnOpen(next);
+        onOpenChange?.(next);
+    };
     const [index, setIndex] = useState(0);
     const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 280 });
     const buttonRef = useRef<HTMLButtonElement>(null);
@@ -206,7 +209,7 @@ export function Dropdown({
                 <div className="dd-list">
                     {shown.map((option, itemIndex) => (
                         <Fragment key={option.value}>
-                            {option.group && option.group !== shown[itemIndex - 1]?.group && (
+                            {option.group && !query.trim() && option.group !== shown[itemIndex - 1]?.group && (
                                 <div className="dd-group" role="presentation">
                                     {option.group}
                                 </div>
