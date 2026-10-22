@@ -25,6 +25,9 @@ use gpui::{
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 use sikemux_wire::protocol::AccountInfo;
 
+/// How often a wait lets the app run, moving its clock on as far, so its timers fire as they would.
+const STEP: Duration = Duration::from_millis(50);
+
 fn main() -> anyhow::Result<()> {
     let out = std::env::args().nth(1).unwrap_or_else(|| "shot.png".into());
     let wait: f64 = std::env::args()
@@ -301,7 +304,8 @@ fn main() -> anyhow::Result<()> {
         let started = Instant::now();
         while started.elapsed() < Duration::from_secs_f64(pause) {
             cx.run_until_parked();
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(STEP);
+            cx.advance_clock(STEP);
         }
         cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx))?;
         if verb == "shot" {
