@@ -271,7 +271,9 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri/crates/sikemux-gpui
+          workspaces: |
+            src-tauri/crates/sikemux-gpui
+            src-tauri
           key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
           save-if: false
 
@@ -296,6 +298,21 @@ jobs:
           screencapture -x window-run/screen.png
           kill "$probe" 2>/dev/null || true
           test -s window-run/window.png
+
+      - name: Build the core and the fake agent
+        run: cargo build -p sikemux-core --bin sikemux-core --bin sikemux-fake-acp-agent
+        working-directory: src-tauri
+
+      - name: Build the app with its in-app driver
+        run: cargo build --features drive --bin sikemux --example fake_chat
+        working-directory: src-tauri/crates/sikemux-gpui
+
+      - name: Drive the desk checks
+        working-directory: src-tauri/crates/sikemux-gpui
+        run: >-
+          python3 -I ci/desk-checks.py --app target/debug/sikemux
+          --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent
+          --seed target/debug/examples/fake_chat --out window-run/desk
 
       - name: Upload the capture
         if: always()
