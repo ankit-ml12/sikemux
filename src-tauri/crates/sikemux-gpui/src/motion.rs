@@ -757,8 +757,11 @@ pub fn with_window(
     }
 }
 
+/// What draws an element once it has the window.
+type Build = Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>;
+
 pub struct WithWindow {
-    build: Option<Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>>,
+    build: Option<Build>,
 }
 
 impl IntoElement for WithWindow {

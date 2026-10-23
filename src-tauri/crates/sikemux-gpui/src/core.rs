@@ -943,7 +943,7 @@ async fn run(
                         event = events.recv() => match event {
                             Some(ClientEvent::Grid { stream, frame }) => streams.frame(stream, frame),
                             Some(ClientEvent::Event(Event::DeviceView { view })) => {
-                                let _ = updates.send(Update::View(Box::new(view)));
+                                let _ = updates.send(Update::View(view));
                             }
                             Some(ClientEvent::Event(Event::Notice { title, body, agent_id })) => {
                                 let _ = updates.send(Update::Notice { title, body, agent: agent_id });
@@ -1018,7 +1018,7 @@ async fn run(
                                     let _ = updates.send(Update::From(host, Box::new(news)));
                                 }
                                 ClientEvent::Event(Event::DeviceView { view }) => {
-                                    let _ = updates.send(Update::HostView(host, Box::new(view)));
+                                    let _ = updates.send(Update::HostView(host, view));
                                 }
                                 ClientEvent::Event(Event::Changed { topic, project, paths }) => {
                                     let changed = host_watches

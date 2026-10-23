@@ -17,6 +17,9 @@ use crate::model_picker;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, select, Button, IconButton, Pick, Toggle, Variant};
 
+/// Keeps a choice made in a picker as the board's settings.
+type Save = Rc<dyn Fn(Value, &mut gpui_kit::App)>;
+
 const MAX_SLOTS: u32 = 8;
 const NO_CARD: &str = "0";
 
@@ -599,7 +602,7 @@ fn auto_picker(
         models.current = model.to_owned();
     }
     let pane_entity = cx.entity();
-    let save: Rc<dyn Fn(Value, &mut gpui_kit::App)> = Rc::new(move |chosen, cx| {
+    let save: Save = Rc::new(move |chosen, cx| {
         let changes = match role {
             Role::Agent => chosen,
             Role::Reviewer => json!({ "reviewer": chosen }),

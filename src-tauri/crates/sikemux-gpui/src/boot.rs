@@ -78,12 +78,10 @@ pub fn opening(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElem
         return None;
     }
     let t = Tokens::get(cx).clone();
-    let words = bench.slow_start.then(|| {
-        if bench.version.is_empty() {
-            "Waiting for Sikemux to start"
-        } else {
-            "Opening your workspace"
-        }
+    let words = bench.slow_start.then_some(if bench.version.is_empty() {
+        "Waiting for Sikemux to start"
+    } else {
+        "Opening your workspace"
     });
     let mark = div()
         .relative()

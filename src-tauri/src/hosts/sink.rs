@@ -70,7 +70,7 @@ impl EventSink for RemoteSink {
             } => crate::acp::deliver(&self.app, &agent_id, seq, changes),
             Event::DeviceView { view } => {
                 if let Some(hosts) = self.app.try_state::<Hosts>() {
-                    hosts.emit_view(&self.host, view);
+                    hosts.emit_view(&self.host, *view);
                 }
             }
             Event::Changed {

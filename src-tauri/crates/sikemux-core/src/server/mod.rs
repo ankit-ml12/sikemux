@@ -960,7 +960,9 @@ impl Core {
             }),
         };
         let frame = encode_control(&ServerMessage::Event {
-            event: Event::DeviceView { view },
+            event: Event::DeviceView {
+                view: Box::new(view),
+            },
         })
         .ok()?;
         Some((frame, moving))

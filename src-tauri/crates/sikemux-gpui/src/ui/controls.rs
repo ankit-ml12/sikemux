@@ -15,7 +15,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{Tokens, RADIUS_2};
 
-pub(super) type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+pub type OnClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type OnSelect = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
 
 /// How much of its colour an icon button keeps while it can't be pressed, low enough to tell

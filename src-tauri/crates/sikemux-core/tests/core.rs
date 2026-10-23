@@ -836,7 +836,7 @@ async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles()
             .expect("the view arrives")
             .expect("the core disconnected");
         if let ClientEvent::Event(Event::DeviceView { view }) = event {
-            break view;
+            break *view;
         }
     };
     let session = view

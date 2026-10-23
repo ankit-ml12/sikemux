@@ -1867,7 +1867,7 @@ pub enum Event {
     /// Sent only to paired devices: what they show of this host, whole, when
     /// they connect and whenever any of it changes.
     DeviceView {
-        view: DeviceView,
+        view: Box<DeviceView>,
     },
     /// Sent only to clients on this host.
     Remote {

@@ -201,7 +201,7 @@ impl Switcher {
                     }
                 }
             };
-            let _ = cx.update(|cx| on_pick(project, cx));
+            cx.update(|cx| on_pick(project, cx));
         })
         .detach();
     }

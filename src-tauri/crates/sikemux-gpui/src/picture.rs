@@ -119,11 +119,14 @@ impl Asset for Thumbnail {
         thumb: Thumb,
         _: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        async move {
-            let _decoding = DECODING.acquire().await;
-            shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into()))
-        }
+        shrink_when_free(thumb)
     }
+}
+
+/// Shrinks `thumb` once fewer than the most allowed are decoding.
+async fn shrink_when_free(thumb: Thumb) -> Result<Arc<RenderImage>, ImageCacheError> {
+    let _decoding = DECODING.acquire().await;
+    shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into()))
 }
 
 fn shrink(thumb: &Thumb) -> Result<Arc<RenderImage>, String> {

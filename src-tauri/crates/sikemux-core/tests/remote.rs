@@ -973,7 +973,7 @@ async fn until_view(
             .expect("the device's connection closed");
         if let ClientEvent::Event(Event::DeviceView { view }) = event {
             if wanted(&view) {
-                return view;
+                return *view;
             }
         }
     }
@@ -1067,8 +1067,8 @@ async fn a_device_is_sent_its_view_on_connecting_and_again_when_it_changes() {
     let mut last = changed;
     while let Ok(event) = events.try_recv() {
         if let ClientEvent::Event(Event::DeviceView { view }) = event {
-            assert_ne!(view, last, "nothing changed, so nothing was sent");
-            last = view;
+            assert_ne!(*view, last, "nothing changed, so nothing was sent");
+            last = *view;
         }
     }
     while let Ok(event) = app_events.try_recv() {

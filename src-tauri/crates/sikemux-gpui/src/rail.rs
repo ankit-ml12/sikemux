@@ -1166,19 +1166,15 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
         .trigger(row)
         .content(move |_, _, cx| {
             let popover = cx.entity();
-            let item =
-                |id: &'static str,
-                 label: &'static str,
-                 icon: Icon,
-                 act: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>| {
-                    let popover = popover.clone();
-                    MenuItem::new(id, label)
-                        .icon(icon)
-                        .on_click(move |event, window, cx| {
-                            act(event, window, cx);
-                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        })
-                };
+            let item = |id: &'static str, label: &'static str, icon: Icon, act: ui::OnClick| {
+                let popover = popover.clone();
+                MenuItem::new(id, label)
+                    .icon(icon)
+                    .on_click(move |event, window, cx| {
+                        act(event, window, cx);
+                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                    })
+            };
             let mut menu = Menu::new();
             for (id, label, icon, hint, act) in items.iter().cloned() {
                 menu = menu.child(

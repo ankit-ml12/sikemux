@@ -513,7 +513,7 @@ fn layout() -> anyhow::Result<DeviceView> {
         client.watch_view().await?;
         while let Some(event) = events.recv().await {
             if let ClientEvent::Event(Event::DeviceView { view }) = event {
-                return Ok(view);
+                return Ok(*view);
             }
         }
         Err(anyhow::anyhow!("the core sent no view"))

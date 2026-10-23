@@ -16,7 +16,7 @@ pub mod selectable;
 pub mod shimmer;
 mod state_mark;
 
-pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
+pub use controls::{Button, Field, IconButton, OnClick, Segmented, Toggle, Variant};
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow, DockScope};
 pub use find_bar::FindBar;
