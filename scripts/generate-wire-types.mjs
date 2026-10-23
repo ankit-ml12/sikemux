@@ -51,6 +51,7 @@ const SOURCES = [
   `${WIRE}/jira.rs`,
   `${WIRE}/rundeck.rs`,
   `${WIRE}/linear.rs`,
+  `${WIRE}/slack.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -82,7 +83,14 @@ const JIRA_TYPES = [
 ];
 
 /** Linear's types are known as Linear's, as Jira's are known as Jira's. */
-const LINEAR_TYPES = ["State", "IssueRow", "IssueList", "Label", "Comment", "IssueView"];
+const LINEAR_TYPES = [
+  "State",
+  "IssueRow",
+  "IssueList",
+  "Label",
+  "Comment",
+  "IssueView",
+];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
 const RUNDECK_TYPES = [
@@ -100,6 +108,17 @@ const RUNDECK_TYPES = [
   "LiveRun",
   "JobPage",
   "ActivityPage",
+];
+
+/** Slack's types are known as Slack's. */
+const SLACK_TYPES = [
+  "ChannelKind",
+  "Channel",
+  "Channels",
+  "Message",
+  "History",
+  "Thread",
+  "OpenThread",
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -152,6 +171,9 @@ const RENAMES = {
   ),
   [`${WIRE}/rundeck.rs`]: Object.fromEntries(
     RUNDECK_TYPES.map((name) => [name, `Rundeck${name}`]),
+  ),
+  [`${WIRE}/slack.rs`]: Object.fromEntries(
+    SLACK_TYPES.map((name) => [name, `Slack${name}`]),
   ),
 };
 
@@ -250,6 +272,9 @@ const RUNDECK_ROOTS = [
   "RundeckActivityPage",
 ];
 
+/** What the Slack plugin's views hand its pane. */
+const SLACK_ROOTS = ["SlackChannels", "SlackHistory", "SlackOpenThread"];
+
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
   DeviceView: "workspace chats sessions attentions inbox faceStyle",
@@ -306,6 +331,7 @@ const OUTPUTS = {
   jira: "src/plugins/jira/types.generated.ts",
   rundeck: "src/plugins/rundeck/types.generated.ts",
   linear: "src/plugins/linear/types.generated.ts",
+  slack: "src/plugins/slack/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -998,5 +1024,6 @@ await emit(OUTPUTS.codehost, typescript(false, CODEHOST_ROOTS, ""));
 await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
 await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
+await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());

@@ -12,4 +12,5 @@ pub mod notch;
 pub mod protocol;
 pub mod pty;
 pub mod rundeck;
+pub mod slack;
 pub mod theme;

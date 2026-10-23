@@ -7,6 +7,7 @@ pub use sikemux_wire::codehost;
 pub use sikemux_wire::jira;
 pub use sikemux_wire::linear;
 pub use sikemux_wire::rundeck;
+pub use sikemux_wire::slack;
 mod error;
 pub mod http;
 pub mod images;
