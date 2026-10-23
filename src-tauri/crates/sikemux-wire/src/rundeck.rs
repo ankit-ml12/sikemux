@@ -230,3 +230,121 @@ pub struct ActivityPage {
     /// While a run goes on, how soon the core reads it again.
     pub read_again_secs: Option<u64>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OptionKind {
+    Text,
+    /// Only Rundeck's own form can upload a file.
+    File,
+}
+
+/// A value a job takes when it starts.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobOption {
+    pub name: String,
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub required: bool,
+    pub secure: bool,
+    pub default: Option<String>,
+    /// The values Rundeck lists for it.
+    pub values: Option<Vec<String>>,
+    /// Where its values are read from instead, before `${option.NAME.value}` is filled in.
+    pub values_url: Option<String>,
+    /// Only listed values are allowed.
+    pub enforced: bool,
+    pub multivalued: bool,
+    /// What separates its values when it takes several.
+    pub delimiter: String,
+    pub is_date: bool,
+    pub date_format: Option<String>,
+    pub kind: OptionKind,
+}
+
+/// One of the values an option may take, read from its values URL.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionChoice {
+    pub name: String,
+    pub value: String,
+}
+
+/// The form that starts a job.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployForm {
+    pub job_id: String,
+    pub name: String,
+    pub group: Option<String>,
+    pub project: String,
+    pub description: Option<String>,
+    pub permalink: Option<String>,
+    pub node_filter: Option<String>,
+    pub execution_enabled: bool,
+    pub prod: bool,
+    /// The environment it starts in: its top folder, or its project.
+    pub env: String,
+    /// The job's name below its folders, as a deploy plan names it.
+    pub service: String,
+    pub runs_branch: bool,
+    /// The option that holds the branch.
+    pub branch_key: Option<String>,
+    pub run_word: String,
+    pub options: Vec<JobOption>,
+    /// Why the job's own options could not be read; the form then offers the branch alone.
+    pub options_error: Option<String>,
+    /// What each option starts filled in with.
+    pub values: BTreeMap<String, String>,
+    pub usual_secs: Option<u64>,
+    /// Branches it ran lately, newest first.
+    pub recent_branches: Vec<String>,
+}
+
+/// What a filled-in form would start, and what stops it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunCheck {
+    /// By option name.
+    pub errors: BTreeMap<String, String>,
+    /// The options Rundeck is sent.
+    pub send: BTreeMap<String, String>,
+    /// Each option's values URL with the other options filled in.
+    pub values_urls: BTreeMap<String, String>,
+    /// Whether a run of the job goes on now, when asked.
+    pub running: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Tone {
+    Ok,
+    Info,
+    Warn,
+    Danger,
+}
+
+/// A line of a deploy plan.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCheck {
+    pub tone: Tone,
+    pub text: String,
+    pub value: Option<String>,
+    /// It says the checkout is pushed first.
+    pub pushes: bool,
+}
+
+/// What deploying a branch would do.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Plan {
+    pub target_branch: String,
+    pub deployed_branch: Option<String>,
+    pub current_branch: Option<String>,
+    /// The checkout is pushed before the run starts.
+    pub pushes: bool,
+    pub checks: Vec<PlanCheck>,
+    pub detail: Option<String>,
+}

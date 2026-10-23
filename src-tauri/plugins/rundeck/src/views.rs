@@ -346,12 +346,7 @@ pub async fn job_view(
         .map(|(ex, run)| live_run(ex, run, &detail.steps));
     let finished = runs.iter().filter(|run| !run.live).count() as u32;
     Ok(JobPage {
-        permalink: Some(format!(
-            "{}/project/{}/job/show/{}",
-            session.url.trim_end_matches('/'),
-            detail.project,
-            detail.id
-        )),
+        permalink: Some(job_permalink(session, &detail.project, &detail.id)),
         prod: is_production(
             &detail.project,
             detail.group.as_deref(),
@@ -432,7 +427,7 @@ pub async fn activity_view(
     })
 }
 
-fn runs_of(executions: &[Execution], branch_options: &[String]) -> Vec<Run> {
+pub(crate) fn runs_of(executions: &[Execution], branch_options: &[String]) -> Vec<Run> {
     let mut runs: Vec<(i64, Run)> = executions
         .iter()
         .map(|ex| {
@@ -469,7 +464,7 @@ fn runs_of(executions: &[Execution], branch_options: &[String]) -> Vec<Run> {
 }
 
 /// The middle time of the runs that succeeded, so one stuck or instant run does not skew it.
-fn usual_secs(runs: &[Run]) -> Option<u64> {
+pub(crate) fn usual_secs(runs: &[Run]) -> Option<u64> {
     let mut times: Vec<u64> = runs
         .iter()
         .filter(|run| run.status_kind == StatusKind::Succeeded)
@@ -522,4 +517,12 @@ fn step_state(state: Option<&str>) -> StepState {
         "NOT_ELIGIBLE" | "SKIPPED" => StepState::Skip,
         _ => StepState::Pending,
     }
+}
+
+/// Where Rundeck shows the job.
+pub(crate) fn job_permalink(session: &Session, project: &str, job_id: &str) -> String {
+    format!(
+        "{}/project/{project}/job/show/{job_id}",
+        session.url.trim_end_matches('/')
+    )
 }

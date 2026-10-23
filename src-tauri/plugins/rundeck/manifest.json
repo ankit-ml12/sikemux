@@ -8,7 +8,10 @@
     "treeView": { "everySecs": 300 },
     "jobsView": { "everySecs": 30 },
     "jobView": { "everySecs": 20 },
-    "activityView": { "everySecs": 30 }
+    "activityView": { "everySecs": 30 },
+    "deployView": { "everySecs": 60 },
+    "planView": { "everySecs": 10 },
+    "optionValues": { "everySecs": 60 }
   },
   "writes": ["run", "agentRun", "abort", "setLists"],
   "tools": [

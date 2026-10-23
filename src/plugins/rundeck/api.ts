@@ -1,5 +1,6 @@
 import { createPluginBackend, isPluginFailure, type PluginStreamHandlers } from "../../plugin-api/backend";
 import { RUNDECK_PLUGIN } from "./kinds";
+import type { RundeckJobOption, RundeckRunCheck } from "./types.generated";
 
 const backend = createPluginBackend(RUNDECK_PLUGIN.id);
 
@@ -117,11 +118,6 @@ export interface JobDetail {
     steps: string[];
 }
 
-export interface OptionValue {
-    name: string;
-    value: string;
-}
-
 export interface ExecSummary {
     execution_id: number;
     status: string;
@@ -229,41 +225,13 @@ export interface LogTick {
     error: string | null;
 }
 
-export type BranchRelation =
-    | "same"
-    | "target-contains-deployed"
-    | "target-missing-deployed"
-    | "unknown-no-deployed-branch"
-    | "unknown-deployed-not-on-origin"
-    | "unknown-target-not-on-origin"
-    | "unknown-no-repo";
-
-export type PushAction = "will-push-current" | "will-not-push-different-branch" | "will-not-push-no-repo" | "will-not-push-detached";
-
-export interface PlanRequest {
-    jobId: string;
-    project: string;
-    service: string;
-    targetBranch: string;
-    repoPath: string;
-}
-
-export interface PlanResult {
-    project: string;
-    service: string;
-    target_branch: string;
-    deployed_branch: string | null;
-    branch_relation: BranchRelation;
-    branch_relation_detail: string | null;
-    git_root: string | null;
-    current_branch: string | null;
-    head_sha: string | null;
-    dirty: boolean;
-    upstream: string | null;
-    ahead: number | null;
-    behind: number | null;
-    remote_target_exists: boolean;
-    push_action: PushAction;
+export interface RunCheckRequest {
+    options: RundeckJobOption[];
+    values: Record<string, string>;
+    remote: Record<string, string[] | null>;
+    /** Given to also ask whether a run of the job goes on. */
+    jobId?: string;
+    project?: string;
 }
 
 /** The lists people edit in the plugin's settings, kept by the core. */
@@ -282,7 +250,6 @@ export const rundeckApi = {
     jobs: (project: string) => rndInvoke<RundeckJob[]>("jobs", { project }),
     jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
     jobDetail: (jobId: string) => rndInvoke<JobDetail>("jobDetail", { jobId }),
-    optionValues: (url: string) => rndInvoke<OptionValue[]>("optionValues", { url }),
     jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
     lists: () => backend.call<RundeckLists>("lists"),
     setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),
@@ -298,5 +265,5 @@ export const rundeckApi = {
     logs: (executionId: number, offset: string | null, handlers: PluginStreamHandlers<LogTick>) =>
         backend.stream("logs", { executionId, offset, backlog: null }, handlers),
 
-    plan: (req: PlanRequest) => rndInvoke<PlanResult>("plan", req),
+    checkRun: (req: RunCheckRequest) => rndInvoke<RundeckRunCheck>("checkRun", req),
 };

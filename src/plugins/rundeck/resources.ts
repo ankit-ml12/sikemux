@@ -1,21 +1,28 @@
 import { peekResource, useResource } from "../../plugin-api/resources";
 import { defineService } from "../../plugin-api/service";
-import { rundeckApi, type PlanRequest, type RundeckJob } from "./api";
+import { rundeckApi, type RundeckJob } from "./api";
 import { RUNDECK_PLUGIN } from "./kinds";
-import type { RundeckActivityPage, RundeckJobPage, RundeckJobs, RundeckTree } from "./types.generated";
+import type {
+    RundeckActivityPage,
+    RundeckDeployForm,
+    RundeckJobPage,
+    RundeckJobs,
+    RundeckOptionChoice,
+    RundeckPlan,
+    RundeckTree,
+} from "./types.generated";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
 export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
 
 export const rndProjectsR = rundeck.resource("projects", () => rundeckApi.projects(), 5 * 60_000);
 
-export const rndJobsR = rundeck.resource("jobs", (project: string) => rundeckApi.jobs(project), 60_000);
-
 export const rndJobIndexR = rundeck.resource("jobIndex", () => rundeckApi.jobIndex(), 5 * 60_000);
 
 export const rndJobDetailR = rundeck.resource("jobDetail", (jobId: string) => rundeckApi.jobDetail(jobId), 60_000);
 
-export const rndOptionValuesR = rundeck.resource("optionValues", (url: string) => rundeckApi.optionValues(url), 60_000);
+/** The values an option may take, read from its values URL and kept by the core. */
+export const rndOptionValuesV = rundeck.view<[url: string], RundeckOptionChoice[]>("optionValues", (url) => ({ url }));
 
 /** The projects' folders of jobs, kept by the core for the pane's tree. */
 export const rndTreeV = rundeck.view<[], RundeckTree>("treeView", () => ({}));
@@ -43,7 +50,24 @@ export const rndExecutionsR = rundeck.resource(
     15_000,
 );
 
-export const rndPlanR = rundeck.resource("plan", (request: PlanRequest) => rundeckApi.plan(request), 10_000);
+/** The form that starts a job, with the options an earlier run was given. */
+export const rndDeployV = rundeck.view<
+    [jobId: string, project: string, name: string, group: string, branch: string, given: Record<string, string>],
+    RundeckDeployForm
+>("deployView", (jobId, project, name, group, branch, given) => ({
+    jobId,
+    project,
+    name,
+    group: group || undefined,
+    branch: branch || undefined,
+    given,
+}));
+
+/** What deploying `targetBranch` would do, checked against the linked checkout at `repoPath`. */
+export const rndPlanV = rundeck.view<[jobId: string, project: string, service: string, targetBranch: string, repoPath: string], RundeckPlan>(
+    "planView",
+    (jobId, project, service, targetBranch, repoPath) => ({ jobId, project, service, targetBranch, repoPath }),
+);
 
 export const rndListsR = rundeck.resource("lists", () => rundeckApi.lists());
 

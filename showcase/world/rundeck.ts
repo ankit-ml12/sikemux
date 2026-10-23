@@ -347,22 +347,64 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
   executions: ({ jobId: id }) => history(String(id)),
   jobView: ({ jobId: id }) => jobView(String(id)),
   activityView: () => activityView(),
-  plan: ({ targetBranch }) => ({
-    project: PROJECT,
-    service: "deploy/production/billing-service",
-    target_branch: targetBranch,
-    deployed_branch: "release/2.13",
-    branch_relation: "target-contains-deployed",
-    branch_relation_detail: null,
-    git_root: "/Users/edon/code/billing-service",
-    current_branch: "release/2.14",
-    head_sha: "9c41e2a5d0b7",
-    dirty: true,
-    upstream: "origin/release/2.14",
-    ahead: 2,
-    behind: 0,
-    remote_target_exists: true,
-    push_action: "will-push-current",
+  deployView: ({ jobId: id, branch, given }) =>
+    deployView(
+      String(id),
+      branch as string | undefined,
+      given as Params | undefined,
+    ),
+  planView: ({ targetBranch }) => ({
+    targetBranch,
+    deployedBranch: "release/2.13",
+    currentBranch: "release/2.14",
+    pushes: true,
+    checks: [
+      {
+        tone: "ok",
+        text: "Contains everything that is live",
+        value: null,
+        pushes: false,
+      },
+      {
+        tone: "ok",
+        text: "On origin",
+        value: `origin/${targetBranch}`,
+        pushes: false,
+      },
+      {
+        tone: "info",
+        text: "Checkout is on release/2.14",
+        value: "9c41e2a",
+        pushes: false,
+      },
+      {
+        tone: "warn",
+        text: "Checkout has uncommitted changes",
+        value: "not deployed",
+        pushes: false,
+      },
+      {
+        tone: "warn",
+        text: "2 local commits not pushed",
+        value: "origin/release/2.14",
+        pushes: false,
+      },
+      {
+        tone: "warn",
+        text: "Pushes your checkout before deploying",
+        value: null,
+        pushes: true,
+      },
+    ],
+    detail: null,
+  }),
+  checkRun: ({ values }) => ({
+    errors: (values as Params).BRANCH
+      ? {}
+      : { BRANCH: "enter a branch to deploy" },
+    send: values,
+    valuesUrls: {},
+    running: false,
   }),
 };
 
@@ -509,6 +551,73 @@ function jobView(id: string) {
     fastestSecs: times.length ? Math.min(...times) : null,
     slowestSecs: times.length ? Math.max(...times) : null,
     readAgainSecs: live ? 3 : null,
+  };
+}
+
+function deployView(
+  id: string,
+  branch: string | undefined,
+  given: Params | undefined,
+) {
+  const job = jobs.find((candidate) => candidate.id === id) ?? jobs[0];
+  const page = jobView(id);
+  const env = job.group.split("/")[1];
+  return {
+    jobId: job.id,
+    name: job.name,
+    group: job.group,
+    project: PROJECT,
+    description: job.description,
+    permalink: null,
+    nodeFilter: null,
+    executionEnabled: true,
+    prod: page.prod,
+    env: "deploy",
+    service: `${job.group}/${job.name}`,
+    runsBranch: true,
+    branchKey: "BRANCH",
+    runWord: "Deploy",
+    options: [
+      {
+        name: "BRANCH",
+        label: "Branch",
+        description: null,
+        required: true,
+        secure: false,
+        default: "main",
+        values: null,
+        valuesUrl: null,
+        enforced: false,
+        multivalued: false,
+        delimiter: ",",
+        isDate: false,
+        dateFormat: null,
+        kind: "text",
+      },
+      {
+        name: "ENV",
+        label: null,
+        description: null,
+        required: true,
+        secure: false,
+        default: env,
+        values: ENVS,
+        valuesUrl: null,
+        enforced: true,
+        multivalued: false,
+        delimiter: ",",
+        isDate: false,
+        dateFormat: null,
+        kind: "text",
+      },
+    ],
+    optionsError: null,
+    values: { BRANCH: branch || String(given?.BRANCH ?? "main"), ENV: env },
+    usualSecs: page.usualSecs,
+    recentBranches: [...new Set(page.runs.map((run) => run.branch))].slice(
+      0,
+      6,
+    ),
   };
 }
 

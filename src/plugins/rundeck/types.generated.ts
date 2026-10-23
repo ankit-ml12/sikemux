@@ -191,3 +191,96 @@ export interface RundeckActivityPage {
     /** While a run goes on, how soon the core reads it again. */
     readAgainSecs: number | null;
 }
+
+/** The form that starts a job. */
+export interface RundeckDeployForm {
+    jobId: string;
+    name: string;
+    group: string | null;
+    project: string;
+    description: string | null;
+    permalink: string | null;
+    nodeFilter: string | null;
+    executionEnabled: boolean;
+    prod: boolean;
+    /** The environment it starts in: its top folder, or its project. */
+    env: string;
+    /** The job's name below its folders, as a deploy plan names it. */
+    service: string;
+    runsBranch: boolean;
+    /** The option that holds the branch. */
+    branchKey: string | null;
+    runWord: string;
+    options: RundeckJobOption[];
+    /** Why the job's own options could not be read; the form then offers the branch alone. */
+    optionsError: string | null;
+    /** What each option starts filled in with. */
+    values: Record<string, string>;
+    usualSecs: number | null;
+    /** Branches it ran lately, newest first. */
+    recentBranches: string[];
+}
+
+/** A value a job takes when it starts. */
+export interface RundeckJobOption {
+    name: string;
+    label: string | null;
+    description: string | null;
+    required: boolean;
+    secure: boolean;
+    default: string | null;
+    /** The values Rundeck lists for it. */
+    values: string[] | null;
+    /** Where its values are read from instead, before `${option.NAME.value}` is filled in. */
+    valuesUrl: string | null;
+    /** Only listed values are allowed. */
+    enforced: boolean;
+    multivalued: boolean;
+    /** What separates its values when it takes several. */
+    delimiter: string;
+    isDate: boolean;
+    dateFormat: string | null;
+    kind: RundeckOptionKind;
+}
+
+export type RundeckOptionKind = "text" | "file";
+
+/** What a filled-in form would start, and what stops it. */
+export interface RundeckRunCheck {
+    /** By option name. */
+    errors: Record<string, string>;
+    /** The options Rundeck is sent. */
+    send: Record<string, string>;
+    /** Each option's values URL with the other options filled in. */
+    valuesUrls: Record<string, string>;
+    /** Whether a run of the job goes on now, when asked. */
+    running: boolean | null;
+}
+
+/** One of the values an option may take, read from its values URL. */
+export interface RundeckOptionChoice {
+    name: string;
+    value: string;
+}
+
+/** What deploying a branch would do. */
+export interface RundeckPlan {
+    targetBranch: string;
+    deployedBranch: string | null;
+    currentBranch: string | null;
+    /** The checkout is pushed before the run starts. */
+    pushes: boolean;
+    checks: RundeckPlanCheck[];
+    detail: string | null;
+}
+
+/** A line of a deploy plan. */
+export interface RundeckPlanCheck {
+    tone: RundeckTone;
+    text: string;
+    value: string | null;
+    /** It says the checkout is pushed first. */
+    pushes: boolean;
+}
+
+export type RundeckTone = "ok" | "info" | "warn" | "danger";

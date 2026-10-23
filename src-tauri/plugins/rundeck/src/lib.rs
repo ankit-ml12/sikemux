@@ -20,6 +20,7 @@ mod client;
 mod config;
 mod error;
 mod executions;
+mod form;
 mod jobs;
 mod logs;
 mod plan;
@@ -198,6 +199,15 @@ impl Plugin for Rundeck {
                         params(input)?,
                     ))
                     .await
+                }
+                "deployView" => {
+                    answer(form::deploy_view(session, &saved.settings, params(input)?)).await
+                }
+                "planView" => {
+                    answer(form::plan_view(session, &saved.settings, params(input)?)).await
+                }
+                "checkRun" => {
+                    answer(form::check_run(session, &saved.settings, params(input)?)).await
                 }
                 "projects" => answer(projects::projects(session)).await,
                 "jobs" => {

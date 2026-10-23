@@ -108,6 +108,14 @@ const RUNDECK_TYPES = [
   "LiveRun",
   "JobPage",
   "ActivityPage",
+  "OptionKind",
+  "JobOption",
+  "OptionChoice",
+  "DeployForm",
+  "RunCheck",
+  "Tone",
+  "PlanCheck",
+  "Plan",
 ];
 
 /** Slack's types are known as Slack's. */
@@ -270,6 +278,10 @@ const RUNDECK_ROOTS = [
   "RundeckJobs",
   "RundeckJobPage",
   "RundeckActivityPage",
+  "RundeckDeployForm",
+  "RundeckRunCheck",
+  "RundeckOptionChoice",
+  "RundeckPlan",
 ];
 
 /** What the Slack plugin's views hand its pane. */
