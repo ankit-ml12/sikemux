@@ -1,7 +1,7 @@
 import { defineService } from "../../plugin-api/service";
 import { awsApi } from "./api";
 import { AWS_PLUGIN } from "./kinds";
-import type { AwsBilling, AwsEc2, AwsLambda, AwsS3, AwsSqs } from "./types.generated";
+import type { AwsBilling, AwsEc2, AwsEcsClusters, AwsEcsServices, AwsEcsTasks, AwsLambda, AwsS3, AwsSqs } from "./types.generated";
 
 export const aws = defineService(AWS_PLUGIN, () => awsApi.status());
 
@@ -15,16 +15,6 @@ export const awsSetupR = aws.resource("setup", () => awsApi.setup());
 
 export const awsIdentityR = aws.resource("identity", (profile: string, force: boolean) => awsApi.identity(profile, force), 60_000);
 
-export const ecsClustersR = aws.resource("ecs.clusters", (profile: string) => awsApi.ecsClusters(profile), 30_000);
-
-export const ecsServicesR = aws.resource("ecs.services", (profile: string, cluster: string) => awsApi.ecsServices(profile, cluster), 30_000);
-
-export const ecsTasksR = aws.resource(
-    "ecs.tasks",
-    (profile: string, cluster: string, service: string) => awsApi.ecsTasks(profile, cluster, service),
-    15_000,
-);
-
 export const ecsServiceLogConfigR = aws.resource("ecs.serviceLogConfig", (profile: string, cluster: string, service: string) =>
     awsApi.ecsServiceLogConfig(profile, cluster, service),
 );
@@ -34,6 +24,19 @@ const MONTHS_BACK = 5;
 
 /** The account's costs by month, worked out by the plugin and kept by the core. */
 export const billingV = aws.view<[profile: string], AwsBilling>("billingView", (profile) => ({ profile, monthsBack: MONTHS_BACK }));
+
+export const ecsClustersV = aws.view<[profile: string], AwsEcsClusters>("ecsClustersView", (profile) => ({ profile }));
+
+export const ecsServicesV = aws.view<[profile: string, cluster: string], AwsEcsServices>("ecsServicesView", (profile, cluster) => ({
+    profile,
+    cluster,
+}));
+
+export const ecsTasksV = aws.view<[profile: string, cluster: string, service: string], AwsEcsTasks>("ecsTasksView", (profile, cluster, service) => ({
+    profile,
+    cluster,
+    service,
+}));
 
 export const ec2V = aws.view<[profile: string], AwsEc2>("ec2View", (profile) => ({ profile }));
 

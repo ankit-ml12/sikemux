@@ -1,5 +1,5 @@
-//! What the AWS plugin's views hand a pane: an account's costs by month, and its instances,
-//! functions, queues and buckets with what each one's state means.
+//! What the AWS plugin's views hand a pane: an account's costs by month, and its clusters,
+//! services, tasks, instances, functions, queues and buckets with what each one's state means.
 
 use serde::{Deserialize, Serialize};
 
@@ -205,4 +205,98 @@ pub struct S3Bucket {
     pub uri: String,
     pub arn: String,
     pub console_url: String,
+}
+
+/// The ECS clusters in the profile's region, read as `<product>-<env>-cluster`.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsClusters {
+    pub region: String,
+    /// The environments the clusters' names end in, earliest stage first, `other` last.
+    pub envs: Vec<EcsEnv>,
+    pub clusters: Vec<EcsClusterRow>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsEnv {
+    /// `prod`, `staging`, or `other` for names that follow no environment.
+    pub key: String,
+    /// `Prod`, `Staging`, `Other`.
+    pub label: String,
+    pub count: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsClusterRow {
+    pub name: String,
+    /// Its name without `-cluster` at the end.
+    pub short_name: String,
+    pub arn: String,
+    pub product: String,
+    /// The key of its environment.
+    pub env: String,
+    /// What its environment chip reads.
+    pub env_label: String,
+    pub production: bool,
+    pub services: u32,
+    pub running: u32,
+    pub pending: u32,
+    pub health: Health,
+    pub console_url: String,
+}
+
+/// A cluster's services.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsServices {
+    pub region: String,
+    pub cluster: String,
+    pub services: Vec<EcsServiceRow>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsServiceRow {
+    pub name: String,
+    pub arn: String,
+    pub desired: u32,
+    pub running: u32,
+    pub pending: u32,
+    pub health: Health,
+    /// `Steady`, `Deploying`, `Degraded` or `Scaled to 0`.
+    pub state_label: String,
+    /// When its newest deployment last moved.
+    pub deployed_at: Option<String>,
+    pub console_url: String,
+}
+
+/// A service's running tasks.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsTasks {
+    pub tasks: Vec<EcsTaskRow>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EcsTaskRow {
+    pub arn: String,
+    pub id: String,
+    /// Its id's first twelve characters, which tell tasks apart, and the eight after them.
+    pub short_id: String,
+    pub id_rest: String,
+    pub health: Health,
+    /// `Running`, `Pending`, `Stopped`.
+    pub status_label: String,
+    /// Its health check's answer, when it has one.
+    pub check: Option<Health>,
+    /// `Healthy`, `Unhealthy`, `Unknown`.
+    pub check_label: String,
+    pub private_ip: Option<String>,
+    pub zone: Option<String>,
+    /// `0.5 vCPU · 1 GB`.
+    pub size: Option<String>,
+    pub started_at: Option<String>,
 }

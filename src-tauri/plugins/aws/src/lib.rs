@@ -156,19 +156,6 @@ impl Plugin for Aws {
                         profile: agent_profile::pick_pane(ctx, profile)?,
                     })
                 }
-                "ecsClusters" => answer(ecs::clusters(&params(input)?)).await,
-                "ecsServices" => {
-                    let ClusterParams { target, cluster } = params(input)?;
-                    answer(ecs::services(&target, &cluster)).await
-                }
-                "ecsTasks" => {
-                    let ServiceParams {
-                        target,
-                        cluster,
-                        service,
-                    } = params(input)?;
-                    answer(ecs::tasks(&target, &cluster, Some(&service), false)).await
-                }
                 "ecsTaskLogConfig" => {
                     let TaskParams {
                         target,
@@ -189,6 +176,19 @@ impl Plugin for Aws {
                 "lambdaView" => answer(views::lambda(ctx, params(input)?)).await,
                 "sqsView" => answer(views::sqs(ctx, params(input)?)).await,
                 "s3View" => answer(views::s3(ctx, params(input)?)).await,
+                "ecsClustersView" => answer(views::ecs_clusters(ctx, params(input)?)).await,
+                "ecsServicesView" => {
+                    let ClusterParams { target, cluster } = params(input)?;
+                    answer(views::ecs_services(ctx, target, cluster)).await
+                }
+                "ecsTasksView" => {
+                    let ServiceParams {
+                        target,
+                        cluster,
+                        service,
+                    } = params(input)?;
+                    answer(views::ecs_tasks(ctx, target, cluster, service)).await
+                }
                 "billingView" => {
                     let BillingParams {
                         target,

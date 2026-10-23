@@ -110,6 +110,13 @@ const AWS_TYPES = [
   "SqsQueue",
   "S3",
   "S3Bucket",
+  "EcsClusters",
+  "EcsEnv",
+  "EcsClusterRow",
+  "EcsServices",
+  "EcsServiceRow",
+  "EcsTasks",
+  "EcsTaskRow",
 ];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
@@ -326,7 +333,16 @@ const JIRA_ROOTS = [
 const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
 /** What the AWS plugin's views hand its pane. */
-const AWS_ROOTS = ["AwsBilling", "AwsEc2", "AwsLambda", "AwsSqs", "AwsS3"];
+const AWS_ROOTS = [
+  "AwsBilling",
+  "AwsEcsClusters",
+  "AwsEcsServices",
+  "AwsEcsTasks",
+  "AwsEc2",
+  "AwsLambda",
+  "AwsSqs",
+  "AwsS3",
+];
 
 /** What the Rundeck plugin's views hand its pane. */
 const RUNDECK_ROOTS = [

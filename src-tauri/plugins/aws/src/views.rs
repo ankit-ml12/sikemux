@@ -4,14 +4,15 @@
 use std::collections::HashMap;
 
 use sikemux_plugin_api::aws::{
-    Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance, Health, Lambda,
+    Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance, EcsClusterRow,
+    EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow, EcsTasks, Health, Lambda,
     LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
 };
 use sikemux_plugin_api::PluginContext;
 
 use crate::common::Target;
 use crate::error::AwsResult;
-use crate::{auth, billing, ec2, lambda, s3, sqs};
+use crate::{auth, billing, ec2, ecs, lambda, s3, sqs};
 
 const MONTH_NAMES: [&str; 12] = [
     "January",
@@ -56,6 +57,22 @@ const RUNTIME_FAMILIES: [(&str, &str); 7] = [
     ("dotnet", ".NET"),
     ("ruby", "Ruby"),
     ("provided", "Custom"),
+];
+
+/// The environments a cluster's name may end in, earliest stage first.
+const ENV_ORDER: [&str; 12] = [
+    "dev",
+    "development",
+    "test",
+    "qa",
+    "uat",
+    "sandbox",
+    "demo",
+    "staging",
+    "stage",
+    "preprod",
+    "prod",
+    "production",
 ];
 
 /// The smallest share of a bar a queue holding anything gets, so it still shows.
@@ -268,6 +285,217 @@ pub(crate) async fn s3(ctx: &PluginContext, asked: Target) -> AwsResult<S3> {
         })
         .collect();
     Ok(S3 { region, buckets })
+}
+
+pub(crate) async fn ecs_clusters(ctx: &PluginContext, asked: Target) -> AwsResult<EcsClusters> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let clusters: Vec<EcsClusterRow> = ecs::clusters(&target)
+        .await?
+        .into_iter()
+        .map(|cluster| cluster_of(cluster, &region))
+        .collect();
+    let mut envs: Vec<EcsEnv> = Vec::new();
+    for cluster in &clusters {
+        match envs.iter_mut().find(|env| env.key == cluster.env) {
+            Some(env) => env.count += 1,
+            None => envs.push(EcsEnv {
+                label: capitalised(&cluster.env),
+                key: cluster.env.clone(),
+                count: 1,
+            }),
+        }
+    }
+    envs.sort_by_key(|env| {
+        ENV_ORDER
+            .iter()
+            .position(|known| *known == env.key)
+            .unwrap_or(ENV_ORDER.len())
+    });
+    Ok(EcsClusters {
+        region,
+        envs,
+        clusters,
+    })
+}
+
+fn cluster_of(cluster: ecs::EcsCluster, region: &str) -> EcsClusterRow {
+    let short_name = cluster
+        .name
+        .strip_suffix("-cluster")
+        .unwrap_or(&cluster.name)
+        .to_owned();
+    let (product, env, env_label) = read_cluster_name(&short_name);
+    let count = |n: Option<i64>| n.and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
+    let pending = count(cluster.tasks_pending);
+    let health = match cluster.status.as_deref() {
+        Some("INACTIVE") => Health::Off,
+        Some(status) if status != "ACTIVE" => Health::Fail,
+        _ if pending > 0 => Health::Warn,
+        _ => Health::Ok,
+    };
+    EcsClusterRow {
+        console_url: format!(
+            "https://{region}.console.aws.amazon.com/ecs/v2/clusters/{}/services?region={region}",
+            encoded(&cluster.name)
+        ),
+        production: matches!(env.as_str(), "prod" | "production"),
+        services: count(cluster.services_count),
+        running: count(cluster.tasks_running),
+        pending,
+        health,
+        product,
+        env,
+        env_label,
+        short_name,
+        name: cluster.name,
+        arn: cluster.arn,
+    }
+}
+
+/// `<product>-<env>` as its product, environment and the environment's chip; a name ending in
+/// no known environment is `other`, its chip what follows its first word.
+fn read_cluster_name(short_name: &str) -> (String, String, String) {
+    let words: Vec<&str> = short_name.split('-').collect();
+    match words.split_last() {
+        Some((last, rest)) if ENV_ORDER.contains(last) => {
+            let product = match rest.is_empty() {
+                true => (*last).to_owned(),
+                false => rest.join("-"),
+            };
+            (product, (*last).to_owned(), (*last).to_owned())
+        }
+        _ => {
+            let (first, rest) = words.split_first().map_or(("", &[][..]), |(f, r)| (*f, r));
+            let label = match rest.is_empty() {
+                true => "other".to_owned(),
+                false => rest.join("-"),
+            };
+            (first.to_owned(), "other".to_owned(), label)
+        }
+    }
+}
+
+pub(crate) async fn ecs_services(
+    ctx: &PluginContext,
+    asked: Target,
+    cluster: String,
+) -> AwsResult<EcsServices> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let services = ecs::services(&target, &cluster)
+        .await?
+        .into_iter()
+        .map(|service| service_of(service, &cluster, &region))
+        .collect();
+    Ok(EcsServices {
+        region,
+        cluster,
+        services,
+    })
+}
+
+fn service_of(service: ecs::EcsService, cluster: &str, region: &str) -> EcsServiceRow {
+    let count = |n: Option<i64>| n.and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
+    let (desired, running, pending) = (
+        count(service.desired),
+        count(service.running),
+        count(service.pending),
+    );
+    let (health, label) = if pending > 0 {
+        (Health::Warn, "Deploying")
+    } else if desired == 0 && running == 0 {
+        (Health::Off, "Scaled to 0")
+    } else if running == desired {
+        (Health::Ok, "Steady")
+    } else {
+        (Health::Fail, "Degraded")
+    };
+    EcsServiceRow {
+        console_url: format!(
+            "https://{region}.console.aws.amazon.com/ecs/v2/clusters/{}/services/{}/health?region={region}",
+            encoded(cluster),
+            encoded(&service.name)
+        ),
+        deployed_at: service.primary_updated_at.or(service.primary_created_at),
+        state_label: label.to_owned(),
+        health,
+        desired,
+        running,
+        pending,
+        name: service.name,
+        arn: service.arn,
+    }
+}
+
+pub(crate) async fn ecs_tasks(
+    ctx: &PluginContext,
+    asked: Target,
+    cluster: String,
+    service: String,
+) -> AwsResult<EcsTasks> {
+    let (target, _) = targeted(ctx, asked).await?;
+    let tasks = ecs::tasks(&target, &cluster, Some(&service), false)
+        .await?
+        .into_iter()
+        .map(task_of)
+        .collect();
+    Ok(EcsTasks { tasks })
+}
+
+fn task_of(task: ecs::EcsTask) -> EcsTaskRow {
+    let health = match task.status.as_deref() {
+        Some("RUNNING") => Health::Ok,
+        Some("STOPPED") => Health::Off,
+        _ => Health::Warn,
+    };
+    let check = match task.health_status.as_deref() {
+        Some("HEALTHY") => Some(Health::Ok),
+        Some("UNHEALTHY") => Some(Health::Fail),
+        _ => None,
+    };
+    let number = |value: &Option<String>| {
+        value
+            .as_deref()
+            .and_then(|n| n.parse::<f64>().ok())
+            .filter(|n| n.is_finite() && *n > 0.)
+    };
+    let size = number(&task.cpu)
+        .zip(number(&task.memory))
+        .map(|(cpu, memory)| {
+            let memory = match memory >= 1024. {
+                true => format!("{} GB", memory / 1024.),
+                false => format!("{memory} MB"),
+            };
+            format!("{} vCPU · {memory}", cpu / 1024.)
+        });
+    EcsTaskRow {
+        short_id: task.task_id.chars().take(12).collect(),
+        id_rest: task.task_id.chars().skip(12).take(8).collect(),
+        status_label: titled(task.status.as_deref()),
+        check_label: titled(task.health_status.as_deref()),
+        health,
+        check,
+        size,
+        private_ip: task.private_ip,
+        zone: task.availability_zone,
+        started_at: task.started_at,
+        id: task.task_id,
+        arn: task.arn,
+    }
+}
+
+/// `RUNNING` as `Running`.
+fn titled(value: Option<&str>) -> String {
+    value.map_or_else(
+        || "—".to_owned(),
+        |value| capitalised(&value.to_lowercase()),
+    )
+}
+
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// `text` made safe to put in a URL, as a browser's `encodeURIComponent` makes it.

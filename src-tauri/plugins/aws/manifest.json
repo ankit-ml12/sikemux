@@ -6,6 +6,9 @@
   "callTimeoutSecs": 150,
   "views": {
     "billingView": { "everySecs": 600 },
+    "ecsClustersView": { "everySecs": 30 },
+    "ecsServicesView": { "everySecs": 30 },
+    "ecsTasksView": { "everySecs": 15 },
     "ec2View": { "everySecs": 60 },
     "lambdaView": { "everySecs": 60 },
     "sqsView": { "everySecs": 60 },

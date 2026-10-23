@@ -78,6 +78,89 @@ export type AwsBillingChange =
           pct: number;
       };
 
+/** The ECS clusters in the profile's region, read as `<product>-<env>-cluster`. */
+export interface AwsEcsClusters {
+    region: string;
+    /** The environments the clusters' names end in, earliest stage first, `other` last. */
+    envs: AwsEcsEnv[];
+    clusters: AwsEcsClusterRow[];
+}
+
+export interface AwsEcsEnv {
+    /** `prod`, `staging`, or `other` for names that follow no environment. */
+    key: string;
+    /** `Prod`, `Staging`, `Other`. */
+    label: string;
+    count: number;
+}
+
+export interface AwsEcsClusterRow {
+    name: string;
+    /** Its name without `-cluster` at the end. */
+    shortName: string;
+    arn: string;
+    product: string;
+    /** The key of its environment. */
+    env: string;
+    /** What its environment chip reads. */
+    envLabel: string;
+    production: boolean;
+    services: number;
+    running: number;
+    pending: number;
+    health: AwsHealth;
+    consoleUrl: string;
+}
+
+/** How a resource is doing, as a pane colours it. */
+export type AwsHealth = "ok" | "warn" | "fail" | "off";
+
+/** A cluster's services. */
+export interface AwsEcsServices {
+    region: string;
+    cluster: string;
+    services: AwsEcsServiceRow[];
+}
+
+export interface AwsEcsServiceRow {
+    name: string;
+    arn: string;
+    desired: number;
+    running: number;
+    pending: number;
+    health: AwsHealth;
+    /** `Steady`, `Deploying`, `Degraded` or `Scaled to 0`. */
+    stateLabel: string;
+    /** When its newest deployment last moved. */
+    deployedAt: string | null;
+    consoleUrl: string;
+}
+
+/** A service's running tasks. */
+export interface AwsEcsTasks {
+    tasks: AwsEcsTaskRow[];
+}
+
+export interface AwsEcsTaskRow {
+    arn: string;
+    id: string;
+    /** Its id's first twelve characters, which tell tasks apart, and the eight after them. */
+    shortId: string;
+    idRest: string;
+    health: AwsHealth;
+    /** `Running`, `Pending`, `Stopped`. */
+    statusLabel: string;
+    /** Its health check's answer, when it has one. */
+    check: AwsHealth | null;
+    /** `Healthy`, `Unhealthy`, `Unknown`. */
+    checkLabel: string;
+    privateIp: string | null;
+    zone: string | null;
+    /** `0.5 vCPU · 1 GB`. */
+    size: string | null;
+    startedAt: string | null;
+}
+
 /** The EC2 instances in the profile's region. */
 export interface AwsEc2 {
     region: string;
@@ -100,9 +183,6 @@ export interface AwsEc2Instance {
     launchedAt: string | null;
     consoleUrl: string;
 }
-
-/** How a resource is doing, as a pane colours it. */
-export type AwsHealth = "ok" | "warn" | "fail" | "off";
 
 /** The Lambda functions in the profile's region. */
 export interface AwsLambda {

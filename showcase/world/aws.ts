@@ -127,52 +127,64 @@ export const AWS: Record<string, (params: Params) => unknown> = {
     status: "authed",
     message: null,
   }),
-  ecsClusters: () => [
-    {
-      name: "prod",
-      arn: "arn:aws:ecs:eu-west-1:123456789012:cluster/prod",
-      services_count: 5,
-      tasks_running: 18,
-      tasks_pending: 1,
-      status: "ACTIVE",
-    },
-    {
-      name: "staging",
-      arn: "arn:aws:ecs:eu-west-1:123456789012:cluster/staging",
-      services_count: 5,
-      tasks_running: 7,
-      tasks_pending: 0,
-      status: "ACTIVE",
-    },
-  ],
-  ecsServices: () =>
-    SERVICES.map(([name, desired, running], index) => ({
+  ecsClustersView: () => ({
+    region: REGION,
+    envs: [
+      { key: "staging", label: "Staging", count: 1 },
+      { key: "prod", label: "Prod", count: 1 },
+    ],
+    clusters: [
+      ["prod", 18, 1],
+      ["staging", 7, 0],
+    ].map(([name, running, pending]) => ({
       name,
-      arn: `arn:aws:ecs:eu-west-1:123456789012:service/prod/${name}`,
+      shortName: name,
+      arn: `arn:aws:ecs:${REGION}:123456789012:cluster/${name}`,
+      product: name,
+      env: name,
+      envLabel: name,
+      production: name === "prod",
+      services: 5,
+      running,
+      pending,
+      health: pending ? "warn" : "ok",
+      consoleUrl: `${CONSOLE}/ecs/v2/clusters/${name}/services?region=${REGION}`,
+    })),
+  }),
+  ecsServicesView: ({ cluster }) => ({
+    region: REGION,
+    cluster,
+    services: SERVICES.map(([name, desired, running], index) => ({
+      name,
+      arn: `arn:aws:ecs:${REGION}:123456789012:service/prod/${name}`,
       desired,
       running,
       pending: desired - running,
-      status: "ACTIVE",
-      primary_created_at: minutesAgo(600 + index * 90),
-      primary_updated_at: minutesAgo(40 + index * 55),
+      health: desired === running ? "ok" : "warn",
+      stateLabel: desired === running ? "Steady" : "Deploying",
+      deployedAt: minutesAgo(40 + index * 55),
+      consoleUrl: `${CONSOLE}/ecs/v2/clusters/${String(cluster)}/services/${name}/health?region=${REGION}`,
     })),
-  ecsTasks: () =>
-    Array.from({ length: 6 }, (_, index) => {
+  }),
+  ecsTasksView: () => ({
+    tasks: Array.from({ length: 6 }, (_, index) => {
       const id = `9f${index}c4e1a7b2d44e08a1${index}3f6e2c9d0b${index}`;
       return {
-        arn: `arn:aws:ecs:eu-west-1:123456789012:task/prod/${id}`,
-        task_id: id,
-        status: "RUNNING",
-        desired_status: "RUNNING",
-        health_status: "HEALTHY",
-        cpu: "512",
-        memory: "1024",
-        started_at: minutesAgo(90 + index * 7),
-        last_status_change: minutesAgo(88 + index * 7),
-        availability_zone: `eu-west-1${"abc"[index % 3]}`,
-        private_ip: `10.0.${12 + index}.${40 + index * 7}`,
+        arn: `arn:aws:ecs:${REGION}:123456789012:task/prod/${id}`,
+        id,
+        shortId: id.slice(0, 12),
+        idRest: id.slice(12, 20),
+        health: "ok",
+        statusLabel: "Running",
+        check: "ok",
+        checkLabel: "Healthy",
+        privateIp: `10.0.${12 + index}.${40 + index * 7}`,
+        zone: `${REGION}${"abc"[index % 3]}`,
+        size: "0.5 vCPU · 1 GB",
+        startedAt: minutesAgo(90 + index * 7),
       };
     }),
+  }),
   ecsServiceLogConfig: ({ service }) => ({
     log_group: `/ecs/prod/${String(service)}`,
     container_name: String(service),

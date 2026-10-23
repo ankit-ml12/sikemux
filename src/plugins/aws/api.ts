@@ -47,40 +47,6 @@ export interface AwsLoginResult {
     stderr: string;
 }
 
-export interface EcsCluster {
-    name: string;
-    arn: string;
-    services_count: number | null;
-    tasks_running: number | null;
-    tasks_pending: number | null;
-    status: string | null;
-}
-
-export interface EcsService {
-    name: string;
-    arn: string;
-    desired: number | null;
-    running: number | null;
-    pending: number | null;
-    status: string | null;
-    primary_created_at: string | null;
-    primary_updated_at: string | null;
-}
-
-export interface EcsTask {
-    arn: string;
-    task_id: string;
-    status: string | null;
-    desired_status: string | null;
-    health_status: string | null;
-    cpu: string | null;
-    memory: string | null;
-    started_at: string | null;
-    last_status_change: string | null;
-    availability_zone: string | null;
-    private_ip: string | null;
-}
-
 export interface EcsTaskLog {
     log_group: string;
     log_stream: string;
@@ -114,9 +80,6 @@ export const awsApi = {
     agentProfilePicks: (project: string | null) => backend.call<AgentProfilePicks>("agentProfilePicks", { project }),
     pickAgentProfile: (project: string | null, profile: string | null) => backend.call<AgentProfilePicks>("pickAgentProfile", { project, profile }),
     identity: (profile: string, force = false) => backend.call<AwsIdentity>("identity", { profile, force }),
-    ecsClusters: (profile: string) => backend.call<EcsCluster[]>("ecsClusters", { profile }),
-    ecsServices: (profile: string, cluster: string) => backend.call<EcsService[]>("ecsServices", { profile, cluster }),
-    ecsTasks: (profile: string, cluster: string, service: string) => backend.call<EcsTask[]>("ecsTasks", { profile, cluster, service }),
     ecsTaskLogConfig: (profile: string, cluster: string, taskArn: string) =>
         backend.call<EcsTaskLog>("ecsTaskLogConfig", { profile, cluster, taskArn }),
     ecsServiceLogConfig: (profile: string, cluster: string, service: string) =>
