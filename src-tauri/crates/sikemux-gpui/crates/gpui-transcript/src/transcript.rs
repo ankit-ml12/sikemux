@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -55,13 +56,18 @@ pub enum Change<R> {
     Keep(Vec<SharedString>),
     /// An earlier page, oldest first, goes above the rows held; any already held are skipped.
     Prepend(Vec<R>),
+    /// A later page, oldest first, goes below the rows held; any already held are skipped.
+    Append(Vec<R>),
+    /// Every row before this one goes.
+    DropBefore(SharedString),
     Reset(Vec<R>),
 }
 
 type DrawRow<R> = Rc<dyn Fn(&[R], usize, &Pen, &mut Window, &mut App) -> AnyElement>;
 type Ask = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// Rows within this many of the first one count as the top, where an earlier page is asked for.
+/// Rows within this many of the first one count as the top, where an earlier page is asked for,
+/// and as many of the last one as the bottom, where a later one is.
 const NEAR_TOP: usize = 8;
 
 /// A hidden transcript draws nothing, so it holds changes until it is shown,
@@ -80,6 +86,10 @@ pub struct Transcript<R: Row> {
     draw_row: DrawRow<R>,
     on_reach_top: Option<Ask>,
     asked_earlier: bool,
+    on_reach_bottom: Option<Ask>,
+    asked_later: bool,
+    /// The rows in view as the list last laid them out.
+    visible: Range<usize>,
     focus: FocusHandle,
     ends: Option<(Spot, Spot)>,
     dragging: bool,
@@ -153,11 +163,8 @@ impl<R: Row> Transcript<R> {
         list.set_follow_mode(FollowMode::Tail);
         let this = cx.weak_entity();
         list.set_scroll_handler(move |event, window, cx| {
-            let (near_top, away) = (
-                event.visible_range.start < NEAR_TOP,
-                !event.is_following_tail,
-            );
-            this.update(cx, |this, cx| this.scrolled(near_top, away, window, cx))
+            let (visible, away) = (event.visible_range.clone(), !event.is_following_tail);
+            this.update(cx, |this, cx| this.scrolled(visible, away, window, cx))
                 .ok();
         });
         Transcript {
@@ -168,6 +175,9 @@ impl<R: Row> Transcript<R> {
             draw_row: Rc::new(draw_row),
             on_reach_top: None,
             asked_earlier: false,
+            on_reach_bottom: None,
+            asked_later: false,
+            visible: 0..0,
             focus: cx.focus_handle(),
             ends: None,
             dragging: false,
@@ -358,6 +368,18 @@ impl<R: Row> Transcript<R> {
         self
     }
 
+    /// Called once each time the reader scrolls near the last row held, to fetch a later page
+    /// when the host dropped the rows after it.
+    pub fn on_reach_bottom(mut self, ask: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_reach_bottom = Some(Rc::new(ask));
+        self
+    }
+
+    /// The rows in view as the list last laid them out.
+    pub fn visible(&self) -> Range<usize> {
+        self.visible.clone()
+    }
+
     /// The rows as of the last frame drawn; changes pushed since are not in them yet.
     /// Draws every row in `style` from now on, measured again.
     pub fn restyle(&mut self, style: Rc<Style>, cx: &mut Context<Self>) {
@@ -448,12 +470,31 @@ impl<R: Row> Transcript<R> {
                     self.stale = Stale::All;
                     self.asked_earlier = false;
                 }
+                Change::Append(rows) => {
+                    let held: HashSet<&str> = self.rows.iter().map(Row::id).collect();
+                    let later: Vec<R> = rows
+                        .into_iter()
+                        .filter(|row| !held.contains(row.id()))
+                        .collect();
+                    self.list.splice(end..end, later.len());
+                    self.rows.extend(later);
+                    self.stale = Stale::All;
+                    self.asked_later = false;
+                }
+                Change::DropBefore(id) => {
+                    if let Some(ix) = self.rows.iter().position(|row| row.id() == id.as_ref()) {
+                        self.rows.drain(..ix);
+                        self.list.splice(0..ix, 0);
+                        self.stale = Stale::All;
+                    }
+                }
                 Change::Reset(rows) => {
                     self.stale = Stale::All;
                     self.rows = rows;
                     self.list.reset(self.rows.len());
                     self.list.set_follow_mode(FollowMode::Tail);
                     self.asked_earlier = false;
+                    self.asked_later = false;
                 }
             }
         }
@@ -479,7 +520,7 @@ impl<R: Row> Transcript<R> {
 
     fn scrolled(
         &mut self,
-        near_top: bool,
+        visible: Range<usize>,
         away: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -488,16 +529,29 @@ impl<R: Row> Transcript<R> {
             self.away = away;
             cx.emit(AwayChanged(away));
         }
+        let near_top = visible.start < NEAR_TOP;
+        let near_bottom = visible.end + NEAR_TOP > self.rows.len();
+        self.visible = visible;
         if !near_top {
             self.asked_earlier = false;
+        }
+        if !near_bottom {
+            self.asked_later = false;
+        }
+        if self.rows.is_empty() {
             return;
         }
-        if self.asked_earlier || self.rows.is_empty() {
-            return;
+        if near_top && !self.asked_earlier {
+            self.asked_earlier = true;
+            if let Some(ask) = self.on_reach_top.clone() {
+                ask(window, cx);
+            }
         }
-        self.asked_earlier = true;
-        if let Some(ask) = self.on_reach_top.clone() {
-            ask(window, cx);
+        if near_bottom && away && !self.asked_later {
+            self.asked_later = true;
+            if let Some(ask) = self.on_reach_bottom.clone() {
+                ask(window, cx);
+            }
         }
     }
 

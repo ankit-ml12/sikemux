@@ -764,6 +764,11 @@ impl Workbench {
                         }
                     }
                     ChatNews::Page(page) => chat.page(page, cx),
+                    ChatNews::Later(page) => {
+                        if let Some(ask) = chat.later_page(&agent, page, cx) {
+                            self.ask_chat(ask);
+                        }
+                    }
                     ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
                     ChatNews::Replied { request, error } => chat.replied(&request, error),
                     ChatNews::TaskStopped { task, error } => chat.task_stopped(&task, error),
@@ -1494,6 +1499,24 @@ impl Workbench {
         }
         if closed {
             self.watch_drafts();
+        }
+    }
+
+    /// Asks for the rows after the last the chat holds, when those were dropped.
+    pub fn ask_later(&mut self, agent: &str) {
+        if let Some(ask) = self.chats.get_mut(agent).and_then(|chat| chat.later(agent)) {
+            self.ask_chat(ask);
+        }
+    }
+
+    /// Brings `agent`'s chat to its latest rows.
+    pub fn to_latest(&mut self, agent: &str, cx: &mut Context<Self>) {
+        if let Some(ask) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.to_latest(agent, cx))
+        {
+            self.ask_chat(ask);
         }
     }
 

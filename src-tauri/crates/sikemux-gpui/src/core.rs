@@ -86,6 +86,8 @@ pub enum ChatNews {
     },
     /// Earlier rows, a `ChatPage` as JSON, or null when the core had none to give.
     Page(Value),
+    /// Later rows, a `ChatPage` as JSON with `newerAfter`.
+    Later(Value),
     /// A `ToolDetail` as JSON.
     Detail {
         tool: String,
@@ -312,6 +314,12 @@ pub enum ChatAsk {
         before: u64,
         turns: u32,
     },
+    /// The rows opened after event `after`, from the core's `chatPage`.
+    Later {
+        agent: String,
+        feed: String,
+        after: u64,
+    },
     /// Words for the agent. The core starts a stopped chat on its own session to take them,
     /// and `attach` then attaches the window that was not attached yet.
     Prompt {
@@ -376,6 +384,7 @@ impl ChatAsk {
             | ChatAsk::Move { agent, .. }
             | ChatAsk::Detach { agent }
             | ChatAsk::History { agent, .. }
+            | ChatAsk::Later { agent, .. }
             | ChatAsk::Prompt { agent, .. }
             | ChatAsk::Keep { agent, .. }
             | ChatAsk::Cancel { agent }
@@ -1341,6 +1350,13 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
         } => {
             let page = client.acp_history(agent.clone(), feed, before, turns).await;
             (agent, ChatNews::Page(page.unwrap_or_default()))
+        }
+        ChatAsk::Later { agent, feed, after } => {
+            let asked = json!({ "agentId": agent, "feed": feed, "after": after });
+            match client.call("chatPage", asked).await {
+                Ok(page) => (agent, ChatNews::Later(page)),
+                Err(error) => return eprintln!("sikemux: the core gave no later page: {error}"),
+            }
         }
         ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
         ChatAsk::Prompt {

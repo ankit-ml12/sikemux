@@ -67,6 +67,19 @@ pub use draft::key as draft_key;
 
 /// Turns asked for each time the reader nears the top of what is held.
 const PAGE_TURNS: u32 = 20;
+/// The turns a chat holds while it follows its latest rows; earlier ones are dropped, and
+/// paged back when the reader scrolls up to them.
+const HELD_TURNS: usize = 40;
+/// How many turns past `HELD_TURNS` gather before any are dropped, so rows go in batches.
+const SLACK_TURNS: usize = 20;
+/// The rows a chat holds above and below the one at the top of its view while the reader is
+/// scrolled up, and how many more gather on either side before any are dropped.
+const HELD_AROUND: usize = 150;
+const SLACK_ROWS: usize = 50;
+/// The most rows a chat following its latest rows holds, for a turn of many tool calls.
+const HELD_ROWS: usize = 400;
+/// The rows a subagent's card holds, its latest, as the core sends them.
+const SUBAGENT_ROWS: usize = 40;
 
 /// A text longer than this many characters shows its start, with a way to show the rest.
 const LONG_TEXT: usize = 20_000;
@@ -133,6 +146,15 @@ fn text_of(part: &ChatPart) -> Option<(&str, Option<&PartTree>)> {
 }
 
 impl ChatRow {
+    /// The chat event that opened the row, which pages are asked from.
+    fn from_event(&self) -> Option<u64> {
+        self.message.from_event
+    }
+
+    fn opens_turn(&self) -> bool {
+        self.message.role == ChatRole::User
+    }
+
     fn new(message: ChatMessage) -> ChatRow {
         let mut row = ChatRow {
             message,
@@ -422,6 +444,12 @@ pub struct Chat {
     pub mark: Option<ChatMark>,
     older_before: Option<u64>,
     asked_earlier: bool,
+    /// The rows after `newer_after` were dropped while the reader was scrolled up, so only the
+    /// head follows the live chat and `mark` stays where it was then; the chat attaches again
+    /// from it once the reader pages back down to the live rows.
+    detached: bool,
+    newer_after: Option<u64>,
+    asked_later: bool,
     /// What the person writes to the agent, made once the window can make it.
     pub composer: Option<Composing>,
     /// The answers picked for the agent's open questions, sent once each has one.
@@ -600,8 +628,14 @@ impl Chat {
                 },
                 cx,
             )
-            .on_reach_top(move |_, cx| {
-                bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
+            .on_reach_top({
+                let (bench, agent) = (bench.clone(), agent.clone());
+                move |_, cx| {
+                    bench.update(cx, |bench, _| bench.ask_earlier(&agent)).ok();
+                }
+            })
+            .on_reach_bottom(move |_, cx| {
+                bench.update(cx, |bench, _| bench.ask_later(&agent)).ok();
             })
             .rise_in(crate::motion::ease_out())
         });
@@ -629,8 +663,9 @@ impl Chat {
             cx.subscribe(&transcript, move |_, _: &RowsChanged, cx| {
                 stage
                     .update(cx, |bench, cx| {
-                        if let Some(chat) = bench.chats.get(&chat) {
+                        if let Some(chat) = bench.chats.get_mut(&chat) {
                             chat.follow_activity(cx);
+                            chat.trim(cx);
                         }
                     })
                     .ok();
@@ -659,6 +694,9 @@ impl Chat {
             mark: None,
             older_before: None,
             asked_earlier: false,
+            detached: false,
+            newer_after: None,
+            asked_later: false,
             composer: None,
             picks: HashMap::new(),
             shown: None,
@@ -676,6 +714,7 @@ impl Chat {
 
     /// What the core answered an attach with.
     pub fn attached(&mut self, attachment: ChatAttachment, cx: &mut App) {
+        (self.detached, self.newer_after, self.asked_later) = (false, None, false);
         match attachment {
             ChatAttachment::Live { view, mark } => {
                 match serde_json::from_value::<ChatView>(view) {
@@ -694,6 +733,13 @@ impl Chat {
 
     /// Takes the core's changes numbered `seq`, and says whether some before them went missing.
     pub fn changed(&mut self, seq: u64, changes: Value, cx: &mut App) -> bool {
+        if self.detached {
+            let changes = read_changes(changes).into_iter().filter(|change| {
+                matches!(change, ChatChange::Head { .. } | ChatChange::View { .. })
+            });
+            self.apply_all(changes.collect(), cx);
+            return false;
+        }
         let Some(mark) = self.mark.as_mut() else {
             return false;
         };
@@ -723,6 +769,7 @@ impl Chat {
         self.follow_head(cx);
         self.older_before = view.older_before;
         self.asked_earlier = false;
+        (self.detached, self.newer_after, self.asked_later) = (false, None, false);
         let rows = view.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| {
             transcript.push(Change::Reset(rows), cx)
@@ -901,13 +948,107 @@ impl Chat {
         });
     }
 
-    fn apply(&mut self, changes: Value, cx: &mut App) {
-        let changes = match serde_json::from_value::<Vec<ChatChange>>(changes) {
-            Ok(changes) => changes,
-            Err(error) => {
-                return eprintln!("sikemux: the core's chat changes do not read: {error}")
+    /// Brings the latest rows into view: those held, or, after rows below were dropped, the
+    /// chat as it stands, attached afresh.
+    pub fn to_latest(&mut self, agent: &str, cx: &mut App) -> Option<ChatAsk> {
+        if self.detached {
+            return Some(ChatAsk::Attach {
+                agent: agent.to_owned(),
+                since: None,
+            });
+        }
+        self.transcript
+            .update(cx, |transcript, cx| transcript.to_latest(cx));
+        None
+    }
+
+    /// The rows after the last one held, when the reader is near it and they were dropped.
+    pub fn later(&mut self, agent: &str) -> Option<ChatAsk> {
+        if !self.detached || self.asked_later {
+            return None;
+        }
+        self.asked_later = true;
+        Some(match (self.newer_after, self.mark.as_ref()) {
+            (Some(after), Some(mark)) => ChatAsk::Later {
+                agent: agent.to_owned(),
+                feed: mark.feed.clone(),
+                after,
+            },
+            _ => ChatAsk::Attach {
+                agent: agent.to_owned(),
+                since: self.mark.clone(),
+            },
+        })
+    }
+
+    /// A later page, a `ChatPage` as JSON with `newerAfter`, which is null once the page
+    /// reached the live rows; the chat then attaches again from its mark, which it answers.
+    pub fn later_page(&mut self, agent: &str, page: Value, cx: &mut App) -> Option<ChatAsk> {
+        self.asked_later = false;
+        let newer_after = page["newerAfter"].as_u64();
+        let page = serde_json::from_value::<ChatPage>(page).ok()?;
+        self.newer_after = newer_after;
+        let rows = page.rows.into_iter().map(ChatRow::new).collect();
+        self.transcript.update(cx, |transcript, cx| {
+            transcript.push(Change::Append(rows), cx)
+        });
+        newer_after.is_none().then(|| ChatAsk::Attach {
+            agent: agent.to_owned(),
+            since: self.mark.clone(),
+        })
+    }
+
+    /// Drops the rows far from what the reader sees, so a chat holds about the same however long
+    /// it grows: while it follows its latest rows, all but its last turns; while the reader is
+    /// scrolled up, those well above and below the view, which pages bring back.
+    pub fn trim(&mut self, cx: &mut App) {
+        let transcript = self.transcript.read(cx);
+        let rows = transcript.rows();
+        let mut drops = Vec::new();
+        if transcript.away() {
+            let top = transcript.list().logical_scroll_top().item_ix;
+            if top > HELD_AROUND + SLACK_ROWS {
+                let from = &rows[top - HELD_AROUND];
+                if let Some(event) = from.from_event() {
+                    self.older_before = Some(event);
+                    drops.push(Change::DropBefore(from.id().to_owned().into()));
+                }
             }
-        };
+            if rows.len() > top + 2 * HELD_AROUND + SLACK_ROWS {
+                let (last, cut) = (
+                    &rows[top + 2 * HELD_AROUND - 1],
+                    &rows[top + 2 * HELD_AROUND],
+                );
+                if let Some(event) = last.from_event() {
+                    (self.newer_after, self.detached) = (Some(event), true);
+                    drops.push(Change::DropFrom(cut.id().to_owned().into()));
+                }
+            }
+        } else {
+            let turns: Vec<usize> = (0..rows.len())
+                .filter(|&ix| rows[ix].opens_turn())
+                .collect();
+            let by_turns =
+                (turns.len() > HELD_TURNS + SLACK_TURNS).then(|| turns[turns.len() - HELD_TURNS]);
+            let by_rows = (rows.len() > HELD_ROWS + SLACK_ROWS).then(|| rows.len() - HELD_ROWS);
+            if let Some(from) = by_turns.max(by_rows).map(|ix| &rows[ix]) {
+                if let Some(event) = from.from_event() {
+                    self.older_before = Some(event);
+                    drops.push(Change::DropBefore(from.id().to_owned().into()));
+                }
+            }
+        }
+        if !drops.is_empty() {
+            self.transcript
+                .update(cx, |transcript, cx| transcript.extend(drops, cx));
+        }
+    }
+
+    fn apply(&mut self, changes: Value, cx: &mut App) {
+        self.apply_all(read_changes(changes), cx);
+    }
+
+    fn apply_all(&mut self, changes: Vec<ChatChange>, cx: &mut App) {
         let mut rows = Vec::new();
         for change in changes {
             match change {
@@ -933,6 +1074,9 @@ impl Chat {
                         match held.iter_mut().find(|held| held.message.id == row.id) {
                             Some(held) => *held = ChatRow::new(row),
                             None => held.push(ChatRow::new(row)),
+                        }
+                        if held.len() > SUBAGENT_ROWS + SLACK_ROWS {
+                            held.drain(..held.len() - SUBAGENT_ROWS);
                         }
                         cx.notify();
                     });
@@ -1411,6 +1555,13 @@ impl Chat {
     }
 }
 
+fn read_changes(changes: Value) -> Vec<ChatChange> {
+    serde_json::from_value(changes).unwrap_or_else(|error| {
+        eprintln!("sikemux: the core's chat changes do not read: {error}");
+        Vec::new()
+    })
+}
+
 fn rows_by_session(
     subagents: impl IntoIterator<Item = (String, Vec<ChatMessage>)>,
 ) -> HashMap<String, Vec<ChatRow>> {
@@ -1514,7 +1665,10 @@ pub fn pane(
                 .map(|finding| find::bar(&agent.id, finding, chat.transcript.read(cx).found(), cx)),
         )
         .children(chat.transcript.read(cx).away().then(|| {
-            let transcript = chat.transcript.clone();
+            let latest = cx.listener({
+                let agent = agent.id.clone();
+                move |bench, _, _, cx| bench.to_latest(&agent, cx)
+            });
             div()
                 .absolute()
                 .bottom(px(8.))
@@ -1536,9 +1690,7 @@ pub fn pane(
                                 "Jump to latest message",
                             )
                             .glyph(14.)
-                            .on_click(move |_, _, cx| {
-                                transcript.update(cx, |transcript, cx| transcript.to_latest(cx));
-                            }),
+                            .on_click(latest),
                         ),
                 )
         }))
