@@ -906,7 +906,7 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
     let began = Instant::now();
     let to = chat.to_owned();
     run.bench
-        .update(&mut run.cx, |bench, cx| bench.to_latest(&to, cx));
+        .update(&mut run.cx, |bench, cx| bench.show_latest(&to, cx));
     let back = run.until(15, |run| run.row_ids(chat).last() == latest.as_ref());
     println!(
         "windowed latest: {} in {:.0} ms, the app holds {} rows",

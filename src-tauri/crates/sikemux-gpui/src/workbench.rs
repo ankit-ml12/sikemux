@@ -1523,11 +1523,11 @@ impl Workbench {
     }
 
     /// Brings `agent`'s chat to its latest rows.
-    pub fn to_latest(&mut self, agent: &str, cx: &mut Context<Self>) {
+    pub fn show_latest(&mut self, agent: &str, cx: &mut Context<Self>) {
         if let Some(ask) = self
             .chats
             .get_mut(agent)
-            .and_then(|chat| chat.to_latest(agent, cx))
+            .and_then(|chat| chat.show_latest(agent, cx))
         {
             self.ask_chat(ask);
         }

@@ -147,7 +147,7 @@ fn text_of(part: &ChatPart) -> Option<(&str, Option<&PartTree>)> {
 
 impl ChatRow {
     /// The chat event that opened the row, which pages are asked from.
-    fn from_event(&self) -> Option<u64> {
+    fn first_event(&self) -> Option<u64> {
         self.message.from_event
     }
 
@@ -973,7 +973,7 @@ impl Chat {
 
     /// Brings the latest rows into view: those held, or, after rows below were dropped, the
     /// chat as it stands, attached afresh.
-    pub fn to_latest(&mut self, agent: &str, cx: &mut App) -> Option<ChatAsk> {
+    pub fn show_latest(&mut self, agent: &str, cx: &mut App) -> Option<ChatAsk> {
         if self.detached {
             return Some(ChatAsk::Attach {
                 agent: agent.to_owned(),
@@ -1047,7 +1047,7 @@ impl Chat {
             let top = transcript.list().logical_scroll_top().item_ix;
             if top > HELD_AROUND + SLACK_ROWS {
                 let from = &rows[top - HELD_AROUND];
-                if let Some(event) = from.from_event() {
+                if let Some(event) = from.first_event() {
                     self.older_before = Some(event);
                     drops.push(Change::DropBefore(from.id().to_owned().into()));
                 }
@@ -1057,7 +1057,7 @@ impl Chat {
                     &rows[top + 2 * HELD_AROUND - 1],
                     &rows[top + 2 * HELD_AROUND],
                 );
-                if let Some(event) = last.from_event() {
+                if let Some(event) = last.first_event() {
                     (self.newer_after, self.detached) = (Some(event), true);
                     drops.push(Change::DropFrom(cut.id().to_owned().into()));
                 }
@@ -1070,7 +1070,7 @@ impl Chat {
                 (turns.len() > HELD_TURNS + SLACK_TURNS).then(|| turns[turns.len() - HELD_TURNS]);
             let by_rows = (rows.len() > HELD_ROWS + SLACK_ROWS).then(|| rows.len() - HELD_ROWS);
             if let Some(from) = by_turns.max(by_rows).map(|ix| &rows[ix]) {
-                if let Some(event) = from.from_event() {
+                if let Some(event) = from.first_event() {
                     self.older_before = Some(event);
                     drops.push(Change::DropBefore(from.id().to_owned().into()));
                 }
@@ -1709,7 +1709,7 @@ pub fn pane(
         .children(chat.transcript.read(cx).away().then(|| {
             let latest = cx.listener({
                 let agent = agent.id.clone();
-                move |bench, _, _, cx| bench.to_latest(&agent, cx)
+                move |bench, _, _, cx| bench.show_latest(&agent, cx)
             });
             div()
                 .absolute()
