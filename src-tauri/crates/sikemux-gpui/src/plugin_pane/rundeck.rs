@@ -278,6 +278,7 @@ pub const PALETTES: &[super::PluginPalette] = &[super::PluginPalette {
     placeholder: "search Rundeck jobs…",
     view: "catalogView",
     rows: job_rows,
+    typed: None,
 }];
 
 fn job_rows(catalog: &Value) -> Vec<crate::palette::Row> {

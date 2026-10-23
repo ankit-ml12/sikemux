@@ -209,6 +209,7 @@ pub const REGISTRATION: super::Registration = super::Registration {
             placeholder: "search services…",
             view: "servicesView",
             rows: service_rows,
+            typed: Some(trace_row),
         },
         super::PluginPalette {
             plugin: "sikemux.signoz",
@@ -217,6 +218,7 @@ pub const REGISTRATION: super::Registration = super::Registration {
             placeholder: "search dashboards…",
             view: "dashboardsView",
             rows: dashboard_rows,
+            typed: Some(trace_row),
         },
     ],
 };
@@ -236,6 +238,13 @@ fn service_rows(services: &Value) -> Vec<crate::palette::Row> {
             crate::palette::Row::new(format!("service:{}", row.service), row.service).meta(meta)
         })
         .collect()
+}
+
+/// Opens a trace by the id typed, when the words are one: sixteen to thirty-two hex digits.
+fn trace_row(typed: &str) -> Option<crate::palette::Row> {
+    let id = typed.trim().to_lowercase();
+    let hex = (16..=32).contains(&id.len()) && id.chars().all(|c| c.is_ascii_hexdigit());
+    hex.then(|| crate::palette::Row::new(format!("trace:{id}"), format!("Open trace {id}")).meta("trace"))
 }
 
 fn dashboard_rows(dashboards: &Value) -> Vec<crate::palette::Row> {
@@ -377,6 +386,10 @@ impl Panel for Signoz {
             Some(("dashboard", id)) => {
                 self.show_section(Section::Dashboards);
                 self.dashboard = Some(id.to_owned());
+            }
+            Some(("trace", id)) => {
+                self.show_section(Section::Traces);
+                self.trace = Some(id.to_owned());
             }
             _ => {}
         }

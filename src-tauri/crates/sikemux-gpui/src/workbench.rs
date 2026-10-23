@@ -3255,6 +3255,10 @@ impl Workbench {
             move |row, bench, _, cx| bench.open_plugin_at(palette.plugin, row.key.to_string(), cx),
         )
         .empty("reading…");
+        let spec = match palette.typed {
+            Some(typed) => spec.typed(typed),
+            None => spec,
+        };
         self.toggle_palette(spec, window, cx);
         let asked = self.target().request(
             "pluginView",

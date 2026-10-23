@@ -107,6 +107,8 @@ pub struct PluginPalette {
     pub placeholder: &'static str,
     pub view: &'static str,
     pub rows: fn(&Value) -> Vec<crate::palette::Row>,
+    /// A row made of what is typed, such as an id to open, when the words read as one.
+    pub typed: Option<fn(&str) -> Option<crate::palette::Row>>,
 }
 
 /// The palettes `plugin` offers.
