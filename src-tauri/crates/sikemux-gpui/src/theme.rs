@@ -12,6 +12,10 @@ use sikemux_wire::theme::{Palette, ThemeEditor, ThemeHighlight};
 
 pub const UI: &str = "Figtree";
 
+/// How much lighter-than-mid-grey text is thinned, as the power its glyphs' coverage is raised to
+/// for white text: the person's pick, nearer WebKit's weight on a dark ground.
+const LIGHT_TEXT_CURVE: f32 = 1.5;
+
 /// GPUI Kit's own text size at the default text size. The Kit sets each window's rem to its
 /// text size, so the interface's text is measured in it.
 pub const REM: f32 = 13.;
@@ -259,11 +263,8 @@ pub fn install(cx: &mut App) {
         .add_fonts(fonts.into_iter().map(Cow::Borrowed).collect())
         .expect("bundled fonts load");
     cx.text_system().set_antialiased_only(true);
-    // A trial for the person to compare against the default; never on unless they set it.
-    let light_text_curve = std::env::var("SIKEMUX_TRIAL_TEXT_CURVE")
-        .ok()
-        .and_then(|exponent| exponent.parse().ok());
-    cx.text_system().set_light_text_curve(light_text_curve);
+    cx.text_system()
+        .set_light_text_curve(Some(LIGHT_TEXT_CURVE));
 
     apply(&sikemux_core::server::themes::default_palette(), cx);
     let toasts = &mut KitTheme::global_mut(cx).notification;
