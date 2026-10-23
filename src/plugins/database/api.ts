@@ -49,50 +49,6 @@ export interface Tested {
     millis: number;
 }
 
-export interface Connected {
-    id: string;
-    version: string;
-}
-
-export type TableKind = "table" | "view" | "materialized-view" | "foreign-table";
-
-export interface DatabaseTable {
-    name: string;
-    kind: TableKind;
-}
-
-export interface ColumnInfo {
-    name: string;
-    type: string;
-    nullable: boolean;
-    default: string | null;
-    primaryKey: boolean;
-}
-
-export interface IndexInfo {
-    name: string;
-    columns: string[];
-    unique: boolean;
-    primary: boolean;
-}
-
-export interface ForeignKeyInfo {
-    name: string | null;
-    columns: string[];
-    referencesSchema: string | null;
-    referencesTable: string;
-    referencesColumns: string[];
-}
-
-export interface TableInfo {
-    schema: string;
-    name: string;
-    kind: TableKind;
-    columns: ColumnInfo[];
-    indexes: IndexInfo[];
-    foreignKeys: ForeignKeyInfo[];
-}
-
 export interface ResultColumn {
     name: string;
     /** The engine's own name for the type; empty when it does not say. */
@@ -116,32 +72,16 @@ export interface QueryOutcome {
     millis: number;
 }
 
-export interface HistoryEntry {
-    sql: string;
-    /** Milliseconds since 1970. */
-    at: number;
-    millis: number;
-    ok: boolean;
-    rows: number | null;
-    error: string | null;
-    source: "person" | "agent";
-}
-
 export const databaseApi = {
     profiles: () => backend.call<DatabaseProfile[]>("profiles"),
     /** A password left out keeps the saved one; an empty one forgets it. */
     save: (profile: ProfileDraft, password?: string) => backend.call<DatabaseProfile>("save", { profile, password }),
     remove: (id: string) => backend.call<void>("remove", { id }),
     test: (profile: ProfileDraft, password?: string) => backend.call<Tested>("test", { profile, password }),
-    connect: (id: string) => backend.call<Connected>("connect", { id }),
+    connect: (id: string) => backend.call<void>("connect", { id }),
     disconnect: (id: string) => backend.call<void>("disconnect", { id }),
-    connected: () => backend.call<Connected[]>("connected"),
-    schemas: (id: string) => backend.call<string[]>("schemas", { id }),
-    tables: (id: string, schema?: string) => backend.call<DatabaseTable[]>("tables", { id, schema }),
-    describe: (id: string, table: string, schema?: string) => backend.call<TableInfo>("describe", { id, table, schema }),
     /** `run` names this run, so stopping it never stops another console's query on the same connection. */
     query: (id: string, sql: string, limit?: number, run?: string) => backend.call<QueryOutcome>("query", { id, sql, limit, run }),
     cancel: (id: string, run: string) => backend.call<void>("cancel", { id, run }),
-    history: (id: string, search?: string) => backend.call<HistoryEntry[]>("history", { id, search }),
     clearHistory: (id: string) => backend.call<void>("clearHistory", { id }),
 };

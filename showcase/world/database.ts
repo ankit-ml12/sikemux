@@ -30,7 +30,36 @@ const TABLES = [
   "products",
   "refunds",
   "webhooks",
-].map((name) => ({ name, kind: "table" }));
+].map((name) => ({
+  name,
+  kind: "table",
+  kindName: "table",
+  preview: `select * from "public"."${name}" limit 100;`,
+  columns: null,
+  failed: null,
+}));
+
+const CONNECTION = {
+  id: PROFILE.id,
+  name: PROFILE.name,
+  engine: "postgres",
+  engineName: "PostgreSQL",
+  address: "readonly@db.internal.acme.dev:5432/shop",
+  readOnly: true,
+  connected: "PostgreSQL 17.2",
+  defaultSchema: "public",
+  facts: [
+    { label: "Engine", value: "PostgreSQL", mono: false },
+    { label: "Server", value: "db.internal.acme.dev:5432", mono: true },
+    { label: "Database", value: "shop", mono: true },
+    { label: "User", value: "readonly", mono: true },
+    { label: "Password", value: "Saved in the Keychain", mono: false },
+    { label: "Agents", value: "Read only", mono: false },
+    { label: "Status", value: "Connected to PostgreSQL 17.2", mono: false },
+  ],
+};
+
+type Opened = { id: string; schemas: string[] };
 
 const ROWS: [number, string, string, string, string][] = [
   [48213, "maya@northwind.io", "129.00", "failed", "2026-09-26 09:38:12"],
@@ -48,14 +77,30 @@ const ROWS: [number, string, string, string, string][] = [
 
 export const DATABASE: Record<string, (params: Args) => unknown> = {
   profiles: () => [PROFILE],
-  connected: () => [{ id: PROFILE.id, version: "PostgreSQL 17.2" }],
-  connect: () => ({ id: PROFILE.id, version: "PostgreSQL 17.2" }),
-  schemas: () => ["public", "analytics"],
-  tables: ({ schema }) => (schema === "public" ? TABLES : []),
-  describe: () => ({
+  connect: () => null,
+  explorerView: ({ open }) => {
+    const opened = (open as Opened[]).find((each) => each.id === PROFILE.id);
+    const schemas = ["public", "analytics"].map((name) => ({
+      name,
+      groups: opened?.schemas.includes(name)
+        ? name === "public"
+          ? [{ name: "tables", tables: TABLES }]
+          : []
+        : null,
+      failed: null,
+    }));
+    return {
+      connections: [
+        { ...CONNECTION, schemas: opened ? schemas : null, failed: null },
+      ],
+    };
+  },
+  tableView: () => ({
     schema: "public",
     name: "orders",
     kind: "table",
+    kindName: "table",
+    preview: 'select * from "public"."orders" limit 100;',
     columns: [],
     indexes: [],
     foreignKeys: [],
@@ -77,5 +122,8 @@ export const DATABASE: Record<string, (params: Args) => unknown> = {
       },
     ],
   }),
-  history: () => [],
+  historyView: () => ({
+    entries: [],
+    empty: "Queries you and your agents run here show up in this list.",
+  }),
 };

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { swallow } from "../../../plugin-api/host";
 import { Dropdown } from "../../../plugin-api/ui";
-import type { DatabaseProfile, ResultSet } from "../api";
+import type { ResultSet } from "../api";
+import type { DatabaseConnection } from "../types.generated";
 import { ROW_LIMITS, runQuery, stopQuery, updateQuery, useQuery } from "../queryState";
 import { ResultsView } from "./ResultsView";
 import { SqlEditor } from "./SqlEditor";
@@ -13,7 +14,7 @@ export function QueryWorkspace({
 }: {
     /** Which console's SQL and results to show; a connection can have several. */
     consoleId: string;
-    profile: DatabaseProfile;
+    profile: DatabaseConnection;
     resultActions?: (result: ResultSet) => ReactNode;
 }) {
     const query = useQuery(id);

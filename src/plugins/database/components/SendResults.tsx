@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { SendToAgentMenu } from "../../../plugin-api/ui";
-import type { DatabaseProfile, ResultSet } from "../api";
-import { engineLabel } from "../profileForm";
+import type { ResultSet } from "../api";
+import type { DatabaseConnection } from "../types.generated";
 import { resultMessage } from "../results";
 
 /** A button that hands these results, and the SQL behind them, to one of the project's agents. */
-export function SendResults({ profile, sql, result }: { profile: DatabaseProfile; sql: string; result: ResultSet }) {
+export function SendResults({ profile, sql, result }: { profile: DatabaseConnection; sql: string; result: ResultSet }) {
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     return (
         <>
@@ -24,7 +24,7 @@ export function SendResults({ profile, sql, result }: { profile: DatabaseProfile
                     x={menu.x}
                     y={menu.y}
                     alignRight
-                    delivery={() => ({ text: resultMessage(profile.name, engineLabel(profile.engine), sql, result) })}
+                    delivery={() => ({ text: resultMessage(profile.name, profile.engineName, sql, result) })}
                     onClose={() => setMenu(null)}
                 />
             )}

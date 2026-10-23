@@ -81,29 +81,6 @@ impl Plugin for Database {
                     self.pool.forget(&id).await;
                     reply(())
                 }
-                "connected" => reply(self.pool.connected().await),
-                "schemas" => {
-                    let profiles::IdRequest { id } = params(input)?;
-                    answer(async {
-                        self.pool
-                            .session(&data_dir, &id, connections::Access::Browse)
-                            .await?
-                            .schemas()
-                            .await
-                    })
-                    .await
-                }
-                "tables" => {
-                    let schema::SchemaRequest { id, schema } = params(input)?;
-                    answer(async {
-                        self.pool
-                            .session(&data_dir, &id, connections::Access::Browse)
-                            .await?
-                            .tables(schema)
-                            .await
-                    })
-                    .await
-                }
                 "query" => {
                     let request = params(input)?;
                     answer(queries::run(
@@ -127,29 +104,11 @@ impl Plugin for Database {
                     answer(agent::describe(&self.pool, &data_dir, params(input)?)).await
                 }
                 "agentQuery" => answer(agent::query(&self.pool, &data_dir, params(input)?)).await,
-                "history" => {
-                    let request: history::HistoryRequest = params(input)?;
-                    answer(profiles::blocking(move || {
-                        history::list(&data_dir, &request)
-                    }))
-                    .await
-                }
                 "clearHistory" => {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || history::clear(&data_dir, &id))).await
                 }
                 "cancel" => answer(queries::cancel(&self.pool, params(input)?)).await,
-                "describe" => {
-                    let schema::TableRequest { id, schema, table } = params(input)?;
-                    answer(async {
-                        self.pool
-                            .session(&data_dir, &id, connections::Access::Browse)
-                            .await?
-                            .describe(schema, table)
-                            .await
-                    })
-                    .await
-                }
                 _ => Err(PluginError::unknown_method(method)),
             }
         })

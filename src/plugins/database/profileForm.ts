@@ -20,8 +20,6 @@ export const TLS_MODES: readonly { value: TlsMode; label: string; detail: string
     { value: "disable", label: "Off", detail: "Never encrypt" },
 ];
 
-export const engineLabel = (engine: Engine): string => ENGINES.find((entry) => entry.value === engine)?.label ?? engine;
-
 export function blankTarget(engine: Engine): Target {
     return engine === "sqlite" ? { engine, path: "" } : { engine, host: "localhost", port: null, database: "", user: "", tls: "prefer" };
 }
@@ -56,18 +54,4 @@ export function missingField(draft: ProfileDraft): string | null {
 export function parsePort(text: string): number | null {
     const trimmed = text.trim();
     return trimmed ? Number(trimmed) : null;
-}
-
-/** Where the database is, the way the list shows it: `app@localhost:5432/shop`, or the file's name. */
-export function addressOf(target: Target): string {
-    if (target.engine === "sqlite") return target.path.split("/").pop() || target.path;
-    const database = target.database ? `/${target.database}` : "";
-    return `${target.user}@${target.host}:${target.port ?? defaultPort(target.engine)}${database}`;
-}
-
-/** The schema a database opens on: `public`, `main`, or the database a MySQL profile names. */
-export function defaultSchema(target: Target): string {
-    if (target.engine === "postgres") return "public";
-    if (target.engine === "sqlite") return "main";
-    return target.database;
 }

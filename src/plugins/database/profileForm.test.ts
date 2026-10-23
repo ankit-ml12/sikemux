@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseProfile, ProfileDraft } from "./api";
-import { addressOf, blankDraft, defaultSchema, draftOf, engineLabel, isServer, missingField, parsePort, withEngine } from "./profileForm";
+import { blankDraft, draftOf, isServer, missingField, parsePort, withEngine } from "./profileForm";
 
 const postgres: ProfileDraft = {
     name: "Shop",
@@ -46,23 +46,8 @@ describe("profileForm", () => {
         expect(draftOf(saved)).toEqual({ ...postgres, id: "1" });
     });
 
-    it("opens each engine on its usual schema", () => {
-        expect(defaultSchema(postgres)).toBe("public");
-        expect(defaultSchema({ ...postgres, engine: "mysql", database: "app" })).toBe("app");
-        expect(defaultSchema({ engine: "sqlite", path: "/a.db" })).toBe("main");
-    });
-
     it("reads an empty port as the default one", () => {
         expect(parsePort("")).toBeNull();
         expect(parsePort(" 6543 ")).toBe(6543);
-    });
-
-    it("shows where each database is", () => {
-        expect(addressOf(postgres)).toBe("app@db.internal:5432/shop");
-        expect(addressOf({ ...postgres, port: 6543, database: "" })).toBe("app@db.internal:6543");
-        expect(addressOf({ engine: "sqlite", path: "/Users/me/data/app.db" })).toBe("app.db");
-        expect(addressOf({ ...postgres, engine: "mysql", database: "app" })).toBe("app@db.internal:3306/app");
-        expect(engineLabel("postgres")).toBe("PostgreSQL");
-        expect(engineLabel("mysql")).toBe("MySQL");
     });
 });

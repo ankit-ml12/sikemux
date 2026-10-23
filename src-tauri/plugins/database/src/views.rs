@@ -385,3 +385,70 @@ fn preview(target: &Target, schema: &str, table: &str) -> String {
     };
     format!("select * from {qualified} limit 100;")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profiles::{Server, Tls};
+
+    fn shop() -> Server {
+        Server {
+            host: "db.internal".into(),
+            port: None,
+            database: "shop".into(),
+            user: "app".into(),
+            tls: Tls::Prefer,
+        }
+    }
+
+    #[test]
+    fn says_where_each_database_is_and_the_schema_it_opens_on() {
+        let sqlite = Target::Sqlite {
+            path: "/Users/me/data/app.db".into(),
+        };
+        let mysql = Target::Mysql(Server {
+            database: "app".into(),
+            ..shop()
+        });
+        let unnamed = Target::Postgres(Server {
+            port: Some(6543),
+            database: String::new(),
+            ..shop()
+        });
+        assert_eq!(
+            address(&Target::Postgres(shop())),
+            "app@db.internal:5432/shop"
+        );
+        assert_eq!(address(&unnamed), "app@db.internal:6543");
+        assert_eq!(address(&sqlite), "app.db");
+        assert_eq!(address(&mysql), "app@db.internal:3306/app");
+        assert_eq!(default_schema(&Target::Postgres(shop())), "public");
+        assert_eq!(default_schema(&mysql), "app");
+        assert_eq!(default_schema(&sqlite), "main");
+    }
+
+    #[test]
+    fn previews_a_table_with_names_quoted_as_each_engine_reads_them() {
+        let postgres = Target::Postgres(shop());
+        let mysql = Target::Mysql(shop());
+        let sqlite = Target::Sqlite {
+            path: "/a.db".into(),
+        };
+        assert_eq!(
+            preview(&postgres, "public", "orders"),
+            r#"select * from "public"."orders" limit 100;"#
+        );
+        assert_eq!(
+            preview(&postgres, "public", r#"odd "name""#),
+            r#"select * from "public"."odd ""name""" limit 100;"#
+        );
+        assert_eq!(
+            preview(&mysql, "shop", "odd `name`"),
+            "select * from `shop`.`odd ``name``` limit 100;"
+        );
+        assert_eq!(
+            preview(&sqlite, "main", "orders"),
+            r#"select * from "orders" limit 100;"#
+        );
+    }
+}

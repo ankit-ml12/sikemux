@@ -53,13 +53,6 @@ pub struct TableInfo {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct SchemaRequest {
-    pub id: String,
-    #[serde(default)]
-    pub schema: Option<String>,
-}
-
-#[derive(Deserialize, Debug)]
 pub struct TableRequest {
     pub id: String,
     #[serde(default)]
