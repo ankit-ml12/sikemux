@@ -4,11 +4,12 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::{Issue, IssuePage, Label};
 
 use crate::client;
-use crate::common::{avatar_of, login_of, ActorRow, Label, LabelRow, MAX_PER_PAGE};
+use crate::common::{avatar_of, login_of, ActorRow, LabelRow, MAX_PER_PAGE};
 use crate::error::{GithubError, GithubResult};
 use crate::workflows::RepoRef;
 
@@ -32,26 +33,6 @@ struct IssueRow {
     labels: Vec<LabelRow>,
     #[serde(default)]
     assignees: Vec<ActorRow>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Issue {
-    pub number: u64,
-    pub title: String,
-    pub body: String,
-    pub state: String,
-    /// Why it was closed: `completed`, `not_planned` or `reopened`.
-    pub state_reason: Option<String>,
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    pub closed_at: Option<String>,
-    pub comments: u64,
-    pub labels: Vec<Label>,
-    pub assignees: Vec<String>,
-    pub url: String,
 }
 
 impl From<IssueRow> for Issue {
@@ -92,14 +73,6 @@ pub struct Query {
 struct SearchPage {
     total_count: u64,
     items: Vec<IssueRow>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IssuePage {
-    pub issues: Vec<Issue>,
-    pub total: u64,
-    pub next_page: Option<u32>,
 }
 
 /// A label or login goes into a search as one quoted term, so nothing in it
@@ -245,71 +218,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_labels_and_assignees() {
-        let row: IssueRow = serde_json::from_value(json!({
-            "number": 3, "title": "Crash on open", "state": "open",
-            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
-            "html_url": "https://github.com/a/b/issues/3",
-            "labels": [{ "name": "bug", "color": "d73a4a" }],
-            "assignees": [{ "login": "nodelike" }],
-            "comments": 4,
-        }))
-        .expect("parses");
-        let issue = Issue::from(row);
-        assert_eq!(issue.labels.first().map(|l| l.name.as_str()), Some("bug"));
-        assert_eq!(issue.assignees, ["nodelike"]);
-        assert_eq!(issue.comments, 4);
-    }
-
-    #[test]
-    fn searches_one_repository_for_issues_only() -> GithubResult<()> {
-        let query = Query {
-            repo: RepoRef {
-                owner: "nodelike".into(),
-                name: "sikemux".into(),
-            },
-            state: None,
-            assignee: Some("@me".into()),
-            labels: Some("bug, good first issue".into()),
-            page: None,
-            per_page: None,
-        };
-        assert_eq!(
-            search_terms(&query, "open")?,
-            "repo:nodelike/sikemux is:issue is:open assignee:@me label:\"bug\" label:\"good first issue\""
-        );
-        assert_eq!(
-            search_terms(&query, "all")?,
-            "repo:nodelike/sikemux is:issue assignee:@me label:\"bug\" label:\"good first issue\""
-        );
-        Ok(())
-    }
-
-    #[test]
     fn a_label_cannot_smuggle_in_a_qualifier() {
         assert_eq!(quoted("x\" repo:evil/x"), "\"x repo:evil/x\"");
-    }
-
-    #[tokio::test]
-    async fn refuses_a_state_github_would_not_take() {
-        let repo = RepoRef {
-            owner: "a".into(),
-            name: "b".into(),
-        };
-        let bad = SetState {
-            issue: IssueRef { repo, number: 1 },
-            state: "archived".into(),
-        };
-        assert!(set_state(&std::env::temp_dir(), bad).await.is_err());
-
-        let untitled = NewIssue {
-            repo: RepoRef {
-                owner: "a".into(),
-                name: "b".into(),
-            },
-            title: "   ".into(),
-            body: "why".into(),
-        };
-        assert!(create(&std::env::temp_dir(), untitled).await.is_err());
     }
 }

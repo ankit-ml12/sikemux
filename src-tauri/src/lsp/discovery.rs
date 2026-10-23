@@ -18,7 +18,7 @@ fn is_executable(path: &Path) -> bool {
 }
 
 fn executable_in_path(bin: &str) -> Option<PathBuf> {
-    crate::system::find_executable(bin)
+    sikemux_process::user_environment::find_executable(bin)
 }
 
 fn go_env(name: &str) -> Option<String> {
@@ -79,11 +79,56 @@ const BUILTIN_LSP: &[(&str, &str, &[&str])] = &[
     ("go", "gopls", &[]),
     ("rust", "rust-analyzer", &[]),
     ("python", "pyright-langserver", &["--stdio"]),
+    ("java", "jdtls", &[]),
 ];
 
+const OVERRIDE_PREFIX: &str = "SIKEMUX_LSP_";
+
+/// Every language a server can start for: the built-in ones and any that a
+/// `SIKEMUX_LSP_<LANG>` variable names.
+pub(super) fn server_languages() -> Vec<String> {
+    let shell = sikemux_pty::user_shell::login_shell_environment()
+        .keys()
+        .cloned();
+    let mut languages: Vec<String> = BUILTIN_LSP
+        .iter()
+        .map(|(language, _, _)| (*language).to_owned())
+        .chain(
+            shell
+                .chain(std::env::vars().map(|(key, _)| key))
+                .filter_map(|key| Some(key.strip_prefix(OVERRIDE_PREFIX)?.to_lowercase()))
+                .filter(|language| server_command(language).is_some()),
+        )
+        .collect();
+    languages.sort();
+    languages.dedup();
+    languages
+}
+
+const JDTLS_MIN_JAVA: u32 = 21;
+
+/// jdtls runs on the Java in `JAVA_HOME`, so one set for an older project would stop it starting.
+fn jdtls_java_home() -> Option<PathBuf> {
+    let current = sikemux_core::tasks::java::default_java()?;
+    if current.major >= JDTLS_MIN_JAVA {
+        return None;
+    }
+    sikemux_core::tasks::java::java_at_least(JDTLS_MIN_JAVA)
+        .map(|runtime| PathBuf::from(runtime.home))
+}
+
+pub(super) fn server_env(language: &str) -> Vec<(&'static str, PathBuf)> {
+    match language {
+        "java" => jdtls_java_home()
+            .map(|home| vec![("JAVA_HOME", home)])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
 pub(super) fn server_command(language: &str) -> Option<(String, Vec<String>)> {
-    let env_key = format!("SIKEMUX_LSP_{}", language.to_uppercase());
-    if let Ok(spec) = std::env::var(&env_key) {
+    let env_key = format!("{OVERRIDE_PREFIX}{}", language.to_uppercase());
+    if let Some(spec) = sikemux_process::user_environment::shell_var(&env_key) {
         // Naive split — sufficient for "bin arg1 arg2". Quoted args aren't
         // supported; users that need them can wrap in a shell script.
         let mut parts = spec.split_whitespace();
@@ -146,5 +191,12 @@ pub(super) fn install_gopls() -> AppResult<String> {
         AppError::Lsp(
             "gopls installed, but Sikemux could not locate it in PATH, GOBIN, or GOPATH/bin".into(),
         )
+    })
+}
+
+pub(super) fn install_jdtls() -> AppResult<String> {
+    sikemux_core::tasks::tools::brew_install("jdtls").map_err(AppError::Lsp)?;
+    executable_in_path("jdtls").map(path_string).ok_or_else(|| {
+        AppError::Lsp("jdtls installed, but Sikemux could not locate it in PATH".into())
     })
 }

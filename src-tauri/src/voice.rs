@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::error::{AppError, AppResult};
@@ -19,6 +20,9 @@ use crate::voice_models;
 
 pub const VOICE_EVENT: &str = "voice";
 /// The helper would otherwise honour these and fetch models from wherever they point.
+const DOWNLOAD_OFFLINE: &str =
+    "You're offline, so the speech model paused downloading. It carries on when you're back.";
+
 const MODEL_FETCH_VARIABLES: [&str; 5] = [
     "REGISTRY_URL",
     "MODEL_REGISTRY_URL",
@@ -49,32 +53,18 @@ pub struct VoiceStatus {
 
 impl VoiceManager {
     pub fn drain(&self) {
-        if let Some(download) = self.lock_download().take() {
+        if let Some(download) = self.download.locked().take() {
             download.abort();
         }
-        if let Some(mut helper) = self.lock().take() {
+        if let Some(mut helper) = self.helper.locked().take() {
             helper.stopped_on_purpose.store(true, Ordering::SeqCst);
             let _ = helper.child.kill();
             let _ = helper.child.wait();
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Helper>> {
-        self.helper
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn lock_download(
-        &self,
-    ) -> std::sync::MutexGuard<'_, Option<tauri::async_runtime::JoinHandle<()>>> {
-        self.download
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn prepare(&self, app: &AppHandle, dir: PathBuf) {
-        let mut download = self.lock_download();
+        let mut download = self.download.locked();
         if download
             .as_ref()
             .is_some_and(|task| !task.inner().is_finished())
@@ -91,28 +81,32 @@ impl VoiceManager {
                     json!({ "type": "progress", "stage": "download", "fraction": fraction }),
                 );
             })
-            .await
-            .map_err(|error| format!("Could not download the speech model: {error}"));
-            let sent = fetched.and_then(|()| {
-                manager
+            .await;
+            let sent = match fetched {
+                Err(AppError::Unreachable(_)) => Err(("offline", DOWNLOAD_OFFLINE.to_string())),
+                Err(error) => Err((
+                    "models",
+                    format!("Could not download the speech model: {error}"),
+                )),
+                Ok(()) => manager
                     .send(
                         &app,
                         json!({ "type": "prepare", "modelsDir": dir.to_string_lossy() }),
                     )
-                    .map_err(|error| error.to_string())
-            });
-            if let Err(message) = sent {
+                    .map_err(|error| ("models", error.to_string())),
+            };
+            if let Err((reason, message)) = sent {
                 let _ = app.emit_to(
                     "main",
                     VOICE_EVENT,
-                    json!({ "type": "error", "reason": "models", "message": message }),
+                    json!({ "type": "error", "reason": reason, "message": message }),
                 );
             }
         }));
     }
 
     fn send(&self, app: &AppHandle, command: Value) -> AppResult<()> {
-        let mut slot = self.lock();
+        let mut slot = self.helper.locked();
         let running = match slot.as_mut() {
             Some(helper) => matches!(helper.child.try_wait(), Ok(None)),
             None => false,

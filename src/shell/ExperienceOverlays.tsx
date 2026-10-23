@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invokeCommand as invoke } from "../api/invoke";
 import { uiActivity, type UiActivityReport } from "../lib/activity";
 import { browserDiagnostics, exportDiagnosticsSnapshot, nativeDiagnostics } from "../lib/diagnostics";
 import { useResourceEnabled } from "../state/resources";
@@ -9,16 +8,19 @@ import * as cmd from "../state/commands";
 import { agentDetectionApi, type ManifestReport } from "../api/agentDetection";
 import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
 import { actionForEvent, keybindingLabelForAction, type CoreKeybindingActionId } from "../commands/keybindings";
-import { AgentIcon, IconAgent, IconCommand, IconFolder, IconSearch, Logo } from "../ui/Icons";
+import { AgentIcon, IconAgent, IconFolder, IconSearch, IconServer, Logo } from "../ui/Icons";
+import { agentStatusLabel } from "../agents/agentStatus";
+import { installAgent, signInAgent } from "../agents/AgentInstall";
+import { installCommand, loginArgs } from "../agents/catalog";
+import { setupOrder, withMissingAgents } from "../agents/setupList";
 import { Kbd } from "../ui/Kbd";
 import { ShaderField } from "../ui/ShaderField";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useOccludeNativeViews } from "../state/nativeViews";
 import { copyText } from "../lib/clipboard";
-
-interface IntegrationHealth {
-    git: boolean;
-}
+import { errorText } from "../lib/format";
+import { swallow } from "../state/toast";
+import { integrationHealth } from "../api/system";
 
 /** Real first moves. Picking one closes the welcome and runs the action. */
 const WELCOME_MOVES = [
@@ -37,7 +39,7 @@ const WELCOME_MOVES = [
         run: () => void cmd.startAgent(),
     },
     { id: "palette.commands", label: "Browse commands", detail: "Every action and its shortcut", Icon: IconSearch, run: cmd.openCommandPalette },
-    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconCommand, run: () => cmd.openPicker("ssh") },
+    { id: "ssh.open", label: "Connect to a host", detail: "Hosts from your SSH config", Icon: IconServer, run: () => cmd.openPicker("ssh") },
 ] as const satisfies readonly {
     id: CoreKeybindingActionId;
     label: string;
@@ -105,11 +107,11 @@ export function Onboarding() {
         if (!open) return;
         let disposed = false;
         setGitMissing(false);
-        void invoke<IntegrationHealth>("integration_health")
+        void integrationHealth()
             .then((value) => {
                 if (!disposed) setGitMissing(!value.git);
             })
-            .catch(() => {});
+            .catch(swallow("read integration health"));
         return () => {
             disposed = true;
         };
@@ -166,13 +168,12 @@ export function Onboarding() {
             first.focus();
         }
     };
-    const agents = [...(catalog.data ?? [])].sort((a, b) => Number(b.available !== false) - Number(a.available !== false));
+    const found = catalog.data ?? [];
+    const agents = catalog.data ? setupOrder(withMissingAgents(found)) : [];
     const dragWindow = (event: React.MouseEvent<HTMLElement>) => {
         if (event.button !== 0 || event.target !== event.currentTarget) return;
         event.preventDefault();
-        void getCurrentWindow()
-            .startDragging()
-            .catch(() => {});
+        void getCurrentWindow().startDragging().catch(swallow("drag the window"));
     };
 
     return (
@@ -217,17 +218,45 @@ export function Onboarding() {
                         <p className="welcome-muted">None found. Install Claude Code, Codex or another supported CLI.</p>
                     ) : (
                         <ul className="welcome-agents">
-                            {agents.map((agent) => (
-                                <li
-                                    key={agent.profileId ?? agent.type}
-                                    className={agent.available === false ? "is-missing" : ""}
-                                    title={agent.available === false ? `${agent.command} is not installed` : agent.command}>
-                                    <span className={`agent-glyph ${agent.type}`}>
-                                        <AgentIcon type={agent.type} size={18} />
-                                    </span>
-                                    <span>{agent.label}</span>
-                                </li>
-                            ))}
+                            {agents.map((agent) => {
+                                const status = agentStatusLabel(agent.status);
+                                const classes = [
+                                    agent.available === false ? "is-missing" : "",
+                                    agent.status?.state === "signedOut" ? "is-signed-out" : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ");
+                                return (
+                                    <li
+                                        key={agent.profileId ?? agent.type}
+                                        className={classes}
+                                        title={
+                                            agent.status?.state === "broken"
+                                                ? agent.status.reason
+                                                : agent.available === false
+                                                  ? `${agent.command} is not installed`
+                                                  : agent.command
+                                        }>
+                                        <span className={`agent-glyph ${agent.type}`}>
+                                            <AgentIcon type={agent.type} size={18} />
+                                        </span>
+                                        <span className="welcome-agent-name">
+                                            <span>{agent.label}</span>
+                                            {status && <small>{status}</small>}
+                                        </span>
+                                        {(agent.status?.state === "missing" || agent.status?.state === "broken") && installCommand(agent.type) && (
+                                            <button type="button" className="welcome-agent-install" onClick={() => installAgent(agent.type)}>
+                                                {agent.status.state === "broken" ? "Reinstall" : "Install"}
+                                            </button>
+                                        )}
+                                        {agent.status?.state === "signedOut" && loginArgs(agent.type) && (
+                                            <button type="button" className="welcome-agent-install" onClick={() => signInAgent(agent)}>
+                                                Sign in
+                                            </button>
+                                        )}
+                                    </li>
+                                );
+                            })}
                         </ul>
                     )}
                 </div>
@@ -313,7 +342,7 @@ export function DiagnosticsOverlay() {
     const [explain, setExplain] = useState<unknown>(null);
     const [uiReport, setUiReport] = useState<UiActivityReport | null>(null);
     const agents = useStore((s) => s.agents);
-    const activity = useStore((s) => s.agentActivity);
+    const status = useStore((s) => s.agentStatus);
     const refresh = async () => {
         setError("");
         try {
@@ -321,7 +350,7 @@ export function DiagnosticsOverlay() {
             setSnapshot({ browser: browserDiagnostics(), native });
             setManifests(detection);
         } catch (value) {
-            setError(value instanceof Error ? value.message : String(value));
+            setError(errorText(value));
         }
     };
     useEffect(() => {
@@ -361,7 +390,7 @@ export function DiagnosticsOverlay() {
                                 .catch((value) => setError(String(value)))
                         }>
                         <b>{agent.title}</b>
-                        <span>{agent.launchState === "dormant" ? "dormant" : (activity[agent.id]?.state ?? "unknown")}</span>
+                        <span>{agent.launchState === "dormant" ? "dormant" : (status[agent.id]?.status ?? "unknown")}</span>
                         <small>explain</small>
                     </button>
                 ))}
@@ -382,9 +411,7 @@ export function DiagnosticsOverlay() {
                 <button onClick={() => void copyText(text)}>Copy JSON</button>
                 <button
                     disabled={snapshot == null}
-                    onClick={() =>
-                        void exportDiagnosticsSnapshot(snapshot).catch((value) => setError(value instanceof Error ? value.message : String(value)))
-                    }>
+                    onClick={() => void exportDiagnosticsSnapshot(snapshot).catch((value) => setError(errorText(value)))}>
                     Save JSON
                 </button>
             </footer>

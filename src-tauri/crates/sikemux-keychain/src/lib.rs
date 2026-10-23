@@ -1,14 +1,19 @@
-//! Secrets kept in the system's keychain, by service and account. On macOS
-//! this is the login Keychain, reached through the `security` tool so no
-//! secret ever sits on a command line.
+//! Secrets kept by service and account, where no agent can reach them: in
+//! the data protection keychain for a build Sikemux's team signed on macOS,
+//! and in the guarded store for a core Sikemux's installer set up on Linux. A
+//! development build keeps them in files only the person can read. Any other
+//! build keeps none, rather than keep them where agents could read them.
 
 use std::fmt;
-use std::time::Duration;
 
-const TIMEOUT: Duration = Duration::from_secs(10);
-const OUTPUT_LIMIT: usize = 64 * 1024;
-/// What `security` exits with when there is simply no such entry.
-const NOT_FOUND: i32 = 44;
+mod file;
+#[cfg(target_os = "linux")]
+mod guarded;
+#[cfg(target_os = "macos")]
+mod keychain;
+mod signature;
+
+pub use signature::{signed_by_team, TEAM_REQUIREMENT};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeychainError {
@@ -30,10 +35,53 @@ impl std::error::Error for KeychainError {}
 
 pub type KeychainResult<T> = Result<T, KeychainError>;
 
+/// Run first thing in `main`, before any thread starts. `core` says this run
+/// is the core, the only one that keeps the means to reach a guarded store.
+pub fn settle(core: bool) {
+    #[cfg(target_os = "linux")]
+    guarded::settle(core);
+    #[cfg(not(target_os = "linux"))]
+    let _ = core;
+}
+
+enum Store {
+    #[cfg(target_os = "macos")]
+    Keychain,
+    #[cfg(target_os = "linux")]
+    Guarded,
+    Files,
+    Unprotected,
+}
+
+fn store() -> Store {
+    #[cfg(target_os = "macos")]
+    if signed_by_team() {
+        return Store::Keychain;
+    }
+    #[cfg(target_os = "linux")]
+    if guarded::active() {
+        return Store::Guarded;
+    }
+    if cfg!(debug_assertions) {
+        Store::Files
+    } else {
+        Store::Unprotected
+    }
+}
+
+fn unprotected() -> KeychainError {
+    KeychainError::Failed(if cfg!(target_os = "macos") {
+        "this copy of Sikemux is not signed by Sikemux, so it keeps no secrets".into()
+    } else {
+        "Sikemux keeps no secrets on this host until its installer sets the core up to guard them: run `curl -fsSL https://sikemux.com/install | sh`".into()
+    })
+}
+
 fn name_like(raw: &str, what: &str) -> KeychainResult<String> {
     let value = raw.trim();
     let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':' | '@');
-    if value.is_empty() || value.len() > 256 || !value.chars().all(allowed) {
+    let dots = value.chars().all(|c| c == '.');
+    if dots || value.len() > 256 || !value.chars().all(allowed) {
         return Err(KeychainError::Invalid(format!(
             "the keychain {what} is letters, digits and . _ - : @"
         )));
@@ -41,13 +89,9 @@ fn name_like(raw: &str, what: &str) -> KeychainResult<String> {
     Ok(value.to_string())
 }
 
-/// Secrets reach `security -i` on a command line it splits on spaces, so
-/// anything that could end the value early is refused rather than escaped.
 fn secret_like(raw: &str) -> KeychainResult<String> {
     let secret = raw.trim();
-    let allowed =
-        |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '~' | '=' | '+' | '/');
-    if secret.is_empty() || secret.len() > 8192 || !secret.chars().all(allowed) {
+    if secret.is_empty() || secret.len() > 8192 || secret.chars().any(char::is_control) {
         return Err(KeychainError::Invalid(
             "that does not look like a token".into(),
         ));
@@ -55,75 +99,52 @@ fn secret_like(raw: &str) -> KeychainResult<String> {
     Ok(secret.to_string())
 }
 
-fn security(args: &[&str], input: Option<&[u8]>) -> KeychainResult<std::process::Output> {
-    if !cfg!(target_os = "macos") {
-        return Err(KeychainError::Failed(
-            "there is no keychain on this system yet".into(),
-        ));
-    }
-    sikemux_process::run(
-        sikemux_process::user_environment::command("security").args(args),
-        input,
-        TIMEOUT,
-        OUTPUT_LIMIT,
-        None,
-    )
-    .map_err(|error| KeychainError::Failed(error.to_string()))
-}
-
 /// Nothing saved reads as `None`; a keychain that will not answer is an error.
 pub fn read(service: &str, account: &str) -> KeychainResult<Option<String>> {
-    let service = name_like(service, "service")?;
-    let account = name_like(account, "account")?;
-    let output = security(
-        &[
-            "find-generic-password",
-            "-s",
-            &service,
-            "-a",
-            &account,
-            "-w",
-        ],
-        None,
-    )?;
-    if output.status.code() == Some(NOT_FOUND) {
-        return Ok(None);
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::read(&service, &account),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::read(root, &service, &account)),
+        Store::Files => file::read(&file::home_root()?, &service, &account),
+        Store::Unprotected => Err(unprotected()),
     }
-    if !output.status.success() {
-        return Err(KeychainError::Failed(format!(
-            "could not read the saved token: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let secret = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok((!secret.is_empty()).then_some(secret))
 }
 
-/// `security -i` reads the command from stdin, so the secret never shows up
-/// in the process list the way an argument would.
 pub fn write(service: &str, account: &str, secret: &str) -> KeychainResult<()> {
-    let service = name_like(service, "service")?;
-    let account = name_like(account, "account")?;
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
     let secret = secret_like(secret)?;
-    let line = format!("add-generic-password -U -s {service} -a {account} -w {secret}\n");
-    let output = security(&["-i"], Some(line.as_bytes()))?;
-    if !output.status.success() {
-        return Err(KeychainError::Failed(
-            "the keychain refused to save it".into(),
-        ));
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::write(&service, &account, &secret),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::write(root, &service, &account, &secret)),
+        Store::Files => file::write(&file::home_root()?, &service, &account, &secret),
+        Store::Unprotected => Err(unprotected()),
     }
-    Ok(())
 }
 
 /// Deleting an entry that is not there is not an error.
 pub fn delete(service: &str, account: &str) -> KeychainResult<()> {
-    let service = name_like(service, "service")?;
-    let account = name_like(account, "account")?;
-    security(
-        &["delete-generic-password", "-s", &service, "-a", &account],
-        None,
-    )?;
-    Ok(())
+    let (service, account) = (
+        name_like(service, "service")?,
+        name_like(account, "account")?,
+    );
+    match store() {
+        #[cfg(target_os = "macos")]
+        Store::Keychain => keychain::delete(&service, &account),
+        #[cfg(target_os = "linux")]
+        Store::Guarded => guarded::run(move |root| file::delete(root, &service, &account)),
+        Store::Files => file::delete(&file::home_root()?, &service, &account),
+        Store::Unprotected => Err(unprotected()),
+    }
 }
 
 #[cfg(test)]
@@ -143,8 +164,9 @@ mod tests {
     }
 
     #[test]
-    fn anything_that_could_end_the_command_early_is_refused() {
-        for secret in ["", "   ", "two words", "a\nb", "a;b", "a\"b", "a'b"] {
+    fn a_secret_is_one_line_of_text() {
+        assert!(secret_like("two words; \"quoted\"").is_ok());
+        for secret in ["", "   ", "a\nb", "a\u{7}b"] {
             assert!(secret_like(secret).is_err(), "{secret:?}");
         }
         for account in ["", "a b", "a/b", "a\nb", "{uuid}"] {
@@ -153,7 +175,6 @@ mod tests {
         assert!(name_like("github.com:nodelike", "account").is_ok());
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     #[allow(clippy::expect_used)]
     fn a_saved_secret_reads_back_and_goes_on_delete() {

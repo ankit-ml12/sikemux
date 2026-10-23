@@ -1,4 +1,4 @@
-import { expandHome, joinPath, normalizePath } from "../lib/paths";
+import { expandHome, fileUriToPath, joinPath, normalizePath } from "../lib/paths";
 
 /** A reference to a file, resolved far enough to open it. */
 export interface PathRef {
@@ -33,17 +33,6 @@ const ANCHOR_SUFFIX = /#L(\d+)(?:C(\d+))?$/i;
 const LEADING_NOISE = /^[('"`[{<]+/;
 const TRAILING_NOISE = /[.,;:!?'"`)\]}>]+$/;
 
-function decodeFileUri(raw: string): string | null {
-    let path: string;
-    try {
-        path = decodeURIComponent(new URL(raw).pathname);
-    } catch {
-        return null;
-    }
-    // A Windows file URI carries its drive behind the leading slash.
-    return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path;
-}
-
 function splitLocation(raw: string): { body: string; line?: number; column?: number } {
     const anchor = ANCHOR_SUFFIX.exec(raw);
     if (anchor) return { body: raw.slice(0, anchor.index), line: Number(anchor[1]), column: anchor[2] ? Number(anchor[2]) : undefined };
@@ -74,16 +63,17 @@ export function parsePathRef(raw: string, roots: PathRoots): PathRef | null {
 
     if (/^file:\/\//i.test(trimmed)) {
         const { body, line, column } = splitLocation(trimmed);
-        const decoded = decodeFileUri(body);
+        const decoded = fileUriToPath(body);
         return decoded ? { path: normalizePath(decoded), line, column } : null;
     }
 
     const { body, line, column } = splitLocation(trimmed);
-    if (!body || /\s/.test(body)) return null;
+    if (!body) return null;
     if (URL_SCHEME.test(body) && !WINDOWS_DRIVE.test(body)) return null;
 
     const expanded = expandHome(body, roots.home);
     const absolute = expanded.startsWith("/") || WINDOWS_DRIVE.test(expanded);
+    if (!absolute && /\s/.test(body)) return null;
     if (!absolute && !looksRelative(expanded)) return null;
     if (!absolute && !roots.cwd) return null;
 
@@ -121,4 +111,15 @@ export function scanPathCandidates(text: string): PathCandidate[] {
         if (candidate) found.push(candidate);
     }
     return found;
+}
+
+/* Backticks mark where a name starts and ends, so a full path between them
+   may contain spaces, as a file named after its contents often does. */
+const ABSOLUTE_START = /^(?:\/|~\/|[A-Za-z]:[\\/])\S/;
+
+/** Whether the text between a pair of backticks names one file as a whole. */
+export function namesWholePath(text: string): boolean {
+    const [only] = scanPathCandidates(text);
+    if (only && only.start === 0 && only.end === text.length) return true;
+    return !text.includes("\n") && ABSOLUTE_START.test(text);
 }

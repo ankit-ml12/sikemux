@@ -19,8 +19,15 @@ export function bundle(definitions: Definitions): {
   $defs: Record<string, any>;
 };
 export function typescript(definitions: Definitions): string;
-export function rust(definitions: Definitions): string;
+export function rust(
+  definitions: Definitions,
+  options?: {
+    include?: (definition: Definition) => boolean;
+    imports?: string;
+  },
+): string;
 export function openapi(
   definitions: Definitions,
   routes: { routes: unknown[] },
 ): any;
+export function client(routes: { routes: unknown[] }): string;

@@ -1,7 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sikemux_process::clock::epoch_ms;
 
 pub const DEFAULT_MINUTES: u32 = 30;
 const MAX_MINUTES: u32 = 7 * 24 * 60;
@@ -21,17 +20,10 @@ pub fn round_ms(ms: f64) -> f64 {
     (ms * 1_000.0).round() / 1_000.0
 }
 
-pub fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 /// Start and end of the last `minutes`, clamped to a week.
 pub fn window(minutes: Option<u32>) -> (u64, u64) {
     let minutes = minutes.unwrap_or(DEFAULT_MINUTES).clamp(1, MAX_MINUTES);
-    let end = now_ms();
+    let end = epoch_ms();
     (end.saturating_sub(u64::from(minutes) * 60_000), end)
 }
 
@@ -88,37 +80,11 @@ pub fn with_filter(mut spec: Value, expression: Option<String>) -> Value {
 }
 
 /// Unix nanoseconds from the RFC 3339 times SigNoz writes, like
-/// `2026-09-24T08:59:25.187Z`, without pulling in a date library for it.
+/// `2026-09-24T08:59:25.187Z`.
 pub fn parse_timestamp_ns(text: &str) -> Option<i128> {
-    let (date, time) = text.split_once('T')?;
-    let mut date_parts = date.splitn(3, '-').map(str::parse::<i64>);
-    let (year, month, day) = (
-        date_parts.next()?.ok()?,
-        date_parts.next()?.ok()?,
-        date_parts.next()?.ok()?,
-    );
-    let time = time.strip_suffix('Z')?;
-    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
-    let mut clock_parts = clock.splitn(3, ':').map(str::parse::<i64>);
-    let (hour, minute, second) = (
-        clock_parts.next()?.ok()?,
-        clock_parts.next()?.ok()?,
-        clock_parts.next()?.ok()?,
-    );
-    let digits: String = fraction.chars().take(9).collect();
-    let nanos = if digits.is_empty() {
-        0
-    } else {
-        format!("{digits:0<9}").parse::<i64>().ok()?
-    };
-    let years = if month <= 2 { year - 1 } else { year };
-    let era = years.div_euclid(400);
-    let year_of_era = years - era * 400;
-    let day_of_year = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    let days = era * 146_097 + day_of_era - 719_468;
-    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
-    Some(i128::from(seconds) * 1_000_000_000 + i128::from(nanos))
+    time::OffsetDateTime::parse(text, &time::format_description::well_known::Rfc3339)
+        .ok()
+        .map(time::OffsetDateTime::unix_timestamp_nanos)
 }
 
 #[cfg(test)]

@@ -1,9 +1,13 @@
 export * from "../ui/Icons";
 export { Checkbox, Switch } from "../ui/Controls";
+export { Filter, Seg, StaleNotice, type SegOption } from "./Controls";
 export { Dropdown, type DropdownOption } from "../ui/Dropdown";
 export { EmptyState } from "../ui/Panel";
 export { Markdown, type ProseImageLoader } from "./Prose";
-export { SignInScreen, SignInWaiting } from "./SignIn";
+export { Loaded, Pending } from "./Loaded";
+export { SignedIn } from "./SignedIn";
+export { TokenSignIn, type TokenField, type TokenValues } from "./TokenSignIn";
+export { SignInError, SignInScreen, SignInWaiting, useSignInAttempt, type SignInAttempt, type SignInStatus } from "./SignIn";
 export { SkeletonRows } from "../ui/Skeleton";
 export { Tooltip } from "../ui/Tooltip";
 export { VirtualLogList } from "../ui/VirtualLogList";
@@ -15,3 +19,5 @@ export { SendToAgentMenu, sendToAgentItems, useAgentChoices } from "../agents/Se
 export { codeFence, type AgentChoice } from "../agents/agentTargets";
 export type { AgentDelivery } from "../agents/agentInbox";
 export { TreeContextMenu as ContextMenu, type CtxItem as ContextMenuItem } from "../rail/FileTree";
+export { useCardDrag } from "../ui/kanbanDrag";
+export { ResizeHandle } from "../git/ResizeHandle";

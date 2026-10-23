@@ -1,0 +1,11 @@
+{
+  "title": "Agents",
+  "defaultOpen": true,
+  "pages": [
+    "supported",
+    "chats",
+    "permissions",
+    "accounts",
+    "linked-hosts"
+  ]
+}

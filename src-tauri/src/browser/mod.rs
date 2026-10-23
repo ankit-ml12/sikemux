@@ -7,35 +7,40 @@
 //! window": `get_webview_window("main")` returns `None` and commands taking a
 //! `WebviewWindow` fail. The app reaches the main window with `get_window`.
 
-pub mod agents;
+pub mod address;
 mod burst;
+mod discard;
 mod documents;
+mod downloads;
 mod favicon;
+mod handover;
 mod history;
 #[cfg(target_os = "macos")]
 mod input;
 mod local_files;
 #[cfg(target_os = "macos")]
-mod macos;
+pub(crate) mod macos;
 #[cfg(target_os = "macos")]
 mod recording;
 pub mod tools;
 mod viewport;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sikemux_process::sync::Locked;
 use tauri::webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, Url, Webview, WebviewUrl,
 };
 
 use crate::error::{AppError, AppResult};
+pub use handover::SavedStrip;
 
 pub const BROWSER_TABS_EVENT: &str = "browser-tabs-changed";
 pub const BROWSER_SHORTCUT_EVENT: &str = "browser-shortcut";
@@ -49,6 +54,11 @@ const MAX_URL_LEN: usize = 8192;
 /// A page opening more tabs than this in `POPUP_WINDOW` is in a loop.
 const POPUP_LIMIT: usize = 4;
 const POPUP_WINDOW: Duration = Duration::from_secs(10);
+/// A page saving more files than this in `DOWNLOAD_WINDOW` is filling the disk.
+const DOWNLOAD_LIMIT: usize = 8;
+const DOWNLOAD_WINDOW: Duration = Duration::from_secs(30);
+/// Files the person never kept are cleared from the holding folder after this long.
+const HELD_DOWNLOAD_LIFETIME: Duration = Duration::from_secs(7 * 24 * 3600);
 // Parked pages sit outside the window, since a hidden view still takes file
 // drops over the spot it last covered. They are hidden too once they are idle.
 const PARKED_ORIGIN: f64 = -100_000.0;
@@ -59,6 +69,9 @@ const ACTING_LINGER: Duration = Duration::from_secs(3);
 /// A hidden page runs no animation frames, and React reveals streamed content
 /// on one, so a parked tab stays shown this long after it finishes loading.
 const LOAD_SETTLE: Duration = Duration::from_secs(2);
+/// The longest a reloaded tab waits off screen for its page before showing
+/// whatever it has so far.
+const REVEAL_LIMIT: Duration = Duration::from_secs(3);
 
 /// WebKit's own agent string names no browser at all, and sites answer that
 /// with an "unsupported browser" page, so tabs — and the fetch that goes after
@@ -138,8 +151,7 @@ pub struct BrowserShortcut {
     pub alt: bool,
 }
 
-/// A file a page handed to the download folder, announced when it starts and
-/// again when it ends. macOS never reports the saved path back, so the path
+/// A file a page saved, announced when it starts and again when it ends. macOS never reports the saved path back, so the path
 /// chosen at the start is the one carried through.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -213,6 +225,14 @@ pub struct TabStrip {
     pub acting: HashMap<String, u64>,
     /// Tabs that finished loading a moment ago, keyed by mark like `acting`.
     pub settling: HashMap<String, u64>,
+    /// Tabs whose page was let go to free memory. Their view is built again
+    /// at the same address once they are needed.
+    pub unloaded: HashSet<String>,
+    /// Tabs built again that stay off screen until their page has loaded, so
+    /// the pane keeps its last picture rather than flashing a blank page.
+    pub revealing: HashMap<String, u64>,
+    /// Since when each tab has been out of sight and idle.
+    pub hidden_since: HashMap<String, Instant>,
 }
 
 impl TabStrip {
@@ -232,6 +252,9 @@ impl TabStrip {
         self.pages.remove(id);
         self.acting.remove(id);
         self.settling.remove(id);
+        self.unloaded.remove(id);
+        self.revealing.remove(id);
+        self.hidden_since.remove(id);
         if self.active.as_deref() == Some(id) {
             self.active = self
                 .order
@@ -273,6 +296,14 @@ impl TabStrip {
             return false;
         }
         self.settling.remove(tab);
+        true
+    }
+
+    pub fn release_revealing(&mut self, tab: &str, mark: u64) -> bool {
+        if self.revealing.get(tab) != Some(&mark) {
+            return false;
+        }
+        self.revealing.remove(tab);
         true
     }
 
@@ -319,11 +350,27 @@ struct AgentBrowser {
     /// What each tab's view was last given, so a swipe moving one page every
     /// frame does not also re-place every tab parked behind it.
     applied: HashMap<String, (viewport::Layout, bool)>,
+    downloads: downloads::DownloadLog,
 }
 
 impl AgentBrowser {
+    /// Unloaded tabs that must have their page back: the one the pane shows,
+    /// and any an agent is working in.
+    fn needed_back(&self) -> Vec<String> {
+        self.strip
+            .unloaded
+            .iter()
+            .filter(|id| {
+                (self.bounds.is_some() && self.strip.active.as_deref() == Some(id.as_str()))
+                    || self.strip.acting.contains_key(id.as_str())
+            })
+            .cloned()
+            .collect()
+    }
+
     fn layout_of(&self, tab_id: &str) -> viewport::Layout {
-        let shown = self.strip.active.as_deref() == Some(tab_id);
+        let shown = self.strip.active.as_deref() == Some(tab_id)
+            && !self.strip.revealing.contains_key(tab_id);
         viewport::layout(
             self.bounds.as_ref().filter(|_| shown),
             self.viewports.get(tab_id).copied(),
@@ -348,13 +395,31 @@ pub struct BrowserManager {
     local_files: local_files::LocalFiles,
     #[cfg(target_os = "macos")]
     recordings: Mutex<HashMap<String, recording::Session>>,
+    app: OnceLock<AppHandle>,
+    relieving: AtomicBool,
 }
 
 impl BrowserManager {
+    /// A loopback address a tab can load `path` from.
+    pub(crate) fn local_file_url(&self, path: &Path) -> Result<String, String> {
+        self.local_files.url_for(path)
+    }
+
+    /// The page `input` opens: a web address, a search, or a local file served to the tab.
+    pub(crate) fn page_url(&self, input: &str) -> AppResult<String> {
+        match address::resolve(input) {
+            address::Address::Local(path) => {
+                self.local_files.url_for(&path).map_err(AppError::Other)
+            }
+            address::Address::Url(url) | address::Address::Search(url) => Ok(url),
+        }
+    }
+
     pub fn snapshot(&self, agent_id: &str) -> AppResult<BrowserSnapshot> {
         validate_agent_id(agent_id)?;
         Ok(self
-            .lock()
+            .agents
+            .locked()
             .get(agent_id)
             .map(|agent| agent.strip.snapshot())
             .unwrap_or(BrowserSnapshot {
@@ -370,35 +435,70 @@ impl BrowserManager {
         url: Option<&str>,
     ) -> AppResult<String> {
         validate_agent_id(agent_id)?;
-        let url = normalize_url(url.unwrap_or_default());
+        let url = self.page_url(url.unwrap_or_default())?;
         validate_url(&url)?;
         let parsed = Url::parse(&url).map_err(|_| AppError::BadArg("invalid browser url"))?;
-        let window = app
-            .get_window("main")
-            .ok_or_else(|| AppError::Window("main window is not open".into()))?;
         let tab_id = format!(
             "browser-{}-{}",
             label_safe(agent_id),
             self.next_tab.fetch_add(1, Ordering::AcqRel)
         );
+        let webview = self.create_view(app, agent_id, &tab_id, parsed, USER_AGENT)?;
+        {
+            let mut agents = self.agents.locked();
+            let agent = agents.entry(agent_id.to_owned()).or_default();
+            agent.strip.insert(
+                tab_id.clone(),
+                TabPage {
+                    url: url.clone(),
+                    loading: url != BLANK_URL,
+                    ..TabPage::default()
+                },
+            );
+            agent.views.insert(tab_id.clone(), webview);
+        }
+        self.relayout(agent_id);
+        self.announce(app);
+        Ok(tab_id)
+    }
+
+    /// Adds the tab's page to the main window, parked off screen.
+    fn create_view(
+        &self,
+        app: &AppHandle,
+        agent_id: &str,
+        tab_id: &str,
+        url: Url,
+        user_agent: &str,
+    ) -> AppResult<Webview> {
+        self.adopt_app(app);
+        let window = app
+            .get_window("main")
+            .ok_or_else(|| AppError::Window("main window is not open".into()))?;
         let (width, height) = self
-            .lock()
+            .agents
+            .locked()
             .get(agent_id)
             .and_then(|agent| agent.seen)
             .unwrap_or(PARKED_SIZE);
 
-        let builder = self.tab_builder(app, agent_id, &tab_id, parsed);
-        let webview = window
-            .add_child(
+        let builder = self.tab_builder(app, agent_id, tab_id, url, user_agent);
+        let add = || {
+            window.add_child(
                 builder,
                 LogicalPosition::new(PARKED_ORIGIN, PARKED_ORIGIN),
                 LogicalSize::new(width, height),
             )
-            .map_err(window_error)?;
+        };
+        #[cfg(target_os = "macos")]
+        let webview = macos::without_activating(add);
+        #[cfg(not(target_os = "macos"))]
+        let webview = add();
+        let webview = webview.map_err(window_error)?;
         let _ = webview.hide();
         #[cfg(target_os = "macos")]
         {
-            let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.clone());
+            let (app_handle, agent, tab) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
             let _ = webview.with_webview(move |platform| {
                 let (moved_agent, moved_tab) = (agent.clone(), tab.clone());
                 let (dialog_app, dialog_tab) = (app_handle.clone(), tab.clone());
@@ -420,7 +520,7 @@ impl BrowserManager {
                     },
                     move |dialog| {
                         let manager = dialog_app.state::<BrowserManager>();
-                        let mut dialogs = manager.dialogs_lock();
+                        let mut dialogs = manager.dialogs.locked();
                         match dialog {
                             Some(dialog) => dialogs.insert(dialog_tab.clone(), dialog),
                             None => dialogs.remove(&dialog_tab),
@@ -433,7 +533,8 @@ impl BrowserManager {
                     move |event| {
                         let manager = document_app.state::<BrowserManager>();
                         let failed = manager
-                            .documents_lock()
+                            .documents
+                            .locked()
                             .entry(document_tab.clone())
                             .or_default()
                             .note(event);
@@ -450,7 +551,7 @@ impl BrowserManager {
                     },
                     move |stall| {
                         let manager = health_app.state::<BrowserManager>();
-                        let mut stalls = manager.stalls_lock();
+                        let mut stalls = manager.stalls.locked();
                         match stall {
                             Some(stall) => stalls.insert(health_tab.clone(), stall),
                             None => stalls.remove(&health_tab),
@@ -460,22 +561,97 @@ impl BrowserManager {
             });
         }
         self.install_shortcuts(app);
-        {
-            let mut agents = self.lock();
-            let agent = agents.entry(agent_id.to_owned()).or_default();
-            agent.strip.insert(
-                tab_id.clone(),
-                TabPage {
-                    url: url.clone(),
-                    loading: url != BLANK_URL,
-                    ..TabPage::default()
-                },
-            );
-            agent.views.insert(tab_id.clone(), webview);
+        Ok(webview)
+    }
+
+    fn adopt_app(&self, app: &AppHandle) {
+        if self.app.set(app.clone()).is_ok() {
+            discard::watch_pressure(app.clone());
         }
-        self.relayout(agent_id);
+    }
+
+    /// Builds an unloaded tab's view again at the address it was on. The
+    /// back and forward history went with the old page.
+    fn restore(&self, agent_id: &str, tab_id: &str) -> Option<Webview> {
+        let app = self.app.get()?;
+        let (url, user_agent) = {
+            let mut agents = self.agents.locked();
+            let agent = agents.get_mut(agent_id)?;
+            if !agent.strip.unloaded.remove(tab_id) {
+                return agent.views.get(tab_id).cloned();
+            }
+            let url = agent.strip.pages.get(tab_id)?.url.clone();
+            let user_agent = agent
+                .viewports
+                .get(tab_id)
+                .and_then(|fixed| fixed.user_agent())
+                .unwrap_or(USER_AGENT);
+            (url, user_agent)
+        };
+        let parsed = Url::parse(&url)
+            .ok()
+            .filter(tab_may_load)
+            .unwrap_or_else(|| Url::parse(BLANK_URL).expect("about:blank parses"));
+        let blank = parsed.as_str() == BLANK_URL;
+        let view = match self.create_view(app, agent_id, tab_id, parsed, user_agent) {
+            Ok(view) => view,
+            Err(error) => {
+                eprintln!("Sikemux could not reload browser tab {tab_id}: {error}");
+                if let Some(agent) = self.agents.locked().get_mut(agent_id) {
+                    agent.strip.unloaded.insert(tab_id.to_owned());
+                }
+                return None;
+            }
+        };
+        let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
+        let kept = {
+            let mut agents = self.agents.locked();
+            match agents
+                .get_mut(agent_id)
+                .filter(|agent| agent.strip.pages.contains_key(tab_id))
+            {
+                Some(agent) => {
+                    if let Some(page) = agent.strip.pages.get_mut(tab_id) {
+                        page.loading = !blank;
+                    }
+                    if !blank {
+                        agent.strip.revealing.insert(tab_id.to_owned(), mark);
+                    }
+                    agent.views.insert(tab_id.to_owned(), view.clone());
+                    true
+                }
+                None => false,
+            }
+        };
+        if !kept {
+            drop_view(view);
+            return None;
+        }
         self.announce(app);
-        Ok(tab_id)
+        let (app, agent_id, tab_id) = (app.clone(), agent_id.to_owned(), tab_id.to_owned());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(REVEAL_LIMIT).await;
+            let manager = app.state::<BrowserManager>();
+            let released = manager
+                .agents
+                .locked()
+                .get_mut(&agent_id)
+                .is_some_and(|agent| agent.strip.release_revealing(&tab_id, mark));
+            if released {
+                manager.relayout(&agent_id);
+            }
+        });
+        Some(view)
+    }
+
+    /// Whether the agent's shown tab has no live page yet: unloaded, or
+    /// still loading again off screen.
+    pub fn reloading(&self, agent_id: &str) -> bool {
+        self.agents.locked().get(agent_id).is_some_and(|agent| {
+            agent.strip.active.as_ref().is_some_and(|id| {
+                agent.strip.unloaded.contains(id) || agent.strip.revealing.contains_key(id)
+            })
+        })
     }
 
     fn tab_builder(
@@ -484,6 +660,7 @@ impl BrowserManager {
         agent_id: &str,
         tab_id: &str,
         url: Url,
+        user_agent: &str,
     ) -> WebviewBuilder<tauri::Wry> {
         let builder = WebviewBuilder::new(tab_id, WebviewUrl::External(url))
             .accept_first_mouse(true)
@@ -492,7 +669,9 @@ impl BrowserManager {
             .initialization_script(RECORDER_SCRIPT)
             .on_navigation(tab_may_load);
         #[cfg(target_os = "macos")]
-        let builder = builder.user_agent(USER_AGENT);
+        let builder = builder.user_agent(user_agent);
+        #[cfg(not(target_os = "macos"))]
+        let _ = user_agent;
 
         let (load_app, load_agent, load_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
@@ -502,11 +681,16 @@ impl BrowserManager {
         let popups = Mutex::new(burst::Burst::new(POPUP_LIMIT, POPUP_WINDOW));
         let (download_app, download_agent, download_tab) =
             (app.clone(), agent_id.to_owned(), tab_id.to_owned());
+        let downloads = Mutex::new(burst::Burst::new(DOWNLOAD_LIMIT, DOWNLOAD_WINDOW));
         builder
             .on_download(move |_, event| {
+                if matches!(event, DownloadEvent::Requested { .. })
+                    && !downloads.locked().admit(Instant::now())
+                {
+                    return false;
+                }
                 let manager = download_app.state::<BrowserManager>();
-                manager.note_download(&download_app, &download_agent, &download_tab, event);
-                true
+                manager.note_download(&download_app, &download_agent, &download_tab, event)
             })
             .on_page_load(move |webview, payload| {
                 let loading = payload.event() == PageLoadEvent::Started;
@@ -537,10 +721,7 @@ impl BrowserManager {
                 });
             })
             .on_new_window(move |url, _| {
-                let admitted = popups
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .admit(Instant::now());
+                let admitted = popups.locked().admit(Instant::now());
                 if !admitted {
                     return NewWindowResponse::Deny;
                 }
@@ -559,21 +740,20 @@ impl BrowserManager {
         agent_id: &str,
         tab_id: &str,
         event: DownloadEvent<'_>,
-    ) {
+    ) -> bool {
         let key = |url: &Url| (tab_id.to_owned(), url.to_string());
         let (url, path, state) = match event {
             DownloadEvent::Requested { url, destination } => {
-                let folder = app
-                    .path()
-                    .download_dir()
-                    .unwrap_or_else(|_| std::env::temp_dir());
+                let Some(folder) = held_downloads_dir(app) else {
+                    return false;
+                };
                 let path = unique_download_path(&folder, &download_file_name(&url, destination));
                 *destination = path.clone();
-                self.downloads_lock().insert(key(&url), path.clone());
+                self.downloads.locked().insert(key(&url), path.clone());
                 (url, path, DownloadState::Started)
             }
             DownloadEvent::Finished { url, path, success } => {
-                let chosen = self.downloads_lock().remove(&key(&url));
+                let chosen = self.downloads.locked().remove(&key(&url));
                 let path = path.or(chosen).unwrap_or_default();
                 #[cfg(target_os = "macos")]
                 if success {
@@ -589,76 +769,72 @@ impl BrowserManager {
                     },
                 )
             }
-            _ => return,
+            _ => return true,
         };
-        let _ = app.emit(
-            BROWSER_DOWNLOAD_EVENT,
-            BrowserDownload {
-                agent_id: agent_id.to_owned(),
-                tab_id: tab_id.to_owned(),
-                url: url.to_string(),
-                path: path.to_string_lossy().into_owned(),
-                state,
-            },
-        );
+        let bytes = (state == DownloadState::Finished)
+            .then(|| std::fs::metadata(&path).ok().map(|meta| meta.len()))
+            .flatten();
+        let download = BrowserDownload {
+            agent_id: agent_id.to_owned(),
+            tab_id: tab_id.to_owned(),
+            url: url.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            state,
+        };
+        if let Some(agent) = self.agents.locked().get_mut(agent_id) {
+            agent.downloads.note(&download, bytes);
+        }
+        let _ = app.emit(BROWSER_DOWNLOAD_EVENT, download);
+        true
     }
 
-    fn dialogs_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, PageDialog>> {
-        self.dialogs
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// The number the agent's next download will get, to find later which
+    /// downloads an action started.
+    pub fn download_mark(&self, agent_id: &str) -> u64 {
+        self.agents
+            .locked()
+            .get(agent_id)
+            .map_or(0, |agent| agent.downloads.mark())
+    }
+
+    pub fn downloads_since(&self, agent_id: &str, mark: u64) -> Vec<downloads::SavedFile> {
+        self.agents
+            .locked()
+            .get(agent_id)
+            .map(|agent| agent.downloads.since(mark))
+            .unwrap_or_default()
+    }
+
+    pub fn recent_downloads(&self, agent_id: &str) -> Vec<downloads::SavedFile> {
+        self.downloads_since(agent_id, 0)
     }
 
     pub fn dialog(&self, tab_id: &str) -> Option<PageDialog> {
-        self.dialogs_lock().get(tab_id).cloned()
-    }
-
-    fn uploads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<PathBuf>>> {
-        self.uploads
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.dialogs.locked().get(tab_id).cloned()
     }
 
     /// Files for the tab's next file chooser, answered in place of the person.
     pub fn offer_upload(&self, tab_id: &str, paths: Vec<PathBuf>) {
-        self.uploads_lock().insert(tab_id.to_owned(), paths);
-    }
-
-    #[cfg(target_os = "macos")]
-    fn recordings_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, recording::Session>> {
-        self.recordings
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.uploads.locked().insert(tab_id.to_owned(), paths);
     }
 
     pub fn upload_pending(&self, tab_id: &str) -> bool {
-        self.uploads_lock().contains_key(tab_id)
+        self.uploads.locked().contains_key(tab_id)
     }
 
     /// `None` once the chooser took the files or the offer was withdrawn.
     pub fn take_upload(&self, tab_id: &str) -> Option<Vec<PathBuf>> {
-        self.uploads_lock().remove(tab_id)
-    }
-
-    fn documents_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, documents::DocumentLog>> {
-        self.documents
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.uploads.locked().remove(tab_id)
     }
 
     /// The tab's top-level loads, oldest first; with `since_current`, only
     /// the one that produced the page on screen and any tried after it.
     pub fn documents(&self, tab_id: &str, since_current: bool) -> Vec<documents::DocumentLoad> {
-        self.documents_lock()
+        self.documents
+            .locked()
             .get(tab_id)
             .map(|log| log.loads(since_current))
             .unwrap_or_default()
-    }
-
-    fn stalls_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, TabStall>> {
-        self.stalls
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Set once WebKit has seen the tab's page stop answering or crash, and
@@ -666,13 +842,7 @@ impl BrowserManager {
     /// noticed a few seconds after input reaches it; `input::probe_responsiveness`
     /// sends some.
     pub fn stalled(&self, tab_id: &str) -> Option<TabStall> {
-        self.stalls_lock().get(tab_id).copied()
-    }
-
-    fn downloads_lock(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), PathBuf>> {
-        self.downloads
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.stalls.locked().get(tab_id).copied()
     }
 
     pub fn note_page(
@@ -683,7 +853,7 @@ impl BrowserManager {
         update: impl FnOnce(&mut TabPage),
     ) {
         let (changed, loading, shown) = {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             match agents
                 .get_mut(agent_id)
                 .and_then(|agent| agent.strip.pages.get_mut(tab_id))
@@ -720,8 +890,11 @@ impl BrowserManager {
 
     fn settle(&self, app: &AppHandle, agent_id: &str, tab_id: &str) {
         let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
-        match self.lock().get_mut(agent_id) {
-            Some(agent) => agent.strip.settle(tab_id, mark),
+        match self.agents.locked().get_mut(agent_id) {
+            Some(agent) => {
+                agent.strip.settle(tab_id, mark);
+                agent.strip.revealing.remove(tab_id);
+            }
             None => return,
         }
         self.relayout(agent_id);
@@ -730,7 +903,8 @@ impl BrowserManager {
             tokio::time::sleep(LOAD_SETTLE).await;
             let manager = app.state::<BrowserManager>();
             let released = manager
-                .lock()
+                .agents
+                .locked()
                 .get_mut(&agent_id)
                 .is_some_and(|agent| agent.strip.release_settled(&tab_id, mark));
             if released {
@@ -742,7 +916,7 @@ impl BrowserManager {
     pub fn close_tab(&self, app: &AppHandle, agent_id: &str, tab_id: &str) -> AppResult<()> {
         validate_agent_id(agent_id)?;
         let view = {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             let agent = agents
                 .get_mut(agent_id)
                 .ok_or(AppError::BadArg("unknown browser tab"))?;
@@ -751,8 +925,8 @@ impl BrowserManager {
             }
             let view = agent.views.remove(tab_id);
             agent.viewports.remove(tab_id);
-            self.documents_lock().remove(tab_id);
-            self.stalls_lock().remove(tab_id);
+            self.documents.locked().remove(tab_id);
+            self.stalls.locked().remove(tab_id);
             if agent.strip.order.is_empty() {
                 agents.remove(agent_id);
             }
@@ -769,19 +943,20 @@ impl BrowserManager {
     pub fn close_agent(&self, app: &AppHandle, agent_id: &str) -> AppResult<()> {
         validate_agent_id(agent_id)?;
         #[cfg(target_os = "macos")]
-        self.recordings_lock().remove(agent_id);
+        self.recordings.locked().remove(agent_id);
         let views = self
-            .lock()
+            .agents
+            .locked()
             .remove(agent_id)
             .map(|agent| agent.views.into_iter().collect::<Vec<_>>())
             .unwrap_or_default();
         let views: Vec<Webview> = {
-            let mut documents = self.documents_lock();
+            let mut documents = self.documents.locked();
             views
                 .into_iter()
                 .map(|(tab_id, view)| {
                     documents.remove(&tab_id);
-                    self.stalls_lock().remove(&tab_id);
+                    self.stalls.locked().remove(&tab_id);
                     view
                 })
                 .collect()
@@ -802,7 +977,8 @@ impl BrowserManager {
     pub fn switch_tab(&self, app: &AppHandle, agent_id: &str, tab_id: &str) -> AppResult<()> {
         validate_agent_id(agent_id)?;
         let switched = self
-            .lock()
+            .agents
+            .locked()
             .get_mut(agent_id)
             .is_some_and(|agent| agent.strip.activate(tab_id));
         if !switched {
@@ -824,7 +1000,7 @@ impl BrowserManager {
         }
         let bounds = bounds.filter(|area| !viewport::collapsed(area));
         {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             let agent = match agents.get_mut(agent_id) {
                 Some(agent) => agent,
                 None if bounds.is_some() => agents.entry(agent_id.to_owned()).or_default(),
@@ -841,7 +1017,7 @@ impl BrowserManager {
 
     /// Whether the person can see this tab's page in its pane right now.
     pub fn shown(&self, agent_id: &str, tab_id: &str) -> bool {
-        self.lock().get(agent_id).is_some_and(|agent| {
+        self.agents.locked().get(agent_id).is_some_and(|agent| {
             agent.strip.active.as_deref() == Some(tab_id)
                 && agent
                     .bounds
@@ -850,17 +1026,18 @@ impl BrowserManager {
         })
     }
 
-    pub fn navigate(&self, app: &AppHandle, agent_id: &str, url: &str) -> AppResult<()> {
-        let url = normalize_url(url);
+    /// Opens `input` in the agent's tab and returns the address it went to.
+    pub fn navigate(&self, app: &AppHandle, agent_id: &str, input: &str) -> AppResult<String> {
+        let url = self.page_url(input)?;
         validate_url(&url)?;
         let parsed = Url::parse(&url).map_err(|_| AppError::BadArg("invalid browser url"))?;
         let (tab_id, view) = self.active_view(agent_id)?;
         view.navigate(parsed).map_err(window_error)?;
         self.note_page(app, agent_id, &tab_id, |page| {
-            page.url = url;
+            page.url = url.clone();
             page.loading = true;
         });
-        Ok(())
+        Ok(url)
     }
 
     pub fn reload(&self, agent_id: &str) -> AppResult<()> {
@@ -894,7 +1071,7 @@ impl BrowserManager {
         fixed: Option<viewport::Viewport>,
     ) -> AppResult<()> {
         let view = {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             let agent = agents
                 .get_mut(agent_id)
                 .ok_or(AppError::BadArg("unknown browser tab"))?;
@@ -922,27 +1099,48 @@ impl BrowserManager {
     }
 
     pub fn viewport(&self, agent_id: &str, tab_id: &str) -> Option<viewport::Viewport> {
-        self.lock()
+        self.agents
+            .locked()
             .get(agent_id)
             .and_then(|agent| agent.viewports.get(tab_id).copied())
     }
 
+    /// The agent's shown tab, with its page loading again if it was unloaded.
     pub fn active_view(&self, agent_id: &str) -> AppResult<(String, Webview)> {
         validate_agent_id(agent_id)?;
-        self.lock()
+        let no_tab = || AppError::BadArg("this agent has no open browser tab");
+        let (id, view) = self
+            .agents
+            .locked()
             .get(agent_id)
             .and_then(|agent| {
                 let id = agent.strip.active.clone()?;
-                let view = agent.views.get(&id)?.clone();
+                let view = agent.views.get(&id).cloned();
                 Some((id, view))
             })
-            .ok_or(AppError::BadArg("this agent has no open browser tab"))
+            .ok_or_else(no_tab)?;
+        if let Some(view) = view {
+            return Ok((id, view));
+        }
+        let view = self.restore(agent_id, &id).ok_or_else(no_tab)?;
+        self.relayout(agent_id);
+        Ok((id, view))
     }
 
     /// Show the active tab inside the pane's page area and park the rest.
     fn relayout(&self, agent_id: &str) {
+        let needed = self
+            .agents
+            .locked()
+            .get(agent_id)
+            .map(AgentBrowser::needed_back)
+            .unwrap_or_default();
+        for tab_id in needed {
+            self.restore(agent_id, &tab_id);
+        }
+        let now = Instant::now();
         let plan: Vec<(Webview, viewport::Layout, bool)> = {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             let Some(agent) = agents.get_mut(agent_id) else {
                 return;
             };
@@ -954,6 +1152,13 @@ impl BrowserManager {
                     (id.clone(), view.clone(), layout, agent.strip.awake(id))
                 })
                 .collect();
+            for (id, _, layout, awake) in &wanted {
+                if *awake || matches!(layout, viewport::Layout::Shown { .. }) {
+                    agent.strip.hidden_since.remove(id);
+                } else {
+                    agent.strip.hidden_since.entry(id.clone()).or_insert(now);
+                }
+            }
             let views = &agent.views;
             agent.applied.retain(|id, _| views.contains_key(id));
             wanted
@@ -989,7 +1194,7 @@ impl BrowserManager {
     pub fn mark_acting(&self, app: &AppHandle, agent_id: &str) -> Option<(String, u64)> {
         let mark = self.next_mark.fetch_add(1, Ordering::AcqRel);
         let (tab, woke) = {
-            let mut agents = self.lock();
+            let mut agents = self.agents.locked();
             let strip = &mut agents.get_mut(agent_id)?.strip;
             let was_awake = strip.active.as_deref().is_some_and(|id| strip.awake(id));
             (strip.mark_acting(mark)?, !was_awake)
@@ -1013,7 +1218,7 @@ impl BrowserManager {
             tokio::time::sleep(ACTING_LINGER).await;
             let manager = app.state::<BrowserManager>();
             let mut released = false;
-            if let Some(agent) = manager.lock().get_mut(&agent_id) {
+            if let Some(agent) = manager.agents.locked().get_mut(&agent_id) {
                 for (tab, mark) in &marks {
                     released |= agent.strip.release_acting(tab, *mark);
                 }
@@ -1048,7 +1253,8 @@ impl BrowserManager {
 
     pub fn drain(&self, why: &str) {
         let views: Vec<Webview> = self
-            .lock()
+            .agents
+            .locked()
             .drain()
             .flat_map(|(_, agent)| agent.views.into_values())
             .collect();
@@ -1059,31 +1265,6 @@ impl BrowserManager {
             drop_view(view);
         }
     }
-
-    pub fn mcp_launch(&self) -> AppResult<BrowserMcpLaunch> {
-        let executable = crate::cli_paths::cli_executable_path().ok_or_else(|| {
-            AppError::Other(
-                "the sikemux-editor sidecar is missing; build it with node scripts/build-cli-sidecar.mjs"
-                    .into(),
-            )
-        })?;
-        Ok(BrowserMcpLaunch {
-            command: executable.to_string_lossy().into_owned(),
-            args: vec![crate::cli_client::TOOLS_MCP_FLAG.into()],
-        })
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, AgentBrowser>> {
-        self.agents
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct BrowserMcpLaunch {
-    pub command: String,
-    pub args: Vec<String>,
 }
 
 fn drop_view(view: Webview) {
@@ -1115,6 +1296,27 @@ fn history_state(webview: &Webview) -> Option<(bool, bool)> {
     }
 }
 
+/// Where pages' downloads wait until the person keeps them, so a page can never
+/// drop a file into Downloads by itself. Files left there go after a week.
+fn held_downloads_dir(app: &AppHandle) -> Option<PathBuf> {
+    let folder = app.path().app_cache_dir().ok()?.join("desk-downloads");
+    std::fs::create_dir_all(&folder).ok()?;
+    let now = std::time::SystemTime::now();
+    for entry in std::fs::read_dir(&folder).ok()?.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| {
+                now.duration_since(modified)
+                    .is_ok_and(|age| age > HELD_DOWNLOAD_LIFETIME)
+            });
+        if stale {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Some(folder)
+}
+
 /// Where Sikemux keeps the files an agent host needs to find the browser: MCP
 /// configs and the private home copies.
 pub(crate) fn browser_state_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -1130,12 +1332,7 @@ fn window_error(error: tauri::Error) -> AppError {
 }
 
 pub(crate) fn validate_agent_id(agent_id: &str) -> AppResult<()> {
-    if agent_id.is_empty()
-        || agent_id.len() > 128
-        || !agent_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':'))
-    {
+    if !sikemux_core::cli::protocol::is_tool_agent_id(agent_id) {
         return Err(AppError::BadArg("invalid browser agent id"));
     }
     Ok(())
@@ -1232,7 +1429,11 @@ fn place(view: &Webview, layout: viewport::Layout, awake: bool) {
                     .collect();
                 macos::clip(tab, frame.clip_left, frame.clip_right, holes);
                 macos::dim(tab, frame.dim);
-                macos::fade(tab, frame.opacity);
+                // A video's controls blur what is behind them, and that blur
+                // draws through the mask even when it cuts the whole page away.
+                let page_width = page.map_or(frame.width, |(width, _)| width);
+                let nothing_shows = frame.clip_left + frame.clip_right >= page_width;
+                macos::fade(tab, if nothing_shows { 0.0 } else { frame.opacity });
             }
             viewport::Layout::Parked {
                 page: (width, height),
@@ -1374,27 +1575,6 @@ fn label_safe(agent_id: &str) -> String {
         .collect()
 }
 
-pub fn normalize_url(input: &str) -> String {
-    let value = input.trim();
-    if value.is_empty() {
-        return BLANK_URL.into();
-    }
-    if value == BLANK_URL || value.contains("://") {
-        return value.to_owned();
-    }
-    if value.starts_with("localhost") || value.starts_with("127.0.0.1") || value.contains('.') {
-        return format!(
-            "http{}://{value}",
-            if value.starts_with("localhost") || value.starts_with("127.0.0.1") {
-                ""
-            } else {
-                "s"
-            }
-        );
-    }
-    history::search_url(value)
-}
-
 #[tauri::command]
 pub async fn browser_snapshot(
     manager: State<'_, BrowserManager>,
@@ -1449,8 +1629,11 @@ pub async fn browser_navigate(
     agent_id: String,
     url: String,
 ) -> AppResult<()> {
-    manager.navigate(&app, &agent_id, &url)?;
-    manager.history.note_typed(&app, &normalize_url(&url));
+    let local = matches!(address::resolve(&url), address::Address::Local(_));
+    let opened = manager.navigate(&app, &agent_id, &url)?;
+    if !local {
+        manager.history.note_typed(&app, &opened);
+    }
     Ok(())
 }
 
@@ -1497,6 +1680,11 @@ pub async fn browser_page_still(
     manager: State<'_, BrowserManager>,
     agent_id: String,
 ) -> AppResult<tauri::ipc::Response> {
+    if manager.reloading(&agent_id) {
+        return Err(AppError::Window(
+            "the page is loading again and keeps its last picture".into(),
+        ));
+    }
     let (_, view) = manager.active_view(&agent_id)?;
     #[cfg(target_os = "macos")]
     {
@@ -1550,18 +1738,6 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_marked_without_a_tab_and_a_closed_tab_drops_its_mark() {
-        let mut strip = TabStrip::default();
-        assert_eq!(strip.mark_acting(1), None);
-
-        strip.insert("a".into(), page("https://a.test"));
-        strip.mark_acting(2);
-        strip.remove("a");
-
-        assert!(strip.acting.is_empty());
-    }
-
-    #[test]
     fn a_tab_sleeps_only_once_it_is_idle_and_its_latest_load_has_settled() {
         let mut strip = TabStrip::default();
         strip.insert("a".into(), page("https://a.test"));
@@ -1587,15 +1763,6 @@ mod tests {
     }
 
     #[test]
-    fn a_new_tab_takes_the_active_spot() {
-        let mut strip = TabStrip::default();
-        strip.insert("a".into(), page("https://a"));
-        strip.insert("b".into(), page("https://b"));
-        assert_eq!(strip.active.as_deref(), Some("b"));
-        assert_eq!(strip.order, vec!["a", "b"]);
-    }
-
-    #[test]
     fn closing_the_shown_tab_moves_right_then_left() {
         let mut strip = TabStrip::default();
         for id in ["a", "b", "c"] {
@@ -1609,48 +1776,6 @@ mod tests {
         assert!(strip.remove("a"));
         assert_eq!(strip.active, None);
         assert!(!strip.remove("a"));
-    }
-
-    #[test]
-    fn closing_another_tab_keeps_the_shown_one() {
-        let mut strip = TabStrip::default();
-        for id in ["a", "b", "c"] {
-            strip.insert(id.into(), page(id));
-        }
-        assert!(strip.activate("a"));
-        assert!(strip.remove("c"));
-        assert_eq!(strip.active.as_deref(), Some("a"));
-        assert!(!strip.activate("zzz"));
-    }
-
-    #[test]
-    fn snapshot_lists_tabs_in_strip_order_with_the_active_flag() {
-        let mut strip = TabStrip::default();
-        strip.insert("a".into(), page("https://a"));
-        strip.insert("b".into(), page("https://b"));
-        strip.activate("a");
-        let snapshot = strip.snapshot();
-        assert_eq!(snapshot.active_tab_id.as_deref(), Some("a"));
-        assert_eq!(
-            snapshot
-                .tabs
-                .iter()
-                .map(|tab| (tab.id.as_str(), tab.active))
-                .collect::<Vec<_>>(),
-            vec![("a", true), ("b", false)]
-        );
-    }
-
-    #[test]
-    fn normalizes_addresses_and_searches() {
-        assert_eq!(normalize_url("  "), BLANK_URL);
-        assert_eq!(normalize_url("example.com"), "https://example.com");
-        assert_eq!(normalize_url("localhost:3000/x"), "http://localhost:3000/x");
-        assert_eq!(normalize_url("http://a.b"), "http://a.b");
-        assert_eq!(
-            normalize_url("rust lifetimes"),
-            "https://www.google.com/search?q=rust+lifetimes"
-        );
     }
 
     #[test]

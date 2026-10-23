@@ -20,13 +20,19 @@ describe("terminalName", () => {
         name: "Shells",
         role: "term",
         activePaneId: "p",
-        root: { type: "pane", id: "p", cwd: "/repo", kind: "terminal", title: "server" },
+        root: { type: "pane", id: "p", cwd: "/repo", kind: "terminal", title: "server", ptyId: 3 },
     };
 
     it("prefers the pane's own title over its window's", () => {
         const context = { sessionId: "s", sessionName: "repo", sessionKind: "project" as const, windowId: "w", paneId: "p" };
-        expect(terminalName({ windows: { w: win } }, context)).toBe("server");
-        expect(terminalName({ windows: { w: win } }, { ...context, paneId: "gone" })).toBe("Shells");
-        expect(terminalName({ windows: {} }, context)).toBeNull();
+        expect(terminalName({ windows: { w: win }, terminalTitles: {} }, context)).toBe("server");
+        expect(terminalName({ windows: { w: win }, terminalTitles: {} }, { ...context, paneId: "gone" })).toBe("Shells");
+        expect(terminalName({ windows: {}, terminalTitles: {} }, context)).toBeNull();
+    });
+
+    it("goes by the name the person gave the tab, then by the shell's title", () => {
+        const context = { sessionId: "s", sessionName: "repo", sessionKind: "project" as const, windowId: "w", paneId: "p" };
+        expect(terminalName({ windows: { w: win }, terminalTitles: { 3: "~/repo" } }, context)).toBe("~/repo");
+        expect(terminalName({ windows: { w: { ...win, customName: "dev server" } }, terminalTitles: { 3: "~/repo" } }, context)).toBe("dev server");
     });
 });

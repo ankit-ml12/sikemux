@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { coreCall } from "../api/core";
+import { useProjectRepo } from "../git/projectRepo";
+import { errorText } from "../lib/format";
 import { deliverToAgent } from "../agents/agentInbox";
 import { worktreeSwitchState } from "./worktreeSwitch";
 import * as cmd from "../state/commands";
 import { useResourceEnabled } from "../state/resources";
 import { gitWorktreesR } from "../state/resources.defs";
 import { useStore } from "../state/store";
-import type { Agent } from "../state/types";
+import type { Agent, AgentWorktree } from "../state/types";
 import type { OutgoingMessage } from "./queuedMessages";
 import type { ChatState } from "./types";
+
+/** The checkout the core cut for an agent and moved it into. */
+export interface PreparedWorktree {
+    worktree: AgentWorktree;
+    /** Where the agent works inside the new checkout. */
+    cwd: string;
+    /** Why the project's setup commands did not all finish, when they did not. */
+    setupError: string | null;
+}
 
 /** Waits for the session to come back up in the worktree before the message that started it goes out. */
 interface PendingSend {
@@ -45,8 +57,10 @@ export function useChatWorktree({
     const on = choice?.cwd === cwd ? choice.on : projectDefault;
     const [step, setStep] = useState<string | null>(null);
     const pending = useRef<PendingSend | null>(null);
-    const checkouts = useResourceEnabled(visible && !agent.worktree && !started, gitWorktreesR, cwd);
-    const isRepo = checkouts.data ? true : checkouts.status === "error" ? false : null;
+    const project = useProjectRepo(cwd, visible && !agent.worktree && !started);
+    const checkouts = useResourceEnabled(visible && !agent.worktree && !started && project.repo !== null, gitWorktreesR, project.repo ?? cwd);
+    const noRepo = project.repos !== null && project.repo === null;
+    const isRepo = noRepo ? false : checkouts.data ? true : checkouts.status === "error" ? false : null;
     const state = worktreeSwitchState({ worktree: agent.worktree, isRepo, started, preparing: step, on });
 
     const toggle = () => {
@@ -70,23 +84,22 @@ export function useChatWorktree({
         if (state.kind !== "choosing" || !state.on) return send(message, steerNow);
         onError(null);
         setStep("Creating worktree");
-        void import("../agents/agentWorktree")
-            .then(({ createAgentWorktree }) =>
-                createAgentWorktree({ agentId, projectCwd: cwd, message: message.text || message.context[0]?.title || "", onStep: setStep }),
-            )
-            .then(
-                (prepared) => {
-                    if (!prepared.setupError) pending.current = { cwd: prepared.cwd, message, seen: false };
-                    cmd.setAgentWorktree(agentId, prepared.cwd, prepared.worktree);
-                    if (prepared.setupError) {
-                        giveBack(message, `${prepared.setupError}. The worktree is kept at ${prepared.worktree.path}; send again to start there.`);
-                        return;
-                    }
-                    setStep("Starting the agent in the worktree");
-                },
-                (failure: unknown) =>
-                    giveBack(message, `Could not create a worktree: ${failure instanceof Error ? failure.message : String(failure)}`),
-            );
+        void coreCall<PreparedWorktree>("createAgentWorktree", {
+            agentId,
+            message: message.text || message.context[0]?.title || "",
+            repo: project.repo !== cwd ? project.repo : null,
+        }).then(
+            (prepared) => {
+                if (!prepared.setupError) pending.current = { cwd: prepared.cwd, message, seen: false };
+                cmd.setAgentWorktree(agentId, prepared.cwd, prepared.worktree);
+                if (prepared.setupError) {
+                    giveBack(message, `${prepared.setupError}. The worktree is kept at ${prepared.worktree.path}; send again to start there.`);
+                    return;
+                }
+                setStep("Starting the agent in the worktree");
+            },
+            (failure: unknown) => giveBack(message, `Could not create a worktree: ${errorText(failure)}`),
+        );
         return true;
     };
 

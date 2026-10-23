@@ -1,11 +1,14 @@
 use std::sync::Mutex;
 
+use futures_util::StreamExt;
 use iroh::SecretKey;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
-use tokio_websockets::{CloseCode, ServerBuilder};
+use tokio::net::TcpStream;
+use tokio_websockets::{CloseCode, Message, ServerBuilder, WebSocketStream};
 
 use super::*;
+use crate::accounts::socket::OVER_LIMIT_WAIT;
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -223,14 +226,6 @@ fn urls_follow_the_api_scheme() {
     assert_eq!(url("http://127.0.0.1:4000/"), "ws://127.0.0.1:4000/v1/live");
 }
 
-#[test]
-fn backoff_never_passes_its_cap() {
-    for failures in [1, 2, 10, 40, u32::MAX] {
-        assert!(backoff(failures) <= BACKOFF_CAP);
-    }
-    assert!(backoff(1) <= BACKOFF_BASE);
-}
-
 #[tokio::test]
 async fn a_host_proves_its_key_applies_each_event_once_and_acknowledges_it() {
     let server = Server::new().await;
@@ -313,6 +308,49 @@ async fn a_key_the_server_has_forgotten_signs_the_host_out() {
 }
 
 #[tokio::test]
+async fn a_host_over_the_servers_limits_waits_out_the_minute() {
+    let server = Server::new().await;
+    let account = Fake::new(Want::Stay);
+    let (_changed, mut watching) = watch::channel(());
+    let app = LiveApp {
+        platform: crate::accounts::protocol::Platform::Macos,
+        version: "0.0.0-test".into(),
+    };
+    let url = url(&server.base());
+    let outbox = Outbox::default();
+    let ended = session(&*account, &url, &app, &outbox, &mut watching);
+    let refused = async {
+        let mut peer = server.greet(&account).await;
+        peer.ready(0).await;
+        peer.close(4429).await;
+    };
+    let (ended, ()) = tokio::join!(ended, refused);
+    let Ended::Retry { hint, .. } = ended else {
+        panic!("the host gives up instead of retrying");
+    };
+    assert!(hint.is_some_and(|wait| wait >= OVER_LIMIT_WAIT));
+}
+
+#[tokio::test]
+async fn the_network_coming_back_cuts_a_waiting_host_short() {
+    let server = Server::new().await;
+    let account = Fake::new(Want::Stay);
+    let (task, changed) = spawn(&account, &server);
+    let mut peer = server.greet(&account).await;
+    peer.ready(0).await;
+    peer.close(4429).await;
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    changed.send(()).unwrap();
+    let back = tokio::time::timeout(Duration::from_secs(5), server.greet(&account)).await;
+    assert!(
+        back.is_ok(),
+        "the host waits out its backoff instead of connecting now"
+    );
+    task.abort();
+}
+
+#[tokio::test]
 async fn signing_out_sends_leave_once_the_server_is_ready() {
     let server = Server::new().await;
     let account = Fake::new(Want::Stay);
@@ -374,7 +412,7 @@ fn push(to: &str, card: &str, expires_at: u64) -> Push {
 }
 
 fn later() -> u64 {
-    now_ms() + 60_000
+    epoch_ms() + 60_000
 }
 
 #[test]
@@ -382,6 +420,31 @@ fn expiry_reads_as_an_rfc3339_time() {
     assert_eq!(rfc3339(0), "1970-01-01T00:00:00.000Z");
     assert_eq!(rfc3339(1_791_003_600_123), "2026-10-03T05:00:00.123Z");
     assert_eq!(rfc3339(951_782_400_000), "2000-02-29T00:00:00.000Z");
+}
+
+#[test]
+fn server_times_read_back_to_the_millisecond() {
+    for ms in [0, 1_791_003_600_123, 951_782_400_000, 4_102_444_799_999] {
+        assert_eq!(parse_rfc3339(&rfc3339(ms)), Some(ms));
+    }
+    assert_eq!(
+        parse_rfc3339("2026-10-03T05:00:00Z"),
+        Some(1_791_003_600_000)
+    );
+    assert_eq!(
+        parse_rfc3339("2026-10-03T05:00:00.5Z"),
+        Some(1_791_003_600_500)
+    );
+    for bad in [
+        "",
+        "2026-10-03",
+        "2026-10-03T05:00:00",
+        "2026-13-03T05:00:00Z",
+        "2026-10-03T05:00:00.x1Z",
+        "2026-10-03T05:+0:00Z",
+    ] {
+        assert_eq!(parse_rfc3339(bad), None, "{bad}");
+    }
 }
 
 #[test]
@@ -393,7 +456,7 @@ fn a_newer_alert_for_the_same_card_replaces_one_still_waiting() {
         blob: "BBBB".into(),
         ..push("phone", "a", later())
     });
-    outbox.post(push("phone", "c", now_ms() - 1));
+    outbox.post(push("phone", "c", epoch_ms() - 1));
     let waiting = outbox.waiting();
     assert_eq!(waiting.len(), 3);
     assert_eq!(waiting[0].collapse_id, "b".repeat(32));

@@ -63,8 +63,7 @@
     color: var(--text-primary);
 }
 .aws-nav-item.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .aws-nav-item:disabled {
@@ -81,7 +80,7 @@
     color: var(--text-tertiary);
 }
 .aws-nav-item.active .aws-nav-icon {
-    color: var(--acc);
+    color: var(--text-primary);
 }
 .aws-nav-name {
     flex: 1 1 auto;
@@ -92,9 +91,33 @@
     color: var(--text-tertiary);
 }
 
+.aws-agent-profile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: auto;
+    padding-bottom: var(--space-3);
+}
+.aws-agent-profile .dd,
+.aws-agent-profile .dd-btn {
+    width: 100%;
+}
+.aws-agent-profile-for {
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.aws-agent-profile-note {
+    margin: 0;
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
 .aws-account-wrap {
     position: relative;
-    margin-top: auto;
 }
 .aws-account {
     display: flex;
@@ -111,6 +134,7 @@
     transition:
         background var(--dur-1) linear,
         border-color var(--dur-1) linear;
+    border-radius: var(--radius-3);
 }
 .aws-account:hover,
 .aws-account.open {
@@ -186,9 +210,8 @@
 }
 .aws-profile-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     padding: var(--space-1h) var(--space-2);
     border: 1px solid transparent;
@@ -205,9 +228,15 @@
     outline: none;
 }
 .aws-profile-item.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
+}
+.aws-profile-item-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    min-width: 0;
 }
 .aws-profile-item-name {
     max-width: 100%;
@@ -386,98 +415,15 @@
     }
 }
 
-.aws-seg {
-    display: inline-flex;
-    gap: var(--space-1);
-    flex: 0 0 auto;
-}
-.aws-seg button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1h);
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: var(--text-xs);
-    white-space: nowrap;
-    cursor: pointer;
-}
-.aws-seg button:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-}
-.aws-seg button.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
-    color: var(--text-primary);
-}
-.aws-seg-count {
-    font-size: var(--text-2xs);
-    font-variant-numeric: tabular-nums;
-    color: var(--text-tertiary);
-}
-
-.aws-filter {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    height: 28px;
-    width: 220px;
-    min-width: 120px;
-    flex: 0 1 auto;
-    padding: 0 var(--space-1h) 0 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: text;
-}
-.aws-filter:focus-within {
-    border-color: var(--border-strong);
-    box-shadow: var(--focus-ring);
-}
-.aws-filter svg {
-    flex: 0 0 auto;
-}
-.aws-filter input {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--text-xs);
-}
-.aws-filter input::placeholder {
-    color: var(--text-tertiary);
-}
-.aws-filter kbd {
-    flex: 0 0 auto;
-    padding: 0 5px;
-    border: 1px solid var(--border);
-    font-family: var(--ui);
-    font-size: var(--text-2xs);
-    color: var(--text-tertiary);
-}
-.aws-filter:focus-within kbd {
-    display: none;
-}
-
 .aws-filter-chip {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
     height: 28px;
     padding: 0 var(--space-1) 0 10px;
-    border: 1px solid var(--border-selected);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
     font-size: var(--text-xs);
 }
 .aws-filter-chip button {
@@ -722,8 +668,7 @@
     color: var(--text-primary);
 }
 .aws-table tbody tr.sel td {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .aws-table tbody tr td:first-child {
@@ -736,7 +681,6 @@
 }
 .aws-table tbody tr.sel td:first-child,
 .aws-table tbody tr.sel td:last-child {
-    border-color: var(--border-selected);
 }
 .aws-table tbody tr:focus-visible td {
     background: var(--surface-active);
@@ -1028,12 +972,14 @@
     border: 1px solid color-mix(in oklab, var(--live) 30%, transparent);
     background: color-mix(in oklab, var(--live) 8%, transparent);
     color: var(--live);
+    border-radius: var(--radius-full);
 }
 .aws-live i {
     width: 6px;
     height: 6px;
     background: currentColor;
     animation: aws-pulse 1.4s ease-in-out infinite;
+    border-radius: var(--radius-full);
 }
 .aws-live.ended {
     border-color: var(--border);
@@ -1272,8 +1218,7 @@
     background: var(--surface-hover);
 }
 .aws-chart-bar.on {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
 }
 .aws-chart-amount {
     font-size: var(--text-2xs);

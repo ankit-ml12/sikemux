@@ -56,7 +56,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section(
         "plugins",
         "Built-in plugins",
-        "aws bruno database postgres postgresql sqlite sql github actions jira rundeck signoz enable disable switch off turn on extensions integrations",
+        "aws bitbucket bruno database postgres postgresql mysql sqlite sql github actions gitlab jira rundeck signoz slack enable disable switch off turn on extensions integrations",
     ),
     section("general", "Project folders", "repos repositories directories roots scan depth index picker"),
     section("general", "Session transfer", "export import clipboard move machine bundle copy"),
@@ -66,6 +66,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("appearance", "Interface", "Text size", "font zoom scale larger smaller accessibility"),
     row("appearance", "Interface", "Pane texture", "dither dithering shader grain noise background effect"),
     row("appearance", "Interface", "Pane image", "picture photo wallpaper background dither dithered custom"),
+    row("appearance", "Interface", "Pane strength", "dither grain picture opacity intensity texture image"),
+    section("appearance", "Buddies", "agent icon character avatar mascot face"),
+    row("appearance", "Buddies", "Show buddies", "agent icon character avatar mascot harness logo"),
+    row("appearance", "Buddies", "Pack", "agent icon character avatar mascot style"),
+    row("appearance", "Buddies", "Shape", "agent icon character avatar mixed"),
+    row("appearance", "Buddies", "Animate faces", "motion blink animation"),
     ...(IS_MACOS
         ? [
               section("appearance", "Window"),
@@ -76,8 +82,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
     section("keybindings", "Shortcuts", "keybindings hotkeys keys keyboard remap"),
 
-    section("activity", "Overview", "stats statistics analytics dashboard profile usage totals sessions tokens commits hours"),
+    section(
+        "activity",
+        "Overview",
+        "stats statistics analytics dashboard profile usage totals sessions tokens commits hours cost spend dollars money",
+    ),
     section("activity", "Calendar", "heatmap contributions streak days year"),
+    section("activity", "By model", "cost price pricing spend opus sonnet gpt models"),
     section("activity", "By agent", "claude codex share breakdown"),
     section("activity", "By project", "repositories share breakdown"),
 
@@ -88,25 +99,34 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("about", "Privacy", "Share anonymous usage", "analytics telemetry tracking opt out posthog"),
     section("about", "Help", "what's new changelog diagnostics welcome onboarding"),
 
+    section("agents", "Agents on this machine", "install reinstall missing claude codex opencode hermes pi omp grok cli"),
     section("agents", "Launch boundary", "permissions yolo sandbox safety bypass approval"),
-    section("agents", "Provider profiles", "claude codex gemini accounts"),
+    section("agents", "Claude accounts", "sign in login logout email subscription max pro switch rotate limit add second work personal"),
+    section("agents", "Codex accounts", "sign in login logout email chatgpt plus pro switch rotate limit add second work personal"),
+    section("agents", "Provider profiles", "claude codex accounts"),
     row("agents", "Provider profiles", "Name", "profile"),
-    row("agents", "Provider profiles", "Provider", "claude codex gemini"),
+    row("agents", "Provider profiles", "Provider", "claude codex"),
     row("agents", "Provider profiles", "Executable path", "binary cli path"),
     row("agents", "Provider profiles", "Profile directory", "config account home"),
-    row("agents", "Provider profiles", "Claude default", "profile"),
-    row("agents", "Provider profiles", "Codex default", "profile"),
+    section("agents", "Coding plans", "zai glm minimax kimi code opencode go synthetic ollama subscription plan key claude codex"),
     section(
         "agents",
         "Model providers",
-        "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp",
+        "openrouter baseten together fireworks groq cerebras deepseek moonshot kimi mistral vercel api key hosted open models opencode pi omp claude codex",
     ),
+    section("agents", "Local models", "ollama lm studio lmstudio local offline runner claude codex"),
+    section("agents", "Helpers", "cheap model workers scouts reviewers subagents spawn paid by provider"),
+    row("agents", "Helpers", "Agent", "helper worker scout reviewer subagent cheap model provider"),
+    section("agents", "Skills", "skill SKILL.md library claude codex opencode pi omp hermes grok global own move"),
+    row("agents", "Skills", "Add a skill", "new create install git folder"),
     section("agents", "Sessions"),
     row("agents", "Sessions", "Restore agent tabs", "resume reopen startup"),
     row("agents", "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),
     row("agents", "Sessions", "Test notification", "notification sound permission send try"),
     row("agents", "Sessions", "Rail density", "compact comfortable sidebar"),
-    row("agents", "Sessions", "Idle agents", "sleep memory process"),
+    row("agents", "Sessions", "Sending while an agent works", "steer queue interrupt enter"),
+    row("agents", "Sessions", "Agent names", "name theme anime nature naruto one piece characters words"),
+    row("agents", "Sessions", "Idle chats", "sleep memory process agents"),
     ...(IS_MACOS
         ? [
               section("agents", "Voice", "dictation microphone speech talk transcribe"),
@@ -122,6 +142,11 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
               row("agents", "Notch", "Step aside for Sikemux Dev", "dev build development"),
               row("agents", "Voice", "Dictate with right Option", "dictation microphone speech push to talk hold"),
               row("agents", "Voice", "Speech model", "parakeet download neural engine"),
+              section("agents", "iOS Simulator", "iphone ipad xcode devicehub simulator phone mobile bezel frame buttons"),
+              row("agents", "iOS Simulator", "Let agents drive the iOS Simulator", "iphone tap swipe app test mobile"),
+              row("agents", "iOS Simulator", "Xcode", "xcode-select developer tools"),
+              row("agents", "iOS Simulator", "iOS runtimes", "ios version runtime"),
+              row("agents", "iOS Simulator", "Simulator helper", "download idb"),
           ]
         : []),
 
@@ -133,15 +158,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     row("actions", "New action", "Where output lands", "placement terminal split popup background"),
     row("actions", "New action", "Contexts", "project ssh aws bruno plugin"),
 
-    section("cli", "Shell integration", "install terminal path sikemux-editor"),
+    section("cli", "Shell integration", "install terminal path"),
     section("cli", "Usage", "editor git commit open"),
 
-    section("devices", "Remote access", "phone mobile iphone android remote away connect host"),
-    row("devices", "Remote access", "Allow paired devices", "phone mobile remote enable turn on off background"),
-    section("devices", "Your account", "account sign in login google github email phones find"),
-    row("devices", "Your account", "Not signed in", "sign in log in account google github email"),
-    section("devices", "Pair a device", "phone mobile code pairing add connect"),
-    section("devices", "Paired devices", "phone mobile revoke remove forget access watch"),
+    section("devices", "Your account", "account sign in sign out login google github email delete"),
+    section("devices", "Remote access", "phone mobile iphone android remote away connect host enable turn on off"),
+    section("devices", "Phones", "phone mobile iphone android qr code scan revoke remove forget access watch full control"),
 
     section("cloud", "Single sign-on", "sso aws gcp login"),
     row("cloud", "Single sign-on", "Browser app", "chrome safari firefox arc"),

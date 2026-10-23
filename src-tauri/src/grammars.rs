@@ -3,24 +3,23 @@
 //! kept on disk so each is downloaded once.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
+use crate::http_client::client;
 
 const MIRRORS: [&str; 2] = [
     "https://cdn.jsdelivr.net/npm/@shikijs/langs@",
     "https://unpkg.com/@shikijs/langs@",
 ];
 const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The largest grammar is under 800 KB.
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 /// A file shown while offline asks again on every render; after a failed
@@ -92,7 +91,12 @@ async fn download(version: &str, id: &str, expected: &str) -> AppResult<Vec<u8>>
 }
 
 async fn fetch(url: &str) -> AppResult<Vec<u8>> {
-    let response = client().get(url).send().await?.error_for_status()?;
+    let response = client()?
+        .get(url)
+        .timeout(FETCH_TIMEOUT)
+        .send()
+        .await?
+        .error_for_status()?;
     if response
         .content_length()
         .is_some_and(|length| length > MAX_BYTES as u64)
@@ -113,12 +117,7 @@ async fn fetch(url: &str) -> AppResult<Vec<u8>> {
 
 /// Written beside its final name and renamed, so a reader never sees half a file.
 fn keep(path: &Path, source: &[u8]) -> AppResult<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = PathBuf::from(format!("{}.{}.partial", path.display(), std::process::id()));
-    std::fs::write(&partial, source)?;
-    std::fs::rename(&partial, path)?;
+    sikemux_process::files::write_atomic(path, source, false)?;
     Ok(())
 }
 
@@ -158,18 +157,6 @@ fn remember_failure(id: &str) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .insert(id.to_owned(), Instant::now());
-}
-
-fn client() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .unwrap_or_default()
-    })
 }
 
 #[cfg(test)]

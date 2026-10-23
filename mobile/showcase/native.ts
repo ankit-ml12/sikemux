@@ -3,10 +3,25 @@
  * showcase: one Mac is already paired and answers from the demo world instead
  * of the network.
  */
-import { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind } from '../app/test/mocks/sikemux-native';
-import { CHATS, CORE, HOST, LAUNCHERS, PANE_PICTURE, PROJECTS, SESSIONS, chatEvents, permissionPayload, setupOf } from './world';
+import { ChatAttachment, CoreEvent, MobileError } from '../app/test/mocks/sikemux-native';
+import {
+  BOARDS,
+  CHATS,
+  CORE,
+  HOST,
+  LAUNCHERS,
+  MESSAGES,
+  PANE_PICTURE,
+  PROJECTS,
+  QUESTIONS,
+  RECENT,
+  SESSIONS,
+  chatEvents,
+  permissionPayload,
+  setupOf,
+} from './world';
 
-export { BuildChannel, ChatAttachment, ChatState, CoreEvent, MobileError, SessionKind };
+export { ChatAttachment, CoreEvent, MobileError };
 
 const files = ((globalThis as { sikemuxTestFiles?: Map<string, string> }).sikemuxTestFiles ??= new Map());
 files.set(
@@ -26,24 +41,92 @@ files.set(
 );
 
 type Listener = {
-  output(session: bigint, bytes: ArrayBuffer): void;
   events(events: unknown[]): void;
   closed(): void;
 };
 
 const projectPath = (id: string) => PROJECTS.find((project) => project.id === id)?.path ?? '/';
 
+/** The host's inbox as its core would rank the demo world. */
+function inbox() {
+  const by = (chat: (typeof CHATS)[number]) => ({
+    agentId: chat.agentId,
+    name: chat.name,
+    cli: chat.provider,
+    project: chat.project,
+    title: chat.title,
+    feed: chat.agentId,
+    recordings: [],
+  });
+  const chat = (agentId: string) => CHATS.find((known) => known.agentId === agentId) ?? CHATS[0];
+  const needs = [
+    ...CHATS.filter((known) => known.asking).map((known) => ({
+      ...by(known),
+      id: `permission:${known.agentId}`,
+      tier: 'needs',
+      kind: 'permission',
+      what: 'Needs your permission',
+      detail: known.asking?.command,
+      at: Date.now() - 90_000,
+      requestId: `ask-${known.agentId}`,
+    })),
+    ...QUESTIONS.map((question) => ({
+      ...by(chat(question.agentId)),
+      id: `question:${question.id}`,
+      tier: 'needs',
+      kind: question.blocked ? 'question' : 'assumption',
+      what: question.blocked ? 'Asks you' : `Went on assuming ${question.assumption}`,
+      detail: question.text,
+      at: question.at,
+      questionId: question.id,
+    })),
+  ];
+  const listed = new Set(needs.map((item) => item.agentId));
+  const working = CHATS.filter((known) => known.running && !listed.has(known.agentId));
+  const finished = CHATS.filter((known) => known.handoff).map((known) => ({
+    ...by(known),
+    id: `agent:${known.agentId}`,
+    tier: 'review',
+    kind: 'changes',
+    what: 'Finished, with changes to review',
+    at: Date.now() - 1_800_000,
+    handoff: { answer: known.handoff?.answer, files: known.handoff?.files, edited: known.handoff?.files.length },
+    recordings: known.handoff?.recording
+      ? [{ path: '/Users/edon/Movies/Sikemux/refunds.mov', seconds: known.handoff.recording, at: Date.now() - 1_900_000 }]
+      : [],
+  }));
+  return {
+    items: [
+      ...needs,
+      ...finished,
+      ...working.map((known) => ({
+        ...by(known),
+        id: `agent:${known.agentId}`,
+        tier: 'progress',
+        kind: 'working',
+        what: 'Working',
+        at: Date.now() - 300_000,
+      })),
+    ],
+    working: working.length,
+    away: false,
+    agentMessages: {},
+    remoteAgents: [],
+    agents: [],
+  };
+}
+
 function view() {
   return {
     workspace: {
       projects: PROJECTS,
       launchers: LAUNCHERS,
-      palette: new Map<string, string>(),
+      palette: {},
       backdrop: { texture: true, image: 'pane' },
     },
     sessions: SESSIONS.map((session) => ({
       id: session.id,
-      kind: session.task ? SessionKind.Task : SessionKind.Terminal,
+      kind: session.task ? 'task' : 'terminal',
       running: true,
       cols: 120,
       rows: 34,
@@ -53,15 +136,17 @@ function view() {
     })),
     chats: CHATS.map((chat) => ({
       agentId: chat.agentId,
+      name: chat.name,
       provider: chat.provider,
       title: chat.title,
       cwd: projectPath(chat.project),
-      state: ChatState.Ready,
+      state: 'ready',
       running: chat.running,
       pendingPermissions: chat.asking ? [`ask-${chat.agentId}`] : [],
       launcher: chat.provider,
       permissionMode: chat.permissionMode,
       asleep: chat.asleep ?? false,
+      group: QUESTIONS.some((question) => question.agentId === chat.agentId && question.blocked) ? 'blocked' : undefined,
     })),
     attentions: CHATS.flatMap((chat) => {
       const request = permissionPayload(chat);
@@ -72,20 +157,53 @@ function view() {
               agentId: chat.agentId,
               provider: chat.provider,
               cwd: projectPath(chat.project),
-              requestJson: JSON.stringify(request),
-              at: BigInt(Date.now() - 90_000),
+              request,
+              at: Date.now() - 90_000,
+              choices: { allowOnce: 'allow', reject: 'reject' },
             },
           ]
         : [];
     }),
+    recent: RECENT.map((chat) => ({
+      id: chat.id,
+      provider: chat.provider,
+      title: chat.title,
+      project: chat.project,
+      cwd: projectPath(chat.project),
+      activeAt: Date.now() - chat.hours * 3_600_000,
+    })),
+    inbox: inbox(),
   };
+}
+
+type Event = { kind: string; payload: Record<string, unknown> };
+
+/** Gives each answer its whole markdown tree, as a host sends it, read by the core's own parser. */
+async function withTrees(events: Event[]): Promise<Event[]> {
+  const answers = events.flatMap((event) => {
+    const update = event.payload.update as
+      { sessionUpdate?: string; content?: { type?: string; text?: string }; _meta?: { sikemux?: object } } | undefined;
+    const text = update?.content?.type === 'text' ? update.content.text : undefined;
+    return update &&
+      text !== undefined &&
+      (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'agent_thought_chunk')
+      ? [{ update, text }]
+      : [];
+  });
+  const response = await fetch('/showcase/markdown', { method: 'POST', body: JSON.stringify(answers.map(({ text }) => text)) });
+  const trees = (await response.json()) as unknown[][];
+  answers.forEach(({ update, text }, index) => {
+    const md = { n: text.length, o: [{ p: [], at: 0, c: trees[index] }] };
+    update._meta = { ...update._meta, sikemux: { ...update._meta?.sikemux, md } };
+  });
+  return events;
 }
 
 class Connection {
   private open = true;
 
   constructor(listener: Listener) {
-    setTimeout(() => listener.events([CoreEvent.View.new({ view: view() })]), 0);
+    setTimeout(() => listener.events([CoreEvent.View.new({ viewJson: JSON.stringify(view()) })]), 0);
   }
 
   isOpen() {
@@ -97,7 +215,7 @@ class Connection {
   }
 
   async host() {
-    return { ...HOST, version: '0.4.2', channel: BuildChannel.Stable };
+    return JSON.stringify({ ...HOST, version: '0.4.2', channel: 'stable' });
   }
 
   async wakeChat() {}
@@ -105,7 +223,7 @@ class Connection {
   async attachChat(agentId: string) {
     const chat = CHATS.find((known) => known.agentId === agentId);
     if (!chat) return ChatAttachment.Missing.new({});
-    const events = chatEvents(chat);
+    const events = await withTrees(chatEvents(chat));
     return ChatAttachment.Live.new({
       sessionId: `session-${chat.agentId}`,
       capabilitiesJson: '{}',
@@ -120,6 +238,9 @@ class Connection {
 
   async detachChat() {}
   async prompt() {}
+  async attachFile(_agentId: string, name: string) {
+    return `/Users/demo/Library/Caches/com.nodelike.sikemux/pasted/${name}`;
+  }
   async cancel() {}
   async answerPermission() {}
   async setChatConfig(_agentId: string, _configId: string, value: string) {
@@ -128,15 +249,50 @@ class Connection {
   async startChat() {
     return CHATS[0].agentId;
   }
-  async attach() {
-    return { replay: new ArrayBuffer(0), alternateScreen: false, exited: false };
+  async resumeChat() {
+    return CHATS[0].agentId;
   }
-  async write() {}
-  async resize() {}
-  ack() {}
   async unpair() {}
   async saveBackdrop() {
     return undefined;
+  }
+  async call(method: string, params: string): Promise<string> {
+    if (method === 'boards') return JSON.stringify(BOARDS);
+    if (method === 'board') {
+      const { project } = JSON.parse(params) as { project: string };
+      const board = BOARDS.find((known) => known.project === project);
+      return JSON.stringify(board ?? { ...BOARDS[0], project, cards: [] });
+    }
+    if (method === 'questions') return JSON.stringify(QUESTIONS);
+    if (method === 'agentMessages') {
+      const { project } = JSON.parse(params) as { project: string };
+      return JSON.stringify({ project, entries: project === BOARDS[0].project ? MESSAGES : [] });
+    }
+    if (method === 'digest') return JSON.stringify({ away: false, finished: [], failed: [], waiting: [] });
+    throw new Error(`the showcase host does not know ${method}`);
+  }
+  async callToFile(method: string): Promise<string> {
+    throw new Error(`the showcase host does not know ${method}`);
+  }
+}
+
+const PHONE_ID = 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+
+export class DeviceIdentity {
+  id() {
+    return PHONE_ID;
+  }
+
+  signLive() {
+    return '';
+  }
+
+  signRegistration() {
+    return '';
+  }
+
+  signPush() {
+    return '';
   }
 }
 
@@ -146,20 +302,14 @@ export class Device {
   }
 
   id() {
-    return 'a3f9c27e51d04b8e9c6f2a7d18e3b5c40f9e7a2d6b1c8e5f3a0d9c7b6e4f2a1d';
+    return PHONE_ID;
   }
 
   async connect(_core: string, listener: Listener) {
     return new Connection(listener);
   }
 
-  async pair() {
-    return CORE;
-  }
-
   async close() {}
 }
 
 export const newDeviceKey = (): ArrayBuffer => new Uint8Array(32).buffer;
-
-export const parsePairingLink = (): undefined => undefined;

@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, type RefObject } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "../state/types";
 import { ChatComposer } from "./ChatComposer";
@@ -7,6 +7,9 @@ import { PathRootsProvider } from "./FileRef";
 import type { TrackedList } from "../codehost/tracked";
 import { deliverToAgent } from "../agents/agentInbox";
 import type { WorktreeSwitchState } from "./worktreeSwitch";
+import { handleVoiceEvent, toggleDictation, useVoice } from "../voice/dictation";
+import { setState } from "../state/store";
+import { draftOf, typeDraft } from "../test/draft";
 
 const repo = { provider: "github", owner: "o", name: "r", account: null };
 
@@ -27,23 +30,31 @@ vi.mock("../codehost/tracked", async (importOriginal) => ({
     useTrackedItems: mocks.tracked,
     loadTrackedContext: mocks.load,
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
+const voice = vi.hoisted(() => ({
+    status: vi.fn(async () => ({ supported: true, installed: true, reason: null })),
+    prepare: vi.fn(async () => {}),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
+    cancel: vi.fn(async () => {}),
+    shutdown: vi.fn(async () => {}),
+    subscribe: vi.fn(async () => () => {}),
+}));
+vi.mock("../api/voice", () => ({ voiceApi: voice }));
 
 const agent: Agent = {
     id: "composer-agent",
     type: "codex",
     title: "Agent",
-    startup: "codex",
     permissionMode: "workspace-write",
     launchState: "live",
 };
 
-function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => void }) {
+function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => void }, paneRef: RefObject<HTMLDivElement | null> = createRef()) {
     render(
         <PathRootsProvider cwd="/repo">
             <ChatComposer
                 agent={agent}
-                paneRef={createRef()}
+                paneRef={paneRef}
                 visible
                 connection="ready"
                 running={false}
@@ -73,7 +84,7 @@ function renderComposer(worktree?: { state: WorktreeSwitchState; toggle: () => v
 }
 
 function type(editor: HTMLElement, value: string) {
-    fireEvent.change(editor, { target: { value, selectionStart: value.length } });
+    typeDraft(editor, value);
 }
 
 afterEach(() => {
@@ -81,103 +92,80 @@ afterEach(() => {
     mocks.onSend.mockClear();
 });
 
-describe("ChatComposer @ picker", () => {
-    it("lists project files and folders matching what follows the @", async () => {
+describe("ChatComposer + picker", () => {
+    it("lists project files and folders matching what follows the +", async () => {
         const editor = renderComposer();
-        type(editor, "look at @util");
+        type(editor, "look at +util");
         expect(await screen.findByRole("option", { name: /util\.ts/ })).toBeInTheDocument();
         expect(screen.queryByRole("option", { name: /README/ })).not.toBeInTheDocument();
-        type(editor, "look at @lib");
+        type(editor, "look at +lib");
         expect(await screen.findByRole("option", { name: /^lib/ })).toBeInTheDocument();
     });
 
-    it("takes the token out of the text and attaches the chosen path", async () => {
+    it("writes the chosen file into the text as a tag and attaches its path", async () => {
         const editor = renderComposer();
-        type(editor, "look at @main please");
-        fireEvent.change(editor, { target: { value: "look at @main please", selectionStart: 13 } });
+        type(editor, "look at +main please");
+        typeDraft(editor, "look at +main please", 13);
         await screen.findByRole("option", { name: /main\.ts/ });
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(editor).toHaveValue("look at please");
-        expect(screen.getByTitle("/repo/src/main.ts")).toBeInTheDocument();
+        expect(draftOf(editor)).toBe("look at +main.ts please");
 
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at please", paths: ["/repo/src/main.ts"], context: [] }, false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "look at +main.ts please", paths: ["/repo/src/main.ts"], context: [] }, true);
     });
 
-    it("leaves the @ in place when Escape dismisses the picker", async () => {
+    it("leaves the + in place when Escape dismisses the picker", async () => {
         const editor = renderComposer();
-        type(editor, "@READ");
+        type(editor, "+READ");
         await screen.findByRole("option", { name: /README/ });
         fireEvent.keyDown(editor, { key: "Escape" });
         await act(async () => {});
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-        expect(editor).toHaveValue("@READ");
-    });
-
-    it("keeps an email address as text", async () => {
-        const editor = renderComposer();
-        type(editor, "mail me@main");
-        await act(async () => {});
-        expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+        expect(draftOf(editor)).toBe("+READ");
     });
 });
 
-describe("ChatComposer # picker", () => {
+describe("ChatComposer # and ! pickers", () => {
     const items = [
         { kind: "issue" as const, number: 12, title: "Login crashes", createdAt: "2026-02-01", url: "https://github.com/o/r/issues/12" },
+        { kind: "issue" as const, number: 14, title: "Slow boot on Intel", createdAt: "2026-02-02", url: "https://github.com/o/r/issues/14" },
         { kind: "pull" as const, number: 9, title: "Faster boot", createdAt: "2026-01-01", url: "https://github.com/o/r/pull/9" },
     ];
 
-    it("lists open issues and pull requests, filtered by number or words", async () => {
+    it("lists open issues on # and pull requests on !, filtered by number or words", async () => {
         mocks.tracked.mockReturnValue({ state: "ready", repo, items });
         const editor = renderComposer();
         type(editor, "#");
         expect(await screen.findByRole("option", { name: /#12.*Login crashes/ })).toBeInTheDocument();
-        expect(screen.getByRole("option", { name: /#9.*Faster boot/ })).toBeInTheDocument();
+        expect(screen.queryByRole("option", { name: /Faster boot/ })).not.toBeInTheDocument();
         type(editor, "#boot");
+        expect(screen.getByRole("option", { name: /#14/ })).toBeInTheDocument();
         expect(screen.queryByRole("option", { name: /#12/ })).not.toBeInTheDocument();
-        type(editor, "#1");
-        expect(screen.getByRole("option", { name: /#12/ })).toBeInTheDocument();
-        expect(screen.queryByRole("option", { name: /#9/ })).not.toBeInTheDocument();
+        type(editor, "!");
+        expect(await screen.findByRole("option", { name: /!9.*Faster boot/ })).toBeInTheDocument();
+        expect(screen.queryByRole("option", { name: /Login crashes/ })).not.toBeInTheDocument();
     });
 
-    it("says why there is nothing to pick", async () => {
-        mocks.tracked.mockReturnValue({ state: "unavailable", message: "Sign in to GitHub in the Git pane to pick from its issues" });
-        const editor = renderComposer();
-        type(editor, "fix #");
-        expect(await screen.findByText("Sign in to GitHub in the Git pane to pick from its issues")).toBeInTheDocument();
-    });
-
-    it("adds a chip, and reads the issue in full when the message is sent", async () => {
+    it("writes the issue into the text as a tag, and reads it in full when the message is sent", async () => {
         mocks.tracked.mockReturnValue({ state: "ready", repo, items });
         const editor = renderComposer();
         type(editor, "fix #12");
-        fireEvent.keyDown(await screen.findByRole("textbox", { name: "Message agent" }), { key: "Enter" });
-        expect(editor).toHaveValue("fix ");
-        expect(screen.getByTitle("https://github.com/o/r/issues/12")).toHaveTextContent("#12 Login crashes");
+        await screen.findByRole("option", { name: /#12/ });
+        fireEvent.keyDown(editor, { key: "Enter" });
+        expect(draftOf(editor)).toBe("fix #12 ");
 
         fireEvent.keyDown(editor, { key: "Enter" });
         await waitFor(() =>
             expect(mocks.onSend).toHaveBeenCalledWith(
                 {
-                    text: "fix",
+                    text: "fix #12",
                     paths: [],
                     context: [{ uri: "https://github.com/o/r/issues/12", title: "#12 Login crashes", text: "Issue #12: Login crashes" }],
                 },
-                false,
+                true,
             ),
         );
         expect(mocks.load).toHaveBeenCalledWith(repo, "issue", 12);
-        await waitFor(() => expect(screen.queryByTitle("https://github.com/o/r/issues/12")).not.toBeInTheDocument());
-    });
-
-    it("lets a chip be removed", async () => {
-        mocks.tracked.mockReturnValue({ state: "ready", repo, items });
-        const editor = renderComposer();
-        type(editor, "#9");
-        fireEvent.keyDown(editor, { key: "Enter" });
-        fireEvent.click(screen.getByRole("button", { name: "Remove #9" }));
-        expect(screen.queryByTitle("https://github.com/o/r/pull/9")).not.toBeInTheDocument();
     });
 });
 
@@ -188,7 +176,7 @@ describe("ChatComposer deliveries", () => {
         act(() => deliverToAgent("composer-agent", { context: [issue] }));
         expect(screen.getByTitle(issue.uri)).toHaveTextContent("#4 Flaky test");
         fireEvent.keyDown(editor, { key: "Enter" });
-        expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, false);
+        expect(mocks.onSend).toHaveBeenCalledWith({ text: "", paths: [], context: [issue] }, true);
         expect(mocks.load).not.toHaveBeenCalled();
     });
 });
@@ -196,29 +184,50 @@ describe("ChatComposer deliveries", () => {
 describe("ChatComposer Worktree switch", () => {
     const toggle = vi.fn();
 
-    it("is absent outside a git repository", () => {
-        renderComposer({ state: { kind: "hidden" }, toggle });
-        expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
-    });
-
     it("leaves the choice to the project strip above it", () => {
         renderComposer({ state: { kind: "choosing", on: false }, toggle });
         expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
     });
 
-    it("names the branch of an agent already in a worktree", async () => {
-        renderComposer({ state: { kind: "in", branch: "sikemux/fix-pty", path: "/code/app.worktrees/fix-pty" }, toggle });
-        const button = await screen.findByRole("button", { name: "sikemux/fix-pty" });
-        expect(button).toBeDisabled();
-        expect(button).toHaveAttribute("aria-pressed", "true");
-        expect(button.title).toContain("/code/app.worktrees/fix-pty");
-    });
-
-    it("holds the message back while the worktree is being set up", async () => {
+    it("holds the message back while the worktree is being set up", () => {
         const editor = renderComposer({ state: { kind: "preparing", step: "Running Install" }, toggle });
         type(editor, "hello");
         fireEvent.keyDown(editor, { key: "Enter" });
         expect(mocks.onSend).not.toHaveBeenCalled();
-        expect((await screen.findByRole("button", { name: "worktree" })).title).toBe("Running Install…");
+    });
+});
+
+describe("sending while dictating", () => {
+    it("stops the mic and sends what was typed together with what was said", async () => {
+        const pane = document.createElement("div");
+        document.body.append(pane);
+        const paneRef = { current: pane };
+        setState({ voiceDictation: true });
+        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null, partial: "" });
+        const editor = renderComposer(undefined, paneRef);
+        type(editor, "fix the");
+
+        act(() => toggleDictation(pane));
+        act(() => handleVoiceEvent({ type: "listening" }));
+        fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+        expect(voice.stop).toHaveBeenCalledOnce();
+        expect(mocks.onSend).not.toHaveBeenCalled();
+
+        act(() => handleVoiceEvent({ type: "transcript", text: "login redirect" }));
+        await waitFor(() => expect(mocks.onSend).toHaveBeenCalledWith({ text: "fix the login redirect", paths: [], context: [] }, true));
+        pane.remove();
+    });
+
+    it("lets a message that is only spoken be sent", () => {
+        const pane = document.createElement("div");
+        document.body.append(pane);
+        setState({ voiceDictation: true });
+        useVoice.setState({ phase: "ready", reason: null, stage: null, fraction: 0, target: null, partial: "" });
+        renderComposer(undefined, { current: pane });
+        expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+        act(() => toggleDictation(pane));
+        act(() => handleVoiceEvent({ type: "listening" }));
+        expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+        pane.remove();
     });
 });

@@ -1,19 +1,23 @@
 import "./styles/restored-rails.css";
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { invokeCommand as invoke } from "./api/invoke";
+import { whenIdle } from "./lib/idle";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { checkForUpdate } from "./api/updater";
+import { checkForUpdate, UPDATES_IN_APP } from "./api/updater";
 import { reportActive } from "./api/usage";
-import { TopBar } from "./shell/TopBar";
+import { TabRow, TopBar } from "./shell/TopBar";
 import { SideRail } from "./rail/SideRail";
-import { AgentRail } from "./rail/AgentRail";
+import { TabRail } from "./rail/TabRail";
 import { RailPeek } from "./rail/RailPeek";
 import { RailResizer, useRailWidthVars } from "./rail/RailResizer";
-import { AgentSessionSync } from "./agents/AgentSessionSync";
-import { watchTerminalAgentExits } from "./agents/tuiResume";
-import { AgentLifecycleManager } from "./agents/AgentLifecycleManager";
+import { watchSshLinks } from "./terminal/sshLinks";
+import { watchTerminalTitles } from "./terminal/terminalTitles";
+import { watchFocusForAgentStatus } from "./agents/statusRefresh";
+import { syncAgentAccounts } from "./agents/accountBook";
+import { agentApi, type AgentAccountBook } from "./api/agents";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
+import { AgentInstallHost } from "./agents/AgentInstall";
 import { FilePalette } from "./palettes/FilePalette";
 import { NewTabPalette } from "./palettes/NewTabPalette";
 import { SeshPicker } from "./palettes/SeshPicker";
@@ -21,20 +25,30 @@ import { SessionSwitcher } from "./palettes/SessionSwitcher";
 import { Workspace } from "./workspace/Workspace";
 import { Toaster } from "./shell/Toaster";
 import { CommandPalette } from "./palettes/CommandPalette";
+import { ThemePalette } from "./palettes/ThemePalette";
+import { AccountDialogHost } from "./agents/AccountDialog";
 import { DialogHost } from "./shell/DialogHost";
+import { ShareHost } from "./share/ShareControls";
+import { BuddyPickerHost } from "./buddies/BuddyPicker";
 import { ImageViewer } from "./editor/ImageViewer";
 import { useOccludeNativeViews } from "./state/nativeViews";
 import { TerminalPane } from "./terminal/TerminalPane";
 import { HarnessBridge } from "./shell/HarnessBridge";
+import { NetworkBridge } from "./shell/NetworkBridge";
+import { GlobalSkillsBridge } from "./shell/GlobalSkillsBridge";
 import { RemoteChatBridge } from "./shell/RemoteChatBridge";
+import { AgentNameBridge } from "./shell/AgentNameBridge";
+import { AgentQuestionBridge } from "./shell/AgentQuestionBridge";
+import { AgentBoardBridge } from "./shell/AgentBoardBridge";
 import { RemoteWorkspaceBridge } from "./shell/RemoteWorkspaceBridge";
 import { UpdateRequiredPrompt } from "./shell/UpdateRequiredPrompt";
+import { PairingPrompt } from "./shell/PairingPrompt";
 import { NotchBridge } from "./notch/NotchBridge";
 import { CliOpenBridge } from "./shell/CliOpenBridge";
 import { DeepLinkBridge } from "./shell/DeepLinkBridge";
 import { git } from "./api/git";
 import { runKeybindingAction, useKeymap } from "./commands/keymap";
-import { getKeybindingAction } from "./commands/keybindings";
+import { getKeybindingAction, QUIT_AND_STOP_SHORTCUT } from "./commands/keybindings";
 import { usePinchZoom } from "./shell/pinchZoom";
 import { introduceNotifications, useAgentNotifications } from "./agents/agentNotifications";
 import { useVoiceDictation } from "./voice/dictation";
@@ -42,13 +56,19 @@ import { VoiceCaption } from "./voice/VoiceCaption";
 import { useBackdropImage } from "./hooks/useBackdropImage";
 import { useBrowserDownloads } from "./state/browserDownloads";
 import { useBrowserReveal } from "./state/browserReveal";
+import { useSimulatorReveal } from "./state/simulatorReveal";
+import { simApi } from "./api/sim";
 import { useBrowserStrips } from "./state/browserStrips";
 import { filesApi } from "./api/files";
+import { fsapi } from "./api/fs";
 import { emit } from "./state/bus";
 import * as cmd from "./state/commands";
 import { offerSavedSessions, restoreCoreSessions } from "./workspace/restoreCoreSessions";
+import { startSpareShells } from "./terminal/spareShell";
 import { coreSessionsApi } from "./api/coreSessions";
-import { IS_MACOS } from "./lib/platform";
+import type { Workspace as SharedWorkspace } from "./api/generated/wire";
+import { fetchCoreWorkspace, startCoreWorkspace } from "./state/coreWorkspace";
+import { startHosts } from "./hosts/hosts";
 import { applyHydrate, canFlushPersist, flushPersist, hydrationAllowsPersistence, subscribePersist, type HydrationResult } from "./state/persist";
 import {
     dispatchFolder,
@@ -64,43 +84,31 @@ import { confirmDialog } from "./state/dialog";
 import { invalidate } from "./state/resources";
 import { getState, useStore } from "./state/store";
 import { applyTheme, applyWindowOpacity, registerCustomThemes } from "./themes/bus";
+import { startPageTheme } from "./chat/pageTheme";
 import { applyTerminalFontSize } from "./terminal/fontSize";
 import { applyChatTextScale } from "./chat/textScale";
 import { applyEditorTextScale } from "./editor/textScale";
 import { dirname } from "./lib/paths";
 import type { StandaloneCommand } from "./commands/registry";
-import type { ProjectConfigLoadResult } from "./projects/projectConfig";
 import { agentDetectionApi } from "./api/agentDetection";
 import { lsp } from "./api/lsp";
-import { projectActionCommand, trustProjectConfig } from "./projects/projectConfigRuntime";
+import { trustProjectConfig } from "./projects/projectConfigRuntime";
+import { projectActionCommands } from "./projects/projectActions";
 import { worktreeHasLiveOwners } from "./git/worktreeLifecycle";
 import { performanceTelemetry } from "./lib/performance";
-import { workbenchRuntime } from "./workbench/runtime";
-import {
-    activeProjectTaskInventoryMatches,
-    appTaskRuntime,
-    clearActiveProjectTasks,
-    getAppTaskSnapshot,
-    replaceActiveProjectTasks,
-    subscribeAppTasks,
-} from "./tasks/application";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot } from "./tasks/taskRegistry";
-import {
-    applicationActionContext,
-    applicationActionContextFingerprint,
-    executeApplicationAction,
-    getApplicationActionRevision,
-    loadApplicationActions,
-    resolveApplicationActions,
-    subscribeApplicationActions,
-} from "./actions/bridge";
-import { projectControllerBridge } from "./projects/controllerBridge";
-import { getIpcTransport, type IpcUnsubscribe } from "./api/transport";
+import { releaseClosedPaneResources } from "./terminal/paneResources";
+import { personRuns, runProjectTask, stopTaskRun } from "./tasks/projectTaskActions";
+import { useProjectTasks, useTaskRuns, type ProjectTask, type TaskRun } from "./tasks/coreTasks";
+import { showTaskTerminals } from "./tasks/taskTerminals";
+import { activeProject, refreshProject, setOpenProjects, subscribeProjects, watchProjects } from "./projects/projectState";
+import { onCoreChanged, type CoreChange } from "./api/coreChanged";
 import { pluginsApi } from "./api/plugins";
 import "./plugins/builtin";
-import { recordAgentTurns } from "./state/activityRecorder";
+import { watchInbox } from "./rail/useInbox";
 import { useInstalledPlugins } from "./plugins/installed";
-import { useRailEntrance } from "./rail/railMotion";
+import { useRailDock } from "./rail/railMotion";
+import { openUrl } from "./api/system";
+import brandMark from "../brand/mark/mark-white.svg";
 
 const SettingsPanel = lazy(() => import("./settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 
@@ -126,13 +134,10 @@ export interface ActiveTaskControls {
  * already-running PTY. Restart is stricter: it is available only while the
  * last task still resolves through the current trusted project inventory.
  */
-export function activeTaskControls(snapshot: TaskControllerSnapshot | null, currentTasks: readonly ResolvedTaskDefinition[]): ActiveTaskControls {
-    if (!snapshot || snapshot.disposed) return Object.freeze({ canStop: false, restartTaskId: null });
-    const restartTaskId = snapshot.task && currentTasks.some((task) => task.id === snapshot.task!.id) ? snapshot.task.id : null;
-    return Object.freeze({
-        canStop: snapshot.activeRunId !== null,
-        restartTaskId,
-    });
+export function activeTaskControls(running: TaskRun | null, currentTasks: readonly ProjectTask[]): ActiveTaskControls {
+    if (!running) return Object.freeze({ canStop: false, restartTaskId: null });
+    const restartTaskId = currentTasks.some((task) => task.id === running.taskId) ? running.taskId : null;
+    return Object.freeze({ canStop: true, restartTaskId });
 }
 
 /** The part of `path` below `folder`, with forward slashes, or null when it is not below it. */
@@ -148,30 +153,26 @@ export function gitChangeInvalidates(kind: string, args: unknown[], repo: string
     if (nested !== null) {
         const touched = !paths?.length || paths.some((path) => path === nested || path.startsWith(`${nested}/`));
         if (!touched || !kind.startsWith("git.")) return false;
-        return !paths?.length || kind === "git.overview" || kind === "git.status";
+        return !paths?.length || kind === "git.overview" || kind === "git.status" || kind === "git.changeOwners";
     }
     if (repo && args[0] !== repo) return false;
     if (kind === "files.list") return true;
     if (!kind.startsWith("git.")) return false;
     if (!paths?.length) return true;
-    return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos";
+    return kind === "git.overview" || kind === "git.status" || kind === "git.discoveredRepos" || kind === "git.changeOwners";
 }
 
-export function subscribeGitChanged(signal?: AbortSignal): Promise<IpcUnsubscribe> {
-    return getIpcTransport().subscribe<{ repo: string; paths: string[] | null }>(
-        "git_changed",
-        (event) => {
-            const repo = event.payload.repo || "";
-            filesApi.invalidate(repo || undefined);
-            invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, event.payload.paths));
-            // An empty array would mean "these zero paths changed", and the scoped
-            // consumers would refresh nothing. Absent or empty both mean "unknown",
-            // which has to fall back to refreshing everything.
-            const paths = event.payload.paths;
-            emit({ type: "fs-changed", repo, ...(paths?.length ? { paths } : {}) });
-        },
-        { signal },
-    );
+/** Reads again what the core says moved in a project: the paths, with `.git` standing for its git state, which anything may depend on. */
+export function onGitChanged({ project, paths, host }: CoreChange): void {
+    const repo = project ?? "";
+    // An empty list would mean "these zero paths changed", and the scoped
+    // consumers would refresh nothing, so it means "unknown" as none does.
+    const moved = paths?.length && !paths.includes(".git") ? [...paths] : null;
+    if (host === undefined) {
+        filesApi.invalidate(repo || undefined);
+        invalidate((kind, args) => gitChangeInvalidates(kind, args, repo, moved));
+    }
+    emit({ type: "fs-changed", repo, ...(moved ? { paths: moved } : {}), ...(host === undefined ? {} : { host }) });
 }
 
 interface TreeDropTarget {
@@ -179,37 +180,6 @@ interface TreeDropTarget {
     targetDir: string;
     highlightPath: string | null;
     dropEl: HTMLElement;
-}
-
-type ValidProjectConfig = Extract<ProjectConfigLoadResult, { readonly status: "valid" }>;
-
-function activeProjectConfigMatches(project: string, expected: ValidProjectConfig, requireTaskInventory = false): boolean {
-    const active = projectControllerBridge.getActiveSnapshot();
-    const current = active?.config;
-    return (
-        active?.cwd === project &&
-        current?.status === "valid" &&
-        current.path === expected.path &&
-        current.fingerprint === expected.fingerprint &&
-        (!requireTaskInventory || activeProjectTaskInventoryMatches(project, expected.fingerprint))
-    );
-}
-
-/**
- * Re-checks the on-disk config after approval: the user can take arbitrarily
- * long in the dialog, and the project must still be the one they approved.
- */
-async function trustCurrentProjectConfig(project: string, expected: ValidProjectConfig, requireTaskInventory = false): Promise<boolean> {
-    if (!activeProjectConfigMatches(project, expected, requireTaskInventory)) return false;
-    if (!(await trustProjectConfig(expected))) return false;
-    return activeProjectConfigMatches(project, expected, requireTaskInventory);
-}
-
-/** `if (!trusted) return;` in promise form, for command bodies that must stay void. */
-function whenTrusted(project: string, expected: ValidProjectConfig, requireTaskInventory: boolean, run: () => void): void {
-    void trustCurrentProjectConfig(project, expected, requireTaskInventory).then((ok) => {
-        if (ok) run();
-    });
 }
 
 /**
@@ -285,83 +255,27 @@ function projectRepoKeyOf(s: ReturnType<typeof getState>): string {
 }
 
 /*
- * The live project, kept in step with the controller, the task registry and the
- * actions a checked-in sikemux.json contributes.
+ * The live project, kept in step with the controller and the task registry.
  *
- * All of it hangs off which project is in front and what its config says, so it
- * sits below the shell rather than inside it: the shell no longer re-renders
+ * All of it hangs off which project is in front, so it sits below the shell rather than inside it: the shell no longer re-renders
  * because a task started or a worktree list came back.
  */
 function ProjectBridge() {
-    const activeSessionId = useStore((s) => s.activeSessionId);
     const activeProjectCwd = useStore(activeProjectCwdOf);
     const projectRepoKey = useStore(projectRepoKeyOf);
-    const projectControllerSnapshot = useSyncExternalStore(
-        projectControllerBridge.subscribe,
-        projectControllerBridge.getActiveSnapshot,
-        projectControllerBridge.getActiveSnapshot,
-    );
-    const projectConfig = projectControllerSnapshot?.cwd === activeProjectCwd ? (projectControllerSnapshot.config ?? null) : null;
+
+    useEffect(() => watchProjects(), []);
 
     useEffect(() => {
-        void projectControllerBridge.start();
-        return () => {
-            projectControllerBridge.stop();
-        };
+        showTaskTerminals();
+        return onCoreChanged("tasks", (change) => {
+            if (change.project) void refreshProject(change.project);
+        });
     }, []);
-
-    const taskProjectRootsRef = useRef<Set<string>>(new Set());
-
-    useEffect(() => {
-        if (activeProjectCwd && projectConfig?.status === "valid") {
-            replaceActiveProjectTasks(activeProjectCwd, projectConfig.fingerprint, projectConfig.config.tasks);
-        } else {
-            clearActiveProjectTasks();
-        }
-        return clearActiveProjectTasks;
-    }, [activeProjectCwd, projectConfig]);
-
-    useEffect(() => {
-        let cancelled = false;
-        let dispose: (() => void) | null = null;
-        if (!activeProjectCwd || projectConfig?.status !== "valid") return;
-
-        void loadApplicationActions()
-            .then((runtime) => {
-                if (cancelled) return;
-                const registration = runtime.registerProjectActions({
-                    projectId: activeSessionId,
-                    projectRoot: activeProjectCwd,
-                    configPath: projectConfig.path,
-                    actions: projectConfig.config.actions,
-                    isCurrent: () => activeProjectConfigMatches(activeProjectCwd, projectConfig),
-                    execute: (action) => {
-                        whenTrusted(activeProjectCwd, projectConfig, false, () => cmd.runCustomCommand(projectActionCommand(action)));
-                    },
-                });
-                dispose = () => registration.dispose();
-            })
-            .catch((error: unknown) => {
-                if (!cancelled) reportError("load project actions")(error);
-            });
-
-        return () => {
-            cancelled = true;
-            dispose?.();
-        };
-    }, [activeProjectCwd, activeSessionId, projectConfig]);
-
-    useEffect(() => {
-        const current = new Set(projectRepoKey.split("\0").filter(Boolean));
-        for (const project of taskProjectRootsRef.current) {
-            if (!current.has(project)) void appTaskRuntime.disposeProject(project).catch(reportError("stop closed-project task"));
-        }
-        taskProjectRootsRef.current = current;
-    }, [projectRepoKey]);
 
     useEffect(() => {
         const roots = projectRepoKey ? projectRepoKey.split("\0") : [];
-        void projectControllerBridge.reconcile(roots, activeProjectCwd || null);
+        setOpenProjects(roots, activeProjectCwd || null);
     }, [activeProjectCwd, projectRepoKey]);
 
     return null;
@@ -391,18 +305,12 @@ function ApplicationCommandPalette() {
         const id = s.sessions[s.activeSessionId]?.activeWindowId;
         return id && s.windows[id]?.role === "term" ? id : null;
     });
-    const projectControllerSnapshot = useSyncExternalStore(
-        projectControllerBridge.subscribe,
-        projectControllerBridge.getActiveSnapshot,
-        projectControllerBridge.getActiveSnapshot,
-    );
+    const projectControllerSnapshot = useSyncExternalStore(subscribeProjects, activeProject, activeProject);
     const activeProjectSnapshot = projectControllerSnapshot?.cwd === activeProjectCwd ? projectControllerSnapshot : null;
     const projectConfig = activeProjectSnapshot?.config ?? null;
     const activeWorktrees = activeProjectSnapshot?.worktrees ?? [];
-    const taskRegistrySnapshot = useSyncExternalStore(subscribeAppTasks, getAppTaskSnapshot, getAppTaskSnapshot);
-    useSyncExternalStore(subscribeApplicationActions, getApplicationActionRevision, getApplicationActionRevision);
-    useStore(applicationActionContextFingerprint);
-    const actionContext = applicationActionContext(getState());
+    const offeredTasks = useProjectTasks(activeProjectCwd || null);
+    const taskRuns = useTaskRuns();
 
     const runStandalone =
         (id: string, execute: () => void): (() => void) =>
@@ -410,19 +318,9 @@ function ApplicationCommandPalette() {
             cmd.noteRecentCommand(`standalone:${id}`);
             execute();
         };
-    const contributedActionCommands: StandaloneCommand[] = resolveApplicationActions(actionContext).map((action) => ({
-        id: action.commandId,
-        title: action.title,
-        detail: action.detail,
-        category: action.category,
-        shortcut: action.shortcut,
-        disabled: !action.enabled,
-        execute: () => {
-            void executeApplicationAction(action.actionId, applicationActionContext(getState())).catch(reportError(`run action ${action.commandId}`));
-        },
-    }));
     const projectCommands: StandaloneCommand[] = [];
     if (projectConfig?.status === "valid") {
+        projectCommands.push(...projectActionCommands(activeProjectCwd, projectConfig));
         if (projectConfig.config.preview?.command) {
             projectCommands.push({
                 id: "project.preview.start",
@@ -451,9 +349,7 @@ function ApplicationCommandPalette() {
                 detail: projectConfig.config.preview.url,
                 category: "Project · Preview",
                 execute: runStandalone("project.preview.open", () => {
-                    void invoke("open_url", { url: projectConfig.config.preview!.url!, app: null, shortcut: null }).catch(
-                        reportError("open project preview"),
-                    );
+                    void openUrl(projectConfig.config.preview!.url!).catch(reportError("open project preview"));
                 }),
             });
         }
@@ -468,61 +364,33 @@ function ApplicationCommandPalette() {
             ),
         });
     }
-    const currentProjectTasks =
-        projectConfig?.status === "valid" && activeProjectTaskInventoryMatches(activeProjectCwd, projectConfig.fingerprint)
-            ? taskRegistrySnapshot.tasks.filter((task) => task.project === activeProjectCwd && task.source === "project")
-            : [];
-    const taskCommands: StandaloneCommand[] =
-        projectConfig?.status === "valid"
-            ? currentProjectTasks.map((task) => ({
-                  id: `task.run.${task.id}`,
-                  title: task.label,
-                  detail: `Run task from ${task.cwd}`,
-                  category: "Tasks",
-                  execute: runStandalone(`task.run.${task.id}`, () => {
-                      whenTrusted(activeProjectCwd, projectConfig, true, () => {
-                          const snapshot = appTaskRuntime.getSnapshot(activeProjectCwd);
-                          const operation =
-                              snapshot?.status === "running" || snapshot?.status === "stopping"
-                                  ? appTaskRuntime.restart(activeProjectCwd, task.id)
-                                  : appTaskRuntime.run(activeProjectCwd, task.id);
-                          void operation.then(() => notify("success", `Started task: ${task.label}`)).catch(reportError(`start task ${task.label}`));
-                      });
-                  }),
-              }))
-            : [];
-    const taskRuntimeSnapshot = activeProjectCwd ? appTaskRuntime.getSnapshot(activeProjectCwd) : null;
-    const taskControls = activeTaskControls(taskRuntimeSnapshot, currentProjectTasks);
-    if (activeProjectCwd && taskControls.restartTaskId) {
-        const restartTaskId = taskControls.restartTaskId;
+    const currentProjectTasks = offeredTasks?.tasks ?? [];
+    const taskCommands: StandaloneCommand[] = currentProjectTasks.map((task) => ({
+        id: `task.run.${task.id}`,
+        title: task.label,
+        detail: `Run task from ${task.cwd}`,
+        category: "Tasks",
+        execute: runStandalone(`task.run.${task.id}`, () => void runProjectTask(activeProjectCwd, task)),
+    }));
+    const runningTask = activeProjectCwd ? personRuns(taskRuns, activeProjectCwd).running : null;
+    const taskControls = activeTaskControls(runningTask, currentProjectTasks);
+    const restartTask = currentProjectTasks.find((task) => task.id === taskControls.restartTaskId);
+    if (activeProjectCwd && restartTask) {
         taskCommands.push({
             id: "task.restart-active",
             title: "Restart active task",
             detail: "Stop the current project task and start its current trusted definition",
             category: "Tasks",
-            execute: runStandalone("task.restart-active", () => {
-                if (projectConfig?.status !== "valid") return;
-                whenTrusted(activeProjectCwd, projectConfig, true, () => {
-                    void appTaskRuntime
-                        .restart(activeProjectCwd, restartTaskId)
-                        .then(() => notify("success", "Restarted active task"))
-                        .catch(reportError("restart active task"));
-                });
-            }),
+            execute: runStandalone("task.restart-active", () => void runProjectTask(activeProjectCwd, restartTask)),
         });
     }
-    if (activeProjectCwd && taskControls.canStop) {
+    if (activeProjectCwd && runningTask && taskControls.canStop) {
         taskCommands.push({
             id: "task.stop-active",
             title: "Stop active task",
             detail: "Stop only the exact PTY owned by the current project task",
             category: "Tasks",
-            execute: runStandalone("task.stop-active", () => {
-                void appTaskRuntime
-                    .stop(activeProjectCwd)
-                    .then(() => notify("success", "Stopped active task"))
-                    .catch(reportError("stop active task"));
-            }),
+            execute: runStandalone("task.stop-active", () => stopTaskRun(runningTask!)),
         });
     }
     const worktreeCommands: StandaloneCommand[] = activeWorktrees
@@ -557,7 +425,7 @@ function ApplicationCommandPalette() {
                                   return git
                                       .worktreeRemove(activeProjectCwd, worktree.path)
                                       .then(async () => {
-                                          await projectControllerBridge.refresh(activeProjectCwd);
+                                          await refreshProject(activeProjectCwd);
                                           notify("success", `Removed worktree ${worktree.branch ?? worktree.path}`);
                                       })
                                       .catch(reportError("remove worktree"));
@@ -570,6 +438,13 @@ function ApplicationCommandPalette() {
     const standaloneCommands: StandaloneCommand[] = [
         ...(activeKind === "project" && activeProjectCwd
             ? [
+                  {
+                      id: "project.settings",
+                      title: "Project settings",
+                      detail: "Tasks, the default git repository, worktrees and language servers",
+                      category: "Project",
+                      execute: runStandalone("project.settings", () => cmd.openProjectSettings()),
+                  } satisfies StandaloneCommand,
                   languageServersAllowedHere
                       ? ({
                             id: "project.language-servers.stop",
@@ -641,7 +516,7 @@ function ApplicationCommandPalette() {
             title: "Quit and Stop Everything",
             detail: "Stop every terminal, terminal agent and task, then quit. Plain Quit leaves them running.",
             category: "Application",
-            shortcut: IS_MACOS ? "⌥⌘Q" : undefined,
+            shortcut: QUIT_AND_STOP_SHORTCUT ?? undefined,
             execute: runStandalone("app.quit-and-stop-everything", () => void quitAndStopEverything()),
         },
         {
@@ -653,7 +528,6 @@ function ApplicationCommandPalette() {
         },
         ...worktreeCommands,
         ...taskCommands,
-        ...contributedActionCommands,
         ...projectCommands,
     ];
 
@@ -686,6 +560,22 @@ function ShellBackdrop() {
     return useBackdropImage() ? <div className="shell-image" aria-hidden="true" /> : null;
 }
 
+/** A start that finishes within this shows only the window's ground, so it never flashes. */
+const SHOW_BOOT_AFTER_MS = 400;
+/** A start still going after this says what it waits on. */
+const NAME_THE_WAIT_AFTER_MS = 3000;
+
+/** Whether `after` milliseconds have passed while the app is still starting. */
+function useBootDelay(ready: boolean, after: number): boolean {
+    const [passed, setPassed] = useState(false);
+    useEffect(() => {
+        if (ready) return;
+        const timer = setTimeout(() => setPassed(true), after);
+        return () => clearTimeout(timer);
+    }, [ready, after]);
+    return passed;
+}
+
 export default function App() {
     useKeymap();
     usePinchZoom();
@@ -693,30 +583,39 @@ export default function App() {
     useVoiceDictation();
     useBrowserDownloads();
     useBrowserReveal();
+    useSimulatorReveal();
     useBrowserStrips();
     useRailWidthVars();
     const [bootReady, setBootReady] = useState(false);
     const [bootIssue, setBootIssue] = useState<string | null>(null);
+    const [coreAnswered, setCoreAnswered] = useState(false);
+    const bootShown = useBootDelay(bootReady, SHOW_BOOT_AFTER_MS);
+    const bootSlow = useBootDelay(bootReady, NAME_THE_WAIT_AFTER_MS);
     const sideRailVisible = useStore((s) => s.sideRailOpen);
-    const agentRailVisible = useStore((s) => s.agentRailOpen);
+    const tabRailVisible = useStore((s) => s.tabRailOpen);
     const activeSessionIsProject = useStore((s) => s.sessions[s.activeSessionId]?.kind === "project");
-    useRailEntrance(sideRailVisible, ".side-rail");
-    useRailEntrance(agentRailVisible && activeSessionIsProject, ".agent-rail");
+    useRailDock(sideRailVisible, true, ".side-rail", bootReady);
+    useRailDock(tabRailVisible, activeSessionIsProject, ".tab-rail", bootReady);
     const pickerOpen = useStore((s) => s.pickerOpen);
     const agentPaletteOpen = useStore((s) => s.agentPaletteOpen);
     const filePaletteOpen = useStore((s) => s.filePaletteOpen);
     const newTabPaletteOpen = useStore((s) => s.newTabPaletteOpen);
     const installedPlugins = useInstalledPlugins();
-    const disabledPlugins = useStore((s) => s.disabledPlugins);
+    const iosSimulator = useStore((s) => s.iosSimulator);
     useEffect(() => {
-        void pluginsApi.setDisabled(disabledPlugins).catch(swallow("switch plugins"));
-    }, [disabledPlugins]);
+        void simApi.offerToAgents(iosSimulator).catch(swallow("switch the iOS Simulator"));
+    }, [iosSimulator]);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const uiTextScale = useStore((s) => s.uiTextScale);
     useEffect(() => {
         document.documentElement.style.setProperty("--ui-text-scale", String(uiTextScale));
     }, [uiTextScale]);
+    const paneStrength = useStore((s) => s.paneStrength);
+    useEffect(() => {
+        document.documentElement.style.setProperty("--pane-strength", String(paneStrength));
+    }, [paneStrength]);
     const commandPaletteOpen = useStore((s) => s.commandPaletteOpen);
+    const themePaletteOpen = useStore((s) => s.themePaletteOpen);
     const commandPopup = useStore((s) => s.commandPopup);
     const sessionSwitcherOpen = useStore((s) => s.sessionSwitcher !== null);
     const onboardingOpen = useStore((s) => s.onboardingOpen);
@@ -729,6 +628,7 @@ export default function App() {
             newTabPaletteOpen ||
             settingsOpen ||
             commandPaletteOpen ||
+            themePaletteOpen ||
             sessionSwitcherOpen ||
             onboardingOpen ||
             Boolean(commandPopup),
@@ -737,6 +637,11 @@ export default function App() {
     useEffect(() => {
         let disposed = false;
         let unsub = () => {};
+        let stopSpareShells = () => {};
+        let stopHosts = () => {};
+        let stopPaneResources = () => {};
+        let stopAccountSync = () => {};
+        let stopWorkspaceSync = () => {};
         let bootFinished = false;
         let hydrationResult: HydrationResult | null = null;
         const bootSpan = performanceTelemetry.startTrace("startup.boot");
@@ -747,16 +652,26 @@ export default function App() {
             if (recorded) performanceTelemetry.recordLatency("startup.boot", recorded.durationMs);
         };
         void pluginsApi.manifests().then(cmd.setPluginManifests, swallow("plugin manifests"));
-        invoke<BootInfo>("boot_init")
-            .then((boot) => {
+        let accounts: AgentAccountBook | null | undefined;
+        let workspace: SharedWorkspace | undefined;
+        const fromCore = Promise.all([agentApi.accounts().catch(() => undefined), fetchCoreWorkspace()]);
+        void fromCore.then(
+            () => !disposed && setCoreAnswered(true),
+            () => {},
+        );
+        Promise.all([invoke<BootInfo>("boot_init"), fromCore])
+            .then(([boot, [book, shared]]) => {
                 if (disposed) return;
+                accounts = book;
+                workspace = shared;
                 const hydrateSpan = performanceTelemetry.startSpan(bootSpan, "startup.hydrate");
                 try {
                     cmd.setHome(boot.home);
-                    hydrationResult = applyHydrate(boot.state);
+                    hydrationResult = applyHydrate(boot.state, accounts, workspace);
                     const st = getState();
                     registerCustomThemes(st.customThemes);
                     applyTheme(st.themeId);
+                    startPageTheme();
                     applyWindowOpacity(st.windowOpacity);
                     applyTerminalFontSize(st.terminalFontSize);
                     applyChatTextScale(st.chatTextScale);
@@ -788,18 +703,15 @@ export default function App() {
             .finally(() => {
                 const writable = hydrationResult !== null && hydrationAllowsPersistence(hydrationResult);
                 if (!disposed && writable) {
-                    try {
-                        workbenchRuntime.start();
-                    } catch (error) {
-                        setBootIssue("Sikemux could not open the saved workspace. Nothing has been written; reload to retry.");
-                        finishBoot("error");
-                        swallow("workbench start")(error);
-                        return;
-                    }
+                    stopPaneResources = releaseClosedPaneResources();
                     unsub = subscribePersist();
+                    if (workspace) stopWorkspaceSync = startCoreWorkspace(workspace);
+                    stopAccountSync = syncAgentAccounts(accounts);
                     setBootReady(true);
                     introduceNotifications();
                     void restoreCoreSessions();
+                    stopSpareShells = startSpareShells();
+                    stopHosts = startHosts();
                 }
                 finishBoot(disposed ? "cancelled" : writable ? "success" : "error");
             });
@@ -807,7 +719,11 @@ export default function App() {
             disposed = true;
             finishBoot("cancelled");
             unsub();
-            workbenchRuntime.stop();
+            stopWorkspaceSync();
+            stopAccountSync();
+            stopSpareShells();
+            stopHosts();
+            stopPaneResources();
         };
     }, []);
 
@@ -821,9 +737,13 @@ export default function App() {
         [],
     );
 
-    useEffect(() => recordAgentTurns(), []);
+    useEffect(watchInbox, []);
 
-    useEffect(() => watchTerminalAgentExits(), []);
+    useEffect(() => watchSshLinks(), []);
+    useEffect(() => watchTerminalTitles(), []);
+    useEffect(() => watchFocusForAgentStatus(), []);
+    /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
+    useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(swallow("preload the chat surface"))), []);
 
     useEffect(() => {
         let disposed = false;
@@ -857,18 +777,10 @@ export default function App() {
         };
     }, []);
 
-    useEffect(() => {
-        const controller = new AbortController();
-        void subscribeGitChanged(controller.signal).catch((error: unknown) => {
-            if (!controller.signal.aborted) swallow("git change listener")(error);
-        });
-        return () => {
-            controller.abort();
-        };
-    }, []);
+    useEffect(() => onCoreChanged("git", onGitChanged), []);
 
     useEffect(() => {
-        if (import.meta.env.DEV) return;
+        if (import.meta.env.DEV || !UPDATES_IN_APP) return;
         const firstCheck = window.setTimeout(() => void checkForUpdate(), 4000);
         const poll = window.setInterval(() => void checkForUpdate(), 30 * 60_000);
         return () => {
@@ -921,18 +833,17 @@ export default function App() {
             }
 
             showPathDropHover(null);
-            const paths = e.payload.paths;
-            if (!paths || paths.length === 0) {
-                clearTreeHover();
-                return;
-            }
-            if (pathTarget && dispatchPaths(pathTarget, paths)) {
+            const dropped = e.payload.paths;
+            if (!dropped || dropped.length === 0) {
                 clearTreeHover();
                 return;
             }
             const target = resolveTreeDropTarget(at);
-            if (target) dispatchFolder(target.dropEl, paths);
             clearTreeHover();
+            void fsapi.keepDroppedPaths(dropped).then((paths) => {
+                if (pathTarget && dispatchPaths(pathTarget, paths)) return;
+                if (target) dispatchFolder(target.dropEl, paths);
+            }, reportError("Could not take the dropped files"));
         });
         return () => {
             showPathDropHover(null);
@@ -943,18 +854,25 @@ export default function App() {
     if (!bootReady) {
         return (
             <div className="shell boot-shell">
-                <section className="boot-state" role={bootIssue ? "alert" : "status"} aria-live="polite">
-                    <span className="boot-state-mark" aria-hidden="true">
-                        S
-                    </span>
-                    <h1>{bootIssue ? "Workspace protected" : "Opening workspace"}</h1>
-                    <p>{bootIssue ?? "Hydrating sessions and preparing terminal ownership…"}</p>
-                    {bootIssue && (
+                {bootIssue ? (
+                    <section className="boot-state" role="alert" aria-live="polite">
+                        <img className="boot-state-mark" src={brandMark} alt="" />
+                        <h1>Workspace protected</h1>
+                        <p>{bootIssue}</p>
                         <button type="button" onClick={() => window.location.reload()}>
                             Reload safely
                         </button>
-                    )}
-                </section>
+                    </section>
+                ) : (
+                    bootShown && (
+                        <section className="boot-state" role="status" aria-live="polite" aria-label="Opening Sikemux">
+                            <img className="boot-state-mark" src={brandMark} alt="" />
+                            {bootSlow && (
+                                <p className="boot-state-wait">{coreAnswered ? "Opening your workspace" : "Waiting for Sikemux to start"}</p>
+                            )}
+                        </section>
+                    )
+                )}
                 <Toaster />
             </div>
         );
@@ -969,12 +887,16 @@ export default function App() {
             <RemoteWorkspaceBridge />
             <NotchBridge />
             <RemoteChatBridge />
+            <AgentNameBridge />
+            <AgentQuestionBridge />
+            <AgentBoardBridge />
+            <GlobalSkillsBridge />
+            <NetworkBridge />
             <ProjectBridge />
-            <AgentSessionSync />
-            <AgentLifecycleManager />
             <TopBar />
+            <TabRow />
             <div className="body">
-                {sideRailVisible && <SideRail />}
+                <SideRail />
                 {sideRailVisible && <RailResizer edge="start" />}
                 {!sideRailVisible && (
                     <RailPeek edge="start">
@@ -989,11 +911,11 @@ export default function App() {
                         </Suspense>
                     )}
                 </main>
-                {agentRailVisible && activeSessionIsProject && <AgentRail />}
-                {agentRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
-                {!agentRailVisible && activeSessionIsProject && (
+                {activeSessionIsProject && <TabRail />}
+                {tabRailVisible && activeSessionIsProject && <RailResizer edge="end" />}
+                {!tabRailVisible && activeSessionIsProject && (
                     <RailPeek edge="end">
-                        <AgentRail />
+                        <TabRail />
                     </RailPeek>
                 )}
             </div>
@@ -1004,6 +926,7 @@ export default function App() {
             {installedPlugins.map(({ id, Overlay }) => (Overlay ? <Overlay key={id} /> : null))}
             {sessionSwitcherOpen && <SessionSwitcher />}
             {commandPaletteOpen && <ApplicationCommandPalette />}
+            {themePaletteOpen && <ThemePalette />}
             {commandPopup && (
                 <div className="experience-backdrop command-popup-backdrop" role="presentation" onMouseDown={cmd.closeCommandPopup}>
                     <section
@@ -1032,9 +955,14 @@ export default function App() {
                 {diagnosticsOpen && <DiagnosticsOverlay />}
                 {whatsNewOpen && <WhatsNewOverlay />}
             </Suspense>
+            <AgentInstallHost />
             <DialogHost />
+            <AccountDialogHost />
+            <ShareHost />
+            <BuddyPickerHost />
             <ImageViewer />
             <VoiceCaption />
+            <PairingPrompt />
             <UpdateRequiredPrompt />
             <Toaster />
         </div>

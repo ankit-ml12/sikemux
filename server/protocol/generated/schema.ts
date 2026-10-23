@@ -4,20 +4,63 @@ export const schema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://api.sikemux.com/schema/v1",
   $defs: {
+    Account: {
+      description:
+        "Whether the signed-in account is in use or waiting to be deleted.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/AccountStatus" },
+        deletesAt: {
+          description:
+            "Only while deleting: when the account is deleted for good unless restored first.",
+          type: "string",
+          format: "date-time",
+        },
+        restorableDays: {
+          description:
+            "How many days a deleted account can still be restored: deletesAt is this long after the deletion.",
+          type: "integer",
+          minimum: 1,
+        },
+      },
+      required: ["status", "restorableDays"],
+      additionalProperties: false,
+    },
     AccountDeletion: {
       description:
-        "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+        "Every device is revoked and every token refused from the moment this is answered, except to read or restore the account. Signing in again before deletesAt can restore it.",
       type: "object",
       properties: {
         status: { $ref: "#/$defs/AccountDeletionStatus" },
         requestedAt: { type: "string", format: "date-time" },
+        deletesAt: {
+          description:
+            "When the sign-in is deleted for good and the account can no longer be restored.",
+          type: "string",
+          format: "date-time",
+        },
       },
-      required: ["status", "requestedAt"],
+      required: ["status", "requestedAt", "deletesAt"],
+      additionalProperties: false,
+    },
+    AccountDeletionRequest: {
+      description:
+        "What the phone may send when it deletes an account. The body can be left out.",
+      type: "object",
+      properties: {
+        appleAuthorizationCode: {
+          description:
+            "A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.",
+          type: "string",
+          minLength: 1,
+          maxLength: 512,
+        },
+      },
       additionalProperties: false,
     },
     AccountDeletionStatus: {
       description:
-        "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+        "Deleting while the account can still be restored, until the server deletes the sign-in in Clerk at deletesAt; deleted once Clerk has.",
       type: "string",
       enum: ["deleting", "deleted"],
     },
@@ -55,6 +98,24 @@ export const schema = {
         "account.deleted",
       ],
     },
+    AccountProfile: {
+      description:
+        "The name, email and picture the account signed in with, for a host to show who it belongs to.",
+      type: "object",
+      properties: {
+        email: { type: ["string", "null"], maxLength: 320 },
+        name: { type: ["string", "null"], maxLength: 256 },
+        imageUrl: { type: ["string", "null"], format: "uri", maxLength: 2048 },
+      },
+      required: ["email", "name", "imageUrl"],
+      additionalProperties: false,
+    },
+    AccountStatus: {
+      description:
+        "Active, or deleting: deleted on request and still restorable until deletesAt.",
+      type: "string",
+      enum: ["active", "deleting"],
+    },
     ApiError: {
       description: "The body of every response that is not a success.",
       type: "object",
@@ -67,6 +128,16 @@ export const schema = {
         "Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.",
       type: "string",
       enum: ["sandbox", "production"],
+    },
+    ApprovedHost: {
+      description: "The host a sign-in code belonged to, once approved.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string" },
+      },
+      required: ["key", "name"],
+      additionalProperties: false,
     },
     AppVersion: {
       description: "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
@@ -145,6 +216,14 @@ export const schema = {
       required: ["key", "role", "name", "platform", "nonce", "signature"],
       additionalProperties: false,
     },
+    DeviceRename: {
+      description:
+        "What a device or host is called on the account, everywhere it is shown.",
+      type: "object",
+      properties: { name: { type: "string", minLength: 1, maxLength: 64 } },
+      required: ["name"],
+      additionalProperties: false,
+    },
     DeviceRole: {
       description:
         "A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.",
@@ -163,6 +242,7 @@ export const schema = {
         "rate_limited",
         "internal",
         "unavailable",
+        "reverify_required",
       ],
     },
     ErrorDetail: {
@@ -178,6 +258,12 @@ export const schema = {
           description:
             "The same as the response's x-request-id header, and how the server's logs find this request.",
           type: "string",
+        },
+        reverifyWithinMinutes: {
+          description:
+            "Only with reverify_required: how recently the person must have proved their first factor.",
+          type: "integer",
+          minimum: 1,
         },
       },
       required: ["code", "message", "requestId"],
@@ -205,6 +291,171 @@ export const schema = {
       additionalProperties: false,
     },
     HealthStatus: { type: "string", enum: ["ok", "unavailable"] },
+    HostSignIn: {
+      description:
+        "What the host shows and keeps while its person approves it from a device already signed in.",
+      type: "object",
+      properties: {
+        code: { $ref: "#/$defs/HostSignInCode" },
+        userCode: { $ref: "#/$defs/HostSignInUserCode" },
+        verificationUrl: {
+          description:
+            "Where the person approves this host by typing the code it shows. It never carries the code, so a link alone cannot approve anything.",
+          type: "string",
+          format: "uri",
+        },
+        expiresAt: { type: "string", format: "date-time" },
+        interval: {
+          description:
+            "How many seconds the host waits between asks whether it was approved.",
+          type: "integer",
+          minimum: 1,
+        },
+      },
+      required: [
+        "code",
+        "userCode",
+        "verificationUrl",
+        "expiresAt",
+        "interval",
+      ],
+      additionalProperties: false,
+    },
+    HostSignInCode: {
+      description:
+        "The secret a host holds while it waits to be signed in: 32 random bytes in lowercase hex. Only the host ever sees it.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
+    HostSignInFinish: {
+      description:
+        "Registers the approved host. The signature is the host key's, over the same text a DeviceRegistration signs, with the account from HostSignInState.",
+      type: "object",
+      properties: {
+        code: { $ref: "#/$defs/HostSignInCode" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: ["code", "nonce", "signature"],
+      additionalProperties: false,
+    },
+    HostSignInPoll: {
+      type: "object",
+      properties: { code: { $ref: "#/$defs/HostSignInCode" } },
+      required: ["code"],
+      additionalProperties: false,
+    },
+    HostSignInStart: {
+      description:
+        "A host with no browser asks to be signed in. It proves its key only when it finishes, once it knows the account.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string", minLength: 1, maxLength: 64 },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+      },
+      required: ["key", "name", "platform", "channel"],
+      additionalProperties: false,
+    },
+    HostSignInState: {
+      description:
+        "Pending until the person approves. Approved carries the account and a fresh challenge, which the host signs as it would a DeviceRegistration and sends back in HostSignInFinish.",
+      type: "object",
+      properties: {
+        status: { $ref: "#/$defs/HostSignInStatus" },
+        account: {
+          description:
+            "Only once approved: the Clerk user id of the account that approved.",
+          type: "string",
+          pattern: "^user_[A-Za-z0-9]+$",
+          maxLength: 64,
+        },
+        nonce: {
+          description: "Only once approved: a challenge good for two minutes.",
+          type: "string",
+          pattern: "^[0-9a-f]{64}$",
+        },
+      },
+      required: ["status"],
+      additionalProperties: false,
+    },
+    HostSignInStatus: { type: "string", enum: ["pending", "approved"] },
+    HostSignInUserCode: {
+      description:
+        "What the host shows its person, who types it on a device already signed in. Eight consonants in two groups of four.",
+      type: "string",
+      pattern: "^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$",
+    },
+    JoinRequest: {
+      description: "Which host on the account the phone wants to join.",
+      type: "object",
+      properties: { host: { $ref: "#/$defs/DeviceKey" } },
+      required: ["host"],
+      additionalProperties: false,
+    },
+    JoinTicket: {
+      description:
+        "The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal, followed by `|<via>|<viaName>` when the ticket has them.",
+      type: "object",
+      properties: {
+        v: {
+          description: "The ticket's format. Only 1 exists.",
+          type: "integer",
+          minimum: 1,
+          maximum: 1,
+        },
+        keyId: {
+          description:
+            "Which of the server's signing keys signed it: prod-1 in production, dev-1 for a local API.",
+          type: "string",
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+          maxLength: 32,
+        },
+        account: {
+          description:
+            "The Clerk user id of the account the phone and the host are on.",
+          type: "string",
+          pattern: "^user_[A-Za-z0-9]+$",
+          maxLength: 64,
+        },
+        host: { $ref: "#/$defs/DeviceKey" },
+        phone: { $ref: "#/$defs/DeviceKey" },
+        issuedAt: {
+          description: "When the server signed it, in unix seconds.",
+          type: "integer",
+          minimum: 0,
+        },
+        expiresAt: {
+          description:
+            "When it stops being good, in unix seconds: ten minutes after issuedAt.",
+          type: "integer",
+          minimum: 0,
+        },
+        via: {
+          description:
+            "The host that added the joining app to the account, when a host did, so the host it joins can say which.",
+          $ref: "#/$defs/DeviceKey",
+        },
+        viaName: {
+          description: "What the account calls the host in via.",
+          type: "string",
+          maxLength: 64,
+        },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+      },
+      required: [
+        "v",
+        "keyId",
+        "account",
+        "host",
+        "phone",
+        "issuedAt",
+        "expiresAt",
+        "signature",
+      ],
+      additionalProperties: false,
+    },
     LiveAck: {
       description: "Every event up to and including id is handled.",
       type: "object",
@@ -236,7 +487,7 @@ export const schema = {
     },
     LiveBye: {
       description:
-        "The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.",
+        "The server is restarting and closes with LiveCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
       type: "object",
       properties: {
         type: { const: "bye" },
@@ -256,6 +507,67 @@ export const schema = {
       },
       required: ["type", "nonce", "expiresAt"],
       additionalProperties: false,
+    },
+    LiveCloseCode: {
+      description:
+        "Why the server closed a live connection, as the WebSocket close code.",
+      type: "integer",
+      oneOf: [
+        {
+          const: 4400,
+          title: "badMessage",
+          description:
+            "The device sent something the protocol does not allow. Reconnect with backoff.",
+        },
+        {
+          const: 4401,
+          title: "unauthenticated",
+          description:
+            "The hello did not prove who the device is, or the web app's sign-in expired.",
+        },
+        {
+          const: 4403,
+          title: "revoked",
+          description:
+            "The device is no longer on the account, after a revoked message. Do not reconnect.",
+        },
+        {
+          const: 4408,
+          title: "helloTimeout",
+          description:
+            "No hello came within 10 seconds of the challenge. Reconnect with backoff.",
+        },
+        {
+          const: 4409,
+          title: "replaced",
+          description:
+            "A newer connection for the same device took over. Reconnecting at once would push that one off.",
+        },
+        {
+          const: 4429,
+          title: "overLimit",
+          description:
+            "Over a limit: more messages a second than allowed, too many failed hellos from this key or address in a minute, or too many connections for the account. Wait at least 30 seconds, since the limits count over a minute.",
+        },
+        {
+          const: 1011,
+          title: "serverError",
+          description:
+            "Something failed on the server. Reconnect with backoff.",
+        },
+        {
+          const: 1012,
+          title: "restarting",
+          description:
+            "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs.",
+        },
+        {
+          const: 1013,
+          title: "overloaded",
+          description:
+            "The server has too many connections, or the device stopped reading. Reconnect with backoff.",
+        },
+      ],
     },
     LiveDeviceMessage: {
       description: "What a device or the web app sends on a live connection.",
@@ -417,7 +729,7 @@ export const schema = {
     },
     LiveRevoked: {
       description:
-        "This device is no longer on the account. The server closes with 4403 after it.",
+        "This device is no longer on the account. The server closes with LiveCloseCode revoked after it.",
       type: "object",
       properties: {
         type: { const: "revoked" },
@@ -453,10 +765,11 @@ export const schema = {
       type: "object",
       properties: {
         macos: { $ref: "#/$defs/ChannelVersions" },
+        linux: { $ref: "#/$defs/ChannelVersions" },
         ios: { $ref: "#/$defs/ChannelVersions" },
         android: { $ref: "#/$defs/ChannelVersions" },
       },
-      required: ["macos", "ios", "android"],
+      required: ["macos", "linux", "ios", "android"],
       additionalProperties: false,
     },
     Network: {
@@ -476,7 +789,53 @@ export const schema = {
       required: ["relays", "minimumVersions"],
       additionalProperties: false,
     },
-    Platform: { type: "string", enum: ["macos", "ios", "android"] },
+    PendingHost: {
+      description:
+        "The host waiting behind a user code, for the person to check before approving it.",
+      type: "object",
+      properties: {
+        key: { $ref: "#/$defs/DeviceKey" },
+        name: { type: "string" },
+        platform: { $ref: "#/$defs/Platform" },
+        channel: { $ref: "#/$defs/Channel" },
+        expiresAt: { type: "string", format: "date-time" },
+        requestedAt: {
+          description: "When the host asked to be signed in.",
+          type: "string",
+          format: "date-time",
+        },
+        requestedFrom: {
+          description:
+            "The address the host asked from, as the server saw it, or null when it is not known.",
+          type: ["string", "null"],
+          maxLength: 64,
+        },
+        requestedNear: {
+          description:
+            "Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know.",
+          type: ["string", "null"],
+          maxLength: 256,
+        },
+        removedAt: {
+          description:
+            "Only for a host once removed from this account: when it was. It can come back only through a code approved like this.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: [
+        "key",
+        "name",
+        "platform",
+        "channel",
+        "expiresAt",
+        "requestedAt",
+        "requestedFrom",
+        "requestedNear",
+      ],
+      additionalProperties: false,
+    },
+    Platform: { type: "string", enum: ["macos", "linux", "ios", "android"] },
     PushApp: {
       description:
         "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",
@@ -581,6 +940,420 @@ export const schema = {
         "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",
       type: "string",
       enum: ["removed", "signed_out", "account_deleted"],
+    },
+    Sealed: {
+      description:
+        "What the host sealed for the share's viewers: a 12-byte nonce, then AES-256-GCM ciphertext and tag, in unpadded base64url. The key lives only in the share's link, so the server cannot read it.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]+$",
+      maxLength: 6000000,
+    },
+    ShareAnswer: {
+      description: "Host only: the sealed answer to one viewer's question.",
+      type: "object",
+      properties: {
+        type: { const: "answer" },
+        share: { $ref: "#/$defs/ShareId" },
+        viewer: { $ref: "#/$defs/ShareViewerId" },
+        sealed: { $ref: "#/$defs/Sealed" },
+      },
+      required: ["type", "share", "viewer", "sealed"],
+      additionalProperties: false,
+    },
+    ShareAnswered: {
+      description:
+        "To a viewer: the host's sealed answer to one of its questions.",
+      type: "object",
+      properties: {
+        type: { const: "answer" },
+        sealed: { $ref: "#/$defs/Sealed" },
+      },
+      required: ["type", "sealed"],
+      additionalProperties: false,
+    },
+    ShareAsk: {
+      description:
+        "Viewer only: a sealed question for the host, such as the chat's turns before some event or a picture pasted into it. The host answers with answer.",
+      type: "object",
+      properties: {
+        type: { const: "ask" },
+        sealed: { $ref: "#/$defs/Sealed" },
+      },
+      required: ["type", "sealed"],
+      additionalProperties: false,
+    },
+    ShareAsked: {
+      description:
+        "To the host: a viewer's sealed question. Answer it with answer, naming the viewer.",
+      type: "object",
+      properties: {
+        type: { const: "ask" },
+        share: { $ref: "#/$defs/ShareId" },
+        viewer: { $ref: "#/$defs/ShareViewerId" },
+        sealed: { $ref: "#/$defs/Sealed" },
+      },
+      required: ["type", "share", "viewer", "sealed"],
+      additionalProperties: false,
+    },
+    ShareAuth: {
+      description:
+        "Viewer only: a fresh Clerk token for the same user, sent before ready.authExpiresAt.",
+      type: "object",
+      properties: {
+        type: { const: "auth" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+      },
+      required: ["type", "token"],
+      additionalProperties: false,
+    },
+    ShareBye: {
+      description:
+        "The server is restarting and closes with ShareCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
+      type: "object",
+      properties: {
+        type: { const: "bye" },
+        reconnectAfterMs: { type: "integer", minimum: 0 },
+      },
+      required: ["type", "reconnectAfterMs"],
+      additionalProperties: false,
+    },
+    ShareChallenge: {
+      description:
+        "The server's first message on every share connection: a one-time value a host's hello signs.",
+      type: "object",
+      properties: {
+        type: { const: "challenge" },
+        nonce: { type: "string", pattern: "^[0-9a-f]{64}$" },
+        expiresAt: { type: "string", format: "date-time" },
+      },
+      required: ["type", "nonce", "expiresAt"],
+      additionalProperties: false,
+    },
+    ShareClientMessage: {
+      description: "What a host or a viewer sends on a share connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/ShareHello" },
+        { $ref: "#/$defs/ShareOpen" },
+        { $ref: "#/$defs/SharePublish" },
+        { $ref: "#/$defs/ShareAnswer" },
+        { $ref: "#/$defs/ShareClose" },
+        { $ref: "#/$defs/ShareAsk" },
+        { $ref: "#/$defs/ShareAuth" },
+        { $ref: "#/$defs/SharePong" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    ShareClose: {
+      description:
+        "Host only: end a share for good. Its viewers are told it was stopped.",
+      type: "object",
+      properties: {
+        type: { const: "close" },
+        share: { $ref: "#/$defs/ShareId" },
+      },
+      required: ["type", "share"],
+      additionalProperties: false,
+    },
+    ShareCloseCode: {
+      description:
+        "Why the server closed a share connection, as the WebSocket close code.",
+      type: "integer",
+      oneOf: [
+        {
+          const: 4400,
+          title: "badMessage",
+          description:
+            "Something the protocol does not allow was sent. Reconnect with backoff.",
+        },
+        {
+          const: 4401,
+          title: "unauthenticated",
+          description:
+            "The hello did not prove who is connecting, or the viewer's sign-in expired.",
+        },
+        {
+          const: 4404,
+          title: "notFound",
+          description: "No share has this id. Do not reconnect.",
+        },
+        {
+          const: 4408,
+          title: "helloTimeout",
+          description:
+            "No hello came within 10 seconds of the challenge. Reconnect with backoff.",
+        },
+        {
+          const: 4409,
+          title: "replaced",
+          description: "A newer connection for the same host took over.",
+        },
+        {
+          const: 4410,
+          title: "ended",
+          description:
+            "The share ended, after an ended message. Do not reconnect.",
+        },
+        {
+          const: 4429,
+          title: "overLimit",
+          description:
+            "Over a limit: too many messages, viewers or failed hellos. Wait at least 30 seconds.",
+        },
+        {
+          const: 1011,
+          title: "serverError",
+          description:
+            "Something failed on the server. Reconnect with backoff.",
+        },
+        {
+          const: 1012,
+          title: "restarting",
+          description:
+            "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs.",
+        },
+        {
+          const: 1013,
+          title: "overloaded",
+          description:
+            "The server has too many connections, or the connection stopped reading. Reconnect with backoff.",
+        },
+      ],
+    },
+    ShareEnded: {
+      description:
+        "The share ended. The server closes a viewer's connection with ShareCloseCode ended after it.",
+      type: "object",
+      properties: {
+        type: { const: "ended" },
+        share: { $ref: "#/$defs/ShareId" },
+        reason: { $ref: "#/$defs/ShareEndReason" },
+      },
+      required: ["type", "share", "reason"],
+      additionalProperties: false,
+    },
+    ShareEndReason: {
+      description:
+        "Why a share ended: the host stopped it or its chat ended, or it ran past its expiry.",
+      type: "string",
+      enum: ["stopped", "expired"],
+    },
+    ShareFrame: {
+      description:
+        "One sealed frame of a share. A snapshot holds the whole chat as it stands, so a viewer starts over from it and the frames before it are no longer needed.",
+      type: "object",
+      properties: {
+        seq: { $ref: "#/$defs/ShareSeq" },
+        snapshot: { type: "boolean" },
+        sealed: { $ref: "#/$defs/Sealed" },
+      },
+      required: ["seq", "snapshot", "sealed"],
+      additionalProperties: false,
+    },
+    ShareFrames: {
+      description:
+        "To a viewer: frames in order. One with snapshot set replaces everything before it.",
+      type: "object",
+      properties: {
+        type: { const: "frames" },
+        frames: { type: "array", items: { $ref: "#/$defs/ShareFrame" } },
+      },
+      required: ["type", "frames"],
+      additionalProperties: false,
+    },
+    ShareHello: {
+      description:
+        "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.",
+      type: "object",
+      properties: {
+        type: { const: "hello" },
+        role: { $ref: "#/$defs/ShareRole" },
+        key: { $ref: "#/$defs/DeviceKey" },
+        signature: { type: "string", pattern: "^[0-9a-f]{128}$" },
+        token: { type: "string", minLength: 1, maxLength: 4096 },
+        share: { $ref: "#/$defs/ShareId" },
+        proof: { $ref: "#/$defs/ShareViewerProof" },
+        since: { $ref: "#/$defs/ShareSeq" },
+      },
+      required: ["type", "role"],
+      additionalProperties: false,
+    },
+    ShareHost: {
+      description:
+        "To a viewer: the sharing host connected or went away. Questions wait for it.",
+      type: "object",
+      properties: { type: { const: "host" }, online: { type: "boolean" } },
+      required: ["type", "online"],
+      additionalProperties: false,
+    },
+    ShareId: {
+      description:
+        "A shared chat's id: 16 random bytes the host picks, in unpadded base64url.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]{22}$",
+    },
+    ShareOpen: {
+      description:
+        "Host only: start a share. The server answers opened or refused. Hosts on 0.5.3 and earlier send no viewers check, and their shares are open to anyone signed in who has the link.",
+      type: "object",
+      properties: {
+        type: { const: "open" },
+        share: { $ref: "#/$defs/ShareId" },
+        expiresAt: { type: "string", format: "date-time" },
+        viewers: { $ref: "#/$defs/ShareViewerCheck" },
+      },
+      required: ["type", "share", "expiresAt"],
+      additionalProperties: false,
+    },
+    ShareOpened: {
+      description: "To the host: the share is open and viewers may join.",
+      type: "object",
+      properties: {
+        type: { const: "opened" },
+        share: { $ref: "#/$defs/ShareId" },
+      },
+      required: ["type", "share"],
+      additionalProperties: false,
+    },
+    SharePing: {
+      description: "Answer with pong.",
+      type: "object",
+      properties: { type: { const: "ping" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    SharePong: {
+      description: "The answer to ping.",
+      type: "object",
+      properties: { type: { const: "pong" } },
+      required: ["type"],
+      additionalProperties: false,
+    },
+    SharePublish: {
+      description:
+        "Host only: the share's next frame, for every viewer now and later.",
+      type: "object",
+      properties: {
+        type: { const: "publish" },
+        share: { $ref: "#/$defs/ShareId" },
+        frame: { $ref: "#/$defs/ShareFrame" },
+      },
+      required: ["type", "share", "frame"],
+      additionalProperties: false,
+    },
+    ShareReady: {
+      description:
+        "The hello was accepted. A viewer is sent the frames it does not hold next, from the latest snapshot on.",
+      type: "object",
+      properties: {
+        type: { const: "ready" },
+        heartbeatMs: { type: "integer", minimum: 1 },
+        expiresAt: {
+          description: "Viewer only: when the share ends.",
+          type: "string",
+          format: "date-time",
+        },
+        hostOnline: {
+          description: "Viewer only: whether the sharing host is connected.",
+          type: "boolean",
+        },
+        authExpiresAt: {
+          description:
+            "Viewer only: send a fresh token in an auth message before this.",
+          type: "string",
+          format: "date-time",
+        },
+      },
+      required: ["type", "heartbeatMs"],
+      additionalProperties: false,
+    },
+    ShareRefusal: {
+      description:
+        "Why the server would not open a share: the account has as many open as it may, the id is taken, or the expiry is not between now and seven days from now.",
+      type: "string",
+      enum: ["limit", "exists", "expiry"],
+    },
+    ShareRefused: {
+      description: "To the host: the share was not opened.",
+      type: "object",
+      properties: {
+        type: { const: "refused" },
+        share: { $ref: "#/$defs/ShareId" },
+        reason: { $ref: "#/$defs/ShareRefusal" },
+      },
+      required: ["type", "share", "reason"],
+      additionalProperties: false,
+    },
+    ShareRole: {
+      description: "A host publishes its shared chats; a viewer watches one.",
+      type: "string",
+      enum: ["host", "viewer"],
+    },
+    ShareSeq: {
+      description:
+        "A frame's place in its share. The host numbers frames from 1, one higher each time.",
+      type: "integer",
+      minimum: 1,
+    },
+    ShareServerMessage: {
+      description: "What the server sends on a share connection.",
+      type: "object",
+      oneOf: [
+        { $ref: "#/$defs/ShareChallenge" },
+        { $ref: "#/$defs/ShareReady" },
+        { $ref: "#/$defs/ShareOpened" },
+        { $ref: "#/$defs/ShareRefused" },
+        { $ref: "#/$defs/ShareViewers" },
+        { $ref: "#/$defs/ShareAsked" },
+        { $ref: "#/$defs/ShareWantsSnapshot" },
+        { $ref: "#/$defs/ShareFrames" },
+        { $ref: "#/$defs/ShareAnswered" },
+        { $ref: "#/$defs/ShareHost" },
+        { $ref: "#/$defs/ShareEnded" },
+        { $ref: "#/$defs/SharePing" },
+        { $ref: "#/$defs/ShareBye" },
+      ],
+      discriminator: { propertyName: "type" },
+    },
+    ShareViewerCheck: {
+      description:
+        "The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.",
+      type: "string",
+      pattern: "^[0-9a-f]{64}$",
+    },
+    ShareViewerId: {
+      description:
+        "One viewer's connection, as the server names it to the host.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]{1,32}$",
+    },
+    ShareViewerProof: {
+      description:
+        "What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.",
+      type: "string",
+      pattern: "^[A-Za-z0-9_-]{43}$",
+    },
+    ShareViewers: {
+      description: "To the host: how many viewers a share has now.",
+      type: "object",
+      properties: {
+        type: { const: "viewers" },
+        share: { $ref: "#/$defs/ShareId" },
+        count: { type: "integer", minimum: 0 },
+      },
+      required: ["type", "share", "count"],
+      additionalProperties: false,
+    },
+    ShareWantsSnapshot: {
+      description:
+        "To the host: the server let go of the share's frames, so the next frame it publishes must be a snapshot.",
+      type: "object",
+      properties: {
+        type: { const: "snapshot" },
+        share: { $ref: "#/$defs/ShareId" },
+      },
+      required: ["type", "share"],
+      additionalProperties: false,
     },
   },
 } as const;

@@ -1,34 +1,79 @@
 mod access;
+mod activity;
+pub(crate) mod activity_log;
 mod agent;
-mod bonjour;
+mod agent_accounts;
+mod agent_sign_in;
+mod attachments;
+mod board;
+mod callers;
+mod calls;
+mod changed;
 mod chat;
+mod ci;
+mod collisions;
 mod connection;
+mod custom_command;
+mod display;
+mod edits;
 mod entry;
+mod follow;
+mod git;
 mod handover;
 mod harness;
 mod host;
+mod host_key;
+mod hosts;
+mod inbox;
+mod join;
+mod kept;
+mod launching;
+mod lifecycle;
+mod load;
+mod local_peer;
+mod messages;
+mod model_providers;
+mod names;
+mod network_watch;
 mod notify;
-mod pairing;
+pub mod plugins;
+mod ports;
 mod prepare;
+mod questions;
 mod remote;
+mod sandbox;
+mod saved;
+mod saved_sessions;
 mod seen;
 mod session;
+mod session_watch;
+mod share;
+mod skill_library;
+mod spawn;
+mod tasks;
 mod tools;
+mod transcript;
 mod upgrade;
+mod wake;
+mod warm;
+mod who_wrote;
 mod window;
 mod workspace;
 
 pub use entry::main;
+pub use host::{info as host_info, PLATFORM as HOST_PLATFORM};
+pub use remote::trust_remote_file;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{DirBuilder, File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, Weak};
+use std::time::{Duration, Instant};
 
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::agent_detection::{ManifestRegistry, ManifestReloadReport};
 
 use sikemux_pty::error::PtyError;
@@ -39,19 +84,28 @@ use sikemux_pty::task::{
 use tokio::sync::{watch, Notify};
 
 use crate::client::{probe, ProbeError};
-use crate::protocol::{encode_control, BuildIdentity, DeviceView, Event, ServerMessage, SessionId};
+use crate::protocol::{
+    encode_control, AgentGroup, BuildIdentity, DeviceView, Event, ServerMessage, SessionId,
+};
 
 use connection::{ClientConn, ClientId};
 use session::Session;
 
 pub const DEFAULT_IDLE_EXIT: Duration = Duration::from_secs(5 * 60);
+/// For a core a service runs, which nothing would start again once it left.
+pub const NEVER_IDLE_EXIT: Duration = Duration::from_millis(u64::MAX);
 const MAX_ACTIVE_SESSIONS: usize = 256;
 const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
-/// How soon a paired device sees a change to what it shows of this host.
+/// How often what a paired device shows of this host is looked at again
+/// while something in it moves by itself, such as an agent mid-turn.
 const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
+/// A burst of changes to the view goes out as one.
+const DEVICE_VIEW_GATHER: Duration = Duration::from_millis(50);
+/// However much changes, the view is built at most this often.
+const DEVICE_VIEW_SPACING: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -64,12 +118,19 @@ pub struct ServerConfig {
     /// The app's data directory, for the harness journal and tool tally.
     /// Without it they are kept in memory, or not at all.
     pub data_dir: Option<PathBuf>,
+    /// Where files devices send for a chat are kept. Without it devices
+    /// cannot send files.
+    pub attachment_dir: Option<PathBuf>,
     /// Remote access listens on loopback only, with no relay and without
     /// publishing the core's address. For tests.
     pub remote_direct_only: bool,
     /// The accounts server this host keeps a live connection to while it is
     /// signed in. Without it the host learns nothing from its account.
     pub accounts_api: Option<String>,
+    /// The host's key and the digest of the devices it trusts live in the
+    /// person's secret store. Without it they live in a file beside the
+    /// socket, for tests.
+    pub secret_store: bool,
 }
 
 impl ServerConfig {
@@ -80,8 +141,10 @@ impl ServerConfig {
             build: BuildIdentity::default(),
             cli_endpoint: None,
             data_dir: None,
+            attachment_dir: None,
             remote_direct_only: false,
             accounts_api: None,
+            secret_store: false,
         }
     }
 }
@@ -110,10 +173,6 @@ impl std::fmt::Display for CoreError {
 impl CoreError {
     fn pty(error: impl std::fmt::Display) -> Self {
         Self(format!("pty: {error}"))
-    }
-
-    fn poisoned<T>(_: T) -> Self {
-        Self("pty: lock poisoned".into())
     }
 }
 
@@ -149,10 +208,10 @@ impl From<serde_json::Error> for CoreError {
 
 pub(crate) type CoreResult<T> = Result<T, CoreError>;
 
-static EPOCH: OnceLock<Instant> = OnceLock::new();
+static STARTED: OnceLock<Instant> = OnceLock::new();
 
-fn epoch() -> Instant {
-    *EPOCH.get_or_init(Instant::now)
+fn started() -> Instant {
+    *STARTED.get_or_init(Instant::now)
 }
 
 /// A core that replaced an earlier one keeps its clock, so the times the
@@ -161,11 +220,11 @@ pub(crate) fn continue_clock(uptime_ms: u64) {
     let start = Instant::now()
         .checked_sub(Duration::from_millis(uptime_ms))
         .unwrap_or_else(Instant::now);
-    let _ = EPOCH.set(start);
+    let _ = STARTED.set(start);
 }
 
-pub(crate) fn now_ms() -> u64 {
-    epoch().elapsed().as_millis() as u64
+pub(crate) fn uptime_ms() -> u64 {
+    started().elapsed().as_millis() as u64
 }
 
 /// Counts launching, live and retained sessions, so the PTY budget holds even
@@ -247,6 +306,7 @@ pub(crate) struct Listening {
 }
 
 pub(crate) struct Core {
+    me: Weak<Core>,
     sessions: Mutex<HashMap<SessionId, Arc<Session>>>,
     next_session_id: AtomicU64,
     capacity: Arc<Capacity>,
@@ -270,9 +330,29 @@ pub(crate) struct Core {
     pub(crate) tools: Mutex<Option<tools::ToolEndpoint>>,
     pub(crate) chats: chat::Chats,
     pub(crate) remote: remote::Remote,
+    pub(crate) shares: share::Shares,
     pub(crate) workspaces: workspace::Workspaces,
     pub(crate) seen: seen::Seen,
+    pub(crate) lifecycle: lifecycle::Lifecycle,
+    pub(crate) session_watch: session_watch::SessionWatch,
+    pub(crate) activity_log: Arc<activity_log::ActivityLog>,
+    /// Pokes the device view awake once something may be watching it.
+    pub(crate) view_watched: Notify,
+    /// Sends the device view before its next tick, once an agent's state changed.
+    pub(crate) view_stale: Notify,
+    pub(crate) names: names::Names,
+    pub(crate) boards: board::Boards,
+    pub(crate) changes: changed::Changes,
+    pub(crate) ports: ports::Ports,
+    pub(crate) tasks: tasks::Tasks,
+    pub(crate) git_watches: crate::git::watch::Watches,
+    pub(crate) ci: ci::Ci,
+    pub(crate) edits: edits::Edits,
+    pub(crate) collisions: collisions::Collisions,
     pub(crate) notify: notify::Notifier,
+    pub(crate) inbox: inbox::Inbox,
+    /// Hosts linked with this one, and the agents of teams shared with them.
+    pub(crate) hosts: hosts::Hosts,
     /// The view paired devices were last sent, as sent.
     device_view: Mutex<Vec<u8>>,
 }
@@ -280,18 +360,32 @@ pub(crate) struct Core {
 /// Session and window call ids start from the clock, so an id a client still
 /// holds from a core that has since restarted never names a new one.
 fn first_session_id() -> SessionId {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
-        .max(1)
+    sikemux_process::clock::epoch_ms().max(1)
 }
 
 impl Core {
+    /// The core's own identity for a session it spawns itself, or for a
+    /// device on another machine, whose paths mean nothing here.
+    pub(crate) fn launch_identity(&self) -> crate::protocol::LaunchIdentity {
+        crate::protocol::LaunchIdentity {
+            version: self.build.version.clone(),
+            cli_executable: std::env::current_exe().ok(),
+            cli_endpoint: self
+                .listening
+                .get()
+                .and_then(|listening| listening.config.cli_endpoint.clone()),
+        }
+    }
+
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
-        Ok(Arc::new(Self {
+        let names = names::Names::new(data_dir);
+        let hosts = hosts::Hosts::new(data_dir);
+        names.pin(hosts.team.ids());
+        let harness = harness::Harness::new(data_dir, |agent_id| names.get(agent_id).is_some());
+        Ok(Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             sessions: Mutex::new(HashMap::new()),
             next_session_id: AtomicU64::new(first_session_id()),
             capacity: Arc::new(Capacity {
@@ -304,7 +398,7 @@ impl Core {
             build,
             detection: RwLock::new(detection),
             manifest_dir: Mutex::new(None),
-            harness: harness::Harness::new(data_dir),
+            harness,
             window: window::Window::new(first_session_id()),
             frozen: watch::channel(false).0,
             upgrading: std::sync::atomic::AtomicBool::new(false),
@@ -312,13 +406,35 @@ impl Core {
             launching: Gauge::default(),
             listening: OnceLock::new(),
             tools: Mutex::new(None),
-            chats: chat::Chats::default(),
+            chats: chat::Chats::new(data_dir),
             remote: remote::Remote::default(),
-            workspaces: workspace::Workspaces::default(),
+            shares: share::Shares::default(),
+            workspaces: workspace::Workspaces::new(data_dir),
             seen: seen::Seen::default(),
+            lifecycle: lifecycle::Lifecycle::default(),
+            session_watch: session_watch::SessionWatch::default(),
+            activity_log: Arc::new(activity_log::ActivityLog::new(data_dir)),
+            view_watched: Notify::new(),
+            view_stale: Notify::new(),
+            names,
+            boards: board::Boards::new(data_dir),
+            changes: changed::Changes::default(),
+            ports: ports::Ports::default(),
+            tasks: tasks::Tasks::new(data_dir),
+            git_watches: Default::default(),
+            ci: Default::default(),
+            edits: edits::Edits::new(data_dir, me.clone()),
+            collisions: collisions::Collisions::new(me.clone()),
             notify: notify::Notifier::default(),
+            inbox: inbox::Inbox::default(),
+            hosts,
             device_view: Mutex::new(Vec::new()),
         }))
+    }
+
+    /// This core, for work that outlives the call it starts in.
+    pub(crate) fn arc(&self) -> Option<Arc<Core>> {
+        self.me.upgrade()
     }
 
     pub(crate) fn is_frozen(&self) -> bool {
@@ -332,25 +448,15 @@ impl Core {
     }
 
     pub(crate) fn manifest_dir(&self) -> Option<PathBuf> {
-        self.manifest_dir.lock().ok().and_then(|dir| dir.clone())
-    }
-
-    pub(crate) fn has_local_client(&self) -> bool {
-        self.clients().iter().any(|client| client.peer.is_local())
+        self.manifest_dir.locked().clone()
     }
 
     fn clients(&self) -> Vec<Arc<ClientConn>> {
-        self.clients
-            .lock()
-            .map(|clients| clients.values().cloned().collect())
-            .unwrap_or_default()
+        self.clients.locked().values().cloned().collect()
     }
 
-    pub(crate) fn manifest_report(&self) -> CoreResult<ManifestReloadReport> {
-        self.detection
-            .read()
-            .map(|registry| registry.report())
-            .map_err(|_| "agent detection registry lock poisoned".into())
+    pub(crate) fn manifest_report(&self) -> ManifestReloadReport {
+        self.detection.read_locked().report()
     }
 
     /// Rebuilds the detection rules from the bundled ones and the person's
@@ -359,16 +465,12 @@ impl Core {
         &self,
         directory: Option<PathBuf>,
     ) -> CoreResult<ManifestReloadReport> {
-        *self.manifest_dir.lock().map_err(CoreError::poisoned)? = directory;
+        *self.manifest_dir.locked() = directory;
         self.reload_manifests()
     }
 
     pub(crate) fn reload_manifests(&self) -> CoreResult<ManifestReloadReport> {
-        let directory = self
-            .manifest_dir
-            .lock()
-            .map_err(CoreError::poisoned)?
-            .clone();
+        let directory = self.manifest_dir.locked().clone();
         let manifests = |error: sikemux_pty::agent_detection::ManifestError| {
             CoreError::from(format!("agent detection manifests: {error}"))
         };
@@ -377,7 +479,7 @@ impl Core {
             None => ManifestRegistry::bundled().map_err(manifests)?,
         };
         let report = replacement.reload().map_err(manifests)?;
-        *self.detection.write().map_err(CoreError::poisoned)? = replacement;
+        *self.detection.write_locked() = replacement;
         // The screens may be unchanged while the rules are not, so every agent
         // is read again on the next poll.
         for session in self.all_sessions() {
@@ -386,6 +488,82 @@ impl Core {
             }
         }
         Ok(report)
+    }
+
+    /// Tells [`Seen`] the agents each phone shows: the chats and terminals it
+    /// has open while its app is in front.
+    fn show_phones(&self) {
+        let phones: Vec<_> = self
+            .clients()
+            .into_iter()
+            .filter(|client| !client.peer.is_local())
+            .collect();
+        if phones.is_empty() {
+            return;
+        }
+        let agent_sessions: Vec<_> = self
+            .all_sessions()
+            .into_iter()
+            .filter_map(|session| Some((session.id, session.agent.as_ref()?.agent_id().to_owned())))
+            .collect();
+        for phone in phones {
+            let mut shown = HashSet::new();
+            if phone.in_front() {
+                shown.extend(self.chats.followed_by(phone.id));
+                shown.extend(
+                    agent_sessions
+                        .iter()
+                        .filter(|(id, _)| phone.is_subscribed(*id))
+                        .map(|(_, agent_id)| agent_id.clone()),
+                );
+            }
+            self.seen.show(phone.id, shown, true);
+        }
+    }
+
+    /// Every chat and agent terminal running here.
+    pub(crate) fn running_agents(&self) -> HashSet<String> {
+        let mut running: HashSet<String> = self.chats.ids().into_iter().collect();
+        running.extend(self.all_sessions().iter().filter_map(|session| {
+            session
+                .agent
+                .as_ref()
+                .map(|agent| agent.agent_id().to_owned())
+        }));
+        running
+    }
+
+    /// The agents that keep their names: those running here and those the
+    /// workspace holds, asleep or not.
+    pub(crate) fn open_agents(&self) -> HashSet<String> {
+        let mut open = self.running_agents();
+        open.extend(self.workspaces.agent_ids());
+        open
+    }
+
+    /// The agent's name, given now when it has none. Reads and writes the
+    /// disk, so it belongs on a blocking thread.
+    pub(crate) fn name_agent(
+        &self,
+        agent_id: &str,
+        cwd: &Path,
+        provider: Option<&str>,
+        resume_id: Option<&str>,
+    ) -> names::AgentName {
+        let project = names::project_of(cwd, &self.workspaces.project_paths());
+        let (named, changed) = self.names.give(
+            names::Starting {
+                agent_id,
+                project,
+                provider,
+                resume_id,
+            },
+            self.open_agents(),
+        );
+        if changed {
+            self.view_changed();
+        }
+        named
     }
 
     pub(crate) fn agent_session(&self, agent_id: &str) -> Option<Arc<Session>> {
@@ -398,34 +576,28 @@ impl Core {
     }
 
     pub(crate) fn session(&self, id: SessionId) -> Option<Arc<Session>> {
-        self.sessions.lock().ok()?.get(&id).cloned()
+        self.sessions.locked().get(&id).cloned()
     }
 
     fn all_sessions(&self) -> Vec<Arc<Session>> {
-        self.sessions
-            .lock()
-            .map(|sessions| sessions.values().cloned().collect())
-            .unwrap_or_default()
+        self.sessions.locked().values().cloned().collect()
     }
 
     fn insert_session(&self, session: Arc<Session>) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.insert(session.id, session);
-        }
+        self.sessions.locked().insert(session.id, session);
     }
 
     pub(crate) fn remove_session(&self, session: &Arc<Session>) -> bool {
-        let removed = self.sessions.lock().is_ok_and(|mut sessions| {
-            if sessions
+        let removed = {
+            let mut sessions = self.sessions.locked();
+            let current = sessions
                 .get(&session.id)
-                .is_some_and(|current| Arc::ptr_eq(current, session))
-            {
+                .is_some_and(|current| Arc::ptr_eq(current, session));
+            if current {
                 sessions.remove(&session.id);
-                true
-            } else {
-                false
             }
-        });
+            current
+        };
         if removed {
             session::detach_all(session);
         }
@@ -433,7 +605,7 @@ impl Core {
     }
 
     fn take_session_for_kill(&self, id: SessionId) -> Option<Arc<Session>> {
-        let mut sessions = self.sessions.lock().ok()?;
+        let mut sessions = self.sessions.locked();
         let session = sessions.get(&id)?.clone();
         // A killed task keeps its snapshot and output log for later reads.
         if !session.is_task() {
@@ -446,22 +618,23 @@ impl Core {
 
     fn running_sessions(&self) -> usize {
         self.sessions
-            .lock()
-            .map(|sessions| sessions.values().filter(|s| s.is_running()).count())
-            .unwrap_or(0)
+            .locked()
+            .values()
+            .filter(|s| s.is_running())
+            .count()
     }
 
     fn is_idle(&self) -> bool {
         !self.remote.is_enabled()
-            && self.clients.lock().is_ok_and(|clients| clients.is_empty())
+            && self.clients.locked().is_empty()
             && self.running_sessions() == 0
             && self.chats.count() == 0
+            && !board::auto_has_work(self)
     }
 
     fn register_client(&self, client: Arc<ClientConn>) {
-        if let Ok(mut clients) = self.clients.lock() {
-            clients.insert(client.id, client);
-        }
+        self.clients.locked().insert(client.id, client);
+        self.view_watched.notify_one();
     }
 
     fn unregister_client(&self, client: &ClientConn) {
@@ -469,23 +642,22 @@ impl Core {
         self.window.unregister(client.id);
         self.chats.forget_client(client.id);
         self.seen.client_gone(client.id);
-        if let Ok(mut clients) = self.clients.lock() {
-            clients.remove(&client.id);
-        }
+        self.clients.locked().remove(&client.id);
         for id in client.take_subscriptions() {
             if let Some(session) = self.session(id) {
                 session::detach(&session, client.id);
             }
         }
+        self.view_changed();
     }
 
     /// Paired devices hear only of terminals ending and changing; the rest
-    /// reaches them through [`Core::publish_device_view`].
+    /// reaches them in the device view.
     pub(crate) fn broadcast_event(&self, event: &Event) {
         match event {
             Event::Attention { attention } => {
                 self.notify
-                    .send(notify::Signal::Attention(attention.clone()));
+                    .send(notify::Signal::Attention(Box::new(attention.clone())));
             }
             Event::AttentionCleared { id, agent_id } => self.notify.send(notify::Signal::Cleared {
                 id: id.clone(),
@@ -497,7 +669,10 @@ impl Core {
             }),
             _ => {}
         }
-        let devices_hear = matches!(event, Event::Exited { .. } | Event::ShellMetadata(_));
+        let devices_hear = matches!(
+            event,
+            Event::Exited { .. } | Event::ShellMetadata(_) | Event::Changed { .. }
+        );
         self.broadcast_to(event, |client| devices_hear || client.peer.is_local());
     }
 
@@ -508,74 +683,115 @@ impl Core {
         sessions.sort_by_key(|info| info.id);
         for info in &mut sessions {
             if let Some(agent_id) = &info.agent_id {
+                info.agent_name = self.names.name(agent_id);
                 info.title = self.workspaces.title(agent_id);
                 info.unread = self.seen.unread(agent_id);
+                info.active_at = self.seen.active_at(agent_id);
             }
+            let asking = info
+                .agent_id
+                .as_deref()
+                .is_some_and(|agent_id| self.harness.questions.blocks_on_person(agent_id));
+            display::show_session(info, asking);
         }
         sessions
     }
 
-    /// The chats under the app's names, with whether the person has seen what
-    /// each last did.
+    /// The chats under the app's names, most recently active first, with
+    /// whether the person has seen what each last did.
     pub(crate) fn chat_infos(&self) -> Vec<crate::protocol::ChatInfo> {
         let mut chats = self.workspaces.listed(self.chats.list());
         for chat in &mut chats {
+            chat.name = self.names.name(&chat.agent_id);
             chat.pending_permissions.sort();
             chat.unread = self.seen.unread(&chat.agent_id);
+            chat.active_at = self.seen.active_at(&chat.agent_id);
+            let asking = self.harness.questions.blocks_on_person(&chat.agent_id);
+            display::show_chat(chat, asking);
         }
+        chats.sort_by_key(|chat| std::cmp::Reverse(chat.active_at));
         chats
     }
 
-    fn device_view_frame(&self) -> Option<Vec<u8>> {
-        let sessions = self.session_infos();
-        let chats = self.chat_infos();
+    /// The chats and sessions, each agent numbered in the order it wants the
+    /// person.
+    pub(crate) fn ranked_infos(
+        &self,
+    ) -> (
+        Vec<crate::protocol::ChatInfo>,
+        Vec<crate::protocol::SessionInfo>,
+    ) {
+        let mut sessions = self.session_infos();
+        let mut chats = self.chat_infos();
+        display::rank(&mut chats, &mut sessions, |agent_id| {
+            self.seen.started_at(agent_id)
+        });
+        (chats, sessions)
+    }
+
+    /// The view devices are sent, and whether anything in it moves by itself.
+    fn device_view_frame(&self) -> Option<(Vec<u8>, bool)> {
+        let (chats, sessions) = self.ranked_infos();
+        let moving = chats.iter().any(|chat| {
+            chat.group == AgentGroup::Working
+                || chat.subagents > 0
+                || chat.tasks > 0
+                || chat.reconnecting.is_some()
+        }) || sessions
+            .iter()
+            .any(|session| session.group == Some(AgentGroup::Working));
         let mut attentions = self.chats.attentions();
         attentions.sort_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)));
+        let recent = self.workspaces.recent(&chats);
+        let inbox = serde_json::to_value(inbox::view(self, &chats, &sessions)).ok()?;
         let view = DeviceView {
             workspace: self.workspaces.view(),
             sessions,
             chats,
             attentions,
+            recent,
+            inbox,
         };
-        encode_control(&ServerMessage::Event {
+        let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
         })
-        .ok()
+        .ok()?;
+        Some((frame, moving))
     }
 
     /// Sends every paired device what it shows of this host, when that changed
     /// since they were last sent it.
-    pub(crate) fn publish_device_view(&self) {
-        let devices: Vec<_> = self
-            .clients()
+    fn view_watchers(&self) -> Vec<Arc<ClientConn>> {
+        self.clients()
             .into_iter()
             .filter(|client| !client.peer.is_local() || client.watches_view())
-            .collect();
+            .collect()
+    }
+
+    /// Whether anything in the view moves by itself.
+    fn publish_device_view(&self) -> bool {
+        let devices = self.view_watchers();
         if devices.is_empty() {
-            return;
+            return false;
         }
-        let Ok(mut last) = self.device_view.lock() else {
-            return;
+        let mut last = self.device_view.locked();
+        let Some((frame, moving)) = self.device_view_frame() else {
+            return false;
         };
-        let Some(frame) = self.device_view_frame() else {
-            return;
-        };
-        if *last == frame {
-            return;
+        if *last != frame {
+            let shared: Arc<[u8]> = frame.as_slice().into();
+            for client in devices {
+                client.send(shared.clone());
+            }
+            *last = frame;
         }
-        let shared: Arc<[u8]> = frame.as_slice().into();
-        for client in devices {
-            client.send(shared.clone());
-        }
-        *last = frame;
+        moving
     }
 
     /// A device that just connected starts from the whole view.
     pub(crate) fn send_device_view(&self, client: &ClientConn) {
-        let Ok(_last) = self.device_view.lock() else {
-            return;
-        };
-        if let Some(frame) = self.device_view_frame() {
+        let _last = self.device_view.locked();
+        if let Some((frame, _)) = self.device_view_frame() {
             client.send(frame.into());
         }
     }
@@ -596,6 +812,7 @@ impl Core {
                 client.send(frame.clone());
             }
         }
+        self.view_stale.notify_one();
     }
 
     /// Ends the connections of one paired device, or of every one.
@@ -612,11 +829,11 @@ impl Core {
     }
 
     pub(crate) fn permit(&self, peer: &access::Peer, needs: access::Needs) -> CoreResult<()> {
-        let device_access = match peer {
-            access::Peer::Local => None,
-            access::Peer::Device { id } => self.remote.access_of(id),
+        let standing = match peer {
+            access::Peer::App | access::Peer::Local | access::Peer::Share { .. } => None,
+            access::Peer::Device { id } => self.remote.standing_of(id),
         };
-        access::permit(peer, device_access, needs)
+        access::permit(peer, standing, needs)
     }
 
     pub(crate) fn schedule_task_output_notice(self: &Arc<Self>, id: SessionId, delay: Duration) {
@@ -638,21 +855,17 @@ impl Core {
         let candidates = sessions
             .iter()
             .enumerate()
-            .filter_map(|(index, session)| {
-                Some(TaskRetentionCandidate {
-                    id: index as u32,
-                    exited_at_ms: session.exited_at_ms.load(Ordering::Acquire),
-                    has_subscribers: session.has_subscribers()?,
-                })
+            .map(|(index, session)| TaskRetentionCandidate {
+                id: index as u32,
+                exited_at_ms: session.exited_at_ms.load(Ordering::Acquire),
+                has_subscribers: session.has_subscribers(),
             })
             .collect();
         for index in task_reclamation_plan(candidates, now, MAX_RETAINED_EXITED_TASK_PTYS) {
             let Some(session) = sessions.get(index as usize) else {
                 continue;
             };
-            if session.exited_at_ms.load(Ordering::Acquire) != 0
-                && session.has_subscribers() == Some(false)
-            {
+            if session.exited_at_ms.load(Ordering::Acquire) != 0 && !session.has_subscribers() {
                 self.remove_session(session);
             }
         }
@@ -660,10 +873,12 @@ impl Core {
 
     fn drain(&self) {
         self.chats.stop_all();
-        let sessions: Vec<Arc<Session>> = match self.sessions.lock() {
-            Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
-            Err(_) => return,
-        };
+        let sessions: Vec<Arc<Session>> = self
+            .sessions
+            .locked()
+            .drain()
+            .map(|(_, session)| session)
+            .collect();
         if sessions.is_empty() {
             return;
         }
@@ -751,36 +966,61 @@ async fn poll_sessions(core: Arc<Core>) {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
-        let now = now_ms();
+        let now = uptime_ms();
         for session in core.all_sessions() {
             agent::poll(&core, &session, now);
             if !session.shell_protocol {
                 continue;
             }
-            let update = session.parser.lock().ok().and_then(|mut parser| {
-                parser
-                    .callbacks_mut()
-                    .shell
-                    .as_mut()
-                    .and_then(|shell| shell.take_due_event(now))
-            });
+            let update = session
+                .parser
+                .locked()
+                .callbacks_mut()
+                .shell
+                .as_mut()
+                .and_then(|shell| shell.take_due_event(now));
             if let Some(update) = update {
-                core.broadcast_event(&Event::ShellMetadata(
-                    sikemux_pty::shell_protocol::PtyShellMetadataEvent::from_update(
-                        session.id, update,
-                    ),
-                ));
+                core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
             }
         }
     }
 }
 
+/// Sends devices the view when anything in it may have changed, and on a
+/// tick only while something in it moves by itself.
 async fn device_views(core: Arc<Core>) {
     let mut ticker = tokio::time::interval(DEVICE_VIEW_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut window = None;
+    let mut moving = true;
+    let mut built = tokio::time::Instant::now();
     loop {
-        ticker.tick().await;
-        core.publish_device_view();
+        if core.view_watchers().is_empty() {
+            core.view_watched.notified().await;
+            ticker.reset();
+        }
+        let changed = if moving {
+            tokio::select! {
+                _ = ticker.tick() => false,
+                () = core.view_stale.notified() => true,
+            }
+        } else {
+            core.view_stale.notified().await;
+            true
+        };
+        if changed {
+            let now = tokio::time::Instant::now();
+            tokio::time::sleep_until((now + DEVICE_VIEW_GATHER).max(built + DEVICE_VIEW_SPACING))
+                .await;
+        }
+        core.show_phones();
+        let now = core.window.client_id();
+        if now != window {
+            window = now;
+            core.agents_changed();
+        }
+        moving = core.publish_device_view();
+        built = tokio::time::Instant::now();
     }
 }
 
@@ -790,7 +1030,7 @@ async fn sweep(core: Arc<Core>) {
     ticker.tick().await;
     loop {
         ticker.tick().await;
-        let now = now_ms();
+        let now = uptime_ms();
         core.reclaim_exited_sessions(now);
         for session in core.all_sessions() {
             session::trim_if_idle(&session, now, IDLE_TRIM);
@@ -806,12 +1046,12 @@ pub async fn serve(config: ServerConfig) -> Result<(), ServerError> {
         .await
         .map_err(std::io::Error::other)??;
     let core = Core::new(config.build.clone(), config.data_dir.as_deref())?;
+    chat::restore(&core);
+    core.chats.clear_history();
     if let Some(path) = config.cli_endpoint.clone() {
         match tools::ToolEndpoint::start(core.clone(), path).await {
             Ok(tools) => {
-                if let Ok(mut slot) = core.tools.lock() {
-                    *slot = Some(tools);
-                }
+                *core.tools.locked() = Some(tools);
             }
             Err(error) => eprintln!("sikemux core: agents' tools are unavailable: {error}"),
         }
@@ -832,19 +1072,83 @@ pub(crate) async fn run_core(
         listener_fd: listener.as_raw_fd(),
         lock_fd: lock.as_raw_fd(),
     });
+    local_peer::settle();
     listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(listener)?;
     remote::start(&core, &config).await;
+    core.chats.resets.arm_saved(&core);
+    git::follow_projects(&core);
+    if let Some(data_dir) = config.data_dir.as_deref() {
+        crate::git_guard::shim::install(data_dir, config.cli_endpoint.as_deref());
+        tokio::spawn(workspace::refresh_launchers(core.clone()));
+        skill_library::watch_global(&core);
+        if crate::usage::Install::Host.reports() {
+            let host = host_info();
+            let core = core.clone();
+            tokio::spawn(crate::usage::report_host(
+                data_dir.to_owned(),
+                host.version,
+                host.channel,
+                move || core.remote.owner(),
+            ));
+        }
+    }
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let background = [
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(lifecycle::serve(core.clone())),
+        tokio::spawn(changed::serve(core.clone())),
+        tokio::spawn(tasks::publish_runs(core.clone())),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.harness.mailbox.wake,
+            messages::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.harness.questions.wake,
+            questions::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.boards.wake,
+            board::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.collisions.wake,
+            collisions::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.workspaces.wake,
+            workspace::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.hosts.wake,
+            hosts::settle,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.hosts.relink,
+            hosts::account::relink,
+        )),
+        tokio::spawn(wake::serve(
+            core.clone(),
+            |core| &core.ports.wake,
+            ports::settle,
+        )),
+        tokio::spawn(workspace::recents(core.clone())),
         tokio::spawn(notify::run(core.clone())),
+        tokio::spawn(network_watch::run(core.clone())),
     ];
     let mut shutdown = core.shutdown.subscribe();
     let mut frozen = core.frozen.subscribe();
+    crate::waiting::wake(&config.socket);
     let mut ticker = tokio::time::interval(
         (config.idle_exit / 10).clamp(Duration::from_millis(10), Duration::from_secs(1)),
     );
@@ -886,13 +1190,14 @@ pub(crate) async fn run_core(
     remote::stop_network(&core);
     remote::stop(&core).await;
     remote::stop_live(&core);
-    let tools = core.tools.lock().ok().and_then(|mut tools| tools.take());
+    let tools = core.tools.locked().take();
     if let Some(tools) = tools {
         tools.stop();
     }
     drop(listener);
     let _ = std::fs::remove_file(&config.socket);
     drop(lock);
+    crate::waiting::wake(&config.socket);
     Ok(())
 }
 

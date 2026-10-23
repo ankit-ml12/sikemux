@@ -5,6 +5,7 @@ import {
     useContext,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     type MouseEvent as ReactMouseEvent,
@@ -14,34 +15,55 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { keybindingLabelForAction, type KeybindingActionId } from "../commands/keybindings";
-import type { Agent, AgentRuntimeState, Session, SessionKind, Window, WindowRole } from "../state/types";
+import type { Agent, Session, SessionKind, Window } from "../state/types";
 import * as cmd from "../state/commands";
-import { animate, EASE_IN, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
-import { rollupAgentStates } from "../state/agentStatus";
+import { animate, EASE_IN, EASE_PAN, EASE_POP, EASE_SWAP, foldedFrames, leavingRef, prefersReducedMotion } from "../lib/motion";
+import { agentDisplay, rollupAgentDisplays } from "../state/agentStatus";
 import { getState, useStore } from "../state/store";
-import { AgentIcon, IconAgent, IconClose, IconCommand, IconFolder, IconPencil, IconPlus, WindowIcon } from "../ui/Icons";
+import { useShallow } from "zustand/react/shallow";
+import { AgentFace } from "../buddies/Buddy";
+import { IconAgent, IconClose, IconFolder, IconMove, IconPencil, IconPlus, IconServer, IconSettings, IconTerminal, WindowIcon } from "../ui/Icons";
+import { useHostRepo } from "../codehost/project";
+import { codeHost } from "../codehost/registry";
+import { isTreeSection } from "../codehost/state";
+import { SectionIcon } from "../codehost/components/ActionsIcon";
+import { sectionLabel, sectionsOf } from "../codehost/sections";
+import { collectPanes } from "../state/layout";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState, Panel, PanelHeader } from "../ui/Panel";
 import { RailMasthead } from "./RailMasthead";
+import { RailAccount } from "../account/RailAccount";
 import { UpdateChip } from "./UpdateChip";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { agentIdsOf } from "../state/selectors";
+import { PROJECT_SURFACE_ORDER, PROJECT_SURFACES, type ProjectSurfaceRole } from "../workbench/surfaces";
 import { pluginSurface, type FrontendPlugin } from "../plugins/registry";
+import type { PluginSignIn } from "../plugin-api/signInState";
+import { StatusDot, type StatusTone } from "../ui/StatusDot";
+import { useSshTone } from "../terminal/sshLinks";
 import { useInstalledPlugins } from "../plugins/installed";
 import { railGroupOf, type RailGroup } from "../state/railGroups";
 import { isPluginKind, pluginIdOf } from "../plugins/kinds";
 import { leavingRail } from "./railMotion";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { TreeContextMenu, type CtxItem } from "./FileTree";
-import { shownProjects, spaceBadge } from "../state/projectSpaces";
+import { newSpace, SpaceGlyph, SpaceSwitch } from "./SpaceSwitch";
+import { shownProjects } from "../state/projectSpaces";
 import type { ProjectSpace } from "../state/types";
-import { confirmDialog, promptDialog } from "../state/dialog";
+import { HostRows } from "./HostsGroup";
+import { openOnHost, type HostEntry } from "../hosts/hosts";
+import { reportError } from "../state/toast";
+
+/* Line icons keep a margin inside their box and logos run edge to edge, so each is drawn at the size that inks the same area. */
+const LINE_ICON_SIZE = 13;
+const LOGO_SIZE = 13;
 
 function kindIcon(kind: SessionKind): ReactNode {
-    if (kind === "project") return <IconFolder size={13} />;
+    if (kind === "project") return <IconFolder size={LINE_ICON_SIZE} />;
+    if (kind === "ssh") return <IconServer size={LINE_ICON_SIZE} />;
     const surface = pluginSurface(kind);
-    if (surface) return surface.icon(15);
-    return <IconCommand size={13} />;
+    if (surface) return surface.icon(LOGO_SIZE);
+    return <IconTerminal size={LINE_ICON_SIZE} />;
 }
 
 const MAX_BADGE_ICONS = 5;
@@ -87,7 +109,7 @@ function cloneProjectRow(source: HTMLElement): HTMLElement {
 }
 
 function projectElement(id: string): HTMLElement | null {
-    return Array.from(document.querySelectorAll<HTMLElement>("[data-project-id]")).find((element) => element.dataset.projectId === id) ?? null;
+    return document.querySelector<HTMLElement>(`[data-project-id="${CSS.escape(id)}"]`);
 }
 
 function projectRects(): Map<string, DOMRect> {
@@ -110,18 +132,12 @@ function projectRects(): Map<string, DOMRect> {
  */
 interface RailContextValue {
     activeSessionId: string;
-    windowsById: Record<string, Window>;
-    windowsBySession: Record<string, string[]>;
-    agentsById: Record<string, Agent>;
-    activityById: Record<string, AgentRuntimeState>;
-    backgroundById: Record<string, number>;
     draggingProjectId: string | null;
     projectDragClass: (id: string) => string;
     onProjectPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, sourceId: string) => void;
     selectProject: (id: string) => void;
     openSpaceMenu: (event: ReactMouseEvent, session: Session) => void;
     jumpToWindow: (sessionId: string, winId: string) => void;
-    jumpToAgents: (sessionId: string) => void;
     kb: (id: KeybindingActionId) => string;
 }
 
@@ -143,7 +159,7 @@ function SessionCloseButton({ session }: { session: Session }) {
     );
 }
 
-function SimpleRow({ s }: { s: Session }) {
+function SimpleRow({ s, status }: { s: Session; status?: ReactNode }) {
     const { activeSessionId } = useRail();
     const active = s.id === activeSessionId;
     return (
@@ -154,6 +170,7 @@ function SimpleRow({ s }: { s: Session }) {
                 </span>
                 <span className="sess-name">{s.name}</span>
             </button>
+            {status && <span className="row-status">{status}</span>}
             <SessionCloseButton session={s} />
         </div>
     );
@@ -211,25 +228,59 @@ function useProjectUnfold(tree: RefObject<HTMLDivElement | null>, active: boolea
     }, [active, tree]);
 }
 
-function ProjectBlock({ s }: { s: Session }) {
+/* Each project reads only its own windows, agents and their states, so one agent changing state re-renders its own project and not the rail. */
+const ProjectBlock = memo(function ProjectBlock({ s }: { s: Session }) {
     const rail = useRail();
-    const { activeSessionId, agentsById, activityById, backgroundById, windowsById, windowsBySession, draggingProjectId, kb } = rail;
+    const { activeSessionId, draggingProjectId, kb } = rail;
     const active = s.id === activeSessionId;
     // Active or not, a project is one tree root holding its row, so the row survives the switch and its tint cross-fades.
     const treeRef = useRef<HTMLDivElement>(null);
     useProjectUnfold(treeRef, active);
-    const winIds = windowsBySession[s.id] ?? [];
-    const sessionWindows = winIds.map((id) => windowsById[id]).filter(Boolean) as Window[];
-    const agents = agentIdsOf({ windowsBySession, windows: windowsById }, s.id)
-        .map((id) => agentsById[id])
-        .filter(Boolean);
-    const rollup = rollupAgentStates(agents.map((agent) => activityById[agent.id]));
-    const rollupBackground = agents.some((agent) => (backgroundById[agent.id] ?? 0) > 0);
-    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
+    const host = useHostRepo(active ? s.cwd : null, active).repo;
+    const hostDef = host ? codeHost(host.provider) : undefined;
+    const gitArea = useStore((st) => {
+        for (const id of st.windowsBySession[s.id] ?? []) {
+            const win = st.windows[id];
+            const pane = win?.role === "git" ? collectPanes(win.root).find((candidate) => candidate.kind === "git") : undefined;
+            if (pane) return st.gitViews[pane.id]?.area ?? "local";
+        }
+        return null;
+    });
+    const sessionWindows = useStore(
+        useShallow((st) => (st.windowsBySession[s.id] ?? []).flatMap((id): Window[] => (st.windows[id] ? [st.windows[id]] : []))),
+    );
+    const agents = useStore(useShallow((st) => agentIdsOf(st, s.id).flatMap((id): Agent[] => (st.agents[id] ? [st.agents[id]] : []))));
+    const statuses = useStore(useShallow((st) => agents.map((agent) => st.agentStatus[agent.id])));
+    const rollup = rollupAgentDisplays(statuses.map((status) => agentDisplay(status)));
+
+    const visibleAgents = agents.slice(0, MAX_BADGE_ICONS);
+    const agentOverflow = agents.length - visibleAgents.length;
+    const agentBadge = (
+        <>
+            {visibleAgents.length > 0 && (
+                <span className="proj-child-icons">
+                    {visibleAgents.map((a) => (
+                        <AgentFace
+                            key={a.id}
+                            agent={a}
+                            size={16}
+                            logoSize={20}
+                            logoClass={`proj-pip proj-pip-${a.type}`}
+                            buddyClass="proj-pip buddy-mark"
+                        />
+                    ))}
+                    {agentOverflow > 0 && <span className="proj-child-icons-more">+{agentOverflow}</span>}
+                </span>
+            )}
+            {rollup && showsAgentState(rollup) && (
+                <span className="proj-row-status">
+                    <AgentStateIndicator display={rollup} />
+                </span>
+            )}
+        </>
+    );
 
     if (!active) {
-        const visible = agents.slice(0, MAX_BADGE_ICONS);
-        const overflow = agents.length - visible.length;
         return (
             <div ref={treeRef} className={`proj-tree${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
                 <div className="session-row-shell project-row-shell" onContextMenu={(event) => rail.openSpaceMenu(event, s)}>
@@ -241,26 +292,10 @@ function ProjectBlock({ s }: { s: Session }) {
                             onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                             onClick={() => rail.selectProject(s.id)}>
                             <span className="proj-folder">
-                                <IconFolder size={12} />
+                                <IconFolder size={LINE_ICON_SIZE} />
                             </span>
                             <span className="proj-name">{s.name}</span>
-                            {visible.length > 0 && (
-                                <span className="proj-child-icons">
-                                    {visible.map((a) => (
-                                        <span
-                                            key={a.id}
-                                            className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-                                            <AgentIcon type={a.type} size={20} />
-                                        </span>
-                                    ))}
-                                    {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                </span>
-                            )}
-                            {showsAgentState(rollup ?? "idle", rollupBackground) && (
-                                <span className="proj-row-status">
-                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
-                                </span>
-                            )}
+                            {agentBadge}
                         </button>
                     </Tooltip>
                     <SessionCloseButton session={s} />
@@ -269,69 +304,68 @@ function ProjectBlock({ s }: { s: Session }) {
         );
     }
 
-    const winByRole = (role: WindowRole): Window | undefined => sessionWindows.find((w) => w.role === role);
     const activeRole = sessionWindows.find((w) => w.id === s.activeWindowId)?.role;
-    const isSubActive = (role: WindowRole | "agents"): boolean => activeRole === (role === "agents" ? "agent" : role);
-
-    const onSubClick = (role: WindowRole | "agents") => {
-        if (role === "agents") {
-            rail.jumpToAgents(s.id);
-            return;
-        }
-        if (role === "files") {
-            cmd.openEditorPane();
-            return;
-        }
-        if (role === "git") {
-            cmd.openGitWorkbench();
-            return;
-        }
-        if (role === "search") {
-            cmd.focusGlobalSearch();
-            return;
-        }
-        const w = winByRole(role);
-        if (w) {
-            rail.jumpToWindow(s.id, w.id);
-        } else if (role === "term") {
-            if (s.id !== activeSessionId) cmd.selectSession(s.id);
-            cmd.newWindow();
-        }
-    };
-
+    const tabCount = sessionWindows.filter((w) => w.role === "term").length;
     const termIcons: ReactNode[] =
         tabCount > 1
             ? Array.from({ length: tabCount }, (_, i) => (
                   <span key={i} className="proj-pip proj-pip-term">
-                      <IconCommand size={14} />
+                      <IconTerminal size={LINE_ICON_SIZE} />
                   </span>
               ))
             : [];
-    const agentIcons: ReactNode[] = agents.map((a) => (
-        <span key={a.id} className={`proj-pip proj-pip-${a.type}${activityById[a.id] ? ` state-${activityById[a.id].state}` : ""}`}>
-            <AgentIcon type={a.type} size={20} />
-        </span>
-    ));
-
-    const children: SubRow[] = [
-        { role: "files", label: "Files", kbd: kb("window.files"), title: `Files — ${kb("window.files")}`, icons: [] },
-        {
-            role: "term",
-            label: "Term",
-            kbd: kb("window.terminal"),
-            title: `Term${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
-            icons: termIcons,
-        },
-        { role: "git", label: "Git", kbd: kb("window.git"), title: `Git — ${kb("window.git")}`, icons: [] },
-        {
-            role: "agents",
-            label: "Agents",
-            kbd: kb("window.agents"),
-            title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
-            icons: agentIcons,
-        },
-        { role: "search", label: "Search", kbd: kb("window.search"), title: `Search — ${kb("window.search")}`, icons: [] },
-    ];
+    const surfaceRow = (role: ProjectSurfaceRole): SubRow => {
+        const { label, shortcut, open } = PROJECT_SURFACES[role];
+        return {
+            key: role,
+            icon: <WindowIcon role={role} size={13} />,
+            label,
+            kbd: kb(shortcut),
+            title: `${label} — ${kb(shortcut)}`,
+            open: role === "git" && gitArea && isTreeSection(gitArea) ? () => cmd.openGitArea("local") : open,
+            active: activeRole === role && !(role === "git" && gitArea && isTreeSection(gitArea)),
+            icons: [],
+        };
+    };
+    const hostRows: SubRow[] = hostDef
+        ? sectionsOf(hostDef)
+              .filter(isTreeSection)
+              .map((section) => ({
+                  key: section,
+                  icon: <SectionIcon section={section} size={13} />,
+                  label: sectionLabel(hostDef, section),
+                  title: sectionLabel(hostDef, section),
+                  open: () => cmd.openGitArea(section),
+                  active: activeRole === "git" && gitArea === section,
+                  icons: [],
+              }))
+        : [];
+    const terminalRow: SubRow = {
+        key: "term",
+        icon: <WindowIcon role="term" size={13} />,
+        label: "Terminal",
+        kbd: kb("window.terminal"),
+        title: `Terminal${tabCount > 1 ? ` · ${tabCount} tabs` : ""} — ${kb("window.terminal")}`,
+        open: () => cmd.selectWindowByRole("term"),
+        active: activeRole === "term",
+        icons: termIcons,
+    };
+    const agentsRow: SubRow = {
+        key: "agents",
+        icon: <IconAgent size={13} />,
+        label: "Agents",
+        kbd: kb("window.agents"),
+        title: `Agents${agents.length ? ` · ${agents.length}` : ""} — ${kb("window.agents")}`,
+        open: () => cmd.focusAgents(),
+        active: activeRole === "agent",
+        icons: [],
+    };
+    const children: SubRow[] = PROJECT_SURFACE_ORDER.flatMap((role) => {
+        const row = surfaceRow(role);
+        if (role === "files") return [row, terminalRow];
+        if (role === "git") return [agentsRow, row, ...hostRows];
+        return [row];
+    });
     return (
         <div ref={treeRef} className={`proj-tree active${rail.projectDragClass(s.id)}`} data-project-id={s.id}>
             <div className="session-row-shell project-row-shell" onContextMenu={(event) => rail.openSpaceMenu(event, s)}>
@@ -343,42 +377,31 @@ function ProjectBlock({ s }: { s: Session }) {
                         onPointerDown={(event) => rail.onProjectPointerDown(event, s.id)}
                         onClick={() => rail.selectProject(s.id)}>
                         <span className="proj-folder">
-                            <IconFolder size={12} />
+                            <IconFolder size={LINE_ICON_SIZE} />
                         </span>
                         <span className="proj-name">{s.name}</span>
+                        {agentBadge}
                     </button>
                 </Tooltip>
                 <SessionCloseButton session={s} />
             </div>
             <div className="proj-children" ref={foldChildren}>
                 {children.map((c) => {
-                    const subActive = isSubActive(c.role);
-                    const node = c.role === "agents" ? <IconAgent size={13} /> : <WindowIcon role={c.role} size={13} />;
-                    const visibleIcons = c.icons.slice(0, MAX_BADGE_ICONS);
-                    const overflow = c.icons.length - visibleIcons.length;
                     return (
-                        <Tooltip key={c.role} label={c.title} side="right">
+                        <Tooltip key={c.key} label={c.title} side="right">
                             <button
                                 type="button"
-                                className={`proj-child${subActive ? " active" : ""}`}
+                                className={`proj-child${c.active ? " active" : ""}`}
                                 aria-label={c.label}
-                                aria-current={subActive ? "page" : undefined}
+                                aria-current={c.active ? "page" : undefined}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    onSubClick(c.role);
+                                    c.open();
                                 }}>
                                 <span className="proj-child-tick" />
-                                <span className="proj-child-ic">{node}</span>
+                                <span className="proj-child-ic">{c.icon}</span>
                                 <span className="proj-child-label">{c.label}</span>
-                                {visibleIcons.length > 0 && (
-                                    <span className="proj-child-icons">
-                                        {visibleIcons}
-                                        {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
-                                    </span>
-                                )}
-                                {c.role === "agents" && (rollup || rollupBackground) && (
-                                    <AgentStateIndicator state={rollup ?? "idle"} background={rollupBackground} />
-                                )}
+                                {c.icons.length > 0 && <FittedIcons icons={c.icons} />}
                                 {c.kbd && <span className="proj-child-kbd">{c.kbd}</span>}
                             </button>
                         </Tooltip>
@@ -387,24 +410,52 @@ function ProjectBlock({ s }: { s: Session }) {
             </div>
         </div>
     );
-}
+});
 
 interface SubRow {
-    role: WindowRole | "agents";
+    key: string;
+    icon: ReactNode;
     label: string;
     kbd?: string;
     title: string;
+    open: () => void;
+    active: boolean;
     icons: ReactNode[];
 }
 
 function renderSession(s: Session) {
-    return s.kind === "project" ? <ProjectBlock key={s.id} s={s} /> : <SimpleRow key={s.id} s={s} />;
+    if (s.kind === "project") return <ProjectBlock key={s.id} s={s} />;
+    return <SimpleRow key={s.id} s={s} status={s.kind === "ssh" ? <SshDot sessionId={s.id} /> : undefined} />;
+}
+
+const SSH_TONE_LABEL: Record<StatusTone, string> = { ok: "Connected", pending: "Connecting", idle: "Not connected", failed: "Connection failed" };
+
+function SshDot({ sessionId }: { sessionId: string }) {
+    const tone = useSshTone(sessionId);
+    return <StatusDot tone={tone} label={SSH_TONE_LABEL[tone]} />;
+}
+
+const SIGN_IN_TONE: Record<PluginSignIn, { tone: StatusTone; label: string }> = {
+    "signed-in": { tone: "ok", label: "Signed in" },
+    checking: { tone: "pending", label: "Checking sign-in" },
+    "signed-out": { tone: "idle", label: "Not signed in" },
+    failed: { tone: "failed", label: "Sign-in failed" },
+};
+
+function SignInDot({ useSignIn }: { useSignIn: () => PluginSignIn }) {
+    const { tone, label } = SIGN_IN_TONE[useSignIn()];
+    return <StatusDot tone={tone} label={label} />;
+}
+
+function signInDot(plugin: FrontendPlugin): ReactNode {
+    return plugin.useSignIn ? <SignInDot useSignIn={plugin.useSignIn} /> : undefined;
 }
 
 /** A plugin that is enabled but not open yet: the same row its session will be, opening it on click. */
 function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: string }) {
     const surface = plugin.surfaces[0];
     if (!surface) return null;
+    const status = signInDot(plugin);
     return (
         <div className="session-row-shell">
             <button className="sess-row" onClick={plugin.open}>
@@ -413,106 +464,37 @@ function PluginLauncherRow({ plugin, name }: { plugin: FrontendPlugin; name: str
                 </span>
                 <span className="sess-name">{name}</span>
             </button>
+            {status && <span className="row-status">{status}</span>}
         </div>
     );
 }
 
 type OpenMenu = (event: ReactMouseEvent, items: CtxItem[]) => void;
 
-async function askSpaceName(title: string, confirmLabel: string, initial = ""): Promise<string | null> {
-    const name = await promptDialog({ title, label: "Name", initial, placeholder: "Work, Side projects, Client A…", confirmLabel });
-    return name?.trim() ? name : null;
-}
-
-async function newSpace(then?: (id: string) => void): Promise<void> {
-    const name = await askSpaceName("Create space", "Create");
-    const id = name ? cmd.createSpace(name) : null;
-    if (id) (then ?? cmd.showSpace)(id);
-}
-
-function spaceItems(space: ProjectSpace): CtxItem[] {
-    return [
-        {
-            label: "Rename…",
-            run: () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name)),
-        },
-        {
-            label: "Change Icon…",
-            run: () =>
-                void promptDialog({
-                    title: "Space icon",
-                    label: "An emoji",
-                    initial: space.icon,
-                    placeholder: "💼",
-                    confirmLabel: "Save",
-                }).then((icon) => icon !== null && cmd.setSpaceIcon(space.id, icon)),
-        },
-        ...(space.icon ? [{ label: "Use First Letter as Icon", run: () => cmd.setSpaceIcon(space.id, "") }] : []),
-        { sep: true },
-        {
-            label: "Delete Space…",
-            danger: true,
-            run: () =>
-                void confirmDialog({
-                    title: `Delete “${space.name}”?`,
-                    body: "Its projects stay open and show under All.",
-                    confirmLabel: "Delete",
-                }).then((yes) => yes && cmd.deleteSpace(space.id)),
-        },
-    ];
-}
-
-function SpaceSwitch({ spaces, activeSpaceId, onMenu }: { spaces: readonly ProjectSpace[]; activeSpaceId: string | null; onMenu: OpenMenu }) {
-    const add = (
-        <Tooltip label="Create space">
-            <button type="button" className="space-add" aria-label="Create space" onClick={() => void newSpace()}>
-                <IconPlus size={11} />
-                {spaces.length === 0 && <span>New space</span>}
-            </button>
-        </Tooltip>
-    );
-    if (spaces.length === 0) return <div className="space-switch empty">{add}</div>;
-    const option = (id: string | null, label: string, badge?: string, space?: ProjectSpace) => (
-        <button
-            key={id ?? "all"}
-            type="button"
-            role="radio"
-            aria-checked={activeSpaceId === id}
-            aria-label={label}
-            className={activeSpaceId === id ? "active" : ""}
-            onClick={() => cmd.showSpace(id)}
-            onContextMenu={space ? (event) => onMenu(event, spaceItems(space)) : undefined}
-            onDoubleClick={
-                space
-                    ? () => void askSpaceName("Rename space", "Rename", space.name).then((name) => name && cmd.renameSpace(space.id, name))
-                    : undefined
-            }>
-            {badge && <span className="space-badge">{badge}</span>}
-            <span className="space-name">{label}</span>
-        </button>
-    );
-    return (
-        <div className="space-switch">
-            <div className="space-options" role="radiogroup" aria-label="Projects shown">
-                {option(null, "All")}
-                {spaces.map((space) => option(space.id, space.name, spaceBadge(space), space))}
-            </div>
-            {add}
-        </div>
-    );
-}
-
-function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined): CtxItem[] {
+function projectSpaceItems(session: Session, spaces: readonly ProjectSpace[], current: string | undefined, hosts: readonly HostEntry[]): CtxItem[] {
     const mark = (selected: boolean) => (selected ? "✓" : undefined);
+    const elsewhere = [
+        ...(session.host ? [{ id: undefined, name: "This host", reach: "connected" }] : []),
+        ...hosts.filter((host) => host.id !== session.host),
+    ];
     return [
+        { label: "Project settings", icon: <IconSettings size={13} />, run: () => cmd.openProjectSettings(session.id) },
+        ...elsewhere.map((host) => ({
+            label: `Open on ${host.name}`,
+            icon: <IconServer size={13} />,
+            disabled: host.reach !== "connected",
+            run: () => void openOnHost(session, host).catch(reportError(`Open ${session.name} on ${host.name}`)),
+        })),
+        { sep: true },
         ...spaces.map((space) => ({
-            label: `${spaceBadge(space)}  ${space.name}`,
+            label: space.name,
+            icon: <SpaceGlyph icon={space.icon} />,
             hint: mark(current === space.id),
             run: () => cmd.setProjectSpace(session.cwd, space.id),
         })),
-        { label: "New Space…", run: () => void newSpace((id) => cmd.setProjectSpace(session.cwd, id)) },
+        { label: "New Space…", icon: <IconPlus size={13} />, run: () => void newSpace((id) => cmd.setProjectSpace(session.cwd, id)) },
         { sep: true },
-        { label: "No Space", hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
+        { label: "No Space", icon: <IconMove size={13} />, hint: mark(current === undefined), run: () => cmd.setProjectSpace(session.cwd, null) },
     ];
 }
 
@@ -584,11 +566,6 @@ function Group({
 export const SideRail = memo(function SideRail() {
     const sessionsById = useStore((s) => s.sessions);
     const sessionOrder = useStore((s) => s.sessionOrder);
-    const windowsById = useStore((s) => s.windows);
-    const windowsBySession = useStore((s) => s.windowsBySession);
-    const agentsById = useStore((s) => s.agents);
-    const activityById = useStore((s) => s.agentActivity);
-    const backgroundById = useStore((s) => s.agentBackgroundWork);
     const rawActiveSessionId = useStore((s) => s.activeSessionId);
     const settingsOpen = useStore((s) => s.settingsOpen);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
@@ -617,17 +594,19 @@ export const SideRail = memo(function SideRail() {
         event.preventDefault();
         setMenu({ x: event.clientX, y: event.clientY, items });
     };
-    const allProjects = inGroup("project");
+    const chosenHost = useStore((s) => s.chosenHost);
+    // Each host has its own projects (ADR 0019); an SSH host without Sikemux has none.
+    const allProjects = inGroup("project").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const projects = shownProjects(allProjects, projectSpaces, activeSpaceId);
     const activeSpace = spaces.find((space) => space.id === activeSpaceId);
     const sshs = inGroup("ssh");
-    const commands = inGroup("command");
+    const commands = inGroup("command").filter((session) => chosenHost.kind === "core" && session.host === chosenHost.host);
     const plugins = inGroup("plugins");
     const enabledPlugins = useInstalledPlugins();
     // Every enabled plugin always has a row; its session is only made on the first click.
     const pluginRows = enabledPlugins.flatMap((plugin) => {
         const opened = plugins.filter((session) => isPluginKind(session.kind) && pluginIdOf(session.kind) === plugin.id);
-        if (opened.length > 0) return opened.map(renderSession);
+        if (opened.length > 0) return opened.map((session) => <SimpleRow key={session.id} s={session} status={signInDot(plugin)} />);
         return [<PluginLauncherRow key={plugin.id} plugin={plugin} name={plugin.manifest.name} />];
     });
 
@@ -670,7 +649,7 @@ export const SideRail = memo(function SideRail() {
                 if (Math.abs(shift) < 1) continue;
                 element.animate([{ transform: `translate3d(0, ${shift}px, 0)` }, { transform: "translate3d(0, 0, 0)" }], {
                     duration: 220,
-                    easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+                    easing: EASE_POP,
                 });
             }
         });
@@ -708,7 +687,7 @@ export const SideRail = memo(function SideRail() {
                 { transform: ghost.style.transform, opacity: 1 },
                 { transform: `translate3d(${bounds.left}px, ${bounds.top}px, 0)`, opacity: 0 },
             ],
-            { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "forwards" },
+            { duration: 180, easing: EASE_PAN, fill: "forwards" },
         );
         void animation.finished
             .catch(() => undefined)
@@ -791,12 +770,6 @@ export const SideRail = memo(function SideRail() {
         cmd.selectSession(id);
     };
 
-    const projectDragClass = (id: string) => {
-        if (draggingProjectId === id) return " project-drag-source";
-        if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
-        return "";
-    };
-
     useEffect(() => () => endProjectDrag(), [endProjectDrag]);
 
     useLayoutEffect(() => {
@@ -808,10 +781,6 @@ export const SideRail = memo(function SideRail() {
         if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
         cmd.selectWindowId(winId);
     };
-    const jumpToAgents = (sessionId: string) => {
-        if (sessionId !== activeSessionId) cmd.selectSession(sessionId);
-        cmd.focusAgents();
-    };
 
     const ghostPoint = projectGhostPointRef.current;
     const ghostTransform =
@@ -819,22 +788,29 @@ export const SideRail = memo(function SideRail() {
             ? `translate3d(${ghostPoint.x - projectDragVisual.grabX}px, ${ghostPoint.y - projectDragVisual.grabY}px, 0)`
             : "translate3d(-100vw, -100vh, 0)";
 
-    const rail: RailContextValue = {
-        activeSessionId,
-        windowsById,
-        windowsBySession,
-        agentsById,
-        activityById,
-        backgroundById,
-        draggingProjectId,
-        projectDragClass,
-        onProjectPointerDown,
-        selectProject,
-        openSpaceMenu: (event, session) => openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd])),
-        jumpToWindow,
-        jumpToAgents,
-        kb,
-    };
+    /* The handlers change on every render; the rows reach them through this, so the context changes only with what the rows show. */
+    const handlers = useRef({ onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow });
+    handlers.current = { onProjectPointerDown, selectProject, openMenu, spaces, projectSpaces, jumpToWindow };
+    const rail = useMemo<RailContextValue>(
+        () => ({
+            activeSessionId,
+            draggingProjectId,
+            projectDragClass: (id) => {
+                if (draggingProjectId === id) return " project-drag-source";
+                if (projectDrop?.targetId === id) return ` project-drop-${projectDrop.placement}`;
+                return "";
+            },
+            onProjectPointerDown: (event, sourceId) => handlers.current.onProjectPointerDown(event, sourceId),
+            selectProject: (id) => handlers.current.selectProject(id),
+            openSpaceMenu: (event, session) => {
+                const { openMenu, spaces, projectSpaces } = handlers.current;
+                openMenu(event, projectSpaceItems(session, spaces, projectSpaces[session.cwd], getState().hosts));
+            },
+            jumpToWindow: (sessionId, winId) => handlers.current.jumpToWindow(sessionId, winId),
+            kb: (id) => keybindingLabelForAction(keybindingOverrides, id),
+        }),
+        [activeSessionId, draggingProjectId, projectDrop, keybindingOverrides],
+    );
 
     return (
         <RailContext.Provider value={rail}>
@@ -848,22 +824,24 @@ export const SideRail = memo(function SideRail() {
                         addTitle={`Open project — ${kb("project.open")}`}
                         addKbd={kb("project.open")}
                         emptyText={activeSpace ? `no projects in ${activeSpace.name}` : "no projects"}
-                        toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} onMenu={openMenu} />}
+                        toolbar={allProjects.length > 0 && <SpaceSwitch spaces={spaces} activeSpaceId={activeSpaceId} />}
                     />
                     <Group
-                        label="SSH"
+                        label="Hosts"
                         list={sshs}
+                        rows={<HostRows sshSessions={sshs} onMenu={openMenu} />}
                         add={() => cmd.openPicker("ssh")}
-                        addTitle={`Connect to SSH host — ${kb("ssh.open")}`}
+                        addTitle={`Find a host — ${kb("ssh.open")}`}
                         addKbd={kb("ssh.open")}
                         action={() => void cmd.openSshConfigEditor()}
                         actionTitle="Edit ~/.ssh/config"
-                        emptyText="no ssh hosts"
+                        emptyText="no hosts"
                     />
-                    <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" className="rail-logos" />
+                    <Group label="Plugins" list={plugins} rows={pluginRows} emptyText="no plugins" />
                     <Group label="Terminals" list={commands} add={cmd.createCommandSession} addTitle="New terminal" emptyText="no terminals" />
                 </div>
                 <UpdateChip />
+                <RailAccount />
             </aside>
             {projectDragVisual &&
                 createPortal(
@@ -880,3 +858,33 @@ export const SideRail = memo(function SideRail() {
         </RailContext.Provider>
     );
 });
+
+/* A mark is 20px wide and each one after it overlaps the last, by more for
+   buddies, which fill their box, than for logos drawn small inside theirs. */
+const MARK = 20;
+const MARK_STEP = { buddies: 10, logos: 14 };
+const MORE = 22;
+
+/** As many marks as the row has room for, the rest counted as +N, so none is ever cut in half. */
+function FittedIcons({ icons }: { icons: ReactNode[] }) {
+    const ref = useRef<HTMLSpanElement>(null);
+    const [room, setRoom] = useState(Infinity);
+    const step = useStore((s) => (s.buddies ? MARK_STEP.buddies : MARK_STEP.logos));
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const observer = new ResizeObserver(() => setRoom(el.clientWidth));
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+    const width = (count: number, more: boolean) => (count > 0 ? MARK + (count - 1) * step : 0) + (more ? MORE : 0);
+    let shown = Math.min(icons.length, MAX_BADGE_ICONS);
+    while (shown > 0 && width(shown, shown < icons.length) > room) shown--;
+    const overflow = icons.length - shown;
+    return (
+        <span ref={ref} className="proj-child-icons">
+            {icons.slice(0, shown)}
+            {overflow > 0 && <span className="proj-child-icons-more">+{overflow}</span>}
+        </span>
+    );
+}

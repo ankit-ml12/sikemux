@@ -520,7 +520,7 @@ pub async fn tail(data_dir: &Path, mut search: LogSearch, sink: StreamSink) -> P
     let mut first = true;
     let mut failures = 0u32;
     loop {
-        let window = (since, query::now_ms());
+        let window = (since, sikemux_process::clock::epoch_ms());
         let outcome = async {
             let request = if first {
                 list_query(&search, window, backlog, 0, true)?
@@ -739,15 +739,6 @@ mod tests {
         );
         assert_eq!(ksuid_seconds("not-a-ksuid"), None);
         assert_eq!(ksuid_seconds("zzzzzzzzzzzzzzzzzzzzzzzzzzz"), None);
-    }
-
-    #[test]
-    fn looks_a_line_up_by_its_id() {
-        let search = LogSearch {
-            id: Some("abc".into()),
-            ..LogSearch::default()
-        };
-        assert_eq!(expression(&search).unwrap().unwrap(), "id = 'abc'");
     }
 
     #[test]

@@ -4,10 +4,8 @@ import type {
   Network,
 } from "@sikemux/protocol";
 
-const CHANNELS = [
-  "nightly",
-  "stable",
-] as const satisfies readonly (keyof ChannelVersions)[];
+import { isPort, settingsFrom } from "../env.ts";
+import { CHANNELS } from "../updates/update.ts";
 
 const APP_VERSION =
   /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/;
@@ -24,8 +22,7 @@ export function readNetwork(
   env: NodeJS.ProcessEnv,
   problems: string[],
 ): Network {
-  const setting = (name: string, fallback: string) =>
-    env[name]?.trim() || fallback;
+  const { text: setting } = settingsFrom(env, problems);
 
   const url = setting("RELAY_URL", "https://relay.sikemux.com/");
   const parsed = URL.parse(url);
@@ -36,10 +33,7 @@ export function readNetwork(
 
   const quic = setting("RELAY_QUIC_PORT", "7842");
   const quicPort = quic === "none" ? null : Number(quic);
-  if (
-    quicPort !== null &&
-    (!Number.isInteger(quicPort) || quicPort < 1 || quicPort > 65535)
-  )
+  if (quicPort !== null && !isPort(quicPort))
     problems.push('RELAY_QUIC_PORT is not a port number or "none"');
 
   const versions = (platform: keyof MinimumVersions) => {
@@ -64,6 +58,7 @@ export function readNetwork(
     ],
     minimumVersions: {
       macos: versions("macos"),
+      linux: versions("linux"),
       ios: versions("ios"),
       android: versions("android"),
     },

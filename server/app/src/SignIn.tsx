@@ -1,9 +1,16 @@
 import { useSignIn, useSignUp } from "@clerk/react";
+import { errorCode, explain } from "@sikemux/protocol/account";
 import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
-import { errorCode, explain } from "./clerkErrors.ts";
-import { BackIcon, EyeIcon, GitHubMark, GoogleMark, Logo } from "./icons.tsx";
-import { rememberReturn } from "./navigation.ts";
+import {
+  AppleMark,
+  BackIcon,
+  EyeIcon,
+  GitHubMark,
+  GoogleMark,
+  Logo,
+} from "./icons.tsx";
+import { HOST, isSharePath, rememberReturn } from "./navigation.ts";
 
 /** Why an emailed code is asked for: a browser new to the account, a new account, or a new password. */
 type CodePurpose = "trust" | "verify" | "reset";
@@ -15,13 +22,28 @@ type Step =
   | { kind: "code"; purpose: CodePurpose }
   | { kind: "new-password" };
 
-type Action = "google" | "github" | "submit";
+type Provider = "oauth_apple" | "oauth_google" | "oauth_github";
+
+type Action = "apple" | "google" | "github" | "submit";
+
+const ACTIONS: Record<Provider, Action> = {
+  oauth_apple: "apple",
+  oauth_google: "google",
+  oauth_github: "github",
+};
 
 const CODE_DETAIL: Record<CodePurpose, string> = {
   trust: "to confirm this browser is yours",
   verify: "to confirm the address is yours",
   reset: "so you can choose a new password",
 };
+
+/** On a shared chat's page a finished sign-in stays there, where the chat then opens, instead of going to the account pages. */
+function staying() {
+  return isSharePath(location.pathname) || location.pathname === HOST
+    ? { navigate: () => undefined }
+    : undefined;
+}
 
 export function SignIn({ ready }: { ready: boolean }) {
   const { signIn } = useSignIn();
@@ -72,7 +94,8 @@ export function SignIn({ ready }: { ready: boolean }) {
   };
 
   const afterPassword = async () => {
-    if (signIn.status === "complete") return check(await signIn.finalize());
+    if (signIn.status === "complete")
+      return check(await signIn.finalize(staying()));
     if (
       signIn.status === "needs_client_trust" ||
       signIn.status === "needs_second_factor"
@@ -85,8 +108,8 @@ export function SignIn({ ready }: { ready: boolean }) {
     );
   };
 
-  const withProvider = (strategy: "oauth_google" | "oauth_github") =>
-    attempt(strategy === "oauth_google" ? "google" : "github", async () => {
+  const withProvider = (strategy: Provider) =>
+    attempt(ACTIONS[strategy], async () => {
       rememberReturn();
       check(
         await signIn.sso({
@@ -136,7 +159,7 @@ export function SignIn({ ready }: { ready: boolean }) {
       try {
         if (purpose === "trust") {
           check(await signIn.mfa.verifyEmailCode({ code: typed }));
-          return check(await signIn.finalize());
+          return check(await signIn.finalize(staying()));
         }
         if (purpose === "reset") {
           check(
@@ -149,7 +172,7 @@ export function SignIn({ ready }: { ready: boolean }) {
           throw new Error(
             "The account needs more than this page asks for; try again.",
           );
-        check(await signUp.finalize());
+        check(await signUp.finalize(staying()));
       } catch (error) {
         setCode("");
         throw error;
@@ -189,6 +212,16 @@ export function SignIn({ ready }: { ready: boolean }) {
           and they find each other.
         </p>
         <div className="providers">
+          <button
+            type="button"
+            className="button"
+            onClick={() => withProvider("oauth_apple")}
+            disabled={busy !== undefined}
+            data-busy={busy === "apple" || undefined}
+          >
+            <AppleMark />
+            Continue with Apple
+          </button>
           <button
             type="button"
             className="button"
@@ -333,7 +366,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-function PasswordField({
+export function PasswordField({
   value,
   onChange,
   autoComplete,
@@ -369,7 +402,7 @@ function PasswordField({
 }
 
 /** Six tiles under one real input, so typing, pasting and the browser's code autofill all work. */
-function CodeEntry({
+export function CodeEntry({
   code,
   onChange,
   disabled,

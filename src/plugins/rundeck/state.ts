@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { closeCorePalettes, onPaneClosed, openSurface } from "../../plugin-api/host";
 import { definePluginSettings } from "../../plugin-api/settings";
-import { RUNDECK_DEPLOY, RUNDECK_PLUGIN_ID } from "./kinds";
-import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, basenameOf } from "./shape";
+import { RUNDECK_DEPLOY, RUNDECK_PLUGIN } from "./kinds";
+import { basenameOf } from "./shape";
 
 /** A Rundeck job as the views address it, plus the local checkout linked to it, if any. */
 export interface JobRef {
@@ -15,6 +15,7 @@ export interface JobRef {
 
 export type RundeckLevel =
     | { kind: "matrix" }
+    | { kind: "activity"; project: string }
     | ({ kind: "service" } & JobRef)
     | ({ kind: "deploy"; branch?: string; options?: Record<string, string> } & JobRef)
     | ({ kind: "execution"; executionId: number } & JobRef);
@@ -31,19 +32,14 @@ export interface DeployTarget {
 export interface RundeckSettings {
     activeProject: string;
     activeGroup: string | null;
-    prodEnvs: string[];
-    branchOptions: string[];
     /** The job picked for each local project folder. */
     deployTargets: Record<string, DeployTarget>;
     treeHidden: boolean;
+    /** Tell the person when a run they started here ends, so they need not watch it. */
+    notifyWhenDone: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-
-const stringList = (value: unknown, fallback: string[]): string[] => {
-    if (!Array.isArray(value)) return fallback;
-    return value.filter((entry): entry is string => typeof entry === "string");
-};
 
 function decodeSettings(saved: unknown): RundeckSettings {
     const raw = isRecord(saved) ? saved : {};
@@ -56,14 +52,13 @@ function decodeSettings(saved: unknown): RundeckSettings {
     return {
         activeProject: typeof raw.activeProject === "string" ? raw.activeProject : "",
         activeGroup: typeof raw.activeGroup === "string" && raw.activeGroup ? raw.activeGroup : null,
-        prodEnvs: stringList(raw.prodEnvs, DEFAULT_PROD_ENVS),
-        branchOptions: stringList(raw.branchOptions, DEFAULT_BRANCH_OPTIONS),
         deployTargets,
         treeHidden: raw.treeHidden === true,
+        notifyWhenDone: raw.notifyWhenDone !== false,
     };
 }
 
-export const rundeckSettings = definePluginSettings(RUNDECK_PLUGIN_ID, decodeSettings);
+export const rundeckSettings = definePluginSettings(RUNDECK_PLUGIN.id, decodeSettings);
 
 export function updateRundeckSettings(patch: Partial<RundeckSettings>): void {
     rundeckSettings.update((settings) => ({ ...settings, ...patch }));
@@ -89,8 +84,6 @@ interface RundeckRuntime {
     /** Folder open/closed choices per pane, keyed by `treeKey`. Absent means "follow the selection". */
     treeOpen: Record<string, Record<string, boolean>>;
     treeWidth: number;
-    /** The job each pane's list has picked out for the side panel. */
-    selectedJob: Record<string, string>;
     /** Whether each pane lists its jobs or lines up the folders beside each other. */
     layout: Record<string, "list" | "compare">;
 }
@@ -100,13 +93,8 @@ export const useRundeck = create<RundeckRuntime>()(() => ({
     jobPaletteOpen: false,
     treeOpen: {},
     treeWidth: 220,
-    selectedJob: {},
     layout: {},
 }));
-
-export function selectRundeckJob(paneId: string, jobId: string): void {
-    useRundeck.setState((state) => ({ selectedJob: { ...state.selectedJob, [paneId]: jobId } }));
-}
 
 export function setRundeckLayout(paneId: string, layout: "list" | "compare"): void {
     useRundeck.setState((state) => ({ layout: { ...state.layout, [paneId]: layout } }));
@@ -114,17 +102,15 @@ export function setRundeckLayout(paneId: string, layout: "list" | "compare"): vo
 
 onPaneClosed((paneId) => {
     const state = useRundeck.getState();
-    if (!(paneId in state.views) && !(paneId in state.treeOpen) && !(paneId in state.selectedJob) && !(paneId in state.layout)) return;
+    if (!(paneId in state.views) && !(paneId in state.treeOpen) && !(paneId in state.layout)) return;
     useRundeck.setState((current) => {
         const views = { ...current.views };
         const treeOpen = { ...current.treeOpen };
-        const selectedJob = { ...current.selectedJob };
         const layout = { ...current.layout };
         delete views[paneId];
         delete treeOpen[paneId];
-        delete selectedJob[paneId];
         delete layout[paneId];
-        return { views, treeOpen, selectedJob, layout };
+        return { views, treeOpen, layout };
     });
 });
 
@@ -178,6 +164,12 @@ export function selectRundeckGroup(paneId: string, project: string, group: strin
     rundeckHome(paneId);
 }
 
+/** Every run in a project, over its job list so Back leads there. */
+export function openRundeckActivity(paneId: string, project: string): void {
+    if (rundeckSettings.get().activeProject !== project) updateRundeckSettings({ activeProject: project, activeGroup: null });
+    setStack(paneId, [...HOME.stack, { kind: "activity", project }]);
+}
+
 export function openRundeckJobPalette(): void {
     closeCorePalettes();
     useRundeck.setState({ jobPaletteOpen: true });
@@ -210,4 +202,19 @@ export function openRundeckJob(job: JobRef, options: { paneId?: string | null; b
     const deploy: RundeckLevel[] = options.branch !== undefined ? [{ kind: "deploy", ...job, branch: options.branch }] : [];
     const base = options.push ? rundeckView(paneId).stack : HOME.stack;
     setStack(paneId, [...base, service, ...deploy]);
+}
+
+export const jobRefOf = (level: JobRef): JobRef => ({
+    project: level.project,
+    jobId: level.jobId,
+    name: level.name,
+    group: level.group,
+    repoPath: level.repoPath,
+});
+
+/** Opens one run of a job, with the job underneath so Back leads to it. */
+export function openRundeckExecution(job: JobRef, executionId: number): void {
+    const paneId = openSurface(RUNDECK_DEPLOY);
+    if (!paneId) return;
+    setStack(paneId, [...HOME.stack, { kind: "service", ...job }, { kind: "execution", ...job, executionId }]);
 }

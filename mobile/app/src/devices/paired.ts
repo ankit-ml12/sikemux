@@ -1,9 +1,10 @@
 import { File, Paths } from 'expo-file-system';
 
-import type { BuildChannel } from '@/core/protocol';
+import type { BuildChannel, DeviceAccess } from '@/core/protocol';
 import type { DeviceKind } from '@/ui/Icon';
+import { readWhole, writeWhole } from './disk';
 
-export type Access = 'full' | 'watch';
+export type Access = DeviceAccess;
 
 /** A computer this phone paired with, known by its core's key. */
 export type PairedDevice = {
@@ -26,10 +27,19 @@ export type PairedDevice = {
 const store = new File(Paths.document, 'paired-devices.json');
 
 let cached: PairedDevice[] | undefined;
+let damaged = false;
 let writing: Promise<unknown> = Promise.resolve();
 
+function isDeviceList(value: unknown): value is PairedDevice[] {
+  return Array.isArray(value) && value.every((device) => typeof device?.core === 'string' && typeof device?.access === 'string');
+}
+
 async function load(): Promise<PairedDevice[]> {
-  cached ??= store.exists ? (JSON.parse(await store.text()) as PairedDevice[]) : [];
+  if (!cached) {
+    const read = await readWhole(store, isDeviceList);
+    damaged ||= read.damaged;
+    cached = read.value ?? [];
+  }
   return cached;
 }
 
@@ -38,12 +48,30 @@ export async function pairedDevices(): Promise<PairedDevice[]> {
   return load();
 }
 
+/** Whether the saved list could not be read, so the phone started again with none. */
+export function pairedListDamaged(): boolean {
+  return damaged;
+}
+
 /** Changes run one after another on the latest list, so two at once never undo each other. */
 function change(edit: (devices: PairedDevice[]) => PairedDevice[]): Promise<void> {
   const next = writing.then(async () => {
-    const devices = edit(await load());
-    store.write(JSON.stringify(devices));
+    const before = await load();
+    const devices = edit(before);
+    const text = JSON.stringify(devices);
+    if (text === JSON.stringify(before) && store.exists) return;
+    writeWhole(store, text);
     cached = devices;
+  });
+  writing = next.catch(() => {});
+  return next;
+}
+
+/** Reads the saved list from disk again. A damaged one was already moved aside, so it reads as a fresh list. */
+export function readAgain(): Promise<void> {
+  const next = writing.then(() => {
+    cached = undefined;
+    damaged = false;
   });
   writing = next.catch(() => {});
   return next;

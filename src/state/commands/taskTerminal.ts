@@ -1,7 +1,7 @@
 import { isPathWithin } from "../../lib/paths";
-import type { TaskTerminalPresentationRequest } from "../../tasks/nativeRuntime";
 import { mutate } from "../store";
 import { collectPanes } from "../layout";
+import { projectSessionId } from "../selectors";
 import { makeWindow } from "./shared";
 
 function taskTerminalContainsControl(value: string): boolean {
@@ -25,21 +25,31 @@ function requireTaskTerminalText(name: string, value: string, maxLength: number)
     return value;
 }
 
+/** Where a task's terminal opens: the same one for every run of the task. */
+export interface TaskTerminalRequest {
+    readonly project: string;
+    readonly cwd: string;
+    readonly terminalKey: string;
+    readonly label: string;
+    /** Opened without taking focus. */
+    readonly background?: boolean;
+}
+
 /**
  * Open or focus a transient task-output window and return its pane ID. PTY IDs,
  * commands, and environment values are intentionally absent from this state.
  */
-export function openTaskTerminal(request: TaskTerminalPresentationRequest): string {
+export function openTaskTerminal(request: TaskTerminalRequest): string {
     const project = requireTaskTerminalText("task project", request.project, 4_096);
     const cwd = requireTaskTerminalText("task cwd", request.cwd, 4_096);
     const terminalKey = requireTaskTerminalText("task terminal key", request.terminalKey, 8_192);
     const label = requireTaskTerminalText("task label", request.label, 256);
     if (!isPathWithin(cwd, project)) throw new TypeError("task working directory must stay within its project");
-    if (request.signal.aborted) throw request.signal.reason ?? new DOMException("Task terminal presentation was aborted", "AbortError");
 
     let paneId: string | null = null;
     mutate((d) => {
-        const owner = d.sessionOrder.map((id) => d.sessions[id]).find((session) => session?.kind === "project" && session.cwd === project);
+        const ownerId = projectSessionId(d, project);
+        const owner = ownerId ? d.sessions[ownerId] : undefined;
         if (!owner) return;
         const windowIds = d.windowsBySession[owner.id] ?? [];
         for (const windowId of windowIds) {

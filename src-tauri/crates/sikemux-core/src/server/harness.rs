@@ -5,43 +5,75 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_process::sync::Locked;
 use sikemux_pty::output_log::{OutputPage, OutputQuery};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use crate::cli::protocol::{is_browser_method, is_plugin_method, HarnessRequest};
+use crate::cli::protocol::{
+    is_browser_method, is_sim_method, validate_harness, HarnessRequest, COMMIT_FOOTER_METHOD,
+    CORE_REPLY_TIMEOUT, GIT_GUARD_METHOD, PLUGINS_CHANGED_METHOD, SIM_CANCEL_METHOD,
+    SIM_OFFERED_METHOD, TOOLS_MANIFEST_METHOD,
+};
 use crate::harness::command::{command_cwd, command_label, command_task_id, COMMAND_TASK_PREFIX};
-use crate::harness::journal::{JournalRecord, Journals};
+use crate::harness::journal::{EventsPage, JournalRecord, Journals};
 use crate::harness::runs::{CommandLaunch, Launch, Run, RunStatus, Runs, RunsRecord};
-use crate::protocol::{RunSelector, SessionId, TaskSessionInfo, WindowCall};
+use crate::protocol::{SessionId, TaskSessionInfo, WindowCall};
 
 use super::connection::blocking;
-use super::window::{self, Call};
+use super::messages::{self, Mailbox};
+use super::questions::{self, Questions};
+use super::window::Call;
+use super::{board, follow, saved, spawn};
 use super::{session, Core};
+use crate::skills;
 
 /// MCP hosts give up on a tool call after about a minute, so a start answers
 /// well before that with whatever state it reached.
 const START_BUDGET: Duration = Duration::from_secs(30);
-/// A little longer than the app gives its page, so the app's own timeout,
-/// which names the tool, is the one an agent sees.
-const WINDOW_REPLY_TIMEOUT: Duration = Duration::from_secs(66);
-/// A launch may wait on the person trusting `sikemux.json`.
-const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// A chatty task adds at most one output event per this long.
 const OUTPUT_EVENT_GAP: Duration = Duration::from_millis(250);
 const READY_POLL: Duration = Duration::from_millis(250);
 const MAX_WAITS: usize = 32;
 const MAX_WAIT_MS: u64 = 30_000;
+/// Every running agent's tools server holds one of these open.
+const MAX_PLUGIN_WAITS: usize = 512;
+/// Shorter than the tools server waits for any answer.
+const PLUGIN_WAIT: Duration = Duration::from_secs(55);
+/// A pane that makes several calls in a row wakes each tools server once.
+const PLUGIN_SETTLE: Duration = Duration::from_secs(1);
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const TOOL_CALLS_FILE: &str = "agent-tool-calls.json";
 const WINDOW_GONE: &str = "Sikemux's window closed before it answered";
+/// Tools that act as the agent calling them, or with a sign-in or a view
+/// the caller does not hold itself, so a call from outside every agent's
+/// processes is refused rather than answered for no one.
+const AGENT_METHODS: [&str; 8] = [
+    "agent.",
+    "board.",
+    "git.",
+    "review.",
+    "browser.",
+    "sim.",
+    "plugins.call",
+    "app.console",
+];
+/// What a reviewer Auto started blind may not do: start agents, read saved
+/// sessions, who wrote what, or the board, any of which could show it the
+/// builder's side.
+const BLIND_REFUSED: [&str; 4] = ["agent.spawn", "agent.sessions", "agent.wrote", "board."];
+/// What agents do goes in the same journal as tasks, for `agent_wait` alone.
+pub(crate) const AGENT_EVENT: &str = "agent.";
 
-const WINDOW_CLOSED_NOTE: &str = "Sikemux's window is closed, so this lists only the runs you started and the event cursor. Panes, the tasks in sikemux.json and listening ports need the window open.";
+/// What `workspace_inspect` takes from the window: the panes it shows.
+const LAYOUT_FIELDS: [&str; 4] = ["sessionId", "active", "activeWindowId", "windows"];
+const NO_WINDOW_NOTE: &str =
+    "No Sikemux window is open on this host, so there are no panes to list.";
 const AWAITING_TRUST_NOTE: &str = "Waiting for the person to trust this project's sikemux.json in Sikemux. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it starts.";
 const STARTING_NOTE: &str = "Still starting. Call task_start again with the same idempotencyKey, or events_wait with this executionId, to see when it runs.";
 const NOT_READY_NOTE: &str = "The task is running but readyWhen has not appeared yet. Wait with events_wait on this executionId, or task_read with search.";
@@ -121,13 +153,23 @@ pub(crate) struct Harness {
     state: Mutex<State>,
     changes: watch::Sender<u64>,
     tool_calls: Option<PathBuf>,
+    /// The app data folder, which holds the skills library.
+    pub(crate) data_dir: Option<PathBuf>,
     waits: AtomicUsize,
+    plugins: watch::Sender<u64>,
+    plugin_waits: AtomicUsize,
+    /// Messages between agents waiting for their turn to end.
+    pub(crate) mailbox: Mailbox,
+    /// Questions agents asked that wait on an answer.
+    pub(crate) questions: Questions,
+    pub(crate) spawning: spawn::Spawning,
 }
 
 impl Harness {
-    /// Journals and the tool-call tally go under `data_dir`; without one they
-    /// live in memory, or not at all.
-    pub(crate) fn new(data_dir: Option<&Path>) -> Self {
+    /// Journals, the tool-call tally, and the messages and questions between
+    /// agents go under `data_dir`; without one they live in memory, or not at
+    /// all. Messages and questions of agents `known` does not hold are dropped.
+    pub(crate) fn new(data_dir: Option<&Path>, known: impl Fn(&str) -> bool) -> Self {
         Self {
             state: Mutex::new(State {
                 runs: Runs::default(),
@@ -136,19 +178,29 @@ impl Harness {
             }),
             changes: watch::channel(0).0,
             tool_calls: data_dir.map(|dir| dir.join(TOOL_CALLS_FILE)),
+            data_dir: data_dir.map(Path::to_path_buf),
             waits: AtomicUsize::new(0),
+            plugins: watch::channel(0).0,
+            plugin_waits: AtomicUsize::new(0),
+            mailbox: Mailbox::new(data_dir, &known),
+            questions: Questions::new(data_dir, &known),
+            spawning: spawn::Spawning::default(),
         }
+    }
+
+    pub(crate) fn plugins_changed(&self) {
+        self.plugins.send_modify(|version| *version += 1);
     }
 
     /// Runs `change` on the state and wakes every waiter.
     fn change<T>(&self, change: impl FnOnce(&mut State) -> T) -> T {
-        let result = change(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner));
+        let result = change(&mut self.state.locked());
         self.changes.send_modify(|version| *version += 1);
         result
     }
 
     fn read<T>(&self, read: impl FnOnce(&mut State) -> T) -> T {
-        read(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner))
+        read(&mut self.state.locked())
     }
 
     /// A task session just spawned. True when its run was stopped before it
@@ -164,6 +216,8 @@ impl Harness {
             run.pty_id = Some(id);
             run.label = Some(task.label.clone());
             run.command = Some(task.command.clone());
+            run.cwd = Some(task.cwd.clone());
+            run.started_at = Some(sikemux_process::clock::epoch_ms());
             if matches!(run.status, RunStatus::Starting | RunStatus::AwaitingTrust) {
                 state.set_status(&task.execution_id, RunStatus::Running);
             }
@@ -172,24 +226,40 @@ impl Harness {
     }
 
     /// A missing `code` means the status could not be read, which counts as a
-    /// failure.
-    pub(crate) fn session_exited(&self, id: SessionId, code: Option<u32>, signal: Option<String>) {
+    /// failure. Returns the run when it failed on its own and an agent started it.
+    pub(crate) fn session_exited(
+        &self,
+        id: SessionId,
+        code: Option<u32>,
+        signal: Option<String>,
+    ) -> Option<FailedRun> {
         self.change(|state| {
-            let Some(run) = state.runs.by_pty_mut(id) else {
-                return;
-            };
+            let run = state.runs.by_pty_mut(id)?;
             let code = code.unwrap_or(1);
             run.exit_code = Some(code);
-            run.signal = signal;
+            run.signal = signal.clone();
             let next = match run.status {
-                RunStatus::Stopped => return,
+                RunStatus::Stopped => return None,
                 RunStatus::Stopping => RunStatus::Stopped,
                 _ if code == 0 => RunStatus::Completed,
                 _ => RunStatus::Failed,
             };
+            let failed = (next == RunStatus::Failed)
+                .then(|| run.agent_id.clone())
+                .flatten()
+                .map(|agent_id| FailedRun {
+                    agent_id,
+                    execution_id: run.execution_id.clone(),
+                    label: run.label.clone().unwrap_or_else(|| run.task_id.clone()),
+                    reason: match &signal {
+                        Some(signal) => format!("it stopped from signal {signal}"),
+                        None => format!("it exited with code {code}"),
+                    },
+                });
             let execution_id = run.execution_id.clone();
             state.set_status(&execution_id, next);
-        });
+            failed
+        })
     }
 
     pub(crate) fn record(&self) -> HarnessRecord {
@@ -223,6 +293,75 @@ impl Harness {
             for execution_id in cut_short {
                 state.set_status(&execution_id, RunStatus::Failed);
             }
+        });
+    }
+
+    /// One of the few waits the core holds open at once, or an error when
+    /// they are all taken.
+    pub(crate) fn wait_slot(&self) -> Result<WaitSlot<'_>, String> {
+        if self.waits.fetch_add(1, Ordering::AcqRel) >= MAX_WAITS {
+            self.waits.fetch_sub(1, Ordering::AcqRel);
+            return Err("Too many event waits".into());
+        }
+        Ok(WaitSlot(&self.waits))
+    }
+
+    /// Changes whenever a project's journal does.
+    pub(crate) fn subscribe(&self) -> watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
+    pub(crate) fn journal_cursor(&self, project: &str) -> u64 {
+        self.read(|state| state.journals.cursor(project))
+    }
+
+    pub(crate) fn journal_since(&self, project: &str, after: u64) -> Result<EventsPage, String> {
+        self.read(|state| state.journals.since(project, after, None))
+    }
+
+    /// Something happened to a project's repository, such as a commit landing
+    /// or its check ending, which `events_wait` hears of.
+    pub(crate) fn note_repository(&self, project: &str, kind: &str) {
+        self.change(|state| {
+            state.journals.append(project, kind, None, None);
+        });
+    }
+
+    /// Something happened to an agent, which `agent_wait` hears of.
+    pub(crate) fn note_agent(&self, project: &str, kind: &str, agent_id: &str) {
+        self.change(|state| {
+            state.journals.append_agent(project, kind, agent_id);
+        });
+    }
+
+    /// Wakes whatever waits on the harness, for a change kept elsewhere.
+    pub(crate) fn changed(&self) {
+        self.change(|_| ());
+    }
+
+    pub(crate) fn run_of(&self, execution_id: &str) -> Option<Run> {
+        self.read(|state| state.runs.by_execution(execution_id).cloned())
+    }
+
+    pub(crate) fn run_on(&self, pty_id: SessionId) -> Option<Run> {
+        self.read(|state| state.runs.by_pty(pty_id).cloned())
+    }
+
+    pub(crate) fn all_runs(&self) -> Vec<Run> {
+        self.read(|state| state.runs.all().to_vec())
+    }
+
+    /// A run that has not spawned yet will not.
+    pub(crate) fn launch_failed(&self, execution_id: &str, message: &str) {
+        self.change(|state| {
+            let Some(run) = state.runs.by_execution_mut(execution_id) else {
+                return;
+            };
+            if run.pty_id.is_some() || !run.status.is_active() {
+                return;
+            }
+            run.error.get_or_insert_with(|| message.to_owned());
+            state.set_status(execution_id, RunStatus::Failed);
         });
     }
 
@@ -307,9 +446,8 @@ fn purpose(method: &str) -> &'static str {
         "workspace.inspect" => "inspect the workspace",
         "ui.open" => "open things in it",
         "app.console" => "read its console",
-        "task.start" | "task.restart" => "start tasks",
         method if is_browser_method(method) => "use the browser",
-        method if is_plugin_method(method) => "use plugin tools",
+        method if is_sim_method(method) => "drive the iOS Simulator",
         _ => "use this tool",
     }
 }
@@ -318,7 +456,7 @@ fn no_answer(method: &str) -> String {
     format!(
         "{} got no answer from Sikemux within {} s. Check that the Sikemux window is open and responsive, then retry.",
         method.replace('.', "_"),
-        WINDOW_REPLY_TIMEOUT.as_secs()
+        CORE_REPLY_TIMEOUT.as_secs()
     )
 }
 
@@ -339,18 +477,55 @@ async fn answer_of(
 }
 
 async fn forward(core: &Core, request: HarnessRequest) -> Result<Value, String> {
-    let method = request.method.clone();
-    let call = core
-        .window
-        .call(WindowCall::Harness { request }, purpose(&method), false)?;
-    answer_of(core, call, WINDOW_REPLY_TIMEOUT, no_answer(&method)).await
+    let call = core.window.call(
+        WindowCall::Harness {
+            request: serde_json::to_value(&request).map_err(|error| error.to_string())?,
+        },
+        purpose(&request.method),
+        false,
+    )?;
+    answer_of(core, call, CORE_REPLY_TIMEOUT, no_answer(&request.method)).await
 }
 
-/// Answers one tool call. The call is counted whether or not it succeeds.
-pub(crate) async fn call(core: &Arc<Core>, request: HarnessRequest) -> Result<Value, String> {
-    request.validate()?;
+/// Answers one tool call from the client at `peer` on the tool endpoint's
+/// `port`, as the agent whose processes hold that connection, whatever agent
+/// it names, or as a commit the core runs. The call is counted whether or not
+/// it succeeds.
+pub(crate) async fn call(
+    core: &Arc<Core>,
+    mut request: HarnessRequest,
+    peer: std::net::SocketAddr,
+    port: u16,
+) -> Result<Value, String> {
+    validate_harness(&request)?;
+    let grant = if request.method == COMMIT_FOOTER_METHOD {
+        tokio::task::spawn_blocking(move || super::callers::take_commit_grant(peer, port))
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    request.agent_id = match grant {
+        Some(_) => None,
+        None => tokio::task::spawn_blocking(move || super::callers::identify(peer, port))
+            .await
+            .ok()
+            .flatten(),
+    };
+    if request.agent_id.is_none()
+        && grant.is_none()
+        && AGENT_METHODS
+            .iter()
+            .any(|prefix| request.method.starts_with(prefix))
+    {
+        return Err(format!(
+            "{} works only for an agent Sikemux started, and this call came from outside every agent's processes; start this agent from Sikemux again",
+            request.method.replace('.', "_")
+        ));
+    }
     let tool = tool_name(&request);
-    let result = dispatch(core, request).await;
+    let result = dispatch(core, request, grant).await;
     if let (Some(tool), Some(path)) = (tool, core.harness.tool_calls.clone()) {
         let succeeded = result.is_ok();
         tokio::task::spawn_blocking(move || record_tool_call(&path, &tool, succeeded));
@@ -358,7 +533,14 @@ pub(crate) async fn call(core: &Arc<Core>, request: HarnessRequest) -> Result<Va
     result
 }
 
-async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
+async fn dispatch(
+    core: &Arc<Core>,
+    mut request: HarnessRequest,
+    grant: Option<super::callers::CommitGrant>,
+) -> Result<Value, String> {
+    if request.method == TOOLS_MANIFEST_METHOD {
+        return crate::cli::manifest::served();
+    }
     let project = request.project.clone();
     request.project = tokio::task::spawn_blocking(move || std::fs::canonicalize(project))
         .await
@@ -366,6 +548,19 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
         .map_err(|error| error.to_string())?
         .to_string_lossy()
         .into_owned();
+    if let Some(agent_id) = &request.agent_id {
+        messages::used_tool(core, agent_id, &request.method.replace('.', "_"));
+        if core.names.is_blind(agent_id)
+            && BLIND_REFUSED
+                .iter()
+                .any(|refused| request.method.starts_with(refused))
+        {
+            return Err(format!(
+                "You review a card blind for Auto, so {} is not yours to use; judge the change from the card, the diff and your folder",
+                request.method.replace('.', "_")
+            ));
+        }
+    }
     match request.method.as_str() {
         "task.read" => task_read(core, &request).await,
         "task.stop" => {
@@ -379,42 +574,38 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
                 .map(|run| with_fields(&run, json!({})))
         }
         "events.wait" => events_wait(core, &request).await,
+        "agent.list" => messages::list(core, &request).await,
+        "agent.send" => messages::send(core, &request).await,
+        "agent.spawn" => spawn::spawn(core, &request).await,
+        "agent.sessions" => saved::find(core, &request).await,
+        "agent.ask" => questions::ask(core, &request).await,
+        "agent.read" => follow::read(core, &request).await,
+        "agent.wait" => follow::wait(core, &request).await,
+        "agent.wrote" => super::who_wrote::tool(core, &request).await,
+        "board.add" => board::add(core, &request).await,
+        "board.list" => board::list(core, &request).await,
+        "board.claim" => board::claim(core, &request).await,
+        "board.update" => board::update(core, &request).await,
+        "review.verdict" => board::verdict(core, &request).await,
+        "git.commit" => super::edits::commit::call(core, &request).await,
+        COMMIT_FOOTER_METHOD => super::edits::footer::call(core, &request, grant).await,
+        GIT_GUARD_METHOD => super::edits::guard::call(core, &request).await,
+        "browser.record" => {
+            let agent_id = request.agent_id.clone();
+            let answer = forward(core, request).await?;
+            if let Some(agent_id) = agent_id {
+                super::inbox::recorded(core, &agent_id, &answer);
+            }
+            Ok(answer)
+        }
+        PLUGINS_CHANGED_METHOD => plugins_wait(&core.harness, &request.params).await,
+        "plugins.tools" => super::plugins::agent_tools(&request.project).await,
+        "plugins.call" => super::plugins::call_agent_tool(&request.params).await,
+        "skills.manage" => skills_call(core, &request).await,
         "task.start" => task_start(core, &request, false).await,
         "task.restart" => task_start(core, &request, true).await,
-        "workspace.inspect" => {
-            let project = request.project.clone();
-            let agent_id = request.agent_id.clone();
-            let closed = || {
-                json!({
-                    "project": project,
-                    "agentId": agent_id,
-                    "window": null,
-                    "note": WINDOW_CLOSED_NOTE,
-                })
-            };
-            let mut value = if core.window.is_open() {
-                match forward(core, request).await {
-                    Ok(value) => value,
-                    Err(_) if !core.window.is_open() => closed(),
-                    Err(message) => return Err(message),
-                }
-            } else {
-                closed()
-            };
-            if let Some(object) = value.as_object_mut() {
-                core.harness.read(|state| {
-                    object.insert(
-                        "runs".into(),
-                        serde_json::to_value(state.runs.list(&project)).unwrap_or_default(),
-                    );
-                    object.insert(
-                        "cursor".into(),
-                        state.journals.cursor(&project).to_string().into(),
-                    );
-                });
-            }
-            Ok(value)
-        }
+        "workspace.inspect" => inspect(core, request).await,
+        "page.show" => show_page(core, request).await,
         "ui.open" => {
             let kind = text(&request.params, "kind")?.map(str::to_owned);
             if kind.as_deref() == Some("terminal") {
@@ -435,6 +626,151 @@ async fn dispatch(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value
     }
 }
 
+/// The project as the core knows it, with the panes the window shows when
+/// one is open.
+const PAGE_IN_REPLY: &str = "The person sees the page in your reply, above the text you write next. Do not describe or restate it; write only what it does not already say.";
+const PAGE_ON_DESK: &str =
+    "The page is open on your desk, beside your terminal, where the person can see it.";
+const PAGE_KEPT: &str = "The page is kept, but no Sikemux window is open to show it on your desk.";
+
+/// Keeps the page an agent wrote. A chat shows it in its reply; for an agent
+/// in a terminal the window opens it on the agent's desk.
+async fn show_page(core: &Arc<Core>, mut request: HarnessRequest) -> Result<Value, String> {
+    let path = PathBuf::from(required_text(&request.params, "path")?);
+    if !path.is_absolute() {
+        return Err("path must be absolute".into());
+    }
+    let title = required_text(&request.params, "title")?.to_owned();
+    let height = match request.params.get("height") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(integer(&request.params, "height", 0, 4000, 1)? as u32),
+    };
+    let dir = core
+        .harness
+        .data_dir
+        .clone()
+        .ok_or("Pages need Sikemux's data folder, and this core was started without one")?
+        .join(crate::pages::FOLDER);
+    let page = blocking(move || Ok(crate::pages::publish(&dir, &path, &title, height)))
+        .await
+        .map_err(|error| error.to_string())??;
+    let in_chat = request
+        .agent_id
+        .as_deref()
+        .is_none_or(|agent_id| core.chats.get(agent_id).is_some());
+    let mut on_desk = false;
+    if core.window.is_open() {
+        request.params = json!({ "id": page.id, "desk": !in_chat });
+        on_desk = forward(core, request).await.is_ok() && !in_chat;
+    }
+    let note = if in_chat {
+        PAGE_IN_REPLY
+    } else if on_desk {
+        PAGE_ON_DESK
+    } else {
+        PAGE_KEPT
+    };
+    Ok(json!({ "page": page, "note": note }))
+}
+
+async fn inspect(core: &Arc<Core>, request: HarnessRequest) -> Result<Value, String> {
+    let project = request.project.clone();
+    let agent_id = request.agent_id.clone();
+    let layout = if core.window.is_open() {
+        forward(core, request).await.ok()
+    } else {
+        None
+    };
+    let mut value = {
+        let (core, project) = (core.clone(), project.clone());
+        blocking(move || Ok(super::tasks::inspect(&core, Path::new(&project))))
+            .await
+            .map_err(|error| error.to_string())?
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert("project".into(), project.clone().into());
+        object.insert("agentId".into(), agent_id.into());
+        match layout {
+            Some(Value::Object(mut layout)) => {
+                for key in LAYOUT_FIELDS {
+                    if let Some(value) = layout.remove(key) {
+                        object.insert(key.into(), value);
+                    }
+                }
+            }
+            _ => {
+                object.insert("note".into(), NO_WINDOW_NOTE.into());
+            }
+        }
+        core.harness.read(|state| {
+            object.insert(
+                "runs".into(),
+                serde_json::to_value(state.runs.list(&project)).unwrap_or_default(),
+            );
+            object.insert(
+                "cursor".into(),
+                state.journals.cursor(&project).to_string().into(),
+            );
+        });
+    }
+    Ok(value)
+}
+
+const SKILL_LOADS: &str =
+    "Start a new agent session to load it. Claude lists it as /sikemux:<name>.";
+
+async fn skills_call(core: &Core, request: &HarnessRequest) -> Result<Value, String> {
+    let data_dir = core
+        .harness
+        .data_dir
+        .clone()
+        .ok_or("Skills need Sikemux's data folder, and this core was started without one")?;
+    let params = request.params.clone();
+    blocking(move || Ok(skills_answer(&data_dir, &params)))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn skills_answer(data_dir: &Path, params: &Value) -> Result<Value, String> {
+    match required_text(params, "action")? {
+        "list" => Ok(json!({
+            "library": skills::library(data_dir),
+            "skills": skills::list(data_dir),
+        })),
+        "create" => {
+            let body = match params.get("body") {
+                None | Some(Value::Null) => "",
+                Some(Value::String(body)) => body.as_str(),
+                Some(_) => return Err("body must be text".into()),
+            };
+            let skill = skills::create(
+                data_dir,
+                required_text(params, "name")?,
+                required_text(params, "description")?,
+                body,
+            )?;
+            Ok(json!({ "skill": skill, "note": SKILL_LOADS }))
+        }
+        "install" => {
+            let source = required_text(params, "source")?;
+            let skill = if source.starts_with('/') {
+                skills::install_folder(data_dir, Path::new(source))?
+            } else {
+                skills::install_git(data_dir, source, text(params, "subfolder")?)?
+            };
+            Ok(json!({ "skill": skill, "note": SKILL_LOADS }))
+        }
+        "remove" => {
+            let name = required_text(params, "name")?;
+            skills::remove(data_dir, name)?;
+            Ok(json!({ "removed": name }))
+        }
+        other => Err(format!(
+            "action must be list, create, install or remove, not {other}"
+        )),
+    }
+}
+
 async fn read_output(core: &Core, id: SessionId, query: OutputQuery) -> Result<OutputPage, String> {
     let session = core
         .session(id)
@@ -451,7 +787,7 @@ async fn task_read(core: &Core, request: &HarnessRequest) -> Result<Value, Strin
         state.run(&request.project, &execution_id)
     })?;
     let plain = match params.get("plain") {
-        None => false,
+        None => true,
         Some(Value::Bool(plain)) => *plain,
         Some(_) => return Err("plain must be a boolean".into()),
     };
@@ -486,7 +822,7 @@ async fn task_read(core: &Core, request: &HarnessRequest) -> Result<Value, Strin
     Ok(with_fields(&run, fields))
 }
 
-struct WaitSlot<'a>(&'a AtomicUsize);
+pub(crate) struct WaitSlot<'a>(&'a AtomicUsize);
 
 impl Drop for WaitSlot<'_> {
     fn drop(&mut self) {
@@ -506,16 +842,14 @@ async fn events_wait(core: &Core, request: &HarnessRequest) -> Result<Value, Str
     let timeout = integer(params, "timeoutMs", MAX_WAIT_MS, MAX_WAIT_MS, 0)?;
     let execution_id = text(params, "executionId")?;
     let harness = &core.harness;
-    if harness.waits.fetch_add(1, Ordering::AcqRel) >= MAX_WAITS {
-        harness.waits.fetch_sub(1, Ordering::AcqRel);
-        return Err("Too many event waits".into());
-    }
-    let _slot = WaitSlot(&harness.waits);
+    let _slot = harness.wait_slot()?;
     let deadline = Instant::now() + Duration::from_millis(timeout);
     loop {
         let mut changed = harness.changes.subscribe();
-        let page =
+        let mut page =
             harness.read(|state| state.journals.since(&request.project, after, execution_id))?;
+        page.events
+            .retain(|entry| !entry.kind.starts_with(AGENT_EVENT));
         if !page.events.is_empty() || page.truncated || Instant::now() >= deadline {
             let events: Vec<Value> = page
                 .events
@@ -541,8 +875,28 @@ async fn events_wait(core: &Core, request: &HarnessRequest) -> Result<Value, Str
     }
 }
 
+/// Answers with how many times plugins have changed, once that is no longer
+/// `seen` or the wait runs out.
+async fn plugins_wait(harness: &Harness, params: &Value) -> Result<Value, String> {
+    let seen = params.get("seen").and_then(Value::as_u64);
+    if harness.plugin_waits.fetch_add(1, Ordering::AcqRel) >= MAX_PLUGIN_WAITS {
+        harness.plugin_waits.fetch_sub(1, Ordering::AcqRel);
+        return Err("Too many plugin waits".into());
+    }
+    let _slot = WaitSlot(&harness.plugin_waits);
+    let mut changes = harness.plugins.subscribe();
+    if seen == Some(*changes.borrow_and_update()) {
+        let changed = tokio::time::timeout(PLUGIN_WAIT, changes.changed()).await;
+        if matches!(changed, Ok(Ok(()))) {
+            tokio::time::sleep(PLUGIN_SETTLE).await;
+        }
+    }
+    let version = *harness.plugins.borrow();
+    Ok(json!({ "version": version }))
+}
+
 /// Stops one run and waits for its process to go.
-async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run, String> {
+pub(crate) async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run, String> {
     let kill = core
         .harness
         .change(|state| -> Result<Option<SessionId>, String> {
@@ -592,8 +946,17 @@ async fn stop_run(core: &Arc<Core>, execution_id: &str) -> Result<Run, String> {
     })
 }
 
-/// Stops the active runs a closed project or agent leaves behind, or one the
-/// window replaces.
+/// The runs that match every field given.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RunSelector {
+    execution_id: Option<String>,
+    project: Option<String>,
+    agent_id: Option<String>,
+}
+
+/// Stops the active runs that match, such as the ones a closed project or
+/// agent leaves behind.
 pub(crate) async fn stop_runs(core: &Arc<Core>, selector: RunSelector) {
     let matching = core.harness.read(|state| {
         state.runs.matching(|run| {
@@ -670,19 +1033,21 @@ enum Begun {
     Existing(String),
     New {
         execution_id: String,
-        forwarded: HarnessRequest,
+        /// The run a restart replaces.
+        previous: Option<String>,
     },
 }
 
 fn begin_start(
     core: &Core,
-    request: &HarnessRequest,
+    project: &str,
+    agent_id: Option<&str>,
+    params: &Value,
     key: &str,
     restart: bool,
 ) -> Result<Begun, String> {
-    let project = request.project.as_str();
     core.harness.change(|state| {
-        let (task_id, mut spec) = launch_target(state, project, &request.params, restart)?;
+        let (task_id, mut spec) = launch_target(state, project, params, restart)?;
         if !restart {
             if let Some(existing) = state.runs.keyed(project, key, &task_id)? {
                 return Ok(Begun::Existing(existing));
@@ -698,31 +1063,16 @@ fn begin_start(
                 return Ok(Begun::Existing(execution_id));
             }
         }
-        if !core.window.is_open() {
-            return Err(window::not_open("start tasks"));
-        }
         let previous = restart
             .then(|| state.runs.latest(project, &task_id))
             .flatten()
             .map(|run| run.execution_id.clone());
         let execution_id = uuid::Uuid::new_v4().to_string();
         let mut run = Run::new(execution_id.clone(), task_id.clone(), project.to_owned());
-        run.agent_id = request.agent_id.clone();
-        let mut params = json!({ "executionId": execution_id, "taskId": task_id });
-        if let (Some(spec), Some(fields)) = (spec.as_ref(), params.as_object_mut()) {
-            let cwd = if spec.cwd.is_empty() {
-                PathBuf::from(project)
-            } else {
-                Path::new(project).join(&spec.cwd)
-            };
-            fields.insert("command".into(), spec.command.clone().into());
-            fields.insert("cwd".into(), cwd.to_string_lossy().into_owned().into());
-            fields.insert("label".into(), spec.label.clone().into());
+        run.agent_id = agent_id.map(str::to_owned);
+        if let Some(spec) = &spec {
             run.label = Some(spec.label.clone());
             run.command = Some(spec.command.clone());
-        }
-        if let (Some(previous), Some(fields)) = (previous, params.as_object_mut()) {
-            fields.insert("previousExecutionId".into(), previous.into());
         }
         run.launch_spec = spec;
         state.runs.insert(run)?;
@@ -741,45 +1091,75 @@ fn begin_start(
         );
         Ok(Begun::New {
             execution_id,
-            forwarded: HarnessRequest {
-                id: request.id.clone(),
-                project: project.to_owned(),
-                agent_id: request.agent_id.clone(),
-                method: "task.start".into(),
-                params,
-            },
+            previous,
         })
     })
 }
 
-/// Records how the window's launch ended. A window that went away after the
-/// task started leaves it running.
-fn launch_finished(core: &Core, execution_id: &str, result: Result<Value, String>) {
+/// Records how a launch ended.
+fn launch_finished(core: &Core, execution_id: &str, result: Result<Option<String>, String>) {
     core.harness.change(|state| {
         let Some(run) = state.runs.by_execution_mut(execution_id) else {
             return;
         };
         let message = match result {
-            Ok(value) => {
+            Ok(preview_url) => {
                 run.launch = Launch::Done;
-                run.preview_url = value
-                    .get("previewUrl")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
+                run.preview_url = preview_url;
                 return;
             }
             Err(message) => message,
         };
-        if run.pty_id.is_some() && run.status == RunStatus::Running && message == WINDOW_GONE {
-            run.launch = Launch::Done;
-            return;
-        }
         run.launch = Launch::Failed(message.clone());
         run.error.get_or_insert(message);
         if run.pty_id.is_none() && run.status.is_active() {
             state.set_status(execution_id, RunStatus::Failed);
         }
     });
+}
+
+/// Launches a run in the background. `checked` says the person already saw
+/// what could stop it.
+fn launch(core: &Arc<Core>, execution_id: String, previous: Option<String>, checked: bool) {
+    let core = core.clone();
+    tokio::spawn(async move {
+        let result = super::tasks::launch(&core, &execution_id, previous, checked).await;
+        launch_finished(&core, &execution_id, result);
+    });
+}
+
+/// The person starts a task, in place of whatever else they run in that
+/// project. Answers the new run's id.
+pub(crate) fn start_for_person(
+    core: &Arc<Core>,
+    project: &str,
+    task_id: &str,
+) -> Result<String, String> {
+    let params = json!({ "taskId": task_id });
+    let key = uuid::Uuid::new_v4().to_string();
+    let Begun::New {
+        execution_id,
+        previous,
+    } = begin_start(core, project, None, &params, &key, true)?
+    else {
+        return Err("The task did not start".into());
+    };
+    let others = core.harness.read(|state| {
+        state.runs.matching(|run| {
+            run.project == project
+                && run.agent_id.is_none()
+                && run.task_id != task_id
+                && run.status.is_active()
+        })
+    });
+    let stopping = core.clone();
+    tokio::spawn(async move {
+        for other in others {
+            let _ = stop_run(&stopping, &other).await;
+        }
+    });
+    launch(core, execution_id.clone(), previous, true);
+    Ok(execution_id)
 }
 
 async fn task_start(
@@ -800,34 +1180,21 @@ async fn task_start(
             text(&request.params, "readyWhen")?.map(str::to_owned),
         )
     };
-    let execution_id = match begin_start(core, request, &key, restart)? {
+    let begun = begin_start(
+        core,
+        &request.project,
+        request.agent_id.as_deref(),
+        &request.params,
+        &key,
+        restart,
+    )?;
+    let execution_id = match begun {
         Begun::Existing(execution_id) => execution_id,
         Begun::New {
             execution_id,
-            forwarded,
+            previous,
         } => {
-            match core.window.call(
-                WindowCall::Harness { request: forwarded },
-                "start tasks",
-                false,
-            ) {
-                Ok(call) => {
-                    let following = core.clone();
-                    let id = execution_id.clone();
-                    tokio::spawn(async move {
-                        let result = answer_of(
-                            &following,
-                            call,
-                            LAUNCH_TIMEOUT,
-                            "Sikemux's window did not finish starting the task within 10 minutes"
-                                .into(),
-                        )
-                        .await;
-                        launch_finished(&following, &id, result);
-                    });
-                }
-                Err(message) => launch_finished(core, &execution_id, Err(message)),
-            }
+            launch(core, execution_id.clone(), previous, false);
             execution_id
         }
     };
@@ -930,7 +1297,13 @@ async fn output_appears(
 /// method. Listing plugin tools is not a call.
 fn tool_name(request: &HarnessRequest) -> Option<String> {
     match request.method.as_str() {
-        "plugins.tools" => None,
+        "plugins.tools"
+        | PLUGINS_CHANGED_METHOD
+        | TOOLS_MANIFEST_METHOD
+        | COMMIT_FOOTER_METHOD
+        | GIT_GUARD_METHOD
+        | SIM_OFFERED_METHOD
+        | SIM_CANCEL_METHOD => None,
         "plugins.call" => request
             .params
             .get("tool")
@@ -950,7 +1323,7 @@ struct Tally {
 /// surface can be trimmed by what is used. The tally stays on this machine.
 fn record_tool_call(path: &Path, tool: &str, succeeded: bool) {
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-    let _held = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
+    let _held = ONE_AT_A_TIME.locked();
     if let Err(error) = add_tool_call(path, tool, succeeded) {
         eprintln!("sikemux core: could not count a call to {tool}: {error}");
     }
@@ -972,9 +1345,63 @@ fn add_tool_call(path: &Path, tool: &str, succeeded: bool) -> std::io::Result<()
     std::fs::write(path, serde_json::to_vec_pretty(&tallies)?)
 }
 
+/// A run an agent started that ended with an error nobody asked for.
+pub(crate) struct FailedRun {
+    agent_id: String,
+    execution_id: String,
+    label: String,
+    reason: String,
+}
+
+/// Tells the agent its run died, so a crashed dev server does not go unnoticed
+/// while the agent works on something else.
+pub(crate) fn tell_agent_run_failed(core: &Core, run: FailedRun) {
+    let (Some(core), Ok(runtime)) = (core.arc(), tokio::runtime::Handle::try_current()) else {
+        return;
+    };
+    let text = format!(
+        "Your task \"{}\" (executionId {}) stopped: {}. Read its output with task_read, fix the cause, and start it again with task_start.",
+        run.label, run.execution_id, run.reason
+    );
+    runtime.spawn(async move {
+        let _ = super::messages::from_sikemux(&core, run.agent_id, text).await;
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_skills_tool_creates_lists_and_removes_in_the_library() {
+        let data =
+            std::env::temp_dir().join(format!("sikemux-harness-skills-{}", uuid::Uuid::new_v4()));
+        let answer = |params: Value| skills_answer(&data, &params);
+        let created = answer(json!({
+            "action": "create",
+            "name": "deploy-preview",
+            "description": "Deploys a preview",
+            "body": "Run make preview.",
+        }))
+        .unwrap();
+        assert_eq!(created["skill"]["name"], "deploy-preview");
+        assert!(created["note"].as_str().unwrap().contains("/sikemux:"));
+
+        let listed = answer(json!({ "action": "list" })).unwrap();
+        assert_eq!(listed["skills"][0]["description"], "Deploys a preview");
+
+        let refused = answer(json!({ "action": "create", "name": "Bad Name", "description": "x" }));
+        assert!(refused.unwrap_err().contains("not a skill name"));
+        assert!(answer(json!({ "action": "install", "source": "relative/path" })).is_err());
+        assert!(answer(json!({ "action": "rename" })).is_err());
+
+        answer(json!({ "action": "remove", "name": "deploy-preview" })).unwrap();
+        assert_eq!(
+            answer(json!({ "action": "list" })).unwrap()["skills"],
+            json!([])
+        );
+        std::fs::remove_dir_all(&data).unwrap();
+    }
 
     fn request(method: &str, params: Value) -> HarnessRequest {
         HarnessRequest {
@@ -997,6 +1424,41 @@ mod tests {
             Some("browser.navigate")
         );
         assert_eq!(tool_name(&request("plugins.tools", json!({}))), None);
+        assert_eq!(tool_name(&request(PLUGINS_CHANGED_METHOD, json!({}))), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_plugin_wait_answers_at_once_unless_it_has_seen_the_latest_change() {
+        let harness = Harness::new(None, |_| true);
+        assert_eq!(
+            plugins_wait(&harness, &json!({})).await,
+            Ok(json!({ "version": 0 }))
+        );
+        harness.plugins_changed();
+        assert_eq!(
+            plugins_wait(&harness, &json!({ "seen": 0 })).await,
+            Ok(json!({ "version": 1 }))
+        );
+
+        let seen = json!({ "seen": 1 });
+        let waiting = plugins_wait(&harness, &seen);
+        let change = async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            harness.plugins_changed();
+            harness.plugins_changed();
+        };
+        let started = Instant::now();
+        let (answer, ()) = tokio::join!(waiting, change);
+        assert_eq!(answer, Ok(json!({ "version": 3 })));
+        assert_eq!(started.elapsed(), Duration::from_secs(5) + PLUGIN_SETTLE);
+
+        let started = Instant::now();
+        assert_eq!(
+            plugins_wait(&harness, &json!({ "seen": 3 })).await,
+            Ok(json!({ "version": 3 }))
+        );
+        assert_eq!(started.elapsed(), PLUGIN_WAIT);
+        assert_eq!(harness.plugin_waits.load(Ordering::Acquire), 0);
     }
 
     #[test]
@@ -1020,7 +1482,7 @@ mod tests {
 
     #[test]
     fn task_ids_and_commands_are_resolved_before_anything_starts() {
-        let harness = Harness::new(None);
+        let harness = Harness::new(None, |_| true);
         let resolve = |params: Value, restart: bool| {
             harness.read(|state| launch_target(state, "/one", &params, restart))
         };
@@ -1054,7 +1516,7 @@ mod tests {
 
     #[test]
     fn a_run_follows_its_session_and_says_how_it_ended() {
-        let harness = Harness::new(None);
+        let harness = Harness::new(None, |_| true);
         harness.change(|state| {
             state
                 .runs

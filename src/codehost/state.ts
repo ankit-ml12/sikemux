@@ -1,8 +1,12 @@
-import { create } from "zustand";
-import { onPaneClosed } from "../plugin-api/host";
+import { definePaneViews } from "../plugin-api/paneViews";
 import { definePluginSettings, type PluginSettings } from "../plugin-api/settings";
+import { coreCall } from "../api/core";
+import type { CodeHostChoice } from "../api/generated/wire";
 import { setGitView } from "../state/commands";
+import { getState, setState } from "../state/store";
+import { swallow } from "../state/toast";
 import type { RepoRef } from "./types";
+import { isRecord } from "../lib/guards";
 
 export const STATUS_FILTERS = ["all", "in_progress", "queued", "success", "failure", "cancelled"] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -10,40 +14,22 @@ export type StatusFilter = (typeof STATUS_FILTERS)[number];
 export const SECTIONS = ["pulls", "actions", "issues", "releases", "inbox"] as const;
 export type Section = (typeof SECTIONS)[number];
 
-export function isSection(value: unknown): value is Section {
-    return typeof value === "string" && (SECTIONS as readonly string[]).includes(value);
-}
-
-export function needsRepo(section: Section): boolean {
-    return section !== "inbox";
-}
+/** The sections the project tree lists under Git, which open as screens of their own rather than as tabs in the Git pane. */
+export const TREE_SECTIONS = ["pulls", "issues", "actions", "releases"] as const satisfies readonly Section[];
+export type TreeSection = (typeof TREE_SECTIONS)[number];
+export const isTreeSection = (area: string): area is TreeSection => (TREE_SECTIONS as readonly string[]).includes(area);
 
 export interface HostSettings {
     pinned: string[];
-    /** A repository picked by hand for a project folder, which wins over what its remote says. */
-    repoByProject: Record<string, string>;
-    /** An account picked by hand for a project folder, which wins over the first account that can see its repository. */
-    accountByProject: Record<string, string>;
     followBranch: boolean;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const isSlug = (value: unknown): value is string => typeof value === "string" && /^[\w.-]+\/[\w.-]+$/u.test(value);
 
 function decodeSettings(saved: unknown): HostSettings {
     const raw = isRecord(saved) ? saved : {};
-    const repoByProject: Record<string, string> = {};
-    for (const [cwd, slug] of Object.entries(isRecord(raw.repoByProject) ? raw.repoByProject : {})) {
-        if (isSlug(slug)) repoByProject[cwd] = slug;
-    }
-    const accountByProject: Record<string, string> = {};
-    for (const [cwd, account] of Object.entries(isRecord(raw.accountByProject) ? raw.accountByProject : {})) {
-        if (typeof account === "string" && account) accountByProject[cwd] = account;
-    }
     return {
         pinned: Array.isArray(raw.pinned) ? [...new Set(raw.pinned.filter(isSlug))] : [],
-        repoByProject,
-        accountByProject,
         followBranch: raw.followBranch !== false,
     };
 }
@@ -67,30 +53,32 @@ export function togglePinned(provider: string, slug: string): void {
     }));
 }
 
+/**
+ * Picks the repository or account `provider` shows for the project at `cwd`, over what its remote and the host's accounts
+ * say, or with null goes back to them. The core keeps the pick, so Auto and every device use the same one.
+ */
+function pickCodeHost(provider: string, cwd: string, change: CodeHostChoice): void {
+    const state = getState();
+    const current = state.codeHosts[cwd] ?? {};
+    const choice = Object.fromEntries(Object.entries({ ...current[provider], ...change }).filter(([, value]) => value)) as CodeHostChoice;
+    const { [provider]: _replaced, ...others } = current;
+    const next = choice.repo || choice.account ? { ...others, [provider]: choice } : others;
+    setState({ codeHosts: { ...state.codeHosts, [cwd]: next } });
+    const project = Object.values(state.sessions).find((session) => session.kind === "project" && session.cwd === cwd);
+    if (project) void coreCall("updateProject", { id: project.id, patch: { codeHosts: next } }).catch(swallow("pick the project's code host"));
+}
+
 export function setProjectRepo(provider: string, cwd: string, slug: string | null): void {
-    hostSettings(provider).update((settings) => {
-        const repoByProject = { ...settings.repoByProject };
-        if (slug) repoByProject[cwd] = slug;
-        else delete repoByProject[cwd];
-        return { ...settings, repoByProject };
-    });
+    pickCodeHost(provider, cwd, { repo: slug ?? undefined });
 }
 
 export function setProjectAccount(provider: string, cwd: string, account: string | null): void {
-    hostSettings(provider).update((settings) => {
-        const accountByProject = { ...settings.accountByProject };
-        if (account) accountByProject[cwd] = account;
-        else delete accountByProject[cwd];
-        return { ...settings, accountByProject };
-    });
+    pickCodeHost(provider, cwd, { account: account ?? undefined });
 }
 
 /** Every project that picked an account forgets it once it signs out, and goes back to finding one. */
 export function forgetAccount(provider: string, account: string): void {
-    hostSettings(provider).update((settings) => ({
-        ...settings,
-        accountByProject: Object.fromEntries(Object.entries(settings.accountByProject).filter(([, picked]) => picked !== account)),
-    }));
+    for (const [cwd, hosts] of Object.entries(getState().codeHosts)) if (hosts[provider]?.account === account) setProjectAccount(provider, cwd, null);
 }
 
 export function setFollowBranch(provider: string, followBranch: boolean): void {
@@ -140,39 +128,11 @@ const FRESH: HostView = {
     runTab: "summary",
 };
 
-export const useHostViews = create<{ views: Record<string, HostView>; paletteOpen: boolean }>()(() => ({
-    views: {},
-    paletteOpen: false,
-}));
+const views = definePaneViews(FRESH);
 
-export function togglePalette(): void {
-    useHostViews.setState((state) => ({ paletteOpen: !state.paletteOpen }));
-}
-
-export function closePalette(): void {
-    useHostViews.setState({ paletteOpen: false });
-}
-
-onPaneClosed((paneId) => {
-    if (!(paneId in useHostViews.getState().views)) return;
-    useHostViews.setState((state) => {
-        const views = { ...state.views };
-        delete views[paneId];
-        return { views };
-    });
-});
-
-export function useHostView(paneId: string): HostView {
-    return useHostViews((state) => state.views[paneId] ?? FRESH);
-}
-
-export function viewOf(paneId: string): HostView {
-    return useHostViews.getState().views[paneId] ?? FRESH;
-}
-
-export function updateView(paneId: string, patch: Partial<HostView>): void {
-    useHostViews.setState((state) => ({ views: { ...state.views, [paneId]: { ...(state.views[paneId] ?? FRESH), ...patch } } }));
-}
+export const useHostView = views.use;
+export const viewOf = views.get;
+export const updateView = views.update;
 
 /** Everything a pane had open belongs to the repository it was showing, so a different one starts clean. */
 export function resetView(paneId: string): void {
@@ -181,11 +141,6 @@ export function resetView(paneId: string): void {
 
 export function filterBy(paneId: string, patch: Pick<Partial<HostView>, "workflowId" | "statusFilter" | "branch">): void {
     updateView(paneId, { ...patch, item: null, composing: null, page: 1, run: null, job: null });
-}
-
-/** Leaving a section closes whatever was open in the one before. */
-export function leaveSection(paneId: string): void {
-    updateView(paneId, { item: null, run: null, job: null, page: 1, composing: null });
 }
 
 export function showItem(paneId: string, number: number | null): void {

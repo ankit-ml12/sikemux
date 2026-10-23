@@ -73,6 +73,8 @@
       "post": {
         "operationId": "createChallenge",
         "summary": "A one-time value for a device to sign before it registers",
+        "security": [{ "session": [] }],
+        "description": "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
         "responses": {
           "200": {
             "description": "The challenge, valid for two minutes.",
@@ -97,6 +99,8 @@
       "post": {
         "operationId": "registerDevice",
         "summary": "Add a device to your account, or update it",
+        "security": [{ "session": [] }],
+        "description": "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
         "requestBody": {
           "required": true,
           "content": {
@@ -135,6 +139,8 @@
       "get": {
         "operationId": "listDevices",
         "summary": "Your devices",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
         "parameters": [
           {
             "name": "role",
@@ -166,7 +172,9 @@
     "/v1/devices/{key}": {
       "delete": {
         "operationId": "removeDevice",
-        "summary": "Take one of your devices off your account",
+        "summary": "Take one of your devices off your account, from the phone, the web app or the app on one of your hosts",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
         "parameters": [
           {
             "name": "key",
@@ -188,10 +196,62 @@
         }
       }
     },
+    "/v1/devices/{key}/name": {
+      "post": {
+        "operationId": "renameDevice",
+        "summary": "Rename one of your devices or hosts, from the phone, the web app or the app on one of your hosts",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DeviceRename" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The device under its new name. Every device hears device.changed.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Device" }
+              }
+            }
+          },
+          "404": {
+            "description": "None of your devices has that key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/devices/{key}/push": {
       "put": {
         "operationId": "setPushToken",
         "summary": "Deliver this phone's notifications to a push token",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "key",
@@ -218,7 +278,7 @@
             }
           },
           "400": {
-            "description": "The challenge is unknown, used or expired; the device is a host; or this server does not deliver to that app or APNs environment.",
+            "description": "The challenge is unknown, used or expired, or this server does not deliver to that app or APNs environment.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiError" }
@@ -234,7 +294,7 @@
             }
           },
           "404": {
-            "description": "None of your devices has that key.",
+            "description": "None of your phones has that key.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiError" }
@@ -254,6 +314,8 @@
       "delete": {
         "operationId": "clearPushToken",
         "summary": "Stop delivering notifications to this phone",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
         "parameters": [
           {
             "name": "key",
@@ -267,7 +329,390 @@
             "description": "The phone has no push token, whether or not it had one."
           },
           "404": {
-            "description": "None of your devices has that key.",
+            "description": "None of your phones has that key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/devices/{key}/join": {
+      "post": {
+        "operationId": "createJoinTicket",
+        "summary": "A ticket for this phone to join one of your hosts without a code",
+        "security": [{ "session": [] }, { "host": [] }],
+        "description": "The phone's or the web app's sign-in, or a request signed by a host on the account.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/JoinRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The ticket, good for ten minutes. The host still asks its owner before letting the phone in.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JoinTicket" }
+              }
+            }
+          },
+          "404": {
+            "description": "None of your phones has that key, or none of your hosts has the host's.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "429": {
+            "description": "More than 10 tickets for this phone in a minute.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins": {
+      "post": {
+        "operationId": "startHostSignIn",
+        "summary": "Start signing in a host that has no browser, such as a server reached over SSH",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HostSignInStart" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The codes, good for ten minutes. The host shows the user code and asks every interval seconds whether it was approved.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HostSignIn" }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many sign-ins from this address.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins/poll": {
+      "post": {
+        "operationId": "pollHostSignIn",
+        "summary": "Whether the person approved this host yet",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HostSignInPoll" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pending, or approved with the account and a challenge to sign.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HostSignInState" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "429": {
+            "description": "Asked more often than the interval allows.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins/finish": {
+      "post": {
+        "operationId": "finishHostSignIn",
+        "summary": "Register the approved host on the account, proving it holds its key",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/HostSignInFinish" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The host was already on the account and is updated. The code is used up.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Device" }
+              }
+            }
+          },
+          "201": {
+            "description": "The host is on the account. The code is used up.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Device" }
+              }
+            }
+          },
+          "400": {
+            "description": "The challenge is unknown, used or expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "403": {
+            "description": "The signature does not prove the host holds its key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "409": {
+            "description": "The key is registered to another account, or as a phone.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins/{userCode}": {
+      "get": {
+        "operationId": "getPendingHost",
+        "summary": "The host waiting behind a user code, to check before approving it",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The waiting host.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PendingHost" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "refuseHostSignIn",
+        "summary": "Refuse the waiting host",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Refused. The host hears the code is gone." },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins/{userCode}/approve": {
+      "post": {
+        "operationId": "approveHostSignIn",
+        "summary": "Add the waiting host to your account",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Approved. The host finishes on its next ask."
+          },
+          "403": {
+            "description": "The sign-in was not verified again within the error's reverifyWithinMinutes (message reverify).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/host-sign-ins/{userCode}/approve-from-host": {
+      "post": {
+        "operationId": "approveHostSignInFromHost",
+        "summary": "Add the waiting host to your account from the app on another of your hosts, which read the code over SSH",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "parameters": [
+          {
+            "name": "userCode",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved, naming the host. It finishes on its next ask.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovedHost" }
+              }
+            }
+          },
+          "404": {
+            "description": "The code is unknown, was refused, or has expired.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiError" }
@@ -297,7 +742,7 @@
         },
         "responses": {
           "101": {
-            "description": "The connection is open. The server sends a challenge; the device answers with hello within 10 seconds. Close codes: 4400 bad message, 4401 not signed in, 4403 revoked, 4408 no hello in time, 4409 replaced by a newer connection for the same device, 4429 too many messages, 1012 restarting, 1013 overloaded."
+            "description": "The connection is open. The server sends a challenge; the device answers with hello within 10 seconds. Its close codes are LiveCloseCode."
           },
           "429": {
             "description": "Too many connections from this address.",
@@ -319,23 +764,127 @@
       }
     },
     "/v1/account": {
+      "get": {
+        "operationId": "getAccount",
+        "summary": "Whether your account is in use or waiting to be deleted",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "responses": {
+          "200": {
+            "description": "The account's status. A deleted account still answers, so an app can offer to restore it.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "deleteAccount",
         "summary": "Delete your account and take every device off it",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
-            "description": "The account is deleted here. Repeating the call answers the same way.",
+            "description": "The account is deleted here and its devices revoked; the sign-in is deleted in Clerk at deletesAt unless the account is restored first. Repeating the call answers the same way. Revoking Sign in with Apple is tried once, and the deletion goes ahead whether or not it works.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/AccountDeletion" }
               }
             }
           },
-          "403": {
-            "description": "Only the phone and web app may delete an account, after verifying the sign-in again in the last 10 minutes (message reverify).",
+          "400": {
+            "description": "The body is not a valid AccountDeletionRequest.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "403": {
+            "description": "The sign-in was not verified again within the error's reverifyWithinMinutes (message reverify).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/restore": {
+      "post": {
+        "operationId": "restoreAccount",
+        "summary": "Take back a deletion before it is final",
+        "security": [{ "session": [] }],
+        "description": "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+        "responses": {
+          "200": {
+            "description": "The account is in use again, with no devices on it; each signs in again. Restoring an account in use changes nothing.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "404": {
+            "description": "The sign-in is already deleted in Clerk, so the account can no longer be restored.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          },
+          "default": {
+            "description": "Something went wrong.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/account/profile": {
+      "get": {
+        "operationId": "getAccountProfile",
+        "summary": "The name, email and picture of the account a host is on",
+        "security": [{ "host": [] }],
+        "description": "Only a request signed by a host on the account.",
+        "responses": {
+          "200": {
+            "description": "The profile, read from the account's sign-in.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AccountProfile" }
               }
             }
           },
@@ -388,18 +937,55 @@
   },
   "components": {
     "schemas": {
+      "Account": {
+        "description": "Whether the signed-in account is in use or waiting to be deleted.",
+        "type": "object",
+        "properties": {
+          "status": { "$ref": "#/components/schemas/AccountStatus" },
+          "deletesAt": {
+            "description": "Only while deleting: when the account is deleted for good unless restored first.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "restorableDays": {
+            "description": "How many days a deleted account can still be restored: deletesAt is this long after the deletion.",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": ["status", "restorableDays"],
+        "additionalProperties": false
+      },
       "AccountDeletion": {
-        "description": "The account and its devices are gone from the moment this is answered; every device is revoked and every token refused.",
+        "description": "Every device is revoked and every token refused from the moment this is answered, except to read or restore the account. Signing in again before deletesAt can restore it.",
         "type": "object",
         "properties": {
           "status": { "$ref": "#/components/schemas/AccountDeletionStatus" },
-          "requestedAt": { "type": "string", "format": "date-time" }
+          "requestedAt": { "type": "string", "format": "date-time" },
+          "deletesAt": {
+            "description": "When the sign-in is deleted for good and the account can no longer be restored.",
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["status", "requestedAt"],
+        "required": ["status", "requestedAt", "deletesAt"],
+        "additionalProperties": false
+      },
+      "AccountDeletionRequest": {
+        "description": "What the phone may send when it deletes an account. The body can be left out.",
+        "type": "object",
+        "properties": {
+          "appleAuthorizationCode": {
+            "description": "A code Sign in with Apple gave the phone moments ago. The server trades it for a token and revokes that, so Apple stops treating the person as signed in to Sikemux.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
         "additionalProperties": false
       },
       "AccountDeletionStatus": {
-        "description": "Deleted once Clerk confirms it deleted the sign-in too; deleting until then, while the server retries.",
+        "description": "Deleting while the account can still be restored, until the server deletes the sign-in in Clerk at deletesAt; deleted once Clerk has.",
         "type": "string",
         "enum": ["deleting", "deleted"]
       },
@@ -435,6 +1021,26 @@
           "account.deleted"
         ]
       },
+      "AccountProfile": {
+        "description": "The name, email and picture the account signed in with, for a host to show who it belongs to.",
+        "type": "object",
+        "properties": {
+          "email": { "type": ["string", "null"], "maxLength": 320 },
+          "name": { "type": ["string", "null"], "maxLength": 256 },
+          "imageUrl": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "maxLength": 2048
+          }
+        },
+        "required": ["email", "name", "imageUrl"],
+        "additionalProperties": false
+      },
+      "AccountStatus": {
+        "description": "Active, or deleting: deleted on request and still restorable until deletesAt.",
+        "type": "string",
+        "enum": ["active", "deleting"]
+      },
       "ApiError": {
         "description": "The body of every response that is not a success.",
         "type": "object",
@@ -448,6 +1054,16 @@
         "description": "Which of Apple's push servers issued an iOS token: sandbox for builds run from Xcode, production for TestFlight and the App Store.",
         "type": "string",
         "enum": ["sandbox", "production"]
+      },
+      "ApprovedHost": {
+        "description": "The host a sign-in code belonged to, once approved.",
+        "type": "object",
+        "properties": {
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "name": { "type": "string" }
+        },
+        "required": ["key", "name"],
+        "additionalProperties": false
       },
       "AppVersion": {
         "description": "A semantic version, such as 0.5.0 or 0.6.0-nightly.3.",
@@ -531,6 +1147,15 @@
         "required": ["key", "role", "name", "platform", "nonce", "signature"],
         "additionalProperties": false
       },
+      "DeviceRename": {
+        "description": "What a device or host is called on the account, everywhere it is shown.",
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      },
       "DeviceRole": {
         "description": "A host is a core people connect to, such as a Mac. A client connects to hosts, such as a phone.",
         "type": "string",
@@ -547,7 +1172,8 @@
           "payload_too_large",
           "rate_limited",
           "internal",
-          "unavailable"
+          "unavailable",
+          "reverify_required"
         ]
       },
       "ErrorDetail": {
@@ -561,6 +1187,11 @@
           "requestId": {
             "description": "The same as the response's x-request-id header, and how the server's logs find this request.",
             "type": "string"
+          },
+          "reverifyWithinMinutes": {
+            "description": "Only with reverify_required: how recently the person must have proved their first factor.",
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": ["code", "message", "requestId"],
@@ -586,6 +1217,159 @@
         "additionalProperties": false
       },
       "HealthStatus": { "type": "string", "enum": ["ok", "unavailable"] },
+      "HostSignIn": {
+        "description": "What the host shows and keeps while its person approves it from a device already signed in.",
+        "type": "object",
+        "properties": {
+          "code": { "$ref": "#/components/schemas/HostSignInCode" },
+          "userCode": { "$ref": "#/components/schemas/HostSignInUserCode" },
+          "verificationUrl": {
+            "description": "Where the person approves this host by typing the code it shows. It never carries the code, so a link alone cannot approve anything.",
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "interval": {
+            "description": "How many seconds the host waits between asks whether it was approved.",
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "code",
+          "userCode",
+          "verificationUrl",
+          "expiresAt",
+          "interval"
+        ],
+        "additionalProperties": false
+      },
+      "HostSignInCode": {
+        "description": "The secret a host holds while it waits to be signed in: 32 random bytes in lowercase hex. Only the host ever sees it.",
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "HostSignInFinish": {
+        "description": "Registers the approved host. The signature is the host key's, over the same text a DeviceRegistration signs, with the account from HostSignInState.",
+        "type": "object",
+        "properties": {
+          "code": { "$ref": "#/components/schemas/HostSignInCode" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+        },
+        "required": ["code", "nonce", "signature"],
+        "additionalProperties": false
+      },
+      "HostSignInPoll": {
+        "type": "object",
+        "properties": {
+          "code": { "$ref": "#/components/schemas/HostSignInCode" }
+        },
+        "required": ["code"],
+        "additionalProperties": false
+      },
+      "HostSignInStart": {
+        "description": "A host with no browser asks to be signed in. It proves its key only when it finishes, once it knows the account.",
+        "type": "object",
+        "properties": {
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "platform": { "$ref": "#/components/schemas/Platform" },
+          "channel": { "$ref": "#/components/schemas/Channel" }
+        },
+        "required": ["key", "name", "platform", "channel"],
+        "additionalProperties": false
+      },
+      "HostSignInState": {
+        "description": "Pending until the person approves. Approved carries the account and a fresh challenge, which the host signs as it would a DeviceRegistration and sends back in HostSignInFinish.",
+        "type": "object",
+        "properties": {
+          "status": { "$ref": "#/components/schemas/HostSignInStatus" },
+          "account": {
+            "description": "Only once approved: the Clerk user id of the account that approved.",
+            "type": "string",
+            "pattern": "^user_[A-Za-z0-9]+$",
+            "maxLength": 64
+          },
+          "nonce": {
+            "description": "Only once approved: a challenge good for two minutes.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
+      "HostSignInStatus": { "type": "string", "enum": ["pending", "approved"] },
+      "HostSignInUserCode": {
+        "description": "What the host shows its person, who types it on a device already signed in. Eight consonants in two groups of four.",
+        "type": "string",
+        "pattern": "^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$"
+      },
+      "JoinRequest": {
+        "description": "Which host on the account the phone wants to join.",
+        "type": "object",
+        "properties": { "host": { "$ref": "#/components/schemas/DeviceKey" } },
+        "required": ["host"],
+        "additionalProperties": false
+      },
+      "JoinTicket": {
+        "description": "The server's word that a phone and a host are on the same account. The phone hands it to the host over ALPN sikemux/join/1, and the host checks it without calling the server, then still asks its owner. The signature is the server's Ed25519 signature over the UTF-8 text `sikemux-join|v1|<keyId>|<account>|<host>|<phone>|<issuedAt>|<expiresAt>`, with the times in decimal, followed by `|<via>|<viaName>` when the ticket has them.",
+        "type": "object",
+        "properties": {
+          "v": {
+            "description": "The ticket's format. Only 1 exists.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1
+          },
+          "keyId": {
+            "description": "Which of the server's signing keys signed it: prod-1 in production, dev-1 for a local API.",
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "maxLength": 32
+          },
+          "account": {
+            "description": "The Clerk user id of the account the phone and the host are on.",
+            "type": "string",
+            "pattern": "^user_[A-Za-z0-9]+$",
+            "maxLength": 64
+          },
+          "host": { "$ref": "#/components/schemas/DeviceKey" },
+          "phone": { "$ref": "#/components/schemas/DeviceKey" },
+          "issuedAt": {
+            "description": "When the server signed it, in unix seconds.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "expiresAt": {
+            "description": "When it stops being good, in unix seconds: ten minutes after issuedAt.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "via": {
+            "description": "The host that added the joining app to the account, when a host did, so the host it joins can say which.",
+            "$ref": "#/components/schemas/DeviceKey"
+          },
+          "viaName": {
+            "description": "What the account calls the host in via.",
+            "type": "string",
+            "maxLength": 64
+          },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+        },
+        "required": [
+          "v",
+          "keyId",
+          "account",
+          "host",
+          "phone",
+          "issuedAt",
+          "expiresAt",
+          "signature"
+        ],
+        "additionalProperties": false
+      },
       "LiveAck": {
         "description": "Every event up to and including id is handled.",
         "type": "object",
@@ -617,7 +1401,7 @@
         "additionalProperties": false
       },
       "LiveBye": {
-        "description": "The server is restarting and closes with 1012 after it. Reconnect no sooner than reconnectAfterMs.",
+        "description": "The server is restarting and closes with LiveCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
         "type": "object",
         "properties": {
           "type": { "const": "bye" },
@@ -636,6 +1420,57 @@
         },
         "required": ["type", "nonce", "expiresAt"],
         "additionalProperties": false
+      },
+      "LiveCloseCode": {
+        "description": "Why the server closed a live connection, as the WebSocket close code.",
+        "type": "integer",
+        "oneOf": [
+          {
+            "const": 4400,
+            "title": "badMessage",
+            "description": "The device sent something the protocol does not allow. Reconnect with backoff."
+          },
+          {
+            "const": 4401,
+            "title": "unauthenticated",
+            "description": "The hello did not prove who the device is, or the web app's sign-in expired."
+          },
+          {
+            "const": 4403,
+            "title": "revoked",
+            "description": "The device is no longer on the account, after a revoked message. Do not reconnect."
+          },
+          {
+            "const": 4408,
+            "title": "helloTimeout",
+            "description": "No hello came within 10 seconds of the challenge. Reconnect with backoff."
+          },
+          {
+            "const": 4409,
+            "title": "replaced",
+            "description": "A newer connection for the same device took over. Reconnecting at once would push that one off."
+          },
+          {
+            "const": 4429,
+            "title": "overLimit",
+            "description": "Over a limit: more messages a second than allowed, too many failed hellos from this key or address in a minute, or too many connections for the account. Wait at least 30 seconds, since the limits count over a minute."
+          },
+          {
+            "const": 1011,
+            "title": "serverError",
+            "description": "Something failed on the server. Reconnect with backoff."
+          },
+          {
+            "const": 1012,
+            "title": "restarting",
+            "description": "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs."
+          },
+          {
+            "const": 1013,
+            "title": "overloaded",
+            "description": "The server has too many connections, or the device stopped reading. Reconnect with backoff."
+          }
+        ]
       },
       "LiveDeviceMessage": {
         "description": "What a device or the web app sends on a live connection.",
@@ -786,7 +1621,7 @@
         "additionalProperties": false
       },
       "LiveRevoked": {
-        "description": "This device is no longer on the account. The server closes with 4403 after it.",
+        "description": "This device is no longer on the account. The server closes with LiveCloseCode revoked after it.",
         "type": "object",
         "properties": {
           "type": { "const": "revoked" },
@@ -820,10 +1655,11 @@
         "type": "object",
         "properties": {
           "macos": { "$ref": "#/components/schemas/ChannelVersions" },
+          "linux": { "$ref": "#/components/schemas/ChannelVersions" },
           "ios": { "$ref": "#/components/schemas/ChannelVersions" },
           "android": { "$ref": "#/components/schemas/ChannelVersions" }
         },
-        "required": ["macos", "ios", "android"],
+        "required": ["macos", "linux", "ios", "android"],
         "additionalProperties": false
       },
       "Network": {
@@ -841,7 +1677,52 @@
         "required": ["relays", "minimumVersions"],
         "additionalProperties": false
       },
-      "Platform": { "type": "string", "enum": ["macos", "ios", "android"] },
+      "PendingHost": {
+        "description": "The host waiting behind a user code, for the person to check before approving it.",
+        "type": "object",
+        "properties": {
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "name": { "type": "string" },
+          "platform": { "$ref": "#/components/schemas/Platform" },
+          "channel": { "$ref": "#/components/schemas/Channel" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "requestedAt": {
+            "description": "When the host asked to be signed in.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestedFrom": {
+            "description": "The address the host asked from, as the server saw it, or null when it is not known.",
+            "type": ["string", "null"],
+            "maxLength": 64
+          },
+          "requestedNear": {
+            "description": "Where requestedFrom is, as far as the server's IP database knows: the country, then the network's owner, such as `Germany · Hetzner Online`. Null when it does not know.",
+            "type": ["string", "null"],
+            "maxLength": 256
+          },
+          "removedAt": {
+            "description": "Only for a host once removed from this account: when it was. It can come back only through a code approved like this.",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "platform",
+          "channel",
+          "expiresAt",
+          "requestedAt",
+          "requestedFrom",
+          "requestedNear"
+        ],
+        "additionalProperties": false
+      },
+      "Platform": {
+        "type": "string",
+        "enum": ["macos", "linux", "ios", "android"]
+      },
       "PushApp": {
         "description": "Which build of the phone app the token belongs to. Each has its own Firebase project and bundle id, and an API serves only one of them.",
         "type": "string",
@@ -936,15 +1817,405 @@
         "description": "Why a device left its account: removed from another device or the web, signed out on the device itself, or the account was deleted.",
         "type": "string",
         "enum": ["removed", "signed_out", "account_deleted"]
+      },
+      "Sealed": {
+        "description": "What the host sealed for the share's viewers: a 12-byte nonce, then AES-256-GCM ciphertext and tag, in unpadded base64url. The key lives only in the share's link, so the server cannot read it.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+$",
+        "maxLength": 6000000
+      },
+      "ShareAnswer": {
+        "description": "Host only: the sealed answer to one viewer's question.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "answer" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "viewer": { "$ref": "#/components/schemas/ShareViewerId" },
+          "sealed": { "$ref": "#/components/schemas/Sealed" }
+        },
+        "required": ["type", "share", "viewer", "sealed"],
+        "additionalProperties": false
+      },
+      "ShareAnswered": {
+        "description": "To a viewer: the host's sealed answer to one of its questions.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "answer" },
+          "sealed": { "$ref": "#/components/schemas/Sealed" }
+        },
+        "required": ["type", "sealed"],
+        "additionalProperties": false
+      },
+      "ShareAsk": {
+        "description": "Viewer only: a sealed question for the host, such as the chat's turns before some event or a picture pasted into it. The host answers with answer.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ask" },
+          "sealed": { "$ref": "#/components/schemas/Sealed" }
+        },
+        "required": ["type", "sealed"],
+        "additionalProperties": false
+      },
+      "ShareAsked": {
+        "description": "To the host: a viewer's sealed question. Answer it with answer, naming the viewer.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ask" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "viewer": { "$ref": "#/components/schemas/ShareViewerId" },
+          "sealed": { "$ref": "#/components/schemas/Sealed" }
+        },
+        "required": ["type", "share", "viewer", "sealed"],
+        "additionalProperties": false
+      },
+      "ShareAuth": {
+        "description": "Viewer only: a fresh Clerk token for the same user, sent before ready.authExpiresAt.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "auth" },
+          "token": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "required": ["type", "token"],
+        "additionalProperties": false
+      },
+      "ShareBye": {
+        "description": "The server is restarting and closes with ShareCloseCode restarting after it. Reconnect no sooner than reconnectAfterMs.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "bye" },
+          "reconnectAfterMs": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["type", "reconnectAfterMs"],
+        "additionalProperties": false
+      },
+      "ShareChallenge": {
+        "description": "The server's first message on every share connection: a one-time value a host's hello signs.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "challenge" },
+          "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["type", "nonce", "expiresAt"],
+        "additionalProperties": false
+      },
+      "ShareClientMessage": {
+        "description": "What a host or a viewer sends on a share connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/ShareHello" },
+          { "$ref": "#/components/schemas/ShareOpen" },
+          { "$ref": "#/components/schemas/SharePublish" },
+          { "$ref": "#/components/schemas/ShareAnswer" },
+          { "$ref": "#/components/schemas/ShareClose" },
+          { "$ref": "#/components/schemas/ShareAsk" },
+          { "$ref": "#/components/schemas/ShareAuth" },
+          { "$ref": "#/components/schemas/SharePong" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "ShareClose": {
+        "description": "Host only: end a share for good. Its viewers are told it was stopped.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "close" },
+          "share": { "$ref": "#/components/schemas/ShareId" }
+        },
+        "required": ["type", "share"],
+        "additionalProperties": false
+      },
+      "ShareCloseCode": {
+        "description": "Why the server closed a share connection, as the WebSocket close code.",
+        "type": "integer",
+        "oneOf": [
+          {
+            "const": 4400,
+            "title": "badMessage",
+            "description": "Something the protocol does not allow was sent. Reconnect with backoff."
+          },
+          {
+            "const": 4401,
+            "title": "unauthenticated",
+            "description": "The hello did not prove who is connecting, or the viewer's sign-in expired."
+          },
+          {
+            "const": 4404,
+            "title": "notFound",
+            "description": "No share has this id. Do not reconnect."
+          },
+          {
+            "const": 4408,
+            "title": "helloTimeout",
+            "description": "No hello came within 10 seconds of the challenge. Reconnect with backoff."
+          },
+          {
+            "const": 4409,
+            "title": "replaced",
+            "description": "A newer connection for the same host took over."
+          },
+          {
+            "const": 4410,
+            "title": "ended",
+            "description": "The share ended, after an ended message. Do not reconnect."
+          },
+          {
+            "const": 4429,
+            "title": "overLimit",
+            "description": "Over a limit: too many messages, viewers or failed hellos. Wait at least 30 seconds."
+          },
+          {
+            "const": 1011,
+            "title": "serverError",
+            "description": "Something failed on the server. Reconnect with backoff."
+          },
+          {
+            "const": 1012,
+            "title": "restarting",
+            "description": "The server is restarting, after a bye message. Reconnect no sooner than its reconnectAfterMs."
+          },
+          {
+            "const": 1013,
+            "title": "overloaded",
+            "description": "The server has too many connections, or the connection stopped reading. Reconnect with backoff."
+          }
+        ]
+      },
+      "ShareEnded": {
+        "description": "The share ended. The server closes a viewer's connection with ShareCloseCode ended after it.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ended" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "reason": { "$ref": "#/components/schemas/ShareEndReason" }
+        },
+        "required": ["type", "share", "reason"],
+        "additionalProperties": false
+      },
+      "ShareEndReason": {
+        "description": "Why a share ended: the host stopped it or its chat ended, or it ran past its expiry.",
+        "type": "string",
+        "enum": ["stopped", "expired"]
+      },
+      "ShareFrame": {
+        "description": "One sealed frame of a share. A snapshot holds the whole chat as it stands, so a viewer starts over from it and the frames before it are no longer needed.",
+        "type": "object",
+        "properties": {
+          "seq": { "$ref": "#/components/schemas/ShareSeq" },
+          "snapshot": { "type": "boolean" },
+          "sealed": { "$ref": "#/components/schemas/Sealed" }
+        },
+        "required": ["seq", "snapshot", "sealed"],
+        "additionalProperties": false
+      },
+      "ShareFrames": {
+        "description": "To a viewer: frames in order. One with snapshot set replaces everything before it.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "frames" },
+          "frames": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ShareFrame" }
+          }
+        },
+        "required": ["type", "frames"],
+        "additionalProperties": false
+      },
+      "ShareHello": {
+        "description": "The first message on a share connection. A host sends its key and its Ed25519 signature over the UTF-8 text `sikemux-share|<nonce>|<key>`. A viewer sends the share it wants, the proof its link holds and the last frame it holds, if any, and signs in with a Clerk token from the web app or the phone, or, on a Mac, with the host's key and its Ed25519 signature over `sikemux-share-viewer|<nonce>|<key>`.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "hello" },
+          "role": { "$ref": "#/components/schemas/ShareRole" },
+          "key": { "$ref": "#/components/schemas/DeviceKey" },
+          "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" },
+          "token": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "proof": { "$ref": "#/components/schemas/ShareViewerProof" },
+          "since": { "$ref": "#/components/schemas/ShareSeq" }
+        },
+        "required": ["type", "role"],
+        "additionalProperties": false
+      },
+      "ShareHost": {
+        "description": "To a viewer: the sharing host connected or went away. Questions wait for it.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "host" },
+          "online": { "type": "boolean" }
+        },
+        "required": ["type", "online"],
+        "additionalProperties": false
+      },
+      "ShareId": {
+        "description": "A shared chat's id: 16 random bytes the host picks, in unpadded base64url.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{22}$"
+      },
+      "ShareOpen": {
+        "description": "Host only: start a share. The server answers opened or refused. Hosts on 0.5.3 and earlier send no viewers check, and their shares are open to anyone signed in who has the link.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "open" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "viewers": { "$ref": "#/components/schemas/ShareViewerCheck" }
+        },
+        "required": ["type", "share", "expiresAt"],
+        "additionalProperties": false
+      },
+      "ShareOpened": {
+        "description": "To the host: the share is open and viewers may join.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "opened" },
+          "share": { "$ref": "#/components/schemas/ShareId" }
+        },
+        "required": ["type", "share"],
+        "additionalProperties": false
+      },
+      "SharePing": {
+        "description": "Answer with pong.",
+        "type": "object",
+        "properties": { "type": { "const": "ping" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "SharePong": {
+        "description": "The answer to ping.",
+        "type": "object",
+        "properties": { "type": { "const": "pong" } },
+        "required": ["type"],
+        "additionalProperties": false
+      },
+      "SharePublish": {
+        "description": "Host only: the share's next frame, for every viewer now and later.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "publish" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "frame": { "$ref": "#/components/schemas/ShareFrame" }
+        },
+        "required": ["type", "share", "frame"],
+        "additionalProperties": false
+      },
+      "ShareReady": {
+        "description": "The hello was accepted. A viewer is sent the frames it does not hold next, from the latest snapshot on.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "ready" },
+          "heartbeatMs": { "type": "integer", "minimum": 1 },
+          "expiresAt": {
+            "description": "Viewer only: when the share ends.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "hostOnline": {
+            "description": "Viewer only: whether the sharing host is connected.",
+            "type": "boolean"
+          },
+          "authExpiresAt": {
+            "description": "Viewer only: send a fresh token in an auth message before this.",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["type", "heartbeatMs"],
+        "additionalProperties": false
+      },
+      "ShareRefusal": {
+        "description": "Why the server would not open a share: the account has as many open as it may, the id is taken, or the expiry is not between now and seven days from now.",
+        "type": "string",
+        "enum": ["limit", "exists", "expiry"]
+      },
+      "ShareRefused": {
+        "description": "To the host: the share was not opened.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "refused" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "reason": { "$ref": "#/components/schemas/ShareRefusal" }
+        },
+        "required": ["type", "share", "reason"],
+        "additionalProperties": false
+      },
+      "ShareRole": {
+        "description": "A host publishes its shared chats; a viewer watches one.",
+        "type": "string",
+        "enum": ["host", "viewer"]
+      },
+      "ShareSeq": {
+        "description": "A frame's place in its share. The host numbers frames from 1, one higher each time.",
+        "type": "integer",
+        "minimum": 1
+      },
+      "ShareServerMessage": {
+        "description": "What the server sends on a share connection.",
+        "type": "object",
+        "oneOf": [
+          { "$ref": "#/components/schemas/ShareChallenge" },
+          { "$ref": "#/components/schemas/ShareReady" },
+          { "$ref": "#/components/schemas/ShareOpened" },
+          { "$ref": "#/components/schemas/ShareRefused" },
+          { "$ref": "#/components/schemas/ShareViewers" },
+          { "$ref": "#/components/schemas/ShareAsked" },
+          { "$ref": "#/components/schemas/ShareWantsSnapshot" },
+          { "$ref": "#/components/schemas/ShareFrames" },
+          { "$ref": "#/components/schemas/ShareAnswered" },
+          { "$ref": "#/components/schemas/ShareHost" },
+          { "$ref": "#/components/schemas/ShareEnded" },
+          { "$ref": "#/components/schemas/SharePing" },
+          { "$ref": "#/components/schemas/ShareBye" }
+        ],
+        "discriminator": { "propertyName": "type" }
+      },
+      "ShareViewerCheck": {
+        "description": "The lowercase hex SHA-256 of a share's ShareViewerProof bytes, which the host gives the server so it can check viewers without learning the proof.",
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "ShareViewerId": {
+        "description": "One viewer's connection, as the server names it to the host.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,32}$"
+      },
+      "ShareViewerProof": {
+        "description": "What a share's link proves to the server, so only someone holding the link takes a viewer's place: HMAC-SHA256 keyed with the link's 32-byte key over the UTF-8 text `sikemux-share-viewer|v1|<share id>`, in unpadded base64url. It cannot be turned back into the key.",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{43}$"
+      },
+      "ShareViewers": {
+        "description": "To the host: how many viewers a share has now.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "viewers" },
+          "share": { "$ref": "#/components/schemas/ShareId" },
+          "count": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["type", "share", "count"],
+        "additionalProperties": false
+      },
+      "ShareWantsSnapshot": {
+        "description": "To the host: the server let go of the share's frames, so the next frame it publishes must be a snapshot.",
+        "type": "object",
+        "properties": {
+          "type": { "const": "snapshot" },
+          "share": { "$ref": "#/components/schemas/ShareId" }
+        },
+        "required": ["type", "share"],
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
       "session": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A Clerk session token."
+        "description": "A Clerk sign-in: a session token from the phone or the web app, or the Mac app's OAuth access token."
+      },
+      "host": {
+        "type": "http",
+        "scheme": "SikemuxHost",
+        "description": "`Authorization: SikemuxHost <key>.<time>.<signature>`: a host on the account signs each request with its key. `time` is the request's Unix time in seconds, within a minute of the server's, and `signature` the Ed25519 signature in hex over the UTF-8 text `sikemux-host-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. The server takes each signature once."
       }
     }
-  },
-  "security": [{ "session": [] }]
+  }
 }

@@ -7,6 +7,9 @@ use std::path::Path;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sikemux_plugin_api::codehost::{
+    ChangedFile, Comment, CommitAuthor, Pull, PullCommit, Review, TimelineItem,
+};
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
@@ -66,43 +69,7 @@ struct PullRow {
     links: Links,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Pull {
-    pub number: u64,
-    pub title: String,
-    pub body: String,
-    /// `open`, `merged`, or `closed` for one declined or superseded.
-    pub state: &'static str,
-    pub draft: bool,
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub author_association: Option<String>,
-    pub head: Option<String>,
-    /// `workspace:branch`, which names the fork a branch lives on.
-    pub head_label: Option<String>,
-    pub base: Option<String>,
-    pub head_sha: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    pub comments: Option<u64>,
-    pub additions: Option<u64>,
-    pub deletions: Option<u64>,
-    pub changed_files: Option<u64>,
-    pub mergeable: Option<bool>,
-    pub merge_state: Option<String>,
-    pub labels: Vec<Value>,
-    pub reviewers: Vec<String>,
-    pub assignees: Vec<String>,
-    pub milestone: Option<String>,
-    pub commits: Option<u64>,
-    pub merged_at: Option<String>,
-    pub merged_by: Option<String>,
-    pub merge_commit_sha: Option<String>,
-    pub avatars: BTreeMap<String, String>,
-    pub url: String,
-}
-
+/// `closed` covers a pull request declined or superseded.
 fn state_of(raw: &str) -> &'static str {
     match raw {
         "OPEN" => "open",
@@ -111,71 +78,111 @@ fn state_of(raw: &str) -> &'static str {
     }
 }
 
-impl Pull {
-    fn from_row(repo: &RepoRef, row: PullRow) -> Self {
-        let mut avatars = BTreeMap::new();
-        let mut reviewers = Vec::new();
-        let people = row.reviewers.iter().chain(
-            row.participants
-                .iter()
-                .filter(|participant| participant.role.as_deref() == Some("REVIEWER"))
-                .filter_map(|participant| participant.user.as_ref()),
-        );
-        for user in people {
-            if let Some(login) = user.login() {
-                if let Some(avatar) = user.avatar() {
-                    avatars.insert(login.clone(), avatar);
-                }
-                if !reviewers.contains(&login) {
-                    reviewers.push(login);
-                }
+fn pull_of(repo: &RepoRef, row: PullRow) -> Pull {
+    let mut avatars = BTreeMap::new();
+    let mut reviewers = Vec::new();
+    let people = row.reviewers.iter().chain(
+        row.participants
+            .iter()
+            .filter(|participant| participant.role.as_deref() == Some("REVIEWER"))
+            .filter_map(|participant| participant.user.as_ref()),
+    );
+    for user in people {
+        if let Some(login) = user.login() {
+            if let Some(avatar) = user.avatar() {
+                avatars.insert(login.clone(), avatar);
+            }
+            if !reviewers.contains(&login) {
+                reviewers.push(login);
             }
         }
-        let head = row.source.branch.map(|branch| branch.name);
-        let fork = row
-            .source
-            .repository
-            .and_then(|repository| repository.full_name)
-            .and_then(|name| name.split_once('/').map(|(owner, _)| owner.to_string()));
-        let merged = row.state == "MERGED";
-        Pull {
-            number: row.id,
-            title: row.title,
-            body: row.description.unwrap_or_default(),
-            state: state_of(&row.state),
-            draft: row.draft,
-            author: login_of(row.author.as_ref()),
-            avatar_url: avatar_of(row.author.as_ref()),
-            author_association: None,
-            head_label: head
-                .as_ref()
-                .map(|branch| format!("{}:{branch}", fork.unwrap_or_else(|| repo.owner.clone()))),
-            head,
-            base: row.destination.branch.map(|branch| branch.name),
-            head_sha: row.source.commit.hash,
-            created_at: row.created_on,
-            merged_at: merged.then(|| row.updated_on.clone()),
-            updated_at: row.updated_on,
-            comments: row.comment_count,
-            additions: None,
-            deletions: None,
-            changed_files: None,
-            mergeable: None,
-            merge_state: None,
-            labels: Vec::new(),
-            reviewers,
-            assignees: Vec::new(),
-            milestone: None,
-            commits: None,
-            merged_by: merged.then(|| login_of(row.closed_by.as_ref())).flatten(),
-            merge_commit_sha: row.merge_commit.and_then(|commit| commit.hash),
-            avatars,
-            url: row
-                .links
-                .html
-                .href
-                .unwrap_or_else(|| repo.web(&format!("/pull-requests/{}", row.id))),
-        }
+    }
+    let head = row.source.branch.map(|branch| branch.name);
+    let fork = row
+        .source
+        .repository
+        .and_then(|repository| repository.full_name)
+        .and_then(|name| name.split_once('/').map(|(owner, _)| owner.to_string()));
+    let merged = row.state == "MERGED";
+    Pull {
+        number: row.id,
+        title: row.title,
+        body: row.description.unwrap_or_default(),
+        state: state_of(&row.state).into(),
+        draft: row.draft,
+        author: login_of(row.author.as_ref()),
+        avatar_url: avatar_of(row.author.as_ref()),
+        author_association: None,
+        head_label: head
+            .as_ref()
+            .map(|branch| format!("{}:{branch}", fork.unwrap_or_else(|| repo.owner.clone()))),
+        head,
+        base: row.destination.branch.map(|branch| branch.name),
+        head_sha: row.source.commit.hash,
+        created_at: row.created_on,
+        merged_at: merged.then(|| row.updated_on.clone()),
+        updated_at: row.updated_on,
+        comments: row.comment_count,
+        additions: None,
+        deletions: None,
+        changed_files: None,
+        mergeable: None,
+        merge_state: None,
+        labels: Vec::new(),
+        reviewers,
+        assignees: Vec::new(),
+        milestone: None,
+        commits: None,
+        merged_by: merged.then(|| login_of(row.closed_by.as_ref())).flatten(),
+        merge_commit_sha: row.merge_commit.and_then(|commit| commit.hash),
+        avatars,
+        url: row
+            .links
+            .html
+            .href
+            .unwrap_or_else(|| repo.web(&format!("/pull-requests/{}", row.id))),
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct BuildStatus {
+    name: Option<String>,
+    state: Option<String>,
+    url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PullWithBuilds {
+    #[serde(flatten)]
+    pull: Pull,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    builds: Vec<BuildStatus>,
+}
+
+/// Whether a pull request can merge, in GitHub's merge-state words. Bitbucket
+/// does not say outright, so it is read off what it does say: a draft, a file
+/// in conflict, a reviewer asking for changes, and the builds on the head.
+fn merge_state(
+    draft: bool,
+    conflicted: bool,
+    changes_requested: bool,
+    builds: &[BuildStatus],
+) -> (bool, &'static str) {
+    let build = |wanted: &str| {
+        builds
+            .iter()
+            .any(|status| status.state.as_deref() == Some(wanted))
+    };
+    if draft {
+        (false, "draft")
+    } else if conflicted {
+        (false, "dirty")
+    } else if changes_requested {
+        (false, "blocked")
+    } else if build("FAILED") || build("STOPPED") || build("INPROGRESS") {
+        (true, "unstable")
+    } else {
+        (true, "clean")
     }
 }
 
@@ -211,8 +218,36 @@ pub async fn list(data_dir: &Path, input: ListQuery) -> BitbucketResult<Vec<Pull
         client::get_all(data_dir, &input.repo.path("/pullrequests")?, &query, 1).await?;
     Ok(rows
         .into_iter()
-        .map(|row| Pull::from_row(&input.repo, row))
+        .map(|row| pull_of(&input.repo, row))
         .collect())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub sha: String,
+}
+
+/// The pull requests that hold the commit `sha`, the merged one first.
+pub async fn of_commit(data_dir: &Path, input: CommitRef) -> BitbucketResult<Vec<Pull>> {
+    if !input.sha.chars().all(|c| c.is_ascii_hexdigit()) || input.sha.len() < 7 {
+        return Err(BitbucketError::BadArg(format!(
+            "`{}` is not a commit hash",
+            input.sha
+        )));
+    }
+    let path = input
+        .repo
+        .path(&format!("/commit/{}/pullrequests", input.sha))?;
+    let rows: Vec<PullRow> = client::get_all(data_dir, &path, &[], 1).await?;
+    let mut pulls: Vec<Pull> = rows
+        .into_iter()
+        .map(|row| pull_of(&input.repo, row))
+        .collect();
+    pulls.sort_by_key(|pull| pull.state != "merged");
+    Ok(pulls)
 }
 
 #[derive(Deserialize)]
@@ -268,35 +303,38 @@ async fn row(data_dir: &Path, repo: &RepoRef, number: u64) -> BitbucketResult<Pu
     client::get(data_dir, &pull_path(repo, number, "")?, &[]).await
 }
 
-pub async fn get(data_dir: &Path, input: Thread) -> BitbucketResult<Pull> {
-    let (row, stats) = futures::try_join!(
+pub async fn get(data_dir: &Path, input: Thread) -> BitbucketResult<PullWithBuilds> {
+    let statuses_path = pull_path(&input.repo, input.number, "/statuses")?;
+    let statuses_query = [("pagelen", "100".to_string())];
+    let (row, stats, builds) = futures::try_join!(
         row(data_dir, &input.repo, input.number),
-        diffstat(data_dir, &input.repo, input.number)
+        diffstat(data_dir, &input.repo, input.number),
+        client::get_all::<BuildStatus>(data_dir, &statuses_path, &statuses_query, 2)
     )?;
-    let mut pull = Pull::from_row(&input.repo, row);
+    let open = row.state == "OPEN";
+    let changes_requested = row
+        .participants
+        .iter()
+        .any(|participant| participant.state.as_deref() == Some("changes_requested"));
+    let conflicted = stats.iter().any(|stat| {
+        stat.status
+            .as_deref()
+            .is_some_and(|status| status.contains("conflict"))
+    });
+    let draft = row.draft;
+    let mut pull = pull_of(&input.repo, row);
+    if open {
+        let (mergeable, state) = merge_state(draft, conflicted, changes_requested, &builds);
+        pull.mergeable = Some(mergeable);
+        pull.merge_state = Some(state.into());
+    }
     if let Some(short) = pull.head_sha.clone() {
         pull.head_sha = Some(full_hash(data_dir, &input.repo, &short).await?);
     }
     pull.additions = Some(stats.iter().map(|stat| stat.lines_added).sum());
     pull.deletions = Some(stats.iter().map(|stat| stat.lines_removed).sum());
     pull.changed_files = Some(stats.len() as u64);
-    Ok(pull)
-}
-
-#[derive(Serialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChangedFile {
-    pub path: String,
-    pub status: String,
-    pub additions: u64,
-    pub deletions: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub previous_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub patch: Option<String>,
-    /// Says which part of the patch this is and how to read the rest.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    Ok(PullWithBuilds { pull, builds })
 }
 
 const PATCH_LINES: usize = 400;
@@ -504,7 +542,7 @@ pub async fn files(data_dir: &Path, input: FilesQuery) -> BitbucketResult<Vec<Ch
 }
 
 #[derive(Deserialize)]
-struct CommitAuthor {
+struct AuthorRow {
     raw: Option<String>,
     user: Option<User>,
 }
@@ -514,17 +552,7 @@ struct CommitRow {
     hash: String,
     message: Option<String>,
     date: Option<String>,
-    author: Option<CommitAuthor>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PullCommit {
-    pub sha: String,
-    pub message: String,
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub date: Option<String>,
+    author: Option<AuthorRow>,
 }
 
 /// `Ada Lovelace <ada@example.com>` without the address.
@@ -575,15 +603,6 @@ fn email_of_raw(raw: &str) -> Option<String> {
     email.contains('@').then(|| email.to_ascii_lowercase())
 }
 
-/// Who wrote a commit, by the email in it, and the account Bitbucket matched that email to.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct KnownAuthor {
-    pub email: String,
-    pub login: String,
-    pub avatar_url: String,
-}
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitsRef {
@@ -593,8 +612,8 @@ pub struct CommitsRef {
     pub git_ref: Option<String>,
 }
 
-fn known_authors(rows: Vec<CommitRow>) -> Vec<KnownAuthor> {
-    let mut known: Vec<KnownAuthor> = Vec::new();
+fn known_authors(rows: Vec<CommitRow>) -> Vec<CommitAuthor> {
+    let mut known: Vec<CommitAuthor> = Vec::new();
     for author in rows.into_iter().filter_map(|row| row.author) {
         let (Some(email), Some(user)) = (author.raw.as_deref().and_then(email_of_raw), author.user)
         else {
@@ -604,7 +623,7 @@ fn known_authors(rows: Vec<CommitRow>) -> Vec<KnownAuthor> {
             continue;
         };
         if known.iter().all(|seen| seen.email != email) {
-            known.push(KnownAuthor {
+            known.push(CommitAuthor {
                 email,
                 login,
                 avatar_url,
@@ -620,7 +639,7 @@ fn known_authors(rows: Vec<CommitRow>) -> Vec<KnownAuthor> {
 pub async fn commit_authors(
     data_dir: &Path,
     input: CommitsRef,
-) -> BitbucketResult<Vec<KnownAuthor>> {
+) -> BitbucketResult<Vec<CommitAuthor>> {
     let mut query = vec![("pagelen", "100".to_string())];
     if let Some(git_ref) = input.git_ref.filter(|git_ref| !git_ref.is_empty()) {
         query.push(("include", git_ref));
@@ -633,16 +652,6 @@ pub async fn commit_authors(
 /// Oldest first, as the other hosts list them; Bitbucket gives them newest first.
 pub async fn commits(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<PullCommit>> {
     commit_rows(data_dir, &input.repo, input.number).await
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Review {
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub state: &'static str,
-    pub body: String,
-    pub submitted_at: Option<String>,
 }
 
 fn verdict(approved: bool, state: Option<&str>) -> Option<&'static str> {
@@ -663,7 +672,7 @@ pub async fn reviews(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Revi
         .into_iter()
         .filter_map(|participant| {
             Some(Review {
-                state: verdict(participant.approved, participant.state.as_deref())?,
+                state: verdict(participant.approved, participant.state.as_deref())?.into(),
                 author: login_of(participant.user.as_ref()),
                 avatar_url: avatar_of(participant.user.as_ref()),
                 body: String::new(),
@@ -688,18 +697,6 @@ struct CommentRow {
     deleted: bool,
     #[serde(default)]
     links: Links,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Comment {
-    pub id: u64,
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub author_association: Option<String>,
-    pub body: String,
-    pub created_at: String,
-    pub url: Option<String>,
 }
 
 pub async fn comments(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Comment>> {
@@ -747,20 +744,22 @@ pub async fn add_comment(data_dir: &Path, input: NewComment) -> BitbucketResult<
     Ok(())
 }
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TimelineItem {
-    pub kind: &'static str,
-    pub id: Option<u64>,
-    pub actor: Option<String>,
-    pub avatar_url: Option<String>,
-    pub association: Option<String>,
-    pub at: Option<String>,
-    pub body: Option<String>,
-    pub state: Option<String>,
-    pub sha: Option<String>,
-    pub message: Option<String>,
-    pub subject: Option<String>,
+/// A timeline item that says only what kind it is, for the rest to be filled in.
+pub fn timeline_item(kind: &str) -> TimelineItem {
+    TimelineItem {
+        kind: kind.into(),
+        id: None,
+        actor: None,
+        avatar_url: None,
+        association: None,
+        at: None,
+        body: None,
+        state: None,
+        sha: None,
+        message: None,
+        subject: None,
+        source: None,
+    }
 }
 
 #[derive(Deserialize)]
@@ -790,22 +789,20 @@ struct Activity {
 fn timeline_of(activity: Activity, merge_sha: Option<&str>) -> Option<TimelineItem> {
     if let Some(comment) = activity.comment.filter(|comment| !comment.deleted) {
         return Some(TimelineItem {
-            kind: "commented",
             id: Some(comment.id),
             actor: login_of(comment.user.as_ref()),
             avatar_url: avatar_of(comment.user.as_ref()),
             at: Some(comment.created_on),
             body: comment.content.and_then(|content| content.raw),
-            ..TimelineItem::default()
+            ..timeline_item("commented")
         });
     }
     let reviewed = |verdict: Verdict, state: &str| TimelineItem {
-        kind: "reviewed",
         actor: login_of(verdict.user.as_ref()),
         avatar_url: avatar_of(verdict.user.as_ref()),
         at: verdict.date,
         state: Some(state.into()),
-        ..TimelineItem::default()
+        ..timeline_item("reviewed")
     };
     if let Some(approval) = activity.approval {
         return Some(reviewed(approval, "approved"));
@@ -815,11 +812,10 @@ fn timeline_of(activity: Activity, merge_sha: Option<&str>) -> Option<TimelineIt
     }
     let update = activity.update?;
     let event = |kind| TimelineItem {
-        kind,
         actor: login_of(update.author.as_ref()),
         avatar_url: avatar_of(update.author.as_ref()),
         at: update.date.clone(),
-        ..TimelineItem::default()
+        ..timeline_item(kind)
     };
     match update.state.as_deref() {
         Some("MERGED") => Some(TimelineItem {
@@ -850,13 +846,12 @@ pub async fn timeline(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Tim
         .into_iter()
         .filter_map(|activity| timeline_of(activity, merge_sha.as_deref()))
         .chain(commits.into_iter().map(|commit| TimelineItem {
-            kind: "committed",
             actor: commit.author,
             avatar_url: commit.avatar_url,
             at: commit.date,
             sha: Some(commit.sha),
             message: Some(commit.message),
-            ..TimelineItem::default()
+            ..timeline_item("committed")
         }))
         .collect();
     items.sort_by(|a, b| a.at.cmp(&b.at));
@@ -868,24 +863,45 @@ pub async fn timeline(data_dir: &Path, input: Thread) -> BitbucketResult<Vec<Tim
 pub struct Merge {
     #[serde(flatten)]
     pub thread: Thread,
-    pub method: String,
+    pub method: Option<String>,
     /// The head commit the person saw; the merge is refused if the branch has moved since.
     pub sha: String,
+    pub message: Option<String>,
 }
 
 fn strategy_of(method: &str) -> BitbucketResult<&'static str> {
     match method {
         "merge" => Ok("merge_commit"),
         "squash" => Ok("squash"),
-        _ => Err(BitbucketError::Unsupported("merge that way")),
+        "fast_forward" => Ok("fast_forward"),
+        other => Err(BitbucketError::MergeMethod(format!(
+            "Bitbucket cannot merge by {other}"
+        ))),
     }
+}
+
+/// Without a method or a message the body stays empty, so Bitbucket merges
+/// the way the repository is set to.
+fn merge_body(input: &Merge) -> BitbucketResult<Value> {
+    let mut body = serde_json::Map::new();
+    if let Some(method) = &input.method {
+        body.insert("merge_strategy".into(), strategy_of(method)?.into());
+    }
+    if let Some(message) = input
+        .message
+        .as_ref()
+        .filter(|message| !message.trim().is_empty())
+    {
+        body.insert("message".into(), message.clone().into());
+    }
+    Ok(Value::Object(body))
 }
 
 /// Bitbucket's merge takes no expected head, so the head is checked first.
 /// That leaves a moment in which a push can still slip in, which is the most
 /// its API allows.
 pub async fn merge(data_dir: &Path, input: Merge) -> BitbucketResult<()> {
-    let strategy = strategy_of(&input.method)?;
+    let body = merge_body(&input)?;
     let current = row(data_dir, &input.thread.repo, input.thread.number).await?;
     let head = current.source.commit.hash.unwrap_or_default();
     if head.is_empty() || !input.sha.starts_with(&head) {
@@ -895,12 +911,15 @@ pub async fn merge(data_dir: &Path, input: Merge) -> BitbucketResult<()> {
         });
     }
     let path = pull_path(&input.thread.repo, input.thread.number, "/merge")?;
-    client::post_empty(
-        data_dir,
-        &path,
-        Some(&json!({ "merge_strategy": strategy })),
-    )
-    .await
+    match client::post_empty(data_dir, &path, Some(&body)).await {
+        Err(BitbucketError::Http {
+            status: 400,
+            message,
+        }) if message.to_ascii_lowercase().contains("strategy") => {
+            Err(BitbucketError::MergeMethod(message))
+        }
+        outcome => outcome,
+    }
 }
 
 #[derive(Deserialize)]
@@ -915,6 +934,8 @@ pub struct NewPull {
     pub body: String,
     #[serde(default)]
     pub draft: bool,
+    #[serde(default)]
+    pub close_branch: bool,
 }
 
 pub async fn create(data_dir: &Path, input: NewPull) -> BitbucketResult<Pull> {
@@ -924,6 +945,7 @@ pub async fn create(data_dir: &Path, input: NewPull) -> BitbucketResult<Pull> {
         "source": { "branch": { "name": input.head } },
         "destination": { "branch": { "name": input.base } },
         "draft": input.draft,
+        "close_source_branch": input.close_branch,
     });
     let row: PullRow = client::send_json(
         data_dir,
@@ -932,7 +954,41 @@ pub async fn create(data_dir: &Path, input: NewPull) -> BitbucketResult<Pull> {
         &body,
     )
     .await?;
-    Ok(Pull::from_row(&input.repo, row))
+    Ok(pull_of(&input.repo, row))
+}
+
+#[derive(Deserialize)]
+pub struct PullEdit {
+    #[serde(flatten)]
+    pub thread: Thread,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub base: Option<String>,
+}
+
+/// Only the fields given change. Bitbucket wants the title on every update,
+/// so one left out is sent as it stands.
+pub async fn edit(data_dir: &Path, input: PullEdit) -> BitbucketResult<Pull> {
+    let title = match input.title {
+        Some(title) => title,
+        None => {
+            row(data_dir, &input.thread.repo, input.thread.number)
+                .await?
+                .title
+        }
+    };
+    let mut body = serde_json::Map::new();
+    body.insert("title".into(), title.into());
+    if let Some(description) = input.body {
+        body.insert("description".into(), description.into());
+    }
+    if let Some(base) = input.base {
+        body.insert("destination".into(), json!({ "branch": { "name": base } }));
+    }
+    let body = Value::Object(body);
+    let path = pull_path(&input.thread.repo, input.thread.number, "")?;
+    let row: PullRow = client::send_json(data_dir, Method::PUT, &path, &body).await?;
+    Ok(pull_of(&input.thread.repo, row))
 }
 
 #[derive(Deserialize)]
@@ -996,6 +1052,36 @@ pub async fn review(data_dir: &Path, input: ReviewInput) -> BitbucketResult<()> 
 mod tests {
     use super::*;
 
+    fn builds(states: &[&str]) -> Vec<BuildStatus> {
+        states
+            .iter()
+            .map(|state| BuildStatus {
+                name: None,
+                state: Some(state.to_string()),
+                url: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn whether_a_pull_request_can_merge_is_read_off_what_bitbucket_says() {
+        assert_eq!(
+            merge_state(false, false, false, &builds(&["SUCCESSFUL"])),
+            (true, "clean")
+        );
+        assert_eq!(merge_state(false, false, false, &[]), (true, "clean"));
+        assert_eq!(
+            merge_state(false, false, false, &builds(&["SUCCESSFUL", "FAILED"])),
+            (true, "unstable")
+        );
+        assert_eq!(
+            merge_state(false, false, true, &builds(&["SUCCESSFUL"])),
+            (false, "blocked")
+        );
+        assert_eq!(merge_state(false, true, false, &[]), (false, "dirty"));
+        assert_eq!(merge_state(true, true, true, &[]), (false, "draft"));
+    }
+
     fn repo() -> RepoRef {
         RepoRef {
             owner: "swishx".into(),
@@ -1009,7 +1095,7 @@ mod tests {
 
     #[test]
     fn a_merged_pull_request_reads_as_merged_and_a_declined_one_as_closed() {
-        let merged = Pull::from_row(
+        let merged = pull_of(
             &repo(),
             row(json!({
                 "id": 4, "title": "t", "state": "MERGED",
@@ -1022,7 +1108,7 @@ mod tests {
         assert_eq!(merged.merged_at.as_deref(), Some("2026-01-02T00:00:00Z"));
         assert_eq!(merged.merged_by.as_deref(), Some("ada"));
         assert_eq!(merged.merge_commit_sha.as_deref(), Some("abc123"));
-        let declined = Pull::from_row(
+        let declined = pull_of(
             &repo(),
             row(
                 json!({ "id": 5, "title": "t", "state": "DECLINED", "created_on": "x", "updated_on": "y" }),
@@ -1034,7 +1120,7 @@ mod tests {
 
     #[test]
     fn a_branch_from_a_fork_is_labelled_with_the_fork() {
-        let pull = Pull::from_row(
+        let pull = pull_of(
             &repo(),
             row(json!({
                 "id": 1, "title": "t", "state": "OPEN", "created_on": "x", "updated_on": "y",
@@ -1054,7 +1140,7 @@ mod tests {
 
     #[test]
     fn reviewers_are_named_once_with_their_pictures() {
-        let pull = Pull::from_row(
+        let pull = pull_of(
             &repo(),
             row(json!({
                 "id": 1, "title": "t", "state": "OPEN", "created_on": "x", "updated_on": "y",
@@ -1244,7 +1330,7 @@ mod tests {
             hash: "abc".into(),
             message: Some("Fix it\n".into()),
             date: None,
-            author: Some(CommitAuthor {
+            author: Some(AuthorRow {
                 raw: Some("Ada Lovelace <ada@example.com>".into()),
                 user: None,
             }),
@@ -1272,16 +1358,6 @@ mod tests {
     }
 
     #[test]
-    fn reviewer_verdicts_use_the_words_every_host_shares() {
-        assert_eq!(verdict(true, None), Some("APPROVED"));
-        assert_eq!(
-            verdict(false, Some("changes_requested")),
-            Some("CHANGES_REQUESTED")
-        );
-        assert_eq!(verdict(false, None), None);
-    }
-
-    #[test]
     fn activity_becomes_timeline_events() {
         let activity =
             |value: Value| -> Activity { serde_json::from_value(value).expect("activity") };
@@ -1291,7 +1367,7 @@ mod tests {
         )
         .expect("an item");
         assert_eq!(
-            (comment.kind, comment.body.as_deref()),
+            (comment.kind.as_str(), comment.body.as_deref()),
             ("commented", Some("hi"))
         );
         let approval = timeline_of(
@@ -1300,7 +1376,7 @@ mod tests {
         )
         .expect("an item");
         assert_eq!(
-            (approval.kind, approval.state.as_deref()),
+            (approval.kind.as_str(), approval.state.as_deref()),
             ("reviewed", Some("approved"))
         );
         let merged = timeline_of(
@@ -1309,7 +1385,7 @@ mod tests {
         )
         .expect("an item");
         assert_eq!(
-            (merged.kind, merged.sha.as_deref()),
+            (merged.kind.as_str(), merged.sha.as_deref()),
             ("merged", Some("f00d"))
         );
         let pushed = timeline_of(
@@ -1320,9 +1396,10 @@ mod tests {
     }
 
     #[test]
-    fn only_merge_commits_and_squashes_are_offered() {
+    fn only_merge_commits_squashes_and_fast_forwards_are_offered() {
         assert_eq!(strategy_of("merge").ok(), Some("merge_commit"));
         assert_eq!(strategy_of("squash").ok(), Some("squash"));
+        assert_eq!(strategy_of("fast_forward").ok(), Some("fast_forward"));
         assert!(strategy_of("rebase").is_err());
     }
 }

@@ -2,9 +2,9 @@
 
 # Sikemux
 
-**A terminal workspace for you and your coding agents.**
+**The IDE for you and your coding agents.**
 
-Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, logs and deploys, in one 13 MB native app.
+Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, logs and deploys, in one 16 MB native app.
 
 ![Sikemux with a Claude Code agent and its browser tab](public/screenshots/sikemux-hero.png)
 
@@ -16,16 +16,39 @@ Bring Claude Code, Codex or OpenCode. Sikemux gives them your shell, browser, lo
 
 ## Install
 
-Download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases](https://github.com/nodelike/sikemux/releases/latest). It is about 13 MB, needs macOS 11 or later on Apple Silicon, and keeps itself up to date.
+```bash
+curl -fsSL https://sikemux.com/install | sh
+```
+
+On a Mac this puts Sikemux in `/Applications`; on Linux it asks whether you want the desktop app (x86_64: the `.deb` or `.rpm`, or the AppImage in `~/Applications`) or just the core for a server. Add `SIKEMUX_CHANNEL=nightly` before `sh` for the nightly build.
+
+Or download the latest `.dmg` from [sikemux.com](https://sikemux.com) or [Releases](https://github.com/nodelike/sikemux/releases/latest). It is about 16 MB, needs macOS 11 or later on Apple Silicon, and keeps itself up to date.
+
+On x86_64 Linux, the `.deb`, `.rpm` and `.AppImage` are in the same release:
+
+```bash
+sudo apt install ./Sikemux_<version>_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./Sikemux-<version>-1.x86_64.rpm   # Fedora
+chmod +x Sikemux_<version>_amd64.AppImage           # any other distribution
+```
+
+The Linux build does not update itself yet, so install each new release the same way.
+
+On a Linux server with no screen, the same line offers to install just the core, for x86_64 or arm64, and sign it in to your account. To skip the question:
+
+```bash
+curl -fsSL https://sikemux.com/install | sh -s -- --host
+```
 
 ## What's inside
 
 - **Projects** with a code editor, terminals, Git, and search, all in one working directory
 - **Coding agents**: Claude, Codex, Hermes, Pi and OpenCode, several at once, each with its own browser tabs, and one list of every agent and recent chat across your open projects
-- **Chats that know your work**: `@` attaches project files, `#` hands over GitHub or Bitbucket issues and pull requests, and an optional worktree gives a chat its own branch. Terminal selections, problems, logs and pull request lines can be sent to any agent
+- **Chats that know your work**: `@` attaches project files, `#` hands over GitHub, GitLab or Bitbucket issues and pull requests, and an optional worktree gives a chat its own branch. Terminal selections, problems, logs and pull request lines can be sent to any agent
 - **Nothing stops when you quit**: terminals, agents and tasks keep running in the background and come back where they were. Quit and Stop Everything (`⌥⌘Q`) ends them
-- **Panels** for AWS, GitHub, Bitbucket, Jira, Rundeck, SigNoz and Bruno, and a database client for PostgreSQL, MySQL and SQLite that your agents can query too
-- **SSH** sessions, nine themes and a custom theme editor
+- **Panels** for AWS, GitHub, GitLab, Bitbucket, Jira, Rundeck, SigNoz and Bruno, and a database client for PostgreSQL, MySQL and SQLite that your agents can query too
+- **Hosts**: this host, every host on your account and the SSH hosts you have open, in one list. Chats and terminals run on whichever you pick, with no SSH, and **Install Sikemux here** turns an SSH host into one of them in a click
+- Nine themes and a custom theme editor
 
 The [website](https://sikemux.com) has the full tour.
 
@@ -59,7 +82,6 @@ Install the `sikemux` launcher from Settings → CLI.
 ```bash
 sikemux .
 sikemux src/App.tsx:42:5
-EDITOR=sikemux-editor git commit
 ```
 
 ## Shortcuts

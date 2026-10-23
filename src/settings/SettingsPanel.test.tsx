@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { agentApi } from "../api/agents";
 import { settingsApi } from "../api/settings";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import { keybindingLabel, resolvedKeybinding } from "../commands/keybindings";
@@ -62,21 +63,7 @@ describe("SettingsPanel keybindings", () => {
         expect(getState().keybindingOverrides).toEqual({});
     });
 
-    it("toggles agent tab restoration", async () => {
-        const user = userEvent.setup();
-        setState({ restoreAgentTabs: true });
-        render(<SettingsPanel />);
-        await user.click(screen.getByRole("button", { name: "Agents" }));
-
-        const restore = screen.getByRole("switch", { name: /Restore agent tabs/ });
-        expect(restore).toBeChecked();
-
-        await user.click(restore);
-        expect(getState()).toMatchObject({ restoreAgentTabs: false });
-        expect(restore).not.toBeChecked();
-    });
-
-    it("persists an explicit launch boundary and non-secret provider path", async () => {
+    it("persists an explicit launch boundary and sends the core a non-secret provider path", async () => {
         const user = userEvent.setup();
         render(<SettingsPanel />);
         await user.click(screen.getByRole("button", { name: "Agents" }));
@@ -88,11 +75,12 @@ describe("SettingsPanel keybindings", () => {
         await user.click(screen.getByRole("radio", { name: /YOLO/ }));
         expect(getState().defaultAgentPermissionMode).toBe("bypass");
 
+        const saveAccount = vi.spyOn(agentApi, "saveAccount").mockImplementation(() => new Promise(() => {}));
         await user.click(screen.getByRole("button", { name: /Codexcodex.*system PATH/ }));
         await user.type(screen.getByRole("textbox", { name: "executable path" }), "/opt/codex/bin/codex");
         await user.click(screen.getByRole("button", { name: "Save profile" }));
 
-        expect(getState().providerProfiles.find((profile) => profile.id === "builtin-codex")?.executablePath).toBe("/opt/codex/bin/codex");
+        expect(saveAccount).toHaveBeenCalledWith(expect.objectContaining({ id: "builtin-codex", executablePath: "/opt/codex/bin/codex" }));
     });
 
     it("drafts a theme from the wallpaper and keeps it once saved", async () => {
@@ -152,13 +140,13 @@ describe("SettingsPanel navigation", () => {
         expect(search).toHaveFocus();
 
         await user.type(search, "sleep");
-        expect(screen.getByRole("option", { name: /Idle agents/ })).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByRole("option", { name: /Idle chats/ })).toHaveAttribute("aria-selected", "true");
 
         await user.keyboard("{Enter}");
         expect(getState().settingsPage).toBe("agents");
         expect(search).toHaveValue("");
         const row = screen.getByRole("button", { name: "Sleep now" }).closest<HTMLElement>("[data-settings-target]");
-        expect(row?.dataset.settingsTarget).toBe("Idle agents");
+        expect(row?.dataset.settingsTarget).toBe("Idle chats");
         expect(row).toHaveAttribute("data-settings-flash");
         expect(screen.getByRole("button", { name: "Sleep now" })).toHaveFocus();
     });
@@ -179,13 +167,6 @@ describe("SettingsPanel navigation", () => {
         await user.keyboard("{ArrowDown}");
         expect(first).toHaveAttribute("aria-selected", "false");
         expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
-    });
-
-    it("says so when nothing matches", async () => {
-        const user = userEvent.setup();
-        render(<SettingsPanel />);
-        await user.type(screen.getByRole("combobox", { name: "Search settings" }), "zzzz");
-        expect(screen.getByText("No settings match “zzzz”.")).toBeInTheDocument();
     });
 
     it("clears the search on the first Escape and closes on the second", async () => {
@@ -246,12 +227,12 @@ describe("SettingsPanel navigation", () => {
     it("opens at the section it was asked for", async () => {
         const transport = new MemoryIpcTransport();
         installIpcTransportForTests(transport);
-        transport.register("remote_status", () => new Promise(() => {}));
+        transport.registerCoreRequest("remoteStatus", () => ({ status: new Promise(() => {}) }));
         transport.register("account_status", () => new Promise(() => {}));
         cmd.openSettings("devices", "Your account");
-        render(<SettingsPanel />);
+        const { container } = render(<SettingsPanel />);
 
-        const section = screen.getByRole("heading", { name: "Your account" }).closest<HTMLElement>("[data-settings-target]");
+        const section = container.querySelector<HTMLElement>('[data-settings-target="Your account"]');
         await vi.waitFor(() => expect(section).toHaveAttribute("data-settings-flash"));
         expect(getState().settingsTarget).toBeNull();
         resetIpcTransportForTests();

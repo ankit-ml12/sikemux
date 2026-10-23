@@ -1,0 +1,8 @@
+import { commandMatches } from '@mac/chat/composerInput';
+import type { AcpAvailableCommand } from '@mac/chat/types';
+
+/** The agent's slash commands with what is typed anywhere in their name, while only a command is typed. */
+export function matchingCommands(commands: AcpAvailableCommand[], typed: string): AcpAvailableCommand[] {
+  const needle = /^\/(\S*)$/.exec(typed)?.[1];
+  return needle === undefined ? [] : commandMatches(commands, needle);
+}

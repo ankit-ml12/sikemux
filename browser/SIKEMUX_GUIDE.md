@@ -8,31 +8,30 @@ description: How to drive a Sikemux project and its browser — task launches, o
 You are running in a pane of a Sikemux workspace. `workspace_inspect`, the
 `task_*` tools, `ui_open` and `events_wait` act on the project the person has
 open. The tools named `browser_*` act on the browser tabs on your desk, the
-pane beside yours that the person can see. Your desk holds everything you open
-for the person: browser pages, files and the terminals of tasks you start, as
-tabs in one strip.
+pane beside yours that the person can see. Your desk holds the pages, files and
+task terminals you open for the person, as tabs in one strip.
 
 When the person asks you to open, show or preview a page, open it on your desk
 with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
-same engine as Sikemux itself and Safari, so check a web page there rather
-than in a headless Chromium you install.
+same engine as Sikemux and Safari, so check pages there, not in a headless
+Chromium.
 
-This page is what to know before your first call. Call `guide` again with a
-`topic` from the list at the end when you need the details of one area.
+Read this page first. For one area in depth, call `guide` with a `topic`
+from the list below.
 
 ## Essentials
 
 - `workspace_inspect` comes first. It returns the open project, the tasks in
   `sikemux.json`, the runs you already started and an event cursor. Task ids
-  come from there; do not guess one. Its `ports` lists the TCP ports the
-  project's terminals, tasks and agents listen on, preview first.
+  come from there; do not guess one. Its `ports` lists the ports the
+  project's terminals, tasks and agents listen on.
 - `task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
   `command`. Reusing a key returns the original run, so pick one key per
   attempt and reuse it when a call fails or you are unsure it landed. Use
   tasks for dev servers and watchers rather than background shell jobs.
 - `task_read` pages output by byte cursor: start at `0` and pass back the
-  `cursor` it returns. `plain: true` strips terminal escapes, `tail: N` gives
-  the last lines and `search` the matching ones.
+  `cursor` it returns. Output comes as plain text; `plain: false` keeps the
+  terminal escapes. `tail: N` gives the last lines and `search` the matching ones.
 - `events_wait` takes an event cursor from `workspace_inspect` or the last
   wait. **Event cursors are not output cursors**; never mix them. A timeout
   is normal: wait again with the fresh cursor. Cursors stay valid after
@@ -44,29 +43,37 @@ This page is what to know before your first call. Call `guide` again with a
   numbering restarts on every new page. Never carry a number across a
   navigation; read or `browser_find` again.
 - Wait with `browser_wait` conditions, or `waitFor` on `browser_navigate`,
-  rather than sleeps or screenshots taken to see whether something finished.
-- Every state says whether the tab is `visible` to the person; do not tell
-  them a page is on their screen when it is not.
-- Plugin tools (`github_*`, `bitbucket_*`, `db_*`, `jira_*`, `signoz_*`) are listed
-  only when they can work here: signed in, and for GitHub or Bitbucket a remote of this
-  project on that host. If one you need is missing, ask the person to sign in
-  from its pane in Sikemux and restart you.
+  rather than with sleeps or screenshots.
+- Every state says whether the tab is `visible` to the person; never tell
+  them a hidden page is on their screen.
+- Other agents may share this checkout: commit with `git_commit`, and see
+  `agents` for the git commands refused here.
+- Plugin tools (`github_*`, `jira_*`, `rundeck_*`, `slack_*`…) are listed only
+  when signed in, and for a code host when this project has a remote on it.
+  If one is missing, ask the person to sign in from its pane; if its tools
+  still do not show up, ask them to restart you.
 
 ## Topics
 
 Pass one of these as `topic`:
 
-- `config` — writing or fixing `sikemux.json`, and what `configStatus` means
-- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping, and what survives a reload
-- `output` — `task_read` paging, `plain`, `tail`, `search`, and `events_wait`
+- `config` — writing or fixing `sikemux.json`, and `configStatus`
+- `tasks` — launching, trust prompts, `readyWhen`, restarting, stopping
+- `output` — `task_read` paging, `plain`, `tail`, `search`, `events_wait`
 - `ui` — `ui_open` for files, diffs, terminals and the preview
-- `browser-reading` — page state, report modes, element numbers and lines, `browser_find`, frames
-- `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, scrolling, dialogs
-- `browser-pages` — navigating, reloading, waiting, local files, viewport sizes, tabs
+- `pages` — charts, tables, diagrams and mockups in your reply
+- `browser-reading` — page state, report modes, element numbers, `browser_find`, frames
+- `browser-input` — clicking, typing, `browser_act`, keys, drag, upload, dialogs
+- `browser-pages` — navigating, reloading, waiting, local files, viewports, tabs
 - `browser-evidence` — `browser_screenshot`, `browser_annotate`, `browser_record`
-- `browser-debugging` — `browser_network`, loads, `browser_console`, `app_console`, `browser_evaluate`
-- `databases` — the `db_*` tools: saved databases, tables, and SQL that is read-only unless allowed
-- `shell` — the `sikemux tool` CLI for scripts and tasks
+- `browser-debugging` — network, console, `app_console`, `browser_evaluate`
+- `simulator` — driving an iOS simulator with `sim_*`
+- `databases` — the `db_*` tools and SQL
+- `aws` — the `aws_*` tools, profiles and expired sign-ins
+- `skills` — skills every agent gets
+- `agents` — names, `@`, messages, committing, who broke CI
+- `board` — the project's cards: adding, claiming, finishing
+- `shell` — the `sikemux tool` CLI
 
 ## config: Writing sikemux.json
 
@@ -96,16 +103,23 @@ inventing new ones. Inspect again after writing to see `configErrors`.
 
 ## tasks: Running and stopping tasks
 
-`task_start` takes an `idempotencyKey` you choose and either a `taskId` from
-`sikemux.json` or a `command` to run. A `command` runs in the same kind of
-managed terminal as a configured task, in the project root or in `cwd`, a
-directory inside the project given relative to it, and `label` names its tab.
-The result's `taskId` looks like `sh:pnpm-dev-3fa2c1`; use it with
+`task_start` takes an `idempotencyKey` you choose and either a `taskId` or a
+`command` to run. `workspace_inspect` lists the task ids: those from
+`sikemux.json`, then those Sikemux found in the project's build files
+(`foundIn: "build files"`), and those the person added for themselves
+(`foundIn: ".sikemux/tasks.json"`). The found ones include Maven, Gradle and
+Go run, test and build tasks, Cargo run, test and build tasks, a
+`package.json`'s scripts, and a Python project's FastAPI, Flask or Django app
+and pytest. A found task runs on the Java its build asks for (`java.runsOn`),
+so prefer it to running `mvn` or `gradle` yourself. A `command` runs in the
+same kind of managed terminal as a configured task, in the project root or in
+`cwd`, a directory inside the project given relative to it, and `label` names
+its tab. The result's `taskId` looks like `sh:pnpm-dev-3fa2c1`; use it with
 `task_read`, `task_stop` and `task_restart`, or pass it back to `task_start`
-to run the same command again. Starting the same command in the same
-directory while it still runs returns that run. Use this for dev servers and
-watchers rather than background shell jobs: you can read their output, see
-when they exit, and they stop with the project.
+to run the same command again. Starting the same command in the same directory
+while it still runs returns that run. Use this for dev servers and watchers
+rather than background shell jobs: you can read their output, see when they
+exit, and they stop with the project.
 
 The key is what makes a retry safe. Reusing a key returns the original
 execution rather than starting a second one, and it keeps doing so after that
@@ -114,17 +128,30 @@ call fails or you are unsure whether it landed.
 
 Two things can stop a launch:
 
-- A `sikemux.json` task may need trust. Sikemux shows its own dialog, and a
-  changed `sikemux.json` is checked again before the next launch. While the
-  dialog waits on the person, `task_start` returns at once with
+- A `sikemux.json` task, or one the person keeps in `.sikemux/tasks.json`,
+  may need trust. Sikemux asks the person in whichever Sikemux app they have
+  open; their answer holds on this host until the file changes. While the
+  question waits, `task_start` returns at once with
   `status: "awaiting-trust"` and an `executionId` that `task_read` and
   `task_stop` already know. Call `task_start` again with the same key, or
   `events_wait` with that `executionId`, to see it start. If the person
   refuses, the run ends as `failed`. A `command` needs no trust, and neither
-does anything you start while the person runs you in YOLO mode.
-- If the same task is already running from the command deck, stop it there
-  first. Starting a task already running through the harness just returns that
-  execution.
+  does anything you start while the person runs you in YOLO mode.
+- A task is checked first: its build tool must be installed, a new enough Java
+  must exist, and a Node.js project's dependencies must be installed. If not,
+  `task_start` fails and says what is missing and how to install it. When a
+  Spring Boot, Next.js, FastAPI or Flask app's port is taken, it runs on the
+  next free one instead, and the result's `previewUrl` says where.
+- Starting a task that is already running, whether you, another agent or the
+  person started it, returns that execution.
+
+After a Maven, Gradle, Vitest, Jest, pytest, Go or Cargo test task, `workspace_inspect` has
+`testResults`: per module, the counts and each failing test with its message,
+file and line, read from the reports the runner writes. Read those instead of the whole build log.
+
+If a task you started stops with an error while you are doing something else,
+such as a dev server crashing, Sikemux sends you a notice with its
+`executionId`. Read its output with `task_read` before starting it again.
 
 `task_start` always answers within about 30 seconds. If the task is still
 launching it returns `status: "starting"`; call again with the same key.
@@ -143,18 +170,15 @@ person's focus. To bring the person to it, call `ui_open` with
 `kind: "terminal"`, the `executionId`, and `focus: true`.
 
 `task_stop` takes an `executionId` and stops that exact execution and
-its process tree. A `taskId` instead stops that task's latest execution. It
-does not stop a task started from the command deck.
+its process tree. A `taskId` instead stops that task's latest execution.
 
 ### What survives a reload or restart
 
 Tasks, their runs and idempotency keys live in Sikemux's background process,
 so they survive the window reloading, the app quitting and Sikemux updating.
-While the window is closed, `task_read`, `task_stop`, `events_wait` and
-`task_start` with a key you already used keep working, and `workspace_inspect`
-returns your runs and an event cursor with `window: null` and a `note`; its
-panes, `sikemux.json` tasks and ports need the window. Starting a new run,
-`ui_open` and the browser tools need the window too; with it closed they fail
+Every task tool works while the window is closed, and so does
+`workspace_inspect`, which then lists no panes and says so in a `note`.
+`ui_open` and the browser tools need the window; with it closed they fail
 and say so. While Sikemux updates its background process a call can fail for
 a moment saying so; call it again. When Sikemux opens again the tasks'
 terminals come back. Chat agents keep running too: a turn in progress goes
@@ -181,14 +205,14 @@ Start at cursor `0`. Pass the returned `cursor` into the next call. Keep
 reading while `hasMore` is true. Every page reports `end`, the length of the
 output so far. Pages are 8 KiB by default; `limit` accepts 4 to 8192 bytes.
 
-Output is raw terminal data and may contain escape sequences. Three options
-change what comes back:
+Output comes as plain text: escape sequences are stripped and carriage
+returns and cursor moves replayed, so a progress bar or build screen that
+redraws itself shows each line once, in its final state. Runs of an identical
+line or block of lines keep one copy and a note such as
+`[repeated 40 more times]`. The cursor counts raw bytes, so pages chain the
+same either way. Three options change what comes back:
 
-- `plain: true` strips escape sequences and replays carriage returns and
-  cursor moves, so a progress bar or build screen that redraws itself shows
-  each line once, in its final state. Runs of an identical line or block of
-  lines keep one copy and a note such as `[repeated 40 more times]`. The
-  cursor still counts raw bytes, so plain pages chain like raw ones.
+- `plain: false` returns the raw terminal data, escape sequences and all.
 - `tail: N` returns the last N lines instead of paging from the cursor, which
   answers "what did the server just say". Its `cursor` is `end`, ready for the
   next read of new output.
@@ -208,7 +232,10 @@ when the app is under pressure. Read output you care about promptly.
 ### Waiting for something to happen
 
 `events_wait` blocks for up to 30 seconds and returns task output,
-task lifecycle, and UI-open events.
+task lifecycle, and UI-open events, `git.moved` when the project's branch
+moves by anyone's commit, and `check.passed` or `check.failed` when the
+project's check of its newest commit ends. Wait on those rather than asking
+another agent to tell you once it has committed.
 
 **Event cursors are not output cursors.** They are separate sequences. Get an
 event cursor from `workspace_inspect`, pass it to `events_wait`, and
@@ -242,6 +269,51 @@ Paths must resolve inside the project; a path that escapes it is refused.
 Preview needs an agent session and opens as a page on your desk. The `previewUrl`
 you get back is configuration, not proof that anything is listening. If you
 need to know the server is up, read the task output or navigate to it.
+
+## pages: Showing a page in your reply
+
+A page is one self-contained HTML file you write, with inline `<style>` and
+`<script>`. Pictures and fonts named by local path (relative to the file,
+absolute, or `~/`) in `src`, CSS `url()` or a script string are inlined when
+it is shown, so a mockup can use the app's own fonts and icons and keeps
+working after the files move. Remote `https` scripts, such as a
+chart library from a CDN, load as they are. Pass absolute paths to the tools.
+
+1. Write the file anywhere, such as the system temp folder.
+2. `page_preview` opens it in a tab on your desk at the reply's width (756
+   px; pass `width: 390` to check a phone) and returns a screenshot, the
+   `contentHeight` it needs and its console, errors included. Fix and preview
+   again until it is right. Editing the file and previewing again is cheaper
+   than writing it anew.
+3. `page_show` with the path, a short `title` and `height` set to the last
+   `contentHeight`. In a chat the page appears in your reply, above the text
+   you write next; that text should add only what the page does not say. An
+   agent running in a terminal gets the page on its desk instead.
+
+Layout:
+
+- The page sits on the chat with no frame around it, as wide as the reply
+  column, and its left edge lines up with your text. Use a fluid width, no
+  outer padding, card, border or title banner: it is part of your reply.
+- Let content set the height. Never use `100vh` or `height: 100%` on `html`
+  or `body`; the frame grows to fit the page.
+- Give charts fixed pixel heights rather than ones that scale with width.
+- Links the person clicks open on your desk, not in the page.
+
+Theme. Sikemux sets these on `:root` and changes them live with the person's
+theme, so style with them rather than fixed colours:
+
+- `--background` (the chat's ground; the page itself is transparent over it),
+  `--foreground`, `--muted-foreground`, `--faint-foreground`
+- `--card` (a raised surface), `--border`
+- `--accent`, `--accent-foreground` (text on `--accent`), `--accent-surface`
+- `--destructive`, `--success`, `--warning`, `--info`
+- `--code-background`, `--code-foreground`
+- `--chart-1` to `--chart-6`, distinct series colours for charts
+- `--radius`, `--font-sans`, `--font-mono`
+
+The base styles set the page's colour and font from these, a 14px body and no
+body margin; your own CSS overrides them.
 
 ## browser-reading: Reading a page
 
@@ -365,11 +437,9 @@ absolute `paths` and the number (or `x`, `y`) of the file input or of the
 button that opens its chooser. The chooser never shows; the page gets the
 files and its change events. Only one file is given when the input takes one.
 
-While you click, type or press, the tab holds the keyboard, and afterwards
-the person's focus goes back to wherever they were typing, so they can keep
-working in Sikemux while you drive a page. A menu that closes when its page
-loses focus may therefore close between your calls; open it and pick from it
-in one `browser_act`.
+Your clicks, typing and keys never take the person's keyboard, so they can
+keep typing in Sikemux while you drive a page. The tab only gets the keyboard
+when the person clicks into it.
 
 A page that hangs or whose process crashes is reported at once on the next
 call: close that tab with `browser_close_tab` and open a new one.
@@ -448,6 +518,15 @@ When an action makes the page open a tab of its own, as a link with a new
 window target does, the result lists it under `openedTabs`, and that tab is
 now the current one. Tabs do not survive a restart of Sikemux.
 
+Files a page downloads are saved to a folder of Sikemux's own, and reach
+`~/Downloads` only when the person keeps them. When your click, press or
+navigation starts one, the result lists it under `downloads` with its `path`,
+`state` and `bytes`, after waiting up to 15 seconds for it to finish. A
+download that starts later shows up in the next result, such as a
+`browser_wait`, and `browser_state` lists the tabs' recent downloads. Click the
+page's own download link and move the file from that path; never read a file's
+bytes back through `browser_evaluate`.
+
 ## browser-evidence: Screenshots, drawings and recordings
 
 `browser_screenshot` returns an image of the visible part of the tab. Use it
@@ -525,6 +604,129 @@ A script that reloads or leaves the page loses its result; use
 `browser_navigate` with `go: "reload"` for that. It runs with the page's own session, so `fetch` of
 the site's API returns what the signed-in person would get.
 
+## simulator: Driving the iOS Simulator
+
+The `sim_*` tools drive the iOS simulators that Xcode installs on this Mac.
+They are listed only when this Mac can run them (macOS 15 or later and a full
+Xcode) and the person has not turned them off in Settings. `sim_attach` puts
+the device live on your desk in Sikemux, beside the person, who watches what
+you do and can tap it too, so there is nothing else to open to show it: do not
+look for Simulator.app or open screenshots in another app. Its absence does
+not mean Xcode is broken; from Xcode 27 its window is DeviceHub.
+`workspace_inspect` reports `simulator`: whether you have the tools, why not
+when you do not, and the device you hold.
+
+`sim_attach` comes first, and each device belongs to one agent at a time.
+Without a `device` you get, in order: the device the person picked on your
+desk, the one your project used before, the iPhone Sikemux made for your
+project (named `Sikemux · <project folder>`), a booted iPhone no agent holds,
+or a new iPhone made for your project on the newest iOS. `sim_devices` lists
+every device with `inUseBy` naming who holds it; a device another agent holds
+cannot be attached, so pick another or ask the person. Attaching boots the
+device if it is off and waits until its screen can be read. A cold boot can
+take a minute; when it outlasts the call it carries on, and `sim_attach` says
+it is still booting, so call it again. Sikemux runs at most three simulators
+it booted at once; `sim_detach` one you no longer need. Every other `sim_*`
+tool acts on the device you hold, and fails until you attach one. When the
+person picks another device on your desk you move to it.
+
+`sim_state` reads the screen: the frontmost `app`, which is `Home Screen` when
+its icons show and `System` for what iOS draws over an app, such as a
+permission alert, Control Center or the lock screen, and numbered `elements`,
+each with its role, label, value, identifier and centre point, as in
+`3 Button "General" at (201, 418)`. Coordinates are device points, the same
+for every tool, and follow the app as it is turned. An element keeps its
+number for as long as it stays on screen, and a new element takes a number
+never used before, so numbers need not run in order. A number from an earlier
+read either reaches the same element or fails with "not on the screen now";
+read again then. Long labels and values are cut at 200 characters, and a
+screen lists at most 200 elements; tap the rest by label.
+
+Tools that act report on the screen afterwards, and `report` chooses how much,
+as for the browser. `"changes"`, the default, returns the app and `changes`:
+`elements` lists what appeared or changed, and `removed` what went away;
+`changes: "none"` means nothing moved. A different app in front, or no earlier
+read, gets the whole screen instead. `"outcome"` returns only the device and
+app, for a run of steps you check afterwards, and `"full"` the whole screen,
+as `sim_state` does.
+
+`sim_tap` takes an element `index`, a `label`, or `x` and `y`. A `label`
+matches the accessibility label or identifier, exact matches first, and fails
+when two elements match equally, listing them; tap one of them by its number.
+Prefer a number or label over a point read off a screenshot. `duration` holds
+the touch, for a long press.
+
+`sim_type` types into the focused field, so tap the field first. While a
+field is focused the keyboard covers the bottom of the screen, and a swipe
+across it types a word, as sliding a finger over the keys does; press Return
+(`\n`) or tap outside the field before you swipe there to scroll. It types the
+characters of a US keyboard; other characters fail and are named.
+`sim_swipe` drags from one point to another; a swipe that starts within
+10 points of a screen edge is a system gesture: up from the bottom goes home,
+in from the left goes back, down from the top opens Notification Center. Its
+result carries a `warning` saying so; to scroll, start inside the content.
+`sim_button` presses `home`, `lock`, `side`, `siri`, `volumeUp` or
+`volumeDown`.
+
+`sim_rotate` turns the device to `portrait`, `landscapeLeft` or
+`landscapeRight` and reads the screen. An app that only runs upright, such as
+Settings, stays upright, and `screen` gives the size it is drawn at; read the
+screen again after turning, and after the person turns it from the desk.
+
+`sim_touch_path` puts one finger down on the first of its `points`, moves it
+through the rest evenly over `duration` seconds and lifts it on the last: a
+long-press drag, reordering a list or drawing. `sim_touch2_path` does the same
+with two fingers, each point naming both (`x1`, `y1`, `x2`, `y2`): spread them
+to zoom in, bring them together to zoom out, or turn them around a centre.
+
+Acting tools wait until two reads of the screen agree before they return, so
+an animation or an app's launch has finished. Content an app loads from the
+network can arrive later; read again with `sim_state`. Each call has about 50
+seconds; one that runs short answers with the screen as it got, and your calls
+run one at a time, so wait for one to answer before the next. A cancelled turn
+stops the call at its next step. `sim_screenshot` returns the screen as an
+image at its size in points; read `sim_state` rather than a screenshot to
+decide what to tap.
+
+To try an app: build it for the simulator with a task (`xcodebuild` with
+`-sdk iphonesimulator` and a `-derivedDataPath` inside the project), then
+`sim_install` the `.app` it produced, which must be inside the project, and
+`sim_launch` it by bundle id, with optional `arguments` and `environment`.
+`sim_launch` relaunches an app that is running. A first launch can outlast
+the call; it then answers with `launching`, and calling `sim_launch` again
+waits for that launch instead of starting the app over. `sim_terminate` quits
+an app, and `sim_open_url` opens a URL or a deep link.
+
+Do not install with `expo run:ios`, `react-native run-ios`, `flutter run` or
+`open -a Simulator`: once the app is on the device they open Simulator.app,
+or DeviceHub from Xcode 27, over the person's screen. For an Expo or React
+Native app, build it with `xcodebuild` as above and start only the bundler as
+a task (`expo start --dev-client` or `react-native start`, without `--ios`).
+An Expo development build then reaches it through `sim_open_url` with
+`<scheme>://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081`.
+
+`sim_logs` reads the device's log, kept from when you attached it, by
+`cursor`: start at `0` and pass back the `cursor` and `generation` it
+returns, as with `task_read`. It holds what apps log through `Logger`, `os_log` or `NSLog` at
+the default level and above; `print()` goes to the app's standard output,
+which the log never sees, and debug-level messages are left out, so log what
+you need at `.info` or higher. Apple's frameworks are left out too. Ask for
+your app by `process`, its executable name: its lines are kept apart, and that
+cursor counts only them. `limit` caps the lines in one read, and a read is cut
+at about 256 KB; `more` says lines are waiting, and `dropped` that older ones
+went before you read them. When the log started over, because the device or
+Sikemux's simulator helper restarted, the read says `restarted` and starts
+from the log's first line; carry on with its new `cursor`.
+
+`sim_detach` lets go of the device for another agent to use; it stays on your
+desk for the person. When you stop, your device is let go of for you, and a
+device Sikemux booted shuts down a few minutes after nobody holds it.
+
+If a call fails: "call sim_attach" means you hold no device or it is not
+running; "in use by" means another agent holds it; "not on the screen now"
+means read the screen again; "still booting" or `launching` mean call again in
+a moment.
+
 ## databases: Saved databases
 
 `db_databases` lists the databases the person saved in the Database pane:
@@ -538,7 +740,9 @@ PostgreSQL, MySQL or MariaDB servers, and SQLite files. Name one by its name in
   Read it before writing a join rather than guessing column names.
 - `db_query` runs SQL. Each result keeps 100 rows unless you pass `limit`, up
   to 1000; `truncated` says some were left out, so add a `where` or an
-  aggregate rather than raising the limit to read everything.
+  aggregate rather than raising the limit to read everything. A whole reply
+  stays under 48 KB and each value under 400 characters; when either cut
+  something, `note` says so, and the answer is to select fewer columns or rows.
 
 Your queries run on a connection of your own. It is read-only unless the
 person ticked "Let agents change data" for that database, and `writable` in
@@ -551,6 +755,534 @@ that database's history in Sikemux, marked as an agent's.
 
 Large integers and decimals arrive as text so no digit is lost; binary values
 arrive as the start of their hex.
+
+## aws: AWS through the person's profiles
+
+The `aws_*` tools read AWS through the AWS CLI and the person's own profiles;
+none of them change anything.
+
+- Leave `profile` out for the profile the person picked for agents in the
+  AWS pane, else their own `AWS_PROFILE`, else the only profile, else
+  `default`. When there are several and none of these, the error lists them,
+  and `aws_profiles` gives each one's account, role and region. `region`
+  defaults to the profile's.
+- Your own shell already has `AWS_PROFILE` set to the profile picked for this
+  project, so the `aws` CLI works without `--profile`; never hunt for one in
+  `~/.aws/config`.
+- When a call says the AWS sign-in expired, the AWS CLI is missing or no
+  profile is set up, stop and tell the person: each is fixed from the AWS pane
+  in Sikemux. Never run `aws sso login` or `aws configure` yourself; they need
+  the person and their browser.
+- `aws_ecs` goes one level down per argument: clusters; a `cluster`'s services
+  with their counts, rollout and task definition; a `service`'s deployments
+  and latest events. `tasks` lists `running` or `stopped` tasks, of the
+  service or the whole cluster, with each container's image, health, exit code
+  and the reason it stopped.
+- `aws_task_definition` reads the `family:revision` a service names: images,
+  ports, sizes, log group and stream prefix, and the names of environment
+  variables and secrets, never their values.
+- `aws_logs` keeps the newest `limit` events from `since` back, 1h unless
+  told. Take the group from the task definition; a wrong name answers with
+  groups named like it. `pattern` is CloudWatch filter syntax: `ERROR`,
+  `"timed out"`, `{ $.level = "error" }`. `note` says when more matched.
+- `aws_target_health` with `loadBalancer` gives each listener's rules as
+  `priority: condition -> action` and every target group's targets with their
+  state and reason; `targetGroup` gives one group.
+- `aws_metrics` needs the metric's whole set of `dimensions`, such as
+  `ClusterName` and `ServiceName` for `AWS/ECS`; no points usually means one is
+  missing. The period widens to keep 120 points at most.
+- `aws_ec2` lists instances; `name` keeps those whose name, id or address
+  contains it.
+
+For anything else, run the `aws` CLI yourself, read-only.
+
+## skills: Skills every agent in Sikemux gets
+
+A skill is a folder with a `SKILL.md`: frontmatter with a `name` and a
+`description`, then markdown instructions. Skills made here are kept by
+Sikemux and handed to every agent it starts, whichever agent made them. The
+same agents run outside Sikemux never see them.
+
+The `skills` tool takes an `action`:
+
+- `create` takes a `name` (lowercase letters, digits and single hyphens, like
+  `deploy-preview`), a `description` saying what the skill does and when to
+  use it, and a `body` of instructions. It refuses a name already taken.
+- `install` copies a skill from a `source`: an absolute folder path holding a
+  `SKILL.md`, or an `https://`, `ssh://` or `git@` repository URL. Pass
+  `subfolder` when the skill is not at the repository's root. The skill keeps
+  the name its `SKILL.md` declares.
+- `list` gives the skills Sikemux keeps; `remove` deletes one by `name`.
+
+Never write a skill into your own skills folder, such as `~/.claude/skills`:
+that is global, and other agents in Sikemux do not read it. A new skill loads
+in the next agent session, not the running one. Claude names these skills
+`sikemux:<name>`, so `/sikemux:deploy-preview` runs the one above.
+
+## agents: Other agents in the project
+
+Sikemux gives every agent it runs a name, a short word such as Otter or Maple.
+Every open agent in a project has its own name. An agent holds its name only
+while it is open: once it closes, the name is free for a new agent, and an
+agent opened again gets a new name, so a name in an old message may now mean
+another agent; an `agentId` never does. Sikemux picks the names, and only the
+person can rename an agent. Tabs and the rail show agents by name.
+
+When a message names `@Otter`, it means the agent called Otter, not the person
+or a file. The message carries a note about each agent it names: its agent
+id, its CLI, whether it is working, idle or waiting on the person, and what it
+is working on.
+
+### Working with other agents
+
+- Reach other agents only with `agent_list`, `agent_send`, `agent_spawn`,
+  `agent_read` and `who_wrote`, never with your CLI's own tools such as
+  SendMessage or ListAgents, which cannot see Sikemux agents and lose their
+  messages when Sikemux restarts. Load these tools together.
+- When another agent's file, commit, build or test is in your way, call
+  `who_wrote` and message or resume its owner rather than working around it or
+  fixing it yourself, unless the person asks you to. Check `who_wrote` before
+  you tell an agent its commit broke something: the commit may be another's.
+- Ask the agents that own shared work, not the person, about their
+  uncommitted files, commits and builds.
+- A message that passes on the person's request says so, and the agent that
+  gets it may act on it as the person's. Never push other agents' commits, or
+  ask an agent to push, unless the person said so.
+- Hand work that takes longer than a few minutes, or that the person may want
+  to watch, pause or resume, to a teammate with `agent_spawn`. Your own
+  subagents are for short pieces of your task: the person cannot see them, and
+  a restart or a pause loses them.
+
+### Committing in a shared checkout
+
+`git_commit` commits only the lines you wrote, with your edit tools or your
+commands, leaving other agents' changes and the files on disk as they are.
+Lines changed while your command and others' ran at once count as yours. With
+`paths` it commits only those files or folders: your lines there, and changes
+no other agent wrote, such as what your scripts, builds and formatters made,
+binary files too. A lockfile goes with the manifest change it records. A named
+file holding only another agent's lines fails the commit rather than leaving
+it half done. It returns the commit, its files and what was left. Stage
+nothing yourself mid-task: what you `git add`, `git mv` or `git rm` early goes
+into the next agent's commit. The shell is zsh, which does not split `$FILES`
+into words; name paths or use an array. In a checkout of your own, `land: true` then puts your commits on the
+branch your checkout was cut from and moves your checkout up to it: a file
+someone changed in the project's checkout and has not committed takes your
+lines merged in, and a clash refuses the landing before anything moves. With
+`push: true` it then pushes
+your own commits only, even when other agents' unpushed commits sit before
+them, and lists theirs as kept; with no `message` it only pushes. Push only
+when the person asked for it. In a checkout other agents work in, Sikemux refuses
+`git add -A`, `commit -a`, `stash`, `reset --hard` and the like, and
+`git checkout -- <path>` or `git restore` over another agent's uncommitted
+lines, naming that agent; in your own clone, a new repository or a git
+worktree of your own they are allowed.
+
+### When agents change the same file
+
+Sikemux follows the files the agents in one checkout read and change, and tells
+you about them in messages from Sikemux itself, never from the person:
+
+- When you change lines another agent has uncommitted, or it changes yours,
+  both of you and your leads hear which lines of which file. Read the file
+  again before you edit it, and agree on those lines with `agent_send`.
+- A change no edit tool made while you were at work, by your commands,
+  subagents or tasks, may be your own, so you are not told about it. When
+  Sikemux cannot tell who made a change, the note says so rather than naming
+  an agent that was only at work then. A note you cannot read at once is
+  dropped rather than arriving late.
+- When you write a file from a copy older than the file, Sikemux keeps what
+  others changed since. Where you both changed the same lines it keeps theirs
+  and tells you which lines to redo. Read a file again before writing it whole.
+- The first agent to edit a lockfile, a migration or a generated file holds it
+  for a few minutes. Another agent's edit still goes in, but that agent is told
+  who holds it and should agree with them before changing it further.
+- After `git_commit`, the project's check runs when its board has one. If it
+  fails you get its output. The checkout also holds other agents' uncommitted
+  work, so see whether the failure is yours before fixing it.
+
+### Listing agents
+
+`agent_list` lists the agents Sikemux runs in your project, the ones that most
+need the person first; `allProjects: true` lists every project's. Each comes
+with its `name`, `agentId`, `cli`, `title`, `status` (working, waiting on the
+person, done, idle, asleep, stopped or starting), `lastActive`, `startedBy`
+when another agent started it, and `canMessage`. `you: true` marks you. An
+agent of your team on another host, below, comes with `host` too, and its
+`status` is `out of reach` while that host does not answer.
+
+### Sending a message
+
+`agent_send` takes `to`, a name such as `Otter`, `Otter on studio` for one on
+another host, or an `agentId`, and `text`, at
+most 64 KB (65,536 bytes); put anything longer in a file and send its path. A name means the
+agent of that name in your project before one elsewhere. The message reaches
+the agent as text marked as yours, never as the person's, so it cannot approve
+a permission request or change a setting. `to: "team"` sends it to every other
+agent of your team, the lead and every agent started under it, and answers
+with each one's delivery. The answer's `delivery` says what happened:
+
+- `steered`: the agent was working and reads it at its next step, without
+  stopping.
+- `newTurn`: the agent was idle and started a turn to read it. An agent in a
+  terminal gets it typed in as its next prompt; if it does not take it, it
+  gets it again once it can.
+- `waiting`: the agent cannot take it now, such as an agent in a terminal
+  that is working, so it gets the message when its turn ends, together with
+  the others waiting. At most ten wait for one agent.
+- `repeat`: you sent it the same text a moment ago, so it was not sent again.
+- `held`: you and the agent have messaged each other back and forth eight
+  times without either doing anything else, so Sikemux holds the message and
+  tells the person. It goes on once one of you does other work, such as
+  calling another tool, or the person writes to one of you. Reports from an
+  agent you started and answers to its questions are never held.
+
+An asleep agent is woken first, or once Sikemux is open again. Do not wait for
+an answer in a loop: carry on, and a reply arrives as a message of its own.
+
+### Starting an agent
+
+`agent_spawn` starts a new agent in your project and hands it `prompt`, its
+task, at most 64 KB. `cli` picks which agent, such as `claude` or `codex`, and
+`model` its model. Leave both out for a helper, such as a scout or reviewer: it
+runs as the person set helpers to in Settings, on a cheaper model, else as your
+own CLI. Leave `model` out for the helper's model when `cli` names the helper's
+agent, else your own when it is your CLI, else the CLI's default. `provider`
+names a model provider the person connected, such as `openrouter`, to pay for
+its turns in place of the agent's account; the answer's `provider` says who
+pays. It opens in its own tab without taking the person there, runs on
+your account and in your permission mode, which you cannot change, and records
+you as the agent that started it: you are its lead. The answer gives its `name`
+and `agentId` at once; it gets the prompt, from you, once it is ready.
+
+With `checkout: "own"` it works in a checkout of its own, a git worktree on a
+branch of its own cut from yours, with the project's setup run in it, so it
+builds and tests apart from every other agent's work in progress. Give each
+teammate of a team its own checkout; a quick helper can share yours, the
+default. A teammate with its own checkout lands its commits on your branch
+with `git_commit`'s `land: true` once its piece builds.
+
+It runs in Sikemux's chat unless you pass `mode: "terminal"`, which starts the
+CLI in a terminal tab of its own instead, the CLI's own screen, as when the
+person asks for one. Do that only when the person or the task asks for a
+terminal. Its prompt is typed in once its prompt box shows; if that takes more
+than two minutes, such as when it waits for the person to trust the folder,
+you hear so. Everything below works the same for it.
+
+Each time its turn ends, its final answer comes to you as a message from it,
+cut to about 4 KB, with the board card it holds, if any. It says instead when the turn was stopped or failed, or the
+agent stopped running, so you are never left waiting. Reports are never
+turned away: they skip the ten-message limit, wait for you while you are
+stopped, and while one waits a newer report from the same agent replaces it.
+Pass
+`report: false` for an agent whose answers you do not need. Do not wait in a
+loop for it: carry on, and its answer arrives as a message. Message it with
+`agent_send` to steer it or give it more.
+
+Write the prompt as a full brief, since the new agent knows nothing of your
+conversation: the goal, the files and constraints, and what to answer with.
+Start one for work that is its own and runs alongside yours, or that takes
+longer than a few minutes, not for a quick lookup your own subagents can do.
+
+Limits: an agent you started may start agents of its own, but one of theirs
+may not; one agent has at most six of its own open, and a project at most
+eight that agents started, counting those on other hosts. A refusal says which
+limit it hit. When the person closes a lead, Sikemux asks them whether to stop
+its agents or keep them.
+
+### Starting an agent on another host
+
+The person may link this host with others on their account, in Settings,
+Devices. `agent_spawn` with `host`, the name a linked host goes by here, starts
+the agent there, on that host's own sign-in for `cli`, never yours; a refusal
+lists the linked hosts. It runs as a chat, so leave out `mode`, `resume` and
+`provider`. It works in a checkout of its own of your project there, on a
+branch of its own cut from your commit, with your uncommitted changes, new
+files too, committed on top as its first commit; your folder must be in a git
+repository. Its name comes with the host's, such as `Otter on studio`, which
+`agent_send`, `agent_read`, `agent_wait` and `ask`'s `for` take, as they take
+its `agentId`.
+
+Everything above works across the link: its reports, its questions, which go
+to you and then to the person here, and your messages. Each time its turn
+ends, its new commits come back first, onto a branch in your checkout named
+for the host and it, such as `sikemux/studio/otter`, and its report names the
+branch. Merge what you want of it yourself; Sikemux never merges it. While the
+host does not answer, what you send it waits and goes once it is back, and you
+hear when it has been out of reach for a few minutes and when it is back. If
+the person removes the link, you hear that too.
+
+### Finding and resuming an earlier session
+
+When the person asks you to go back to an earlier session they half remember,
+such as "the one where we fixed the login flake", call `agent_sessions` with
+`query`, the words they used. It searches the sessions every agent CLI saved
+on this host, Claude, Codex, OpenCode, Hermes, Pi, OMP, Grok and Muse, by
+title and by what the person and the agent wrote, not by tool output. It
+searches your project's sessions, including those run in its subfolders and
+git worktrees; pass `project`, a folder, for another one, or
+`allProjects: true` for every project. Sessions whose title holds the
+words, that hold more of the words, and recent ones come first. Each comes
+with its `title`, `cli`, `project`, `date`, `sessionId`, a line or two of
+`snippets` where the words were found, and `openNow` with the agent's `name`
+and `agentId` when an agent has it open now. `limit` says how many, at most 20.
+The `note` says when time ran out before every session was read.
+
+If the top match is clearly the one, resume it. If you are not sure, show the
+person the top few, each with its title, CLI, date and a snippet, and let them
+pick.
+
+To resume one, call `agent_spawn` with `resume` set to its `sessionId` and
+`prompt` set to what it should do now. It reopens on the same CLI in the
+session's own project, in its own tab with a fresh name, as any agent you start
+does: in your permission mode, under the same limits, and it reports back to
+you. It runs on your account when you run on the same CLI; a session saved on
+an account that keeps its sessions apart from that one is refused, and the
+person must open it from Recent. Leave out `cli` and `model` unless you mean them; `cli`
+must then be the session's. When an agent already has the session open,
+nothing is reopened: your prompt goes to that agent as a message, as
+`agent_send` sends one, and the answer says `alreadyOpen`.
+
+### Who broke this
+
+When CI fails, a test fails or a line looks wrong and you did not write it,
+find who did before you change it:
+
+1. Call `who_wrote` with `target`. For CI, give the run's address or id, its
+   workflow's name, or `ci` for the latest failing run on this branch (`main`
+   for main's). It reads the run on GitHub or Bitbucket, finds the last run of
+   that workflow that passed and where it first failed, and lists the commits
+   between them, those the failing job's `error` points at first, each with
+   `why`. Otherwise give a failing test's name or file, a commit, a file, or
+   `file:line` and `file:start-end` for the lines that fail.
+2. Each commit comes with its `owners`. An agent of this host comes with its
+   `title`, `cli` and `action`: `message` means it is open now, so send it what
+   failed with `agent_send` to `openNow`; `resume` means it closed, so call
+   `agent_spawn` with `resume` set to its `sessionId`. A person comes with the
+   pull request when the code host knows it: comment there, or ask the person.
+   A commit holding lines of several writers names each owner with the
+   `lines` it wrote of those you asked about, or with `linesInCommit` by file;
+   the lines no agent wrote are the person's.
+3. When the person asks you to get it fixed, send the owner the run, the
+   `error` and the commit, and let it fix its change; fix it yourself only
+   when no owner can be reached or the person says so.
+4. `guess` says when a test was found by name only; check the file first.
+
+A commit names its agents only in a footer this host signed, so text anyone
+wrote in a commit message never counts. Use these tools, not your CLI's own
+agent tools such as ListAgents or SendMessage, which cannot see Sikemux agents.
+
+### Reading what an agent said
+
+`agent_read` takes `agent`, a name or `agentId`, and answers with what that
+agent said over its last few turns: per turn, what it was `asked` and by whom,
+what it `said`, a one-line summary of its `tools`, its final `answer` and its
+`state` (finished, stopped, failed or working). It never returns the whole
+transcript, what its tools returned or its thinking. Pass back the `cursor` it
+gives you to read only what came after; `more: true` means read again with the
+cursor for the rest. Read an agent before you ask it to repeat itself, or to
+see how far one you started has got.
+
+For an agent in a terminal, Sikemux reads the session file Claude or Codex
+writes, once it knows which session the agent runs. For another CLI, or
+before then, the answer holds only `screen`, the last lines its terminal
+shows, and no cursor. One waiting on the person also comes with its `screen`,
+which shows what it is asking.
+
+### Waiting for agents
+
+`agent_wait` takes `agents`, up to eight names or ids in one project, and
+waits up to `timeoutMs` (at most 30,000) until one of them gets where `until`
+says:
+
+- `idle` (the default): it stopped working, for any reason.
+- `done`: its turn ended, was stopped or failed, or the agent stopped running.
+- `needs_you`: it waits on the person, such as at a permission prompt.
+- `any`: anything happened to it, including starting work.
+
+Each event names the agent and `what` happened. Pass back the `cursor` it
+gives you, so nothing that happens between two waits is missed; without one, an
+agent already where `until` says answers at once. An agent whose task or
+messages still wait for it counts as starting, not idle, until it takes them. A
+timeout is normal: wait again, or carry on.
+
+Wait only when you cannot go on without the result, such as when you need two
+agents' work before you can merge it. An agent you started reports to you by
+itself when its turn ends, so after `agent_spawn` carry on with your own work
+rather than waiting, and read its report when it arrives.
+
+### When an agent started you
+
+A prompt from your lead arrives as a message from it, and its note says it
+started you. Your final answer goes to your lead by itself each time your turn
+ends, so finish a turn with what your lead needs: what you did, what you
+found, and anything left open. To ask your lead something mid-task, use
+`ask`, below. When the note says your answers do not go to your lead by
+themselves, send it what it needs with `agent_send` when you are done.
+
+### Asking a question
+
+When you cannot go on without an answer, call `ask` with `question`, written
+so it stands on its own, a `header` of two or three words naming it, such as
+`Photo access`, and `choices` when the answer is one of a few: each a short
+`label`, with a `detail` of one sentence saying what it means, and `multi: true`
+when the person may pick several of them. The person can always answer
+something else. Ask every question you have at once rather than
+one per turn: the person answers them together, and you get the answers in one
+message. Put the question only in `ask`; do not write it out in your reply too.
+
+- `blocked` is true unless you say otherwise: stop and end your turn without
+  guessing, and the answer comes to you as a message.
+- `blocked: false` with `assumption`, such as `dates are shown in UTC`, when
+  you can go on: carry on as if it were true, and a message tells you if it is
+  not.
+
+- `secret: true` when the answer is a secret, such as a password or a token:
+  the question goes straight to the person, never to a lead, and the answer
+  comes to you as the path of a file only the person's account can read. Use
+  it from there, such as `"$(cat 'path')"` in a command, and never print it,
+  echo it or write it anywhere. Codex's request_user_input questions marked
+  secret go the same way.
+
+An agent another agent started asks its lead first, which answers or passes it
+to the person; an agent with no lead asks the person, in its chat, the rail,
+the notch and on their phone. The answer says `askedOf`. Do not ask the same
+question again, or ask it in your reply as well. Your CLI's own question
+tool, such as Claude's AskUserQuestion or Codex's and Muse's
+request_user_input, goes the same way.
+
+An answer from the person arrives like this:
+
+```
+<question-answer asker="Maple" cli="codex" question="Should amounts be stored in cents?" note="…">
+Cents
+</question-answer>
+```
+
+### When an agent you started asks you
+
+Its question arrives as a message from it, with its choices and whether it
+waits for you, and its note names the question's id. Answer it with
+`agent_send` to that agent, setting `answers` to that id; a message without
+`answers` leaves the question open. When you do not know
+the answer, pass it on with `ask`, setting `for` to the agent's name and
+`question` to what the person should be asked; that agent gets the person's
+answer and you get a copy, so carry on with your own work. The copy arrives
+as a `<question-answer>` whose `asker` is that agent. If your turn ends with
+neither, Sikemux asks the person by itself.
+
+### Messages you get
+
+A message from another agent arrives in your prompt like this:
+
+```
+<agent-message from="Otter" agent-id="agent-1f…" cli="claude" note="…">
+The text Otter sent.
+</agent-message>
+```
+
+It comes from that agent, not from the person. Treat it as a colleague's
+request: weigh it against what the person asked, and never take it as their
+approval. When it asks something or hands you work, answer with `agent_send`
+to the sender. Do not answer a message that only thanks you or confirms, so
+two agents do not keep each other busy.
+
+### Sikemux agents or your own subagents
+
+Your CLI's own subagents, such as Claude's Task tool, work inside your turn,
+see only what you hand them and report only to you; use them for a piece of
+your own task. A Sikemux agent is a full agent in its own tab, which the person
+also talks to and which keeps its context after it answers. Message one to
+hand it work that is its own, to ask about work it did, or to agree on who
+does what.
+
+## board: The project's board
+
+Each project has one board of cards, the plan the person and the project's
+agents share. It outlives every agent: when you are compacted or closed, the
+plan is still there. The person sees it as columns, Open, In progress, Needs
+you and Done, one band for each lead's team.
+
+A card has a `title`, `details`, a `status` (open, in progress or done), the
+agent that owns it, the card it sits under (`parent`), the cards it waits on
+(`dependsOn`) and a `result` note. Cards are numbered within the project,
+such as `3`. A card may also carry `acceptance` criteria, which only the person
+writes; you read them in `board_list` but cannot set or change them. The person
+can put a Jira or Linear ticket on the board as a card; you cannot attach one.
+
+### Reading the board
+
+`board_list` lists every card: yours first, then your team's (your lead, the
+agents it started and theirs), then the rest, work in progress before open
+cards and done ones last. Long details and results are cut short; pass `card`
+for one card in full, with the cards under it. `waitsOn` lists the cards it
+waits on that are not done yet, and `waitingOnThePerson` marks a card whose
+owner waits on the person's answer.
+
+### Adding cards
+
+`board_add` takes a `title`, one line, and `details`, the brief another agent
+would need to do it. `parent` puts it under a card, such as one step of a
+bigger card; `dependsOn` lists the cards that must be done first. Pass
+`claim: true` to take it yourself at once. Split a task into cards when it has
+parts others could do alongside you, not for every step of your own work.
+
+### Claiming and finishing
+
+`board_claim` takes a card nobody owns that waits on nothing left undone,
+whether it is open or the person moved it to In progress without an owner; it
+is yours in one step, so two agents never take the same card. A refusal says
+who has it or what it waits on. Then do the work, and finish with
+`board_update`: `status: "done"` and a `result` saying what you did and
+where, such as the files, commits or pull request. `status: "open"` gives a
+card back for someone else, and `parent: 0` takes a card out from under
+another. You may change your own cards, cards the agents you started own, and
+cards nobody owns.
+
+When a card is done, the cards waiting on it are free to claim, and their
+owners are told. When you were started by another agent and sit idle, the
+board tells you of your team's open cards nobody has taken, once each: claim
+one and do it, or end your turn. Each time your turn ends, the report your lead
+gets names your card; a turn the board started, in which you did nothing on
+the board, sends no report.
+
+When the person, or the agent that started you, moves or changes a card you
+are working on, a message from the board says so. Notes from the board come
+as messages from `Board`.
+
+### Cards Auto runs
+
+When the person turns on Auto for a project, the board starts an agent of its
+own for each card the person added that nobody has and nothing holds up, each
+in a git worktree and branch of its own. Its task comes as a message from
+`Auto`. Plan first and ask everything at once with `ask`; then do the work,
+run the checks and commit on that branch. Do not push, open a pull request or
+merge: when your turn ends, Auto commits what is left, pushes, opens the pull
+request and merges it once its checks pass. So end your turn only when the
+work is done or you wait on an answer. If you start workers, Auto ships only
+once none of them is still working, so a turn that ends while they work does
+not ship half the change. Marking such a card done with
+`board_update` keeps it in progress until it lands. If its checks fail, a
+message from `Auto` asks you once to fix them.
+
+Once the checks pass, and before it merges, Auto has an agent on another CLI
+review the change blind: it reads only the card, its acceptance criteria and
+the diff, in a read-only checkout of the pushed commit. Only its approval of
+that very commit lets the card merge; anything pushed after needs a new one. If
+it asks for changes, a message from `Auto` lists its findings: fix them and
+commit, and a fresh reviewer looks at the new change, for a few rounds before
+the card goes back to the person. You cannot message, read or wait on the
+reviewer, and it cannot reach you.
+
+### When Auto started you to review
+
+Your task comes as a message from `Auto` holding the card and the diff, and
+your folder is a read-only checkout of the change. Judge it from those alone:
+the board, other agents and starting agents are closed to you, and an `ask`
+goes to the person. Give your verdict once with `review_verdict`: `approve:
+true` to let it merge, or `approve: false` with `findings`, each a `text` and,
+where it applies, a `file` and `line`. Then end your turn. A turn that ends
+without a verdict, and waits on no answer, sends the card back to the person.
 
 ## shell: The same operations from a shell
 

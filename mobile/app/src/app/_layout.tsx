@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -7,35 +7,49 @@ import { useFonts } from 'expo-font';
 import { Figtree_400Regular, Figtree_400Regular_Italic, Figtree_500Medium, Figtree_600SemiBold } from '@expo-google-fonts/figtree';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 
-import { ClerkProvider } from '@clerk/expo';
-import { tokenCache } from '@clerk/expo/token-cache';
+import { ClerkProvider, useAuth } from '@clerk/expo';
+import { resourceCache } from '@clerk/expo/resource-cache';
 
 import { CLERK_PUBLISHABLE_KEY } from '@/account/config';
-import { useAccountLive, useRegisterPhone } from '@/account/session';
+import { tokenCache } from '@/account/tokenCache';
+import { useAccountHostsFeed, useAccountSequence, useConnectArrivals } from '@/account/session';
 import { goOffline } from '@/device/identity';
+import { useDevices } from '@/devices/hub';
+import { lockFor, useLock } from '@/lock/lock';
+import { LockCover, LockScreen } from '@/lock/LockScreen';
 import { NotificationsOffer } from '@/notify/NotificationsOffer';
-import { usePushToken } from '@/notify/switch';
+import { useNotificationResponses } from '@/notify/responses';
 import { currentRelays, useUpdateRequired } from '@/network/network';
+import { useOverTheAirUpdates } from '@/updates/overTheAir';
+import { Crashed } from '@/screens/Crashed';
+import { Unreachable } from '@/screens/Unreachable';
 import { UpdateRequired } from '@/screens/UpdateRequired';
 import { useColors } from '@/ui/theme';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/** A notification or link opened at launch still has Devices under it to go back to. */
+export const unstable_settings = { initialRouteName: 'index' };
+
+export const ErrorBoundary = Crashed;
+
+/** How long the splash waits for the account before saying it can't be reached. */
+const ACCOUNT_WAIT_MS = 10_000;
 
 export default function RootLayout() {
   const colors = useColors();
-  const [loaded, failed] = useFonts({
-    Figtree_400Regular,
-    Figtree_400Regular_Italic,
-    Figtree_500Medium,
-    Figtree_600SemiBold,
-    JetBrainsMono_400Regular,
-  });
+  // Phones have the fonts built in; only a browser, which runs the showcase, loads them.
+  const [loaded, failed] = useFonts(
+    Platform.OS === 'web'
+      ? { Figtree_400Regular, Figtree_400Regular_Italic, Figtree_500Medium, Figtree_600SemiBold, JetBrainsMono_400Regular }
+      : {},
+  );
 
   const required = useUpdateRequired();
 
   useEffect(() => {
-    if (loaded || failed) SplashScreen.hideAsync();
-  }, [loaded, failed]);
+    if (failed || ((loaded || failed) && required)) SplashScreen.hideAsync().catch(() => {});
+  }, [loaded, failed, required]);
 
   useEffect(() => {
     currentRelays().catch(() => {});
@@ -49,27 +63,84 @@ export default function RootLayout() {
     if (required) goOffline().catch(() => {});
   }, [required]);
 
-  if (!loaded && !failed) return null;
+  const fontsReady = loaded || failed;
   if (required)
-    return (
+    return fontsReady ? (
       <>
         <StatusBar style="light" />
         <UpdateRequired required={required} />
       </>
-    );
+    ) : null;
+  // The account starts loading at once; only the screens wait for the fonts, so the two load side by side.
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache} __experimental_resourceCache={resourceCache}>
       <PhoneOnAccount />
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.ground } }} />
-      <NotificationsOffer />
+      {fontsReady ? (
+        <>
+          <StatusBar style="light" />
+          <Routes background={colors.ground} />
+        </>
+      ) : null}
     </ClerkProvider>
   );
 }
 
+/** The screens, once the account and the paired hosts are known; the splash stays up until then. */
+function Routes({ background }: { background: string }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  const devices = useDevices();
+  const ready = isLoaded && (!isSignedIn || devices.loaded);
+  const [late, setLate] = useState(false);
+  const lock = useLock();
+
+  useEffect(() => {
+    if (ready) return;
+    const giveUp = setTimeout(() => setLate(true), ACCOUNT_WAIT_MS);
+    return () => clearTimeout(giveUp);
+  }, [ready]);
+
+  useEffect(() => {
+    if (ready || late) SplashScreen.hideAsync().catch(() => {});
+  }, [ready, late]);
+
+  useEffect(() => {
+    if (isLoaded) void lockFor(!!isSignedIn);
+  }, [isLoaded, isSignedIn]);
+
+  if (!ready) return late && !isLoaded ? <Unreachable /> : null;
+  if (isSignedIn && !lock.opened) return lock.on ? <LockScreen /> : null;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false, freezeOnBlur: true, contentStyle: { backgroundColor: background } }}>
+        <Stack.Screen name="index" />
+        <Stack.Protected guard={!!isSignedIn}>
+          <Stack.Screen name="device/[core]" />
+          <Stack.Screen name="join" />
+          <Stack.Screen name="host-sign-in" />
+          <Stack.Screen name="share/[id]" />
+        </Stack.Protected>
+      </Stack>
+      {!isSignedIn || lock.phase === 'open' ? (
+        <>
+          <NotificationsOffer />
+          <NotificationResponses />
+        </>
+      ) : null}
+      {isSignedIn ? <LockCover /> : null}
+    </>
+  );
+}
+
+/** Mounted with the screens while they show, so a tapped card opens its chat, and answers it, only once the app is unlocked. */
+function NotificationResponses() {
+  useNotificationResponses();
+  return null;
+}
+
 function PhoneOnAccount() {
-  useRegisterPhone();
-  useAccountLive();
-  usePushToken();
+  useOverTheAirUpdates();
+  useAccountSequence();
+  useAccountHostsFeed();
+  useConnectArrivals();
   return null;
 }

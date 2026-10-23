@@ -3,13 +3,13 @@ use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::protocol::frozen::{UpgradeInfo, UPGRADE_INFO_ARG};
+use crate::frozen::{UpgradeInfo, UPGRADE_INFO_ARG};
 use crate::protocol::{BuildIdentity, SessionId};
 
 use super::handover::{self, Recovery};
-use super::{ServerConfig, ServerError, DEFAULT_IDLE_EXIT};
+use super::{ServerConfig, ServerError, DEFAULT_IDLE_EXIT, NEVER_IDLE_EXIT};
 
-const USAGE: &str = "usage: sikemux core [--socket <path>] [--cli-endpoint <path>] [--data-dir <path>] [--idle-exit-secs N] | --upgrade-info";
+const USAGE: &str = "usage: sikemux core [--socket <path>] [--cli-endpoint <path>] [--data-dir <path>] [--idle-exit-secs N | --no-idle-exit] | --upgrade-info";
 
 #[derive(Default)]
 struct CoreArgs {
@@ -23,6 +23,7 @@ struct CoreArgs {
     lock_fd: Option<RawFd>,
     tools_fd: Option<RawFd>,
     sessions: Vec<(SessionId, RawFd, Option<u32>)>,
+    chat_fds: Vec<RawFd>,
 }
 
 fn number<T: std::str::FromStr>(value: Option<String>, flag: &str) -> Result<T, String> {
@@ -66,6 +67,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
                     "--idle-exit-secs",
                 )?));
             }
+            "--no-idle-exit" => parsed.idle_exit = Some(NEVER_IDLE_EXIT),
             "--idle-exit-ms" => {
                 parsed.idle_exit = Some(Duration::from_millis(number(
                     args.next(),
@@ -79,6 +81,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
             "--lock-fd" => parsed.lock_fd = Some(number(args.next(), "--lock-fd")?),
             "--tools-fd" => parsed.tools_fd = Some(number(args.next(), "--tools-fd")?),
             "--session" => parsed.sessions.push(handed_over_session(args.next())?),
+            "--chat-fd" => parsed.chat_fds.push(number(args.next(), "--chat-fd")?),
             flag if flag == UPGRADE_INFO_ARG => parsed.upgrade_info = true,
             other => return Err(format!("unknown argument {other:?}")),
         }
@@ -91,6 +94,11 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<CoreArgs, String
 /// `--cli-endpoint`, by default where the CLI looks for it. `args` are the
 /// ones after `core`. Returns the exit code.
 pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
+    #[cfg(unix)]
+    if let Some(path) = with_system_path(&std::env::var("PATH").unwrap_or_default()) {
+        // Nothing else runs yet, so the process environment is safe to change.
+        std::env::set_var("PATH", path);
+    }
     let args = match parse_args(args) {
         Ok(args) => args,
         Err(message) => {
@@ -122,6 +130,7 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
             data_dir: args.data_dir,
             idle_exit: args.idle_exit.unwrap_or(DEFAULT_IDLE_EXIT),
             sessions: args.sessions,
+            chat_fds: args.chat_fds,
             inherited: HashMap::new(),
         };
         // Taken before anything opens a descriptor of its own.
@@ -131,24 +140,69 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
             .filter_map(|fd| Some((fd, handover::file_type(fd)?)))
             .collect();
         std::thread::spawn(sikemux_pty::user_shell::warm_login_shell_environment);
-        return exit_code(run_runtime(handover::resume(recovery, build)));
+        sikemux_process::jobs::own();
+        let exit = exit_code(run_runtime(handover::resume(recovery, build)));
+        sikemux_process::jobs::leave();
+        return exit;
     }
     let Some(socket) = args.socket.or_else(crate::default_socket_path) else {
         eprintln!("sikemux core: HOME is not set, so pass --socket");
         return 2;
     };
     std::thread::spawn(sikemux_pty::user_shell::warm_login_shell_environment);
-    exit_code(super::run(ServerConfig {
+    sikemux_process::jobs::own();
+    let exit = exit_code(super::run(ServerConfig {
         socket,
         idle_exit: args.idle_exit.unwrap_or(DEFAULT_IDLE_EXIT),
         cli_endpoint: args
             .cli_endpoint
             .or_else(crate::cli::endpoint::default_endpoint_path),
+        attachment_dir: args
+            .data_dir
+            .as_deref()
+            .and_then(super::attachments::pasted_dir),
         data_dir: args.data_dir,
         build,
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
-    }))
+        secret_store: true,
+    }));
+    sikemux_process::jobs::leave();
+    exit
+}
+
+/// `path` with the system folders added when it lacks them. A core keeps
+/// the environment it was first started with through every update, and one
+/// started without these could never run `security`, `ssh` or `sleep`, so
+/// every agent it started read as signed out.
+#[cfg(unix)]
+fn with_system_path(path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = path.split(':').filter(|part| !part.is_empty()).collect();
+    let before = parts.len();
+    for system in sikemux_process::paths::SYSTEM_PATH {
+        if !parts.contains(&system) {
+            parts.push(system);
+        }
+    }
+    (parts.len() != before).then(|| parts.join(":"))
+}
+
+#[cfg(all(test, unix))]
+mod path_tests {
+    use super::with_system_path;
+
+    #[test]
+    fn a_path_without_the_system_folders_gets_them_after_its_own() {
+        assert_eq!(
+            with_system_path("/Users/me/.local/bin:/opt/homebrew/bin").as_deref(),
+            Some("/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        );
+        assert_eq!(with_system_path("/usr/bin:/bin:/usr/sbin:/sbin"), None);
+        assert_eq!(
+            with_system_path("").as_deref(),
+            Some("/usr/bin:/bin:/usr/sbin:/sbin")
+        );
+    }
 }
 
 fn run_runtime(

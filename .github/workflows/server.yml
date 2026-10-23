@@ -6,12 +6,31 @@ on:
     paths:
       - "server/**"
       - "src-tauri/crates/sikemux-core/src/accounts/**"
+      - "src-tauri/crates/sikemux-wire/src/accounts/**"
+      # A shared chat's page draws with the Mac app's own chat view, styles, fonts and markdown.
+      - "src/**"
+      - "public/fonts/**"
+      - "public/file-icons/**"
+      - "src-tauri/crates/sikemux-markdown/**"
+      - "src-tauri/crates/sikemux-markdown-wasm/**"
+      - package.json
+      - pnpm-lock.yaml
       - mobile/app/certs/updates-certificate.pem
       - .github/workflows/server.yml
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "server/**"
       - "src-tauri/crates/sikemux-core/src/accounts/**"
+      - "src-tauri/crates/sikemux-wire/src/accounts/**"
+      # A shared chat's page draws with the Mac app's own chat view, styles, fonts and markdown.
+      - "src/**"
+      - "public/fonts/**"
+      - "public/file-icons/**"
+      - "src-tauri/crates/sikemux-markdown/**"
+      - "src-tauri/crates/sikemux-markdown-wasm/**"
+      - package.json
+      - pnpm-lock.yaml
       - mobile/app/certs/updates-certificate.pem
       - .github/workflows/server.yml
   workflow_dispatch:
@@ -22,6 +41,7 @@ permissions:
 jobs:
   check:
     name: Server checks
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -47,22 +67,32 @@ jobs:
       SIKEMUX_VERSION: ${{ github.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: server/pnpm-lock.yaml
+          cache-dependency-path: |
+            server/pnpm-lock.yaml
+            pnpm-lock.yaml
 
       - name: Install server dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install the Mac app's dependencies, which a shared chat's page draws with
+        working-directory: .
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Setup Rust, for a shared chat's page to parse markdown as the Mac does
+        working-directory: .
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --target wasm32-unknown-unknown --no-self-update
 
       - name: Check, test and build
         run: pnpm check
@@ -71,7 +101,7 @@ jobs:
         run: pnpm pack:release
 
       - name: Keep the release for the deploy
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-release
           path: server/dist/release.tar.gz
@@ -93,7 +123,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Fetch the release
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: server-release
 

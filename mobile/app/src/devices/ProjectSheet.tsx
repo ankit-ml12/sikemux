@@ -2,12 +2,13 @@ import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ProjectInfo } from '@/core/protocol';
-import { DrawnIcon, Icon } from '@/ui/Icon';
+import { agentLabel } from '@mac/agents/catalog';
+import { AgentIcon, DrawnIcon, Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { fonts, type Palette, typeFor, useColors, useStyles, useType } from '@/ui/theme';
+import { fonts, keyboardFor, type Palette, radius, typeFor, useColors, useStyles, useType } from '@/ui/theme';
 
 function home(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, '~');
+  return path.replace(/^\/(Users|home)\/[^/]+/, '~');
 }
 
 type Props = {
@@ -23,14 +24,44 @@ type Props = {
   all?: string;
   /** What runs in a project, shown at the end of its row. */
   tail?: (project: ProjectInfo) => ReactNode;
+  /** A provider filter over the sheet, as the provider tiles head the Mac's rail; 'all' shows every provider. */
+  providers?: { offered: string[]; chosen: string; onChoose: (provider: string) => void };
 };
 
+function ProviderTiles({ offered, chosen, onChoose }: NonNullable<Props['providers']>) {
+  const colors = useColors();
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.tiles}>
+      {['all', ...offered].map((provider) => {
+        const on = provider === chosen;
+        return (
+          <Pressable
+            key={provider}
+            onPress={() => onChoose(provider)}
+            style={[styles.tile, on && styles.tileOn]}
+            accessibilityRole="button"
+            accessibilityLabel={provider === 'all' ? 'All agents' : agentLabel(provider)}
+            accessibilityState={{ selected: on }}>
+            {provider === 'all' ? (
+              <Text style={[styles.tileText, on && { color: colors.ink }]}>All</Text>
+            ) : (
+              <AgentIcon provider={provider} size={20} />
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /** The host's project switcher: the projects open in its app, searched by name or path. */
-export function ProjectSheet({ visible, onClose, device, projects, chosen, onChoose, all, tail }: Props) {
+export function ProjectSheet({ visible, onClose, device, projects, chosen, onChoose, all, tail, providers }: Props) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const type = useType();
   const [query, setQuery] = useState('');
+  if (!visible && query) setQuery('');
   const needle = query.trim().toLowerCase();
   const found = projects.filter((project) => `${project.name} ${project.path}`.toLowerCase().includes(needle));
   const showAll = all !== undefined && !needle;
@@ -39,7 +70,8 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
     onChoose(project);
   };
   return (
-    <Sheet visible={visible} onClose={onClose} tall={projects.length > 6}>
+    <Sheet visible={visible} onClose={onClose} tall={projects.length > 6} scrolls>
+      {providers ? <ProviderTiles {...providers} /> : null}
       <View style={styles.head}>
         <Text style={styles.title}>Projects</Text>
         {device ? <Text style={type.meta}>{device}</Text> : null}
@@ -54,15 +86,19 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
           style={styles.searchInput}
           autoCorrect={false}
           autoCapitalize="none"
-          keyboardAppearance="dark"
+          keyboardAppearance={keyboardFor(colors)}
           returnKeyType="go"
           onSubmitEditing={() => found[0] && choose(found[0].id)}
         />
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" style={{ marginTop: 12 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.list} showsVerticalScrollIndicator={false}>
         <View style={styles.group}>
           {showAll ? (
-            <Pressable onPress={() => choose(null)} style={[styles.row, chosen === null && styles.rowOn]} accessibilityRole="button">
+            <Pressable
+              onPress={() => choose(null)}
+              style={[styles.row, chosen === null && styles.rowOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: chosen === null }}>
               <DrawnIcon name="folders" size={16} color={colors.live} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>All projects</Text>
@@ -78,7 +114,8 @@ export function ProjectSheet({ visible, onClose, device, projects, chosen, onCho
                 key={project.id}
                 onPress={() => choose(project.id)}
                 style={[styles.row, on && styles.rowOn, (showAll || index > 0) && styles.divided]}
-                accessibilityRole="button">
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}>
                 <Icon name="IconFolder" size={16} color={colors.live} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{project.name}</Text>
@@ -109,6 +146,19 @@ const makeStyles = (colors: Palette) => {
       paddingTop: 2,
       paddingBottom: 12,
     },
+    tiles: { flexDirection: 'row', gap: 6, paddingTop: 4, paddingBottom: 14 },
+    tile: {
+      flex: 1,
+      height: 44,
+      borderRadius: radius.control,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.raised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tileOn: { backgroundColor: colors.active, borderColor: colors.borderStrong },
+    tileText: { fontFamily: fonts.uiMedium, fontSize: 13.5, color: colors.secondary },
     title: { fontFamily: fonts.uiSemibold, fontSize: 17, letterSpacing: -0.35, color: colors.ink },
     search: {
       flexDirection: 'row',
@@ -122,6 +172,7 @@ const makeStyles = (colors: Palette) => {
       backgroundColor: colors.sunken,
     },
     searchInput: { flex: 1, fontFamily: fonts.ui, fontSize: 15.5, color: colors.ink },
+    list: { marginTop: 12, flexShrink: 1 },
     group: { borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.raised, overflow: 'hidden' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 14, paddingVertical: 8 },
     rowOn: { backgroundColor: colors.active },

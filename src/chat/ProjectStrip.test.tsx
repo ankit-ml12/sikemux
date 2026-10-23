@@ -20,7 +20,18 @@ const initial = getState();
 const toggle = vi.fn();
 
 function renderStrip(state: Parameters<typeof ProjectStrip>[0]["worktree"]["state"] = { kind: "choosing", on: false }) {
-    return render(<ProjectStrip agentId="agent-1" cwd="/work/app" worktree={{ state, toggle }} />);
+    return render(
+        <ProjectStrip
+            agentId="agent-1"
+            host={undefined}
+            project="/work/app"
+            cwd="/work/app"
+            started={false}
+            worktree={{ state, toggle }}
+            pull={null}
+            account={null}
+        />,
+    );
 }
 
 beforeEach(() => {
@@ -44,28 +55,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ProjectStrip", () => {
-    it("names the project, its branch and the worktree switch", async () => {
-        renderStrip();
-        expect(screen.getByRole("button", { name: "Project" })).toHaveTextContent("app");
-        expect(await screen.findByText("main")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "worktree" }));
-        expect(toggle).toHaveBeenCalledTimes(1);
-    });
-
-    it("drops the worktree switch outside a git repository", () => {
-        renderStrip({ kind: "hidden" });
-        expect(screen.queryByRole("button", { name: "worktree" })).not.toBeInTheDocument();
-    });
-
     it("lists open projects before ones found on disk, and moves the chat to the one picked", async () => {
         renderStrip();
         fireEvent.click(screen.getByRole("button", { name: "Project" }));
-        const list = screen.getByRole("listbox", { name: "Projects" });
+        const list = screen.getByRole("listbox", { name: "Project" });
         await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(3));
         expect(
             within(list)
                 .getAllByRole("option")
-                .map((option) => option.querySelector("strong")?.textContent),
+                .map((option) => option.querySelector(".dd-item-label")?.firstChild?.textContent),
         ).toEqual(["app", "site", "notes"]);
         expect(within(list).getByRole("option", { selected: true })).toHaveTextContent("app");
 
@@ -77,7 +75,7 @@ describe("ProjectStrip", () => {
     it("filters as you type and picks the first match on Enter", async () => {
         renderStrip();
         fireEvent.click(screen.getByRole("button", { name: "Project" }));
-        const search = screen.getByRole("combobox", { name: "Search projects" });
+        const search = screen.getByRole("textbox", { name: "Find a project" });
         await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3));
         fireEvent.change(search, { target: { value: "site" } });
         expect(screen.getAllByRole("option")).toHaveLength(1);

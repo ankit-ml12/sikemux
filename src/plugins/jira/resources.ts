@@ -1,32 +1,21 @@
-import { resource } from "../../plugin-api/resources";
-import { jiraApi, type JiraFilter, type JiraIssue, type JiraPage, type JiraStatus } from "./api";
+import { defineService } from "../../plugin-api/service";
+import { jiraApi } from "./api";
+import { JIRA_PLUGIN } from "./kinds";
 
-export const jiraStatusR = resource({
-    kind: "jira.status",
-    fetch: (): Promise<JiraStatus> => jiraApi.status(),
-    staleAfterMs: 60_000,
-});
+export const jira = defineService(JIRA_PLUGIN, jiraApi.status);
 
-export const jiraSearchR = resource({
-    kind: "jira.search",
-    fetch: (jql: string, site: string): Promise<JiraPage> => jiraApi.search(jql, site || undefined),
-    staleAfterMs: 30_000,
-});
+export const jiraSearchR = jira.resource("search", (jql: string, site: string) => jiraApi.search(jql, site || undefined), 30_000);
 
-export const jiraIssueR = resource({
-    kind: "jira.issue",
-    fetch: (key: string, site: string): Promise<JiraIssue> => jiraApi.issue(key, site || undefined),
-    staleAfterMs: 30_000,
-});
+export const jiraIssueR = jira.resource("issue", (key: string, site: string) => jiraApi.issue(key, site || undefined), 30_000);
 
-export const jiraFiltersR = resource({
-    kind: "jira.filters",
-    fetch: (site: string): Promise<JiraFilter[]> => jiraApi.filters(site || undefined),
-    staleAfterMs: 300_000,
-});
+export const jiraFiltersR = jira.resource("filters", (site: string) => jiraApi.filters(site || undefined), 300_000);
 
-export const jiraKeysR = resource({
-    kind: "jira.keys",
-    fetch: (text: string): Promise<string[]> => jiraApi.keys(text),
-    staleAfterMs: 3_600_000,
-});
+export const jiraProjectsR = jira.resource("projects", (site: string) => jiraApi.projects(site || undefined), 600_000);
+
+export const jiraBoardsR = jira.resource("boards", (site: string) => jiraApi.boards(site || undefined), 600_000);
+
+export const jiraBoardR = jira.resource(
+    "board",
+    (id: number, site: string, picked: string) => jiraApi.board(id, site || undefined, picked ? picked.split(",") : []),
+    30_000,
+);

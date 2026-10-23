@@ -9,6 +9,9 @@ pub const DEFAULT_ROW_LIMIT: usize = 500;
 pub const MAX_ROW_LIMIT: usize = 10_000;
 /// Characters a single cell keeps; the rest is cut, so one huge document cannot swamp a result.
 const CELL_CHARACTERS: usize = 4_000;
+/// What an agent gets of one cell, and of a whole reply, so one query cannot flood its context.
+pub const AGENT_CELL_CHARACTERS: usize = 400;
+pub const AGENT_REPLY_BYTES: usize = 48 * 1024;
 /// The largest integer a JavaScript number holds exactly.
 const SAFE_INTEGER: i64 = (1 << 53) - 1;
 const BLOB_PREVIEW_BYTES: usize = 32;
@@ -48,11 +51,57 @@ pub fn row_limit(asked: Option<usize>) -> usize {
     asked.unwrap_or(DEFAULT_ROW_LIMIT).clamp(1, MAX_ROW_LIMIT)
 }
 
+/// The text cut to `characters` and marked with an ellipsis; none when it is short enough already.
+fn shortened(value: &str, characters: usize) -> Option<String> {
+    let (cut, _) = value.char_indices().nth(characters)?;
+    Some(format!("{}…", value.get(..cut).unwrap_or(value)))
+}
+
 pub fn text(value: &str) -> Value {
-    match value.char_indices().nth(CELL_CHARACTERS) {
-        Some((cut, _)) => Value::String(format!("{}…", value.get(..cut).unwrap_or(value))),
-        None => Value::String(value.to_string()),
+    Value::String(shortened(value, CELL_CHARACTERS).unwrap_or_else(|| value.to_string()))
+}
+
+fn json_bytes(value: &impl Serialize) -> usize {
+    serde_json::to_vec(value).map_or(0, |bytes| bytes.len())
+}
+
+/// Cuts results down for an agent: every text cell to `cell_characters`, and the rows once the reply would pass
+/// `budget` bytes, along with every row of the results after it. A result that lost rows is marked truncated.
+/// Says whether anything was cut.
+pub fn fit(results: &mut [ResultSet], cell_characters: usize, budget: usize) -> bool {
+    let mut spent = 0;
+    let mut cut = false;
+    let mut full = false;
+    for result in results.iter_mut() {
+        spent += json_bytes(&result.columns);
+        let mut kept = 0;
+        for row in &mut result.rows {
+            if full {
+                break;
+            }
+            for cell in row.iter_mut() {
+                if let Value::String(text) = cell {
+                    if let Some(short) = shortened(text, cell_characters) {
+                        *text = short;
+                        cut = true;
+                    }
+                }
+            }
+            let size = json_bytes(row);
+            if spent + size > budget {
+                full = true;
+                break;
+            }
+            spent += size;
+            kept += 1;
+        }
+        if kept < result.rows.len() {
+            result.rows.truncate(kept);
+            result.truncated = true;
+            cut = true;
+        }
     }
+    cut
 }
 
 pub fn integer(value: i64) -> Value {
@@ -70,11 +119,7 @@ pub fn real(value: f64) -> Value {
 
 /// Binary data as the start of its hex, with its full size.
 pub fn blob(bytes: &[u8]) -> Value {
-    let shown: String = bytes
-        .iter()
-        .take(BLOB_PREVIEW_BYTES)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let shown = hex::encode(bytes.get(..BLOB_PREVIEW_BYTES).unwrap_or(bytes));
     if bytes.len() > BLOB_PREVIEW_BYTES {
         Value::String(format!("\\x{shown}… ({} bytes)", bytes.len()))
     } else {
@@ -141,6 +186,39 @@ mod tests {
         assert_eq!(text("short"), Value::String("short".into()));
     }
 
+    fn texts(rows: usize, characters: usize) -> ResultSet {
+        ResultSet {
+            columns: vec![Column {
+                name: "body".into(),
+                type_name: "text".into(),
+                numeric: false,
+            }],
+            rows: (0..rows)
+                .map(|_| vec![Value::String("x".repeat(characters))])
+                .collect(),
+            ..ResultSet::default()
+        }
+    }
+
+    #[test]
+    fn an_agents_reply_keeps_within_its_byte_budget() {
+        let mut results = vec![texts(1_000, 1_000), texts(5, 10)];
+        assert!(fit(&mut results, 400, 48 * 1024));
+        assert!(json_bytes(&results) <= 48 * 1024 + 200);
+        let first = &results[0];
+        assert!(first.truncated);
+        assert!(!first.rows.is_empty() && first.rows.len() < 1_000);
+        let Value::String(cell) = &first.rows[0][0] else {
+            panic!("expected text")
+        };
+        assert_eq!(cell.chars().count(), 401);
+        assert!(results[1].rows.is_empty() && results[1].truncated);
+
+        let mut small = vec![texts(3, 10)];
+        assert!(!fit(&mut small, 400, 48 * 1024));
+        assert_eq!(small, vec![texts(3, 10)]);
+    }
+
     #[test]
     fn blobs_show_their_start_and_size() {
         assert_eq!(blob(&[0xde, 0xad]), Value::String("\\xdead".into()));
@@ -170,12 +248,5 @@ mod tests {
         infer_numeric(&mut columns, &rows);
         let numeric: Vec<bool> = columns.iter().map(|column| column.numeric).collect();
         assert_eq!(numeric, vec![true, false, false]);
-    }
-
-    #[test]
-    fn the_row_limit_stays_within_reason() {
-        assert_eq!(row_limit(None), DEFAULT_ROW_LIMIT);
-        assert_eq!(row_limit(Some(0)), 1);
-        assert_eq!(row_limit(Some(1_000_000)), MAX_ROW_LIMIT);
     }
 }

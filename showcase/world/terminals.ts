@@ -40,17 +40,17 @@ const DEV = lines(
   `    ${c.green("Finished")} \`dev\` profile in 11.02s`,
   `     ${c.green("Running")} \`target/debug/sikemux\``,
   `${c.dim("9:40:07")} ${c.cyan("[vite]")} ${c.green("hmr")} ${c.dim("/src/styles/modern-shell.css")}`,
-  `${c.dim("9:40:19")} ${c.cyan("[vite]")} ${c.green("hmr")} ${c.dim("/src/rail/AgentRail.tsx")}`,
+  `${c.dim("9:40:19")} ${c.cyan("[vite]")} ${c.green("hmr")} ${c.dim("/src/rail/TabRail.tsx")}`,
 );
 
 const TEST = lines(
   title("vitest"),
-  `${prompt("~/code/sikemux", "main", "!3?1")}pnpm test src/rail/AgentRail`,
+  `${prompt("~/code/sikemux", "main", "!3?1")}pnpm test src/rail/TabRail`,
   "",
   ` ${c.bold(c.cyan("RUN"))}  ${c.cyan("v4.1.10")} ${c.dim("~/code/sikemux")}`,
   "",
-  ` ${c.green("✓")} AgentRail.test.tsx ${c.dim("(24 tests)")} ${c.yellow("311ms")}`,
-  ` ${c.green("✓")} AgentRailRows.test.tsx ${c.dim("(9 tests)")} ${c.dim("88ms")}`,
+  ` ${c.green("✓")} TabRail.test.tsx ${c.dim("(24 tests)")} ${c.yellow("311ms")}`,
+  ` ${c.green("✓")} TabRailRows.test.tsx ${c.dim("(9 tests)")} ${c.dim("88ms")}`,
   ` ${c.green("✓")} agentActivity.test.ts ${c.dim("(17 tests)")} ${c.dim("42ms")}`,
   "",
   ` ${c.dim("Test Files")}  ${c.bold(c.green("3 passed"))} ${c.dim("(3)")}`,
@@ -71,10 +71,10 @@ const GIT = lines(
   `${c.yellow("f4c21b8")} perf(pty): replay as one buffer`,
   `${prompt("~/code/sikemux", "main", "!3?1")}git status -sb`,
   `${c.green("## main")}...${c.red("origin/main")} [ahead ${c.green("2")}]`,
-  ` ${c.red("M")} src/rail/AgentRail.tsx`,
+  ` ${c.red("M")} src/rail/TabRail.tsx`,
   `${c.green("M")}  src/styles/modern-shell.css`,
   ` ${c.red("M")} src/styles/tokens.css`,
-  `${c.red("??")} src/rail/AgentRailDensity.tsx`,
+  `${c.red("??")} src/rail/TabRailDensity.tsx`,
   prompt("~/code/sikemux", "main", "!3?1"),
 );
 
@@ -142,7 +142,35 @@ const GPU = lines(
   `${c.green("edon@gpu-box")}:${c.blue("~")}$ `,
 );
 
+const WATCH = lines(
+  title("vitest --watch"),
+  `${prompt("~/code/sikemux", "main", "!3?1")}pnpm vitest --watch src/rail`,
+  "",
+  ` ${c.bold(c.cyan("DEV"))}  ${c.cyan("v4.1.10")} ${c.dim("~/code/sikemux")}`,
+  "",
+  ` ${c.green("✓")} src/rail/TabRail.test.tsx ${c.dim("(25 tests)")} ${c.dim("318ms")}`,
+  ` ${c.green("✓")} src/rail/SideRail.test.tsx ${c.dim("(16 tests)")} ${c.dim("204ms")}`,
+  "",
+  ` ${c.dim("Test Files")}  ${c.bold(c.green("2 passed"))} ${c.dim("(2)")}`,
+  `      ${c.dim("Tests")}  ${c.bold(c.green("41 passed"))} ${c.dim("(41)")}`,
+  "",
+  ` ${c.bold(c.green("PASS"))}  ${c.dim("Waiting for file changes...")}`,
+);
+
+const LOGS = lines(
+  title("tail -f core.log"),
+  `${prompt("~/code/sikemux", "main", "!3?1")}tail -f ~/Library/Logs/Sikemux/core.log`,
+  `${c.dim("09:40:02")} ${c.green("INFO")}  core: listening on 127.0.0.1:47120`,
+  `${c.dim("09:40:02")} ${c.green("INFO")}  agents: 6 chats restored`,
+  `${c.dim("09:40:11")} ${c.green("INFO")}  board: sikemux has 8 cards, 3 running`,
+  `${c.dim("09:40:19")} ${c.yellow("WARN")}  remote: Pixel 9 last seen 2h ago`,
+  `${c.dim("09:40:31")} ${c.green("INFO")}  agents: Otter sent a message to Maple`,
+);
+
 export const TERMINAL_REPLAY: Record<string, string> = {
+  "t-watch": WATCH,
+  "t-logs": LOGS,
+  "t-ssh-gpu": GPU,
   "t-gpu": GPU,
   "agent-notes": HERMES,
   "t-shell": SHELL,

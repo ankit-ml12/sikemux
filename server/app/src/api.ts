@@ -1,51 +1,40 @@
-import type { AccountDeletion, ApiError, DeviceList } from "@sikemux/protocol";
+import type { useAuth } from "@clerk/react";
+import { TRY_AGAIN } from "@sikemux/protocol/account";
+import { ApiProblem, connectApi } from "@sikemux/protocol/api";
 
 import { config } from "./config.ts";
 
-export class ApiProblem extends Error {
-  readonly status: number;
+type GetToken = ReturnType<typeof useAuth>["getToken"];
 
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
+/** A token for the API, or a problem asking the person to sign in again to do `what`. */
+export async function signedInToken(
+  getToken: GetToken,
+  what: string,
+  { fresh = false } = {},
+): Promise<string> {
+  const token = await getToken(fresh ? { skipCache: true } : undefined);
+  if (!token) throw new ApiProblem(`Sign in again to ${what}.`, 401);
+  return token;
 }
 
-async function call(
-  method: "GET" | "DELETE",
-  path: string,
-  token: string,
-): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(`${config.apiUrl}${path}`, {
-      method,
-      headers: { authorization: `Bearer ${token}` },
-    });
-  } catch {
-    throw new ApiProblem(
-      "Can't reach Sikemux. Check your connection and try again.",
-      0,
-    );
-  }
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ApiError | null;
-    throw new ApiProblem(
-      body?.error.message ?? `The API answered ${response.status}.`,
-      response.status,
-    );
-  }
-  return response;
+/** What went wrong, in words for the person. */
+export function problemText(error: unknown): string {
+  return error instanceof Error ? error.message : TRY_AGAIN;
 }
 
-export const api = {
-  devices: async (token: string) =>
-    (await (await call("GET", "/v1/devices", token)).json()) as DeviceList,
-  removeDevice: async (token: string, key: string) => {
-    await call("DELETE", `/v1/devices/${encodeURIComponent(key)}`, token);
-  },
-  deleteAccount: async (token: string) =>
-    (await (
-      await call("DELETE", "/v1/account", token)
-    ).json()) as AccountDeletion,
-};
+/** A day the way the app writes one, like 12 November 2026. */
+export function formatDay(iso: string, month: "short" | "long" = "long") {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month,
+    year: "numeric",
+  });
+}
+
+/** The API's routes, signed in with `token`. */
+export const api = (token: string) =>
+  connectApi({
+    url: config.apiUrl,
+    token: () => Promise.resolve(token),
+    offline: "Can't reach Sikemux. Check your connection and try again.",
+  });

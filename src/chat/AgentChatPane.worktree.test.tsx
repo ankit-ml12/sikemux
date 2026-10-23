@@ -1,29 +1,46 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PreparedWorktree } from "../agents/agentWorktree";
 import { resetResourcesForTests } from "../state/resources";
 import { setState } from "../state/store";
 import type { Agent, AgentWorktree } from "../state/types";
 import { AgentChatPane } from "./AgentChatPane";
+import type { PreparedWorktree } from "./useChatWorktree";
+import { draftOf, typeDraft } from "../test/draft";
 
 const mocks = vi.hoisted(() => ({
     prompt: vi.fn(async () => {}),
-    start: vi.fn(async () => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    start: vi.fn(async (_agentId: string) => ({ sessionId: "session-1", capabilities: {}, setup: {} })),
+    started: null as { sessionId: string; capabilities: object; setup: object } | null,
     create: vi.fn(),
     setAgentWorktree: vi.fn(),
     setAgentWorktreeDefault: vi.fn(),
     worktrees: vi.fn(async () => [{ path: "/repo", head: "abc", branch: "main", is_main: true, current: true }]),
 }));
 
-vi.mock("../api/agents", () => ({ agentApi: { sessionContext: async () => null, available: async () => [] } }));
-vi.mock("../api/fs", () => ({ fsapi: { pathKinds: async (paths: string[]) => paths.map(() => null) } }));
+vi.mock("../api/agents", () => ({ agentApi: { available: async () => [] } }));
+vi.mock("../api/fs", () => {
+    const fsapi = { pathKinds: async (paths: string[]) => paths.map(() => null) };
+    return { fsapi, filesOn: () => fsapi };
+});
 vi.mock("../api/git", () => ({ git: { worktrees: mocks.worktrees, overview: async () => ({ status: { branch: "main" } }) } }));
-vi.mock("../agents/agentWorktree", () => ({ createAgentWorktree: mocks.create }));
+vi.mock("../api/core", async (importOriginal) => {
+    const original = await importOriginal<typeof import("../api/core")>();
+    return {
+        coreCall: (method: string, params: unknown) => (method === "createAgentWorktree" ? mocks.create(params) : original.coreCall(method, params)),
+    };
+});
 vi.mock("../api/acp", () => ({
     acpApi: {
+        composing: vi.fn(async () => {}),
         subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: mocks.start,
+        attach: vi.fn(async (agentId: string) => {
+            const start = mocks.started ?? (await mocks.start(agentId));
+            mocks.started = null;
+            return { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null };
+        }),
+        startChat: vi.fn(async (agentId: string) => {
+            mocks.started = await mocks.start(agentId);
+        }),
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
         stop: vi.fn(async () => {}),
@@ -34,25 +51,21 @@ vi.mock("../api/acp", () => ({
         permissionReply: vi.fn(),
     },
 }));
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
     setAgentWorktree: mocks.setAgentWorktree,
     setAgentWorktreeDefault: mocks.setAgentWorktreeDefault,
-    attachAgentSession: vi.fn(),
     setAgentPermissionMode: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
-    noteAcpAgentState: vi.fn(),
-    noteAgentBackgroundWork: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
     id: "agent-wt",
     type: "codex",
     title: "Agent",
-    startup: "codex",
     permissionMode: "workspace-write",
     launchState: "live",
     cwd: "/repo",
@@ -77,19 +90,20 @@ function renderPane() {
     return view;
 }
 
-async function sendFirstMessage(text: string): Promise<HTMLTextAreaElement> {
-    const editor = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
-    await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ cwd: "/repo" })));
+async function sendFirstMessage(text: string): Promise<HTMLElement> {
+    const editor = screen.getByRole("textbox", { name: "Message agent" });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     const toggle = await screen.findByRole("button", { name: "worktree" });
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
-    fireEvent.change(editor, { target: { value: text } });
+    typeDraft(editor, text);
     fireEvent.keyDown(editor, { key: "Enter" });
     return editor;
 }
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.started = null;
     resetResourcesForTests();
     setState({ agentWorktreeDefaults: {} });
     mocks.create.mockImplementation(
@@ -108,19 +122,17 @@ describe("AgentChatPane in a worktree", () => {
         await sendFirstMessage("Fix the flaky PTY test");
 
         await waitFor(() =>
-            expect(mocks.create).toHaveBeenCalledWith(
-                expect.objectContaining({ agentId: agent.id, projectCwd: "/repo", message: "Fix the flaky PTY test" }),
-            ),
+            expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id, message: "Fix the flaky PTY test" })),
         );
         expect(mocks.setAgentWorktreeDefault).toHaveBeenCalledWith("/repo", true);
         expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
         expect(mocks.prompt).not.toHaveBeenCalled();
 
         resolveCreate({ worktree, cwd: worktree.path, setupError: null });
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Fix the flaky PTY test", []));
-        expect(mocks.start).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: worktree.path }));
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Fix the flaky PTY test", [], [], expect.any(String)));
+        expect(mocks.start).toHaveBeenCalledTimes(2);
         expect(mocks.prompt).toHaveBeenCalledTimes(1);
-        expect(await screen.findByRole("note")).toHaveTextContent("Working in worktree sikemux/fix-the-flaky-pty-test");
+        expect(await screen.findByRole("note")).toHaveTextContent("Working in a worktree on sikemux/fix-the-flaky-pty-test");
         expect(await screen.findByRole("button", { name: "sikemux/fix-the-flaky-pty-test" })).toBeDisabled();
     });
 
@@ -131,7 +143,7 @@ describe("AgentChatPane in a worktree", () => {
 
         resolveCreate({ worktree, cwd: worktree.path, setupError: "Install failed: exit 1" });
         expect(await screen.findByText(/Install failed: exit 1\. The worktree is kept at/)).toBeInTheDocument();
-        await waitFor(() => expect(editor.value).toBe("Fix the flaky PTY test"));
+        await waitFor(() => expect(draftOf(editor)).toBe("Fix the flaky PTY test"));
         expect(mocks.setAgentWorktree).toHaveBeenCalledWith(agent.id, worktree.path, worktree);
         expect(mocks.prompt).not.toHaveBeenCalled();
     });
@@ -142,7 +154,7 @@ describe("AgentChatPane in a worktree", () => {
         const editor = await sendFirstMessage("Fix the flaky PTY test");
 
         expect(await screen.findByText("Could not create a worktree: branch exists")).toBeInTheDocument();
-        await waitFor(() => expect(editor.value).toBe("Fix the flaky PTY test"));
+        await waitFor(() => expect(draftOf(editor)).toBe("Fix the flaky PTY test"));
         expect(mocks.setAgentWorktree).not.toHaveBeenCalled();
         expect(mocks.prompt).not.toHaveBeenCalled();
     });
@@ -152,9 +164,9 @@ describe("AgentChatPane in a worktree", () => {
         const editor = screen.getByRole("textbox", { name: "Message agent" });
         await screen.findByRole("button", { name: "worktree" });
         await waitFor(() => expect(screen.getByRole("button", { name: "worktree" })).toBeEnabled());
-        fireEvent.change(editor, { target: { value: "hello" } });
+        typeDraft(editor, "hello");
         fireEvent.keyDown(editor, { key: "Enter" });
-        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "hello", []));
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "hello", [], [], expect.any(String)));
         expect(mocks.create).not.toHaveBeenCalled();
     });
 });

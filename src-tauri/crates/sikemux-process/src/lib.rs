@@ -7,7 +7,14 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+pub mod clock;
+pub mod files;
+pub mod jobs;
+pub mod memory_pressure;
+pub mod paths;
+pub mod sync;
 pub mod user_environment;
+pub mod vars;
 
 #[derive(Debug)]
 pub enum ProcessRunError {
@@ -125,6 +132,26 @@ pub fn run(
     max_output_bytes: usize,
     cancellation: Option<&ProcessCancellation>,
 ) -> Result<Output, ProcessRunError> {
+    run_with_pid(
+        command,
+        input,
+        timeout,
+        max_output_bytes,
+        cancellation,
+        |_| {},
+    )
+}
+
+/// [`run`], handing `started` the child's pid before the child is given its
+/// input.
+pub fn run_with_pid(
+    command: &mut Command,
+    input: Option<&[u8]>,
+    timeout: Duration,
+    max_output_bytes: usize,
+    cancellation: Option<&ProcessCancellation>,
+    started: impl FnOnce(u32),
+) -> Result<Output, ProcessRunError> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if input.is_some() {
         command.stdin(Stdio::piped());
@@ -135,6 +162,7 @@ pub fn run(
         command.process_group(0);
     }
     let mut child = command.spawn().map_err(ProcessRunError::Spawn)?;
+    started(child.id());
     let stdout = child.stdout.take().ok_or_else(|| {
         kill_and_reap(&mut child);
         ProcessRunError::MissingPipe("stdout")

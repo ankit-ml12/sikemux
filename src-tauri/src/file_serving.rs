@@ -64,7 +64,8 @@ pub fn content_type(path: &Path) -> &'static str {
     }
 }
 
-/// The type a file's first bytes announce, for files whose name does not say.
+/// The type a file's first bytes announce, for files whose name does not say
+/// and downloads whose server cannot be trusted to.
 pub fn sniff(head: &[u8]) -> Option<&'static str> {
     let starts = |magic: &[u8]| head.starts_with(magic);
     let at = |offset: usize, magic: &[u8]| head.get(offset..offset + magic.len()) == Some(magic);
@@ -96,6 +97,9 @@ pub fn sniff(head: &[u8]) -> Option<&'static str> {
             Some(b"qt  ") => "video/quicktime",
             _ => "video/mp4",
         });
+    }
+    if starts(b"\x00\x00\x01\x00") || starts(b"\x00\x00\x02\x00") {
+        return Some("image/x-icon");
     }
     if starts(b"ID3") || starts(b"\xff\xfb") || starts(b"\xff\xf3") || starts(b"\xff\xf2") {
         return Some("audio/mpeg");
@@ -136,6 +140,11 @@ pub fn sniff(head: &[u8]) -> Option<&'static str> {
     if starts(b"PK\x03\x04") {
         return Some("application/zip");
     }
+    let text = head.trim_ascii_start();
+    let svg = |bytes: &[u8]| bytes.eq_ignore_ascii_case(b"<svg");
+    if text.get(..4).is_some_and(svg) || (text.starts_with(b"<?xml") && head.windows(4).any(svg)) {
+        return Some("image/svg+xml");
+    }
     None
 }
 
@@ -156,7 +165,9 @@ pub fn percent_decode(segment: &str) -> Option<String> {
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'%' {
-            let hex = segment.get(at + 1..at + 3)?;
+            let hex = segment
+                .get(at + 1..at + 3)
+                .filter(|hex| hex.bytes().all(|byte| byte.is_ascii_hexdigit()))?;
             out.push(u8::from_str_radix(hex, 16).ok()?);
             at += 3;
         } else {
@@ -193,6 +204,18 @@ mod tests {
     }
 
     #[test]
+    fn bytes_name_themselves_and_a_page_of_html_names_nothing() {
+        assert_eq!(sniff(b"\x89PNG\r\n\x1a\n rest"), Some("image/png"));
+        assert_eq!(sniff(b"\xff\xd8\xff\xe0"), Some("image/jpeg"));
+        assert_eq!(sniff(b"\x00\x00\x01\x00rest"), Some("image/x-icon"));
+        assert_eq!(
+            sniff(b"  <svg viewBox=\"0 0 1 1\"/>"),
+            Some("image/svg+xml")
+        );
+        assert_eq!(sniff(b"<!doctype html><html>"), None);
+    }
+
+    #[test]
     fn media_ranges_parse() {
         assert_eq!(parse_range("bytes=0-"), Some((0, None)));
         assert_eq!(parse_range("bytes=10-19"), Some((10, Some(19))));
@@ -205,5 +228,6 @@ mod tests {
         assert_eq!(percent_decode("a%20b"), Some("a b".into()));
         assert_eq!(percent_decode("%2FUsers%2Fme"), Some("/Users/me".into()));
         assert_eq!(percent_decode("%zz"), None);
+        assert_eq!(percent_decode("%+f"), None);
     }
 }

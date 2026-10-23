@@ -1,8 +1,13 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import type { LivePush, PushTokenRegistration } from "@sikemux/protocol";
+import {
+  LiveCloseCode,
+  type LivePush,
+  type PushTokenRegistration,
+} from "@sikemux/protocol";
 import { pino } from "pino";
 import {
   afterAll,
@@ -18,7 +23,7 @@ import vector from "../../protocol/vectors/push-token.json" with { type: "json" 
 import type { Database } from "../src/db.ts";
 import { pushTokenMessage, signedBy } from "../src/devices/signature.ts";
 import { RateLimiter } from "../src/limits.ts";
-import { CLOSE } from "../src/live/options.ts";
+import { ApnsProvider } from "../src/push/apns.ts";
 import { FcmProvider, readServiceAccount } from "../src/push/fcm.ts";
 import type { PushMessage } from "../src/push/provider.ts";
 import { Pusher } from "../src/push/send.ts";
@@ -43,6 +48,10 @@ import {
 } from "./live.ts";
 import { body, testApp } from "./support.ts";
 import { macToken, sessionToken } from "./tokens.ts";
+
+const apnsKey = generateKeyPairSync("ec", {
+  namedCurve: "prime256v1",
+}).privateKey;
 
 let database: Database;
 let drop: () => Promise<void>;
@@ -269,7 +278,7 @@ describe("PUT /v1/devices/{key}/push", () => {
 
   it("refuses hosts and the Mac app's sign-in", async () => {
     const mac = await registered(app, "user_a", "host");
-    expect((await putToken("user_a", mac, "fcm-token")).status).toBe(400);
+    expect((await putToken("user_a", mac, "fcm-token")).status).toBe(404);
     const phone = await registered(app, "user_a", "client");
     const response = await call(
       `/v1/devices/${phone.key}/push`,
@@ -349,6 +358,18 @@ describe("DELETE /v1/devices/{key}/push", () => {
       { method: "DELETE" },
     );
     expect(response.status).toBe(404);
+    expect(await storedTokens()).toHaveLength(1);
+  });
+
+  it("refuses the Mac app's sign-in, as setting one does", async () => {
+    const phone = await registered(app, "user_a", "client");
+    await putToken("user_a", phone, "fcm-token");
+    const response = await call(
+      `/v1/devices/${phone.key}/push`,
+      await macToken("user_a"),
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(403);
     expect(await storedTokens()).toHaveLength(1);
   });
 });
@@ -521,6 +542,7 @@ describe("FCM settings", () => {
       app: "production",
       allowSandbox: false,
       fcm: null,
+      apns: null,
     });
     expect(readPush({ PUSH_APP: "dev" }, problems).allowSandbox).toBe(true);
     expect(problems).toEqual([]);
@@ -556,6 +578,43 @@ describe("a host's push", () => {
       },
     ]);
     expect((await storedTokens())[0]?.last_ok_at).not.toBeNull();
+  });
+
+  it("reaches an iPhone through the APNs server its token came from", async () => {
+    const sent: { origin: string; path: unknown }[] = [];
+    await startLive({
+      providers: {
+        apns: new ApnsProvider(
+          { keyId: "ABC123DEFG", teamId: "D577WD6Z5U", privateKey: apnsKey },
+          {
+            topic: "com.nodelike.sikemux.mobile",
+            endpoints: {
+              production: "https://prod",
+              sandbox: "https://sandbox",
+            },
+            transport: (origin, headers) => {
+              sent.push({ origin, path: headers[":path"] });
+              return Promise.resolve({ status: 200, headers: {}, body: "" });
+            },
+          },
+        ),
+      },
+    });
+    const mac = await registered(app, "user_a", "host");
+    const phone = await registered(app, "user_a", "client");
+    expect(
+      (
+        await putToken("user_a", phone, "apns-token", {
+          platform: "apns",
+          apnsEnvironment: "production",
+        })
+      ).status,
+    ).toBe(200);
+    const peer = await liveHost(mac);
+    expect(await pushed(peer, push(phone.key))).toBe("sent");
+    expect(sent).toEqual([
+      { origin: "https://prod", path: "/3/device/apns-token" },
+    ]);
   });
 
   it("goes only to phones on the host's own account", async () => {
@@ -596,7 +655,7 @@ describe("a host's push", () => {
     const peer = kept(await clientPeer(api?.url ?? "", phone, "user_a"));
     await peer.until("ready");
     peer.send(push(phone.key));
-    expect(await peer.closed).toBe(CLOSE.badMessage);
+    expect(await peer.closed).toBe(LiveCloseCode.badMessage);
   });
 
   it("forgets a token FCM says is unregistered", async () => {

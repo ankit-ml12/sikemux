@@ -1,59 +1,64 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpAttachment, AcpEvent } from "../api/acp";
+import { moveChat } from "../agents/accounts";
 import { resetResourcesForTests } from "../state/resources";
-import type { Agent } from "../state/types";
+import type { Agent, ProviderProfile } from "../state/types";
+import { typeDraft } from "../test/draft";
 import { AgentChatPane } from "./AgentChatPane";
-import { chatClaimed } from "./chatClaims";
 
 const mocks = vi.hoisted(() => ({
     listener: null as ((event: AcpEvent) => void) | null,
     attach: vi.fn(),
-    start: vi.fn(async () => ({ sessionId: "session-new", capabilities: {}, setup: {} })),
+    startChat: vi.fn(async () => {}),
+    prompt: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
-    attachAgentSession: vi.fn(),
+    switchAccount: vi.fn(async () => {}),
 }));
 
-vi.mock("../api/agents", () => ({ agentApi: { sessionContext: async () => null, available: async () => [] } }));
-vi.mock("../api/fs", () => ({ fsapi: { pathKinds: async (paths: string[]) => paths.map(() => null) } }));
+vi.mock("../api/agents", () => ({
+    agentApi: { available: async () => [], account: async () => ({ signedIn: true, sessions: null }) },
+}));
+vi.mock("../api/fs", () => {
+    const fsapi = { pathKinds: async (paths: string[]) => paths.map(() => null) };
+    return { fsapi, filesOn: () => fsapi };
+});
 vi.mock("../api/git", () => ({ git: { worktrees: async () => [], overview: async () => ({ status: { branch: "main" } }) } }));
 vi.mock("../api/acp", () => ({
     acpApi: {
+        composing: vi.fn(async () => {}),
         subscribe: vi.fn(async (listener: (event: AcpEvent) => void) => {
             mocks.listener = listener;
             return () => {};
         }),
         attach: mocks.attach,
-        start: mocks.start,
+        startChat: mocks.startChat,
         stop: mocks.stop,
+        switchAccount: mocks.switchAccount,
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
-        prompt: vi.fn(async () => {}),
+        prompt: mocks.prompt,
         steer: vi.fn(),
         cancel: vi.fn(async () => {}),
         stopTask: vi.fn(),
         permissionReply: vi.fn(async () => {}),
     },
 }));
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 vi.mock("../state/commands", () => ({
-    attachAgentSession: mocks.attachAgentSession,
     setAgentPermissionMode: vi.fn(),
     setAgentModelPreferences: vi.fn(),
     setAgentTitle: vi.fn(),
     titleAgentFromPrompt: vi.fn(),
-    noteAcpAgentState: vi.fn(),
-    noteAgentBackgroundWork: vi.fn(),
     toggleAgentSkipPermissions: vi.fn(),
     setAgentWorktree: vi.fn(),
     setAgentWorktreeDefault: vi.fn(),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
 
 const agent: Agent = {
     id: "agent-kept",
     type: "claude",
     title: "Agent",
-    startup: "claude",
     permissionMode: "workspace-write",
     launchState: "live",
     cwd: "/repo",
@@ -66,6 +71,8 @@ const live: AcpAttachment = {
     permissionMode: "workspace-write",
     running: true,
     turned: true,
+    feed: "feed-1",
+    olderBefore: null,
 };
 
 function emit(kind: AcpEvent["kind"], payload: Record<string, unknown> = {}) {
@@ -114,6 +121,11 @@ const showsText = (text: string) => waitFor(() => expect(transcript()).toContain
 
 function renderPane() {
     const view = render(<AgentChatPane agent={agent} cwd="/repo" active visible onBusyChange={() => {}} />);
+    measure();
+    return view;
+}
+
+function measure() {
     const scroller = document.querySelector(".chat-scroll") as HTMLElement;
     for (const [name, size] of [
         ["offsetWidth", 600],
@@ -124,7 +136,6 @@ function renderPane() {
     const target: Element = scroller;
     const entries = [{ target } as ResizeObserverEntry];
     act(() => resizeWatchers.get(scroller)?.forEach((callback) => callback(entries, {} as ResizeObserver)));
-    return view;
 }
 
 beforeEach(() => {
@@ -148,29 +159,26 @@ describe("AgentChatPane with a chat the core kept", () => {
         expect(transcript()).toContain("Earlier question");
         expect(transcript()).toContain("Earlier answer");
         expect(screen.getByRole("region", { name: "Permission required for Touch a file" })).toBeInTheDocument();
-        expect(mocks.attach).toHaveBeenCalledWith({ agentId: agent.id, provider: "claude", cwd: "/repo", configPath: undefined });
-        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.attach).toHaveBeenCalledWith(agent.id);
+        expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
-        expect(mocks.attachAgentSession).toHaveBeenCalledWith(agent.id, "session-kept");
-        expect(chatClaimed(agent.id)).toBe(true);
 
         emit("session_update", { updates: [said("agent_message_chunk", " and done")] });
         await showsText("Still working on it and done");
     });
 
-    it("starts the chat on its saved session when the core has none", async () => {
-        mocks.attach.mockResolvedValue({ status: "missing" });
+    it("leaves a chat whose agent is not running as it is, and takes it up once a message woke it", async () => {
+        mocks.attach.mockResolvedValueOnce({ status: "missing" }).mockResolvedValue(live);
         renderPane();
-        await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id, resumeId: "session-old" })));
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor.getAttribute("aria-placeholder")).toContain("Ask about this project"));
+        expect(mocks.startChat).not.toHaveBeenCalled();
+        typeDraft(editor, "Carry on");
+        fireEvent.keyDown(editor, { key: "Enter" });
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Carry on", [], [], expect.any(String)));
+        await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
+        expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
-    });
-
-    it("starts again from the provider's history when the core kept too much to replay", async () => {
-        mocks.attach.mockResolvedValue({ status: "restart" });
-        renderPane();
-        await waitFor(() => expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ resumeId: "session-old" })));
-        expect(mocks.stop).toHaveBeenCalledWith(agent.id);
-        expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
     });
 
     it("takes the chat up again when the core comes back with it, without stopping it", async () => {
@@ -186,14 +194,36 @@ describe("AgentChatPane with a chat the core kept", () => {
         await showsText("Still working on it");
         expect(transcript().split("Earlier answer")).toHaveLength(2);
         expect(mocks.stop).not.toHaveBeenCalled();
-        expect(mocks.start).not.toHaveBeenCalled();
+        expect(mocks.startChat).not.toHaveBeenCalled();
     });
 
-    it("stops the chat when the pane goes away", async () => {
+    it("leaves the chat running when the pane goes away", async () => {
         mocks.attach.mockResolvedValue(live);
         const view = renderPane();
         await waitFor(() => expect(mocks.attach).toHaveBeenCalled());
         view.unmount();
-        await waitFor(() => expect(mocks.stop).toHaveBeenCalledWith(agent.id));
+        await act(async () => {});
+        expect(mocks.stop).not.toHaveBeenCalled();
+    });
+
+    it("takes a chat moved to another account up where it is, mid-turn, without stopping it", async () => {
+        mocks.attach.mockImplementation(async () => {
+            replayKeptChat();
+            return live;
+        });
+        const view = renderPane();
+        await showsText("Still working on it");
+
+        const work: ProviderProfile = { id: "work", name: "Work", provider: "claude", accent: "#000", configPath: "~/.claude-work" };
+        moveChat(agent, work);
+        expect(mocks.switchAccount).toHaveBeenCalledWith(agent.id, "claude", { id: "work", label: "Work", configPath: "~/.claude-work" });
+        view.rerender(<AgentChatPane agent={{ ...agent, profileId: "work" }} profile={work} cwd="/repo" active visible onBusyChange={() => {}} />);
+        measure();
+        await act(async () => {});
+
+        expect(mocks.attach).toHaveBeenCalledTimes(1);
+        await showsText("Still working on it");
+        expect(mocks.stop).not.toHaveBeenCalled();
+        expect(mocks.startChat).not.toHaveBeenCalled();
     });
 });

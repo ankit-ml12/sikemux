@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { basename } from "../../lib/paths";
 import { ViewerBar, ViewerMessage, type ViewProps } from "./ViewerBar";
+import { useImageZoom } from "./useImageZoom";
 
 export function ImageView({ path, preview, url, onReload }: ViewProps) {
     const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
-    const [zoom, setZoom] = useState<"fit" | number>("fit");
     const [failed, setFailed] = useState(false);
+    const stageRef = useRef<HTMLDivElement>(null);
+    const imageRef = useRef<HTMLImageElement>(null);
+    const { zoom, setZoom, zoomBy } = useImageZoom(stageRef, imageRef, dims);
     const zoomLabel = zoom === "fit" ? "fit" : `${Math.round(zoom * 100)}%`;
 
     return (
@@ -32,35 +35,26 @@ export function ImageView({ path, preview, url, onReload }: ViewProps) {
                         <button type="button" onClick={() => setZoom(1)} disabled={zoom === 1} title="Actual size">
                             100%
                         </button>
-                        <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 1.25 : Math.min(z * 1.25, 8)))} title="Zoom in">
+                        <button type="button" onClick={() => zoomBy(1.25)} title="Zoom in">
                             +
                         </button>
-                        <button type="button" onClick={() => setZoom((z) => (z === "fit" ? 0.8 : Math.max(z / 1.25, 0.1)))} title="Zoom out">
+                        <button type="button" onClick={() => zoomBy(0.8)} title="Zoom out">
                             −
                         </button>
                     </>
                 }
             />
-            <div className="ed-viewer-stage">
+            <div ref={stageRef} className="ed-viewer-stage ed-viewer-image">
                 {failed ? (
                     <ViewerMessage title="couldn't show image" detail={`WebKit can't decode ${preview.mime}`} error />
                 ) : (
                     <img
+                        ref={imageRef}
                         src={url}
                         alt={basename(path)}
                         draggable={false}
                         onError={() => setFailed(true)}
                         onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                        style={
-                            zoom === "fit"
-                                ? undefined
-                                : {
-                                      width: `${Math.max(1, (dims?.w ?? 0) * zoom)}px`,
-                                      height: "auto",
-                                      maxWidth: "none",
-                                      maxHeight: "none",
-                                  }
-                        }
                     />
                 )}
             </div>

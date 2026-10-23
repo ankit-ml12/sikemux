@@ -11,54 +11,70 @@
 }
 
 .chat-welcome {
-    container-type: inline-size;
     display: flex;
     flex-direction: column;
-    gap: 32px;
+    gap: 24px;
     width: min(calc(100% - 44px), 756px);
     margin-inline: auto;
-    padding-top: clamp(16px, 8vh, 80px);
+}
+
+.chat-scroll-content:has(> .chat-welcome) {
+    margin-block: auto;
 }
 
 .chat-welcome-head {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 6px;
-    text-align: center;
+    gap: 14px;
 }
 
 .chat-welcome-mark {
     display: flex;
-    margin-bottom: 6px;
     color: var(--ink-dim);
 }
 
-.chat-welcome-title {
-    color: var(--ink);
-    font-size: var(--text-lg);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-display);
-}
-
-.chat-welcome-activity {
+.chat-welcome-burn {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 2px;
+    min-width: 0;
 }
 
-@container (max-width: 560px) {
-    .chat-welcome .activity-stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        row-gap: var(--space-3);
-    }
-    .chat-welcome .activity-stat:nth-child(3) {
-        padding-left: 0;
-        border-left: 0;
-    }
-    .chat-welcome .activity-metrics {
-        display: none;
-    }
+.chat-welcome-burn-count {
+    color: var(--ink);
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-display);
+    line-height: 1.1;
+}
+
+.chat-welcome-burn-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--ink-faint);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.chat-welcome-project {
+    color: var(--ink);
+}
+
+.chat-welcome-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: auto;
+    padding: 2px 0;
+    color: var(--ink-faint);
+    font-size: var(--text-2xs);
+    transition: color 100ms;
+}
+
+.chat-welcome-more:hover {
+    color: var(--ink);
 }
 
 /* Lines up with the text in a message: the transcript is 800px wide with 22px
@@ -86,11 +102,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: chat-activity-shimmer 2.2s linear infinite;
 }
 
 .chat-activity-elapsed {
@@ -127,9 +138,94 @@
     }
 }
 
-@keyframes chat-activity-shimmer {
+/* A live label's sweep (see Shimmer.tsx). Each band is three labels wide and
+   slides one label's width per pass while its copy, just as wide, slides back
+   the same distance, so the text holds still and only the masks move. The
+   masks add up to one, and plus-lighter sums the copies into the gradient a
+   single label would take. */
+.chat-shimmer {
+    position: relative;
+    isolation: isolate;
+    color: transparent;
+}
+
+.chat-shimmer-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 300%;
+    pointer-events: none;
+    user-select: none;
+    animation: chat-shimmer-band 2.2s linear infinite;
+}
+
+.chat-shimmer-band.dim {
+    -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent 50%, #000 60%);
+    mask-image: linear-gradient(90deg, #000 40%, transparent 50%, #000 60%);
+}
+
+.chat-shimmer-band.lit {
+    -webkit-mask-image: linear-gradient(90deg, transparent 40%, #000 50%, transparent 60%);
+    mask-image: linear-gradient(90deg, transparent 40%, #000 50%, transparent 60%);
+    mix-blend-mode: plus-lighter;
+}
+
+.chat-shimmer-copy {
+    display: block;
+    height: 100%;
+    animation: chat-shimmer-copy 2.2s linear infinite;
+}
+
+/* Painted through background-clip, which draws glyphs lighter than plain
+   coloured text does. A third of the band comes out a fraction of a pixel
+   under the label's width in WebKit, which would ellipsize a label that fits,
+   so the text gets a pixel of slack. */
+.chat-shimmer-text {
+    display: block;
+    width: calc(100% / 3 + 1px);
+    height: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+
+.chat-shimmer-band.dim .chat-shimmer-text {
+    background-image: linear-gradient(var(--ink-faint), var(--ink-faint));
+}
+
+.chat-shimmer-band.lit .chat-shimmer-text {
+    background-image: linear-gradient(var(--ink), var(--ink));
+}
+
+.chat-shimmer .chat-shimmer-text * {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+    color: transparent;
+}
+
+.chat-shimmer-text :is(svg, img) {
+    visibility: hidden;
+}
+
+@keyframes chat-shimmer-band {
+    from {
+        transform: translateX(calc(-200% / 3));
+    }
     to {
-        background-position: 0 0;
+        transform: none;
+    }
+}
+
+@keyframes chat-shimmer-copy {
+    from {
+        transform: translateX(calc(200% / 3));
+    }
+    to {
+        transform: none;
     }
 }
 
@@ -145,8 +241,7 @@
 }
 
 .chat-connection-state button,
-.chat-reconnect button,
-.chat-error button {
+.chat-reconnect button {
     height: 28px;
     padding: 0 11px;
     border: 1px solid var(--line);
@@ -157,9 +252,8 @@
 }
 
 .chat-connection-state button:hover,
-.chat-reconnect button:hover,
-.chat-error button:hover {
-    border-color: var(--acc-line);
+.chat-reconnect button:hover {
+    border-color: var(--border-strong);
     color: var(--ink);
 }
 
@@ -193,6 +287,7 @@
 
 .chat-error {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-top: 12px;
@@ -202,6 +297,50 @@
     background: color-mix(in srgb, var(--danger) 8%, transparent);
     color: color-mix(in srgb, var(--danger) 72%, var(--ink));
     font-size: var(--text-2xs);
+}
+
+.chat-error > span:not(.chat-error-actions) {
+    flex: 1 1 12em;
+    min-width: 0;
+    white-space: pre-line;
+}
+
+/* What fixes the failure sits beside it: a sign-in, or another account. */
+/* What the agent itself said about a failed turn, opened from Details. */
+.chat-error-details {
+    flex-basis: 100%;
+    max-height: 160px;
+    margin: 0;
+    padding: 6px 8px;
+    overflow: auto;
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--danger) 6%, transparent);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+}
+
+.chat-error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.chat-error-actions button {
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    background: var(--rail-2);
+    color: var(--ink-dim);
+    font-size: calc(10.5px * var(--chat-text-em, 1));
+    white-space: nowrap;
+}
+
+.chat-error-actions button:hover {
+    border-color: var(--border-strong);
+    color: var(--ink);
 }
 
 .chat-permission {
@@ -271,7 +410,7 @@
     height: 26px;
     place-items: center;
     border: 1px solid var(--line);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-2);
     background: var(--chat-composer-fill);
     color: var(--ink-dim);
     box-shadow: 0 6px 18px color-mix(in srgb, var(--void) calc(var(--window-opacity, 1) * 52%), transparent);
@@ -279,11 +418,6 @@
 }
 
 .chat-jump-bottom:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
     color: var(--ink);
-}
-
-.chat-error button {
-    flex: none;
-    margin-left: auto;
 }

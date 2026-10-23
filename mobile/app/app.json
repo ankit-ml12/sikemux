@@ -9,10 +9,11 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.nodelike.sikemux.mobile",
-      "supportsTablet": true,
+      "appleTeamId": "D577WD6Z5U",
+      "supportsTablet": false,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Sikemux finds the computers on your network that you can pair with.",
-        "NSBonjourServices": ["_sikemux._udp"]
+        "NSLocalNetworkUsageDescription": "Sikemux reaches your hosts directly when they are on the same network.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "icon": "../../src-tauri/icons/sikemux.icon"
     },
@@ -23,19 +24,49 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      }
+      },
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+      ]
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      ["expo-secure-store", { "configureAndroidBackup": false }],
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sikemux shows your recent photos so you can attach them to a chat.",
+          "cameraPermission": "Sikemux uses the camera to take a photo you attach to a chat.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Sikemux shows your recent photos so you can attach them to a chat.",
+          "savePhotosPermission": false,
+          "granularPermissions": ["photo"],
+          "preventAutomaticLimitedAccessAlert": true
+        }
+      ],
       "@clerk/expo",
+      ["expo-local-authentication", { "faceIDPermission": "Sikemux asks for Face ID before it shows your hosts and chats." }],
       "@clerk/expo-google-signin",
+      "expo-apple-authentication",
       "./plugins/link-system-configuration",
       "./plugins/rustls-platform-verifier",
       "./plugins/small-apk",
       "./plugins/release-signing",
       "./plugins/notifications",
+      "./plugins/backup-rules",
+      "./plugins/scene-lifecycle",
+      "./plugins/photo-thumbnails",
+      "./plugins/spm-ids",
       [
         "expo-splash-screen",
         {
@@ -44,13 +75,16 @@
           "imageWidth": 96
         }
       ],
-      "expo-font",
       [
-        "expo-camera",
+        "expo-font",
         {
-          "cameraPermission": "Sikemux uses the camera to scan the pairing code on your computer.",
-          "microphonePermission": false,
-          "recordAudioAndroid": false
+          "fonts": [
+            "./node_modules/@expo-google-fonts/figtree/400Regular/Figtree_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/figtree/400Regular_Italic/Figtree_400Regular_Italic.ttf",
+            "./node_modules/@expo-google-fonts/figtree/500Medium/Figtree_500Medium.ttf",
+            "./node_modules/@expo-google-fonts/figtree/600SemiBold/Figtree_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/jetbrains-mono/400Regular/JetBrainsMono_400Regular.ttf"
+          ]
         }
       ],
       [
@@ -61,7 +95,7 @@
             "useLegacyPackaging": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
+            "extraProguardRules": "-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }\n-keep class expo.modules.gl.** { *; }\n-dontwarn kotlin.MustUseReturnValues"
           }
         }
       ]

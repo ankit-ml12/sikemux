@@ -1,57 +1,9 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
-import { agentIdsOf } from "../state/selectors";
+import { getIpcTransport } from "../api/transport";
 import { swallow } from "../state/toast";
 import { getState, setState, useStore, type StoreState } from "../state/store";
-
-type AgentView = Pick<StoreState, "sessionOrder" | "sessions" | "windows" | "windowsBySession" | "agents" | "agentActivity">;
-
-export interface AgentAlert {
-    agentId: string;
-    title: string;
-    body: string;
-}
-
-function* openAgents(state: AgentView) {
-    for (const sessionId of state.sessionOrder) {
-        const session = state.sessions[sessionId];
-        if (!session) continue;
-        for (const agentId of agentIdsOf(state, sessionId)) {
-            const agent = state.agents[agentId];
-            if (agent) yield { agentId, agent, sessionName: session.name };
-        }
-    }
-}
-
-/** Agents that are waiting on the person: asking for input, or finished while unseen. */
-export function agentsNeedingYou(state: AgentView): number {
-    let count = 0;
-    for (const { agentId } of openAgents(state)) {
-        const status = state.agentActivity[agentId]?.state;
-        if (status === "blocked" || status === "done") count += 1;
-    }
-    return count;
-}
-
-/**
- * One alert per agent that has just asked for input or just finished working.
- * This reads what the agent itself reported, not what the rail shows, because
- * the rail never marks the agent on screen as finished, and that is often the
- * one someone left running while they switched to another app.
- */
-export function newAgentAlerts(previous: AgentView, next: AgentView): AgentAlert[] {
-    const alerts: AgentAlert[] = [];
-    for (const { agentId, agent, sessionName } of openAgents(next)) {
-        const now = next.agentActivity[agentId]?.backendState;
-        const before = previous.agentActivity[agentId]?.backendState;
-        if (now === before) continue;
-        if (now === "blocked") alerts.push({ agentId, title: `${agent.title} needs your input`, body: sessionName });
-        else if (now === "idle" && (before === "working" || before === "blocked"))
-            alerts.push({ agentId, title: `${agent.title} finished`, body: sessionName });
-    }
-    return alerts;
-}
 
 let audio: AudioContext | null = null;
 const audioContext = (): AudioContext => (audio ??= new AudioContext());
@@ -72,14 +24,15 @@ export function playBip(): void {
     tone.stop(start + 0.16);
 }
 
-async function post(title: string, body: string): Promise<void> {
-    if ((await invoke<string>("plugin:notification|request_permission")) !== "granted") return;
-    await invoke("plugin:notification|notify", { options: { title, body } });
+export async function postNotification(title: string, body: string, agentId?: string): Promise<void> {
+    await invoke("post_notification", { title, body, agentId });
     playBip();
 }
 
 export function sendTestNotification(): void {
-    post("Sikemux notifications are on", "This is how an agent will tell you it needs you or has finished.").catch(swallow("test notification"));
+    postNotification("Sikemux notifications are on", "This is how an agent will tell you it needs you or has finished.").catch(
+        swallow("test notification"),
+    );
 }
 
 /**
@@ -94,10 +47,21 @@ export function introduceNotifications(): void {
     sendTestNotification();
 }
 
+/** What the core tells the window to say, about the agent it names. */
+export interface AgentNotice {
+    title: string;
+    body: string;
+    agentId: string;
+}
+
+/** Agents asking for input plus agents that finished while unseen, as the core groups them. */
+export function agentsNeedingYou(agentStatus: StoreState["agentStatus"]): number {
+    return Object.values(agentStatus).filter((shown) => shown.group === "blocked" || shown.group === "done").length;
+}
+
 /**
  * Keeps the Dock badge at the number of agents waiting on the person and, while
- * Sikemux is in the background, posts a notification and bounces the Dock icon
- * as each one starts waiting.
+ * Sikemux is in the background, posts each notice the core sends and bounces the Dock icon.
  */
 export function installAgentNotifications(hasFocus: () => boolean = () => document.hasFocus()): () => void {
     let badge = 0;
@@ -105,22 +69,29 @@ export function installAgentNotifications(hasFocus: () => boolean = () => docume
     const wakeAudio = () => void audioContext().resume();
     window.addEventListener("pointerdown", wakeAudio, { capture: true, once: true });
     const unsubscribe = useStore.subscribe((next, previous) => {
-        if (next.agentActivity === previous.agentActivity && next.agents === previous.agents) return;
-        const count = agentsNeedingYou(next);
-        if (count !== badge) {
-            badge = count;
-            getCurrentWindow()
-                .setBadgeCount(count > 0 ? count : undefined)
-                .catch(swallow("set dock badge"));
-        }
-        if (!next.agentNotifications || hasFocus()) return;
-        const alerts = newAgentAlerts(previous, next);
-        if (alerts.length === 0) return;
-        getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(swallow("bounce dock icon"));
-        for (const alert of alerts) post(alert.title, alert.body).catch(swallow("agent notification"));
+        if (next.agentStatus === previous.agentStatus) return;
+        const count = agentsNeedingYou(next.agentStatus);
+        if (count === badge) return;
+        badge = count;
+        getCurrentWindow()
+            .setBadgeCount(count > 0 ? count : undefined)
+            .catch(swallow("set dock badge"));
     });
+    const controller = new AbortController();
+    getIpcTransport()
+        .subscribe<AgentNotice>(
+            "agent_notice",
+            ({ payload }) => {
+                if (!getState().agentNotifications || hasFocus()) return;
+                getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(swallow("bounce dock icon"));
+                postNotification(payload.title, payload.body, payload.agentId).catch(swallow("agent notification"));
+            },
+            { signal: controller.signal },
+        )
+        .catch(swallow("agent notices"));
     return () => {
         window.removeEventListener("pointerdown", wakeAudio, { capture: true });
+        controller.abort();
         unsubscribe();
     };
 }

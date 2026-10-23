@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extname, isImagePath, isPreviewPath, viewerKind } from "./fileKinds";
+import { extname, isPreviewPath, viewerKind } from "./fileKinds";
 
 describe("file kinds", () => {
     it("extracts lowercase extensions", () => {
@@ -7,13 +7,6 @@ describe("file kinds", () => {
         expect(extname("/tmp/archive.tar.gz")).toBe("gz");
         expect(extname(".gitignore")).toBe("");
         expect(extname("noext")).toBe("");
-    });
-
-    it("detects image paths", () => {
-        expect(isImagePath("diagram.svg")).toBe(true);
-        expect(isImagePath("photo.HEIC")).toBe(true);
-        expect(isImagePath("README.md")).toBe(false);
-        expect(isImagePath(null)).toBe(false);
     });
 
     it("sends files that are never text straight to a viewer", () => {
@@ -26,7 +19,7 @@ describe("file kinds", () => {
     it("picks a viewer from the type the backend reports", () => {
         expect(viewerKind("image/heic")).toBe("image");
         expect(viewerKind("image/vnd.adobe.photoshop")).toBe("document");
-        expect(viewerKind("application/pdf")).toBe("pdf");
+        expect(viewerKind("application/pdf")).toBe("document");
         expect(viewerKind("video/quicktime")).toBe("video");
         expect(viewerKind("video/x-matroska")).toBe("binary");
         expect(viewerKind("audio/mp4")).toBe("audio");

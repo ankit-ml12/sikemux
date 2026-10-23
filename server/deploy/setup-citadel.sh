@@ -5,6 +5,8 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh
+. "$here/lib.sh"
 deploy_key="${1:?usage: setup-citadel.sh <deploy-public-key-file>}"
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
@@ -13,6 +15,10 @@ PG_CONF="/etc/postgresql/$PG_VERSION/main"
 PG_ADMIN=nodelike
 
 step() { printf '\n== %s\n' "$*"; }
+
+step "kernel"
+install -m 644 "$here/sysctl.conf" /etc/sysctl.d/60-sikemux.conf
+sysctl --quiet --load /etc/sysctl.d/60-sikemux.conf
 
 step "users"
 id sikemux >/dev/null 2>&1 ||
@@ -27,6 +33,7 @@ printf 'restrict,command="/usr/local/lib/sikemux/receive-release" %s\n' "$(tr -d
   >/var/lib/sikemux-deploy/.ssh/authorized_keys
 chown sikemux-deploy:sikemux-deploy /var/lib/sikemux-deploy/.ssh/authorized_keys
 chmod 600 /var/lib/sikemux-deploy/.ssh/authorized_keys
+install -D -m 644 -o root -g root "$here/lib.sh" /usr/local/lib/sikemux/lib.sh
 install -D -m 755 -o root -g root "$here/receive-release" /usr/local/lib/sikemux/receive-release
 
 cat >/etc/sudoers.d/sikemux-deploy <<'EOF'
@@ -41,10 +48,10 @@ install -d -m 755 -o sikemux-deploy -g sikemux-deploy /srv/sikemux /srv/sikemux/
 install -d -m 755 -o sikemux-deploy -g sikemux-deploy /srv/sikemux/updates /srv/sikemux/updates/assets
 install -d -m 750 -o root -g sikemux /etc/sikemux
 if [ ! -f /etc/sikemux/api.env ]; then
-  cat >/etc/sikemux/api.env <<'EOF'
+  cat >/etc/sikemux/api.env <<EOF
 HOST=127.0.0.1
 PORT=4000
-DATABASE_URL=postgresql://sikemux@%2Fvar%2Frun%2Fpostgresql/sikemux
+DATABASE_URL=$SIKEMUX_DATABASE_URL
 APP_ORIGIN=https://app.sikemux.com
 CLERK_ISSUER=https://clerk.sikemux.com
 CLERK_MAC_CLIENT_ID=I4QXaIf3c7zntZR8
@@ -53,6 +60,8 @@ EOF
 fi
 chown root:sikemux /etc/sikemux/api.env
 chmod 640 /etc/sikemux/api.env
+grep -q '^GEOIP_DIR=' /etc/sikemux/api.env ||
+  echo 'GEOIP_DIR=/var/lib/sikemux-places' >>/etc/sikemux/api.env
 
 step "database, reachable only by the sikemux users through the local socket"
 psql -U "$PG_ADMIN" -d postgres -v ON_ERROR_STOP=1 -q <<'SQL'
@@ -82,7 +91,12 @@ if ! grep -q '^sikemux ' "$PG_CONF/pg_ident.conf"; then
   printf 'sikemux         sikemux                 sikemux\nsikemux         sikemux-deploy          sikemux\n' >>"$PG_CONF/pg_ident.conf"
 fi
 systemctl reload "postgresql@$PG_VERSION-main"
-sudo -u sikemux-deploy psql 'postgresql://sikemux@%2Fvar%2Frun%2Fpostgresql/sikemux' -Atc 'select current_user' |
+if ! cmp -s "$here/postgresql.conf" "$PG_CONF/conf.d/sikemux.conf"; then
+  install -m 644 "$here/postgresql.conf" "$PG_CONF/conf.d/sikemux.conf"
+  # shared_buffers is read only at start.
+  systemctl restart "postgresql@$PG_VERSION-main"
+fi
+sudo -u sikemux-deploy psql "$SIKEMUX_DATABASE_URL" -Atc 'select current_user' |
   grep -qx sikemux
 if psql -U "$PG_ADMIN" -d sikemux -c 'select 1' >/dev/null 2>&1; then
   echo "other roles can still reach the sikemux database" >&2
@@ -93,9 +107,14 @@ step "service"
 install -m 644 "$here/sikemux-api.service" /etc/systemd/system/sikemux-api.service
 install -m 644 "$here/sikemux-purge.service" /etc/systemd/system/sikemux-purge.service
 install -m 644 "$here/sikemux-purge.timer" /etc/systemd/system/sikemux-purge.timer
+install -m 644 "$here/sikemux-places.service" /etc/systemd/system/sikemux-places.service
+install -m 644 "$here/sikemux-places.timer" /etc/systemd/system/sikemux-places.timer
+install -D -m 755 -o root -g root "$here/update-places" /usr/local/lib/sikemux/update-places
 systemctl daemon-reload
 systemctl enable sikemux-api >/dev/null
 systemctl enable --now sikemux-purge.timer >/dev/null
+systemctl enable --now sikemux-places.timer >/dev/null
+[ -f /var/lib/sikemux-places/dbip-asn-lite.mmdb ] || systemctl start sikemux-places
 
 step "backups: nightly, encrypted to an offline age key, sent to R2"
 if ! command -v age >/dev/null || ! command -v rclone >/dev/null; then
@@ -195,6 +214,20 @@ if ! /usr/local/lib/sikemux/iroh-relay --version 2>/dev/null | grep -qx "iroh-re
   relay_changed=1
 fi
 install -d -m 750 -o root -g sikemux-relay /etc/sikemux-relay
+# One token, so the API knows the relay is the one asking which devices may use it.
+if [ ! -f /etc/sikemux-relay/relay.env ]; then
+  printf 'IROH_RELAY_HTTP_BEARER_TOKEN=%s\n' "$(openssl rand -hex 32)" >/etc/sikemux-relay/relay.env
+  relay_changed=1
+fi
+chown root:sikemux-relay /etc/sikemux-relay/relay.env
+chmod 640 /etc/sikemux-relay/relay.env
+relay_token="$(sed -n 's/^IROH_RELAY_HTTP_BEARER_TOKEN=//p' /etc/sikemux-relay/relay.env)"
+if ! grep -qx "RELAY_ACCESS_TOKEN=$relay_token" /etc/sikemux/api.env; then
+  sed -i '/^RELAY_ACCESS_TOKEN=/d' /etc/sikemux/api.env
+  echo "RELAY_ACCESS_TOKEN=$relay_token" >>/etc/sikemux/api.env
+  systemctl restart sikemux-api
+fi
+unset relay_token
 cmp -s "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml || relay_changed=1
 install -m 640 -o root -g sikemux-relay "$here/sikemux-relay.toml" /etc/sikemux-relay/relay.toml
 install -m 755 -o root -g root "$here/relay-certificate" /usr/local/lib/sikemux/relay-certificate
@@ -222,6 +255,22 @@ if [ -f /etc/sikemux-relay/tls.crt ]; then
 else
   echo "the relay waits for Caddy's certificate for relay.sikemux.com; it starts within an hour of" \
     "the DNS record pointing here, or run /usr/local/lib/sikemux/relay-certificate" >&2
+fi
+
+step "watch: checks every minute, posting problems to Discord's #alerts"
+id sikemux-watch >/dev/null 2>&1 ||
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sikemux-watch
+command -v vnstat >/dev/null ||
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends vnstat >/dev/null
+systemctl enable --now vnstat >/dev/null
+install -m 755 -o root -g root "$here/watch" /usr/local/lib/sikemux/watch
+install -m 644 "$here/sikemux-watch.service" /etc/systemd/system/sikemux-watch.service
+install -m 644 "$here/sikemux-watch.timer" /etc/systemd/system/sikemux-watch.timer
+systemctl daemon-reload
+if [ -f /etc/sikemux/watch.env ]; then
+  systemctl enable --now sikemux-watch.timer >/dev/null
+else
+  echo "the watch waits for /etc/sikemux/watch.env holding DISCORD_WEBHOOK_URL, the #alerts webhook" >&2
 fi
 
 step "done"

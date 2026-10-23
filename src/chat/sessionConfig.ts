@@ -1,4 +1,5 @@
-import { agentSupportsChat, type ChatAgentType } from "../agents/agentLaunch";
+import { recordOf } from "../lib/guards";
+import { chatDriver } from "../agents/catalog";
 import type { Agent } from "../state/types";
 
 /** One value a session option can take. */
@@ -16,18 +17,13 @@ export interface SessionConfig {
     options: ConfigChoice[];
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-const LEGACY_EFFORT_ID: Partial<Record<ChatAgentType, string>> = { claude: "effort", codex: "reasoning_effort" };
-
 /** The option that sets how hard the model thinks. Agents name it differently
     but tag it with the same category. */
-export function effortConfig(configs: SessionConfig[], type: Agent["type"]): SessionConfig | undefined {
-    const legacy = agentSupportsChat(type) ? LEGACY_EFFORT_ID[type] : undefined;
-    return configs.find((config) => config.category === "thought_level") ?? configs.find((config) => config.id === legacy);
+export function effortConfig(configs: SessionConfig[]): SessionConfig | undefined {
+    return configs.find((config) => config.category === "thought_level");
 }
+
+const EFFORT_ON_EVERY_MODEL = new Set(["claude", "codex"]);
 
 const NAMED_VERSION = /^(\p{L}+)\s+(\d+(?:\.\d+)?)\b/u;
 
@@ -44,7 +40,7 @@ function versioned(label: string, description?: string): string {
 function choices(value: unknown, group?: string): ConfigChoice[] {
     if (!Array.isArray(value)) return [];
     return value.flatMap((item): ConfigChoice[] => {
-        const row = record(item);
+        const row = recordOf(item);
         if (!row) return [];
         if (Array.isArray(row.options)) return choices(row.options, typeof row.name === "string" ? row.name : undefined);
         if (typeof row.value !== "string" || typeof row.name !== "string") return [];
@@ -53,10 +49,15 @@ function choices(value: unknown, group?: string): ConfigChoice[] {
     });
 }
 
+/** The name of the value an option holds, or the value itself when its choices do not list it. */
+export function currentLabel(config: SessionConfig | undefined): string | undefined {
+    return config && (config.options.find((option) => option.value === config.currentValue)?.label ?? config.currentValue);
+}
+
 export function sessionConfigs(setup: Record<string, unknown>): SessionConfig[] {
     if (!Array.isArray(setup.configOptions)) return [];
     return setup.configOptions.flatMap((value): SessionConfig[] => {
-        const row = record(value);
+        const row = recordOf(value);
         if (!row || row.type !== "select" || typeof row.id !== "string" || typeof row.currentValue !== "string") return [];
         return [
             {
@@ -70,13 +71,12 @@ export function sessionConfigs(setup: Record<string, unknown>): SessionConfig[] 
     });
 }
 
-/* Claude and Codex always show both pickers, disabled until the session
-   fills them. The other agents only offer effort for some models, so theirs
-   comes and goes with the model. */
+/* Agents on the Claude and Codex drivers always show both pickers, disabled
+   until the session fills them. The others only offer effort for some models,
+   so theirs comes and goes with the model. */
 export function pickerSlots(configs: SessionConfig[], type: Agent["type"]): { id: string; config?: SessionConfig }[] {
     const slots: { id: string; config?: SessionConfig }[] = [{ id: "model", config: configs.find((item) => item.id === "model") }];
-    const effort = effortConfig(configs, type);
-    const legacy = agentSupportsChat(type) ? LEGACY_EFFORT_ID[type] : undefined;
-    if (effort || legacy) slots.push({ id: effort?.id ?? legacy ?? "effort", config: effort });
+    const effort = effortConfig(configs);
+    if (effort || EFFORT_ON_EVERY_MODEL.has(chatDriver(type) ?? "")) slots.push({ id: effort?.id ?? "effort", config: effort });
     return slots;
 }

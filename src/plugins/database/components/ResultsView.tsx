@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { copyText, swallow } from "../../../plugin-api/host";
-import type { Cell, QueryOutcome, ResultSet } from "../api";
-import { cellText, duration, mainResult, summary, toCsv, toTsv } from "../results";
+import { memo, useState, type MouseEvent, type ReactNode } from "react";
+import { copyWithNotice } from "../../../plugin-api/host";
+import type { Cell, QueryOutcome, ResultColumn, ResultSet } from "../api";
+import { cellText, mainResult, summary, toCsv, toTsv } from "../results";
+import { formatDuration } from "../../../plugin-api/format";
 
 /** Rows drawn at a time; more are added on request so a 10,000-row result stays quick to show. */
 const PAGE = 1000;
@@ -32,7 +33,7 @@ export function ResultsView({ outcome, actions }: { outcome: QueryOutcome; actio
                     </div>
                 )}
                 <span className="db-meta" role="status">
-                    {summary(result)} · {duration(outcome.millis)}
+                    {summary(result)} · {formatDuration(outcome.millis)}
                 </span>
                 <span className="db-grow" />
                 {result.columns.length > 0 && (
@@ -40,7 +41,7 @@ export function ResultsView({ outcome, actions }: { outcome: QueryOutcome; actio
                         type="button"
                         className="db-button"
                         title="Copy as tab-separated text, ready to paste into a spreadsheet"
-                        onClick={() => void copyText(toTsv(result)).catch(swallow("copy the results"))}>
+                        onClick={() => copyWithNotice(toTsv(result), "the results")}>
                         Copy
                     </button>
                 )}
@@ -49,7 +50,7 @@ export function ResultsView({ outcome, actions }: { outcome: QueryOutcome; actio
                         type="button"
                         className="db-button"
                         title="Copy as comma-separated values (CSV)"
-                        onClick={() => void copyText(toCsv(result)).catch(swallow("copy the results"))}>
+                        onClick={() => copyWithNotice(toCsv(result), "the results as CSV")}>
                         Copy CSV
                     </button>
                 )}
@@ -64,6 +65,10 @@ function Grid({ result }: { result: ResultSet }) {
     const [shown, setShown] = useState(PAGE);
     const [selected, setSelected] = useState<{ row: number; column: number } | null>(null);
     const selectedCell: Cell | undefined = selected ? result.rows[selected.row]?.[selected.column] : undefined;
+    const pick = (event: MouseEvent<HTMLElement>) => {
+        const clicked = clickedCell(event);
+        if (clicked) setSelected(clicked);
+    };
 
     return (
         <>
@@ -80,30 +85,15 @@ function Grid({ result }: { result: ResultSet }) {
                             ))}
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody onClick={pick}>
                         {result.rows.slice(0, shown).map((row, rowAt) => (
-                            <tr key={rowAt}>
-                                <td className="db-rownum">{rowAt + 1}</td>
-                                {row.map((cell, columnAt) => {
-                                    const isSelected = selected?.row === rowAt && selected.column === columnAt;
-                                    const classes = [
-                                        result.columns[columnAt]?.numeric ? "numeric" : "",
-                                        cell === null ? "null" : "",
-                                        isSelected ? "selected" : "",
-                                    ]
-                                        .filter(Boolean)
-                                        .join(" ");
-                                    return (
-                                        <td
-                                            key={columnAt}
-                                            className={classes || undefined}
-                                            aria-selected={isSelected}
-                                            onClick={() => setSelected({ row: rowAt, column: columnAt })}>
-                                            {cellText(cell)}
-                                        </td>
-                                    );
-                                })}
-                            </tr>
+                            <GridRow
+                                key={rowAt}
+                                row={row}
+                                at={rowAt}
+                                columns={result.columns}
+                                selectedColumn={selected?.row === rowAt ? selected.column : null}
+                            />
                         ))}
                     </tbody>
                 </table>
@@ -120,7 +110,7 @@ function Grid({ result }: { result: ResultSet }) {
                     <button
                         type="button"
                         className="db-button"
-                        onClick={() => void copyText(selectedCell === null ? "" : cellText(selectedCell)).catch(swallow("copy the value"))}>
+                        onClick={() => copyWithNotice(selectedCell === null ? "" : cellText(selectedCell), "the value")}>
                         Copy value
                     </button>
                 </div>
@@ -128,3 +118,41 @@ function Grid({ result }: { result: ResultSet }) {
         </>
     );
 }
+
+/** The cell a click in the grid's body landed on, read from the row and column it carries. */
+function clickedCell(event: MouseEvent<HTMLElement>): { row: number; column: number } | null {
+    const cell = (event.target as HTMLElement).closest<HTMLElement>("td[data-column]");
+    const row = cell?.parentElement?.dataset.row;
+    if (!cell || row === undefined) return null;
+    return { row: Number(row), column: Number(cell.dataset.column) };
+}
+
+/** One row, drawn again only when its cells or which of them is selected change. */
+const GridRow = memo(function GridRow({
+    row,
+    at,
+    columns,
+    selectedColumn,
+}: {
+    row: Cell[];
+    at: number;
+    columns: ResultColumn[];
+    selectedColumn: number | null;
+}) {
+    return (
+        <tr data-row={at}>
+            <td className="db-rownum">{at + 1}</td>
+            {row.map((cell, columnAt) => {
+                const isSelected = selectedColumn === columnAt;
+                const classes = [columns[columnAt]?.numeric ? "numeric" : "", cell === null ? "null" : "", isSelected ? "selected" : ""]
+                    .filter(Boolean)
+                    .join(" ");
+                return (
+                    <td key={columnAt} data-column={columnAt} className={classes || undefined} aria-selected={isSelected}>
+                        {cellText(cell)}
+                    </td>
+                );
+            })}
+        </tr>
+    );
+});

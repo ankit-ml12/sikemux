@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendTestNotification } from "../agents/agentNotifications";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { invokeCommand as invoke } from "../api/invoke";
+import { simApi, type SimSetup } from "../api/sim";
+import { simUsable, useSimStatus } from "../sim/simStatus";
 import {
     eventToKeybinding,
     findKeybindingConflict,
@@ -16,15 +18,18 @@ import {
     type KeybindingOverrides,
 } from "../commands/keybindings";
 import { settingsApi } from "../api/settings";
-import { isUpdateBusy, updateCheckLabel } from "../api/updater";
-import { prettyPath } from "../lib/paths";
+import { agentNamesApi, type AgentNameTheme } from "../api/agentNames";
+import { openUrl } from "../api/system";
+import { isUpdateBusy, RELEASES_URL, updateCheckLabel, UPDATES_IN_APP } from "../api/updater";
+import { basename, prettyPath } from "../lib/paths";
+import { previewUrl } from "../editor/viewers/fileKinds";
 import { IS_MACOS, PRIMARY_SHORTCUT } from "../lib/platform";
-import { notify, reportError } from "../state/toast";
+import { notify, reportError, swallow } from "../state/toast";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { cloneTheme, newCustomThemeId, THEME_GROUPS, THEMES, themeFromColours, type Theme, type ThemeGroupKey } from "../themes";
 import { wallpaperPixels, wallpaperTheme } from "../themes/wallpaper";
-import { ThemePicker } from "./ThemePicker";
+import { ThemePicker, type PictureSource } from "./ThemePicker";
 import { useLeaveSettingsOnNavigation } from "./leaveSettings";
 import {
     IconActivity,
@@ -49,9 +54,11 @@ import {
 import { Dropdown } from "../ui/Dropdown";
 import { Checkbox, Slider, Switch } from "../ui/Controls";
 import { Tooltip } from "../ui/Tooltip";
+import { PaneField } from "../ui/ShaderField";
 import type { CommandContext, CustomCommand, CustomCommandPlacement } from "../commands/registry";
-import type { AgentProvider, ProjectRoot, ProviderProfile } from "../state/types";
+import type { ProjectRoot, ProviderProfile } from "../state/types";
 import { AGENT_PERMISSION_COPY, AGENT_PERMISSION_MODES } from "../agents/agentLaunch";
+import { ACCOUNT_AGENT_TYPES, agentBrand, agentLabel, hasAccounts, type AccountAgentType } from "../agents/catalog";
 import {
     searchSettings,
     SETTINGS_GROUPS,
@@ -65,8 +72,12 @@ import { useBuiltPlugins } from "../plugins/enabled";
 import { frontendPlugin, pluginSurface } from "../plugins/registry";
 import { ActivityPage } from "../shell/ActivityPage";
 import { DevicesPage } from "./DevicesPage";
+import { SkillsSection } from "./SkillsSection";
 import { ModelProvidersSection } from "./ModelProvidersSection";
+import { AgentSetupSection } from "./AgentSetupSection";
+import { AccountsSections } from "./AccountsSection";
 import { SettingsPage, SettingsRow, SettingsRows, SettingsSection } from "./SettingsLayout";
+import { BuddySettings } from "../buddies/BuddySettings";
 import { useVoice, type VoiceState } from "../voice/dictation";
 import "../styles/settings.css";
 
@@ -109,6 +120,7 @@ export function SettingsPanel() {
     const cloudBrowserShortcut = useStore((s) => s.cloudBrowserShortcut);
     const keybindingOverrides = useStore((s) => s.keybindingOverrides);
     const home = useStore((s) => s.home);
+    const paneShader = useStore((s) => s.paneShader);
     const page = useStore((s) => s.settingsPage);
     const target = useStore((s) => s.settingsTarget);
     const settingsBinding = resolvedKeybinding(keybindingOverrides, "settings.toggle");
@@ -277,6 +289,7 @@ export function SettingsPanel() {
                 </aside>
 
                 <div className="settings-main">
+                    <PaneField enabled={paneShader} />
                     <header className="settings-topbar">
                         <span className="settings-topbar-title">{searching ? "Search" : SETTINGS_PAGE_NAMES[page]}</span>
                         <button
@@ -500,8 +513,8 @@ function AgentsPage() {
     const restore = useStore((s) => s.restoreAgentTabs);
     const notifications = useStore((s) => s.agentNotifications);
     const density = useStore((s) => s.railDensity);
+    const midTurnSend = useStore((s) => s.midTurnSend);
     const profiles = useStore((s) => s.providerProfiles);
-    const selectedProfiles = useStore((s) => s.selectedProviderProfileIds);
     const defaultPermissionMode = useStore((s) => s.defaultAgentPermissionMode);
     const [draft, setDraft] = useState<ProviderProfile>(
         () =>
@@ -509,14 +522,16 @@ function AgentsPage() {
                 id: `profile-${Date.now().toString(36)}`,
                 name: "Local provider",
                 provider: "claude",
-                accent: "#d97757",
+                accent: agentBrand("claude"),
             },
     );
     const isSaved = profiles.some((profile) => profile.id === draft.id);
     const newProfile = () =>
-        setDraft({ id: `profile-${Date.now().toString(36)}`, name: "", provider: "claude", accent: "#d97757", environmentKeys: [] });
+        setDraft({ id: `profile-${Date.now().toString(36)}`, name: "", provider: "claude", accent: agentBrand("claude"), environmentKeys: [] });
     return (
         <SettingsPage>
+            <AgentSetupSection />
+
             <SettingsSection
                 title="Launch boundary"
                 meta={AGENT_PERMISSION_COPY[defaultPermissionMode].label}
@@ -539,6 +554,8 @@ function AgentsPage() {
                     })}
                 </div>
             </SettingsSection>
+
+            <AccountsSections />
 
             <SettingsSection
                 title="Provider profiles"
@@ -581,12 +598,10 @@ function AgentsPage() {
                                     label="provider"
                                     value={draft.provider}
                                     disabled={draft.id.startsWith("builtin-")}
-                                    options={[
-                                        { value: "claude", label: "Claude" },
-                                        { value: "codex", label: "Codex" },
-                                        { value: "gemini", label: "Gemini" },
-                                    ]}
-                                    onChange={(value) => setDraft({ ...draft, provider: value as AgentProvider })}
+                                    options={ACCOUNT_AGENT_TYPES.map((type) => ({ value: type, label: agentLabel(type) }))}
+                                    onChange={(value) =>
+                                        setDraft({ ...draft, provider: value as AccountAgentType, accent: agentBrand(value as AccountAgentType) })
+                                    }
                                 />
                             </SettingsRow>
                             <SettingsRow label="Executable path" desc="Empty uses PATH." wide>
@@ -598,7 +613,7 @@ function AgentsPage() {
                                     onChange={(event) => setDraft({ ...draft, executablePath: event.target.value || undefined })}
                                 />
                             </SettingsRow>
-                            {(draft.provider === "claude" || draft.provider === "codex") && (
+                            {hasAccounts(draft.provider) && (
                                 <SettingsRow
                                     label="Profile directory"
                                     desc={`Set this only when keeping several ${draft.provider} accounts side by side.`}
@@ -635,32 +650,11 @@ function AgentsPage() {
                         </div>
                     </div>
                 </div>
-
-                <SettingsRows>
-                    {(["claude", "codex"] as const).map((type) => (
-                        <SettingsRow
-                            key={type}
-                            label={`${type[0].toUpperCase()}${type.slice(1)} default`}
-                            desc={`The profile a new ${type} session launches with.`}
-                            wide>
-                            <Dropdown
-                                className="settings-dd"
-                                label={`${type} default`}
-                                value={selectedProfiles[type] ?? ""}
-                                options={profiles
-                                    .filter((profile) => profile.provider === type)
-                                    .map((profile) => ({
-                                        value: profile.id,
-                                        label: profile.name,
-                                    }))}
-                                onChange={(value) => cmd.selectProviderProfile(type, value)}
-                            />
-                        </SettingsRow>
-                    ))}
-                </SettingsRows>
             </SettingsSection>
 
             <ModelProvidersSection />
+
+            <SkillsSection />
 
             <SettingsSection title="Sessions">
                 <SettingsRows>
@@ -685,6 +679,18 @@ function AgentsPage() {
                             </button>
                         }
                     />
+                    <SettingsRow label="Sending while an agent works" desc={`What ↵ does mid-turn. ${PRIMARY_SHORTCUT}↵ does the other.`} wide>
+                        <Dropdown
+                            className="settings-dd"
+                            label="sending while an agent works"
+                            value={midTurnSend}
+                            options={[
+                                { value: "steer", label: "Steer", detail: "The agent reads it in the running turn" },
+                                { value: "queue", label: "Queue", detail: "It waits until the turn ends" },
+                            ]}
+                            onChange={(value) => cmd.setMidTurnSend(value as "steer" | "queue")}
+                        />
+                    </SettingsRow>
                     <SettingsRow label="Rail density" desc="Compact fits more sessions while keeping every state symbol visible." wide>
                         <Dropdown
                             className="settings-dd"
@@ -697,7 +703,8 @@ function AgentsPage() {
                             onChange={(value) => cmd.setRailDensity(value as "comfortable" | "compact")}
                         />
                     </SettingsRow>
-                    <SettingsRow label="Idle agents" desc="Put every idle agent to sleep now, freeing its process.">
+                    <AgentNamesRow />
+                    <SettingsRow label="Idle chats" desc="Put every idle chat to sleep now, freeing its process.">
                         <button className="settings-btn" type="button" onClick={() => void cmd.sleepIdleAgents()}>
                             Sleep now
                         </button>
@@ -710,6 +717,7 @@ function AgentsPage() {
 
             {IS_MACOS && <VoiceSection />}
             {IS_MACOS && <NotchSection />}
+            {IS_MACOS && <SimulatorSection />}
         </SettingsPage>
     );
 }
@@ -720,7 +728,6 @@ interface CliInstallStatus {
     state: CliInstallState;
     installDir: string;
     cliPath: string;
-    editorPath: string;
     executable: string | null;
     pathConfigured: boolean;
     message: string;
@@ -743,9 +750,7 @@ function CliPage() {
             notify("success", next.pathConfigured ? "Sikemux CLI is ready" : "Sikemux CLI installed; add its directory to PATH");
         } catch (error) {
             reportError("CLI install")(error);
-            await invoke<CliInstallStatus>("cli_install_status")
-                .then(setStatus)
-                .catch(() => undefined);
+            await invoke<CliInstallStatus>("cli_install_status").then(setStatus).catch(swallow("read the CLI install status"));
         } finally {
             setBusy(false);
         }
@@ -766,8 +771,8 @@ function CliPage() {
             <SettingsSection title="Shell integration" meta={stateLabel} sub={status?.message ?? "Checking the packaged command-line integration…"}>
                 <div className="cli-paths">
                     <span>
-                        <b>Commands</b>
-                        <code>sikemux · sikemux-editor</code>
+                        <b>Command</b>
+                        <code>sikemux</code>
                     </span>
                     <span>
                         <b>Install directory</b>
@@ -785,8 +790,7 @@ function CliPage() {
                 </div>
                 {status?.state === "conflict" && (
                     <p className="settings-hint danger">
-                        Sikemux will not overwrite <em>{status.cliPath}</em> or <em>{status.editorPath}</em>. Move the existing file yourself, then
-                        refresh.
+                        Sikemux will not overwrite <em>{status.cliPath}</em>. Move the existing file yourself, then refresh.
                     </p>
                 )}
                 {status?.state === "installed" && !status.pathConfigured && (
@@ -797,7 +801,7 @@ function CliPage() {
             </SettingsSection>
 
             <SettingsSection title="Usage" sub="Existing files open in an editor tab. Directories focus or create their workspace.">
-                <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md\nEDITOR=sikemux-editor git commit`}</pre>
+                <pre className="cli-usage">{`sikemux .\nsikemux src/App.tsx:42:5\nsikemux open --wait README.md`}</pre>
             </SettingsSection>
         </SettingsPage>
     );
@@ -812,26 +816,41 @@ function AboutPage() {
         <SettingsPage>
             <SettingsSection title="Updates">
                 <SettingsRows>
-                    <SettingsRow
-                        label="Channel"
-                        desc="Stable follows the latest signed release; nightly the newest build, prerelease or stable."
-                        wide>
-                        <Dropdown
-                            className="settings-dd"
-                            label="update channel"
-                            value={updateChannel}
-                            options={[
-                                { value: "stable", label: "Stable", detail: "Latest signed release" },
-                                { value: "nightly", label: "Nightly", detail: "Newest signed build, prerelease or stable" },
-                            ]}
-                            onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
-                        />
-                    </SettingsRow>
-                    <SettingsRow label="Last checked" desc={lastUpdateCheck ? updateCheckLabel(lastUpdateCheck) : "Not checked yet this session."}>
-                        <button className="settings-btn" disabled={isUpdateBusy(pendingUpdate?.state)} onClick={() => void cmd.checkForUpdates()}>
-                            Check now
-                        </button>
-                    </SettingsRow>
+                    {UPDATES_IN_APP ? (
+                        <>
+                            <SettingsRow
+                                label="Channel"
+                                desc="Stable follows the latest signed release; nightly the newest build, prerelease or stable."
+                                wide>
+                                <Dropdown
+                                    className="settings-dd"
+                                    label="update channel"
+                                    value={updateChannel}
+                                    options={[
+                                        { value: "stable", label: "Stable", detail: "Latest signed release" },
+                                        { value: "nightly", label: "Nightly", detail: "Newest signed build, prerelease or stable" },
+                                    ]}
+                                    onChange={(value) => cmd.setUpdateChannel(value as "stable" | "nightly")}
+                                />
+                            </SettingsRow>
+                            <SettingsRow
+                                label="Last checked"
+                                desc={lastUpdateCheck ? updateCheckLabel(lastUpdateCheck) : "Not checked yet this session."}>
+                                <button
+                                    className="settings-btn"
+                                    disabled={isUpdateBusy(pendingUpdate?.state)}
+                                    onClick={() => void cmd.checkForUpdates()}>
+                                    Check now
+                                </button>
+                            </SettingsRow>
+                        </>
+                    ) : (
+                        <SettingsRow label="New versions" desc="Linux builds do not update themselves yet. Download each new release from GitHub.">
+                            <button className="settings-btn" onClick={() => void openUrl(RELEASES_URL).catch(reportError("open releases"))}>
+                                Open releases
+                            </button>
+                        </SettingsRow>
+                    )}
                 </SettingsRows>
             </SettingsSection>
 
@@ -839,7 +858,7 @@ function AboutPage() {
                 <SettingsRows>
                     <SettingsRow
                         label="Share anonymous usage"
-                        desc="Once a day, sends a random install ID with the app version, update channel and macOS version. Never your files, commands or projects."
+                        desc="Once a day, sends a random install ID and a one-way hash of your account with the app version, update channel and system version. Never your files, commands or projects."
                         asLabel
                         control={<Switch checked={shareUsageData} onChange={cmd.setShareUsageData} label="Share anonymous usage" />}
                     />
@@ -1221,6 +1240,7 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
     const uiTextScale = useStore((state) => state.uiTextScale);
     const paneShader = useStore((state) => state.paneShader);
     const paneImage = useStore((state) => state.paneImage);
+    const paneStrength = useStore((state) => state.paneStrength);
     const home = useStore((state) => state.home);
     const customThemes = useStore((s) => s.customThemes);
     const [edit, setEdit] = useState<ThemeEdit | null>(null);
@@ -1245,19 +1265,33 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
             baseName: src.name,
         });
 
-    const [readingWallpaper, setReadingWallpaper] = useState(false);
-    const fromWallpaper = async () => {
-        setReadingWallpaper(true);
+    const [readingPicture, setReadingPicture] = useState<PictureSource | null>(null);
+    const themeFromPicture = async (source: PictureSource, read: () => Promise<{ name: string; pixels: Uint8ClampedArray }>) => {
+        setReadingPicture(source);
         try {
-            const wallpaper = await settingsApi.wallpaperImage();
-            const theme = themeFromColours(wallpaperTheme(await wallpaperPixels(wallpaper.dataUrl), `${wallpaper.name} wallpaper`));
+            const picture = await read();
+            const theme = themeFromColours(wallpaperTheme(picture.pixels, picture.name));
             openEditor({ theme: cloneTheme(theme, { id: newCustomThemeId() }), original: cloneTheme(theme), isNew: true, baseName: theme.name });
         } catch (error) {
-            reportError("Theme from wallpaper")(error);
+            reportError(source === "wallpaper" ? "Theme from wallpaper" : "Theme from pane image")(error);
         } finally {
-            setReadingWallpaper(false);
+            setReadingPicture(null);
         }
     };
+    const fromWallpaper = () =>
+        themeFromPicture("wallpaper", async () => {
+            const wallpaper = await settingsApi.wallpaperImage();
+            return { name: `${wallpaper.name} wallpaper`, pixels: await wallpaperPixels(wallpaper.dataUrl) };
+        });
+    const fromPaneImage = (path: string) =>
+        themeFromPicture("paneImage", async () => {
+            const url = URL.createObjectURL(await (await fetch(previewUrl(path))).blob());
+            try {
+                return { name: basename(path).replace(/\.[^.]+$/, ""), pixels: await wallpaperPixels(url) };
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        });
 
     const editCustom = (src: Theme) => openEditor({ theme: cloneTheme(src), original: cloneTheme(src), isNew: false, baseName: src.name });
 
@@ -1285,7 +1319,8 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                     onCustomize={customizeFrom}
                     onEdit={editCustom}
                     onFromWallpaper={fromWallpaper}
-                    readingWallpaper={readingWallpaper}
+                    onFromPaneImage={paneImage ? () => fromPaneImage(paneImage) : undefined}
+                    readingPicture={readingPicture}
                 />
             </SettingsSection>
 
@@ -1355,8 +1390,16 @@ function AppearancePage({ themeId, windowOpacity, windowBlur }: AppearancePagePr
                             </button>
                         </div>
                     </SettingsRow>
+                    <SettingsRow label="Pane strength" desc="How strongly the texture or picture shows. 1.00 is the default.">
+                        <div className="settings-knob">
+                            <Slider label="Pane strength" min={0} max={2} step={0.05} value={paneStrength} onChange={cmd.setPaneStrength} />
+                            <NumberField value={paneStrength} onCommit={cmd.setPaneStrength} format={(v) => v.toFixed(2)} />
+                        </div>
+                    </SettingsRow>
                 </SettingsRows>
             </SettingsSection>
+
+            <BuddySettings />
 
             {IS_MACOS && (
                 <SettingsSection title="Window">
@@ -1588,6 +1631,7 @@ function PluginsPage() {
                                 label={title}
                                 desc={`${plugin.id}${version ? ` · ${version}` : ""}`}
                                 asLabel
+                                icon={plugin.mark?.(20)}
                                 control={
                                     <Switch
                                         checked={!disabled.includes(plugin.id)}
@@ -1648,6 +1692,33 @@ function voiceModelStatus(voice: VoiceState, enabled: boolean): string {
         default:
             return "Ready. Speech never leaves this Mac.";
     }
+}
+
+function AgentNamesRow() {
+    const [theme, setTheme] = useState<AgentNameTheme | null>(null);
+    useEffect(() => {
+        agentNamesApi.theme().then(setTheme).catch(reportError("Agent names"));
+    }, []);
+    const choose = (next: AgentNameTheme) => {
+        setTheme(next);
+        agentNamesApi.setTheme(next).then(setTheme).catch(reportError("Agent names"));
+    };
+    return (
+        <SettingsRow label="Agent names" desc="What new agents are called. Open agents keep their names." wide>
+            {theme && (
+                <Dropdown
+                    className="settings-dd"
+                    label="agent names"
+                    value={theme}
+                    options={[
+                        { value: "anime", label: "Anime", detail: "Luffy, Gojo, Frieren" },
+                        { value: "nature", label: "Nature", detail: "Otter, Maple, Flint" },
+                    ]}
+                    onChange={(value) => choose(value as AgentNameTheme)}
+                />
+            )}
+        </SettingsRow>
+    );
 }
 
 function VoiceSection() {
@@ -1798,6 +1869,59 @@ function NotchSection() {
                         />
                     }
                 />
+            </SettingsRows>
+        </SettingsSection>
+    );
+}
+
+function xcodeDescription(path: string | null): string {
+    if (!path) return "No Xcode is selected. Install Xcode, or choose one with xcode-select.";
+    if (path.includes("CommandLineTools"))
+        return "Only the Command Line Tools are selected, and simulators need Xcode. Install Xcode, or choose it with xcode-select.";
+    return path;
+}
+
+function SimulatorSection() {
+    const enabled = useStore((s) => s.iosSimulator);
+    const frame = useStore((s) => s.simulatorFrame);
+    const status = useSimStatus();
+    const [setup, setSetup] = useState<SimSetup | "unread" | null>(null);
+    const usable = simUsable(status);
+    useEffect(() => {
+        if (!usable) return;
+        let current = true;
+        void simApi.setup().then(
+            (found) => current && setSetup(found),
+            () => current && setSetup("unread"),
+        );
+        return () => {
+            current = false;
+        };
+    }, [usable]);
+    const unavailable = status && !usable ? (status.reason ?? "The iOS Simulator is not available here.") : null;
+    const read = (describe: (found: SimSetup) => string) =>
+        setup === null ? "Checking…" : setup === "unread" ? "Could not read the developer tools." : describe(setup);
+    const xcode = unavailable ?? read((found) => xcodeDescription(found.xcode));
+    const runtimes = read((found) => found.runtimes.join(", ") || "None installed. Add one in Xcode's Components settings.");
+    const helper = read((found) => `The helper that drives simulators is ${found.helper}.`);
+    return (
+        <SettingsSection title="iOS Simulator">
+            <SettingsRows>
+                <SettingsRow
+                    label="Let agents drive the iOS Simulator"
+                    desc="Agents tap, type and read simulators without asking, as they do browser tabs, and their screenshots go to the agent's provider. Applies to agents started after a change."
+                    asLabel
+                    control={<Switch checked={enabled} onChange={cmd.setIosSimulator} label="Let agents drive the iOS Simulator" />}
+                />
+                <SettingsRow
+                    label="Show the device's frame"
+                    desc="Draws the phone's bezel and side buttons around its screen, as Simulator does. Without it the screen gets a little more room."
+                    asLabel
+                    control={<Switch checked={frame} onChange={cmd.setSimulatorFrame} label="Show the device's frame" />}
+                />
+                <SettingsRow label="Xcode" desc={xcode} />
+                {!unavailable && <SettingsRow label="iOS runtimes" desc={runtimes} />}
+                {!unavailable && <SettingsRow label="Simulator helper" desc={helper} />}
             </SettingsRows>
         </SettingsSection>
     );

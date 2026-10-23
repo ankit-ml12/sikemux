@@ -1,86 +1,51 @@
-import type { AgentBackendState, AgentPresentationState, AgentRuntimeState } from "./types";
+import type { AgentGroup, AgentShown, AgentStatus } from "../api/generated/wire";
 
-export interface AgentStateEvent {
-    agentId: string;
-    state: AgentBackendState;
-    sequence: number;
-    source: AgentRuntimeState["source"];
-    confidence: AgentRuntimeState["confidence"];
-    reason: string;
-    matchedRule?: string;
-}
+export type { AgentGroup, AgentShown, AgentStatus };
 
-export function reduceAgentState(
-    previous: AgentRuntimeState | undefined,
-    event: AgentStateEvent,
-    visible: boolean,
-    now = Date.now(),
-): AgentRuntimeState | undefined {
-    if (previous && event.sequence <= previous.sequence) return undefined;
-    let state: AgentPresentationState = event.state;
-    let unread = false;
-    if (event.state === "idle" && !visible && (previous?.backendState === "working" || previous?.backendState === "blocked")) {
-        state = "done";
-        unread = true;
-    } else if (event.state === "blocked") {
-        unread = !visible;
-    }
-    const worked = event.state === "working" || event.state === "blocked";
-    const lastWorkedAt = worked ? now : previous?.lastWorkedAt;
-    return {
-        state,
-        backendState: event.state,
-        unread,
-        updatedAt: now,
-        ...(lastWorkedAt != null ? { lastWorkedAt } : {}),
-        sequence: event.sequence,
-        source: event.source,
-        confidence: event.confidence,
-        reason: event.reason,
-        ...(event.matchedRule ? { matchedRule: event.matchedRule } : {}),
-    };
-}
-
-export function acknowledgeAgentState(value: AgentRuntimeState): AgentRuntimeState {
-    return { ...value, state: value.state === "done" ? "idle" : value.state, unread: false };
-}
-
-const PRIORITY: Record<AgentPresentationState, number> = { blocked: 6, working: 5, done: 4, stopped: 3, unknown: 2, idle: 1 };
-
-export function rollupAgentStates(values: Array<AgentRuntimeState | undefined>): AgentPresentationState | undefined {
-    let best: AgentPresentationState | undefined;
-    for (const value of values) if (value && (!best || PRIORITY[value.state] > PRIORITY[best])) best = value.state;
-    return best;
-}
-
-/**
- * Open agents in the order they want attention: waiting on you, running,
- * finished unseen, then the rest by how recently they last ran.
- */
-export function sortByAttention<T extends { id: string }>(
-    agents: T[],
-    activityById: Record<string, AgentRuntimeState | undefined>,
-    backgroundById: Record<string, number | undefined>,
-): T[] {
-    const tier = (a: T) => {
-        const state = activityById[a.id]?.state;
-        if (state === "blocked") return 3;
-        if (state === "working" || (backgroundById[a.id] ?? 0) > 0) return 2;
-        if (state === "done") return 1;
-        return 0;
-    };
-    const lastWorked = (a: T) => activityById[a.id]?.lastWorkedAt ?? 0;
-    return agents
-        .map((agent) => ({ agent, tier: tier(agent), lastWorked: lastWorked(agent) }))
-        .sort((x, y) => y.tier - x.tier || (x.tier >= 2 ? 0 : y.lastWorked - x.lastWorked))
-        .map(({ agent }) => agent);
-}
-
-export const AGENT_STATE_META: Record<AgentPresentationState, { label: string }> = {
-    working: { label: "Working" },
-    blocked: { label: "Needs input" },
-    done: { label: "Done — unseen" },
-    idle: { label: "Ready" },
-    stopped: { label: "Stopped" },
-    unknown: { label: "Unknown" },
+/** The one word each surface uses for each group. */
+export const AGENT_LABELS: Record<AgentGroup, string> = {
+    blocked: "Needs input",
+    working: "Working",
+    done: "Done",
+    idle: "Idle",
 };
+
+const RANK: Record<AgentGroup, number> = { blocked: 3, working: 2, done: 1, idle: 0 };
+
+export interface AgentDisplay {
+    group: AgentGroup;
+    subagents: number;
+    tasks: number;
+    label: string;
+    rank: number;
+}
+
+/** How an agent is shown everywhere, from the group the core put it in. Shells left running only show as counts. */
+export function agentDisplay(shown: Partial<Pick<AgentShown, "group" | "subagents" | "tasks">> = {}): AgentDisplay {
+    const group = shown.group ?? "idle";
+    return { group, subagents: shown.subagents ?? 0, tasks: shown.tasks ?? 0, label: AGENT_LABELS[group], rank: RANK[group] };
+}
+
+/** The group an agent's status puts it in; one starting up already counts as at work. */
+export function groupOfStatus(status: AgentStatus): AgentGroup {
+    if (status === "starting") return "working";
+    return status === "blocked" || status === "working" || status === "done" ? status : "idle";
+}
+
+/** A group of agents shown as the one that wants attention most, counting everything they still have going. */
+export function rollupAgentDisplays(displays: readonly AgentDisplay[]): AgentDisplay | undefined {
+    let best: AgentDisplay | undefined;
+    let subagents = 0;
+    let tasks = 0;
+    for (const display of displays) {
+        if (!best || display.rank > best.rank) best = display;
+        subagents += display.subagents;
+        tasks += display.tasks;
+    }
+    return best && { ...best, subagents, tasks };
+}
+
+/** Mid-turn or waiting on an answer: stopping it now loses work, so closing it asks first. */
+export const isAgentBusy = (shown: AgentShown | undefined): boolean => shown?.group === "working" || shown?.group === "blocked";
+
+export const agentHasBackgroundWork = (shown: AgentShown | undefined): boolean => (shown?.tasks ?? 0) + (shown?.subagents ?? 0) > 0;

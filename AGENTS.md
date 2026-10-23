@@ -7,7 +7,9 @@
   to stabilise a stable release, and cut hotfix branches from `release/*`.
 - Never merge a release branch into `main`. Cherry-pick the fix commit instead, so
   version-bump commits stay on the release line.
-- Do not create or use Git worktrees.
+- Do not create Git worktrees by hand. A teammate started with `agent_spawn` and
+  `checkout: "own"` gets one from the core: work there, and land your commits with
+  `git_commit` and `land: true`.
 - Commit day-to-day changes directly to `main`.
 - Make small, atomic commits as work progresses.
 - Other agents are always working in the same tree at the same time. Stage only the
@@ -20,27 +22,73 @@
 - Do not leave random markdown files in the codebase that are meant to be some way to deliver information to me. If you want to write a markdown file write it in a temporary file, and give me the path and chat and I can read it
 - Never write code that is explicitly backwards compatible. Systems should handle backwards compatibility (like migrations), not logic. If there is some logic that needs to be written otherwise it would appear it would break older users, you MUST make the assumption that no users have ran that code yet and its unreleased, so it would not make sense to consider the side effects that code would produce. This is a safe assumption because the maintainers of this codebase always ensure code that gets shipped is compatbile with the systems that allow for us to not have to explicitly hardcode backwards compatibility
 
+## Tests
+
+- Do not write unit or integration tests on your own initiative. A test an agent writes
+  is only its own reading of the task, the same reading the code came from, so it
+  catches nothing the code would get wrong. Write one only when asked, or to reproduce
+  a bug that actually happened.
+- Never write a test that restates the implementation: same branches, same constants,
+  mocks of everything it calls.
+- Keep the checks that hold things we decided: the stale-output checks in `pnpm check`
+  (`ipc:check`, `grammars:check`, `file-icons:check`, `release:check`, the notch icons,
+  the server protocol), contract tests such as `mobile/app/test/updatePaths.test.ts`,
+  and the end-to-end runs. Do not weaken or delete them to get a change through.
+- When a change breaks an existing test, decide whether the behaviour it pins was meant
+  to change. Update the test only if so; otherwise fix the code.
+- Run every Rust build and check with rustup's Rust first on `PATH` (`cargo --version`
+  shows the version in `rust-toolchain.toml`). Homebrew's older Rust ignores that file,
+  so clippy there can pass code CI rejects.
+
+## Speed and size
+
+- What a person feels must never get visibly worse: startup, typing, scrolling,
+  opening a pane, a terminal under heavy output. Making any of it faster is
+  always welcome.
+- It must feel fast under stress, not only when idle: many agents streaming at
+  once, terminals flooding, a large repository, a long chat, a busy machine.
+  Time changes in those conditions, since that is where slowness shows first.
+- Size and speed trade against each other; make that trade only where nobody can
+  feel it. Build cold code for size and keep hot paths (terminal output,
+  serialization, search, git) at full speed. Measure both sides before choosing.
+- `pnpm perf:budget` (the bundle) and `pnpm perf` (timings in WebKit) are for
+  measuring, not gates: neither runs in CI or `pnpm check`. Run them when a
+  change touches startup or a hot path.
+- A change that adds weight (a dependency, a font, an image, a crate in the
+  core) says what it costs the DMG.
+
 ## Releasing
 
 - Follow `docs/releasing.md`. Releases publish only from the Release workflow, started by
   pushing a `v*` tag; never run `scripts/release.sh --publish` yourself, and never approve
-  the `release` environment for the owner.
+  a stable release on the `approval` environment for the owner.
 - Nightlies are tagged on `main`. Stable releases and hotfixes are tagged on
   `release/<major.minor>`, and their version bump and notes go only there.
 - Never check out `release/*` in this shared checkout. Commit to it from objects with a
   temporary index, as `docs/releasing.md` shows.
-- After a stable `0.x.y`, number `main`'s nightlies `0.(x+1).0-nightly.N`.
+- After a stable `0.x.y`, `main`'s nightlies build toward the next release:
+  `0.x.(y+1)-nightly.N`, or `0.(x+1).0-nightly.N` for a bigger one. A hotfix is that next
+  release shipped early: fix on `main`, ship a nightly, promote it. Cherry-pick onto
+  `release/*` only in an emergency, as `docs/releasing.md` describes.
 
 ## Mobile app
 
 - The phone app is in `mobile/` (Expo, `mobile/app`) with the core's Rust client bridged
   in `mobile/native` from `src-tauri/crates/sikemux-mobile`. `mobile/` is its own pnpm
   workspace: never add it to the root install, scripts or checks.
-- The phone and the core share `sikemux-core`'s protocol. A protocol change must keep
+- The phone and the core share `sikemux-wire`'s protocol. A protocol change must keep
   `sikemux-mobile` building, and bumps `PROTOCOL_VERSION` once anything already released
   speaks the old shape.
-- Phone builds need rustup's Rust first on `PATH`; Homebrew's Rust ignores
-  `rust-toolchain.toml` and has no phone targets.
+- The phone links only `sikemux-wire` and `sikemux-client`, so their code, not the
+  core's, decides when a phone needs a store build rather than an over-the-air update.
+  Keep them to data and transport: never make either depend on `sikemux-core`,
+  `sikemux-pty` or `workspace-hack`. Feature logic the phone needs goes in TypeScript it
+  shares with the Mac, and a new field rides inside JSON the bridge already passes through
+  rather than on a typed UniFFI record. A request the phone needs is a method of the
+  core's `Call` (`sikemux-core/src/server/calls.rs`), never a new wire request or bridge
+  method, and a released method is never removed or renamed. ADR 0010 records why.
+- Phone builds need rustup's Rust first on `PATH` as well; Homebrew's has no phone
+  targets.
 - The bindings `uniffi-bindgen-react-native` generates are build output; do not commit or
   hand-edit them.
 - Phone screens are designed in `mobile/design/screens.src.html` before they are built, and
@@ -61,8 +109,13 @@
 - Migrations in `server/api/migrations` are never edited once merged. A change that
   removes something comes in two steps: stop using it in one release, drop it in a later
   one, so a rollback always finds the schema it expects.
-- Merging to `main` deploys anything under `server/` to production. Do not run
-  `server/deploy` scripts against citadel yourself; ask first.
+- `server/api/schema.dbml` draws the schema the migrations build, for dbdiagram.io. After
+  adding a migration run `pnpm schema:generate` in `server/` and commit it alongside; the
+  API tests fail while it is stale.
+- Merging to `main` deploys anything under `server/` to production. You may push it,
+  run `server/deploy` scripts against citadel, and set up its config without asking,
+  after `agentctl guard` passes. Never print secrets, and ask first before anything
+  destructive or irreversible, such as dropping data or deleting accounts.
 
 ## Brand assets
 
@@ -72,6 +125,8 @@
     transparent PNG at 64, 256 and 1024.
   - `brand/icon/`: the mark on the dark app gradient, or the purple "Sikemux Dev" one,
     with rounded or square corners, as SVG and PNG at 256 and 1024.
+  - `brand/wordmark/`: the name lettered in Figtree as the site's nav sets it, alone or beside
+    the mark, in white, black, or purple mark with white name, as SVG and PNG at 2048 wide.
   - `brand/macos/`: the real Dock icon (Liquid Glass) at 128 to 1024.
   - `brand/social/avatar-400.png`: profile picture.
 - The source is `src-tauri/icons/sikemux.icon`. After changing it, run `pnpm brand` to
@@ -88,6 +143,9 @@
   root (`python3 -m http.server`) and opening `/src-tauri/notch/design/screens.html`.
 - Its icons come from `src/ui/Icons.tsx`, the agent marks and `brand/`. After changing one it
   uses, run `node scripts/generate-notch-icons.mjs`; the release checks fail on a stale copy.
+- Its agent rows are laid out like the app's tab rail rows (`src/rail/AllProjectsAgents.tsx`):
+  the task with how long ago, the project, then the name, counts and state together at the end.
+  When the rail's row changes, change the island's and its design to match.
 - `swift run --package-path src-tauri/notch notch-snapshots <dir>` renders every state to PNGs,
   for comparing with the design.
 
@@ -99,21 +157,33 @@
   latest release, both at build time and in the visitor's browser. It finds the
   download by the `_aarch64.dmg` suffix, so renaming that asset or leaving it off a
   release breaks every Download button. Nightlies are pre-releases and never show up.
-- The README rounds the download to "about 13 MB" and the site says it is smaller than
+- The README rounds the download to "about 16 MB" and the site says it is smaller than
   Ghostty (33.8 MB). Update both if a release moves the DMG past either.
-- Its screenshots come from this repo:
-  `pnpm showcase --site ~/projects/personal/sikemux-front/src/assets/shots`.
+- Its screenshots come from this repo. `pnpm shots` in the site runs the Mac showcase
+  (`showcase/`) and the phone showcase (`mobile/showcase/`), then cuts the feature cards;
+  a showcase scene that stops matching the app shows up there.
 - Its copy must stay true of the shipped app and its look follows `DESIGN.md`. When a
   change adds, removes or renames something the site describes, say so, so the site
   can be updated.
 
+## Marketing
+
+- `marketing/` is a separate local Git repo, ignored by this one: `inspiration/` holds
+  screenshots of what other products do well, indexed in its README; `outreach/`
+  tracks who we contact. File new references and contacts there and commit inside
+  `marketing/`, never in this repo.
+
+## Docs
+
+- The user docs for docs.sikemux.com live in `docs-site/`, a Fumadocs site on Astro with
+  its own package, dark only in sikemux.com's palette. `pnpm dev` there serves them.
+- A change that adds, removes or renames something users see updates its page in
+  `docs-site/src/content/docs/` in the same commit.
+- The pages under `reference/` are generated: run `pnpm docs:reference` after changing
+  a default shortcut, the CLI's help or `browser/tools.json`. CI fails while they are
+  out of date.
+
 ## UI rules
 
-- Never mark a selected, focused or active item with a coloured bar down its left
-  edge (an inset `box-shadow`, `border-left` or pseudo-element stripe). On a rounded
-  row the bar bends around the corner and looks broken. Show selection with a tinted
-  border and background on the whole item instead.
-- Do not mix rounded and square shapes in one group. Every `<button>` gets
-  `--radius-2` from `modern-shell.css`, so never put buttons inside a square box
-  with dividers between them. Give each item its own border and corner, with a gap
-  between items.
+- Follow `DESIGN.md`. It is short on purpose: keep it to principles and tokens,
+  and change it in the same commit when the look moves on.

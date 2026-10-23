@@ -1,8 +1,13 @@
 import type { Network } from "@sikemux/protocol";
 import type { Level } from "pino";
 
+import { readAppleSignIn } from "./account/apple.ts";
+import type { AppleKey } from "./apple-key.ts";
+import { settingsFrom } from "./env.ts";
+import { readJoinSigner, type JoinSigner } from "./join/signer.ts";
 import { readNetwork } from "./network/network.ts";
 import { readPush, type PushSettings } from "./push/settings.ts";
+import { version } from "./version.ts";
 
 export interface MigrationConfig {
   databaseUrl: string;
@@ -25,6 +30,14 @@ export interface Config extends MigrationConfig {
   /** What GET /v1/network answers: the relay apps use and the oldest app versions allowed. */
   network: Network;
   push: PushSettings;
+  /** The key Sign in with Apple takes the API's client secrets with, or null when it is not set up. */
+  appleSignIn: AppleKey | null;
+  /** The key join tickets are signed with. */
+  join: JoinSigner;
+  /** Where DB-IP's databases are, to say roughly where a host asking to sign in is; null without them. */
+  placesDir: string | null;
+  /** What the relay sends to ask whether a device may use it; null leaves the relay's question unanswered. */
+  relayAccessToken: string | null;
 }
 
 const LEVELS: readonly Level[] = [
@@ -36,32 +49,22 @@ const LEVELS: readonly Level[] = [
   "trace",
 ];
 
-/** Collects every problem with the environment, so one failed start names them all. */
 function reader(env: NodeJS.ProcessEnv) {
-  const problems: string[] = [];
-  const read = (name: string, fallback?: string) => {
-    const value = env[name]?.trim() || fallback;
-    if (value === undefined) problems.push(`${name} is not set`);
-    return value ?? "";
-  };
+  const settings = settingsFrom(env, []);
+  const { problems, text } = settings;
   const readDatabaseUrl = () => {
-    const databaseUrl = read("DATABASE_URL");
+    const databaseUrl = text("DATABASE_URL");
     if (databaseUrl && !/^postgres(ql)?:\/\//.test(databaseUrl))
       problems.push("DATABASE_URL is not a postgres:// URL");
     return databaseUrl;
   };
-  const readLogLevel = () => {
-    const logLevel = read("LOG_LEVEL", "info") as Level;
-    if (!LEVELS.includes(logLevel))
-      problems.push(`LOG_LEVEL is not one of ${LEVELS.join(", ")}`);
-    return logLevel;
-  };
+  const readLogLevel = () => settings.oneOf("LOG_LEVEL", LEVELS, "info");
   const finish = <T>(config: T): T => {
     if (problems.length)
       throw new Error(`The API cannot start: ${problems.join("; ")}.`);
     return config;
   };
-  return { problems, read, readDatabaseUrl, readLogLevel, finish };
+  return { ...settings, readDatabaseUrl, readLogLevel, finish };
 }
 
 /** Reads only what migrating needs, so a deploy can migrate without the server's settings. */
@@ -70,21 +73,33 @@ export function loadMigrationConfig(env: NodeJS.ProcessEnv): MigrationConfig {
   return finish({ databaseUrl: readDatabaseUrl(), logLevel: readLogLevel() });
 }
 
-/** Reads the configuration from the environment, refusing to start on anything missing or malformed. */
-export function loadConfig(env: NodeJS.ProcessEnv): Config {
-  const { problems, read, readDatabaseUrl, readLogLevel, finish } = reader(env);
+/**
+ * Reads the configuration from the environment, refusing to start on anything missing or
+ * malformed. `release` is whether this is the bundle CI builds, which never makes its own keys.
+ */
+export function loadConfig(
+  env: NodeJS.ProcessEnv,
+  { release = version !== "dev" } = {},
+): Config {
+  const {
+    problems,
+    text,
+    optional,
+    port: readPort,
+    readDatabaseUrl,
+    readLogLevel,
+    finish,
+  } = reader(env);
 
   const databaseUrl = readDatabaseUrl();
 
-  const port = Number(read("PORT", "4000"));
-  if (!Number.isInteger(port) || port < 1 || port > 65535)
-    problems.push("PORT is not a port number");
+  const port = readPort("PORT", "4000");
 
-  const appOrigin = read("APP_ORIGIN", "https://app.sikemux.com");
+  const appOrigin = text("APP_ORIGIN", "https://app.sikemux.com");
   if (appOrigin && URL.parse(appOrigin)?.origin !== appOrigin)
     problems.push("APP_ORIGIN is not an origin like https://app.sikemux.com");
 
-  const clerkIssuer = read("CLERK_ISSUER");
+  const clerkIssuer = text("CLERK_ISSUER");
   if (
     clerkIssuer &&
     (URL.parse(clerkIssuer)?.origin !== clerkIssuer ||
@@ -94,20 +109,26 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
       "CLERK_ISSUER is not an https origin like https://clerk.sikemux.com",
     );
 
-  const macClientId = read("CLERK_MAC_CLIENT_ID");
+  const macClientId = text("CLERK_MAC_CLIENT_ID");
 
-  const clerkSecretKey = env.CLERK_SECRET_KEY?.trim() || null;
+  const clerkSecretKey = optional("CLERK_SECRET_KEY") ?? null;
   if (clerkSecretKey && !/^sk_(live|test)_\S+$/.test(clerkSecretKey))
     problems.push("CLERK_SECRET_KEY is not a secret key like sk_live_…");
 
-  const clerkWebhookSecret = env.CLERK_WEBHOOK_SECRET?.trim() || null;
+  const clerkWebhookSecret = optional("CLERK_WEBHOOK_SECRET") ?? null;
   if (clerkWebhookSecret && !/^whsec_[A-Za-z0-9+/=]+$/.test(clerkWebhookSecret))
     problems.push("CLERK_WEBHOOK_SECRET is not a signing secret like whsec_…");
 
   const network = readNetwork(env, problems);
   const push = readPush(env, problems);
+  const appleSignIn = readAppleSignIn(env, problems);
+  const join = readJoinSigner(env, problems, release);
   const logLevel = readLogLevel();
-  const host = read("HOST", "127.0.0.1");
+  const host = text("HOST", "127.0.0.1");
+  const placesDir = optional("GEOIP_DIR") ?? null;
+  const relayAccessToken = optional("RELAY_ACCESS_TOKEN") ?? null;
+  if (relayAccessToken !== null && relayAccessToken.length < 32)
+    problems.push("RELAY_ACCESS_TOKEN is shorter than 32 characters");
 
   return finish({
     host,
@@ -120,6 +141,10 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     clerkWebhookSecret,
     network,
     push,
+    appleSignIn,
+    join: join as JoinSigner,
+    placesDir,
+    relayAccessToken,
     logLevel,
   });
 }

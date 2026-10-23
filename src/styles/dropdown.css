@@ -27,8 +27,6 @@
     background: color-mix(in srgb, var(--surface-overlay) calc(var(--window-opacity, 1) * 100%), transparent);
 }
 .dd-btn[aria-expanded="true"] {
-    border-color: var(--border-selected);
-    box-shadow: 0 0 0 3px var(--surface-selected);
 }
 /* Settings rows want the control to span the field, not hug its label. */
 .dd-btn.settings-dd {
@@ -64,11 +62,6 @@
     color: var(--ink-faint);
     transform: rotate(90deg);
 }
-.dd-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-}
 .dd-menu {
     position: absolute;
     top: calc(100% + 5px);
@@ -103,19 +96,17 @@
 }
 .dd-search {
     flex: 0 0 auto;
-    height: 28px;
-    margin-bottom: 2px;
-    padding: 0 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    height: 32px;
+    margin: -4px -4px 4px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
     outline: 0;
-    background: var(--surface-sunken);
+    background: transparent;
     color: var(--text-primary);
     font-family: var(--ui);
     font-size: 12.5px;
-}
-.dd-search:focus {
-    border-color: var(--border-selected);
 }
 .dd-search::placeholder {
     color: var(--text-disabled);
@@ -153,7 +144,37 @@
     color: var(--text-primary);
 }
 .dd-item.active {
-    color: var(--acc);
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.dd-item[aria-selected="true"] {
+    color: var(--text-primary);
+}
+.dd-item-icon {
+    display: flex;
+    flex: 0 0 auto;
+    color: var(--ink-faint);
+}
+.dd-item[aria-selected="true"] .dd-item-icon {
+    color: var(--text-secondary);
+}
+.dd-item-meta {
+    flex: 0 0 auto;
+    padding-left: 14px;
+    color: var(--ink-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.dd-group {
+    padding: 8px 8px 3px;
+    color: var(--ink-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+.dd-group:first-child {
+    padding-top: 4px;
 }
 .dd-check {
     display: inline-flex;
@@ -162,6 +183,9 @@
     width: 12px;
     flex: 0 0 auto;
     color: var(--acc);
+}
+.dd-menu.check-at-end .dd-check {
+    order: 1;
 }
 .dd-item-label {
     flex: 1 1 auto;
@@ -174,6 +198,11 @@
     margin-top: 1px;
     color: var(--ink-faint);
     font-size: 10.5px;
+}
+.dd-item-label.inline-detail small {
+    display: inline;
+    margin: 0 0 0 8px;
+    font-family: var(--mono);
 }
 html.is-transparent .dd-btn {
     background: transparent;

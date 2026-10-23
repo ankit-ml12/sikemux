@@ -1,4 +1,5 @@
 import { DEFAULT_NOTCH_SETTINGS } from "../notch/notchSettings";
+import type { CodeHostChoice } from "../api/generated/wire";
 import type { PluginManifest } from "../api/plugins";
 import { create } from "zustand";
 import { enableMapSet, produce, type Draft } from "immer";
@@ -10,7 +11,9 @@ import type { KeybindingOverrides } from "../commands/keybindings";
 import type { CustomCommand } from "../commands/registry";
 import type { SettingsPageId } from "../settings/settingsIndex";
 import { RAIL_WIDTH } from "../lib/railWidths";
+import { DEFAULT_BUDDY_STYLE } from "../buddies/style";
 import { DEFAULT_PROVIDER_PROFILES, DEFAULT_PROVIDER_PROFILE_SELECTION } from "./types";
+import type { AccountAgentType } from "../agents/catalog";
 
 enableMapSet();
 import { makePane, newId } from "./layout";
@@ -34,7 +37,10 @@ import type {
     ProviderProfileSelection,
     RecentEntry,
     RailDensity,
-    AgentRailScope,
+    MidTurnSend,
+    TabRailScope,
+    TabRailPage,
+    PinnedChat,
     DiffTarget,
     Session,
     SessionSwitcherView,
@@ -59,8 +65,16 @@ export interface DomainState {
     customThemes: Theme[];
     uiTextScale: number;
     paneShader: boolean;
+    /** Agents show a character in place of their harness logo. */
+    buddies: boolean;
+    /** The default character style: a pack id or "all", and a shape id or "mixed". */
+    buddyPack: string;
+    buddyShape: string;
+    buddyMotion: boolean;
     /** A picture on disk that panes show, dithered, in place of the grain. */
     paneImage: string | null;
+    /** How strongly the pane texture or picture shows, 1 being as designed. */
+    paneStrength: number;
     terminalFontSize: number;
     chatTextScale: number;
     editorTextScale: number;
@@ -70,14 +84,16 @@ export interface DomainState {
     cloudBrowserShortcut: string;
     keybindingOverrides: KeybindingOverrides;
     sideRailOpen: boolean;
-    agentRailOpen: boolean;
+    tabRailOpen: boolean;
     sideRailWidth: number;
-    agentRailWidth: number;
+    tabRailWidth: number;
     diffTarget: Record<string, DiffTarget | null>;
     /** Each plugin's own settings, by plugin id, in whatever shape the plugin decodes. */
     pluginSettings: Readonly<Record<string, unknown>>;
     /** Plugins switched off in Settings; they are built in but act as if absent. */
     disabledPlugins: readonly string[];
+    /** The repository and account picked by hand on each code host, by project folder, as the core keeps them. */
+    codeHosts: Readonly<Record<string, Record<string, CodeHostChoice>>>;
     restoreAgentTabs: boolean;
     spaces: readonly ProjectSpace[];
     /** The space id each project belongs to, by project folder, so it outlives closing the project. */
@@ -87,13 +103,22 @@ export interface DomainState {
     agentNotifications: boolean;
     notch: import("../notch/notchSettings").NotchSettings;
     voiceDictation: boolean;
+    /** Agents get the iOS Simulator tools on a Mac that can run it. */
+    iosSimulator: boolean;
+    /** The simulator tab draws the device's frame and side buttons around its screen. */
+    simulatorFrame: boolean;
     notificationsIntroduced: boolean;
     /** The person was told once that terminals keep running after Sikemux quits. */
     keptRunningNoticeShown: boolean;
     railDensity: RailDensity;
-    /** The agent rail shows every CLI's chats instead of one provider's. */
-    agentRailAllAgents: boolean;
-    agentRailScope: AgentRailScope;
+    midTurnSend: MidTurnSend;
+    /** The tab rail shows every CLI's chats instead of one provider's. */
+    tabRailAllAgents: boolean;
+    /** Providers whose chats move to the next signed-in account when one runs out of usage. */
+    accountAutoSwitch: Partial<Record<AccountAgentType, boolean>>;
+    tabRailScope: TabRailScope;
+    tabRailPage: TabRailPage;
+    pinnedChats: PinnedChat[];
     onboardingComplete: boolean;
     lastSeenVersion: string;
     customCommands: CustomCommand[];
@@ -111,9 +136,21 @@ export interface DomainState {
     languageServerTrust: Record<string, boolean>;
     /** Whether a new chat in each project, by root path, starts with its Worktree switch on. */
     agentWorktreeDefaults: Record<string, boolean>;
+    /** For a project folder that holds several repositories, by root path, the one its Git views open. */
+    defaultGitRepos: Record<string, string>;
 }
 
-export type UpdateOperationState = "available" | "preparing" | "downloading" | "installing" | "restarting" | "error";
+export type UpdateOperationState = "available" | "waiting" | "preparing" | "downloading" | "installing" | "restarting" | "error";
+
+/** A chat at work that installing an update now would stop and start again,
+ *  rather than carry over with its agent still running. */
+export interface UpdateBlocker {
+    agentId: string;
+    provider: string;
+    title: string | null;
+    /** `starting` while its agent starts, `busy` in the middle of a request. */
+    reason: string;
+}
 
 export interface PendingUpdate {
     version: string;
@@ -142,6 +179,8 @@ export interface ViewState {
 
     pickerOpen: boolean;
     pickerMode: PickerMode;
+    /** The agent the project picker is choosing a new project for, or null when it opens projects. */
+    pickerMovingAgentId: string | null;
     agentPaletteOpen: boolean;
     filePaletteOpen: boolean;
     newTabPaletteOpen: boolean;
@@ -175,22 +214,42 @@ export interface ViewState {
 
     globalSearchBySession: Record<string, GlobalSearchView>;
 
-    /** Runtime-only PTY activity for live agents. Never persisted or hydrated. */
-    agentActivity: Record<string, import("./types").AgentRuntimeState>;
-    /** How many background shells, monitors and subagents each agent still has going. */
-    agentBackgroundWork: Record<string, number>;
-    /** How many of those are subagents, counted on their own so a tab can show them. */
-    agentSubagents: Record<string, number>;
+    /** How the core shows each open agent, by id, as its device view last said. Never persisted. */
+    agentStatus: Record<string, import("./agentStatus").AgentShown>;
+    /** Questions agents asked that wait on an answer, as the core last sent them. */
+    agentQuestions: import("../agents/agentQuestions").AgentQuestion[];
+    /** Each project's board cards, by the project folder the core names, as the core last sent them. */
+    agentBoards: Record<string, import("../agents/agentBoard").BoardCard[]>;
+    /** Each project's Auto settings and how many of its agents run, by the same project folder. */
+    agentBoardAuto: Record<string, import("../agents/agentBoard").BoardAuto>;
+    /** The core's name for each project folder the app has opened a board for, when it differs. */
+    boardProjects: Record<string, string>;
 
     commandPaletteOpen: boolean;
+    themePaletteOpen: boolean;
     onboardingOpen: boolean;
     diagnosticsOpen: boolean;
     whatsNewOpen: boolean;
     commandPopup: { id: string; title: string; startup: string; cwd: string; context: import("./types").PtyContext } | null;
+    /** What the program in each core terminal last called it, by session id. */
     terminalTitles: Record<string, string>;
     lastSessionId: string | null;
+    /** The account's other hosts this app joined, and how each is reached. */
+    hosts: readonly import("../hosts/hosts").HostEntry[];
+    /** What each of those hosts last showed this app, by its id. */
+    hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
+    /** What asking each SSH host found, by its alias, for those that run Sikemux. */
+    sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
+    /** The SSH hosts being set up now, by alias. */
+    sshWork: Readonly<Record<string, import("../hosts/hosts").SshWork>>;
+    /** The host chosen under Hosts, beside the chosen project: where the tab rail looks and new work starts. */
+    chosenHost: import("../hosts/hosts").HostChoice;
+    /** The session last in front on each host, which choosing that host again puts back. */
+    lastOnHost: Readonly<Record<string, string>>;
 
     pendingUpdate: PendingUpdate | null;
+    /** The chats a waiting update waits on before it installs. */
+    updateBlockers: UpdateBlocker[];
     lastUpdateCheck: UpdateCheckOutcome | null;
 }
 
@@ -235,7 +294,12 @@ export const useStore = create<StoreState>(() => {
         customThemes: [],
         uiTextScale: 1,
         paneShader: true,
+        buddies: false,
+        buddyPack: DEFAULT_BUDDY_STYLE.pack,
+        buddyShape: DEFAULT_BUDDY_STYLE.shape,
+        buddyMotion: true,
         paneImage: null,
+        paneStrength: 1,
         terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
         chatTextScale: DEFAULT_CHAT_TEXT_SCALE,
         editorTextScale: DEFAULT_EDITOR_TEXT_SCALE,
@@ -245,12 +309,13 @@ export const useStore = create<StoreState>(() => {
         cloudBrowserShortcut: "",
         keybindingOverrides: {},
         sideRailOpen: true,
-        agentRailOpen: true,
+        tabRailOpen: true,
         sideRailWidth: RAIL_WIDTH.start.initial,
-        agentRailWidth: RAIL_WIDTH.end.initial,
+        tabRailWidth: RAIL_WIDTH.end.initial,
         diffTarget: {},
         pluginSettings: {},
         disabledPlugins: [],
+        codeHosts: {},
         restoreAgentTabs: true,
         spaces: [],
         projectSpaces: {},
@@ -258,11 +323,17 @@ export const useStore = create<StoreState>(() => {
         agentNotifications: true,
         notch: DEFAULT_NOTCH_SETTINGS,
         voiceDictation: false,
+        iosSimulator: true,
+        simulatorFrame: true,
         notificationsIntroduced: false,
         keptRunningNoticeShown: false,
         railDensity: "comfortable",
-        agentRailAllAgents: false,
-        agentRailScope: "project",
+        midTurnSend: "steer",
+        tabRailAllAgents: false,
+        accountAutoSwitch: {},
+        tabRailScope: "project",
+        tabRailPage: "agents",
+        pinnedChats: [],
         onboardingComplete: false,
         lastSeenVersion: "",
         customCommands: [],
@@ -276,11 +347,13 @@ export const useStore = create<StoreState>(() => {
         lastAgentType: null,
         languageServerTrust: {},
         agentWorktreeDefaults: {},
+        defaultGitRepos: {},
 
         home: "",
         pluginManifests: [],
         pickerOpen: false,
         pickerMode: "all",
+        pickerMovingAgentId: null,
         agentPaletteOpen: false,
         filePaletteOpen: false,
         newTabPaletteOpen: false,
@@ -302,17 +375,27 @@ export const useStore = create<StoreState>(() => {
         gitCmdLog: [],
         gitCmdLogOpen: false,
         globalSearchBySession: {},
-        agentActivity: {},
-        agentBackgroundWork: {},
-        agentSubagents: {},
+        agentStatus: {},
+        agentQuestions: [],
+        agentBoards: {},
+        agentBoardAuto: {},
+        boardProjects: {},
         commandPaletteOpen: false,
+        themePaletteOpen: false,
         onboardingOpen: false,
         diagnosticsOpen: false,
         whatsNewOpen: false,
         commandPopup: null,
         terminalTitles: {},
         lastSessionId: null,
+        hosts: [],
+        hostViews: {},
+        chosenHost: { kind: "core" },
+        lastOnHost: {},
+        sshProbes: {},
+        sshWork: {},
         pendingUpdate: null,
+        updateBlockers: [],
         lastUpdateCheck: null,
     };
 });

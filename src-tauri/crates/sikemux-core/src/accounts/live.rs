@@ -4,35 +4,24 @@
 //! connection drops.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
+use futures_util::SinkExt;
+use sikemux_process::clock::epoch_ms;
+use sikemux_process::sync::Locked;
+use time::format_description::well_known::Rfc3339;
+use time::macros::format_description;
+use time::OffsetDateTime;
 use tokio::sync::{watch, Notify};
-use tokio_websockets::{ClientBuilder, Connector, MaybeTlsStream, Message, WebSocketStream};
 
 use super::protocol::{
-    AccountEvent, LiveAck, LiveApp, LiveDeviceMessage, LiveHello, LiveLeave, LivePong, LivePush,
-    LiveRole, LiveServerMessage, PushKind, PushResult, RevokeReason,
+    AccountEvent, LiveAck, LiveApp, LiveCloseCode, LiveDeviceMessage, LiveHello, LiveLeave,
+    LivePong, LivePush, LiveRole, LiveServerMessage, PushKind, PushResult, RevokeReason,
 };
-
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-const CHALLENGE_WAIT: Duration = Duration::from_secs(10);
-/// The server pings every 25 s; this long without a frame means the
-/// connection is dead even if the network has not said so.
-const SILENCE: Duration = Duration::from_secs(60);
-const BACKOFF_BASE: Duration = Duration::from_secs(1);
-const BACKOFF_CAP: Duration = Duration::from_secs(5 * 60);
-/// Another connection with this key took over, which happens while a core
-/// hands over to its replacement. Coming straight back would push it off.
-const REPLACED_WAIT: Duration = Duration::from_secs(60);
+use super::socket::{self, send, Closed, Failures, Frame, Socket};
 
 const CLOSE_WAIT: Duration = Duration::from_secs(2);
-
-const CLOSE_NOT_SIGNED_IN: u16 = 4401;
-const CLOSE_REVOKED: u16 = 4403;
-const CLOSE_REPLACED: u16 = 4409;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Want {
@@ -103,25 +92,12 @@ struct OutboxState {
     sent: BTreeMap<i64, Push>,
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 impl Outbox {
-    fn lock(&self) -> MutexGuard<'_, OutboxState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// Queues `push`, replacing an alert for the same card that has not gone
     /// out yet.
     pub fn post(&self, push: Push) {
-        let now = now_ms();
-        let mut state = self.lock();
+        let now = epoch_ms();
+        let mut state = self.state.locked();
         state.waiting.retain(|waiting| {
             waiting.expires_at > now
                 && !(waiting.to == push.to && waiting.collapse_id == push.collapse_id)
@@ -134,7 +110,7 @@ impl Outbox {
     /// Drops the push for this card that has not gone out yet. True when
     /// there was one.
     pub fn withdraw(&self, to: &str, collapse_id: &str) -> bool {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         let before = state.waiting.len();
         state
             .waiting
@@ -143,12 +119,12 @@ impl Outbox {
     }
 
     pub fn waiting(&self) -> Vec<Push> {
-        self.lock().waiting.iter().cloned().collect()
+        self.state.locked().waiting.iter().cloned().collect()
     }
 
     pub(crate) fn take(&self) -> Vec<LivePush> {
-        let now = now_ms();
-        let mut state = self.lock();
+        let now = epoch_ms();
+        let mut state = self.state.locked();
         let mut taken = Vec::new();
         while let Some(push) = state.waiting.pop_front() {
             if push.expires_at <= now {
@@ -170,13 +146,13 @@ impl Outbox {
     }
 
     fn answered(&self, r#ref: i64) -> Option<Push> {
-        self.lock().sent.remove(&r#ref)
+        self.state.locked().sent.remove(&r#ref)
     }
 
     /// The connection dropped before these were answered, so they go out
     /// again on the next one, ahead of anything newer.
     fn unanswered(&self) {
-        let mut state = self.lock();
+        let mut state = self.state.locked();
         let sent = std::mem::take(&mut state.sent);
         for push in sent.into_values().rev() {
             if !state
@@ -192,33 +168,27 @@ impl Outbox {
 
 /// `2026-10-03T00:00:30.000Z` for milliseconds since the Unix epoch.
 pub fn rfc3339(ms: u64) -> String {
-    let days = (ms / 86_400_000) as i64;
-    let in_day = ms % 86_400_000;
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let day_of_era = z.rem_euclid(146_097);
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    };
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        in_day / 3_600_000,
-        in_day / 60_000 % 60,
-        in_day / 1000 % 60,
-        in_day % 1000
-    )
+    let at = OffsetDateTime::UNIX_EPOCH + time::Duration::milliseconds(ms as i64);
+    at.format(format_description!(
+        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
+    ))
+    .unwrap_or_default()
+}
+
+/// Milliseconds since the Unix epoch for an RFC 3339 time such as the server
+/// writes, `2026-10-03T00:00:30.000Z`.
+pub fn parse_rfc3339(text: &str) -> Option<u64> {
+    let at = OffsetDateTime::parse(text, &Rfc3339).ok()?;
+    u64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()
 }
 
 /// `base` is the accounts API, `http(s)://host`.
 pub fn url(base: &str) -> String {
+    socket_url(base, "/v1/live")
+}
+
+/// The WebSocket at `path` on the accounts API at `base`.
+pub fn socket_url(base: &str, path: &str) -> String {
     let base = base.trim_end_matches('/');
     let base = if let Some(rest) = base.strip_prefix("https://") {
         format!("wss://{rest}")
@@ -227,7 +197,7 @@ pub fn url(base: &str) -> String {
     } else {
         base.to_owned()
     };
-    format!("{base}/v1/live")
+    format!("{base}{path}")
 }
 
 /// Keeps the connection while [`Account::want`] asks for one. `changed`
@@ -239,7 +209,7 @@ pub async fn run<A: Account>(
     outbox: Arc<Outbox>,
     mut changed: watch::Receiver<()>,
 ) {
-    let mut failures: u32 = 0;
+    let mut failures = Failures::default();
     account.link(Link::Connecting);
     loop {
         if changed.has_changed().is_err() || account.want() == Want::Stop {
@@ -249,13 +219,7 @@ pub async fn run<A: Account>(
         outbox.unanswered();
         let wait = match ended {
             Ended::Done => continue,
-            Ended::Retry { hint, was_live } => {
-                if was_live {
-                    failures = 0;
-                }
-                failures = failures.saturating_add(1);
-                backoff(failures).max(hint.unwrap_or_default())
-            }
+            Ended::Retry { hint, was_live } => failures.wait(hint, was_live),
         };
         account.link(Link::Offline);
         tokio::select! {
@@ -264,18 +228,10 @@ pub async fn run<A: Account>(
                 if gone.is_err() {
                     return;
                 }
+                failures.forget();
             }
         }
     }
-}
-
-/// Full jitter: anywhere from nothing to the doubled delay, capped.
-fn backoff(failures: u32) -> Duration {
-    let ceiling = BACKOFF_BASE
-        .saturating_mul(1u32 << failures.saturating_sub(1).min(16))
-        .min(BACKOFF_CAP);
-    let fraction = (uuid::Uuid::new_v4().as_u128() % 1000) as u32;
-    ceiling.mul_f64(f64::from(fraction) / 1000.0)
 }
 
 enum Ended {
@@ -286,54 +242,9 @@ enum Ended {
     },
 }
 
-type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-fn connector() -> &'static Connector {
-    static CONNECTOR: OnceLock<Connector> = OnceLock::new();
-    CONNECTOR.get_or_init(|| match super::tls_config() {
-        Some(config) => Connector::Rustls(tokio_rustls::TlsConnector::from(config)),
-        None => Connector::Plain,
-    })
-}
-
-async fn connect(url: &str) -> Option<Socket> {
-    let builder = ClientBuilder::new().uri(url).ok()?.connector(connector());
-    match tokio::time::timeout(CONNECT_TIMEOUT, builder.connect()).await {
-        Ok(Ok((socket, _))) => Some(socket),
-        _ => None,
-    }
-}
-
-async fn send(socket: &mut Socket, message: LiveDeviceMessage) -> bool {
-    let Ok(text) = serde_json::to_string(&message) else {
-        return false;
-    };
-    socket.send(Message::text(text)).await.is_ok()
-}
-
-enum Frame {
-    Server(LiveServerMessage),
-    Closed(Option<u16>),
-    Other,
-}
-
-async fn next_frame(socket: &mut Socket, wait: Duration) -> Frame {
-    let message = match tokio::time::timeout(wait, socket.next()).await {
-        Ok(Some(Ok(message))) => message,
-        _ => return Frame::Closed(None),
-    };
-    if let Some((code, _)) = message.as_close() {
-        return Frame::Closed(Some(code.into()));
-    }
-    match message.as_text().map(serde_json::from_str) {
-        Some(Ok(message)) => Frame::Server(message),
-        _ => Frame::Other,
-    }
-}
-
 async fn flush(socket: &mut Socket, outbox: &Outbox) -> bool {
     for push in outbox.take() {
-        if !send(socket, LiveDeviceMessage::Push(push)).await {
+        if !send(socket, &LiveDeviceMessage::Push(push)).await {
             return false;
         }
     }
@@ -348,15 +259,15 @@ async fn session<A: Account>(
     changed: &mut watch::Receiver<()>,
 ) -> Ended {
     let retry = |hint, was_live| Ended::Retry { hint, was_live };
-    let Some(mut socket) = connect(url).await else {
+    let Some(mut socket) = socket::connect(url).await else {
         return retry(None, false);
     };
-    let nonce = loop {
-        match next_frame(&mut socket, CHALLENGE_WAIT).await {
-            Frame::Server(LiveServerMessage::Challenge(challenge)) => break challenge.nonce,
-            Frame::Server(_) | Frame::Other => continue,
-            Frame::Closed(_) => return retry(None, false),
-        }
+    let nonce = socket::challenge(&mut socket, |message| match message {
+        LiveServerMessage::Challenge(challenge) => Some(challenge.nonce),
+        _ => None,
+    });
+    let Some(nonce) = nonce.await else {
+        return retry(None, false);
     };
     let Some((key, signature)) = account.sign_live(&nonce) else {
         return retry(None, false);
@@ -368,16 +279,17 @@ async fn session<A: Account>(
         token: None,
         app: Some(app.clone()),
     });
-    if !send(&mut socket, hello).await {
+    if !send(&mut socket, &hello).await {
         return retry(None, false);
     }
 
     let mut ready = false;
     let mut leaving = false;
     let mut hint = None;
+    let mut silence = socket::HEARTBEAT * 2;
     loop {
         let frame = tokio::select! {
-            frame = next_frame(&mut socket, SILENCE) => frame,
+            frame = socket::next_frame(&mut socket, silence) => frame,
             _ = outbox.ready.notified(), if ready && !leaving => {
                 if !flush(&mut socket, outbox).await {
                     return retry(hint, ready);
@@ -391,7 +303,7 @@ async fn session<A: Account>(
                         return Ended::Done;
                     }
                     Want::Leave if ready && !leaving => {
-                        leaving = send(&mut socket, LiveDeviceMessage::Leave(LiveLeave {})).await;
+                        leaving = send(&mut socket, &LiveDeviceMessage::Leave(LiveLeave {})).await;
                     }
                     _ => {}
                 }
@@ -402,16 +314,21 @@ async fn session<A: Account>(
             Frame::Server(message) => message,
             Frame::Other => continue,
             Frame::Closed(code) => {
-                return match code {
-                    Some(CLOSE_NOT_SIGNED_IN) if !ready => {
+                return match code.and_then(|code| LiveCloseCode::from_code(code.into())) {
+                    Some(LiveCloseCode::Unauthenticated) if !ready => {
                         account.removed(None);
                         Ended::Done
                     }
-                    Some(CLOSE_REVOKED) => {
+                    Some(LiveCloseCode::Revoked) => {
                         account.removed(None);
                         Ended::Done
                     }
-                    Some(CLOSE_REPLACED) => retry(Some(REPLACED_WAIT), ready),
+                    Some(LiveCloseCode::Replaced) => {
+                        retry(socket::wait_after(Closed::Replaced, hint), ready)
+                    }
+                    Some(LiveCloseCode::OverLimit) => {
+                        retry(socket::wait_after(Closed::OverLimit, hint), ready)
+                    }
                     _ => retry(hint, ready),
                 };
             }
@@ -419,11 +336,12 @@ async fn session<A: Account>(
         let answered = match message {
             LiveServerMessage::Ready(server) => {
                 ready = true;
+                silence = socket::silence(server.heartbeat_ms);
                 account.rewind(server.latest);
                 account.link(Link::Live);
                 if account.want() == Want::Leave {
                     leaving = true;
-                    send(&mut socket, LiveDeviceMessage::Leave(LiveLeave {})).await
+                    send(&mut socket, &LiveDeviceMessage::Leave(LiveLeave {})).await
                 } else {
                     flush(&mut socket, outbox).await
                 }
@@ -442,19 +360,17 @@ async fn session<A: Account>(
                 if !fresh.is_empty() {
                     account.apply(&fresh);
                 }
-                send(&mut socket, LiveDeviceMessage::Ack(LiveAck { id: last })).await
+                send(&mut socket, &LiveDeviceMessage::Ack(LiveAck { id: last })).await
             }
             LiveServerMessage::Reset(reset) => {
                 account.rewind(reset.latest);
                 true
             }
             LiveServerMessage::Ping(_) => {
-                send(&mut socket, LiveDeviceMessage::Pong(LivePong {})).await
+                send(&mut socket, &LiveDeviceMessage::Pong(LivePong {})).await
             }
             LiveServerMessage::Bye(bye) => {
-                hint = Some(Duration::from_millis(
-                    u64::try_from(bye.reconnect_after_ms).unwrap_or_default(),
-                ));
+                hint = Some(socket::asked_wait(bye.reconnect_after_ms));
                 true
             }
             LiveServerMessage::Pushed(pushed) => {

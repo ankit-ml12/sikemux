@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import * as cmd from "../state";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { rndStatusR } from "../resources";
+import { rundeck } from "../resources";
 import { EmptyState, IconWarning } from "../../../plugin-api/ui";
 import { RundeckConnection } from "./RundeckConnection";
 import { RundeckLogin } from "./RundeckLogin";
@@ -9,6 +9,8 @@ import { RundeckJobs } from "./RundeckJobs";
 import { RundeckProjectTree } from "./RundeckProjectTree";
 import { RundeckDeploy } from "./RundeckDeploy";
 import { RundeckExecution } from "./RundeckExecution";
+import { RundeckService } from "./RundeckService";
+import { RundeckActivity } from "./RundeckActivity";
 import { hostFromUrl, RundeckHost } from "./parts";
 import "../rundeck.css";
 
@@ -19,7 +21,7 @@ interface Props {
 
 export function RundeckPane({ paneId, active }: Props) {
     const view = cmd.useRundeckView(paneId);
-    const status = useResourceEnabled(active, rndStatusR);
+    const status = useResourceEnabled(active, rundeck.statusR);
     const treeHidden = cmd.rundeckSettings.useSelect((s) => s.treeHidden);
     const treeWidth = cmd.useRundeck((s) => s.treeWidth);
 
@@ -29,22 +31,24 @@ export function RundeckPane({ paneId, active }: Props) {
         if (status.status === "loading" && !status.data) {
             return <RundeckLoading />;
         }
-        if (status.data && (!status.data.configured || (!status.data.ok && status.data.auth_failed))) {
+        if (status.data && (!status.data.configured || status.data.authFailed)) {
             return (
                 <RundeckLogin
                     key={status.data.configured ? "expired" : "new"}
                     initialUrl={status.data.url}
                     initialUser={status.data.user}
-                    initialAllowInsecurePrivateHttp={status.data.allow_insecure_private_http}
-                    notice={status.data.configured ? (status.data.message ?? "Authentication failed") : undefined}
-                    onDone={() => status.refresh()}
+                    initialAllowInsecurePrivateHttp={status.data.allowInsecurePrivateHttp}
+                    status={status.data}
+                    onDone={() => rundeck.refresh()}
                 />
             );
         }
         if (status.data && !status.data.ok) {
             return <RundeckStatusError message={status.data.message ?? "Rundeck connection failed"} onRetry={() => status.refresh()} />;
         }
-        if (top.kind === "matrix" || top.kind === "service") return <RundeckJobs paneId={paneId} active={active} level={top} />;
+        if (top.kind === "matrix") return <RundeckJobs paneId={paneId} active={active} />;
+        if (top.kind === "activity") return <RundeckActivity key={top.project} paneId={paneId} project={top.project} active={active} />;
+        if (top.kind === "service") return <RundeckService key={top.jobId} paneId={paneId} level={top} active={active} />;
         if (top.kind === "deploy") return <RundeckDeploy key={top.jobId} paneId={paneId} level={top} active={active} />;
         if (top.kind === "execution") return <RundeckExecution key={top.executionId} paneId={paneId} level={top} active={active} />;
         return null;

@@ -7,17 +7,41 @@ import { Workspace } from "./Workspace";
 import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 
-vi.mock("../api/acp", () => ({
-    acpApi: {
-        subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: vi.fn(() => new Promise(() => {})),
-        stop: vi.fn(async () => {}),
-        prompt: vi.fn(async () => {}),
-        cancel: vi.fn(async () => {}),
-        permissionReply: vi.fn(async () => {}),
-    },
-}));
+vi.mock("../api/acp", () => {
+    /* The core starting a chat, which the pane then takes up by attaching once. */
+    let started: object | null = null;
+    const start = vi.fn(() => new Promise<never>(() => {}));
+    return {
+        acpApi: {
+            composing: vi.fn(async () => {}),
+            subscribe: vi.fn(async () => () => {}),
+            attach: vi.fn(async () => {
+                const begun = started;
+                started = null;
+                return begun
+                    ? {
+                          status: "live",
+                          start: begun,
+                          permissionMode: "workspace-write",
+                          running: false,
+                          turned: false,
+                          feed: "feed-1",
+                          olderBefore: null,
+                      }
+                    : { status: "missing" };
+            }),
+            startChat: vi.fn(async () => {
+                started = await start();
+            }),
+            stop: vi.fn(async () => {}),
+            prompt: vi.fn(async () => {}),
+            cancel: vi.fn(async () => {}),
+            permissionReply: vi.fn(async () => {}),
+        },
+    };
+});
+
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../terminal/TerminalPane", () => ({
     TerminalPane: (props: ComponentProps<typeof TerminalPane>) => (
@@ -43,11 +67,10 @@ function arrangeRestoredAgents(resumeId: string | undefined): void {
             id: "agent-visible",
             type: "codex",
             title: "visible",
-            startup: "codex resume visible-session",
             resumeId: "visible-session",
             launchState: "live",
         },
-        { id: "agent-hidden", type: "claude", title: "hidden", startup: "claude --resume hidden-session", resumeId, launchState: "live" },
+        { id: "agent-hidden", type: "claude", title: "hidden", resumeId, launchState: "live" },
     ]);
     setState({
         ...slices,
@@ -73,7 +96,7 @@ describe("restored agent lifecycle", () => {
         expect(screen.queryByTestId("terminal-agent-hidden")).not.toBeInTheDocument();
     });
 
-    it("resumes a sleeping agent into GUI and starts TUI only after switching", async () => {
+    it("wakes a sleeping agent into GUI once it is shown, and starts TUI only after switching", async () => {
         arrangeRestoredAgents("hidden-session");
         setState((state) => ({
             agents: {
@@ -84,9 +107,7 @@ describe("restored agent lifecycle", () => {
         render(<Workspace />);
 
         expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Resume codex" }));
-        expect(screen.queryByTestId("terminal-agent-visible")).not.toBeInTheDocument();
-        fireEvent.click((await screen.findAllByRole("button", { name: "TUI" }))[0]);
+        fireEvent.click((await screen.findAllByRole("button", { name: "TUI" }, { timeout: 5000 }))[0]);
         await waitFor(() => expect(screen.getByTestId("terminal-agent-visible")).toHaveAttribute("data-spawn-when", "true"));
     });
 });

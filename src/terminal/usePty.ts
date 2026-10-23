@@ -1,29 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { coreCall } from "../api/core";
+import { workspaceSent } from "../state/workspaceSent";
 import { invokeCommand as invoke } from "../api/invoke";
 import { registerPtyDrop } from "../state/dropRegistry";
 import { registerTextInsert } from "../state/textInsertRegistry";
 import { IS_WINDOWS } from "../lib/platform";
 import type { PtyContext, PtyDirectCommand } from "../state/types";
-import { createItemId } from "../workbench/registry";
-import { captureWorkbenchItemRuntimeLease, getOrCreateWorkbenchItemResource } from "../workbench/itemRuntime";
+import { paneResource } from "./paneResources";
 import { PtyLifecycleController, type PtyApi, type PtyAttachResult, type PtyChannelAdapter, type PtyControllerErrorEvent } from "./ptyController";
 import { performanceTelemetry } from "../lib/performance";
 import { subscribePtyShellMetadata, type PtyShellMetadataEvent } from "../api/ptyShell";
-import { taskPtyBindings, type TaskPtyBinding } from "../tasks/nativeRuntime";
+import { runShownIn, taskRuns, type TaskRun } from "../tasks/coreTasks";
 import { coreSessionsApi } from "../api/coreSessions";
 import { noteSpawnedSession, takeResumableSession } from "./sessionResume";
+import { noteTerminalSize } from "./spareShell";
+import { integrationHealth } from "../api/system";
 
 type NativeChannel = Channel<ArrayBuffer>;
 export type NativePtyController = PtyLifecycleController<NativeChannel, PtyContext>;
 export type TerminalShellSemantics = "posix" | "powershell";
 
-const NATIVE_PTY_RESOURCE = "core.terminal.pty";
 const DEFAULT_SHELL_SEMANTICS: TerminalShellSemantics = IS_WINDOWS ? "powershell" : "posix";
-
-interface IntegrationHealthShell {
-    readonly shell?: unknown;
-}
 
 interface PtyResourceConfiguration {
     readonly cwd?: string;
@@ -31,11 +29,23 @@ interface PtyResourceConfiguration {
     readonly directCommand?: PtyDirectCommand;
     readonly initialDropPaths?: readonly string[];
     readonly initialInput?: string;
+    readonly initialDraft?: string;
     readonly context?: PtyContext;
-    readonly externallyOwned?: boolean;
+    readonly taskTerminalKey?: string;
 }
 
 const NOOP = () => {};
+
+/** The task process a task terminal shows: the newest run behind its key. */
+interface TaskPtyBinding {
+    readonly ptyId: number;
+    readonly executionId: string;
+    readonly terminalKey: string;
+}
+
+function bindingOf(run: TaskRun | null): TaskPtyBinding | null {
+    return run?.ptyId === undefined ? null : { ptyId: run.ptyId, executionId: run.executionId, terminalKey: run.terminalKey };
+}
 
 function createExternalControllerRef(binding: TaskPtyBinding | null): RefObject<NativePtyController | null> {
     // A fresh ref identity makes useXterm restart for each immutable binding.
@@ -59,15 +69,41 @@ function decodeAttachResponse(body: ArrayBuffer): PtyAttachResult {
     return { subId: subId as number, alternateScreen: alternateScreen as boolean, shell, snapshot: new Uint8Array(body, headerEnd) };
 }
 
+/** The same terminal commands, for a terminal on `host`, another host the app joined; the core there names it. */
+function remotePtyApi(host: string): PtyApi<NativeChannel, PtyContext> {
+    return {
+        ...nativePtyApi,
+        spawn: async (request) => {
+            const id = await invoke<number>("pty_spawn", { ...request, host });
+            noteSpawnedSession(id);
+            return id;
+        },
+        resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
+        resume: async (id) => takeResumableSession(id) && (await coreSessionsApi.list(host)).some((session) => session.id === id),
+    };
+}
+
 const nativePtyApi: PtyApi<NativeChannel, PtyContext> = {
+    /* A terminal agent's command line is the core's, built from the agent it keeps. */
     spawn: async (request) => {
-        const id = await invoke<number>("pty_spawn", { ...request });
+        const agentId = request.context?.agentId;
+        const id =
+            agentId && !request.directCommand && !request.startup
+                ? await workspaceSent().then(
+                      async () =>
+                          (await coreCall<{ ptyId: number }>("startTerminalAgent", { agentId, cols: request.cols, rows: request.rows })).ptyId,
+                  )
+                : await invoke<number>("pty_spawn", { ...request });
         noteSpawnedSession(id);
         return id;
     },
     write: (id, data) => invoke<void>("pty_write", { id, data }),
-    resize: (id, cols, rows) => invoke<void>("pty_resize", { id, cols, rows }),
-    kill: (id) => invoke<void>("pty_kill", { id }),
+    paste: (id, text, options) => invoke<void>("pty_paste", { id, text, submit: options?.submit ?? false, starting: options?.starting ?? false }),
+    resize: (id, cols, rows) => {
+        noteTerminalSize(cols, rows);
+        return invoke<void>("pty_resize", { id, cols, rows });
+    },
+    kill: coreSessionsApi.kill,
     attach: async (id, channel) => decodeAttachResponse(await invoke<ArrayBuffer>("pty_attach", { id, onEvent: channel })),
     detach: (id, subId) => invoke<void>("pty_unsubscribe", { id, subId }),
     ack: (id, subId, bytes) => invoke<void>("pty_ack", { id, subId, bytes }),
@@ -124,10 +160,8 @@ export function shellSemanticsForExecutable(shell: string): TerminalShellSemanti
 
 async function configuredShellSemantics(): Promise<TerminalShellSemantics> {
     try {
-        const health = await invoke<IntegrationHealthShell>("integration_health");
-        if (health && typeof health.shell === "string") {
-            return shellSemanticsForExecutable(health.shell) ?? DEFAULT_SHELL_SEMANTICS;
-        }
+        const { shell } = await integrationHealth();
+        return shellSemanticsForExecutable(shell) ?? DEFAULT_SHELL_SEMANTICS;
     } catch {
         // invokeCommand already records the failed IPC. Keep drag/drop usable
         // with the same default the native PTY launcher uses on this platform.
@@ -156,6 +190,7 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         configuration.directCommand?.profile?.environmentKeys ?? null,
         configuration.initialDropPaths ?? null,
         configuration.initialInput ?? null,
+        configuration.initialDraft ?? null,
         context?.sessionId ?? null,
         context?.sessionName ?? null,
         context?.sessionKind ?? null,
@@ -166,11 +201,10 @@ export function ptyResourceFingerprint(configuration: PtyResourceConfiguration, 
         context?.agentType ?? null,
         context?.initialPromptSubmitted ?? null,
         context?.shellIntegration ?? null,
-        configuration.externallyOwned === true,
+        configuration.taskTerminalKey ?? null,
         taskBinding?.ptyId ?? null,
         taskBinding?.executionId ?? null,
         taskBinding?.terminalKey ?? null,
-        taskBinding?.revision ?? null,
     ]);
 }
 
@@ -181,27 +215,33 @@ export function usePty(opts: {
     /** Native file drops replayed as independent paste events before the first task. */
     initialDropPaths?: readonly string[];
     initialInput?: string;
+    /** Pasted once the program starts and never submitted. */
+    initialDraft?: string;
     onInitialInputDelivered?: () => void;
     hostRef: RefObject<HTMLDivElement | null>;
     spawnWhen?: boolean;
     context?: PtyContext;
     onShellMetadata?: (event: PtyShellMetadataEvent) => void;
-    /** Borrow the task runtime's exact pane-bound PTY; never spawn a shell. */
-    externallyOwned?: boolean;
+    /** Show the process of the task run behind this key; never spawn a shell. */
+    taskTerminalKey?: string;
     /** Durable workbench item owner. Omit for popups, agents, and embedded shells. */
     durableItemId?: string;
     /** The process this terminal showed before the page loaded; read once, when the controller is made. */
     resumePtyId?: number;
     onPtySession?: (id: number) => void;
+    /** Another host the app joined, which runs the terminal. */
+    host?: string;
 }): RefObject<NativePtyController | null> {
-    const { hostRef, spawnWhen = true, externallyOwned = false } = opts;
-    const externalPaneId = externallyOwned ? (opts.context?.paneId ?? null) : null;
-    const subscribeTaskBinding = useCallback(
-        (listener: () => void) => (externalPaneId ? taskPtyBindings.subscribe(externalPaneId, listener) : NOOP),
-        [externalPaneId],
+    const { hostRef, spawnWhen = true, taskTerminalKey } = opts;
+    const externallyOwned = taskTerminalKey !== undefined;
+    const subscribeTaskBinding = useCallback((listener: () => void) => (externallyOwned ? taskRuns.subscribe(listener) : NOOP), [externallyOwned]);
+    const taskExecution = useSyncExternalStore(subscribeTaskBinding, () =>
+        taskTerminalKey === undefined ? null : (runShownIn(taskRuns.getSnapshot(), taskTerminalKey)?.executionId ?? null),
     );
-    const getTaskBindingSnapshot = useCallback(() => (externalPaneId ? taskPtyBindings.getSnapshot(externalPaneId) : null), [externalPaneId]);
-    const taskBinding = useSyncExternalStore(subscribeTaskBinding, getTaskBindingSnapshot, getTaskBindingSnapshot);
+    const taskBinding = useMemo(
+        () => (taskTerminalKey === undefined || taskExecution === null ? null : bindingOf(runShownIn(taskRuns.getSnapshot(), taskTerminalKey))),
+        [taskTerminalKey, taskExecution],
+    );
     const ordinaryControllerRef = useRef<NativePtyController | null>(null);
     const externalControllerRef = useMemo(() => createExternalControllerRef(taskBinding), [taskBinding]);
     const controllerRef = externallyOwned ? externalControllerRef : ordinaryControllerRef;
@@ -214,41 +254,24 @@ export function usePty(opts: {
     const currentOptionsRef = useRef(opts);
     currentOptionsRef.current = opts;
     const resourceFingerprint = ptyResourceFingerprint(opts, externallyOwned ? taskBinding : null);
-    const durableItemId = opts.durableItemId ? createItemId(opts.durableItemId) : null;
+    const durableItemId = opts.durableItemId ?? null;
     // Transient agent/popup terminals intentionally keep mount-time launch
     // options: clearing a delivered initial prompt must not respawn the CLI.
     const durableResourceFingerprint = durableItemId ? resourceFingerprint : null;
     // External transient controllers must also rotate with task executions.
     const controllerLifecycleFingerprint = externallyOwned ? resourceFingerprint : durableResourceFingerprint;
-    const runtimeLease = durableItemId ? captureWorkbenchItemRuntimeLease(durableItemId) : null;
 
     useEffect(() => {
-        const durable = runtimeLease !== null;
-        if (durableItemId && !runtimeLease) {
-            performanceTelemetry.incrementCounter("terminal.durable-owner-missing");
-            controllerRef.current = null;
-            return;
-        }
         if (externallyOwned && !taskBinding) {
             controllerRef.current = null;
-            if (runtimeLease) {
-                try {
-                    getOrCreateWorkbenchItemResource<NativePtyController | null>(
-                        runtimeLease,
-                        NATIVE_PTY_RESOURCE,
-                        durableResourceFingerprint!,
-                        () => ({ value: null, dispose: NOOP }),
-                    );
-                } catch {
-                    performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
-                }
-            }
+            if (durableItemId)
+                paneResource<NativePtyController | null>(durableItemId, durableResourceFingerprint!, () => ({ value: null, dispose: NOOP }));
             return;
         }
         const initial = currentOptionsRef.current;
         const createController = () =>
             new PtyLifecycleController<NativeChannel, PtyContext>({
-                api: nativePtyApi,
+                api: initial.host ? remotePtyApi(initial.host) : nativePtyApi,
                 channels: nativeChannels,
                 existingPtyId: externallyOwned ? taskBinding!.ptyId : undefined,
                 resumePtyId: externallyOwned ? undefined : initial.resumePtyId,
@@ -261,22 +284,16 @@ export function usePty(opts: {
                     ? undefined
                     : initial.initialDropPaths?.map((path) => encodeDroppedPaths([path], DEFAULT_SHELL_SEMANTICS)),
                 initialInput: externallyOwned ? undefined : initial.initialInput,
+                initialDraft: externallyOwned ? undefined : initial.initialDraft,
                 onInitialInputDelivered: () => deliveredRef.current?.(),
                 onError: recordControllerError,
             });
-        let controller: NativePtyController;
-        try {
-            controller = runtimeLease
-                ? getOrCreateWorkbenchItemResource(runtimeLease, NATIVE_PTY_RESOURCE, durableResourceFingerprint!, () => {
-                      const value = createController();
-                      return { value, dispose: () => value.dispose() };
-                  })
-                : createController();
-        } catch {
-            performanceTelemetry.incrementCounter("terminal.durable-owner-stale");
-            controllerRef.current = null;
-            return;
-        }
+        const controller = durableItemId
+            ? paneResource(durableItemId, durableResourceFingerprint!, () => {
+                  const value = createController();
+                  return { value, dispose: () => void value.dispose() };
+              })
+            : createController();
         controllerRef.current = controller;
 
         const host = hostRef.current;
@@ -295,7 +312,7 @@ export function usePty(opts: {
                       .then((semantics) => {
                           if (!active) return;
                           const body = encodeDroppedPaths(droppedPaths, semantics);
-                          return controller.write(`\x1b[200~${body}\x1b[201~`);
+                          return controller.paste(body);
                       })
                       // PtyLifecycleController is the sole reporter for write
                       // failures; this catch only prevents an unhandled promise.
@@ -305,7 +322,7 @@ export function usePty(opts: {
         const unregisterTextInsert = host
             ? registerTextInsert(host, (text) => {
                   if (text.includes("\0")) return;
-                  void controller.write(`\x1b[200~${text} \x1b[201~`);
+                  void controller.paste(`${text} `);
               })
             : () => {};
 
@@ -314,18 +331,9 @@ export function usePty(opts: {
             unregisterDrop();
             unregisterTextInsert();
             if (controllerRef.current === controller) controllerRef.current = null;
-            if (!durable) void controller.dispose();
+            if (!durableItemId) void controller.dispose();
         };
-    }, [
-        hostRef,
-        durableItemId,
-        durableResourceFingerprint,
-        runtimeLease,
-        controllerLifecycleFingerprint,
-        controllerRef,
-        externallyOwned,
-        taskBinding,
-    ]);
+    }, [hostRef, durableItemId, durableResourceFingerprint, controllerLifecycleFingerprint, controllerRef, externallyOwned, taskBinding]);
 
     useEffect(() => {
         if (!spawnWhen) return;
@@ -354,7 +362,7 @@ export function usePty(opts: {
             disposed = true;
             unlisten();
         };
-    }, [spawnWhen, controllerLifecycleFingerprint, controllerRef, runtimeLease, opts.context?.shellIntegration]);
+    }, [spawnWhen, controllerLifecycleFingerprint, controllerRef, opts.context?.shellIntegration]);
 
     return controllerRef;
 }

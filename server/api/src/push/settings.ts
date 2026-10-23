@@ -1,5 +1,8 @@
-import type { PushApp } from "@sikemux/protocol";
+import { pushAppValues, type PushApp } from "@sikemux/protocol";
 
+import { readAppleKeySettings, type AppleKey } from "../apple-key.ts";
+import { settingsFrom } from "../env.ts";
+import { APNS_TOPICS } from "./apns.ts";
 import { readServiceAccount, type ServiceAccount } from "./fcm.ts";
 
 export interface PushSettings {
@@ -9,27 +12,24 @@ export interface PushSettings {
   allowSandbox: boolean;
   /** The Firebase service account FCM sends as, or null when Android pushes are not set up. */
   fcm: ServiceAccount | null;
+  /** The key APNs takes this server's pushes with, or null when iPhone pushes are not set up. */
+  apns: (AppleKey & { topic: string }) | null;
 }
 
-const APPS: readonly PushApp[] = ["production", "dev"];
-
 /**
- * Reads PUSH_APP ("production" by default), APNS_ALLOW_SANDBOX ("1" to allow) and
- * FCM_SERVICE_ACCOUNT_FILE, the path of the Firebase service account's JSON key.
+ * Reads PUSH_APP ("production" by default), APNS_ALLOW_SANDBOX ("1" to allow),
+ * FCM_SERVICE_ACCOUNT_FILE, the path of the Firebase service account's JSON key, and
+ * APNS_KEY_FILE, the path of Apple's .p8 push key, with its APNS_KEY_ID and APNS_TEAM_ID.
  */
 export function readPush(
   env: NodeJS.ProcessEnv,
   problems: string[],
 ): PushSettings {
-  const app = (env.PUSH_APP?.trim() || "production") as PushApp;
-  if (!APPS.includes(app))
-    problems.push(`PUSH_APP is not one of ${APPS.join(", ")}`);
+  const settings = settingsFrom(env, problems);
+  const app = settings.oneOf("PUSH_APP", pushAppValues, "production");
+  const sandbox = settings.flag("APNS_ALLOW_SANDBOX", false);
 
-  const sandbox = env.APNS_ALLOW_SANDBOX?.trim() || "0";
-  if (sandbox !== "0" && sandbox !== "1")
-    problems.push("APNS_ALLOW_SANDBOX is not 0 or 1");
-
-  const path = env.FCM_SERVICE_ACCOUNT_FILE?.trim();
+  const path = settings.optional("FCM_SERVICE_ACCOUNT_FILE");
   let fcm: ServiceAccount | null = null;
   if (path) {
     try {
@@ -41,5 +41,19 @@ export function readPush(
     }
   }
 
-  return { app, allowSandbox: app === "dev" || sandbox === "1", fcm };
+  return {
+    app,
+    allowSandbox: app === "dev" || sandbox,
+    fcm,
+    apns: readApns(env, app, problems),
+  };
+}
+
+function readApns(
+  env: NodeJS.ProcessEnv,
+  app: PushApp,
+  problems: string[],
+): PushSettings["apns"] {
+  const key = readAppleKeySettings(env, "APNS", problems);
+  return key && { ...key, topic: APNS_TOPICS[app] };
 }

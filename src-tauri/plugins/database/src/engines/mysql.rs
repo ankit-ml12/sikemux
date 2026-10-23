@@ -12,6 +12,7 @@ use mysql_async::{
     Column as MysqlColumn, Conn, Opts, OptsBuilder, Row, SslOpts, Value as MysqlValue,
 };
 
+use super::Unfinished;
 use crate::error::{DatabaseError, DatabaseResult};
 use crate::profiles::{Server, Tls};
 use crate::schema::{ColumnInfo, ForeignKey, Index, Table, TableInfo, TableKind};
@@ -39,6 +40,7 @@ pub struct Session {
 pub fn describe(error: &mysql_async::Error) -> String {
     match error {
         mysql_async::Error::Server(server) => server.message.clone(),
+        mysql_async::Error::Other(other) => other.to_string(),
         other => other.to_string(),
     }
 }
@@ -74,16 +76,36 @@ fn options(server: &Server, password: Option<&str>, read_only: bool, tls: Option
         .into()
 }
 
-async fn connect(opts: Opts, server: &Server) -> DatabaseResult<Conn> {
+async fn connect(opts: Opts) -> Result<Conn, mysql_async::Error> {
+    let host = opts.ip_or_hostname().to_string();
+    let port = opts.tcp_port();
     match tokio::time::timeout(CONNECT_TIMEOUT, Conn::new(opts)).await {
-        Ok(connected) => connected.map_err(|error| DatabaseError::Connect(describe(&error))),
-        Err(_) => Err(DatabaseError::Connect(format!(
-            "{}:{} did not answer within {}s",
-            server.host,
-            server.port.unwrap_or(MYSQL_PORT),
-            CONNECT_TIMEOUT.as_secs()
-        ))),
+        Ok(connected) => connected,
+        Err(_) => Err(mysql_async::Error::Other(
+            format!(
+                "{host}:{port} did not answer within {}s",
+                CONNECT_TIMEOUT.as_secs()
+            )
+            .into(),
+        )),
     }
+}
+
+fn connect_error(error: &mysql_async::Error) -> DatabaseError {
+    DatabaseError::Connect(describe(error))
+}
+
+/// The server answered but cannot encrypt, which is when `prefer` goes on without it.
+fn lacks_tls(error: &mysql_async::Error) -> bool {
+    matches!(
+        error,
+        mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)
+    )
+}
+
+/// One row past the limit, so a result that was cut still says so.
+fn select_limit(limit: usize) -> String {
+    format!("set sql_select_limit = {}", limit.saturating_add(1))
 }
 
 fn is_numeric(ty: ColumnType) -> bool {
@@ -187,13 +209,16 @@ impl Session {
         read_only: bool,
     ) -> DatabaseResult<Self> {
         let encrypted = options(server, password, read_only, ssl_opts(server.tls));
-        let (connection, opts) = match connect(encrypted.clone(), server).await {
+        let (connection, opts) = match connect(encrypted.clone()).await {
             Ok(connection) => (connection, encrypted),
-            Err(_) if server.tls == Tls::Prefer => {
+            Err(error) if server.tls == Tls::Prefer && lacks_tls(&error) => {
                 let plain = options(server, password, read_only, None);
-                (connect(plain.clone(), server).await?, plain)
+                let connection = connect(plain.clone())
+                    .await
+                    .map_err(|error| connect_error(&error))?;
+                (connection, plain)
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(connect_error(&error)),
         };
         Ok(Self {
             connection_id: connection.id(),
@@ -206,6 +231,10 @@ impl Session {
 
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
+    }
+
+    pub fn retire(&self) {
+        self.alive.store(false, Ordering::Relaxed);
     }
 
     /// The database named in the profile; empty when it names none.
@@ -241,15 +270,33 @@ impl Session {
         ))
     }
 
-    /// Runs every statement in the text, keeping at most `limit` rows from each.
+    /// Runs every statement in the text, keeping at most `limit` rows from each. The server is told to send
+    /// no more than one row past the limit, so a huge select is not read to its end; a select with a `limit`
+    /// of its own keeps that one.
     pub async fn query(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let mut connection = self.connection.lock().await;
-        self.run(&mut connection, sql, limit).await
+        let unfinished = Unfinished::new(&self.alive);
+        connection
+            .query_drop(select_limit(limit))
+            .await
+            .map_err(|error| self.failed(&error))?;
+        let outcome = self.run(&mut connection, sql, limit).await;
+        let reset = connection
+            .query_drop("set sql_select_limit = default")
+            .await
+            .map_err(|error| self.failed(&error));
+        if reset.is_ok() {
+            unfinished.finish();
+        }
+        let results = outcome?;
+        reset?;
+        Ok(results)
     }
 
     /// For an agent on a read-only connection. A session setting could otherwise switch read-only off for the
     /// statements after it, so the SQL must be one statement, and it runs in a read-only transaction that is
-    /// always rolled back.
+    /// always rolled back. A connection the rollback did not reach is not used again, since the session's own
+    /// read-only setting could be left switched off.
     pub async fn query_guarded(&self, sql: &str, limit: usize) -> DatabaseResult<Vec<ResultSet>> {
         let mut connection = self.connection.lock().await;
         let statement = connection.prep(sql).await.map_err(|error| {
@@ -262,15 +309,24 @@ impl Session {
             .close(statement)
             .await
             .map_err(|error| self.failed(&error))?;
+        let unfinished = Unfinished::new(&self.alive);
         connection
-            .query_drop("start transaction read only")
+            .query_drop(format!(
+                "{}; start transaction read only",
+                select_limit(limit)
+            ))
             .await
             .map_err(|error| self.failed(&error))?;
         let outcome = self.run(&mut connection, sql, limit).await;
         let rolled_back = connection
-            .query_drop("rollback; set session transaction read only")
+            .query_drop(
+                "rollback; set session transaction read only; set sql_select_limit = default",
+            )
             .await
             .map_err(|error| self.failed(&error));
+        if rolled_back.is_ok() {
+            unfinished.finish();
+        }
         let results = outcome?;
         rolled_back?;
         Ok(results)
@@ -321,9 +377,9 @@ impl Session {
 
     /// Asks the server, over a second connection, to stop the statement this one is running.
     pub async fn cancel(&self) -> DatabaseResult<()> {
-        let mut killer = Conn::new(self.opts.clone())
+        let mut killer = connect(self.opts.clone())
             .await
-            .map_err(|error| DatabaseError::Connect(describe(&error)))?;
+            .map_err(|error| connect_error(&error))?;
         let killed = killer
             .query_drop(format!("kill query {}", self.connection_id))
             .await
@@ -543,6 +599,15 @@ pub mod tests {
         assert!(!is_numeric(ColumnType::MYSQL_TYPE_VAR_STRING));
     }
 
+    #[test]
+    fn only_a_server_that_cannot_encrypt_is_reached_without_it() {
+        assert!(lacks_tls(&mysql_async::Error::Driver(
+            mysql_async::DriverError::NoClientSslFlagFromServer
+        )));
+        let refused = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+        assert!(!lacks_tls(&mysql_async::Error::Io(refused.into())));
+    }
+
     #[tokio::test]
     async fn nobody_listening_is_a_connect_error() {
         let server = Server {
@@ -606,6 +671,16 @@ pub mod tests {
             .await
             .unwrap();
         assert!(limited[0].truncated);
+        assert_eq!(limited[0].rows.len(), 1);
+        let setting: Option<u64> = scratch
+            .session
+            .connection
+            .lock()
+            .await
+            .query_first("select @@session.sql_select_limit")
+            .await
+            .unwrap();
+        assert_eq!(setting, Some(u64::MAX));
         let failed = scratch.session.query("select * from nowhere", 1).await;
         let Err(DatabaseError::Query(message)) = failed else {
             panic!("expected a query error")
@@ -695,6 +770,14 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(read[0].rows, vec![vec![serde_json::json!(2)]]);
+        let limited = reader
+            .query_guarded("select * from customers", 1)
+            .await
+            .unwrap();
+        assert!(limited[0].truncated);
+        let names = reader.schemas().await.unwrap();
+        assert!(names.len() > 1, "{names:?}");
+        assert!(reader.is_alive());
         let (mut server, password) = server().unwrap();
         server.database = scratch.schema.clone();
         let cleanup = Scratch {

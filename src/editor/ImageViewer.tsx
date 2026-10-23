@@ -4,8 +4,10 @@ import { readImageSource } from "../chat/imagePreview";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { hideImage, useShownImage, type ShownImage } from "../state/imageViewer";
 import { useOccludeNativeViews } from "../state/nativeViews";
-import { errMessage, notify } from "../state/toast";
+import { notify } from "../state/toast";
+import { errorText } from "../lib/format";
 import { IconClose, IconDownload } from "../ui/Icons";
+import { basename } from "../lib/paths";
 
 /** The base64 half of a data URL, which is all a file needs of one. */
 function base64Of(src: string): string | null {
@@ -76,11 +78,11 @@ function ImageSheet({ image }: { image: ShownImage }) {
             const data = image.path ? null : base64Of(image.src);
             if (!image.path && !data) throw new Error("this picture has nothing to save");
             const saved = image.path ? await fsapi.copyIntoDir(image.path, folder) : await fsapi.saveBase64IntoDir(folder, image.name, data!);
-            notify("success", `Saved ${saved.split("/").pop()} to Downloads`, {
+            notify("success", `Saved ${basename(saved)} to Downloads`, {
                 action: { label: "Show", run: () => void fsapi.revealInFinder(saved) },
             });
         } catch (error) {
-            notify("error", `Could not save the picture: ${errMessage(error)}`);
+            notify("error", `Could not save the picture: ${errorText(error)}`);
         } finally {
             setSaving(false);
         }

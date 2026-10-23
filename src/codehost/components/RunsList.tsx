@@ -1,19 +1,34 @@
+import { Segmented } from "../../ui/Controls";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { openUrl, swallow } from "../../plugin-api/host";
 import { useResourceEnabled } from "../../plugin-api/resources";
-import { Dropdown, EmptyState, IconCommit, IconGit, IconPullRequest, IconRefresh, IconRun, SkeletonRows, Tooltip } from "../../plugin-api/ui";
-import { failureMessage, type RepoRef, type Run, type Workflow } from "../api";
+import {
+    Dropdown,
+    EmptyState,
+    IconGit,
+    IconPullRequest,
+    IconRefresh,
+    IconRun,
+    IconTimer,
+    SkeletonRows,
+    StaleNotice,
+    Tooltip,
+} from "../../plugin-api/ui";
+import { type RepoRef, type Run, type Workflow } from "../api";
+import { errorText } from "../../lib/format";
 import { useHost } from "../registry";
 import { pullsR, runsR, workflowsR } from "../resources";
-import { elapsedMs, formatAgo, formatDuration, isUnfinished, OUTCOME_LABEL, outcomeOf, statusParam } from "../runStatus";
+import { elapsedMs, isUnfinished, outcomeOf, statusParam } from "../runStatus";
 import { filterBy, hostSettings, setFollowBranch, showRun, STATUS_FILTERS, updateView, type HostView, type StatusFilter } from "../state";
-import { RingedOutcome } from "./ActionsIcon";
+import { StatusMark } from "./ActionsIcon";
 import { RunMenu } from "./RunMenu";
 import { Face } from "./CommentThread";
-import { coarse, useEvery, useNow } from "./hooks";
-
-const LIVE_REFRESH_MS = 10_000;
-const IDLE_REFRESH_MS = 20_000;
+import { ListTitle, ShellAccount } from "./Bits";
+import { coarse } from "./hooks";
+import { useNow } from "../../plugin-api/hooks";
+import { useCiWatch } from "../ciWatch";
+import { formatAgo, formatDuration } from "../../lib/format";
+import { basename } from "../../lib/paths";
 
 const FILTER_LABEL: Record<StatusFilter, string> = {
     all: "All",
@@ -26,7 +41,10 @@ const FILTER_LABEL: Record<StatusFilter, string> = {
 
 const EVERY_WORKFLOW = "all";
 
-/** A run as Bitbucket lists a pipeline: who started it and its title, then its number, commit and branch, with how it went beside. */
+/**
+ * A run as GitHub lists it, with Bitbucket's face: who started it, how it went and its title, then its workflow and
+ * number, commit and branch, with when it started and how long it took at the end.
+ */
 const RunRow = memo(function RunRow({
     paneId,
     repo,
@@ -48,39 +66,30 @@ const RunRow = memo(function RunRow({
     const outcome = outcomeOf(run);
     const finished = isUnfinished(run) ? null : run.updatedAt;
     return (
-        <div className="gha-run-item">
-            <button
-                type="button"
-                className="gha-run-row"
-                data-outcome={outcome}
-                title={workflow ? `${workflow} #${run.runNumber}` : undefined}
-                onClick={() => showRun(paneId, run.id)}>
+        <div className="gha-run-item" data-outcome={outcome}>
+            <button type="button" className="gha-run-row" onClick={() => showRun(paneId, run.id)}>
                 <span className="gha-run-face">
                     <Face login={run.actor} url={run.avatarUrl} />
                 </span>
-                <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
-                <span className="gha-run-status">
-                    <RingedOutcome outcome={outcome} size={16} />
-                    <span className="gha-run-status-word">{OUTCOME_LABEL[outcome]}</span>
+                <span className="gha-run-top">
+                    <StatusMark outcome={outcome} size={16} />
+                    <span className="gha-run-name">{run.title || run.name || `Run #${run.runNumber}`}</span>
                 </span>
                 <span className="gha-run-sub">
                     <span className="gha-run-who">
-                        #{run.runNumber} - {run.actor ?? "someone"}
-                    </span>
-                    {run.shortSha && (
-                        <span className="gha-run-ref">
-                            <IconCommit size={11} />
-                            {run.shortSha}
+                        <span className="gha-run-workflow">
+                            {workflow ?? run.name} #{run.runNumber}
                         </span>
-                    )}
+                        {run.shortSha ? ` · ${run.shortSha} by ${run.actor ?? "someone"}` : ` · ${run.actor ?? "someone"}`}
+                    </span>
                     {run.pullRequests.length > 0 ? (
-                        <span className="gha-run-ref gha-run-branch" title={`#${run.pullRequests.join(", #")}`}>
+                        <span className="pr-ref gha-run-branch" title={`#${run.pullRequests.join(", #")}`}>
                             <IconPullRequest size={11} />
                             <span>{pullTitle ?? run.pullRequests.map((number) => `#${number}`).join(" ")}</span>
                         </span>
                     ) : (
                         run.branch && (
-                            <span className="gha-run-ref gha-run-branch">
+                            <span className="pr-ref gha-run-branch">
                                 <IconGit size={11} />
                                 <span>{run.branch}</span>
                             </span>
@@ -89,7 +98,10 @@ const RunRow = memo(function RunRow({
                 </span>
                 <span className="gha-run-when">
                     <span className="gha-run-started">{formatAgo(run.startedAt ?? run.createdAt, now)}</span>
-                    <span className="gha-run-took">{formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}</span>
+                    <span className="gha-run-took">
+                        <IconTimer size={12} />
+                        {formatDuration(elapsedMs(run.startedAt ?? run.createdAt, finished, now))}
+                    </span>
                 </span>
             </button>
             <span className="gha-run-more">
@@ -101,7 +113,7 @@ const RunRow = memo(function RunRow({
 
 function actionsPage(runUrl: string, workflow: Workflow | null): string {
     const actions = runUrl.replace(/\/runs\/\d+.*$/u, "");
-    return workflow ? `${actions}/workflows/${workflow.path.split("/").pop()}` : actions;
+    return workflow ? `${actions}/workflows/${basename(workflow.path)}` : actions;
 }
 
 interface Props {
@@ -137,7 +149,7 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
     const anyRunning = runs.some(isUnfinished);
     const now = useNow(active && anyRunning);
 
-    useEvery(active, anyRunning ? LIVE_REFRESH_MS : IDLE_REFRESH_MS, () => void page.refresh());
+    useCiWatch(repo, active);
 
     // A different branch is a different list, so it starts from its first page.
     const shownBranch = useRef(branch);
@@ -152,6 +164,29 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
     const left = (
         <div className="gha-runs pr-list">
             <div className="gha-list-head">
+                <ListTitle section="actions" />
+                <Segmented
+                    label="Which runs to list"
+                    value={view.statusFilter}
+                    options={STATUS_FILTERS.map((filter) => ({ value: filter, label: FILTER_LABEL[filter] }))}
+                    onChange={(filter) => filterBy(paneId, { statusFilter: filter })}
+                />
+                {projectBranch && !view.branch && (
+                    <Tooltip label={`Only show runs on ${projectBranch}`}>
+                        <button
+                            type="button"
+                            className="gha-chip gha-follow"
+                            data-on={followBranch ? "1" : "0"}
+                            onClick={() => setFollowBranch(repo.provider, !followBranch)}>
+                            <IconGit size={11} /> This branch
+                        </button>
+                    </Tooltip>
+                )}
+                <span className="gha-page-spacer" />
+                <span className="gha-dim">
+                    {page.data?.total ?? runs.length} run{(page.data?.total ?? runs.length) === 1 ? "" : "s"}
+                    {branch && <span className="gha-dim"> on {branch}</span>}
+                </span>
                 <Dropdown
                     value={view.workflowId === null ? EVERY_WORKFLOW : view.workflowId}
                     options={[
@@ -165,11 +200,6 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                     onChange={(value) => filterBy(paneId, { workflowId: value === EVERY_WORKFLOW ? null : value })}
                     title="Which workflow's runs to show"
                 />
-                <span className="gha-page-spacer" />
-                <span className="gha-dim">
-                    {page.data?.total ?? runs.length} run{(page.data?.total ?? runs.length) === 1 ? "" : "s"}
-                    {branch && <span className="gha-dim"> on {branch}</span>}
-                </span>
                 {canWrite && chosen?.active && (
                     <Tooltip label="Run workflow">
                         <button type="button" className="gha-icon-btn" onClick={() => onDispatch(chosen.id)} aria-label="Run workflow">
@@ -182,35 +212,14 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                         <IconRefresh size={13} />
                     </button>
                 </Tooltip>
-                <div className="gha-chips">
-                    {STATUS_FILTERS.map((filter) => (
-                        <button
-                            key={filter}
-                            type="button"
-                            className="gha-chip"
-                            data-on={view.statusFilter === filter ? "1" : "0"}
-                            onClick={() => filterBy(paneId, { statusFilter: filter })}>
-                            {FILTER_LABEL[filter]}
-                        </button>
-                    ))}
-                    {projectBranch && !view.branch && (
-                        <Tooltip label={`Only show runs on ${projectBranch}`}>
-                            <button
-                                type="button"
-                                className="gha-chip"
-                                data-on={followBranch ? "1" : "0"}
-                                onClick={() => setFollowBranch(repo.provider, !followBranch)}>
-                                <IconGit size={11} /> This branch
-                            </button>
-                        </Tooltip>
-                    )}
-                </div>
+                <ShellAccount />
             </div>
             {loading && <SkeletonRows rows={8} label="Loading runs" />}
-            {!loading && page.error && (
+            <StaleNotice handle={page} />
+            {!loading && page.error && !page.data && (
                 <EmptyState
                     title="Could not read runs"
-                    message={failureMessage(page.error)}
+                    message={errorText(page.error)}
                     tone="error"
                     action={{ label: "Try again", onClick: () => void page.refresh() }}
                 />
@@ -219,14 +228,6 @@ export function RunsList({ paneId, repo, view, branch, projectBranch, active, ca
                 <EmptyState title="No runs" message={`Nothing matches this filter${branch ? ` on ${branch}` : ""}.`} />
             )}
             <div className="gha-run-rows">
-                {runs.length > 0 && (
-                    <div className="gha-run-cols" aria-hidden="true">
-                        <span>Run</span>
-                        <span>Status</span>
-                        <span>Started</span>
-                        <span>Duration</span>
-                    </div>
-                )}
                 {runs.map((run) => (
                     <RunRow
                         key={run.id}

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fsapi } from "../api/fs";
-import { localImagePath, localPath, previewCacheBytes, readImageSource, sizedSvg, useImagePreview } from "./imagePreview";
+import { localImagePath, localPath } from "../lib/imagePaths";
+import { previewCacheBytes, readImageSource, sizedSvg, useImagePreview } from "./imagePreview";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 const url = (path: string) => `preview://localhost/${encodeURIComponent(path)}`;
@@ -214,5 +215,23 @@ describe("chat image previews", () => {
         await act(async () => answer({ mime: "image/png", size: 4, modified: 0 }));
 
         expect(result.current).toBe(url("/shots/fast.png"));
+    });
+
+    /* The transcript mounts a row again as it scrolls back; a picture that
+       arrived a render late would grow the row and move everything below it. */
+    it("draws a preview it already holds on the first render", async () => {
+        serve({ "/shots/again.png": { mime: "image/png", size: 4 } });
+        const first = renderHook(() => useImagePreview("/shots/again.png"));
+        await waitFor(() => expect(first.result.current).toBe(url("/shots/again.png")));
+        first.unmount();
+
+        const rendered: (string | null)[] = [];
+        renderHook(() => {
+            const preview = useImagePreview("/shots/again.png");
+            rendered.push(preview);
+            return preview;
+        });
+
+        expect(rendered[0]).toBe(url("/shots/again.png"));
     });
 });

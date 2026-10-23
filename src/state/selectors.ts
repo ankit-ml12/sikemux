@@ -1,55 +1,58 @@
 import { pluginDocuments } from "../plugins/documents";
-import type { PaneNode, Session, TabRef, Window, WindowRole } from "./types";
+import type { Agent, PaneNode, Session, TabRef, Window, WindowRole } from "./types";
+import { agentDisplay, type AgentDisplay } from "./agentStatus";
 import type { StoreState } from "./store";
 import { collectPanes, openSides } from "./layout";
+import { relativePath } from "../lib/paths";
+
+/** One saved chat in a map or set: the agent kind and its own session id. */
+export const chatKey = (agent: string, id: string): string => `${agent}\0${id}`;
+
+/** Whether `agent` has the saved chat open. */
+export const hasChat = (agent: Pick<Agent, "type" | "resumeId">, chat: { agent: string; id: string }): boolean =>
+    agent.type === chat.agent && agent.resumeId === chat.id;
+
+export function agentForChat<A extends Pick<Agent, "type" | "resumeId">>(agents: Iterable<A>, chat: { agent: string; id: string }): A | undefined {
+    for (const agent of agents) if (hasChat(agent, chat)) return agent;
+    return undefined;
+}
 
 export const selectSessionIds = (state: StoreState): readonly string[] => state.sessionOrder;
-export const selectActiveSessionId = (state: StoreState): string => state.activeSessionId;
-export const selectActiveSession = (state: StoreState): Session | undefined => state.sessions[state.activeSessionId];
-export const selectFocusMode = (state: Pick<StoreState, "sideRailOpen" | "agentRailOpen">): boolean => !state.sideRailOpen && !state.agentRailOpen;
+export const selectFocusMode = (state: Pick<StoreState, "sideRailOpen" | "tabRailOpen">): boolean => !state.sideRailOpen && !state.tabRailOpen;
 
 export const selectSession =
     (sessionId: string) =>
     (state: StoreState): Session | undefined =>
         state.sessions[sessionId];
-export const selectWindow =
-    (windowId: string) =>
-    (state: StoreState): Window | undefined =>
-        state.windows[windowId];
 export const selectAgent = (agentId: string) => (state: StoreState) => state.agents[agentId];
 
 export const selectWindowIds =
     (sessionId: string) =>
     (state: StoreState): readonly string[] =>
         state.windowsBySession[sessionId] ?? EMPTY_IDS;
-export interface AgentAttention {
+export interface OpenAgent {
     agentId: string;
-    agentTitle: string;
-    agentType: import("./types").AgentType;
-    sessionId: string;
-    sessionName: string;
+    agent: Agent;
+    session: Session;
 }
 
-/**
- * Every agent across every project that stopped to ask the user something. The
- * rail lists these together because a blocked agent in a project you are not
- * looking at is exactly the one you cannot see.
- */
-export function agentsAwaitingInput(
-    state: Pick<StoreState, "sessionOrder" | "sessions" | "windows" | "windowsBySession" | "agents" | "agentActivity">,
-): AgentAttention[] {
-    const waiting: AgentAttention[] = [];
+type OpenAgentsState = Pick<StoreState, "sessionOrder" | "sessions" | "windows" | "windowsBySession" | "agents">;
+
+/** Every agent open in any project, in project order and then strip order. */
+export function* openAgents(state: OpenAgentsState): Generator<OpenAgent> {
     for (const sessionId of state.sessionOrder) {
         const session = state.sessions[sessionId];
         if (!session) continue;
         for (const agentId of agentIdsOf(state, sessionId)) {
-            if (state.agentActivity[agentId]?.state !== "blocked") continue;
             const agent = state.agents[agentId];
-            if (!agent) continue;
-            waiting.push({ agentId, agentTitle: agent.title, agentType: agent.type, sessionId, sessionName: session.name });
+            if (agent) yield { agentId, agent, session };
         }
     }
-    return waiting;
+}
+
+/** How one agent is shown: its turn state plus the subagents and shells it still has going. */
+export function agentDisplayOf(state: Pick<StoreState, "agentStatus">, agentId: string): AgentDisplay {
+    return agentDisplay(state.agentStatus[agentId]);
 }
 
 /**
@@ -75,6 +78,30 @@ export function agentPaneId(win: Window): string | null {
     return collectPanes(win.root).find((pane) => pane.kind === "agent")?.id ?? null;
 }
 
+/**
+ * What a terminal is called everywhere: the name the person gave its tab, else the shell's own
+ * title, else the name it opened with. A renamed tab's name belongs to the terminal it opened with.
+ */
+export function terminalLabel(win: Window | undefined, pane: PaneNode, titles: Readonly<Record<string, string | undefined>>): string {
+    /* The title such a terminal reports is the local shell that runs its command, not anything a person named. */
+    if (pane.startup) return win?.customName || win?.name || pane.title;
+    const home = win?.role === "term" ? collectPanes(win.root).find((candidate) => candidate.kind === "terminal") : undefined;
+    if (win?.customName && home?.id === pane.id) return win.customName;
+    return (pane.ptyId !== undefined ? titles[pane.ptyId] : undefined) || pane.title || win?.name || "Terminal";
+}
+
+/** The open project in this folder. */
+export function projectSessionId(state: Pick<StoreState, "sessionOrder" | "sessions">, cwd: string): string | null {
+    if (!cwd) return null;
+    return state.sessionOrder.find((id) => state.sessions[id]?.kind === "project" && relativePath(state.sessions[id].cwd, cwd) === "") ?? null;
+}
+
+/** The agent an agent window holds; undefined for any other window. */
+export function agentInWindow(agents: Readonly<Record<string, Agent>>, win: Window | undefined): Agent | undefined {
+    const agentId = win?.role === "agent" ? agentPaneId(win) : null;
+    return agentId ? agents[agentId] : undefined;
+}
+
 /** The window an agent lives in, wherever it is. */
 export function agentWindowId(state: Pick<StoreState, "windows">, agentId: string): string | null {
     for (const win of Object.values(state.windows)) if (win.role === "agent" && agentPaneId(win) === agentId) return win.id;
@@ -97,13 +124,13 @@ export function activeAgentId(state: Pick<StoreState, "windows">, session: Pick<
 
 /** The agent in front, or else the one in this project that worked last: whose desk a browser tab goes on. */
 export function nearestAgentId(
-    state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "windowsBySession" | "agentActivity">,
+    state: Pick<StoreState, "sessions" | "activeSessionId" | "windows" | "windowsBySession" | "agentStatus">,
 ): string | null {
     const session = state.sessions[state.activeSessionId];
     if (session?.kind !== "project") return null;
     const active = activeAgentId(state, session);
     if (active) return active;
-    const lastWorked = (id: string) => state.agentActivity[id]?.updatedAt ?? 0;
+    const lastWorked = (id: string) => state.agentStatus[id]?.activeAt ?? 0;
     return [...agentIdsOf(state, session.id)].sort((left, right) => lastWorked(right) - lastWorked(left))[0] ?? null;
 }
 

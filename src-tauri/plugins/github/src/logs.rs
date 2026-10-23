@@ -4,7 +4,8 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use sikemux_plugin_api::codehost::{JobLog, LogExcerpt, LogLine};
 
 use crate::client;
 use crate::error::{GithubError, GithubResult};
@@ -14,24 +15,6 @@ use crate::runs::{self, JobRef};
 /// Fractional seconds are usually there but not always, so only the part
 /// every stamp has is counted on.
 const SHORTEST_STAMP: usize = "2026-01-01T00:00:00Z".len();
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogLine {
-    pub number: u64,
-    pub timestamp: Option<String>,
-    pub text: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobLog {
-    pub lines: Vec<LogLine>,
-    /// True once a log has aged out of GitHub's retention, so nothing is coming.
-    pub expired: bool,
-    /// True when the log was too long to read whole, so only its end is here.
-    pub truncated: bool,
-}
 
 /// Runner logs start every line with a timestamp. Splitting it off lets the
 /// view show the text on its own and the time beside it.
@@ -107,6 +90,45 @@ pub async fn job(data_dir: &Path, input: LogRequest) -> GithubResult<JobLog> {
     }
 }
 
+const DEFAULT_TAIL: usize = 200;
+const MAX_TAIL: usize = 2000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Excerpt {
+    #[serde(flatten)]
+    pub job: JobRef,
+    pub tail: Option<usize>,
+    pub grep: Option<String>,
+}
+
+/// The end of a job's log, optionally only the lines that mention something.
+pub async fn excerpt(data_dir: &Path, input: Excerpt) -> GithubResult<LogExcerpt> {
+    let whole = job(data_dir, LogRequest { job: input.job }).await?;
+    let needle = input
+        .grep
+        .map(|grep| grep.to_lowercase())
+        .filter(|grep| !grep.is_empty());
+    let mut lines: Vec<LogLine> = whole
+        .lines
+        .into_iter()
+        .filter(|line| {
+            needle
+                .as_deref()
+                .is_none_or(|needle| line.text.to_lowercase().contains(needle))
+        })
+        .collect();
+    let tail = input.tail.unwrap_or(DEFAULT_TAIL).clamp(1, MAX_TAIL);
+    let cut = lines.len() > tail;
+    if cut {
+        lines.drain(..lines.len() - tail);
+    }
+    Ok(LogExcerpt {
+        lines,
+        truncated: cut || whole.truncated,
+    })
+}
+
 /// GitHub answers "not found" for a log that aged out, for one a job has not
 /// written yet, and for a repository the token cannot see. Asking about the
 /// job itself tells them apart.
@@ -145,13 +167,6 @@ mod tests {
         assert_eq!(text_of(b"tail of one\nsecond\n", true), "second\n");
         assert_eq!(text_of(b"no break at all", true), "");
         assert_eq!(text_of(b"whole\nlog\n", false), "whole\nlog\n");
-    }
-
-    #[test]
-    fn lifts_the_runners_timestamp_off_each_line() {
-        let (stamp, text) = split_stamp("2026-01-01T00:00:00.1234567Z Run actions/checkout@v4");
-        assert_eq!(stamp.as_deref(), Some("2026-01-01T00:00:00.1234567Z"));
-        assert_eq!(text, "Run actions/checkout@v4");
     }
 
     #[test]

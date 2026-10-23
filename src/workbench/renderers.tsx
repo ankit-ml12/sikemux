@@ -1,9 +1,10 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import type { CorePaneKind, PaneNode, PtyContext, Session, Window as WindowT } from "../state/types";
+import type { CorePaneKind, PaneNode, Session, Window as WindowT } from "../state/types";
 import { isPluginKind } from "../plugins/kinds";
 import { pluginSurface } from "../plugins/registry";
 import * as cmd from "../state/commands";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { terminalContext } from "../terminal/spareShell";
 import { AgentPane } from "../agents/AgentPane";
 import { DeskHost } from "../workspace/Desk";
 
@@ -21,17 +22,12 @@ const EditorPane = lazy(() => import("../editor/EditorPane").then((module) => ({
 const GitPane = lazy(() => import("../git/GitPane").then((module) => ({ default: module.GitPane })));
 const DiffPane = lazy(() => import("../git/DiffPane").then((module) => ({ default: module.DiffPane })));
 const SearchPane = lazy(() => import("../workspace/SearchPane").then((module) => ({ default: module.SearchPane })));
+const SharedChatPane = lazy(() => import("../share/SharedChatPane").then((module) => ({ default: module.SharedChatPane })));
+const ProjectSettingsPane = lazy(() => import("../projects/ProjectSettingsPane").then((module) => ({ default: module.ProjectSettingsPane })));
+const InstallSikemuxPane = lazy(() => import("../hosts/InstallSikemuxPane").then((module) => ({ default: module.InstallSikemuxPane })));
+const BoardPane = lazy(() => import("../board/BoardPane").then((module) => ({ default: module.BoardPane })));
 
 const paneCwd = (pane: PaneNode, session: Session) => pane.cwd || session.cwd;
-const terminalContext = (session: Session, win: WindowT, pane: PaneNode): PtyContext => ({
-    sessionId: session.id,
-    sessionName: session.name,
-    sessionKind: session.kind,
-    ...(session.kind === "project" && session.cwd ? { project: session.cwd } : {}),
-    windowId: win.id,
-    paneId: pane.id,
-    shellIntegration: session.kind === "project" || session.kind === "command",
-});
 
 function ItemFallback() {
     return <div style={{ width: "100%", height: "100%" }} />;
@@ -43,6 +39,7 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             <EditorPane
                 paneId={pane.id}
                 cwd={paneCwd(pane, session)}
+                host={pane.host}
                 active={active}
                 visible={visible}
                 showInsights={win.role !== "ssh-config"}
@@ -56,9 +53,9 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
             <GitPane paneId={pane.id} cwd={paneCwd(pane, session)} active={active} visible={visible} />
         </Suspense>
     ),
-    diff: ({ pane, session, active }) => (
+    diff: ({ pane, session, visible }) => (
         <Suspense fallback={<ItemFallback />}>
-            <DiffPane cwd={paneCwd(pane, session)} active={active} />
+            <DiffPane cwd={paneCwd(pane, session)} visible={visible} />
         </Suspense>
     ),
     search: ({ pane, session, active, visible }) => (
@@ -67,6 +64,26 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
         </Suspense>
     ),
     agent: ({ pane, session, visible }) => <AgentPane paneId={pane.id} session={session} visible={visible} />,
+    shared: ({ pane, visible }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <SharedChatPane paneId={pane.id} link={pane.startup ?? ""} visible={visible} />
+        </Suspense>
+    ),
+    board: ({ pane, session, visible }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <BoardPane folder={paneCwd(pane, session)} visible={visible} />
+        </Suspense>
+    ),
+    "install-sikemux": ({ session }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <InstallSikemuxPane alias={session.name} />
+        </Suspense>
+    ),
+    "project-settings": ({ pane, session, visible }) => (
+        <Suspense fallback={<ItemFallback />}>
+            <ProjectSettingsPane project={paneCwd(pane, session)} visible={visible} />
+        </Suspense>
+    ),
     desk: ({ pane, session, win, active, visible, painted }) => (
         <DeskHost
             paneId={pane.id}
@@ -82,14 +99,15 @@ export const BUILTIN_ITEM_RENDERERS: Readonly<Record<CorePaneKind, (props: Workb
         <TerminalPane
             cwd={paneCwd(pane, session) || undefined}
             startup={pane.startup}
+            reconnect={session.kind === "ssh" ? pane.startup : undefined}
             active={active}
             visible={visible}
-            context={terminalContext(session, win, pane)}
-            externallyOwned={pane.externalPty === true}
+            context={pane.host ? { ...terminalContext(session, win.id, pane.id), project: pane.cwd } : terminalContext(session, win.id, pane.id)}
+            taskTerminalKey={pane.externalPty ? pane.taskTerminalKey : undefined}
             retainPtyOnUnmount
             resumePtyId={pane.ptyId}
             onPtySession={(id) => cmd.setPanePty(pane.id, id)}
-            onTitleChange={(title) => cmd.setTerminalTitle(pane.id, title)}
+            host={pane.host}
         />
     ),
 };

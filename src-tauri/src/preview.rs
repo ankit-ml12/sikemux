@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
+use sikemux_process::sync::Locked;
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{Manager, Runtime, State, UriSchemeContext, UriSchemeResponder};
 
@@ -44,11 +45,7 @@ pub async fn preview_file(previews: State<'_, Previews>, path: String) -> AppRes
         return Err(AppError::Fs(format!("{} is not a file", path.display())));
     }
     let mime = mime_of(&canonical)?;
-    previews
-        .granted
-        .lock()
-        .map_err(|_| AppError::Other("preview grants poisoned".into()))?
-        .insert(canonical);
+    previews.granted.locked().insert(canonical);
     let modified = metadata
         .modified()
         .ok()
@@ -84,9 +81,19 @@ pub fn handle<R: Runtime>(
     }
     let app = context.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let previews = app.state::<Previews>();
-        responder.respond(answer(&previews, &request));
+        let response = answer(&app.state::<Previews>(), &request);
+        respond_on_main_thread(&app, responder, response);
     });
+}
+
+/// WebKit cancels a load on the main thread, and answering a cancelled load
+/// aborts the app, so the answer goes there too and cannot race the cancel.
+pub fn respond_on_main_thread<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    responder: UriSchemeResponder,
+    response: Response<Vec<u8>>,
+) {
+    let _ = app.run_on_main_thread(move || responder.respond(response));
 }
 
 fn answer(previews: &Previews, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
@@ -99,10 +106,7 @@ fn answer(previews: &Previews, request: &Request<Vec<u8>>) -> Response<Vec<u8>> 
     else {
         return status(StatusCode::NOT_FOUND);
     };
-    let granted = previews
-        .granted
-        .lock()
-        .is_ok_and(|granted| granted.contains(&path));
+    let granted = previews.granted.locked().contains(&path);
     if !granted {
         return status(StatusCode::FORBIDDEN);
     }

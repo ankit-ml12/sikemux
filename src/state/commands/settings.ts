@@ -1,8 +1,11 @@
+import { agentApi, type AgentAccountBook } from "../../api/agents";
 import { checkForUpdateNow } from "../../api/updater";
+import { adoptAgentAccounts } from "../persist";
+import { reportError } from "../toast";
 import { invalidate } from "../resources";
 import { projectRootsScanR } from "../resources.defs";
 import { getState, setState } from "../store";
-import type { AgentType } from "../types";
+import type { AccountAgentType } from "../../agents/catalog";
 
 export const setCloudBrowser = (v: string): void => setState({ cloudBrowser: v.trim() });
 export const setCloudBrowserShortcut = (v: string): void => setState({ cloudBrowserShortcut: v.trim() });
@@ -12,39 +15,33 @@ export const setAgentNotifications = (value: boolean): void => setState({ agentN
 export const setVoiceDictation = (value: boolean): void => setState({ voiceDictation: value });
 export const setNotch = (patch: Partial<import("../../notch/notchSettings").NotchSettings>): void =>
     setState({ notch: { ...getState().notch, ...patch } });
+export const setIosSimulator = (value: boolean): void => setState({ iosSimulator: value });
+export const setSimulatorFrame = (value: boolean): void => setState({ simulatorFrame: value });
 export const setPaneShader = (value: boolean): void => setState({ paneShader: value });
+export const setBuddies = (value: boolean): void => setState({ buddies: value });
+export const setBuddyStyle = (pack: string, shape: string): void => setState({ buddyPack: pack, buddyShape: shape });
+export const setBuddyMotion = (value: boolean): void => setState({ buddyMotion: value });
 export const setPaneImage = (path: string | null): void => setState({ paneImage: path });
+export const clampPaneStrength = (value: number): number => Math.min(2, Math.max(0, Math.round(value * 20) / 20));
+export const setPaneStrength = (value: number): void => setState({ paneStrength: clampPaneStrength(value) });
 export const setUiTextScale = (value: number): void => setState({ uiTextScale: [1, 1.1, 1.25].includes(value) ? value : 1 });
 
 export const setRailDensity = (value: import("../types").RailDensity): void => setState({ railDensity: value });
-export const setAgentRailAllAgents = (value: boolean): void => setState({ agentRailAllAgents: value });
-export const setAgentRailScope = (value: import("../types").AgentRailScope): void => setState({ agentRailScope: value });
+export const setMidTurnSend = (value: import("../types").MidTurnSend): void => setState({ midTurnSend: value });
+export const setTabRailAllAgents = (value: boolean): void => setState({ tabRailAllAgents: value });
+export const setTabRailScope = (value: import("../types").TabRailScope): void => setState({ tabRailScope: value });
+export const setTabRailPage = (value: import("../types").TabRailPage): void => setState({ tabRailPage: value });
 export const setDefaultAgentPermissionMode = (value: import("../types").AgentPermissionMode): void =>
     setState({ defaultAgentPermissionMode: value === "bypass" ? "bypass" : "workspace-write" });
-export function selectProviderProfile(type: AgentType, profileId: string): void {
-    setState((state) => ({ selectedProviderProfileIds: { ...state.selectedProviderProfileIds, [type]: profileId } }));
-}
-export function saveProviderProfile(profile: import("../types").ProviderProfile): void {
-    setState((state) => {
-        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
-        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
-            if (selected === profile.id && type !== profile.provider) delete selectedProviderProfileIds[type as AgentType];
-        }
-        return {
-            providerProfiles: [...state.providerProfiles.filter((item) => item.id !== profile.id), profile],
-            selectedProviderProfileIds,
-        };
-    });
-}
-export function deleteProviderProfile(id: string): void {
-    if (id.startsWith("builtin-")) return;
-    setState((state) => {
-        const selectedProviderProfileIds = { ...state.selectedProviderProfileIds };
-        for (const [type, selected] of Object.entries(selectedProviderProfileIds)) {
-            if (selected === id) delete selectedProviderProfileIds[type as AgentType];
-        }
-        return { providerProfiles: state.providerProfiles.filter((profile) => profile.id !== id), selectedProviderProfileIds };
-    });
+/* The person's accounts are the core's; each change goes there and the accounts it answers with come back. */
+const keepAccounts = (change: Promise<AgentAccountBook>, what: string): Promise<void> => change.then(adoptAgentAccounts).catch(reportError(what));
+export const setAccountAutoSwitch = (provider: AccountAgentType, on: boolean): Promise<void> =>
+    keepAccounts(agentApi.setAutoSwitch(provider, on), "Switch accounts at limits");
+export const saveProviderProfile = (profile: import("../types").ProviderProfile): Promise<void> =>
+    keepAccounts(agentApi.saveAccount(profile), "Save account");
+export function deleteProviderProfile(id: string): Promise<void> {
+    if (id.startsWith("builtin-")) return Promise.resolve();
+    return keepAccounts(agentApi.removeAccount(id), "Remove account");
 }
 export const checkForUpdates = (): Promise<void> => checkForUpdateNow();
 
@@ -63,6 +60,14 @@ export const setLanguageServerTrust = (project: string, allowed: boolean): void 
 
 export const setAgentWorktreeDefault = (project: string, on: boolean): void =>
     setState((s) => ({ agentWorktreeDefaults: { ...s.agentWorktreeDefaults, [project]: on } }));
+
+/** Null clears it, so the project's Git views go back to asking. */
+export function setDefaultGitRepo(project: string, repo: string | null): void {
+    setState((s) => {
+        const { [project]: _cleared, ...rest } = s.defaultGitRepos;
+        return { defaultGitRepos: repo ? { ...rest, [project]: repo } : rest };
+    });
+}
 
 export function setKeybinding(id: import("../../commands/keybindings").KeybindingActionId, binding: string | null): void {
     setState((s) => ({ keybindingOverrides: { ...s.keybindingOverrides, [id]: binding } }));
@@ -108,3 +113,20 @@ export function setProjectRootDepth(path: string, depth: number): void {
     }));
     invalidate((kind) => kind === projectRootsScanR.kind);
 }
+
+const samePin = (pin: import("../types").PinnedChat, agent: string, id: string) => pin.agent === agent && pin.id === id;
+
+/** Keeps the chat at the top of the tab rail, open or closed. */
+export const pinChat = (chat: import("../types").PinnedChat): void =>
+    setState((state) => (state.pinnedChats.some((pin) => samePin(pin, chat.agent, chat.id)) ? {} : { pinnedChats: [...state.pinnedChats, chat] }));
+
+export const unpinChat = (agent: string, id: string): void =>
+    setState((state) => ({ pinnedChats: state.pinnedChats.filter((pin) => !samePin(pin, agent, id)) }));
+
+/** A pinned chat keeps the name it was last given. */
+export const retitlePinnedChat = (agent: string, id: string, title: string): void =>
+    setState((state) =>
+        state.pinnedChats.some((pin) => samePin(pin, agent, id))
+            ? { pinnedChats: state.pinnedChats.map((pin) => (samePin(pin, agent, id) ? { ...pin, title } : pin)) }
+            : {},
+    );

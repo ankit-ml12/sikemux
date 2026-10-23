@@ -2,8 +2,12 @@
   "name": "@sikemux/protocol",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./account": "./src/account.ts",
+    "./api": "./src/api.ts",
+    "./live": "./src/live.ts",
     "./openapi.json": "./generated/openapi.json"
   },
   "scripts": {

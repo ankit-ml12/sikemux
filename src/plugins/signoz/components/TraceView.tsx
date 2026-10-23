@@ -1,18 +1,12 @@
 import { useState } from "react";
 import { useResource } from "../../../plugin-api/resources";
-import { EmptyState, IconChevron, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage } from "../api";
+import { EmptyState, IconChevron, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { errorText, formatDuration } from "../../../plugin-api/format";
 import { signozTraceLogsR, signozTraceR } from "../resources";
 import { LogRow } from "./LogRow";
 
 const MAX_INDENT = 16;
 const TRACE_LOG_LOOKBACK_MINUTES = 24 * 60;
-
-export function formatMs(ms: number): string {
-    if (ms >= 1_000) return `${(ms / 1_000).toFixed(ms >= 10_000 ? 0 : 1)}s`;
-    if (ms >= 1) return `${ms.toFixed(ms >= 100 ? 0 : 1)}ms`;
-    return `${Math.round(ms * 1_000)}µs`;
-}
 
 export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => void }) {
     const trace = useResource(signozTraceR, traceId);
@@ -46,7 +40,7 @@ export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => 
                             </span>
                         )}
                         <span className="sgz-trace-meta">
-                            {formatMs(data.durationMs)} · {data.spans.length} spans · {data.services.join(", ")}
+                            {formatDuration(data.durationMs)} · {data.spans.length} spans · {data.services.join(", ")}
                         </span>
                     </>
                 )}
@@ -55,7 +49,8 @@ export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => 
             <div className="sgz-trace-body">
                 <section className="sgz-waterfall" aria-label="Spans">
                     {trace.status === "loading" && !data && <SkeletonRows rows={8} label="Loading spans" />}
-                    {trace.error && <EmptyState tone="error" message={failureMessage(trace.error)} />}
+                    <StaleNotice handle={trace} />
+                    {trace.error && !trace.data && <EmptyState tone="error" message={errorText(trace.error)} />}
                     {data && data.spans.length === 0 && <EmptyState message="No spans for this trace. The service may send logs but not traces." />}
                     {data?.spans.map((span) => (
                         <div key={span.spanId} className={`sgz-span${span.error ? " error" : ""}`} title={span.status ?? undefined}>
@@ -71,14 +66,15 @@ export function TraceView({ traceId, onBack }: { traceId: string; onBack: () => 
                                     style={{ left: `${(span.offsetMs / total) * 100}%`, width: `max(1px, ${(span.durationMs / total) * 100}%)` }}
                                 />
                             </span>
-                            <span className="sgz-span-time">{formatMs(span.durationMs)}</span>
+                            <span className="sgz-span-time">{formatDuration(span.durationMs)}</span>
                         </div>
                     ))}
                 </section>
                 <section className="sgz-trace-logs" aria-label="Log lines in this trace">
                     <h3 className="sgz-section-label">Log lines in this trace</h3>
                     {logs.status === "loading" && !logs.data && <SkeletonRows rows={4} label="Loading log lines" />}
-                    {logs.error && <EmptyState tone="error" message={failureMessage(logs.error)} />}
+                    <StaleNotice handle={logs} />
+                    {logs.error && !logs.data && <EmptyState tone="error" message={errorText(logs.error)} />}
                     {logs.data && traceLines.length === 0 && <EmptyState message="No log lines carry this trace id." />}
                     {traceLines.map((line) => (
                         <LogRow key={line.id} line={line} expanded={expanded.has(line.id)} onToggle={() => toggle(line.id)} />

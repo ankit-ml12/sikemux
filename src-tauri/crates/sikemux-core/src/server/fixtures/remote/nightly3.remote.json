@@ -1,0 +1,39 @@
+{
+  "enabled": true,
+  "devices": [
+    {
+      "id": "f1b9c5cbd5a2e2b4a0a6a6f1d1c6e9a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8",
+      "name": "Kishore's iPhone",
+      "platform": "ios",
+      "access": "full",
+      "pairedAt": 1760900000000,
+      "lastSeen": 1760990000000
+    }
+  ],
+  "owner": "user_2nightly",
+  "accountEventId": 42,
+  "pendingLeave": null,
+  "removed": null,
+  "network": null,
+  "notifications": {},
+  "revoked": {
+    "0d9e8f1b9c5cbd5a2e2b4a0a6a6f1d1c6e9a4b3c2d1e0f9a8b7c6d5e4f3a2b1c": 1760800000000
+  },
+  "shares": [],
+  "joinedThrough": {
+    "f1b9c5cbd5a2e2b4a0a6a6f1d1c6e9a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8": "user_2nightly"
+  },
+  "links": [
+    {
+      "id": "9a8b7c6d5e4f3a2b1c0d9e8f1b9c5cbd5a2e2b4a0a6a6f1d1c6e9a4b3c2d1e0f",
+      "name": "test-ec2",
+      "platform": "linux",
+      "linkedAt": 1760950000000,
+      "lastSeen": 1760991000000,
+      "addresses": [
+        "10.0.16.158:41641"
+      ],
+      "signIns": false
+    }
+  ]
+}

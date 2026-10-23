@@ -18,7 +18,7 @@ enum Keyboard {
     /// Keys with no character of their own, by the names a browser gives them in `KeyboardEvent.key`.
     static func named(_ name: String) throws -> UInt32 {
         let keys: [String: UInt32] = [
-            "Enter": 40, "Escape": 41, "Backspace": 42, "Tab": 43, "Delete": 76,
+            "Enter": 40, "Escape": 41, "Backspace": 42, "Tab": 43, "Delete": 76, "Shift": shift,
             "ArrowRight": 79, "ArrowLeft": 80, "ArrowDown": 81, "ArrowUp": 82,
         ]
         guard let code = keys[name] else {
@@ -36,7 +36,7 @@ enum Keyboard {
         for (offset, digit) in "1234567890".enumerated() { table[digit] = (UInt32(30 + offset), false) }
         for (offset, symbol) in "!@#$%^&*()".enumerated() { table[symbol] = (UInt32(30 + offset), true) }
         let plain: [(Character, UInt32)] = [
-            ("\n", 40), ("\t", 43), (" ", 44), ("-", 45), ("=", 46), ("[", 47), ("]", 48), ("\\", 49),
+            ("\n", 40), ("\r\n", 40), ("\r", 40), ("\u{8}", 42), ("\t", 43), (" ", 44), ("-", 45), ("=", 46), ("[", 47), ("]", 48), ("\\", 49),
             (";", 51), ("'", 52), ("`", 53), (",", 54), (".", 55), ("/", 56),
         ]
         let shifted: [(Character, UInt32)] = [

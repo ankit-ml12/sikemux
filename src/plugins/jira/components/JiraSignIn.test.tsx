@@ -2,22 +2,25 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JiraStatus } from "../api";
 
-const { signIn } = vi.hoisted(() => ({ signIn: vi.fn() }));
-vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: { signIn } }));
+const { signIn, signInWithBrowser } = vi.hoisted(() => ({ signIn: vi.fn(), signInWithBrowser: vi.fn() }));
+vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), jiraApi: { signIn, signInWithBrowser } }));
 
 import { JiraSignIn } from "./JiraSignIn";
 
 const signedIn: JiraStatus = {
     configured: true,
-    sites: [{ host: "acme.atlassian.net", email: "me@acme.dev", displayName: "Me", default: true }],
+    sites: [{ host: "acme.atlassian.net", displayName: "Me", default: true }],
     ok: true,
     authFailed: false,
     message: null,
+    browserSignIn: false,
 };
+const signedOutWithBrowser: JiraStatus = { ...signedIn, configured: false, sites: [], ok: false, browserSignIn: true };
 
 afterEach(cleanup);
 beforeEach(() => {
     signIn.mockReset();
+    signInWithBrowser.mockReset();
 });
 
 function fill(site: string, email: string, token: string) {
@@ -41,24 +44,18 @@ describe("JiraSignIn", () => {
         expect(onSignedIn).toHaveBeenCalledWith(signedIn);
     });
 
-    it("shows why Jira turned the token down and keeps the form", async () => {
-        signIn.mockRejectedValue({ category: "auth", message: "jira: sign-in failed: the email or API token was not accepted" });
+    it("signs in through the browser first when the build can, and waits for it to come back", async () => {
+        let finish: (status: JiraStatus) => void = () => {};
+        signInWithBrowser.mockReturnValue({ done: new Promise<JiraStatus>((resolve) => (finish = resolve)), cancel: vi.fn() });
         const onSignedIn = vi.fn();
-        render(<JiraSignIn status={undefined} onSignedIn={onSignedIn} />);
-        fill("acme.atlassian.net", "me@acme.dev", "wrong");
-        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Sign in" })));
+        render(<JiraSignIn status={signedOutWithBrowser} onSignedIn={onSignedIn} />);
+        expect(screen.queryByPlaceholderText("ATATT…")).not.toBeInTheDocument();
 
-        expect(onSignedIn).not.toHaveBeenCalled();
-        expect(await screen.findByText(/not accepted/)).toBeInTheDocument();
-    });
+        fireEvent.click(screen.getByRole("button", { name: "Continue with Atlassian" }));
+        expect(signInWithBrowser).toHaveBeenCalledOnce();
+        expect(screen.getByText("Finish signing in in your browser")).toBeInTheDocument();
 
-    it("says a saved token stopped working", () => {
-        render(
-            <JiraSignIn
-                status={{ ...signedIn, ok: false, authFailed: true, message: "jira: sign-in failed: token revoked" }}
-                onSignedIn={() => {}}
-            />,
-        );
-        expect(screen.getByText(/token revoked/)).toBeInTheDocument();
+        await act(async () => finish(signedIn));
+        expect(onSignedIn).toHaveBeenCalledWith(signedIn);
     });
 });

@@ -1,4 +1,6 @@
 import { createContext, useContext, useMemo, useState } from "react";
+import { revealBlocks, visibleLength } from "../markdown/visible";
+import type { MdElement } from "../markdown/types";
 
 const LONG_TEXT_LIMIT = 20_000;
 
@@ -17,6 +19,8 @@ function openFence(text: string): string | null {
 }
 
 /** Prefers a paragraph break, then a line break, and cuts mid-line only when neither is near the limit. */
+export const showRestLabel = (hidden: number): string => `Show the rest · ${Math.round(hidden / 1000)}k more characters`;
+
 export function cutLongText(text: string, limit = LONG_TEXT_LIMIT): TextCut | null {
     if (text.length <= limit) return null;
 
@@ -33,6 +37,24 @@ export function cutLongText(text: string, limit = LONG_TEXT_LIMIT): TextCut | nu
     const fence = openFence(head);
     if (fence) head += `\n${fence}`;
     return { head, hidden };
+}
+
+export interface BlocksCut {
+    blocks: MdElement[];
+    hidden: number;
+}
+
+/** A long answer's first whole blocks, or the start of its first block when that alone is too long. */
+export function cutLongBlocks(blocks: readonly MdElement[], limit = LONG_TEXT_LIMIT): BlocksCut | null {
+    const total = blocks.reduce((sum, block) => sum + visibleLength(block), 0);
+    if (total <= limit) return null;
+    let kept = 0;
+    let count = 0;
+    while (count < blocks.length && kept + visibleLength(blocks[count]) <= limit) kept += visibleLength(blocks[count++]);
+    const head = count > 0 ? blocks.slice(0, count) : revealBlocks(blocks, limit);
+    const shown = count > 0 ? kept : limit;
+    const hidden = total - shown;
+    return hidden < limit / 10 ? null : { blocks: head, hidden };
 }
 
 /* Rows unmount when they scroll out of view, so what the reader has seen of each
@@ -52,5 +74,5 @@ export function useLongTextFold(id: string, text: string, live: boolean) {
         memory.expanded.add(id);
         setExpanded(true);
     };
-    return { cut, expand };
+    return { cut, expand, folds };
 }

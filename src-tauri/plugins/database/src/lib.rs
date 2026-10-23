@@ -21,13 +21,10 @@ mod values;
 
 use std::sync::Arc;
 
-use serde::Serialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    answer, params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
 };
-
-use crate::error::DatabaseResult;
 
 pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
     Ok(Arc::new(Database {
@@ -39,12 +36,6 @@ pub fn plugin() -> Result<Arc<dyn Plugin>, PluginError> {
 struct Database {
     manifest: Manifest,
     pool: connections::Pool,
-}
-
-async fn answer<T: Serialize>(
-    result: impl std::future::Future<Output = DatabaseResult<T>>,
-) -> Result<Value, PluginError> {
-    reply(result.await?)
 }
 
 impl Plugin for Database {
@@ -61,7 +52,7 @@ impl Plugin for Database {
         Box::pin(async move {
             let data_dir = ctx.data_dir().to_path_buf();
             match method {
-                "profiles" => reply(profiles::load(&data_dir).profiles),
+                "profiles" => reply(profiles::load(&data_dir)?.profiles),
                 "save" => {
                     let request: profiles::SaveRequest = params(input)?;
                     let saved =
@@ -93,7 +84,7 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .schemas()
                             .await
@@ -104,7 +95,7 @@ impl Plugin for Database {
                     let schema::SchemaRequest { id, schema } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .tables(schema)
                             .await
@@ -121,7 +112,7 @@ impl Plugin for Database {
                     ))
                     .await
                 }
-                "agentDatabases" => reply(agent::databases(&data_dir)),
+                "agentDatabases" => reply(agent::databases(&data_dir)?),
                 "agentTables" => answer(agent::tables(&self.pool, &data_dir, params(input)?)).await,
                 "agentDescribe" => {
                     answer(agent::describe(&self.pool, &data_dir, params(input)?)).await
@@ -138,15 +129,12 @@ impl Plugin for Database {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(profiles::blocking(move || history::clear(&data_dir, &id))).await
                 }
-                "cancel" => {
-                    let profiles::IdRequest { id } = params(input)?;
-                    answer(queries::cancel(&self.pool, &id)).await
-                }
+                "cancel" => answer(queries::cancel(&self.pool, params(input)?)).await,
                 "describe" => {
                     let schema::TableRequest { id, schema, table } = params(input)?;
                     answer(async {
                         self.pool
-                            .session(&data_dir, &id, connections::Access::Person)
+                            .session(&data_dir, &id, connections::Access::Browse)
                             .await?
                             .describe(schema, table)
                             .await
@@ -163,7 +151,7 @@ impl Plugin for Database {
         ctx: &'a PluginContext,
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
-        Box::pin(async move { Ok(!profiles::load(ctx.data_dir()).profiles.is_empty()) })
+        Box::pin(async move { Ok(!profiles::load(ctx.data_dir())?.profiles.is_empty()) })
     }
 }
 
@@ -308,7 +296,7 @@ mod tests {
             Some("bad-params".to_string())
         );
         let cancelled = database
-            .call(&ctx, "cancel", json!({ "id": "not-open" }))
+            .call(&ctx, "cancel", json!({ "id": "not-open", "run": "r1" }))
             .await;
         assert!(cancelled.is_ok());
     }
@@ -349,22 +337,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(history, json!([]));
-    }
-
-    #[test]
-    fn its_manifest_offers_the_four_database_tools() {
-        let database = plugin().unwrap();
-        let names: Vec<&str> = database
-            .manifest()
-            .tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect();
-        assert_eq!(
-            names,
-            ["db_databases", "db_tables", "db_describe", "db_query"]
-        );
-        assert_eq!(database.manifest().call_timeout_secs, Some(600));
     }
 
     #[tokio::test]

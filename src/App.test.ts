@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activeTaskControls, gitChangeInvalidates, subscribeGitChanged } from "./App";
+import { activeTaskControls, gitChangeInvalidates, onGitChanged } from "./App";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "./api/transport";
 import { subscribe } from "./state/bus";
-import type { ResolvedTaskDefinition, TaskControllerSnapshot, TaskLifecycleState } from "./tasks/taskRegistry";
+import type { ProjectTask, TaskRun } from "./tasks/coreTasks";
 
 let transport: MemoryIpcTransport;
 
@@ -14,54 +14,34 @@ beforeEach(() => {
 
 afterEach(() => resetIpcTransportForTests());
 
-function task(id: string): ResolvedTaskDefinition {
-    return Object.freeze({
-        id,
-        label: id,
-        project: "/repo",
-        command: `run ${id}`,
-        cwd: "/repo",
-        env: Object.freeze({}),
-        source: "project",
-    });
+function task(id: string): ProjectTask {
+    return Object.freeze({ id, label: id, command: `run ${id}`, cwd: ".", source: "project" as const });
 }
 
-function snapshot(status: TaskLifecycleState, activeRunId: number | null, activeTask: ResolvedTaskDefinition | null): TaskControllerSnapshot {
+function run(taskId: string): TaskRun {
     return Object.freeze({
-        revision: 1,
-        status,
-        disposed: false,
-        task: activeTask,
-        activeRunId,
-        runAttempts: 1,
-        failures: Object.freeze([]),
+        executionId: "run-1",
+        taskId,
+        project: "/repo",
+        status: "running" as const,
+        ptyId: 7,
+        agentId: null,
+        terminalKey: "task",
     });
 }
 
 describe("active task command reachability", () => {
-    it.each(["running", "stopping", "failed"] as const)("keeps Stop reachable for an owned PTY in %s state after discovery clears", (status) => {
-        expect(activeTaskControls(snapshot(status, 7, task("watch")), [])).toEqual({
-            canStop: true,
-            restartTaskId: null,
-        });
+    it("keeps Stop reachable for a run after its task is gone from the project", () => {
+        expect(activeTaskControls(run("watch"), [])).toEqual({ canStop: true, restartTaskId: null });
     });
 
     it("allows restart only through the current project inventory", () => {
-        const running = snapshot("running", 7, task("watch"));
-
-        expect(activeTaskControls(running, [task("watch")])).toEqual({ canStop: true, restartTaskId: "watch" });
-        expect(activeTaskControls(running, [task("build")])).toEqual({ canStop: true, restartTaskId: null });
+        expect(activeTaskControls(run("watch"), [task("watch")])).toEqual({ canStop: true, restartTaskId: "watch" });
+        expect(activeTaskControls(run("watch"), [task("build")])).toEqual({ canStop: true, restartTaskId: null });
     });
 
-    it("does not expose Stop for a settled or disposed controller", () => {
-        expect(activeTaskControls(snapshot("failed", null, task("watch")), [task("watch")])).toEqual({
-            canStop: false,
-            restartTaskId: "watch",
-        });
-        expect(activeTaskControls({ ...snapshot("running", 7, task("watch")), disposed: true }, [task("watch")])).toEqual({
-            canStop: false,
-            restartTaskId: null,
-        });
+    it("offers neither with nothing running", () => {
+        expect(activeTaskControls(null, [task("watch")])).toEqual({ canStop: false, restartTaskId: null });
     });
 });
 
@@ -91,22 +71,17 @@ describe("Git change IPC subscription", () => {
         expect(gitChangeInvalidates("git.overview", ["/work/internal-old/web"], folder, null)).toBe(false);
     });
 
-    it("routes through the installed transport and aborts idempotently", async () => {
+    it("tells the page what moved, and everything when git's own state did", () => {
         const changed = vi.fn();
         const unsubscribeBus = subscribe("fs-changed", changed);
-        const controller = new AbortController();
-        const unsubscribe = await subscribeGitChanged(controller.signal);
 
-        expect(transport.eventListenerCount).toBe(1);
-        transport.emit("git_changed", { repo: "/repo", paths: null });
+        onGitChanged({ topic: "git", project: "/repo", paths: null });
         expect(changed).toHaveBeenCalledWith({ type: "fs-changed", repo: "/repo" });
-        transport.emit("git_changed", { repo: "/repo", paths: ["src/file.ts"] });
+        onGitChanged({ topic: "git", project: "/repo", paths: ["src/file.ts"] });
         expect(changed).toHaveBeenLastCalledWith({ type: "fs-changed", repo: "/repo", paths: ["src/file.ts"] });
+        onGitChanged({ topic: "git", project: "/repo", paths: [".git", "src/file.ts"] });
+        expect(changed).toHaveBeenLastCalledWith({ type: "fs-changed", repo: "/repo" });
 
-        controller.abort();
-        controller.abort();
-        unsubscribe();
-        expect(transport.eventListenerCount).toBe(0);
         unsubscribeBus();
     });
 });

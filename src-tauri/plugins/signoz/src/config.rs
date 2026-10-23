@@ -3,14 +3,16 @@
 // service the `signoz` shell CLI reads, so either can use a key the other
 // saved. A signed-in session keeps only its refresh token there.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use sikemux_plugin_api::{keychain_service, store};
 
 use crate::error::{SignozError, SignozResult};
 
+/// The signoz CLI's own entry, which every build shares with it.
 pub const API_KEY_SERVICE: &str = "signoz-api";
-pub const SESSION_SERVICE: &str = "sikemux-signoz-session";
+pub const SESSION_SERVICE: &str = keychain_service!("sikemux-signoz-session");
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,19 +38,12 @@ pub struct SignozConfig {
     pub owns_key: bool,
 }
 
-fn config_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("config.json")
-}
-
-pub fn load(data_dir: &Path) -> SignozConfig {
-    let config: SignozConfig = std::fs::read(config_path(data_dir))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    match sikemux_process::user_environment::var("SIGNOZ_URL") {
+pub fn load(data_dir: &Path) -> SignozResult<SignozConfig> {
+    let config: SignozConfig = store::load(data_dir)?;
+    Ok(match sikemux_process::user_environment::var("SIGNOZ_URL") {
         Some(url) if !url.trim().is_empty() => with_url_override(config, &url),
         _ => config,
-    }
+    })
 }
 
 /// A saved credential belongs to the address it was saved for, so pointing
@@ -64,18 +59,6 @@ fn with_url_override(config: SignozConfig, raw: &str) -> SignozConfig {
         owns_key: false,
         ..config
     }
-}
-
-fn io_error(error: std::io::Error) -> SignozError {
-    SignozError::Transport(format!("saving settings: {error}"))
-}
-
-pub fn save(data_dir: &Path, config: &SignozConfig) -> SignozResult<()> {
-    std::fs::create_dir_all(data_dir).map_err(io_error)?;
-    let path = config_path(data_dir);
-    let staged = path.with_extension("json.tmp");
-    std::fs::write(&staged, serde_json::to_vec_pretty(config)?).map_err(io_error)?;
-    std::fs::rename(&staged, &path).map_err(io_error)
 }
 
 pub fn validate_url(raw: &str) -> SignozResult<String> {
@@ -120,24 +103,17 @@ pub fn validate_account(raw: &str) -> SignozResult<String> {
     Ok(account.to_string())
 }
 
-fn keychain_error(error: sikemux_keychain::KeychainError) -> SignozError {
-    match error {
-        sikemux_keychain::KeychainError::Invalid(message) => SignozError::BadArg(message),
-        sikemux_keychain::KeychainError::Failed(message) => SignozError::Keychain(message),
-    }
-}
-
 pub fn keychain_read(service: &str, account: &str) -> SignozResult<Option<String>> {
-    sikemux_keychain::read(service, account).map_err(keychain_error)
+    Ok(sikemux_keychain::read(service, account)?)
 }
 
 pub fn keychain_write(service: &str, account: &str, secret: &str) -> SignozResult<()> {
     let account = validate_account(account)?;
-    sikemux_keychain::write(service, &account, secret).map_err(keychain_error)
+    Ok(sikemux_keychain::write(service, &account, secret)?)
 }
 
 pub fn keychain_delete(service: &str, account: &str) -> SignozResult<()> {
-    sikemux_keychain::delete(service, account).map_err(keychain_error)
+    Ok(sikemux_keychain::delete(service, account)?)
 }
 
 pub fn env_api_key() -> Option<String> {
@@ -192,21 +168,5 @@ mod tests {
         assert_eq!((moved.account.as_str(), moved.owns_key), ("", false));
         let refused = with_url_override(saved, "http://other.example.com");
         assert_eq!((refused.url.as_str(), refused.account.as_str()), ("", ""));
-    }
-
-    #[test]
-    fn round_trips_the_config_file() {
-        let dir = std::env::temp_dir().join(format!("sikemux-signoz-{}", std::process::id()));
-        let config = SignozConfig {
-            url: "https://logs.example.com".into(),
-            auth: AuthMode::ApiKey,
-            account: "work".into(),
-            email: String::new(),
-            owns_key: false,
-        };
-        save(&dir, &config).unwrap();
-        assert_eq!(load(&dir).auth, AuthMode::ApiKey);
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(load(&dir).url, "");
     }
 }

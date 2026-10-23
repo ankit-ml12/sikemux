@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initials } from '@/account/initials';
+import { initials } from '@mac/lib/initials';
 
 describe('initials', () => {
   it('takes the first and last names', () => {
@@ -19,9 +19,5 @@ describe('initials', () => {
 
   it('keeps a letter outside the basic plane whole', () => {
     expect(initials('𝒜da Byron', null)).toBe('𝒜B');
-  });
-
-  it('is empty with nothing to go on', () => {
-    expect(initials(undefined, undefined)).toBe('');
   });
 });

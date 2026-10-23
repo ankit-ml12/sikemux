@@ -3,16 +3,18 @@
 //! moved without loading anything, and app shortcuts pressed while the page
 //! owns the keyboard. Everything here runs on the main thread.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool, Imp, ProtocolObject, Sel};
+use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, ProtocolObject, Sel};
 use objc2::{
     define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly,
 };
@@ -35,6 +37,7 @@ use objc2_web_kit::{
     WKPDFConfiguration, WKPermissionDecision, WKSecurityOrigin, WKSnapshotConfiguration,
     WKUIDelegate, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter};
 
 use super::burst::Burst;
@@ -205,6 +208,17 @@ pub fn keep_running_when_covered(pointer: *mut c_void, keep_running: bool) {
         // one BOOL and returns nothing.
         let _: () = unsafe { msg_send![&*webview, _setWindowOcclusionDetectionEnabled: enabled] };
     }
+}
+
+/// Keeps a page already on screen running while other windows cover it. WebKit
+/// only looks again at whether a page shows when its view is hidden or shown.
+pub fn keep_shown_page_running_when_covered(pointer: *mut c_void) {
+    keep_running_when_covered(pointer, true);
+    let Some(webview) = webview_from(pointer) else {
+        return;
+    };
+    webview.setHidden(true);
+    webview.setHidden(false);
 }
 
 pub fn forget(tab_id: &str) {
@@ -398,12 +412,13 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             whole.size.height,
         ),
     );
-    let holes: Vec<(NSRect, f64)> = holes
+    let holes: Vec<(NSRect, NSRect, f64)> = holes
         .into_iter()
-        .filter_map(|(hole, radius)| {
-            let hole = intersection(hole, visible)?;
+        .filter_map(|(whole_hole, radius)| {
+            let hole = intersection(whole_hole, visible)?;
             Some((
                 hole,
+                whole_hole,
                 radius
                     .min(hole.size.width / 2.0)
                     .min(hole.size.height / 2.0),
@@ -417,7 +432,7 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
         } else {
             all.insert(
                 view_key(&webview),
-                holes.iter().map(|(hole, _)| *hole).collect(),
+                holes.iter().map(|(hole, _, _)| *hole).collect(),
             );
         }
     });
@@ -467,14 +482,8 @@ pub fn clip(pointer: *mut c_void, clip_left: f64, clip_right: f64, holes: Vec<(N
             // SAFETY: a null transform means none, and `path` is a fresh path only we hold.
             unsafe {
                 CGMutablePath::add_rect(Some(&path), std::ptr::null(), flip(visible));
-                for (hole, radius) in &holes {
-                    CGMutablePath::add_rounded_rect(
-                        Some(&path),
-                        std::ptr::null(),
-                        flip(*hole),
-                        *radius,
-                        *radius,
-                    );
+                for (hole, whole_hole, radius) in &holes {
+                    add_hole(&path, flip(*hole), flip(*whole_hole), *radius);
                 }
             }
             if !matches!(masks.get(&key), Some(PageMask::Shape(_))) {
@@ -547,6 +556,38 @@ pub fn dim(pointer: *mut c_void, alpha: f64) {
 
 fn view_key(view: &NSView) -> usize {
     view as *const NSView as usize
+}
+
+/// Round only the corners `hole` shares with `whole_hole`. Where the page's edge
+/// cuts a menu short, the cut stays square instead of curving into the menu.
+fn add_hole(path: &CGMutablePath, hole: NSRect, whole_hole: NSRect, radius: f64) {
+    let same = |a: f64, b: f64| (a - b).abs() < 0.5;
+    let (min_x, min_y) = (hole.origin.x, hole.origin.y);
+    let (max_x, max_y) = (min_x + hole.size.width, min_y + hole.size.height);
+    let left = same(min_x, whole_hole.origin.x);
+    let right = same(max_x, whole_hole.origin.x + whole_hole.size.width);
+    let low = same(min_y, whole_hole.origin.y);
+    let high = same(max_y, whole_hole.origin.y + whole_hole.size.height);
+    let corner = |x: bool, y: bool| if x && y { radius } else { 0.0 };
+    let path = Some(path);
+    let none = std::ptr::null();
+    // SAFETY: a null transform means none.
+    unsafe {
+        CGMutablePath::move_to_point(path, none, (min_x + max_x) / 2.0, min_y);
+        CGMutablePath::add_arc_to_point(path, none, max_x, min_y, max_x, max_y, corner(right, low));
+        CGMutablePath::add_arc_to_point(
+            path,
+            none,
+            max_x,
+            max_y,
+            min_x,
+            max_y,
+            corner(right, high),
+        );
+        CGMutablePath::add_arc_to_point(path, none, min_x, max_y, min_x, min_y, corner(left, high));
+        CGMutablePath::add_arc_to_point(path, none, min_x, min_y, max_x, min_y, corner(left, low));
+    }
+    CGMutablePath::close_subpath(path);
 }
 
 fn intersection(a: NSRect, b: NSRect) -> Option<NSRect> {
@@ -790,7 +831,7 @@ pub fn snapshot_jpeg(
     }
     let done = std::sync::Mutex::new(Some(done));
     let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
-        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+        let Some(done) = done.locked().take() else {
             return;
         };
         // SAFETY: WebKit passes a live image or nil; `retain` takes our own reference.
@@ -830,7 +871,7 @@ pub fn still_jpeg(pointer: *mut c_void, done: Box<dyn FnOnce(Option<Vec<u8>>) + 
     let configuration = unsafe { WKSnapshotConfiguration::new(mtm) };
     let done = std::sync::Mutex::new(Some(done));
     let block = RcBlock::new(move |image: *mut NSImage, _error: *mut NSError| {
-        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+        let Some(done) = done.locked().take() else {
             return;
         };
         // SAFETY: WebKit passes a live image or nil; `retain` takes our own reference.
@@ -892,7 +933,7 @@ pub fn call_async(
     };
     let done = std::sync::Mutex::new(Some(done));
     let block = RcBlock::new(move |value: *mut AnyObject, error: *mut NSError| {
-        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+        let Some(done) = done.locked().take() else {
             return;
         };
         // SAFETY: WebKit passes a live error or nil; `retain` takes our own reference.
@@ -968,7 +1009,7 @@ pub fn full_page_jpeg(
     }
     let done = std::sync::Mutex::new(Some(done));
     let block = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
-        let Some(done) = done.lock().ok().and_then(|mut slot| slot.take()) else {
+        let Some(done) = done.locked().take() else {
             return;
         };
         // SAFETY: WebKit passes live data or nil; `retain` takes our own reference.
@@ -1349,7 +1390,17 @@ define_class!(
                 handler.call((Retained::as_ptr(&chosen),));
                 return;
             }
-            match &self.ivars().inner {
+            // The file chooser blocks the whole app and brings it to the front, so
+            // an agent uploads through `browser_upload` instead.
+            if super::input::agent_input_is_latest() {
+                handler.call((std::ptr::null(),));
+                return;
+            }
+            match self.ivars().inner.as_ref().filter(|inner| {
+                inner.respondsToSelector(sel!(
+                    webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:
+                ))
+            }) {
                 Some(inner) => {
                     let _: () = msg_send![
                         &**inner,
@@ -1371,7 +1422,11 @@ define_class!(
             action: &WKNavigationAction,
             features: &WKWindowFeatures,
         ) -> Option<Retained<WKWebView>> {
-            match self.ivars().inner.as_ref() {
+            match self.ivars().inner.as_ref().filter(|inner| {
+                inner.respondsToSelector(sel!(
+                    webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
+                ))
+            }) {
                 Some(inner) => msg_send![
                     &**inner,
                     webView: webview,
@@ -1423,12 +1478,13 @@ fn present_sheet(
     sheet: Sheet,
     answer: impl Fn(bool, String) + 'static,
 ) {
+    let answer = AnswerOnce::new(answer);
     let (Some(window), Some(mtm)) = (webview.window(), MainThreadMarker::new()) else {
-        answer(false, String::new());
+        answer.give(false, String::new());
         return;
     };
     if !tab.dialogs.borrow_mut().admit(Instant::now()) {
-        answer(false, String::new());
+        answer.give(false, String::new());
         return;
     }
     // SAFETY: main thread, and WebKit keeps `frame` alive while its dialog callback runs.
@@ -1489,9 +1545,37 @@ fn present_sheet(
             .as_ref()
             .map(|field| field.stringValue().to_string())
             .unwrap_or_default();
-        answer(accepted, text);
+        answer.give(accepted, text);
     });
     alert.beginSheetModalForWindow_completionHandler(&window, Some(&block));
+}
+
+/// WebKit throws when a dialog's answer is dropped unanswered, which aborts the
+/// app, so a sheet AppKit discards without running its block answers Cancel.
+struct AnswerOnce<F: Fn(bool, String)> {
+    answer: F,
+    given: Cell<bool>,
+}
+
+impl<F: Fn(bool, String)> AnswerOnce<F> {
+    fn new(answer: F) -> Self {
+        Self {
+            answer,
+            given: Cell::new(false),
+        }
+    }
+
+    fn give(&self, accepted: bool, text: String) {
+        if !self.given.replace(true) {
+            (self.answer)(accepted, text);
+        }
+    }
+}
+
+impl<F: Fn(bool, String)> Drop for AnswerOnce<F> {
+    fn drop(&mut self) {
+        self.give(false, String::new());
+    }
 }
 
 /// Ends the tab's open dialog as if the person pressed OK or Cancel, typing
@@ -1605,6 +1689,16 @@ fn focused_tab(event: &NSEvent, mtm: MainThreadMarker) -> Option<(String, String
     })
 }
 
+/// The tab `view` belongs to, if it is part of one.
+pub(super) fn tab_holding(view: &NSView) -> Option<Retained<WKWebView>> {
+    TABS.with(|tabs| {
+        tabs.borrow()
+            .values()
+            .find(|tab| view.isDescendantOf(&tab.webview))
+            .map(|tab| tab.webview.clone())
+    })
+}
+
 pub fn install_shortcuts(app: AppHandle) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -1653,6 +1747,74 @@ pub fn install_shortcuts(app: AppHandle) {
     watch_the_person();
 }
 
+static TABS_BEING_MADE: AtomicUsize = AtomicUsize::new(0);
+static ORIGINAL_ACTIVATE: OnceLock<Imp> = OnceLock::new();
+static ORIGINAL_ACTIVATE_IGNORING: OnceLock<Imp> = OnceLock::new();
+
+type Activate = unsafe extern "C-unwind" fn(*mut AnyObject, Sel);
+type ActivateIgnoring = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, Bool);
+
+/// Runs `make` without letting it bring Sikemux to the front. Making a
+/// webview activates the whole app, which would take the keyboard from
+/// whatever other app the person is typing in.
+pub fn without_activating<T>(make: impl FnOnce() -> T) -> T {
+    static GUARD: Once = Once::new();
+    GUARD.call_once(guard_activation);
+    TABS_BEING_MADE.fetch_add(1, Ordering::AcqRel);
+    let made = make();
+    TABS_BEING_MADE.fetch_sub(1, Ordering::AcqRel);
+    made
+}
+
+// SAFETY: only the Objective-C runtime calls this, as NSApplication's `activate`.
+unsafe extern "C-unwind" fn activate(app: *mut AnyObject, selector: Sel) {
+    if TABS_BEING_MADE.load(Ordering::Acquire) > 0 {
+        return;
+    }
+    if let Some(original) = ORIGINAL_ACTIVATE.get() {
+        // SAFETY: `original` is the implementation this function replaced, so it
+        // takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, Activate>(*original)(app, selector) };
+    }
+}
+
+// SAFETY: only the Objective-C runtime calls this, as NSApplication's
+// `activateIgnoringOtherApps:`.
+unsafe extern "C-unwind" fn activate_ignoring(app: *mut AnyObject, selector: Sel, ignoring: Bool) {
+    if TABS_BEING_MADE.load(Ordering::Acquire) > 0 {
+        return;
+    }
+    if let Some(original) = ORIGINAL_ACTIVATE_IGNORING.get() {
+        // SAFETY: `original` is the implementation this function replaced, so it
+        // takes the same arguments.
+        unsafe { std::mem::transmute::<Imp, ActivateIgnoring>(*original)(app, selector, ignoring) };
+    }
+}
+
+fn guard_activation() {
+    let Some(class) = AnyClass::get(c"NSApplication") else {
+        return;
+    };
+    if let Some(method) = class.instance_method(sel!(activate)) {
+        let replacement: Activate = activate;
+        // SAFETY: `activate` has the signature of `-[NSApplication activate]` and
+        // calls the implementation it replaces, which is stored before anything
+        // can call it.
+        let original =
+            unsafe { method.set_implementation(std::mem::transmute::<Activate, Imp>(replacement)) };
+        let _ = ORIGINAL_ACTIVATE.set(original);
+    }
+    if let Some(method) = class.instance_method(sel!(activateIgnoringOtherApps:)) {
+        let replacement: ActivateIgnoring = activate_ignoring;
+        // SAFETY: `activate_ignoring` has the signature of `-[NSApplication
+        // activateIgnoringOtherApps:]` and calls the implementation it replaces.
+        let original = unsafe {
+            method.set_implementation(std::mem::transmute::<ActivateIgnoring, Imp>(replacement))
+        };
+        let _ = ORIGINAL_ACTIVATE_IGNORING.set(original);
+    }
+}
+
 /// The person's own pointer and modifier keys, which AppKit delivers through
 /// the app, unlike the agent's events sent straight to a tab.
 fn watch_the_person() {
@@ -1673,6 +1835,7 @@ fn watch_the_person() {
     let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
     PERSON_MONITOR.with(|slot| *slot.borrow_mut() = monitor);
     super::input::guard_cursor();
+    super::input::guard_keyboard();
 }
 
 #[cfg(test)]

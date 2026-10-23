@@ -1,42 +1,41 @@
-import { ChatState, type ChatInfo } from '@/core/protocol';
-
-const PROVIDER_NAMES: Record<string, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  hermes: 'Hermes',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-  omp: 'OMP',
-  grok: 'Grok',
-};
-
-export function providerName(provider: string): string {
-  return PROVIDER_NAMES[provider] ?? provider;
-}
+import type { InboxItem, ProjectInfo, Snapshot } from '@/core/protocol';
 
 export function folder(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path;
 }
 
-/** The title the agent gave the chat, as the Mac's rail shows it. */
-export function chatTitle(chat: Pick<ChatInfo, 'title' | 'provider'>): string {
-  return chat.title ?? `New ${providerName(chat.provider)} chat`;
+/** `word` as it reads beside `count`: "1 agent", "2 agents". */
+export function counted(word: string, count: number): string {
+  return count === 1 ? word : `${word}s`;
 }
 
-/** The Mac rail's words for where a chat is (src/state/agentStatus.ts). */
-export function chatState(chat: ChatInfo): string {
-  if (chat.pendingPermissions.length) return 'Needs input';
-  if (chat.asleep) return 'Sleeping';
-  if (chat.state === ChatState.Stopped) return 'Stopped';
-  if (chat.state === ChatState.Starting) return 'Starting…';
-  return chat.running ? 'Working' : 'Ready';
+/** The host's project with this id or folder. */
+export function projectAt(snapshot: Snapshot, where: string): ProjectInfo | undefined {
+  return snapshot.workspace.projects.find((project) => project.id === where || project.path === where);
 }
 
-export function ago(at: number, now = Date.now()): string {
-  const minutes = Math.round((now - at) / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+/** The name of the project with this id or folder, else the last folder of `path`. */
+export function projectName(snapshot: Snapshot, where: string, path = where): string {
+  return projectAt(snapshot, where)?.name ?? folder(path);
+}
+
+export function inProject(project: ProjectInfo, path: string): boolean {
+  return path === project.path || path.startsWith(`${project.path}/`);
+}
+
+/** The id of the project the host keeps the agent in, which its worktree's folder does not show. */
+export function projectOf(snapshot: Snapshot, agentId: string): string | undefined {
+  return snapshot.workspace.agents?.find((agent) => agent.id === agentId)?.project;
+}
+
+export function agentIn(snapshot: Snapshot, project: ProjectInfo, agentId: string, cwd: string): boolean {
+  const kept = projectOf(snapshot, agentId);
+  return kept ? kept === project.id : inProject(project, cwd);
+}
+
+/** The item's card is on `project`'s board, or its agent works there. */
+export function itemIn(snapshot: Snapshot, item: InboxItem, project: ProjectInfo): boolean {
+  if (!item.card && item.agentId && item.project !== undefined) return agentIn(snapshot, project, item.agentId, item.project);
+  const where = item.card?.project ?? item.project;
+  return where !== undefined && (where === project.id || inProject(project, where));
 }

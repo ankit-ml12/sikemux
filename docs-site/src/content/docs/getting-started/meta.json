@@ -1,0 +1,12 @@
+{
+  "title": "Getting started",
+  "defaultOpen": true,
+  "pages": [
+    "install",
+    "first-launch",
+    "projects",
+    "run",
+    "updates",
+    "phone"
+  ]
+}

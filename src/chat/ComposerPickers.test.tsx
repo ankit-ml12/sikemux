@@ -67,7 +67,7 @@ describe("composer pickers", () => {
         setState({ providerProfiles: [{ id: "work", name: "Work Claude", provider: "claude", accent: "#fff" }] });
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 setup={{}}
                 disabled={false}
@@ -75,7 +75,7 @@ describe("composer pickers", () => {
             />,
         );
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
-        fireEvent.click(screen.getByRole("button", { name: /Work Claude/ }));
+        fireEvent.click(screen.getByRole("button", { name: "Claude" }));
         expect(mocks.onAgent).toHaveBeenCalledWith("claude", "work");
     });
 
@@ -108,17 +108,13 @@ describe("composer pickers", () => {
                 { id: "thinking", category: "thought_level", type: "select", currentValue: "auto", options: [{ value: "auto", name: "Auto" }] },
             ],
         });
-        expect(effortConfig(configs, "omp")?.id).toBe("thinking");
-        expect(effortConfig(configs, "claude")?.id).toBe("thinking");
-        expect(
-            effortConfig(sessionConfigs({ configOptions: [{ id: "effort", type: "select", currentValue: "high", options: [] }] }), "claude")?.id,
-        ).toBe("effort");
+        expect(effortConfig(configs)?.id).toBe("thinking");
     });
 
     it("offers no effort picker to an agent whose model has none", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "hermes", title: "Hermes", startup: "hermes" }}
+                agent={{ id: "a", type: "hermes", title: "Hermes" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={() => {}}
@@ -132,7 +128,7 @@ describe("composer pickers", () => {
     it("lists a harness once when its built-in profile is the default", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 setup={{}}
                 disabled={false}
@@ -141,14 +137,14 @@ describe("composer pickers", () => {
         );
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
         const agents = screen.getByRole("group", { name: "Agent" }).querySelectorAll("button");
-        expect(Array.from(agents, (button) => button.textContent)).toEqual(["Codex", "Claude"]);
+        expect(Array.from(agents, (button) => button.textContent)).toEqual(["Claude", "Codex"]);
         expect(screen.getByRole("button", { name: /Codex/ })).toHaveAttribute("aria-pressed", "true");
     });
 
     it("drops the agent picker after messages while keeping model and effort available", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 agentLocked
@@ -156,7 +152,13 @@ describe("composer pickers", () => {
                 setup={{
                     configOptions: [
                         { id: "model", type: "select", currentValue: "model", options: [{ value: "model", name: "My model" }] },
-                        { id: "reasoning_effort", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
+                        {
+                            id: "reasoning_effort",
+                            category: "thought_level",
+                            type: "select",
+                            currentValue: "high",
+                            options: [{ value: "high", name: "High" }],
+                        },
                     ],
                 }}
             />,
@@ -172,7 +174,7 @@ describe("composer pickers", () => {
         const onConfig = vi.fn();
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={onConfig}
@@ -203,7 +205,7 @@ describe("composer pickers", () => {
     it("closes the model menu with Escape and returns focus to its trigger", () => {
         render(
             <ComposerPickers
-                agent={{ id: "a", type: "codex", title: "Codex", startup: "codex" }}
+                agent={{ id: "a", type: "codex", title: "Codex" }}
                 onAgent={mocks.onAgent}
                 disabled={false}
                 onConfig={() => {}}
@@ -267,8 +269,7 @@ describe("composer pickers", () => {
     it("finds no effort option for an agent that does not chat unless one is tagged", () => {
         const configs = sessionConfigs({ configOptions: [{ id: "effort", type: "select", currentValue: "high", options: [] }] });
 
-        expect(effortConfig(configs, "pi")).toBeUndefined();
-        expect(effortConfig(configs, "codex")).toBeUndefined();
+        expect(effortConfig(configs)).toBeUndefined();
     });
 
     it("moves through models with the arrow keys, wrapping at each end, and picks one with Enter", () => {
@@ -359,22 +360,6 @@ describe("composer pickers", () => {
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     });
 
-    it("anchors the menu above its trigger on a narrow window", () => {
-        const width = window.innerWidth;
-        Object.defineProperty(window, "innerWidth", { configurable: true, value: 600 });
-        try {
-            render(<ComposerPickers agent={codexAgent} onAgent={mocks.onAgent} disabled={false} onConfig={() => {}} setup={threeModels} />);
-            const trigger = screen.getByRole("button", { name: "Model" });
-            vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ top: 500 } as DOMRect);
-            fireEvent.click(trigger);
-
-            const menu = screen.getByRole("listbox").parentElement as HTMLElement;
-            expect(menu.style.bottom).toBe(`${window.innerHeight - 500 + 12}px`);
-        } finally {
-            Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
-        }
-    });
-
     it("labels empty pickers with the agent's launch model and effort until the session reports its own", () => {
         render(
             <ComposerPickers
@@ -402,37 +387,6 @@ describe("composer pickers", () => {
         expect(screen.getByRole("button", { name: "Model" })).toHaveAttribute("title", "Model");
         expect(screen.getByRole("button", { name: "Model" })).toBeDisabled();
         expect(screen.getByRole("button", { name: "Reasoning effort" })).toHaveAttribute("title", "Effort");
-    });
-
-    it("lets an effort picker change the effort", () => {
-        const onConfig = vi.fn();
-        render(
-            <ComposerPickers
-                agent={{ id: "a", type: "claude", title: "Claude", startup: "claude" }}
-                onAgent={mocks.onAgent}
-                disabled={false}
-                onConfig={onConfig}
-                setup={{
-                    configOptions: [
-                        {
-                            id: "effort",
-                            type: "select",
-                            currentValue: "high",
-                            options: [
-                                { value: "high", name: "High", description: "Thinks longer" },
-                                { value: "low", name: "Low" },
-                            ],
-                        },
-                    ],
-                }}
-            />,
-        );
-        fireEvent.click(screen.getByRole("button", { name: "Reasoning effort" }));
-        expect(screen.getByText("Thinks longer")).toBeInTheDocument();
-        expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument();
-        fireEvent.click(screen.getByRole("option", { name: /Low/ }));
-
-        expect(onConfig).toHaveBeenCalledWith(expect.objectContaining({ id: "effort" }), "low");
     });
 
     it("ignores a click on the agent that is already running", () => {

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
 import { useSignIn, useSignUp } from '@clerk/expo';
+import { errorCode, explain } from '@protocol/account';
 
-import { errorCode, explain } from '@/account/clerkErrors';
 import { CodeEntry } from '@/ui/CodeEntry';
-import { Button, Field, Nav, PasswordField, Screen } from '@/ui/parts';
+import { goBack, goHome } from '@/ui/navigate';
+import { Button, Field, PasswordField } from '@/ui/controls';
+import { Prompt } from '@/ui/prompt';
+import { Nav, Screen } from '@/ui/screen';
 import { fonts, type Palette, typeFor, useStyles } from '@/ui/theme';
 
 /** Why an emailed code is asked for: a phone new to the account, a new account, or a new password. */
@@ -21,6 +23,8 @@ const TITLES: Record<Step['kind'], string> = {
   code: 'Check your email',
   'new-password': 'Choose a new password',
 };
+
+export { Crashed as ErrorBoundary } from '@/screens/Crashed';
 
 export default function SignIn() {
   const styles = useStyles(makeStyles);
@@ -58,7 +62,7 @@ export default function SignIn() {
 
   const finishSignIn = async () => {
     check(await signIn.finalize());
-    router.replace('/');
+    goHome();
   };
 
   /** After a password, a phone new to the account confirms with an emailed code. */
@@ -117,7 +121,7 @@ export default function SignIn() {
       check(await signUp.verifications.verifyEmailCode({ code: typed }));
       if (signUp.status !== 'complete') throw new Error('The account needs more than this app asks for; finish signing up on the web.');
       check(await signUp.finalize());
-      router.replace('/');
+      goHome();
     }).finally(() => setCode(''));
 
   const typeCode = (typed: string) => {
@@ -126,43 +130,39 @@ export default function SignIn() {
   };
 
   const back = () => {
-    if (step.kind === 'email') return router.canGoBack() ? router.back() : router.replace('/');
+    if (step.kind === 'email') return goBack();
     void signIn.reset();
     go({ kind: 'email' });
   };
 
   const detail =
     step.kind === 'email'
-      ? 'New here? The same steps make your account.'
+      ? undefined
       : step.kind === 'code'
-        ? step.purpose === 'trust'
-          ? `Sikemux sent a code to ${email}, to confirm this phone is yours.`
-          : step.purpose === 'verify'
-            ? `Sikemux sent a code to ${email}, to confirm the address is yours.`
-            : `Sikemux sent a code to ${email}, so you can choose a new password.`
+        ? `Sikemux sent a code to ${email}.`
         : step.kind === 'create'
-          ? 'At least 15 characters. A password found in a known breach is refused.'
+          ? 'At least 15 characters.'
           : email;
 
   return (
     <Screen>
       <Nav back="Back" onBack={back} />
-      {step.kind === 'code' ? (
-        <View style={styles.codeBlock}>
-          <Text style={[styles.title, styles.centered]}>{TITLES.code}</Text>
-          <Text style={[styles.detail, styles.centered]}>{detail}</Text>
-          <View style={styles.tiles}>
-            <CodeEntry code={code} onChange={typeCode} disabled={busy} failed={problem !== undefined && code.length === 0} />
-          </View>
-          {problem ? <Text style={[styles.problem, styles.centered]}>{problem}</Text> : null}
-        </View>
-      ) : (
-        <View style={styles.block}>
-          <Text style={styles.title}>{TITLES[step.kind]}</Text>
-          <Text style={styles.detail}>{detail}</Text>
+      <Prompt icon="Logo" title={TITLES[step.kind]} detail={detail}>
+        {step.kind === 'code' ? (
+          <>
+            <View style={styles.tiles}>
+              <CodeEntry code={code} onChange={typeCode} disabled={busy} failed={problem !== undefined && code.length === 0} />
+            </View>
+            {problem ? <Text style={[styles.problem, styles.centered]}>{problem}</Text> : null}
+          </>
+        ) : null}
+      </Prompt>
+      {step.kind === 'code' ? null : (
+        <View style={styles.form}>
           {step.kind === 'email' ? (
             <Field
               key="email"
+              icon="IconInbox"
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
@@ -227,14 +227,11 @@ export default function SignIn() {
 const makeStyles = (colors: Palette) => {
   const type = typeFor(colors);
   return StyleSheet.create({
-    block: { paddingTop: 40, paddingHorizontal: 24, gap: 12 },
-    codeBlock: { paddingTop: 40, paddingHorizontal: 28, alignItems: 'center' },
-    title: { ...type.title, fontSize: 22 },
-    detail: { ...type.body, marginTop: -4, marginBottom: 8 },
+    form: { paddingTop: 24, paddingHorizontal: 24, gap: 12 },
     centered: { textAlign: 'center' },
     tiles: { marginTop: 24 },
     problem: { ...type.meta, color: colors.danger, marginTop: 4 },
-    link: { height: 40, alignItems: 'center', justifyContent: 'center' },
+    link: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
     linkText: { fontFamily: fonts.uiMedium, fontSize: 15, color: colors.secondary },
   });
 };

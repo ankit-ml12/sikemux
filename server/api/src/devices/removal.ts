@@ -1,6 +1,7 @@
 import type { DeviceRole, RevokeReason } from "@sikemux/protocol";
 import { sql, type Transaction } from "kysely";
 
+import { audit, type Actor } from "../audit.ts";
 import type { Tables } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
 
@@ -8,8 +9,7 @@ export interface Removal {
   userId: string;
   key: string;
   reason: RevokeReason;
-  /** Who asked, for the audit log: `user:<id>`, `device:<key>` or `clerk`. */
-  actor: string;
+  actor: Actor;
   detail?: Record<string, unknown>;
 }
 
@@ -22,6 +22,7 @@ export interface Removed {
 /**
  * Takes a device off its account: the row moves to a tombstone that keeps its cursor, so a
  * device that was offline still learns why it is gone, and the account hears device.revoked.
+ * A host's shared chats end with it, and so do the apps it added to the account.
  */
 export async function removeDevice(
   trx: Transaction<Tables>,
@@ -47,6 +48,28 @@ export async function removeDevice(
         reason === "removed" && row.clerk_session_id ? sql<Date>`now()` : null,
     })
     .execute();
+  if (row.role === "host") {
+    await trx
+      .updateTable("shares")
+      .set({ ended_at: sql<Date>`now()`, ended_reason: "stopped" })
+      .where("host_key", "=", key)
+      .where("ended_at", "is", null)
+      .execute();
+    const added = await trx
+      .selectFrom("devices")
+      .select("key")
+      .where("registered_by", "=", key)
+      .where("user_id", "=", userId)
+      .execute();
+    for (const app of added)
+      await removeDevice(trx, {
+        userId,
+        key: app.key,
+        reason,
+        actor,
+        detail: { ...detail, with: key },
+      });
+  }
   await appendEvent(trx, {
     userId,
     type: "device.revoked",
@@ -54,21 +77,18 @@ export async function removeDevice(
     subjectRole: row.role as DeviceRole,
     reason,
   });
-  await trx
-    .insertInto("audit")
-    .values({
-      user_id: userId,
-      actor,
-      action: "device.removed",
-      subject: key,
-      detail: JSON.stringify({
-        role: row.role,
-        name: row.name,
-        reason,
-        ...detail,
-      }),
-    })
-    .execute();
+  await audit(trx, {
+    userId,
+    actor,
+    action: "device.removed",
+    subject: key,
+    detail: {
+      role: row.role,
+      name: row.name,
+      reason,
+      ...detail,
+    },
+  });
   return {
     key,
     role: row.role as DeviceRole,

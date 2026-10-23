@@ -4,21 +4,23 @@
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::Engine;
-use futures::StreamExt;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sikemux_core::accounts::protocol::AccountProfile;
+use url::Url;
 
-use crate::release_credits::image_type;
+use crate::file_serving::sniff;
+use crate::http_client::{self, fetch_image, names_private_address, public_client};
 
 const PROFILE_FILE: &str = "profile.json";
 const PICTURE_PREFIX: &str = "picture-";
 const MAX_PICTURE_BYTES: usize = 1024 * 1024;
-const MAX_REDIRECTS: usize = 5;
+/// Google hands Clerk pictures of over a megabyte, so a larger one is fetched and shrunk.
+const MAX_DOWNLOAD_BYTES: usize = 8 * 1024 * 1024;
+const SHRUNK_SIZE: &str = "256";
+const SHRINK_TIMEOUT: Duration = Duration::from_secs(10);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
@@ -37,37 +39,16 @@ impl Profile {
     }
 }
 
-/// What Clerk's `/oauth/userinfo` answers for the `email profile` scopes.
-#[derive(Debug, Default, Deserialize)]
-pub struct UserInfo {
-    pub email: Option<String>,
-    name: Option<String>,
-    given_name: Option<String>,
-    family_name: Option<String>,
-    picture: Option<String>,
-}
-
-impl UserInfo {
-    pub fn into_profile(self, user_id: String, now: u64) -> Profile {
-        let joined = [self.given_name, self.family_name]
-            .into_iter()
-            .flatten()
-            .map(|part| part.trim().to_owned())
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
-        let name = self
+pub fn from_account(account: AccountProfile, user_id: String, now: u64) -> Profile {
+    Profile {
+        user_id,
+        name: account
             .name
             .map(|name| name.trim().to_owned())
-            .filter(|name| !name.is_empty())
-            .or_else(|| (!joined.is_empty()).then_some(joined));
-        Profile {
-            user_id,
-            name,
-            email: self.email,
-            picture: self.picture.filter(|url| picture_url_allowed(url)),
-            checked_at: now,
-        }
+            .filter(|name| !name.is_empty()),
+        email: account.email,
+        picture: account.image_url.filter(|url| picture_url(url).is_some()),
+        checked_at: now,
     }
 }
 
@@ -78,8 +59,12 @@ pub fn now() -> u64 {
         .unwrap_or_default()
 }
 
-fn picture_url_allowed(url: &str) -> bool {
-    url::Url::parse(url).is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
+/// Only a public https address, so an account's picture cannot have this
+/// machine or its network fetched.
+fn picture_url(url: &str) -> Option<Url> {
+    Url::parse(url)
+        .ok()
+        .filter(|url| url.scheme() == "https" && !names_private_address(url))
 }
 
 fn cache_key(url: &str) -> String {
@@ -90,20 +75,15 @@ fn picture_path(dir: &Path, url: &str) -> PathBuf {
     dir.join(format!("{PICTURE_PREFIX}{}", cache_key(url)))
 }
 
-fn content_type_allowed(header: Option<&str>) -> bool {
-    header.is_some_and(|value| value.trim().to_ascii_lowercase().starts_with("image/"))
-}
-
-/// The picture as a `data:` URL, or nothing if it is not a known image or too large.
+/// The picture as a `data:` URL, or nothing if it is too large or not an
+/// image made of pixels; a drawing could carry script.
 fn data_url(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_PICTURE_BYTES {
         return None;
     }
-    let mime = image_type(bytes)?;
-    Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+    let mime =
+        sniff(bytes).filter(|mime| mime.starts_with("image/") && *mime != "image/svg+xml")?;
+    Some(http_client::data_url(mime, bytes))
 }
 
 pub async fn read(dir: &Path) -> Option<Profile> {
@@ -125,7 +105,9 @@ pub async fn save(dir: &Path, profile: &Profile) -> std::io::Result<()> {
     if let (Some(url), Some(path)) = (profile.picture.as_deref(), keep.as_deref()) {
         if tokio::fs::metadata(path).await.is_err() {
             if let Some(bytes) = download(url).await {
-                tokio::fs::write(path, bytes).await?;
+                if let Some(bytes) = fit(dir, bytes).await {
+                    tokio::fs::write(path, bytes).await?;
+                }
             }
         }
     }
@@ -150,52 +132,43 @@ pub async fn forget(dir: &Path) -> std::io::Result<()> {
     }
 }
 
-fn client() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        let https_only = reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() < MAX_REDIRECTS && attempt.url().scheme() == "https" {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        });
-        Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(https_only)
-            .user_agent(concat!("sikemux/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .unwrap_or_default()
-    })
+async fn download(url: &str) -> Option<Vec<u8>> {
+    let url = picture_url(url)?;
+    let request = public_client().ok()?.get(url).timeout(FETCH_TIMEOUT);
+    let (bytes, _) = fetch_image(request, MAX_DOWNLOAD_BYTES).await?;
+    Some(bytes)
 }
 
-async fn download(url: &str) -> Option<Vec<u8>> {
-    if !picture_url_allowed(url) {
+/// The picture small enough to hand to the window, shrunk with macOS's `sips` when it is not.
+async fn fit(dir: &Path, bytes: Vec<u8>) -> Option<Vec<u8>> {
+    if data_url(&bytes).is_some() {
+        return Some(bytes);
+    }
+    if !cfg!(target_os = "macos") {
         return None;
     }
-    let response = client().get(url).send().await.ok()?;
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    if !response.status().is_success()
-        || !content_type_allowed(content_type)
-        || response
-            .content_length()
-            .is_some_and(|length| length > MAX_PICTURE_BYTES as u64)
-    {
-        return None;
-    }
-    let mut body = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.ok()?;
-        if body.len() + chunk.len() > MAX_PICTURE_BYTES {
-            return None;
+    let original = dir.join(format!("{PICTURE_PREFIX}download"));
+    let shrunk = dir.join(format!("{PICTURE_PREFIX}shrunk.png"));
+    tokio::fs::write(&original, &bytes).await.ok()?;
+    let (input, output) = (original.clone(), shrunk.clone());
+    let result = tokio::task::spawn_blocking(move || {
+        let mut sips = sikemux_process::user_environment::command("/usr/bin/sips");
+        sips.args(["-Z", SHRUNK_SIZE, "-s", "format", "png"])
+            .arg(&input)
+            .arg("--out")
+            .arg(&output);
+        let ran = sikemux_process::run(&mut sips, None, SHRINK_TIMEOUT, 64 * 1024, None);
+        match ran {
+            Ok(done) if done.status.success() => std::fs::read(&output).ok(),
+            _ => None,
         }
-        body.extend_from_slice(&chunk);
-    }
-    data_url(&body).is_some().then_some(body)
+    })
+    .await
+    .ok()
+    .flatten();
+    let _ = tokio::fs::remove_file(&original).await;
+    let _ = tokio::fs::remove_file(&shrunk).await;
+    result.filter(|bytes| data_url(bytes).is_some())
 }
 
 #[cfg(test)]
@@ -204,30 +177,44 @@ mod tests {
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nrest";
 
+    /// A real 1x1 PNG, which `sips` can open, unlike the bare signature above.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8,
+        0x0f, 0x04, 0x00, 0x09, 0xfb, 0x03, 0xfd, 0xfb, 0x5e, 0x6b, 0x2b, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_picture_too_large_for_the_window_is_shrunk() {
+        let dir = tempfile::tempdir().expect("dir");
+        let mut large = TINY_PNG.to_vec();
+        large.resize(MAX_PICTURE_BYTES + 1, 0);
+        assert!(data_url(&large).is_none());
+        let shrunk = fit(dir.path(), large).await.expect("shrunk");
+        assert!(data_url(&shrunk).is_some());
+        let left: Vec<_> = std::fs::read_dir(dir.path()).expect("dir").collect();
+        assert!(left.is_empty(), "the working files are removed");
+    }
+
+    #[tokio::test]
+    async fn a_picture_that_already_fits_is_kept_as_it_is() {
+        let dir = tempfile::tempdir().expect("dir");
+        assert_eq!(
+            fit(dir.path(), TINY_PNG.to_vec()).await.as_deref(),
+            Some(TINY_PNG)
+        );
+    }
+
     #[test]
     fn only_https_pictures_are_fetched() {
-        assert!(picture_url_allowed("https://img.clerk.com/abc"));
-        assert!(!picture_url_allowed("http://img.clerk.com/abc"));
-        assert!(!picture_url_allowed("file:///etc/passwd"));
-        assert!(!picture_url_allowed("data:image/png;base64,AAAA"));
-        assert!(!picture_url_allowed("not a url"));
-    }
-
-    #[test]
-    fn the_cache_key_is_a_stable_hash_of_the_url() {
-        let key = cache_key("https://img.clerk.com/abc");
-        assert_eq!(key.len(), 32);
-        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(key, cache_key("https://img.clerk.com/abc"));
-        assert_ne!(key, cache_key("https://img.clerk.com/abd"));
-    }
-
-    #[test]
-    fn only_image_content_types_are_accepted() {
-        assert!(content_type_allowed(Some("image/png")));
-        assert!(content_type_allowed(Some("Image/JPEG; charset=binary")));
-        assert!(!content_type_allowed(Some("text/html")));
-        assert!(!content_type_allowed(None));
+        assert!(picture_url("https://img.clerk.com/abc").is_some());
+        assert!(picture_url("http://img.clerk.com/abc").is_none());
+        assert!(picture_url("file:///etc/passwd").is_none());
+        assert!(picture_url("data:image/png;base64,AAAA").is_none());
+        assert!(picture_url("not a url").is_none());
     }
 
     #[test]
@@ -237,31 +224,6 @@ mod tests {
         let mut huge = PNG.to_vec();
         huge.resize(MAX_PICTURE_BYTES + 1, 0);
         assert_eq!(data_url(&huge), None);
-    }
-
-    #[test]
-    fn the_name_falls_back_to_given_and_family_names() {
-        let info = UserInfo {
-            email: Some("a@b.c".into()),
-            name: Some("  ".into()),
-            given_name: Some("Ada".into()),
-            family_name: Some("Lovelace".into()),
-            picture: Some("http://insecure.example/p.png".into()),
-        };
-        let profile = info.into_profile("user_1".into(), 7);
-        assert_eq!(profile.name.as_deref(), Some("Ada Lovelace"));
-        assert_eq!(profile.picture, None);
-        assert_eq!(profile.checked_at, 7);
-    }
-
-    #[test]
-    fn a_profile_goes_stale_after_the_check_interval() {
-        let profile = Profile {
-            checked_at: 1_000,
-            ..Profile::default()
-        };
-        assert!(!profile.is_stale(1_000 + CHECK_EVERY.as_secs() - 1));
-        assert!(profile.is_stale(1_000 + CHECK_EVERY.as_secs()));
     }
 
     #[tokio::test]

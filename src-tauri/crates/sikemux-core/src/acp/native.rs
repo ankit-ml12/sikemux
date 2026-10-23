@@ -1,68 +1,47 @@
-//! Agents that speak ACP themselves rather than through an adapter Sikemux
-//! installs. Each one shapes its session a little differently, so the choices
-//! here are read from what the session offers rather than assumed.
+//! Agents that speak ACP themselves. Each one shapes its session a little
+//! differently, so the choices here are read from what the session offers
+//! rather than assumed.
 
-use agent_client_protocol::schema::v1::{
-    LoadSessionRequest, NewSessionRequest, PermissionOption, PermissionOptionKind,
-};
-use agent_client_protocol::{JsonRpcRequest, JsonRpcResponse};
-use serde::{Deserialize, Serialize};
+use agent_client_protocol::schema::v1::Meta;
+use serde::Serialize;
 use serde_json::{json, Value};
 
-/// The arguments that put each agent's own binary into ACP mode.
-///
-/// Grok shares one background process between its clients unless told not to,
-/// and a chat's approval choices must not reach the other clients.
+use crate::agent_catalog::{self, ChatDriver};
+use crate::git_guard::shim;
+
+use super::pickers::{self, config_option};
+
+/// The arguments that put the agent's own binary into ACP mode, when it has
+/// one. Grok's `--no-leader` keeps a chat's approval choices off the
+/// background process its other clients share.
 pub fn arguments(provider: &str) -> Option<&'static [&'static str]> {
-    match provider {
-        "opencode" | "omp" | "hermes" => Some(&["acp"]),
-        "grok" => Some(&["agent", "--no-leader", "stdio"]),
+    match agent_catalog::agent(provider)?.chat {
+        Some(ChatDriver::Acp { args, .. }) => Some(args),
         _ => None,
     }
 }
 
-/// Picks the answer that lets one tool call through without granting more.
-pub fn approval(options: &[PermissionOption]) -> Option<&PermissionOption> {
-    options
-        .iter()
-        .find(|option| option.kind == PermissionOptionKind::AllowOnce)
-        .or_else(|| {
-            options
-                .iter()
-                .find(|option| option.kind == PermissionOptionKind::AllowAlways)
-        })
+/// What a session of `provider`'s opens with beside its folder and tools.
+/// Grok loads the plugin whose hook checks its shell commands, since its
+/// login profile's PATH puts the system's git ahead of Sikemux's.
+pub fn session_meta(provider: &str) -> Option<Meta> {
+    let plugin = shim::grok_plugin().filter(|_| provider == "grok")?;
+    let mut meta = Meta::new();
+    meta.insert("pluginDirs".into(), json!([plugin]));
+    Some(meta)
 }
-
-/// `session/new` answered as raw JSON. The typed answer drops the model list
-/// Hermes sends, which the schema only knows as unstable.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "session/new", response = SessionSetup)]
-#[serde(transparent)]
-pub struct NewSession(pub NewSessionRequest);
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "session/load", response = SessionSetup)]
-#[serde(transparent)]
-pub struct LoadSession(pub LoadSessionRequest);
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-#[serde(transparent)]
-pub struct SessionSetup(pub Value);
 
 /// Hermes lists its models beside the session instead of as a config option,
 /// and changes them through `session/set_model`.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "session/set_model", response = SetSessionModelResponse)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSessionModel {
     pub session_id: String,
     pub model_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-pub struct SetSessionModelResponse {
-    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Value>,
+impl SetSessionModel {
+    pub const METHOD: &str = "session/set_model";
 }
 
 /// Whether the model picker has to be built from the session's model list.
@@ -75,26 +54,16 @@ pub fn models_outside_config(setup: &Value) -> bool {
 /// sends, so the chat's model picker reads it the same way.
 pub fn model_config(setup: &Value, current: &str) -> Option<Value> {
     let models = setup.pointer("/models/availableModels")?.as_array()?;
-    let options = models
+    let choices = models
         .iter()
         .filter_map(|model| {
             let value = model.get("modelId")?.as_str()?;
             let name = model.get("name").and_then(Value::as_str).unwrap_or(value);
-            let mut option = json!({ "value": value, "name": name });
-            if let Some(description) = model.get("description").and_then(Value::as_str) {
-                option["description"] = json!(description);
-            }
-            Some(option)
+            let description = model.get("description").and_then(Value::as_str);
+            Some(pickers::choice(value, name, description))
         })
-        .collect::<Vec<_>>();
-    Some(json!({
-        "id": "model",
-        "name": "Model",
-        "category": "model",
-        "type": "select",
-        "currentValue": current,
-        "options": options,
-    }))
+        .collect();
+    Some(pickers::model_select(None, current, choices))
 }
 
 /// Folds the model list into the config options, so the setup reads the same
@@ -116,14 +85,6 @@ pub fn with_model_config(mut setup: Value) -> Value {
         None => setup["configOptions"] = json!([model]),
     }
     setup
-}
-
-fn config_option(setup: &Value, matches: impl Fn(&Value) -> bool) -> Option<&Value> {
-    setup
-        .get("configOptions")?
-        .as_array()?
-        .iter()
-        .find(|option| matches(option))
 }
 
 /// The id of the option that sets how hard the model thinks. Agents name it
@@ -236,20 +197,5 @@ mod tests {
             { "name": "OpenAI", "options": [{ "value": "openai/gpt" }] },
         ] }] });
         assert!(offers(&setup, "model", "openai/gpt"));
-    }
-
-    #[test]
-    fn approval_lets_one_call_through() {
-        let options = vec![
-            PermissionOption::new("always", "Always", PermissionOptionKind::AllowAlways),
-            PermissionOption::new("once", "Once", PermissionOptionKind::AllowOnce),
-            PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
-        ];
-        assert_eq!(approval(&options).unwrap().option_id.to_string(), "once");
-        assert_eq!(
-            approval(&options[..1]).unwrap().option_id.to_string(),
-            "always"
-        );
-        assert!(approval(&options[2..]).is_none());
     }
 }

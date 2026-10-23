@@ -8,12 +8,13 @@ import type { TerminalSearchOptions } from "./interactions";
 import { TerminalFindBar } from "./TerminalFindBar";
 import { TerminalContextMenu } from "./TerminalContextMenu";
 import type { PtyContext, PtyDirectCommand } from "../state/types";
-import { applyPtyShellMetadataEvent, type PtyShellMetadataEvent } from "../api/ptyShell";
+import { applyPtyShellMetadataEvent, ptyShellAtPrompt, type PtyShellMetadataEvent } from "../api/ptyShell";
 import type { PtyShellMetadataSnapshot } from "./ptyController";
 import { basename } from "../lib/paths";
 import { SendToAgentMenu } from "../agents/SendToAgentMenu";
 import { getState } from "../state/store";
 import { terminalName, terminalSelectionDelivery } from "./selectionDelivery";
+import { swallow } from "../state/toast";
 
 export const TERMINAL_RENDERER_RETENTION = Object.freeze({ keepaliveMs: 15_000, maxHidden: 3 });
 const hiddenRendererEvictions = new Map<symbol, () => void>();
@@ -29,42 +30,49 @@ function enforceHiddenRendererBudget() {
 export function TerminalPane({
     cwd,
     startup,
+    reconnect,
     directCommand,
     initialDropPaths,
     initialInput,
+    initialDraft,
     onInitialInputDelivered,
     active,
     visible = active,
     spawnWhen = visible,
     context,
-    externallyOwned = false,
+    taskTerminalKey,
     retainPtyOnUnmount = false,
     resumePtyId,
     onPtySession,
-    onTitleChange,
     onExit,
+    host,
 }: {
     cwd?: string;
     startup?: string;
+    /** Typed in when the pane becomes active and its shell sits at the prompt, such as after SSH gave up. */
+    reconnect?: string;
     directCommand?: PtyDirectCommand;
     /** Native file drops replayed before the first submitted task. */
     initialDropPaths?: readonly string[];
     /** First submitted task for interactive CLIs without an argv prompt. */
     initialInput?: string;
+    /** Pasted at the program's prompt once it starts, and never submitted. */
+    initialDraft?: string;
     onInitialInputDelivered?: () => void;
     active: boolean;
     visible?: boolean;
     spawnWhen?: boolean;
     context?: PtyContext;
-    /** Borrow a task-owned PTY bound to this pane instead of spawning a shell. */
-    externallyOwned?: boolean;
+    /** Show the process of the task run behind this key instead of spawning a shell. */
+    taskTerminalKey?: string;
     /** Item controllers set this; transient/embedded terminals remain local. */
     retainPtyOnUnmount?: boolean;
     /** The terminal this pane showed before the app last closed, taken back if it still runs. */
     resumePtyId?: number;
+    /** Another host the app joined, which runs the terminal. */
+    host?: string;
     /** Hears which terminal this pane shows, so it can be found again after a restart. */
     onPtySession?: (id: number) => void;
-    onTitleChange?: (title: string) => void;
     /** Fires when the shell process ends. Remount with a fresh key to respawn. */
     onExit?: () => void;
 }) {
@@ -78,9 +86,7 @@ export function TerminalPane({
     const [shellMetadata, setShellMetadata] = useState<PtyShellMetadataSnapshot | null>(null);
     const hostRef = useRef<HTMLDivElement>(null);
     const rendererTokenRef = useRef(Symbol("terminal-renderer"));
-    const titleChangeRef = useRef(onTitleChange);
-    titleChangeRef.current = onTitleChange;
-    const shellIntegration = !externallyOwned && context?.shellIntegration === true;
+    const shellIntegration = !taskTerminalKey && context?.shellIntegration === true;
     const applyShellEvent = useCallback((event: PtyShellMetadataEvent) => {
         setShellMetadata((current) => applyPtyShellMetadataEvent(current, event));
     }, []);
@@ -96,25 +102,38 @@ export function TerminalPane({
         directCommand,
         initialDropPaths,
         initialInput,
+        initialDraft,
         onInitialInputDelivered,
         hostRef,
         spawnWhen,
         context,
-        externallyOwned,
+        taskTerminalKey,
         onShellMetadata: shellIntegration ? applyShellEvent : undefined,
         durableItemId: retainPtyOnUnmount ? context?.paneId : undefined,
         resumePtyId,
         onPtySession,
+        host,
     });
+
+    useEffect(() => {
+        const controller = ptyController.current;
+        if (!active || !reconnect || controller?.getSnapshot().status !== "running") return;
+        let cancelled = false;
+        void controller
+            .start()
+            .then(ptyShellAtPrompt)
+            .then((atPrompt) => {
+                if (atPrompt && !cancelled) return controller.write(`${reconnect}\r`);
+            })
+            .catch(swallow("reconnect at the prompt"));
+        return () => {
+            cancelled = true;
+        };
+    }, [active, reconnect, ptyController]);
 
     useEffect(() => {
         if (!shellIntegration) setShellMetadata(null);
     }, [shellIntegration]);
-
-    useEffect(() => {
-        if (!shellIntegration || !shellMetadata?.cwd) return;
-        titleChangeRef.current?.(basename(shellMetadata.cwd));
-    }, [shellIntegration, shellMetadata?.cwd]);
 
     useEffect(() => {
         const token = rendererTokenRef.current;
@@ -150,7 +169,6 @@ export function TerminalPane({
             setFindOpen(true);
         },
         onSearchResults: setFindResult,
-        onTitleChange,
         onShellMetadata: shellIntegration ? applyShellSnapshot : undefined,
         onExit,
     });

@@ -1,6 +1,18 @@
+import { coreCall } from "./core";
+import { onCoreChanged } from "./coreChanged";
 import { invokeCommand as invoke } from "./invoke";
+import type { IpcUnsubscribe } from "./transport";
 import type { AgentRuntimeProfile } from "../agents/agentProfiles";
-import type { AgentEffort, AgentType } from "../state/types";
+import type { AccountAgentType } from "../agents/catalog";
+import type { AgentEffort, AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
+
+/** Whether an agent can be used right now; `unknown` when its CLI has no way to say if it is signed in. */
+export type AgentStatus =
+    | { state: "missing" }
+    | { state: "broken"; reason: string }
+    | { state: "signedOut" }
+    | { state: "ready"; account: string | null }
+    | { state: "unknown" };
 
 export interface AgentInfo {
     type: AgentType;
@@ -15,12 +27,7 @@ export interface AgentInfo {
     defaultModel: string | null;
     /** Effective reasoning effort inherited from the CLI's own user configuration. */
     defaultEffort: AgentEffort | null;
-}
-
-export interface AgentModelInfo {
-    /** Full identifier accepted by the CLI's --model flag. */
-    id: string;
-    label: string;
+    status?: AgentStatus;
 }
 
 export interface AgentSession {
@@ -50,6 +57,8 @@ export interface RecentChat extends AgentSession {
     agent: AgentType;
     /** The project folder the chat ran in. */
     project: string;
+    /** The worktree of the project the chat ran in, when it ran in one. */
+    cwd?: string;
 }
 
 export interface RecentChatsPage {
@@ -72,12 +81,20 @@ export interface AgentUsage {
     unavailableReason?: string | null;
 }
 
-/** A provider-scoped history result. Errors intentionally stay opaque to UI code. */
-export type AgentSessionProviderResult =
-    { provider: AgentInfo; status: "success"; sessions: AgentSession[] } | { provider: AgentInfo; status: "error"; sessions: [] };
+/** The person's agent accounts, as the core keeps them. */
+export interface AgentAccountBook {
+    profiles: ProviderProfile[];
+    selected: ProviderProfileSelection;
+    /** Whether a chat moves to the next signed-in account at a usage limit, by provider. */
+    autoSwitch: Partial<Record<AccountAgentType, boolean>>;
+}
 
 const inflight = new Map<string, Promise<AgentSession[]>>();
-const HISTORY_TIMEOUT_MS = 8_000;
+
+/** One of the core's calls about the person's agent accounts. */
+function accountCall<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    return coreCall<T>(method, params);
+}
 
 function key(agent: string, cwd: string, configPath?: string) {
     return `${agent}\0${cwd}\0${configPath ?? ""}`;
@@ -91,60 +108,92 @@ async function fetchSessions(agent: string, cwd: string, configPath?: string): P
     const k = key(agent, cwd, configPath);
     const existing = inflight.get(k);
     if (existing) return existing;
-    const p = invoke<AgentSession[]>("agent_sessions", { agent, cwd, configPath }).finally(() => {
+    const p = coreCall<AgentSession[]>("savedSessions", { agent, cwd, configPath }).finally(() => {
         inflight.delete(k);
     });
     inflight.set(k, p);
     return p;
 }
 
-async function fetchSessionResults(providers: readonly AgentInfo[], cwd: string): Promise<AgentSessionProviderResult[]> {
-    return Promise.all(
-        providers.map(async (provider): Promise<AgentSessionProviderResult> => {
-            try {
-                let timer: ReturnType<typeof setTimeout> | undefined;
-                const timeout = new Promise<never>((_resolve, reject) => {
-                    timer = setTimeout(() => reject(new Error("agent history timed out")), HISTORY_TIMEOUT_MS);
-                });
-                const sessions = await Promise.race([fetchSessions(provider.type, cwd, provider.configPath ?? undefined), timeout]).finally(() => {
-                    if (timer) clearTimeout(timer);
-                });
-                return { provider, status: "success", sessions };
-            } catch {
-                return { provider, status: "error", sessions: [] };
-            }
-        }),
-    );
+/** Who one account is signed in as, in the agent's own words. */
+export interface AgentAccountStatus {
+    signedIn: boolean;
+    /** The person's own name on the account, where the agent keeps one. */
+    name: string | null;
+    email: string | null;
+    plan: string | null;
+    organization: string | null;
+    /** `subscription`, `apiKey`, or whatever else the CLI signs in with. */
+    method: string | null;
+    /** Where the account keeps its chats: accounts that share it can take over each other's chats. */
+    sessions: string | null;
 }
 
-/** One session Claude Code is running now, as it reports itself. */
-export interface LiveAgentSession {
-    sessionId: string;
-    /** `busy`, `waiting`, `shell`, or `idle` — anything but `idle` still has something going. */
-    status: string;
-}
-
-/** How full a saved session's context window was. Claude does not record the window's size. */
-export interface SavedSessionContext {
-    used: number;
-    size: number | null;
+/** The page a running sign-in opened, for when the browser did not. */
+export interface AgentSignInPage {
+    agent: AgentType;
+    configPath: string | null;
+    url: string;
 }
 
 export const agentApi = {
     available: fetchAvailable,
-    models: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentModelInfo[]> =>
-        invoke<AgentModelInfo[]>("agent_models", { agent, executablePath, configPath }),
-    usage: (agent: AgentType, executablePath?: string, configPath?: string): Promise<AgentUsage> =>
-        invoke<AgentUsage>("agent_usage", { agent, executablePath, configPath }),
+    /** The accounts the core keeps; `null` until the app first gives it some. */
+    accounts: (): Promise<AgentAccountBook | null> => accountCall("agentAccounts"),
+    /** Keeps the account, in place of the one with its id; each of these answers with the accounts as they are now. */
+    saveAccount: (profile: ProviderProfile): Promise<AgentAccountBook> => accountCall("saveAgentAccount", { profile }),
+    removeAccount: (id: string): Promise<AgentAccountBook> => accountCall("removeAgentAccount", { id }),
+    /** Makes the account the one `provider` runs on, and moves its open chats there. */
+    selectAccount: (provider: AgentType, id: string): Promise<AgentAccountBook> => accountCall("selectAgentAccount", { provider, id }),
+    setAutoSwitch: (provider: AgentType, on: boolean): Promise<AgentAccountBook> => accountCall("setAccountAutoSwitch", { provider, on }),
+    /** Forgets every agent's status, so the next look asks each one again. */
+    refreshStatuses: (): Promise<void> => accountCall("forgetAgentStatus"),
+    /** Forgets one account's sign-in and usage, after they changed. */
+    forgetAccount: (agent: AgentType, configPath?: string): Promise<void> => accountCall("forgetAgentStatus", { provider: agent, configPath }),
+    markSignedOut: (agent: AgentType, configPath?: string): Promise<void> => accountCall("markAgentSignedOut", { provider: agent, configPath }),
+    usage: (agent: AgentType, configPath?: string): Promise<AgentUsage> => accountCall("agentUsage", { provider: agent, configPath }),
+    account: (agent: AgentType, configPath?: string): Promise<AgentAccountStatus> =>
+        accountCall("agentAccountStatus", { provider: agent, configPath }),
+    addAccount: (agent: AgentType, name: string): Promise<string> => accountCall("addAgentAccount", { provider: agent, name }),
+    /** Stops a chat a usage limit stopped from sending its prompt again once the limit resets. */
+    cancelResume: (agentId: string): Promise<void> => accountCall("cancelResume", { agentId }),
+    /** Sends the prompt a failed turn stopped again. */
+    retryFailed: (agentId: string): Promise<void> => accountCall("retryFailed", { agentId }),
+    /** Asks a chat's agent to sign in by one of the methods it handles itself. */
+    authenticateChat: (agentId: string, methodId: string): Promise<void> => accountCall("authenticateChat", { agentId, methodId }),
+    /** Lets go of the prompt a failed turn stopped, so nothing sends it again. */
+    discardFailed: (agentId: string): Promise<void> => accountCall("discardFailed", { agentId }),
+    signIn: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        coreCall<void>("agentSignIn", { agent, executablePath, configPath }),
+    signInCode: (agent: AgentType, configPath: string | undefined, code: string): Promise<void> =>
+        coreCall<void>("agentSignInCode", { agent, configPath, code }),
+    cancelSignIn: (agent: AgentType, configPath?: string): Promise<void> => coreCall<void>("cancelAgentSignIn", { agent, configPath }),
+    signOut: (agent: AgentType, executablePath?: string, configPath?: string): Promise<void> =>
+        coreCall<void>("agentSignOut", { agent, executablePath, configPath }),
+    /** Each page a sign-in on the host opens, once, for when the person is not at the host's browser. */
+    onSignInPage: (listener: (page: AgentSignInPage) => void, signal?: AbortSignal): Promise<IpcUnsubscribe> => {
+        const shown = new Set<string>();
+        const read = () =>
+            coreCall<AgentSignInPage[]>("agentSignIns").then(
+                (pages) => {
+                    for (const page of pages) {
+                        if (shown.has(page.url) || signal?.aborted) continue;
+                        shown.add(page.url);
+                        listener(page);
+                    }
+                },
+                () => {},
+            );
+        const stop = onCoreChanged("agentSignIn", () => void read());
+        signal?.addEventListener("abort", stop, { once: true });
+        return Promise.resolve(stop);
+    },
     sessions: fetchSessions,
-    recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => invoke<RecentChatsPage>("agent_recent_sessions", { request }),
-    sessionContext: (agent: AgentType, cwd: string, sessionId: string, configPath?: string): Promise<SavedSessionContext | null> =>
-        invoke<SavedSessionContext | null>("agent_session_context", { agent, cwd, sessionId, configPath }),
+    recent: (request: RecentChatsRequest): Promise<RecentChatsPage> => coreCall<RecentChatsPage>("recentSessions", { request }),
     renameSession: (agent: AgentType, cwd: string, sessionId: string, title: string, executablePath?: string, configPath?: string): Promise<void> =>
-        invoke<void>("agent_session_rename", { agent, cwd, sessionId, title, executablePath, configPath }),
-    sessionResults: fetchSessionResults,
-    watchStart: (agent: AgentType, cwd: string, configPath?: string): Promise<number> =>
-        invoke<number>("agent_sessions_watch_start", { agent, cwd, configPath }),
-    watchStop: (id: number): Promise<void> => invoke<void>("agent_sessions_watch_stop", { id }),
-    liveSessions: (configPath?: string): Promise<LiveAgentSession[]> => invoke<LiveAgentSession[]>("live_agent_sessions", { configPath }),
+        coreCall<void>("renameSession", { agent, cwd, sessionId, title, executablePath, configPath }),
+    deleteSession: (agent: AgentType, cwd: string, sessionId: string, executablePath?: string, configPath?: string): Promise<void> =>
+        coreCall<void>("deleteSession", { agent, cwd, sessionId, executablePath, configPath }),
+    relocateSession: (agent: AgentType, fromCwd: string, toCwd: string, sessionId: string, configPath?: string): Promise<void> =>
+        coreCall<void>("relocateSession", { agent, fromCwd, toCwd, sessionId, configPath }),
 };

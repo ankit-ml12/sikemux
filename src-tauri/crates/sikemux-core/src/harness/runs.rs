@@ -78,6 +78,11 @@ pub struct Run {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// When its process started, in Unix milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
     #[serde(skip)]
     pub agent_id: Option<String>,
     #[serde(skip)]
@@ -100,6 +105,8 @@ impl Run {
             signal: None,
             error: None,
             preview_url: None,
+            cwd: None,
+            started_at: None,
             agent_id: None,
             launch_spec: None,
             launch: Launch::Pending,
@@ -130,6 +137,8 @@ pub struct RunRecord {
     pub signal: Option<String>,
     pub error: Option<String>,
     pub preview_url: Option<String>,
+    pub cwd: Option<String>,
+    pub started_at: Option<u64>,
     pub agent_id: Option<String>,
     pub launch_spec: Option<CommandLaunch>,
     pub launch: Launch,
@@ -150,6 +159,8 @@ impl From<&Run> for RunRecord {
             signal: run.signal,
             error: run.error,
             preview_url: run.preview_url,
+            cwd: run.cwd,
+            started_at: run.started_at,
             agent_id: run.agent_id,
             launch_spec: run.launch_spec,
             launch: run.launch,
@@ -171,6 +182,8 @@ impl From<RunRecord> for Run {
             signal: record.signal,
             error: record.error,
             preview_url: record.preview_url,
+            cwd: record.cwd,
+            started_at: record.started_at,
             agent_id: record.agent_id,
             launch_spec: record.launch_spec,
             launch: record.launch,
@@ -230,6 +243,14 @@ impl Runs {
         self.runs
             .iter_mut()
             .find(|run| run.execution_id == execution_id)
+    }
+
+    pub fn all(&self) -> &[Run] {
+        &self.runs
+    }
+
+    pub fn by_pty(&self, pty_id: u64) -> Option<&Run> {
+        self.runs.iter().find(|run| run.pty_id == Some(pty_id))
     }
 
     pub fn by_pty_mut(&mut self, pty_id: u64) -> Option<&mut Run> {

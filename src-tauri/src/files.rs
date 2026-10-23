@@ -6,15 +6,18 @@
 //   would hide them. Instead we use a fixed denylist of well-known build /
 //   dependency / cache directories.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use dashmap::DashMap;
 use ignore::WalkBuilder;
 use serde::Serialize;
+use sikemux_process::sync::Locked;
+
+pub(crate) use sikemux_core::git::watch::{repo_key as canonical_repo_key, should_skip_dir};
 
 use crate::observability::{global_observability, Metadata, ScalarValue, SpanOutcome};
 
@@ -30,7 +33,6 @@ const MAX_PROJECT_FILES: usize = 250_000;
 // allocated without limit.
 const MAX_PROJECT_SNAPSHOT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_PROJECT_ENCODED_PATH_BYTES: usize = MAX_PROJECT_SNAPSHOT_BYTES - 1024;
-pub(crate) const MAX_REPO_PATH_BYTES: usize = 4 * 1024;
 const MAX_PROJECT_CACHE_ENTRIES: usize = 128;
 const FULL_SCAN_SLOW_THRESHOLD: Duration = Duration::from_millis(100);
 const INCREMENTAL_SLOW_THRESHOLD: Duration = Duration::from_millis(16);
@@ -59,110 +61,46 @@ impl ProjectCache {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, Option<Entry>> {
-        match self.entry.lock() {
-            Ok(entry) => entry,
-            Err(poisoned) => poisoned.into_inner(),
-        }
-    }
-
     fn touch(&self) {
         self.last_used.store(next_cache_access(), Ordering::Release);
     }
 }
 
-fn cache() -> &'static DashMap<String, Arc<ProjectCache>> {
-    static CACHE: OnceLock<DashMap<String, Arc<ProjectCache>>> = OnceLock::new();
-    CACHE.get_or_init(DashMap::new)
-}
+type ProjectCaches = Mutex<HashMap<String, Arc<ProjectCache>>>;
 
-fn cache_admission_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+fn cache() -> &'static ProjectCaches {
+    static CACHE: OnceLock<ProjectCaches> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
 }
 
 fn next_cache_access() -> u64 {
     NEXT_CACHE_ACCESS.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Canonical repository identity shared by snapshots and native watchers.
-/// Raw aliases remain a frontend routing concern; retaining only this key keeps
-/// symlinks, `.` components, and trailing separators from multiplying native
-/// cache/watcher ownership.
-pub(crate) fn canonical_repo_key(repo: &str) -> Result<String, String> {
-    if repo.is_empty()
-        || repo.len() > MAX_REPO_PATH_BYTES
-        || repo.contains('\0')
-        || !Path::new(repo).is_absolute()
-    {
-        return Err(format!(
-            "repository path must be an absolute path of at most {MAX_REPO_PATH_BYTES} bytes"
-        ));
-    }
-    let canonical = std::fs::canonicalize(repo)
-        .map_err(|error| format!("canonicalize repository path: {error}"))?;
-    if !canonical.is_dir() {
-        return Err("repository path is not a directory".into());
-    }
-    let canonical = canonical
-        .into_os_string()
-        .into_string()
-        .map_err(|_| "canonical repository path is not valid UTF-8".to_string())?;
-    if canonical.len() > MAX_REPO_PATH_BYTES {
-        return Err(format!(
-            "canonical repository path exceeds {MAX_REPO_PATH_BYTES} bytes"
-        ));
-    }
-    Ok(canonical)
-}
-
-fn evict_one_idle_project_cache_from(caches: &DashMap<String, Arc<ProjectCache>>) -> bool {
-    let mut candidates = caches
+/// Lookups clone a cell's `Arc` only while holding the map's lock, so under it
+/// a count of one means nobody is using the cell.
+fn evict_one_idle_project_cache_from(caches: &mut HashMap<String, Arc<ProjectCache>>) -> bool {
+    let idle = caches
         .iter()
-        .map(|entry| {
-            (
-                entry.value().last_used.load(Ordering::Acquire),
-                entry.key().clone(),
-            )
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    for (_, key) in candidates {
-        // A concurrent lookup holds the DashMap shard while cloning the Arc.
-        // `remove_if` therefore observes its strong reference before deciding;
-        // only the map-owned, fully idle cell can be evicted.
-        if caches
-            .remove_if(&key, |_, project| Arc::strong_count(project) == 1)
-            .is_some()
-        {
-            return true;
-        }
-    }
-    false
+        .filter(|(_, project)| Arc::strong_count(project) == 1)
+        .min_by_key(|(_, project)| project.last_used.load(Ordering::Acquire))
+        .map(|(key, _)| key.clone());
+    idle.is_some_and(|key| caches.remove(&key).is_some())
 }
 
 fn project_cache_from(
-    caches: &DashMap<String, Arc<ProjectCache>>,
-    admission_lock: &Mutex<()>,
+    caches: &ProjectCaches,
     repo: &str,
     capacity: usize,
 ) -> Result<Arc<ProjectCache>, String> {
-    if let Some(project) = caches.get(repo) {
-        let project = project.clone();
-        project.touch();
-        return Ok(project);
-    }
-
-    let _admission = admission_lock
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut caches = caches.locked();
     if let Some(project) = caches.get(repo) {
         let project = project.clone();
         project.touch();
         return Ok(project);
     }
     while caches.len() >= capacity {
-        if !evict_one_idle_project_cache_from(caches) {
+        if !evict_one_idle_project_cache_from(&mut caches) {
             return Err(format!(
                 "project file cache is busy at its {capacity}-project safety limit"
             ));
@@ -174,58 +112,7 @@ fn project_cache_from(
 }
 
 fn project_cache(repo: &str) -> Result<Arc<ProjectCache>, String> {
-    project_cache_from(
-        cache(),
-        cache_admission_lock(),
-        repo,
-        MAX_PROJECT_CACHE_ENTRIES,
-    )
-}
-
-/// Explicit invalidation keeps compatibility with callers that need the next
-/// read to be a complete scan. The per-project lock object is retained so an
-/// in-flight scan and invalidation cannot split across different cache cells.
-pub fn invalidate(repo: &str) {
-    if let Some(project) = cache().get(repo) {
-        *project.lock() = None;
-    }
-}
-
-// Directories we never descend into. Keep this list conservative — anything
-// here is permanently invisible to the file palette.
-pub fn should_skip_dir(name: &str) -> bool {
-    matches!(
-        name,
-        // dependency / package managers
-        "node_modules" | "bower_components" | "vendor"
-        | ".pnpm-store" | ".yarn" | ".npm" | ".pnpm" | ".bun" | ".deno"
-        // VCS
-        | ".git" | ".hg" | ".svn"
-        // build outputs (js / rust / generic)
-        | "target" | "dist" | "build" | "out" | "_build"
-        | ".next" | ".nuxt" | ".svelte-kit" | ".vercel" | ".turbo" | ".astro"
-        | ".output"
-        // caches (js / generic)
-        | ".cache" | ".parcel-cache" | ".eslintcache" | ".vite"
-        | "coverage" | ".nyc_output"
-        // go
-        | ".gocache" | ".go-cache" | "gocache" | "go-build"
-        // rust
-        | ".cargo" | ".rustup"
-        // python
-        | ".venv" | "venv" | ".env_venv" | "__pycache__"
-        | ".pytest_cache" | ".mypy_cache" | ".ruff_cache" | ".tox"
-        // jvm / scala
-        | ".gradle" | ".m2" | ".bloop" | ".metals" | ".bsp"
-        // infra / cloud
-        | ".terraform" | ".serverless" | ".firebase" | ".vagrant"
-        // ios / xcode
-        | "Pods" | "Carthage" | "DerivedData" | "xcuserdata"
-        // editor / OS junk
-        | ".idea" | ".vscode-test" | ".DS_Store"
-        // cmake / clion
-        | "cmake-build-debug" | "cmake-build-release"
-    )
+    project_cache_from(cache(), repo, MAX_PROJECT_CACHE_ENTRIES)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -242,16 +129,6 @@ impl Entry {
             files: (*self.files).clone(),
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum WatcherChange {
-    /// Reconcile the current on-disk type: insert a file, replace a directory
-    /// subtree, or remove a path which no longer exists.
-    Reconcile(PathBuf),
-    /// Remove the exact path and any cached descendants without consulting a
-    /// potentially reused on-disk rename source.
-    Remove(PathBuf),
 }
 
 enum FullScanReason {
@@ -424,7 +301,7 @@ fn full_scan_locked_with_limits(
             encoded_path_bytes,
         } => (files, encoded_path_bytes),
         LimitedWalk::LimitExceeded => {
-            let _ = observer.increment_counter("files.full_scan.limit_errors", 1);
+            observer.increment_counter("files.full_scan.limit_errors", 1);
             timer.finish(SpanOutcome::Error);
             return Err(format!(
                 "project file snapshot exceeds its {}-file or {}-byte safety limit",
@@ -432,7 +309,7 @@ fn full_scan_locked_with_limits(
             ));
         }
         LimitedWalk::Unreliable => {
-            let _ = observer.increment_counter("files.full_scan.read_errors", 1);
+            observer.increment_counter("files.full_scan.read_errors", 1);
             timer.finish(SpanOutcome::Error);
             return Err("project file snapshot could not be read reliably".into());
         }
@@ -445,7 +322,7 @@ fn full_scan_locked_with_limits(
     };
     *slot = Some(entry.clone());
 
-    let _ = observer.increment_counter("files.full_scans", 1);
+    observer.increment_counter("files.full_scans", 1);
     observer.set_gauge("files.full_scan.last_file_count", entry.files.len() as f64);
     observer.set_gauge(
         "files.full_scan.last_encoded_path_bytes",
@@ -475,7 +352,7 @@ fn full_scan_locked(
 fn snapshot_for_key_blocking(repo: &str) -> Result<ProjectFilesSnapshot, String> {
     let project = project_cache(repo)?;
     let entry = {
-        let mut slot = project.lock();
+        let mut slot = project.entry.locked();
         if let Some(entry) = slot.as_ref() {
             if entry.full_scan_at.elapsed() < TTL {
                 entry.clone()
@@ -503,15 +380,6 @@ pub async fn list_project_files_snapshot(repo: String) -> Result<ProjectFilesSna
         .await
         .map_err(|error| format!("walk join: {error}"))
         .and_then(|snapshot| snapshot)
-}
-
-/// Compatibility command for the current frontend. New callers can use
-/// [`list_project_files_snapshot`] to avoid processing unchanged scan IDs.
-#[tauri::command]
-pub async fn list_project_files(repo: String) -> Result<Vec<String>, String> {
-    list_project_files_snapshot(repo)
-        .await
-        .map(|snapshot| snapshot.files)
 }
 
 fn normalized_relative(repo_root: &Path, path: &Path) -> Result<Option<PathBuf>, ()> {
@@ -663,24 +531,42 @@ fn fallback_full_scan(
     timer: crate::observability::SlowOperationGuard,
 ) {
     timer.finish(SpanOutcome::Cancelled);
-    let _ = global_observability().increment_counter("files.incremental_fallbacks", 1);
+    global_observability().increment_counter("files.incremental_fallbacks", 1);
     if full_scan_locked(repo, slot, FullScanReason::WatcherFallback).is_err() {
         // Keep the previous bounded snapshot rather than replacing it with an
         // empty or partial view. The next explicit read retries and surfaces
         // the stable limit/read error to the renderer.
-        let _ = global_observability().increment_counter("files.incremental_fallback_errors", 1);
+        global_observability().increment_counter("files.incremental_fallback_errors", 1);
     }
 }
 
-/// Applies one debounced watcher batch to a cached sorted snapshot. Ambiguous,
-/// outside-root, oversized, or unreadable changes fall back to one full scan.
-/// A missing cache remains missing so the next command performs its normal
-/// complete scan rather than doing duplicate work in the watcher task.
-pub(crate) fn apply_watcher_batch(
-    repo: &str,
-    changes: Vec<WatcherChange>,
-    force_full_rescan: bool,
+/// Brings the snapshot of `project` up to date with what the core saw move in
+/// it, then runs `then`, so a page reading it again sees the change.
+pub(crate) fn moved(
+    project: String,
+    paths: Option<Vec<String>>,
+    then: impl FnOnce() + Send + 'static,
 ) {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(key) = canonical_repo_key(&project) {
+            apply_moved(&key, paths.as_deref());
+        }
+        then();
+    });
+}
+
+/// Applies the paths the core's watcher saw move to a cached sorted snapshot,
+/// or none for anything. Ambiguous, outside-root, oversized, or unreadable
+/// changes fall back to one full scan. A missing cache remains missing so the
+/// next command performs its normal complete scan rather than doing duplicate
+/// work here.
+pub(crate) fn apply_moved(repo: &str, moved: Option<&[String]>) {
+    let force_full_rescan = moved.is_none();
+    let changes: Vec<&String> = moved
+        .unwrap_or_default()
+        .iter()
+        .filter(|path| path.as_str() != sikemux_core::git::watch::GIT_STATE)
+        .collect();
     let observer = global_observability();
     let mut metadata = Metadata::new();
     metadata.insert("change_count".to_owned(), ScalarValue::from(changes.len()));
@@ -698,14 +584,14 @@ pub(crate) fn apply_watcher_batch(
     let project = match project_cache(repo) {
         Ok(project) => project,
         Err(_) => {
-            let _ = observer.increment_counter("files.incremental_cache_capacity_errors", 1);
+            observer.increment_counter("files.incremental_cache_capacity_errors", 1);
             timer.finish(SpanOutcome::Error);
             return;
         }
     };
-    let mut slot = project.lock();
+    let mut slot = project.entry.locked();
     let Some(current) = slot.as_ref().cloned() else {
-        let _ = observer.increment_counter("files.incremental_cache_misses", 1);
+        observer.increment_counter("files.incremental_cache_misses", 1);
         timer.finish(SpanOutcome::Cancelled);
         return;
     };
@@ -722,10 +608,7 @@ pub(crate) fn apply_watcher_batch(
     let mut remaining_files = MAX_INCREMENTAL_FILES;
 
     for change in changes {
-        let path = match &change {
-            WatcherChange::Reconcile(path) | WatcherChange::Remove(path) => path,
-        };
-        let relative = match normalized_relative(repo_root, path) {
+        let relative = match normalized_relative(repo_root, &repo_root.join(change)) {
             Ok(Some(relative)) => relative,
             Ok(None) => continue,
             Err(()) => {
@@ -735,10 +618,6 @@ pub(crate) fn apply_watcher_batch(
         };
         relevant_changes = relevant_changes.saturating_add(1);
         removals.push(relative.clone());
-
-        if matches!(change, WatcherChange::Remove(_)) {
-            continue;
-        }
 
         let absolute = repo_root.join(&relative);
         let metadata = match std::fs::symlink_metadata(&absolute) {
@@ -815,7 +694,7 @@ pub(crate) fn apply_watcher_batch(
     };
     *slot = Some(updated.clone());
 
-    let _ = observer.increment_counter("files.incremental_updates", 1);
+    observer.increment_counter("files.incremental_updates", 1);
     observer.set_gauge(
         "files.incremental.last_change_count",
         relevant_changes as f64,
@@ -879,28 +758,20 @@ mod tests {
         write(&temp.path().join("a.txt"), "a");
         write(&temp.path().join(".DS_Store"), "junk");
         write(&temp.path().join("target/ignored.txt"), "ignored");
-        let (repo, root) = canonical_temp_root(&temp);
+        let (repo, _) = canonical_temp_root(&temp);
 
         let first = snapshot_blocking(&repo).unwrap();
         assert_eq!(first.files, vec!["a.txt", "z.txt"]);
         assert_eq!(snapshot_blocking(&repo).unwrap().scan_id, first.scan_id);
 
         write(&temp.path().join("b.txt"), "b");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("b.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["b.txt".to_owned()]));
         let second = snapshot_blocking(&repo).unwrap();
         assert!(second.scan_id > first.scan_id);
         assert_eq!(second.files, vec!["a.txt", "b.txt", "z.txt"]);
 
         write(&temp.path().join("b.txt"), "modified");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("b.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["b.txt".to_owned()]));
         let after_modify = snapshot_blocking(&repo).unwrap();
         assert!(after_modify.scan_id > second.scan_id);
         assert_eq!(after_modify.files, second.files);
@@ -916,11 +787,7 @@ mod tests {
         let directory = root.join("nested");
         write(&directory.join("one.txt"), "one");
         write(&directory.join("deep/two.txt"), "two");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(directory.clone())],
-            false,
-        );
+        apply_moved(&repo, Some(&["nested".to_owned()]));
         let after_directory = snapshot_blocking(&repo).unwrap();
         assert!(after_directory.scan_id > initial.scan_id);
         assert_eq!(
@@ -931,16 +798,12 @@ mod tests {
         let old = root.join("old.txt");
         let renamed = root.join("renamed.txt");
         std::fs::rename(&old, &renamed).unwrap();
-        apply_watcher_batch(
+        apply_moved(
             &repo,
-            vec![
-                WatcherChange::Remove(old),
-                WatcherChange::Reconcile(renamed),
-            ],
-            false,
+            Some(&["old.txt".to_owned(), "renamed.txt".to_owned()]),
         );
         std::fs::remove_dir_all(&directory).unwrap();
-        apply_watcher_batch(&repo, vec![WatcherChange::Remove(directory)], false);
+        apply_moved(&repo, Some(&["nested".to_owned()]));
 
         let final_snapshot = snapshot_blocking(&repo).unwrap();
         assert!(final_snapshot.scan_id > after_directory.scan_id);
@@ -950,23 +813,18 @@ mod tests {
     #[test]
     fn outside_path_and_forced_batches_use_full_scan_fallback() {
         let temp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
         write(&temp.path().join("initial.txt"), "initial");
         let (repo, _root) = canonical_temp_root(&temp);
         let initial = snapshot_blocking(&repo).unwrap();
 
         write(&temp.path().join("missed.txt"), "missed");
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(outside.path().join("outside.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["../outside.txt".to_owned()]));
         let after_outside = snapshot_blocking(&repo).unwrap();
         assert!(after_outside.scan_id > initial.scan_id);
         assert_eq!(after_outside.files, vec!["initial.txt", "missed.txt"]);
 
         write(&temp.path().join("forced.txt"), "forced");
-        apply_watcher_batch(&repo, Vec::new(), true);
+        apply_moved(&repo, None);
         let after_forced = snapshot_blocking(&repo).unwrap();
         assert!(after_forced.scan_id > after_outside.scan_id);
         assert_eq!(
@@ -979,63 +837,33 @@ mod tests {
     fn cache_miss_defers_work_until_the_next_snapshot() {
         let temp = tempfile::tempdir().unwrap();
         write(&temp.path().join("one.txt"), "one");
-        let (repo, root) = canonical_temp_root(&temp);
+        let (repo, _) = canonical_temp_root(&temp);
 
-        invalidate(&repo);
-        apply_watcher_batch(
-            &repo,
-            vec![WatcherChange::Reconcile(root.join("one.txt"))],
-            false,
-        );
+        apply_moved(&repo, Some(&["one.txt".to_owned()]));
         let snapshot = snapshot_blocking(&repo).unwrap();
         assert_eq!(snapshot.files, vec!["one.txt"]);
         assert!(snapshot.scan_id > 0);
     }
 
     #[test]
-    fn canonical_repo_keys_collapse_aliases_and_bound_input() {
-        let temp = tempfile::tempdir().unwrap();
-        let canonical = canonical_repo_key(temp.path().to_string_lossy().as_ref()).unwrap();
-        let dotted = temp.path().join(".");
-        assert_eq!(
-            canonical_repo_key(dotted.to_string_lossy().as_ref()).unwrap(),
-            canonical
-        );
-        assert!(canonical_repo_key("relative/repo").is_err());
-        assert!(canonical_repo_key(&format!("/{}", "x".repeat(MAX_REPO_PATH_BYTES))).is_err());
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::symlink;
-
-            let parent = tempfile::tempdir().unwrap();
-            let alias = parent.path().join("repo-alias");
-            symlink(temp.path(), &alias).unwrap();
-            assert_eq!(
-                canonical_repo_key(alias.to_string_lossy().as_ref()).unwrap(),
-                canonical
-            );
-        }
-    }
-
-    #[test]
     fn project_cache_cap_evicts_only_idle_cells() {
-        let caches = DashMap::new();
-        let admission = Mutex::new(());
-        let first = project_cache_from(&caches, &admission, "first", 2).unwrap();
-        let second = project_cache_from(&caches, &admission, "second", 2).unwrap();
+        let caches = ProjectCaches::default();
+        let first = project_cache_from(&caches, "first", 2).unwrap();
+        let second = project_cache_from(&caches, "second", 2).unwrap();
 
         // Both cells have active borrowers, so admitting a third cannot split an
         // in-flight scan/invalidation across a replacement lock cell.
-        assert!(project_cache_from(&caches, &admission, "third", 2).is_err());
-        assert_eq!(caches.len(), 2);
+        assert!(project_cache_from(&caches, "third", 2).is_err());
+        assert_eq!(caches.locked().len(), 2);
 
         drop(first);
-        let third = project_cache_from(&caches, &admission, "third", 2).unwrap();
-        assert!(!caches.contains_key("first"));
-        assert!(caches.contains_key("second"));
-        assert!(caches.contains_key("third"));
-        assert_eq!(caches.len(), 2);
+        let third = project_cache_from(&caches, "third", 2).unwrap();
+        let held = caches.locked();
+        assert!(!held.contains_key("first"));
+        assert!(held.contains_key("second"));
+        assert!(held.contains_key("third"));
+        assert_eq!(held.len(), 2);
+        drop(held);
 
         drop(second);
         drop(third);

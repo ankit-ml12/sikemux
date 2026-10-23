@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AgentInfo } from "../api/agents";
 import type { Agent, Session, Window } from "../state/types";
-import { agentChoices, codeFence, nearestProjectSessionId, projectSessionForCwd, sessionOfPane } from "./agentTargets";
+import { agentChoices, codeFence, nearestProjectSessionId, projectSessionForCwd } from "./agentTargets";
 
 function agentWindow(id: string, agentId: string): Window {
     return { id, name: id, role: "agent", activePaneId: agentId, root: { type: "pane", id: agentId, cwd: "/repo", kind: "agent", title: agentId } };
 }
 
 function agent(id: string, title: string, type: Agent["type"] = "claude"): Agent {
-    return { id, type, title, startup: "" };
+    return { id, type, title };
 }
 
 function info(type: AgentInfo["type"], label: string, available = true): AgentInfo {
@@ -56,13 +56,6 @@ describe("codeFence", () => {
 
     it("outgrows any backtick run inside the text", () => {
         expect(codeFence("x ```` y")).toBe("`````\nx ```` y\n`````");
-    });
-});
-
-describe("sessionOfPane", () => {
-    it("finds the session holding the pane's window", () => {
-        expect(sessionOfPane({ ...state, sessionOrder: ["s1"] }, "a1")).toBe("s1");
-        expect(sessionOfPane({ ...state, sessionOrder: ["s1"] }, "nope")).toBeNull();
     });
 });
 

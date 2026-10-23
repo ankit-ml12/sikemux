@@ -9,19 +9,35 @@ import { Workspace, WorkspaceTabs } from "./Workspace";
 import { agentIdsOf, agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { acceptDialog, useDialogs } from "../state/dialog";
+import { draftOf, typeDraft } from "../test/draft";
 
-vi.mock("../api/acp", () => ({
-    acpApi: {
-        subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => ({ status: "missing" })),
-        start: vi.fn(async () => ({ sessionId: "session-only", capabilities: {}, setup: {} })),
-        setPermissionMode: vi.fn(async () => {}),
-        stop: vi.fn(async () => {}),
-        prompt: vi.fn(async () => {}),
-        cancel: vi.fn(async () => {}),
-        permissionReply: vi.fn(async () => {}),
-    },
-}));
+vi.mock("../api/acp", () => {
+    /* The core holds a new chat for the person, which the pane takes up by attaching once. */
+    const start = vi.fn(async () => ({ sessionId: "session-only", capabilities: {}, setup: {} }));
+    return {
+        acpApi: {
+            composing: vi.fn(async () => {}),
+            subscribe: vi.fn(async () => () => {}),
+            attach: vi.fn(async () => ({
+                status: "live",
+                start: await start(),
+                permissionMode: "workspace-write",
+                running: false,
+                turned: false,
+                feed: "feed-1",
+                olderBefore: null,
+            })),
+            startChat: vi.fn(async () => {}),
+            setPermissionMode: vi.fn(async () => {}),
+            stop: vi.fn(async () => {}),
+            prompt: vi.fn(async () => {}),
+            cancel: vi.fn(async () => {}),
+            permissionReply: vi.fn(async () => {}),
+        },
+    };
+});
+
+vi.mock("../state/workspaceSent", () => ({ workspaceSent: async () => {} }));
 
 vi.mock("../terminal/TerminalPane", () => ({
     TerminalPane: (props: ComponentProps<typeof TerminalPane>) => (
@@ -53,11 +69,6 @@ function projectWithAgent(resumable = true): string {
             id: "agent-only",
             type: "codex",
             title: "only agent",
-            startup: "codex",
-            directCommand: {
-                program: "codex",
-                args: resumable ? ["resume", "--sandbox", "workspace-write", "session-only"] : ["--sandbox", "workspace-write"],
-            },
             ...(resumable ? { resumeId: "session-only" } : {}),
             permissionMode: "workspace-write",
             launchState: "live",
@@ -72,6 +83,9 @@ function projectWithAgent(resumable = true): string {
     });
     return sessionId;
 }
+
+/* The agent's pane loads lazily, which takes longer than a second while the whole suite runs at once. */
+const LAZY_PANE_MS = 5_000;
 
 describe("workspace tab bars", () => {
     it.each([
@@ -102,16 +116,14 @@ describe("workspace tab bars", () => {
         projectWithAgent(false);
         render(<Stage />);
 
-        const toggle = await screen.findByRole("button", { name: /safe/i });
+        const toggle = await screen.findByRole("button", { name: /safe/i }, { timeout: LAZY_PANE_MS });
         await waitFor(() => expect(toggle).not.toBeDisabled());
         fireEvent.click(toggle);
 
         expect(getState().agents["agent-only"]).toMatchObject({
             permissionMode: "bypass",
-            skipPermissions: true,
-            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
         });
-        expect(await screen.findByRole("button", { name: /yolo/i })).toHaveAttribute("aria-pressed", "true");
+        expect(await screen.findByRole("button", { name: /yolo/i }, { timeout: LAZY_PANE_MS })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByTestId("terminal-agent-only")).not.toBeInTheDocument();
     });
 
@@ -120,10 +132,10 @@ describe("workspace tab bars", () => {
         render(<Stage />);
 
         await act(async () => {
-            fireEvent.click(await screen.findByRole("button", { name: "TUI" }));
+            fireEvent.click(await screen.findByRole("button", { name: "TUI" }, { timeout: LAZY_PANE_MS }));
         });
 
-        const original = await screen.findByTestId("terminal-agent-only");
+        const original = await screen.findByTestId("terminal-agent-only", {}, { timeout: LAZY_PANE_MS });
         const header = document.querySelector(".agent-surface-header") as HTMLElement;
         const toggle = within(header).getByRole("button", { name: /safe/i });
         expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -133,7 +145,6 @@ describe("workspace tab bars", () => {
 
         expect(getState().agents["agent-only"]).toMatchObject({
             permissionMode: "bypass",
-            directCommand: { program: "codex", args: ["--dangerously-bypass-approvals-and-sandbox"] },
         });
         expect(toggle).toHaveTextContent("yolo");
         expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -143,7 +154,7 @@ describe("workspace tab bars", () => {
     it("keeps the ACP session alive while its tab is hidden", async () => {
         const sessionId = projectWithAgent(false);
         render(<Stage />);
-        await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(acpApi.attach).toHaveBeenCalledTimes(1));
         await act(async () => {
             setState((state) => ({
                 sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: state.windowsBySession[sessionId][0] } },
@@ -155,7 +166,7 @@ describe("workspace tab bars", () => {
                 sessions: { ...state.sessions, [sessionId]: { ...state.sessions[sessionId], activeWindowId: agentWindowId(state, "agent-only")! } },
             }));
         });
-        expect(acpApi.start).toHaveBeenCalledTimes(1);
+        expect(acpApi.attach).toHaveBeenCalledTimes(1);
     });
 
     it("changes the harness in place before the first message and preserves the draft", async () => {
@@ -163,15 +174,15 @@ describe("workspace tab bars", () => {
         render(<Stage />);
         const editor = await screen.findByRole("textbox", { name: "Message agent" });
         await waitFor(() => expect(editor).toBeEnabled());
-        fireEvent.change(editor, { target: { value: "Keep this draft" } });
+        typeDraft(editor, "Keep this draft");
         fireEvent.click(screen.getByRole("button", { name: "Model" }));
         fireEvent.click(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ }));
-        await waitFor(() => expect(acpApi.start).toHaveBeenCalledTimes(2));
-        expect(acpApi.start).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: "agent-only", provider: "claude", resumeId: undefined }));
+        await waitFor(() => expect(acpApi.attach).toHaveBeenCalledTimes(2));
+        expect(acpApi.attach).toHaveBeenLastCalledWith("agent-only");
         expect(acpApi.stop).toHaveBeenCalledWith("agent-only");
         expect(agentIdsOf(getState(), sessionId)).toEqual(["agent-only"]);
         expect(getState().agents["agent-only"]).toMatchObject({ type: "claude", title: "Claude" });
-        expect(editor).toHaveValue("Keep this draft");
+        expect(draftOf(editor)).toBe("Keep this draft");
         expect(within(screen.getByRole("group", { name: "Agent" })).getByRole("button", { name: /Claude/ })).toHaveAttribute("aria-pressed", "true");
         expect(screen.queryByText("only agent")).not.toBeInTheDocument();
         expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);
@@ -194,7 +205,7 @@ describe("workspace tab bars", () => {
 
 describe("stage layers", () => {
     function addAgentTo(sessionId: string) {
-        setState((s) => withAgents(s, sessionId, [{ id: "agent-two", type: "codex", title: "second agent", startup: "codex", launchState: "live" }]));
+        setState((s) => withAgents(s, sessionId, [{ id: "agent-two", type: "codex", title: "second agent", launchState: "live" }]));
     }
 
     /*
@@ -229,7 +240,8 @@ describe("naming a terminal tab", () => {
 
     it("shows the given name over the terminal's own title, and can go back to it", async () => {
         const win = terminalWindow();
-        cmd.setTerminalTitle(win.activePaneId, "zsh");
+        cmd.setPanePty(win.activePaneId, 7);
+        setState({ terminalTitles: { 7: "zsh" } });
         render(<Stage />);
         expect(screen.getByRole("tab", { name: "zsh" })).toBeInTheDocument();
 
@@ -241,7 +253,7 @@ describe("naming a terminal tab", () => {
         expect(await screen.findByRole("tab", { name: "api server" })).toBeInTheDocument();
         expect(getState().windows[win.id].customName).toBe("api server");
 
-        act(() => cmd.setTerminalTitle(win.activePaneId, "vim"));
+        act(() => setState({ terminalTitles: { 7: "vim" } }));
         expect(screen.getByRole("tab", { name: "api server" })).toBeInTheDocument();
 
         fireEvent.contextMenu(screen.getByRole("tab", { name: "api server" }));
@@ -256,7 +268,7 @@ describe("naming a terminal tab", () => {
 
         fireEvent.doubleClick(screen.getByRole("tab", { name: /only agent/ }));
 
-        expect(useDialogs.getState().dialog).toMatchObject({ kind: "prompt", title: "Rename chat", initial: "only agent" });
+        expect(useDialogs.getState().dialog).toMatchObject({ kind: "prompt", title: "Edit title", initial: "only agent" });
     });
 
     it("keeps the name a duplicated tab was given", () => {

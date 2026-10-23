@@ -1,7 +1,11 @@
-import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { RunChip } from "../tasks/RunChip";
+import { useProjectRepo } from "../git/projectRepo";
+import { memo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import type { BuiltPlugin } from "../plugins/enabled";
+import { TopBarPlace } from "./TopBarPlace";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBattery } from "../hooks/useBattery";
-import { useClock } from "../hooks/useClock";
+import { useNow } from "../hooks/useNow";
 import * as cmd from "../state/commands";
 import { useResource } from "../state/resources";
 import { swallow } from "../state/toast";
@@ -9,7 +13,7 @@ import { gitOverviewR } from "../state/resources.defs";
 import { useInstalledPlugins } from "../plugins/installed";
 import { selectFocusMode } from "../state/selectors";
 import { useStore } from "../state/store";
-import { IconBattery, IconFocus, IconGit, IconMic, IconZoom } from "../ui/Icons";
+import { IconBattery, IconFocus, IconGit, IconMic } from "../ui/Icons";
 import { WorkspaceTabs } from "../workspace/Workspace";
 import { LEAVES_SETTINGS } from "../settings/leaveSettings";
 import { useVoice } from "../voice/dictation";
@@ -19,7 +23,6 @@ import { RollingText } from "../ui/RollingText";
 import { remoteRepoR } from "../codehost/project";
 import { codeHost } from "../codehost/registry";
 import { PortsChip } from "../ports/PortsChip";
-import { AccountButton } from "../account/AccountButton";
 
 const time2 = (n: number) => String(n).padStart(2, "0");
 
@@ -58,7 +61,13 @@ function twelveHour(d: Date): { h: number; m: number; ap: "am" | "pm" } {
  * reads. Asking for a status of its own made the backend do the recursive
  * untracked walk a second time on every file change, for one chip.
  */
-function GitChip({ repo }: { repo: string }) {
+/** The chip for the repository the project's Git views use, which may sit inside the project folder, with its code host's CI beside it. */
+function ProjectGitChip({ project, children }: { project: string; children?: ReactNode }) {
+    const { repo } = useProjectRepo(project);
+    return repo ? <GitChip repo={repo}>{children}</GitChip> : null;
+}
+
+function GitChip({ repo, children }: { repo: string; children?: ReactNode }) {
     const res = useResource(gitOverviewR, repo);
     const remote = useResource(remoteRepoR, repo).data ?? null;
     const host = remote ? codeHost(remote.provider) : undefined;
@@ -98,26 +107,9 @@ function GitChip({ repo }: { repo: string }) {
                     </button>
                 </Tooltip>
             </span>
+            {children}
             <span className="tb-sep" />
         </>
-    );
-}
-
-function CogIcon({ size = 15 }: { size?: number }) {
-    return (
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width={size}
-            height={size}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
     );
 }
 
@@ -125,10 +117,11 @@ function VoicePill() {
     const phase = useVoice((s) => s.phase);
     if (phase !== "listening" && phase !== "transcribing") return null;
     return (
-        <span className={`voice-pill voice-pill-${phase}`} role="status">
-            <IconMic size={11} />
-            {phase === "listening" ? "listening" : "writing"}
-        </span>
+        <Tooltip label={phase === "listening" ? "Listening" : "Writing what you said"}>
+            <span className={`voice-mic ${phase}`} role="status" aria-label={phase === "listening" ? "Listening" : "Writing what you said"}>
+                <IconMic size={14} />
+            </span>
+        </Tooltip>
     );
 }
 
@@ -136,11 +129,16 @@ function BatteryChip() {
     const batt = useBattery();
     if (!batt || batt.percent == null) return null;
     const pct = batt.percent;
-    const tone = pct <= 10 ? "danger" : pct <= 20 ? "warn" : "ok";
+    const tone = batt.charging ? "ok" : pct <= 10 ? "danger" : pct <= 20 ? "warn" : "ok";
+    const detail = batt.charging
+        ? batt.time_remaining
+            ? `charging · ${batt.time_remaining} until full`
+            : "charging"
+        : batt.time_remaining && `${batt.time_remaining} remaining`;
     return (
-        <Tooltip label={batt.time_remaining ? `${pct}% · ${batt.time_remaining} remaining` : `${pct}%${batt.charging ? " · charging" : ""}`}>
+        <Tooltip label={detail ? `${pct}% · ${detail}` : `${pct}%`}>
             <span className={`tb-batt tb-batt-${tone}${batt.charging ? " charging" : ""}`}>
-                <IconBattery size={11} percent={pct} charging={batt.charging} />
+                <IconBattery size={12} percent={pct} charging={batt.charging} />
                 <span className="tb-batt-pct">{pct}%</span>
             </span>
         </Tooltip>
@@ -148,7 +146,7 @@ function BatteryChip() {
 }
 
 function ClockChip() {
-    const now = useClock();
+    const now = new Date(useNow(true, 60_000));
     const t = twelveHour(now);
     return (
         <span className="tb-clock">
@@ -160,37 +158,30 @@ function ClockChip() {
 
 export const TopBar = memo(function TopBar() {
     const session = useStore((s) => s.sessions[s.activeSessionId]);
-    const zoomed = useStore((s) => s.zoomedPaneId != null);
     const zen = useStore(selectFocusMode);
     const focusShortcut = useShortcutLabel("view.focusMode");
-    const settingsShortcut = useShortcutLabel("settings.toggle");
     const [stripHovered, setStripHovered] = useState(false);
     const plugins = useInstalledPlugins();
 
     const isProject = !!session && session.kind === "project";
     if (!session) return null;
+    const pluginItem = ({ id, TopBarItem }: BuiltPlugin) =>
+        TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null;
 
     return (
         <header className="top-bar" onMouseDown={startWindowDragFromTopBar}>
             <div className="tb-left" />
-
-            <div className="tb-center" {...LEAVES_SETTINGS}>
-                <WorkspaceTabs />
-            </div>
+            <div className="tb-grow" />
+            <TopBarPlace />
 
             <div className="tb-right" onPointerEnter={() => setStripHovered(true)}>
                 <VoicePill />
-                {zoomed && (
-                    <span className="zoom-pill">
-                        <IconZoom size={11} />
-                        zoom
-                    </span>
+                {isProject && session.cwd && (
+                    <ProjectGitChip project={session.cwd}>{plugins.filter(({ id }) => codeHost(id)).map(pluginItem)}</ProjectGitChip>
                 )}
-                {isProject && session.cwd && <GitChip repo={session.cwd} />}
+                {isProject && session.cwd && <RunChip sessionId={session.id} project={session.cwd} />}
                 {isProject && session.cwd && <PortsChip sessionId={session.id} />}
-                {plugins.map(({ id, TopBarItem }) =>
-                    TopBarItem ? <TopBarItem key={id} projectCwd={isProject ? session.cwd || null : null} stripHovered={stripHovered} /> : null,
-                )}
+                {plugins.filter(({ id }) => !codeHost(id)).map(pluginItem)}
                 <BatteryChip />
                 <ClockChip />
                 <div className="tb-toggles">
@@ -199,14 +190,19 @@ export const TopBar = memo(function TopBar() {
                             <IconFocus size={15} />
                         </button>
                     </Tooltip>
-                    <Tooltip label={withShortcut("Settings", settingsShortcut)}>
-                        <button className="tb-btn" onClick={cmd.toggleSettings} aria-label="Settings">
-                            <CogIcon size={15} />
-                        </button>
-                    </Tooltip>
                 </div>
-                <AccountButton />
             </div>
         </header>
+    );
+});
+
+/** The project's tabs on a row of their own under the top bar, edge to edge; its empty stretch drags the window like the bar does. */
+export const TabRow = memo(function TabRow() {
+    const hasSession = useStore((s) => !!s.sessions[s.activeSessionId]);
+    if (!hasSession) return null;
+    return (
+        <div className="tab-row" onMouseDown={startWindowDragFromTopBar} {...LEAVES_SETTINGS}>
+            <WorkspaceTabs />
+        </div>
     );
 });

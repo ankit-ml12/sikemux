@@ -9,14 +9,14 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use super::diagnostics::handle_server_notification;
-use super::discovery::server_command;
-use super::limits::{clear_pending_requests, take_pending_request, PENDING_REQUEST_COUNT};
+use super::discovery::{server_command, server_env};
 use super::protocol::path_to_uri;
 use super::server::{lsp_tick, shutdown_server, Server, ServerHandle};
 use super::transport::{
     notify, read_message, request_with_timeout, response_for_server_request, send,
 };
 use crate::error::{AppError, AppResult};
+use sikemux_process::sync::Locked;
 
 struct SpawnedProcessGuard(Option<Child>);
 
@@ -48,6 +48,7 @@ pub(super) fn spawn_server(
         .ok_or_else(|| AppError::Lsp(format!("no language server configured for `{language}`")))?;
     let child = sikemux_process::user_environment::command(&bin)
         .args(&args)
+        .envs(server_env(language))
         .current_dir(project)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -115,9 +116,7 @@ pub(super) fn spawn_server(
                     let reply = json!({"jsonrpc": "2.0", "id": id_value, "result": result});
                     let _ = send(&reader_server, &reply);
                 } else if let Some(id) = id_value.as_i64() {
-                    if let Some(tx) =
-                        take_pending_request(&reader_server.pending, &PENDING_REQUEST_COUNT, id)
-                    {
+                    if let Some(tx) = reader_server.pending.locked().remove(&id) {
                         let val = msg.get("result").cloned().unwrap_or(Value::Null);
                         let _ = tx.send(val);
                     }
@@ -134,7 +133,7 @@ pub(super) fn spawn_server(
         // instead of timing out. It also owns teardown for malformed frames or
         // natural server exit; otherwise the registry would retain an unusable
         // server forever and later lsp_start calls would falsely succeed.
-        clear_pending_requests(&reader_server.pending, &PENDING_REQUEST_COUNT);
+        reader_server.pending.locked().clear();
         shutdown_server(reader_server);
     });
 

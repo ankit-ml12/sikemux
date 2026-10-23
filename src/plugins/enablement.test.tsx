@@ -39,7 +39,7 @@ describe("switching a plugin off", () => {
         expect(keybindingActions().some((action) => action.id === "plugin.run:sikemux.bruno/send")).toBe(true);
     });
 
-    it("is remembered, and anything saved that is not a plugin id is dropped", () => {
+    it("is taken from the core, and anything there that is not a plugin id is dropped", () => {
         const project = getState().sessions[getState().activeSessionId];
         const window = getState().windows[project.activeWindowId];
         applyHydrate(
@@ -49,9 +49,21 @@ describe("switching a plugin off", () => {
                 windowsBySession: { [project.id]: [window] },
                 sessionOrder: [project.id],
                 activeSessionId: project.id,
-                prefs: { disabledPlugins: ["sikemux.signoz", "not an id", 7, "sikemux.signoz"] },
+                prefs: {},
                 itemStates: {},
             }),
+            undefined,
+            {
+                projects: [],
+                spaces: [],
+                agents: [],
+                pinned: [],
+                permissionMode: "bypass",
+                disabledPlugins: ["sikemux.signoz", "not an id", "sikemux.signoz"],
+                launchers: [],
+                palette: {},
+                backdrop: { texture: false, image: null },
+            },
         );
         expect(getState().disabledPlugins).toEqual(["sikemux.signoz"]);
     });

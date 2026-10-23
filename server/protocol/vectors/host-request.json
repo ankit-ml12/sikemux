@@ -1,0 +1,13 @@
+{
+  "description": "A request signed by the host whose secret is 32 bytes of 7, the key in live.json. The server and the core check it. The header is `Authorization: SikemuxHost <key>.<time>.<signature>`.",
+  "secretKey": "0707070707070707070707070707070707070707070707070707070707070707",
+  "key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+  "method": "POST",
+  "path": "/v1/devices/ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c/join",
+  "time": 1760000000,
+  "body": "{\"host\":\"6d40b315d14f2eafe6b431241eb9963845e4afe3170000abe5b5e52306893670\"}",
+  "bodySha256": "27df8f98669112b73d93532fb31aaa4581d2d2a3e793aed9cea99d08355a034b",
+  "message": "sikemux-host-request|POST|/v1/devices/ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c/join|1760000000|27df8f98669112b73d93532fb31aaa4581d2d2a3e793aed9cea99d08355a034b",
+  "signature": "da3a5744840efc53d5e4fa2fca61c3d37972d2234e753ae715c223533490aa14621db155e745609346020d1405af677cf13be3aa232b1e0b816fb9436ba8a70d",
+  "authorization": "SikemuxHost ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c.1760000000.da3a5744840efc53d5e4fa2fca61c3d37972d2234e753ae715c223533490aa14621db155e745609346020d1405af677cf13be3aa232b1e0b816fb9436ba8a70d"
+}

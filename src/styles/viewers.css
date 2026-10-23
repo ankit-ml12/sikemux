@@ -68,8 +68,8 @@
 }
 .ed-viewer-actions button:hover:not(:disabled) {
     color: var(--text-primary);
-    border-color: var(--border-selected);
-    background: var(--surface-selected);
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
 }
 .ed-viewer-actions button:disabled {
     opacity: 0.45;
@@ -90,6 +90,27 @@
     max-height: 100%;
     object-fit: contain;
     image-rendering: auto;
+}
+.ed-viewer-image {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    padding: 0;
+}
+.ed-viewer-stage.ed-viewer-image img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    max-width: none;
+    max-height: none;
+    transform-origin: 0 0;
+    visibility: hidden;
+}
+.ed-viewer-image[data-pans] {
+    cursor: grab;
+}
+.ed-viewer-image[data-dragging] {
+    cursor: grabbing;
 }
 .ed-viewer-message {
     display: flex;
@@ -112,13 +133,6 @@
 }
 .ed-viewer-audio {
     width: min(520px, 100%);
-}
-.ed-viewer-frame {
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 100%;
-    border: 0;
-    background: transparent;
 }
 .ed-viewer-font {
     align-items: flex-start;

@@ -22,49 +22,52 @@
     flex-direction: column;
 }
 .ed-tree-head {
-    height: 30px;
+    padding: 4px 8px 4px 12px;
+}
+.ed-tree-title {
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px;
-    font-size: var(--text-3xs);
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    color: var(--text-tertiary);
-    border-bottom: 1px solid var(--border);
+    gap: 8px;
 }
 .ed-tree-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--text-3xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
 }
 .ed-tree-actions {
     display: inline-flex;
-    gap: 4px;
-    opacity: 0.5;
+    gap: 2px;
+    flex: none;
+    opacity: 0.6;
     transition: opacity 0.12s;
 }
 .ed-tree:hover .ed-tree-actions {
     opacity: 1;
 }
 .ed-tree-act {
-    display: inline-flex;
-    align-items: center;
-    gap: 1px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     background: transparent;
     border: none;
     color: var(--text-tertiary);
     cursor: pointer;
-    padding: 2px 3px;
-    line-height: 1;
 }
 .ed-tree-act:hover {
+    background: var(--surface-hover);
     color: var(--text-primary);
 }
-
 .tree-row.selected {
-    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .tree-row.drag-over {
@@ -139,8 +142,7 @@
     color: var(--text-primary);
 }
 .tree-row.file.active {
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .tree-chev {
@@ -167,6 +169,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.tree-row.ignored {
+    color: var(--text-disabled);
+}
+.tree-row.ignored > .tree-folder,
+.tree-row.ignored > .tree-file {
+    opacity: 0.5;
+}
 
 /* file-tree right-click context menu */
 .tree-ctx-scrim {
@@ -188,6 +197,7 @@
     flex-direction: column;
     gap: 1px;
     font-family: var(--mono);
+    border-radius: var(--radius-4);
 }
 .tree-ctx-item {
     display: flex;
@@ -204,11 +214,61 @@
     cursor: pointer;
 }
 /* A menu shows its current item the way a native one does, with the row's tint rather than the focus ring. */
-.tree-ctx-item:hover,
-.tree-ctx-item:focus-visible {
+/* Inside the menu, so it outranks the app-wide [tabindex]:focus-visible ring that loads later. */
+.tree-ctx-menu .tree-ctx-item:hover,
+.tree-ctx-menu .tree-ctx-item:focus-visible {
     box-shadow: none;
-    background: var(--surface-selected);
+    background: var(--surface-hover);
     color: var(--text-primary);
+}
+/* An item's own actions sit at its row's end, after its hint and tick, and the
+   row tints as a whole while any part of it is pointed at. */
+.tree-ctx-row {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-xs);
+}
+.tree-ctx-row > .tree-ctx-item {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.tree-ctx-menu .tree-ctx-row > .tree-ctx-item:is(:hover, :focus-visible) {
+    background: transparent;
+}
+.tree-ctx-row:has(> .tree-ctx-item:is(:hover, :focus-visible)) {
+    background: var(--surface-hover);
+}
+.tree-ctx-actions {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    padding-right: 4px;
+}
+.tree-ctx-act {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: var(--text-tertiary);
+}
+.tree-ctx-act:is(:hover, :focus-visible) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.tree-ctx-act.danger:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    color: var(--danger);
+}
+/* The current choice is ticked at the row's end, as in a native menu, so it never reads as the hovered one. */
+.tree-ctx-check {
+    display: flex;
+    flex: none;
+    color: var(--text-primary);
+}
+.tree-ctx-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 .tree-ctx-item.disabled {
     color: var(--text-tertiary);
@@ -229,7 +289,13 @@
 .tree-ctx-icon {
     display: flex;
     flex: none;
-    margin-right: -4px;
+    justify-content: center;
+    min-width: 14px;
+    margin-right: -2px;
+    color: var(--text-tertiary);
+}
+[role^="menuitem"]:is(:hover, .danger) > .tree-ctx-icon {
+    color: inherit;
 }
 .tree-ctx-label {
     flex: 1 1 auto;
@@ -302,8 +368,7 @@
     border-right: 1px solid var(--border);
 }
 .tab-wrap.active {
-    background: var(--surface-selected);
-    box-shadow: inset 0 -2px 0 var(--acc);
+    background: var(--surface-chosen);
 }
 /* While a tab is dragged it lifts and follows the pointer, and the others
    slide aside to open the gap it will drop into. */
@@ -314,7 +379,7 @@
     position: relative;
     z-index: 2;
     transition: none;
-    background-image: linear-gradient(var(--surface-selected), var(--surface-selected));
+    background-image: linear-gradient(var(--surface-chosen), var(--surface-chosen));
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .tabbar.is-reordering .tab-wrap.tab-lifted.tab-settling {
@@ -421,7 +486,7 @@ body.is-sorting-tabs * {
     gap: 6px;
     padding: 5px 11px 6px;
     border: 0;
-    border-radius: 4.5px;
+    border-radius: var(--radius-2);
     outline: none;
     background: color-mix(in srgb, var(--surface-raised) calc(var(--window-opacity, 1) * 55%), transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
@@ -443,8 +508,7 @@ body.is-sorting-tabs * {
 }
 .ed-markdown-toggle[aria-pressed="true"] {
     color: var(--text-primary);
-    background: var(--surface-selected);
-    box-shadow: inset 0 0 0 1px var(--border-selected);
+    background: var(--surface-chosen);
 }
 .ed-markdown-toggle:focus-visible {
     outline: none;
@@ -600,7 +664,7 @@ body.is-sorting-tabs * {
 }
 .ed-markdown-body blockquote {
     padding: 0.15em 1em;
-    border-left: 3px solid var(--border-selected);
+    border-left: 3px solid var(--border-strong);
     color: var(--text-tertiary);
 }
 .ed-markdown-body blockquote > :last-child {
@@ -667,6 +731,9 @@ body.is-sorting-tabs * {
     gap: var(--space-1h);
     color: var(--text-tertiary);
     pointer-events: none;
+}
+.ed-empty button {
+    pointer-events: auto;
 }
 .ed-empty p {
     font-size: var(--text-sm);

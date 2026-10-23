@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatReducer, initialChatState } from "./reducer";
+import { runningSubagents } from "./transcript";
 import type { ChatState } from "./types";
 
 const ROOT_SESSION = "session-1";
@@ -35,6 +36,40 @@ function withoutTimes(value: unknown): unknown {
 }
 
 describe("chat reducer", () => {
+    it("keeps a network failure with what the agent said, and lets the person dismiss it", () => {
+        const failed = chatReducer(initialChatState, {
+            type: "error",
+            message: "Lost the connection to the model provider",
+            failure: { kind: "network", account: null, details: "API Error: Connection error." },
+        });
+        expect(failed.failure?.kind).toBe("network");
+        const dismissed = chatReducer(failed, { type: "dismiss_error" });
+        expect(dismissed.error).toBeNull();
+        expect(dismissed.failure).toBeNull();
+    });
+
+    it("holds the agent's retries until it streams again or the turn ends", () => {
+        const retry = (failure: Record<string, unknown>) => ({
+            sessionUpdate: "session_info_update",
+            _meta: { jetbrains: { air: { version: 1, sessionFailure: { id: "t:retry", category: "connection", title: "x", ...failure } } } },
+        });
+        const idle = update(initialChatState, retry({ severity: "warning", attempt: 1 }));
+        expect(idle.retrying).toBeNull();
+
+        const running = chatReducer(initialChatState, { type: "turn_started" });
+        const retrying = update(running, retry({ severity: "warning", attempt: 2 }));
+        expect(retrying.retrying).toEqual({ attempt: 2, connection: true });
+        expect(update(running, retry({ severity: "warning" })).retrying).toEqual({ attempt: null, connection: true });
+        expect(update(running, retry({ severity: "error", attempt: 2 })).retrying).toBeNull();
+        expect(update(running, retry({ severity: "warning", attempt: 1, category: "service" })).retrying).toEqual({ attempt: 1, connection: false });
+        expect(update(retrying, { sessionUpdate: "session_info_update", title: "Fix login" }).retrying).toEqual({ attempt: 2, connection: true });
+
+        const streaming = update(retrying, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Back" } });
+        expect(streaming.retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "turn_completed" }).retrying).toBeNull();
+        expect(chatReducer(retrying, { type: "error", message: "Connection error" }).retrying).toBeNull();
+    });
+
     it("rebuilds from a core's replay, with streamed text joined, the transcript a watching client built", () => {
         const say = (kind: string, text: string) => ({ sessionUpdate: kind, content: { type: "text", text } });
         const tool = { sessionUpdate: "tool_call", toolCallId: "call-1", title: "Read file", status: "in_progress" };
@@ -184,6 +219,36 @@ describe("chat reducer", () => {
         expect(part.tool).not.toHaveProperty("rawInput");
     });
 
+    it("keeps only the arguments a finished call's row shows", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "mcp__sikemux-tools__browser_click",
+            status: "in_progress",
+            rawInput: { text: "Sign in", role: "button", report: "full", steps: [{ action: "click" }] },
+        });
+        const completed = update(created, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" });
+        const part = completed.messages[0].parts[0];
+        if (part.kind !== "tool") throw new Error("expected tool part");
+
+        expect(part.tool.rawInput).toEqual({ text: "Sign in", role: "button" });
+    });
+
+    it("keeps the first short argument of another server's finished call", () => {
+        const created = update(initialChatState, {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-1",
+            title: "mcp__linear__create_issue",
+            status: "in_progress",
+            rawInput: { title: "Rows use underscores", body: "long\nbody" },
+        });
+        const completed = update(created, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" });
+        const part = completed.messages[0].parts[0];
+        if (part.kind !== "tool") throw new Error("expected tool part");
+
+        expect(part.tool.rawInput).toEqual({ detail: "Rows use underscores" });
+    });
+
     it("keeps a failed call's message and drops the output it came from", () => {
         const created = update(initialChatState, {
             sessionUpdate: "tool_call",
@@ -229,6 +294,19 @@ describe("chat reducer", () => {
         expect(part.failure).toBeUndefined();
         expect(part.tool).not.toHaveProperty("rawOutput");
         expect(part.tool).not.toHaveProperty("rawInput");
+    });
+
+    it("keeps the page a finished page_show showed in place of what it printed", () => {
+        const page = { id: "0123456789abcdef0123456789abcdef", title: "Revenue", height: 300 };
+        const shown = replay(initialChatState, [
+            { sessionUpdate: "tool_call", toolCallId: "page-1", title: "mcp__sikemux-tools__page_show", status: "in_progress" },
+            { sessionUpdate: "tool_call_update", toolCallId: "page-1", status: "completed", rawOutput: JSON.stringify({ page, note: "shown" }) },
+        ]);
+        const part = toolPart(shown);
+
+        expect(part.page).toEqual(page);
+        expect(part.output).toBeUndefined();
+        expect(part.tool).not.toHaveProperty("rawOutput");
     });
 
     it("keeps a picture too big to hold by name rather than by its bytes", () => {
@@ -284,7 +362,27 @@ describe("chat reducer", () => {
         expect(orphan.messages).toEqual([]);
     });
 
-    it("stops the work a finished turn left mid-flight", () => {
+    it("keeps a subagent's own subagents inside its card", () => {
+        const parent = update(initialChatState, {
+            sessionUpdate: "subagent_spawned",
+            subagentSessionId: "parent",
+            name: "Map pipeline",
+            task: "Map it",
+        });
+        const nested = update(parent, { sessionUpdate: "subagent_spawned", subagentSessionId: "child", name: "Explore", task: "Read" }, "parent");
+        const working = update(nested, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep", status: "in_progress" }, "child");
+        const done = update(working, { sessionUpdate: "subagent_state_update", subagentSessionId: "child", state: "completed" }, "parent");
+
+        expect(done.messages).toHaveLength(1);
+        const [outer] = done.messages[0].parts;
+        if (outer.kind !== "subagent") throw new Error("expected the parent subagent");
+        const [inner] = outer.subagent.messages[0].parts;
+        if (inner.kind !== "subagent") throw new Error("expected the nested subagent");
+        expect(inner.subagent.state).toBe("completed");
+        expect(inner.subagent.messages[0].parts[0]).toMatchObject({ kind: "tool" });
+    });
+
+    it("stops the calls a finished turn left mid-flight but not its subagents", () => {
         const spawned = update(initialChatState, {
             sessionUpdate: "subagent_spawned",
             subagentSessionId: "subagent-1",
@@ -297,13 +395,13 @@ describe("chat reducer", () => {
 
         const [subagentPart, toolPart] = ended.messages[0].parts;
         if (subagentPart.kind !== "subagent" || toolPart.kind !== "tool") throw new Error("expected a subagent beside a tool call");
-        expect(subagentPart.subagent.state).toBe("cancelled");
+        expect(subagentPart.subagent.state).toBe("running");
         expect(toolPart.tool.status).toBe("cancelled");
         expect(toolPart.endedAt).toBeDefined();
 
         const nestedPart = subagentPart.subagent.messages[0].parts[0];
         if (nestedPart.kind !== "tool") throw new Error("expected the subagent's own call");
-        expect(nestedPart.tool.status).toBe("cancelled");
+        expect(nestedPart.tool.status).toBe("in_progress");
     });
 
     it("leaves a call that already answered alone when the turn ends", () => {
@@ -341,11 +439,11 @@ describe("chat reducer", () => {
         expect(finished.messages.at(-1)?.parts.at(-1)).toEqual({
             id: "notice-task-1",
             kind: "notice",
-            notice: { name: "pnpm test", state: "completed", summary: "12 files passed" },
+            notice: { name: "pnpm test", state: "completed", summary: "12 files passed", taskType: "shell" },
         });
     });
 
-    it("keeps a background agent's notice out even when its report has paragraphs", () => {
+    it("turns a background agent's notification into a notice, never its report, even when the report has paragraphs", () => {
         const notified = update(initialChatState, {
             sessionUpdate: "user_message_chunk",
             content: {
@@ -358,7 +456,10 @@ describe("chat reducer", () => {
             },
         });
 
-        expect(notified.messages).toEqual([]);
+        expect(notified.messages.flatMap((message) => message.parts)).toEqual([
+            { id: "notice-a41", kind: "notice", notice: { name: "Background task", state: "completed" } },
+        ]);
+        expect(notified.messages.some((message) => message.role === "user")).toBe(false);
     });
 
     it("keeps pasted markup with paragraphs that the harness did not write", () => {
@@ -719,6 +820,21 @@ describe("chat reducer", () => {
         expect(stopped.messages[0].parts[0]).toEqual({ id: "notice-task-1", kind: "notice", notice: { name: "Build", state: "stopped" } });
     });
 
+    it("shows the agent's notices in the transcript, apart from its own word on a stopped task", () => {
+        const warned = update(initialChatState, {
+            sessionUpdate: "notice",
+            severity: "warning",
+            title: "Fast mode turned off",
+            description: "Usage limit.",
+        });
+        expect(warned.messages[0].parts[0]).toMatchObject({
+            kind: "agent_notice",
+            notice: { severity: "warning", title: "Fast mode turned off", description: "Usage limit." },
+        });
+
+        expect(update(warned, { sessionUpdate: "notice", severity: "info", title: "Task stopped by user", description: "Build." })).toBe(warned);
+    });
+
     it("keeps the plan, title and config the session reports", () => {
         const plan = { sessionUpdate: "plan", entries: [{ content: "Write tests", status: "pending" }] };
         const state = replay(initialChatState, [
@@ -750,20 +866,6 @@ describe("chat reducer", () => {
         expect(noCurrency.usage).toEqual({ used: 1, size: 10 });
         expect(badAmount.usage).toEqual({ used: 1, size: 10 });
         expect(update(initialChatState, { sessionUpdate: "usage_update", used: NaN, size: 10 }).usage).toBeNull();
-    });
-
-    it("uses saved usage only until the agent reports its own", () => {
-        const saved = chatReducer(initialChatState, { type: "saved_usage", usage: { used: 5, size: 100 } });
-        const reported = update(saved, { sessionUpdate: "usage_update", used: 50, size: 100 });
-
-        expect(saved.usage).toEqual({ used: 5, size: 100 });
-        expect(chatReducer(reported, { type: "saved_usage", usage: { used: 5, size: 100 } })).toBe(reported);
-    });
-
-    it("stores config options sent outside a session update", () => {
-        const state = chatReducer(initialChatState, { type: "config", options: [{ id: "effort" }] });
-
-        expect(state.setup).toEqual({ configOptions: [{ id: "effort" }] });
     });
 
     it("keeps a running turn through a starting status but ends it on an error", () => {
@@ -822,16 +924,29 @@ describe("chat reducer", () => {
         expect(chatReducer(initialChatState, { type: "reset", hold: true }).awaitingReplay).toBe(false);
     });
 
-    it("cancels a running subagent that had only written text when the turn ends", () => {
+    it("keeps a subagent going after the turn that started it ends", () => {
+        const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
+        const working = update(spawned, { sessionUpdate: "tool_call", toolCallId: "tool-1", title: "Grep", status: "in_progress" }, "sub-1");
+        const ended = chatReducer(working, { type: "turn_completed", stopReason: "end_turn" });
+
+        expect(ended.messages).toBe(working.messages);
+        expect(runningSubagents(ended.messages)).toHaveLength(1);
+
+        const later = update(ended, { sessionUpdate: "tool_call_update", toolCallId: "tool-1", status: "completed" }, "sub-1");
+        const done = update(later, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "completed" });
+        expect(runningSubagents(done.messages)).toEqual([]);
+    });
+
+    it("leaves ending a subagent to the host when its agent goes away or starts again", () => {
         const spawned = update(initialChatState, { sessionUpdate: "subagent_spawned", subagentSessionId: "sub-1" });
         const wrote = update(spawned, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Looking" } }, "sub-1");
-        const ended = chatReducer(wrote, { type: "turn_completed" });
+        const ended = chatReducer(wrote, { type: "turn_completed", stopReason: "end_turn" });
 
-        const before = wrote.messages[0].parts[0];
-        const part = ended.messages[0].parts[0];
-        if (part.kind !== "subagent" || before.kind !== "subagent") throw new Error("expected a subagent");
-        expect(part.subagent.state).toBe("cancelled");
-        expect(part.subagent.messages).toBe(before.subagent.messages);
+        for (const state of ["stopped", "error", "starting"] as const) {
+            expect(runningSubagents(chatReducer(ended, { type: "status", state }).messages)).toHaveLength(1);
+        }
+        const gone = update(ended, { sessionUpdate: "subagent_state_update", subagentSessionId: "sub-1", state: "disconnected" });
+        expect(runningSubagents(gone.messages)).toEqual([]);
     });
 
     it("keeps a subagent's transcript as is when its session sends an update it cannot place", () => {
@@ -839,5 +954,65 @@ describe("chat reducer", () => {
         const orphan = update(spawned, { sessionUpdate: "tool_call_update", toolCallId: "tool-9", status: "completed" }, "sub-1");
 
         expect(orphan.messages[0].parts).toEqual(spawned.messages[0].parts);
+    });
+
+    it("says in the transcript which account the chat moved to and why", () => {
+        const moved = update(initialChatState, {
+            sessionUpdate: "account_switched",
+            account: "work",
+            label: "Work",
+            from: "Personal",
+            reason: "limit",
+        });
+
+        expect(moved.messages).toHaveLength(1);
+        expect(moved.messages[0].parts[0]).toMatchObject({ kind: "account", move: { label: "Work", from: "Personal", reason: "limit" } });
+    });
+
+    it("keeps why a turn failed until the chat runs again", () => {
+        const ready = chatReducer(initialChatState, { type: "ready", capabilities: {}, setup: {} });
+        const failed = chatReducer(ready, { type: "error", message: "You've hit your limit", failure: { kind: "limit", account: "personal" } });
+        expect(failed.failure).toEqual({ kind: "limit", account: "personal" });
+
+        const restarting = chatReducer(failed, { type: "status", state: "starting" });
+        expect(restarting.failure).toBeNull();
+        expect(restarting.error).toBeNull();
+    });
+
+    describe("rewinding to a message the person edits", () => {
+        const answered = (state: ChatState, text: string): ChatState =>
+            chatReducer(chatReducer(state, { type: "turn_started" }), {
+                type: "session_update",
+                sessionId: "s",
+                update: { sessionUpdate: "agent_message_chunk", messageId: `a-${text}`, content: { type: "text", text } },
+            });
+
+        it("drops the edited message and everything after it", () => {
+            let state = chatReducer(initialChatState, { type: "local_prompt", text: "first", paths: [], messageId: "m1" });
+            state = answered(state, "one");
+            state = chatReducer(state, { type: "local_prompt", text: "second", paths: [], messageId: "m2" });
+            state = answered(state, "two");
+            expect(state.messages.map((message) => message.promptId ?? null)).toEqual(["m1", null, "m2", null]);
+
+            const rewound = chatReducer(state, { type: "rewind", messageId: "m2" });
+            expect(rewound.messages.map((message) => message.parts[0]?.kind === "text" && message.parts[0].text)).toEqual(["first", "one"]);
+        });
+
+        it("drops a replayed message another device edited", () => {
+            let state = chatReducer(initialChatState, {
+                type: "session_update",
+                sessionId: "s",
+                update: { sessionUpdate: "user_message_chunk", messageId: "u1", content: { type: "text", text: "hello" } },
+            });
+            state = answered(state, "hi");
+            expect(state.messages[0].promptId).toBe("u1");
+            state = chatReducer(state, { type: "session_update", sessionId: "s", update: { sessionUpdate: "message_rewound", messageId: "u1" } });
+            expect(state.messages).toEqual([]);
+        });
+
+        it("leaves the transcript alone for a message it does not have", () => {
+            const state = chatReducer(initialChatState, { type: "local_prompt", text: "first", paths: [], messageId: "m1" });
+            expect(chatReducer(state, { type: "rewind", messageId: "gone" })).toBe(state);
+        });
     });
 });

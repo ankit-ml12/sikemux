@@ -2,9 +2,9 @@ import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { git } from "../api/git";
 import { runGitCmd } from "./git";
-import { errMessage } from "./toast";
+import { errorText } from "../lib/format";
 import { DEFAULT_AI_PROVIDER, defaultAiModel } from "../git/gitPaneConstants";
-import type { GitAiProvider } from "../git/gitPaneTypes";
+import type { CommitMessageAgentType } from "../agents/catalog";
 
 interface Operation {
     label: string;
@@ -16,7 +16,7 @@ interface Operation {
 interface GitWorkbenchState {
     drafts: Record<string, string>;
     operations: Record<string, Operation>;
-    provider: GitAiProvider;
+    provider: CommitMessageAgentType;
     model: string;
 }
 
@@ -77,10 +77,6 @@ export function setGitDraft(repo: string, value: string | ((current: string) => 
     }));
 }
 
-export function setGitProvider(provider: GitAiProvider): void {
-    useGitWorkbench.setState({ provider, model: defaultAiModel(provider) });
-}
-
 export async function runRepositoryGit(repo: string, label: string, action: () => Promise<unknown>): Promise<boolean> {
     if (useGitWorkbench.getState().operations[repo]?.busy) return false;
     const update = (operation: Operation) => useGitWorkbench.setState((state) => ({ operations: { ...state.operations, [repo]: operation } }));
@@ -90,7 +86,7 @@ export async function runRepositoryGit(repo: string, label: string, action: () =
         update({ label, busy: false, error: null, result: typeof result === "string" && result.trim() ? result : `${label} completed` });
         return true;
     } catch (error) {
-        update({ label, busy: false, error: errMessage(error), result: null });
+        update({ label, busy: false, error: errorText(error), result: null });
         return false;
     }
 }
@@ -111,7 +107,7 @@ export async function generateGitDraft(repo: string): Promise<boolean> {
     const { provider, model, drafts } = useGitWorkbench.getState();
     const draft = drafts[repo] ?? "";
     return runRepositoryGit(repo, `Generate message with ${provider}`, async () => {
-        const message = await git.aiMessage(repo, provider, model, () => {});
+        const message = await git.aiMessage(repo, provider, model);
         if (!message.trim()) throw new Error("The provider returned an empty message. Your draft was kept.");
         if ((useGitWorkbench.getState().drafts[repo] ?? "") !== draft)
             throw new Error("Your draft changed during generation. It was kept; generate again when ready.");

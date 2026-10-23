@@ -6,27 +6,33 @@
   "tools": [
     {
       "name": "jira_search",
+      "row": {"verb": "search", "kind": "search", "icon": "search", "target": ["{jql}"], "detail": ["{site}"]},
       "method": "search",
-      "description": "Find Jira issues with JQL, e.g. 'assignee = currentUser() AND sprint in openSprints()'. Returns key, summary, status, priority, assignee and sprint.",
+      "description": "Find Jira issues with JQL, e.g. 'assignee = currentUser() AND sprint in openSprints()'. Returns key, summary, status, priority, assignee, sprint, last update.",
       "properties": {
         "jql": { "type": "string" },
         "limit": { "type": "integer", "maximum": 100, "description": "Default 20." },
+        "comments": { "type": "boolean", "description": "Include each issue's latest 5 comments: author, time and markdown body. JQL cannot filter by commenter; narrow by time (updated >= -1d) and read these." },
+        "next": { "type": "string", "description": "The next value a previous search returned, to get the following page." },
         "site": { "type": "string", "description": "Site host, e.g. acme.atlassian.net. Default: the first signed-in site." }
       },
       "required": ["jql"]
     },
     {
       "name": "jira_issue",
-      "method": "issue",
-      "description": "One Jira issue by key (ABC-123): its fields, description and comments as markdown, and the transitions it can take next.",
+      "row": {"verb": "read", "kind": "read", "icon": "issue", "target": ["{key}"], "detail": ["{site}"]},
+      "method": "agentIssue",
+      "description": "One Jira issue by key (ABC-123): its fields, description and newest comments as markdown, its recent field changes, and the transitions it can take next.",
       "properties": {
         "key": { "type": "string" },
+        "comments": { "type": "integer", "description": "How many of the newest comments to include, up to 50. Default 10; commentCount says how many there are." },
         "site": { "type": "string" }
       },
       "required": ["key"]
     },
     {
       "name": "jira_comment",
+      "row": {"verb": "comment", "kind": "edit", "icon": "message", "target": ["{key}"], "detail": ["{site}"]},
       "method": "comment",
       "description": "Add a comment to a Jira issue. Write it in markdown.",
       "properties": {
@@ -38,6 +44,7 @@
     },
     {
       "name": "jira_transition",
+      "row": {"verb": "move", "kind": "move", "icon": "status", "target": ["{key} to {to}", "{key}"], "detail": ["{site}"]},
       "method": "transition",
       "description": "Move a Jira issue through its workflow. Name a transition or the status it leads to; with neither, lists the transitions the issue can take now.",
       "properties": {
@@ -49,19 +56,57 @@
     },
     {
       "name": "jira_create",
+      "row": {"verb": "create", "kind": "edit", "icon": "square-plus", "target": ["{summary}"], "detail": ["{project}"]},
       "method": "create",
-      "description": "Create a Jira issue. The description is markdown.",
+      "description": "Create a Jira issue; parent puts it under an epic. The description is markdown. A wrong type is answered with the project's types.",
       "properties": {
         "project": { "type": "string", "description": "Project key, e.g. ABC." },
         "summary": { "type": "string" },
-        "type": { "type": "string", "description": "Issue type name. Default Task." },
+        "type": { "type": "string", "description": "Issue type name, e.g. Epic, Bug, Story. Default Task." },
         "description": { "type": "string" },
+        "parent": { "type": "string", "description": "Epic or issue key." },
+        "priority": { "type": "string", "description": "Priority name, e.g. High." },
+        "assignee": { "type": "string", "description": "An account id, or 'me'." },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "fields": { "type": "object", "description": "Other fields by id, as Jira's REST API takes them." },
         "site": { "type": "string" }
       },
       "required": ["project", "summary"]
     },
     {
+      "name": "jira_edit",
+      "row": {"verb": "edit", "kind": "edit", "icon": "issue", "target": ["{key}"], "detail": ["{site}"]},
+      "method": "edit",
+      "description": "Change a Jira issue's fields; only those given change. The description is markdown and replaces the old one.",
+      "properties": {
+        "key": { "type": "string" },
+        "summary": { "type": "string" },
+        "description": { "type": "string" },
+        "parent": { "type": "string", "description": "Epic or issue key; empty takes it out." },
+        "priority": { "type": "string" },
+        "assignee": { "type": "string", "description": "An account id, or 'me'; empty unassigns." },
+        "labels": { "type": "array", "items": { "type": "string" }, "description": "Replaces the labels." },
+        "fields": { "type": "object", "description": "Other fields by id, as Jira's REST API takes them." },
+        "site": { "type": "string" }
+      },
+      "required": ["key"]
+    },
+    {
+      "name": "jira_link",
+      "row": {"verb": "link", "kind": "edit", "icon": "link", "target": ["{key} {relation} {other}"], "detail": ["{site}"]},
+      "method": "link",
+      "description": "Link two issues so 'key relation other' reads true, e.g. ABC-1 blocks ABC-2. A wrong relation is answered with the site's link types.",
+      "properties": {
+        "key": { "type": "string" },
+        "relation": { "type": "string", "description": "As Jira words it, or a link type's name." },
+        "other": { "type": "string" },
+        "site": { "type": "string" }
+      },
+      "required": ["key", "relation", "other"]
+    },
+    {
       "name": "jira_worklog",
+      "row": {"verb": "log", "kind": "edit", "icon": "clock", "target": ["{key}"], "detail": ["{time}"]},
       "method": "worklog",
       "description": "Log time spent on a Jira issue, e.g. time '1h 30m'.",
       "properties": {

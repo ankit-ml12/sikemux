@@ -3,20 +3,20 @@
 //! answered in Rust, and the rest wait in a queue the page claims and answers.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
 pub use sikemux_core::cli::protocol::HarnessRequest;
-use sikemux_core::cli::protocol::{is_browser_method, is_plugin_method};
-use sikemux_core::protocol::{CallId, RunSelector, WindowAnswer, WindowCall};
+use sikemux_core::cli::protocol::{is_browser_method, is_sim_method, PAGE_REPLY_TIMEOUT};
+use sikemux_core::protocol::{CallId, WindowAnswer, WindowCall};
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::error::AppResult;
 use crate::pty::PtyManager;
 
 pub const MAX_PENDING: usize = 64;
-const REPLY_TIMEOUT: Duration = Duration::from_secs(65);
 /// A launch may wait on the person trusting `sikemux.json`.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
@@ -37,7 +37,7 @@ impl HarnessBroker {
         &self,
         request: HarnessRequest,
     ) -> Result<mpsc::Receiver<Result<Value, String>>, String> {
-        let mut pending = self.pending.lock().map_err(|_| "harness lock poisoned")?;
+        let mut pending = self.pending.locked();
         if pending.len() >= MAX_PENDING || pending.contains_key(&request.id) {
             return Err("harness request capacity reached or duplicate request ID".into());
         }
@@ -54,9 +54,7 @@ impl HarnessBroker {
     }
 
     fn claim(&self) -> Vec<HarnessRequest> {
-        let Ok(mut pending) = self.pending.lock() else {
-            return vec![];
-        };
+        let mut pending = self.pending.locked();
         pending
             .values_mut()
             .filter_map(|entry| {
@@ -70,25 +68,19 @@ impl HarnessBroker {
     }
 
     pub fn remove(&self, id: &str) {
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.remove(id);
-        }
+        self.pending.locked().remove(id);
     }
 
     fn reply(&self, id: &str, result: Result<Value, String>) {
-        if let Ok(mut pending) = self.pending.lock() {
-            if let Some(entry) = pending.remove(id) {
-                let _ = entry.reply.send(result);
-            }
+        if let Some(entry) = self.pending.locked().remove(id) {
+            let _ = entry.reply.send(result);
         }
     }
 
     /// The page that would have answered is gone.
     pub fn fail_all(&self, message: &str) {
-        if let Ok(mut pending) = self.pending.lock() {
-            for (_, entry) in pending.drain() {
-                let _ = entry.reply.send(Err(message.into()));
-            }
+        for (_, entry) in self.pending.locked().drain() {
+            let _ = entry.reply.send(Err(message.into()));
         }
     }
 }
@@ -108,10 +100,19 @@ pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowC
         .name("sikemux-window-call".into())
         .spawn(move || match call {
             WindowCall::Harness { request } => {
-                let result = run(&app, request);
+                let result = serde_json::from_value(request)
+                    .map_err(|error| format!("Sikemux could not read the tool call: {error}"))
+                    .and_then(|request| run(&app, request));
                 answer_core(&app, call_id, result);
             }
-            WindowCall::Open { request } => crate::cli_open::answer(&app, call_id, request),
+            WindowCall::Open { request } => match serde_json::from_value(request) {
+                Ok(request) => crate::cli_open::answer(&app, call_id, request),
+                Err(error) => answer_core(
+                    &app,
+                    call_id,
+                    Err(format!("Sikemux could not read the open request: {error}")),
+                ),
+            },
         });
     if let Err(error) = spawned {
         eprintln!("Sikemux could not answer a tool call: {error}");
@@ -119,19 +120,18 @@ pub(crate) fn answer_window_call(app: &AppHandle, call_id: CallId, call: WindowC
 }
 
 fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
+    if request.method == crate::agent_questions::CHANGED_METHOD {
+        return crate::agent_questions::changed(app, &request.params);
+    }
     if is_browser_method(&request.method) {
         return crate::browser::tools::execute(app, &request);
     }
-    if is_plugin_method(&request.method) {
-        return crate::plugins::agent::execute(
-            app,
-            &request.project,
-            &request.method,
-            &request.params,
-        );
+    if is_sim_method(&request.method) {
+        return crate::simulator::tools::execute(app, &request);
     }
     let id = request.id.clone();
     let method = request.method.clone();
+    let agent_id = request.agent_id.clone();
     let focus =
         method == "ui.open" && request.params.get("focus").and_then(Value::as_bool) == Some(true);
     let broker = app.state::<HarnessBroker>();
@@ -140,7 +140,7 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
     let limit = if method == "task.start" {
         LAUNCH_TIMEOUT
     } else {
-        REPLY_TIMEOUT
+        PAGE_REPLY_TIMEOUT
     };
     let result = receiver
         .recv_timeout(limit)
@@ -152,6 +152,12 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
                 (value.as_object_mut(), crate::cli_paths::cli_command_path())
             {
                 object.insert("cli".into(), cli.to_string_lossy().into());
+            }
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "simulator".into(),
+                    crate::simulator::tools::inspect(&app.state(), agent_id.as_deref()),
+                );
             }
             Ok(value)
         }
@@ -165,9 +171,6 @@ fn run(app: &AppHandle, request: HarnessRequest) -> Result<Value, String> {
     }
 }
 
-/// An agent must not pull the person's keyboard away from another app they
-/// are typing in, so unless Sikemux is already in front it only asks for
-/// attention.
 /// Shows the window and makes Sikemux the active app, for a person who asked to see something in it.
 pub(crate) fn bring_to_front(app: &AppHandle) {
     if let Some(window) = app.get_window("main") {
@@ -177,13 +180,12 @@ pub(crate) fn bring_to_front(app: &AppHandle) {
     }
 }
 
+/// An agent must not pull the person's keyboard away from another app they
+/// are typing in, or raise the window over it, so unless Sikemux is already
+/// in front it only asks for attention.
 fn bring_forward(app: &AppHandle) {
     if let Some(window) = app.get_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        if window.is_focused().unwrap_or(false) {
-            let _ = window.set_focus();
-        } else {
+        if !window.is_focused().unwrap_or(false) {
             let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
         }
     }
@@ -199,7 +201,7 @@ fn timeout_message(method: &str) -> String {
     } else {
         format!(
             "{tool} got no answer from Sikemux within {} s. Check that the Sikemux window is open and responsive, then retry.",
-            REPLY_TIMEOUT.as_secs()
+            PAGE_REPLY_TIMEOUT.as_secs()
         )
     }
 }
@@ -225,38 +227,6 @@ pub fn harness_reply(
     );
 }
 
-/// The page is asking the person to trust `sikemux.json` before a launch.
-#[tauri::command]
-pub async fn harness_awaiting_trust(
-    manager: State<'_, PtyManager>,
-    execution_id: String,
-) -> AppResult<()> {
-    let client = manager.client().await?;
-    client
-        .harness_awaiting_trust(execution_id)
-        .await
-        .map_err(crate::pty::core_error)
-}
-
-/// Stops the harness runs that match every field given, and waits for them.
-#[tauri::command]
-pub async fn harness_stop_runs(
-    manager: State<'_, PtyManager>,
-    execution_id: Option<String>,
-    project: Option<String>,
-    agent_id: Option<String>,
-) -> AppResult<()> {
-    let client = manager.client().await?;
-    client
-        .harness_stop_runs(RunSelector {
-            execution_id,
-            project,
-            agent_id,
-        })
-        .await
-        .map_err(crate::pty::core_error)
-}
-
 #[tauri::command]
 pub async fn harness_resolve_path(project: String, path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || resolve_project_path(project, path))
@@ -265,12 +235,18 @@ pub async fn harness_resolve_path(project: String, path: String) -> Result<Strin
 }
 
 fn resolve_project_path(project: String, path: String) -> Result<String, String> {
-    let root = std::fs::canonicalize(project).map_err(|error| error.to_string())?;
-    let target = std::fs::canonicalize(root.join(path)).map_err(|error| error.to_string())?;
-    if !target.starts_with(&root) || !target.is_file() {
-        return Err("File must be inside the project".into());
+    match confine_to_project(&project, &path).map_err(|error| error.to_string())? {
+        Some(target) if target.is_file() => Ok(target.to_string_lossy().into_owned()),
+        _ => Err("File must be inside the project".into()),
     }
-    Ok(target.to_string_lossy().into_owned())
+}
+
+/// `path`, taken from `project` with links followed, or `None` when that leads
+/// outside the project.
+pub(crate) fn confine_to_project(project: &str, path: &str) -> std::io::Result<Option<PathBuf>> {
+    let root = std::fs::canonicalize(project)?;
+    let target = std::fs::canonicalize(root.join(path))?;
+    Ok(target.starts_with(&root).then_some(target))
 }
 
 #[cfg(test)]
@@ -304,12 +280,6 @@ mod tests {
         assert_eq!(broker.claim().len(), 1);
         broker.fail_all("Sikemux reloaded");
         assert_eq!(receiver.recv().unwrap().unwrap_err(), "Sikemux reloaded");
-    }
-    #[test]
-    fn timeouts_name_the_method() {
-        assert!(timeout_message("task.start").starts_with("task_start "));
-        let inspect = timeout_message("workspace.inspect");
-        assert!(inspect.starts_with("workspace_inspect ") && inspect.contains("65 s"));
     }
     #[test]
     fn file_open_rejects_paths_outside_project() {

@@ -1,112 +1,22 @@
-use std::collections::HashMap;
 #[cfg(unix)]
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
 
-use sikemux_process::user_environment::UserEnvironment;
-#[cfg(unix)]
-use sikemux_pty::user_shell::login_shell_path;
-use sikemux_pty::user_shell::{configured_shell, login_shell_environment};
+use sikemux_pty::user_shell::configured_shell;
 use tauri::async_runtime::spawn_blocking;
 
 use crate::{
     error::{AppError, AppResult},
-    plugins,
     pty::PtyManager,
     state::state_load_sync,
 };
 
-/// macOS GUI apps launched from Finder/Dock inherit launchd's minimal PATH
-/// (`/usr/bin:/bin:/usr/sbin:/sbin`), missing `~/.local/bin`,
-/// `/opt/homebrew/bin`, `~/.cargo/bin`, `~/.opencode/bin`, etc. that the
-/// user actually has tools in. `make dev` works because the dev binary is
-/// launched from a terminal that already has the right PATH.
-///
-/// So every child gets the `PATH` the user's login shell resolves, plus any
-/// variable a plugin reads that the app was not already started with. Reading
-/// the shell takes as long as the user's rc files do, so it runs beside window
-/// creation rather than ahead of it.
-pub fn user_environment() -> UserEnvironment {
-    let shell = login_shell_environment();
-    let mut variables: HashMap<String, String> = plugins::shell_variables()
-        .into_iter()
-        .filter(|name| std::env::var_os(name).is_none())
-        .filter_map(|name| Some((name.clone(), shell.get(&name)?.clone())))
-        .collect();
-    if let Some(path) = user_path() {
-        variables.insert("PATH".to_string(), path);
-    }
-    UserEnvironment { variables }
-}
-
-#[cfg(unix)]
-fn user_path() -> Option<String> {
-    let shell_path = login_shell_path().unwrap_or_default();
-
-    // Always-union: even if the shell extraction succeeded, append the
-    // common user-local bin dirs in case they live in ~/.zshrc (which
-    // login shells don't source) or in non-zsh setups. Idempotent —
-    // duplicates are harmless to PATH lookup.
-    let home = std::env::var("HOME").unwrap_or_default();
-    let extra = [
-        format!("{home}/.local/bin"),
-        format!("{home}/.cargo/bin"),
-        format!("{home}/.opencode/bin"),
-        format!("{home}/.config/shell/bin"),
-        format!("{home}/go/bin"),
-        // Node tooling: typescript-language-server, pyright, vue-lsp, etc.
-        // installed via `pnpm add -g` land here on macOS.
-        format!("{home}/Library/pnpm"),
-        format!("{home}/.npm/bin"),
-        format!("{home}/.bun/bin"),
-        // Python virtualenv tooling (pipx, pyenv shims).
-        format!("{home}/.pyenv/shims"),
-        "/opt/homebrew/bin".to_string(),
-        "/opt/homebrew/sbin".to_string(),
-        "/usr/local/bin".to_string(),
-    ];
-    let cli = crate::cli_paths::cli_link_directory().and_then(Path::to_str);
-    let mut parts: Vec<&str> = cli.into_iter().collect();
-    for part in shell_path.split(':').filter(|s| !s.is_empty()) {
-        if !parts.contains(&part) {
-            parts.push(part);
-        }
-    }
-    for d in &extra {
-        if !parts.contains(&d.as_str()) {
-            parts.push(d.as_str());
-        }
-    }
-    // Fall back to the launchd minimal set if shell extraction failed AND
-    // none of the extras hit — guarantees `/usr/bin` etc. stay reachable.
-    if parts.is_empty() {
-        parts = vec!["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-    }
-    Some(parts.join(":"))
-}
-
-/// Windows desktop applications inherit the user's PATH, so only the CLI link
-/// needs adding.
-#[cfg(windows)]
-fn user_path() -> Option<String> {
-    let directory = crate::cli_paths::cli_link_directory()?;
-    let existing = std::env::var_os("PATH").unwrap_or_default();
-    let paths = std::iter::once(directory.to_path_buf())
-        .chain(std::env::split_paths(&existing).filter(|path| path != directory));
-    std::env::join_paths(paths).ok()?.into_string().ok()
-}
+pub use sikemux_host::environment::{child_path, user_environment};
 
 pub fn user_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_default()
-}
-
-pub fn find_executable(name: &str) -> Option<PathBuf> {
-    find_executable_matching(name, |_| true)
+    sikemux_process::paths::home().unwrap_or_default()
 }
 
 #[derive(serde::Serialize)]
@@ -133,79 +43,10 @@ pub async fn integration_health() -> IntegrationHealth {
 fn read_integration_health() -> IntegrationHealth {
     IntegrationHealth {
         shell: configured_shell(),
-        git: find_executable("git").is_some(),
-        aws: find_executable("aws").is_some(),
-        rnd: find_executable("rnd").is_some(),
+        git: sikemux_process::user_environment::find_executable("git").is_some(),
+        aws: sikemux_process::user_environment::find_executable("aws").is_some(),
+        rnd: sikemux_process::user_environment::find_executable("rnd").is_some(),
     }
-}
-
-pub fn find_executable_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Option<PathBuf> {
-    find_executables_matching(name, predicate)
-        .into_iter()
-        .next()
-}
-
-pub fn find_executables_matching(name: &str, predicate: impl Fn(&Path) -> bool) -> Vec<PathBuf> {
-    let Some(paths) = sikemux_process::user_environment::var_os("PATH") else {
-        return Vec::new();
-    };
-    #[cfg(windows)]
-    let names: Vec<String> = if PathBuf::from(name).extension().is_some() {
-        vec![name.to_string()]
-    } else {
-        std::env::var("PATHEXT")
-            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .map(|extension| format!("{name}{}", extension.to_ascii_lowercase()))
-            .chain(std::iter::once(name.to_string()))
-            .collect()
-    };
-    #[cfg(not(windows))]
-    let names = vec![name.to_string()];
-
-    find_executables_matching_in(std::env::split_paths(&paths), &names, &predicate)
-}
-
-#[cfg(test)]
-fn find_executable_matching_in(
-    paths: impl IntoIterator<Item = PathBuf>,
-    names: &[String],
-    predicate: &impl Fn(&Path) -> bool,
-) -> Option<PathBuf> {
-    find_executables_matching_in(paths, names, predicate)
-        .into_iter()
-        .next()
-}
-
-fn find_executables_matching_in(
-    paths: impl IntoIterator<Item = PathBuf>,
-    names: &[String],
-    predicate: &impl Fn(&Path) -> bool,
-) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for directory in paths {
-        for candidate_name in names {
-            let candidate = directory.join(candidate_name);
-            if !candidate.is_file() {
-                continue;
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let Ok(metadata) = candidate.metadata() else {
-                    continue;
-                };
-                if metadata.permissions().mode() & 0o111 == 0 {
-                    continue;
-                }
-            }
-            if predicate(&candidate) && !found.contains(&candidate) {
-                found.push(candidate);
-            }
-        }
-    }
-    found
 }
 
 /// Existing modules use HOME for established ~/.config, ~/.ssh and ~/.aws
@@ -222,17 +63,28 @@ pub fn normalize_user_environment() {
     }
 }
 
-/// With NVIDIA's driver, WebKitGTK's DMA-BUF renderer closes the window about a
-/// second after it opens on Wayland, and leaves it blank on X11.
+/// WebKitGTK only draws on the GPU through its DMA-BUF renderer; without it every
+/// frame is painted on the CPU. With NVIDIA's driver that renderer leaves the
+/// window blank on X11, so it is turned off there. On Wayland it closes the window
+/// a second after it opens, because NVIDIA asks the compositor for explicit sync
+/// on a window GTK also draws plain buffers into; turning that sync off is enough.
 #[cfg(target_os = "linux")]
-pub fn avoid_webkit_dmabuf_renderer_on_nvidia() {
+pub fn keep_webkit_rendering_on_nvidia() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some()
-        || !Path::new("/proc/driver/nvidia/version").exists()
+        || !std::path::Path::new("/proc/driver/nvidia/version").exists()
     {
         return;
     }
+    let on_x11 = std::env::var_os("WAYLAND_DISPLAY").is_none()
+        || std::env::var("GDK_BACKEND").is_ok_and(|backend| backend.starts_with("x11"));
     // SAFETY: run() calls this before the Tauri runtime starts threads.
-    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    unsafe {
+        if on_x11 {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        } else if std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
+            std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+        }
+    }
 }
 
 /// Raise this process's open-file-descriptor soft limit toward its hard
@@ -287,39 +139,6 @@ pub fn raise_fd_limit() {
 #[cfg(not(unix))]
 pub fn raise_fd_limit() {}
 
-#[tauri::command]
-pub fn home_dir() -> String {
-    user_home().to_string_lossy().into_owned()
-}
-
-/// Frecency-ranked directories from zoxide, for the sesh picker.
-#[tauri::command]
-pub async fn recent_dirs() -> Vec<String> {
-    spawn_blocking(zoxide_dirs).await.unwrap_or_default()
-}
-
-fn zoxide_dirs() -> Vec<String> {
-    for bin in [
-        "zoxide",
-        "/opt/homebrew/bin/zoxide",
-        "/usr/local/bin/zoxide",
-    ] {
-        if let Ok(out) = sikemux_process::user_environment::command(bin)
-            .args(["query", "--list"])
-            .output()
-        {
-            if out.status.success() {
-                return String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .map(|l| l.trim().to_string())
-                    .filter(|l| !l.is_empty())
-                    .collect();
-            }
-        }
-    }
-    Vec::new()
-}
-
 #[derive(Serialize)]
 pub struct BootInfo {
     home: String,
@@ -344,8 +163,6 @@ pub struct RuntimeDiagnostics {
     lsp_servers: usize,
     lsp_open_documents: usize,
     lsp_idle_servers: usize,
-    repo_watchers: usize,
-    agent_session_watchers: usize,
     plugin_streams: usize,
     observability: crate::observability::ObservabilitySnapshot,
 }
@@ -381,7 +198,7 @@ fn current_fd_limit() -> (Option<u64>, Option<u64>) {
 #[tauri::command]
 pub async fn runtime_diagnostics(
     ptys: tauri::State<'_, PtyManager>,
-    plugins: tauri::State<'_, crate::plugins::PluginHost>,
+    plugins: tauri::State<'_, crate::plugins::PluginStreams>,
 ) -> AppResult<RuntimeDiagnostics> {
     // Counting /dev/fd is a directory read, so it goes to the blocking pool
     // even though everything else here is in-memory bookkeeping.
@@ -410,9 +227,7 @@ pub async fn runtime_diagnostics(
         lsp_servers: crate::lsp::server_count(),
         lsp_open_documents,
         lsp_idle_servers,
-        repo_watchers: crate::fs_watch::watch_count(),
-        agent_session_watchers: crate::agents::watch_count(),
-        plugin_streams: plugins.stream_count(),
+        plugin_streams: plugins.count(),
         observability: crate::observability::global_observability().snapshot(),
     })
 }
@@ -453,7 +268,7 @@ fn read_battery_status() -> BatteryStatus {
     }
     #[cfg(target_os = "macos")]
     {
-        let out = match sikemux_process::user_environment::command("pmset")
+        let out = match sikemux_process::user_environment::command("/usr/bin/pmset")
             .args(["-g", "batt"])
             .output()
         {
@@ -522,78 +337,15 @@ fn parse_pmset(text: &str) -> BatteryStatus {
     }
 }
 
-/// Single round-trip the renderer uses on boot — home dir + persisted state
-/// + zoxide recents in one IPC instead of three. State validation, SQLite's
-/// bounded busy wait, recovery I/O, and the zoxide subprocess all run on the
-/// blocking pool so a locked database cannot stall unrelated Tauri commands.
+/// Home dir and persisted state in one round-trip on boot. SQLite's busy wait
+/// and recovery I/O run on the blocking pool so a locked database cannot stall
+/// unrelated Tauri commands.
 #[tauri::command]
 pub async fn boot_init() -> AppResult<BootInfo> {
     spawn_blocking(|| BootInfo {
-        home: home_dir(),
+        home: user_home().to_string_lossy().into_owned(),
         state: state_load_sync(),
     })
     .await
     .map_err(|error| AppError::Other(format!("boot_init join: {error}")))
-}
-
-#[cfg(test)]
-mod executable_tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn executable_lookup_continues_after_a_rejected_candidate() {
-        let first = tempdir().expect("first path");
-        let second = tempdir().expect("second path");
-        let first_candidate = first.path().join("tool");
-        let second_candidate = second.path().join("tool");
-        std::fs::write(&first_candidate, b"first").expect("first executable");
-        std::fs::write(&second_candidate, b"second").expect("second executable");
-
-        #[cfg(unix)]
-        for candidate in [&first_candidate, &second_candidate] {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(candidate)
-                .expect("candidate metadata")
-                .permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(candidate, permissions).expect("mark executable");
-        }
-
-        let names = vec!["tool".to_string()];
-        let result = find_executable_matching_in(
-            [first.path().to_path_buf(), second.path().to_path_buf()],
-            &names,
-            &|candidate| candidate != first_candidate,
-        );
-        assert_eq!(result, Some(second_candidate));
-    }
-
-    #[test]
-    fn executable_lookup_returns_every_healthy_candidate_in_path_order() {
-        let first = tempdir().expect("first path");
-        let second = tempdir().expect("second path");
-        let first_candidate = first.path().join("tool");
-        let second_candidate = second.path().join("tool");
-        std::fs::write(&first_candidate, b"first").expect("first executable");
-        std::fs::write(&second_candidate, b"second").expect("second executable");
-
-        #[cfg(unix)]
-        for candidate in [&first_candidate, &second_candidate] {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(candidate).unwrap().permissions();
-            permissions.set_mode(0o755);
-            std::fs::set_permissions(candidate, permissions).unwrap();
-        }
-
-        let names = vec!["tool".to_string()];
-        assert_eq!(
-            find_executables_matching_in(
-                [first.path().to_path_buf(), second.path().to_path_buf()],
-                &names,
-                &|_| true,
-            ),
-            vec![first_candidate, second_candidate]
-        );
-    }
 }

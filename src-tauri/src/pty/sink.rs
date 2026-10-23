@@ -3,11 +3,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sikemux_core::client::EventSink;
-use sikemux_core::protocol::{CallId, Event, SessionId, WindowCall};
-use sikemux_pty::shell_protocol::PTY_SHELL_METADATA_EVENT;
-use sikemux_pty::task::TaskProcessExit;
+use sikemux_core::protocol::{CallId, ChatEventKind, Event, SessionId, WindowCall};
+use sikemux_pty::shell_protocol::{SshLink, PTY_SHELL_METADATA_EVENT};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::inbox::LastView;
 use crate::observability::{global_observability, Metadata, ScalarValue};
 
 use super::streams::StreamTable;
@@ -26,17 +26,25 @@ pub(super) fn output_totals() -> (u64, u64) {
     )
 }
 
-const PTY_EXITED_EVENT: &str = "pty_exited";
+pub(crate) const PTY_EXITED_EVENT: &str = "pty_exited";
+const PTY_SSH_LINK_EVENT: &str = "pty_ssh_link";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtySshLink {
+    id: SessionId,
+    link: SshLink,
+}
 
 /// How a session's process ended, for every session, watched or not, so the
 /// page can bring back an agent that died while its pane was hidden.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PtyExited {
-    id: SessionId,
-    code: Option<u32>,
-    signal: Option<String>,
-    killed: bool,
+pub(crate) struct PtyExited {
+    pub id: SessionId,
+    pub code: Option<u32>,
+    pub signal: Option<String>,
+    pub killed: bool,
 }
 
 /// Turns what the core sends into webview channel messages and app events.
@@ -44,62 +52,51 @@ struct PtyExited {
 pub(super) struct AppSink {
     app: AppHandle,
     streams: Arc<StreamTable>,
+    view: LastView,
 }
 
 impl AppSink {
     pub(super) fn new(app: AppHandle, streams: Arc<StreamTable>) -> Self {
-        Self { app, streams }
+        Self {
+            app,
+            streams,
+            view: LastView::default(),
+        }
     }
 
     fn emit<S: serde::Serialize + Clone>(&self, event: &str, payload: S) {
         if self.app.emit_to(MAIN_WEBVIEW, event, payload).is_err() {
-            let _ = global_observability().increment_counter("pty.emit_errors", 1);
+            global_observability().increment_counter("pty.emit_errors", 1);
         }
     }
 }
 
-/// An absent exit code means the status could not be read, which a task
-/// reports as a failure.
-pub(super) fn task_exit(code: Option<u32>, signal: Option<String>) -> TaskProcessExit {
-    TaskProcessExit {
-        code: code.unwrap_or(1),
-        signal,
-    }
-}
-
-pub(super) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
+pub(crate) fn deliver(streams: &StreamTable, id: SessionId, bytes: &[u8]) {
     let delivery = streams.output(id, bytes);
     if delivery.is_empty() {
         return;
     }
     let dead = delivery.send(bytes);
     if !dead.is_empty() {
-        let _ =
-            global_observability().increment_counter("pty.channel_send_errors", dead.len() as u64);
+        global_observability().increment_counter("pty.channel_send_errors", dead.len() as u64);
         streams.drop_dead(id, &dead);
     }
 }
 
 /// An empty chunk is the frontend's sign that the process is gone.
-pub(super) fn report_exited(streams: &StreamTable, id: SessionId, exit: TaskProcessExit) {
-    let (exit_channel, delivery) = streams.exited(id);
-    if let Some(channel) = exit_channel {
-        let _ = channel.send(exit);
-    }
-    delivery.send(&[]);
+pub(crate) fn report_exited(streams: &StreamTable, id: SessionId) {
+    streams.exited(id).send(&[]);
 }
 
-pub(super) fn report_all_exited(streams: &StreamTable) {
-    for (exit_channel, delivery) in streams.take_all() {
-        if let Some(channel) = exit_channel {
-            let _ = channel.send(task_exit(None, None));
-        }
+pub(crate) fn report_all_exited(streams: &StreamTable) {
+    for delivery in streams.take_all() {
         delivery.send(&[]);
     }
 }
 
 impl EventSink for AppSink {
     fn output(&self, id: SessionId, bytes: &[u8]) {
+        crate::hosts::install::watch_output(id, bytes);
         let observer = global_observability();
         // Every observability call allocates a name and takes one global lock,
         // and this runs for every frame of every terminal. Instrument a
@@ -136,35 +133,97 @@ impl EventSink for AppSink {
                 signal,
                 killed,
             } => {
+                crate::hosts::install::ended(id);
                 self.emit(
                     PTY_EXITED_EVENT,
                     PtyExited {
                         id,
                         code,
-                        signal: signal.clone(),
+                        signal,
                         killed,
                     },
                 );
-                report_exited(&self.streams, id, task_exit(code, signal));
+                report_exited(&self.streams, id);
             }
             Event::ShellMetadata(metadata) => self.emit(PTY_SHELL_METADATA_EVENT, metadata),
+            Event::SshLink { id, link } => self.emit(PTY_SSH_LINK_EVENT, PtySshLink { id, link }),
             Event::TaskOutput { .. } => {}
-            Event::AgentState(state) => self.emit("agent_state_changed", state),
+            Event::AgentState(state) => {
+                if state.state == "stopped" {
+                    crate::simulator::agent_stopped(&self.app, &state.agent_id);
+                }
+            }
             Event::Chat {
                 agent_id, event, ..
-            } => crate::acp::deliver(&self.app, &agent_id, event),
+            } => {
+                if matches!(event.kind, ChatEventKind::Status)
+                    && matches!(event.payload["state"].as_str(), Some("stopped" | "error"))
+                {
+                    crate::simulator::agent_stopped(&self.app, &agent_id);
+                }
+                crate::acp::deliver(&self.app, &agent_id, event)
+            }
             Event::Remote { status } => {
                 crate::account::notice_remote(&self.app, &status);
+                crate::remote::follow_remote_access(&self.app, status.enabled);
+                crate::hosts::follow_links(&self.app);
                 self.emit("remote_status_changed", status);
             }
-            Event::ChatBegun { chat } => self.emit("remote_chat_begun", chat),
-            Event::WakeChat { agent_id } => self.emit("remote_chat_wake", agent_id),
+            Event::ChatBegun { .. } => {}
+            Event::Network { change } => self.emit("network_changed", change),
+            Event::Notice {
+                title,
+                body,
+                agent_id,
+            } => self.emit(
+                "agent_notice",
+                serde_json::json!({ "title": title, "body": body, "agentId": agent_id }),
+            ),
+            Event::AccountDevice {
+                key,
+                name,
+                platform,
+            } => {
+                let own = self
+                    .app
+                    .try_state::<crate::hosts::Hosts>()
+                    .and_then(|hosts| hosts.own_key());
+                if own.as_deref() != Some(key.as_str()) {
+                    self.emit(
+                        "account_device",
+                        serde_json::json!({ "key": key, "name": name, "platform": platform }),
+                    );
+                }
+            }
             Event::FocusAgent { agent_id } => {
-                crate::harness::bring_to_front(&self.app);
-                self.emit("focus_agent", agent_id);
+                crate::agent_notification::focus_agent(&self.app, agent_id)
             }
-            Event::Attention { .. } | Event::AttentionCleared { .. } | Event::DeviceView { .. } => {
+            Event::DeviceView { view } => self.view.changed(&self.app, view),
+            Event::TerminalTitle { id, title } => self.emit(
+                "terminal_title",
+                serde_json::json!({ "id": id, "title": title }),
+            ),
+            Event::Changed {
+                topic,
+                project,
+                paths,
+            } => {
+                let change =
+                    serde_json::json!({ "topic": topic, "project": project, "paths": paths });
+                match project.filter(|_| topic == "git") {
+                    Some(project) => {
+                        let app = self.app.clone();
+                        crate::files::moved(project, paths, move || {
+                            let _ = app.emit_to(MAIN_WEBVIEW, "core_changed", change);
+                        });
+                    }
+                    None => self.emit("core_changed", change),
+                }
             }
+            Event::AttentionCleared { id, agent_id } => {
+                crate::acp::permission_cleared(&self.app, &agent_id, id)
+            }
+            Event::Attention { .. } => {}
         }
     }
 
@@ -183,13 +242,13 @@ impl EventSink for AppSink {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use sikemux_pty::task::TaskProcessExit;
-
-    use super::{report_all_exited, report_exited, task_exit};
+    use super::{report_all_exited, report_exited};
     use crate::pty::streams::StreamTable;
 
-    fn recording<T: tauri::ipc::IpcResponse + 'static>(
-    ) -> (tauri::ipc::Channel<T>, Arc<Mutex<Vec<String>>>) {
+    fn recording() -> (
+        tauri::ipc::Channel<tauri::ipc::Response>,
+        Arc<Mutex<Vec<String>>>,
+    ) {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let sink = seen.clone();
         let channel = tauri::ipc::Channel::new(move |body| {
@@ -204,50 +263,29 @@ mod tests {
     }
 
     #[test]
-    fn an_exit_without_a_code_reports_failure() {
-        assert_eq!(
-            task_exit(None, None),
-            TaskProcessExit {
-                code: 1,
-                signal: None
-            }
-        );
-        assert_eq!(task_exit(Some(0), None).code, 0);
-        assert_eq!(
-            task_exit(Some(143), Some("Terminated".into()))
-                .signal
-                .as_deref(),
-            Some("Terminated")
-        );
-    }
-
-    #[test]
-    fn an_exit_reaches_the_task_channel_once_and_every_pane_as_an_empty_chunk() {
+    fn an_exit_reaches_every_pane_as_an_empty_chunk() {
         let streams = StreamTable::default();
-        let (exit, exits) = recording::<TaskProcessExit>();
-        let (pane, chunks) = recording::<tauri::ipc::Response>();
+        let (pane, chunks) = recording();
         {
-            let mut guard = streams.lock().expect("lock");
-            guard.register_task(4, exit);
+            let mut guard = streams.lock();
             guard.begin_attach(4).expect("begin");
             guard.finish_attach(4, pane).expect("attach");
         }
-        report_exited(&streams, 4, task_exit(Some(7), None));
-        report_exited(&streams, 4, task_exit(Some(9), None));
-        assert_eq!(exits.lock().expect("exits").as_slice(), [r#"{"code":7}"#]);
-        assert_eq!(
-            chunks.lock().expect("chunks").as_slice(),
-            ["raw 0", "raw 0"]
-        );
+        report_exited(&streams, 4);
+        assert_eq!(chunks.lock().expect("chunks").as_slice(), ["raw 0"]);
     }
 
     #[test]
-    fn losing_the_core_ends_every_task_as_failed() {
+    fn losing_the_core_ends_every_pane_and_forgets_it() {
         let streams = StreamTable::default();
-        let (exit, exits) = recording::<TaskProcessExit>();
-        streams.lock().expect("lock").register_task(11, exit);
+        let (pane, chunks) = recording();
+        {
+            let mut guard = streams.lock();
+            guard.begin_attach(11).expect("begin");
+            guard.finish_attach(11, pane).expect("attach");
+        }
         report_all_exited(&streams);
-        assert_eq!(exits.lock().expect("exits").as_slice(), [r#"{"code":1}"#]);
+        assert_eq!(chunks.lock().expect("chunks").as_slice(), ["raw 0"]);
         assert!(streams.take_all().is_empty());
     }
 }

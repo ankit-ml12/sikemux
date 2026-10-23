@@ -18,9 +18,6 @@ pub enum AppError {
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("git: {0}")]
-    Git(String),
-
     #[error("lsp: {0}")]
     Lsp(String),
 
@@ -29,6 +26,9 @@ pub enum AppError {
 
     #[error("http: {0}")]
     Http(String),
+
+    #[error("{}", sikemux_plugin_api::network::unreachable_message(*.0, "the server"))]
+    Unreachable(sikemux_plugin_api::Unreachable),
 
     #[error("{plugin}: {error}")]
     Plugin {
@@ -58,9 +58,6 @@ pub enum AppError {
     #[error("{0} is not UTF-8 text")]
     NotText(String),
 
-    #[error("watch: {0}")]
-    Watch(String),
-
     #[error("state: {0}")]
     State(String),
 
@@ -74,13 +71,11 @@ pub enum AppError {
 
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
+        if let Some(kind) = sikemux_plugin_api::unreachable(&e) {
+            eprintln!("http: {e}");
+            return AppError::Unreachable(kind);
+        }
         AppError::Http(e.to_string())
-    }
-}
-
-impl From<git2::Error> for AppError {
-    fn from(e: git2::Error) -> Self {
-        AppError::Git(e.message().to_string())
     }
 }
 
@@ -141,10 +136,10 @@ impl AppError {
         match self {
             AppError::Io(_) => "io",
             AppError::Json(_) => "json",
-            AppError::Git(_) => "git",
             AppError::Lsp(_) => "lsp",
             AppError::LspServerMissing { .. } => "lsp-server-missing",
             AppError::Http(_) => "http",
+            AppError::Unreachable(kind) => sikemux_plugin_api::network::category(*kind),
             AppError::Plugin { .. } => "plugin",
             AppError::BadArg(_) | AppError::BadArgText(_) => "bad-arg",
             AppError::Pty(_) => "pty",
@@ -152,7 +147,6 @@ impl AppError {
             AppError::Fs(_) => "fs",
             AppError::FileConflict(_) => "file-conflict",
             AppError::NotText(_) => "not-text",
-            AppError::Watch(_) => "watch",
             AppError::State(_) => "state",
             AppError::Window(_) => "window",
             AppError::Other(_) => "other",
@@ -181,8 +175,11 @@ mod tests {
         );
         assert_eq!(AppError::BadArg("x").category(), "bad-arg");
         assert_eq!(AppError::Pty("x".into()).category(), "pty");
-        assert_eq!(AppError::Watch("x".into()).category(), "watch");
         assert_eq!(AppError::State("x".into()).category(), "state");
+        assert_eq!(
+            AppError::Unreachable(sikemux_plugin_api::Unreachable::Offline).category(),
+            "offline"
+        );
     }
 
     #[test]

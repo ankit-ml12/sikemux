@@ -1,8 +1,8 @@
-export { agentSupportsSkipPermissions } from "./agentLogic";
-export { agentDirectCommand, agentStartup } from "./agentLaunchCommand";
+export { agentExecutablePath, profileOf } from "./agentLaunchCommand";
 export { mergePinnedIntoRoots, normaliseProjectRoots } from "./settingsLogic";
 export * from "./agents";
 export * from "./appearance";
+export * from "./board";
 export * from "./cliOpen";
 export * from "./coreSessions";
 export * from "./customCommands";

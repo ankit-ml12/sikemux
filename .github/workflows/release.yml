@@ -7,6 +7,7 @@ on:
     tags: ["v*"]
 
 permissions:
+  actions: read
   contents: read
   checks: write
 
@@ -15,6 +16,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  approve:
+    name: Approve the stable release
+    if: ${{ !contains(github.ref_name, '-nightly.') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: approval
+    steps:
+      - name: Approved
+        run: echo "Approved ${GITHUB_REF_NAME}" >>"$GITHUB_STEP_SUMMARY"
+
   pushed-checks:
     name: Checks already run on this commit
     runs-on: ubuntu-latest
@@ -47,54 +58,25 @@ jobs:
     if: needs.pushed-checks.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
 
-  release:
-    name: Build, verify, and publish
-    needs: [pushed-checks, checks]
-    if: >-
-      !cancelled() && needs.pushed-checks.result == 'success' &&
-      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success')
-    runs-on: macos-26
-    timeout-minutes: 90
-    environment: release
+  plan:
+    name: Plan the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-        with:
-          run_install: false
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Setup Rust
-        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --component clippy --component rustfmt --no-self-update
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: src-tauri
-          shared-key: release
-
-      # release.sh refreshes Cargo.lock offline, which needs every crate already
-      # on disk; a fresh runner has none.
-      - name: Fetch Rust dependencies
-        run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
-
-      - name: Install XcodeGen
-        # The simulator helper builds FBControlCore with it.
-        run: brew install xcodegen
+          persist-credentials: false
 
       - name: Resolve version, channel, and notes
         id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version="$(node -p "require('./package.json').version")"
           if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
@@ -106,10 +88,123 @@ jobs:
             echo "::error::RELEASE_NOTES.md is headed '$heading', not '# Sikemux v$version'"
             exit 1
           fi
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/v$version" --jq .sha)" != "$GITHUB_SHA" ]]; then
+            echo "::error::The remote tag v$version is not on $GITHUB_SHA"
+            exit 1
+          fi
+          if gh release view "v$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::GitHub release v$version already exists"
+            exit 1
+          fi
           if [[ "${version%%+*}" == *-* ]]; then channel=nightly; else channel=stable; fi
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "channel=$channel" >>"$GITHUB_OUTPUT"
-          echo "Releasing $channel v$version from $(git rev-parse HEAD)" >>"$GITHUB_STEP_SUMMARY"
+          echo "Releasing $channel v$version from $GITHUB_SHA" >>"$GITHUB_STEP_SUMMARY"
+
+  # Nothing that builds holds signing material, and nothing that signs runs the
+  # build's dependencies or what it signs. The app is compiled with the hashes of
+  # the voice and simulator helpers it downloads, so they are signed first.
+  helpers:
+    name: Build the helpers
+    needs: [approve, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Install XcodeGen
+        # The simulator helper builds FBControlCore with it.
+        run: brew install xcodegen
+
+      - name: Build the voice and simulator helpers
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          flags=(--stage helpers)
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+          (cd src-tauri/binaries && COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/helpers.tar" sikemux-voice-* sikemux-sim-*)
+
+      - name: Keep the unsigned helpers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: helpers-unsigned
+          if-no-files-found: error
+          path: ${{ runner.temp }}/helpers.tar
+
+  # The core is not compiled with the helpers' hashes, so it builds alongside them.
+  mac-core:
+    name: Build the Mac core
+    needs: [approve, plan]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Build the core
+        env:
+          SIKEMUX_USAGE_REPORTING: app
+          BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
+          JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
+          VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
+        run: cargo build --locked --release -p sikemux-host --bin sikemux-host
+        working-directory: src-tauri
+
+      - name: Keep the core
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-core
+          if-no-files-found: error
+          path: src-tauri/target/release/sikemux-host
+
+  sign-helpers:
+    name: Sign the helpers
+    needs: [plan, helpers]
+    if: ${{ !cancelled() && needs.helpers.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+    outputs:
+      notarized: ${{ vars.RELEASE_NOTARIZED == '1' && '1' || '0' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch helpers-unsigned
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: helpers-unsigned
+          path: ${{ runner.temp }}/unsigned
 
       - name: Import the Developer ID certificate
         if: vars.RELEASE_NOTARIZED == '1'
@@ -130,30 +225,282 @@ jobs:
           while read -r existing; do keychains+=("${existing//\"/}"); done < <(security list-keychains -d user)
           security list-keychains -d user -s "${keychains[@]}"
 
-      - name: Build, verify, and publish
+      - name: Sign the helpers
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTARIZED: ${{ vars.RELEASE_NOTARIZED == '1' && '1' || '0' }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [[ "$RELEASE_NOTARIZED" == "1" ]]; then
+            [[ -n "$IDENTITY" ]] || { echo "::error::APPLE_SIGNING_IDENTITY is not set"; exit 1; }
+            export APPLE_SIGNING_IDENTITY="$IDENTITY"
+          fi
+          mkdir "$RUNNER_TEMP/helpers"
+          tar -xf "$RUNNER_TEMP/unsigned/helpers.tar" -C "$RUNNER_TEMP/helpers"
+          helpers=("$RUNNER_TEMP"/helpers/*)
+          [[ ${#helpers[@]} -eq 2 ]] || { echo "::error::Expected the voice and simulator helpers, found ${#helpers[@]} files"; exit 1; }
+          ./scripts/sign-helper.sh "${helpers[@]}"
+          (cd "$RUNNER_TEMP/helpers" && COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/helpers.tar" sikemux-voice-* sikemux-sim-*)
+
+      - name: Keep the signed helpers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: helpers
+          if-no-files-found: error
+          path: ${{ runner.temp }}/helpers.tar
+
+  # The build runs alongside the checks; only publishing waits for them.
+  build:
+    name: Build the app
+    needs: [plan, sign-helpers]
+    if: ${{ !cancelled() && needs.sign-helpers.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --component clippy --component rustfmt --no-self-update
+
+      # release.sh refreshes Cargo.lock offline, which needs every crate already
+      # on disk; a fresh runner has none.
+      - name: Fetch Rust dependencies
+        run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Fetch helpers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: helpers
+          path: ${{ runner.temp }}/helpers
+
+      - name: Compile the app around the signed helpers
+        env:
+          BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
+          JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
+          VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          mkdir -p src-tauri/binaries
+          tar -xf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
+          flags=(--publish --stage compile)
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/compiled.tar" src-tauri/target/release/sikemux dist
+
+      - name: Keep the compiled app
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-compiled
+          if-no-files-found: error
+          path: ${{ runner.temp }}/compiled.tar
+
+  # The core goes into the app only here, so the app compiles while the core does.
+  package:
+    name: Pack the app
+    needs: [plan, build, mac-core]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.mac-core.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Fetch Rust dependencies
+        run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Fetch helpers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: helpers
+          path: ${{ runner.temp }}/helpers
+
+      - name: Fetch the core
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mac-core
+          path: ${{ runner.temp }}/core
+
+      - name: Fetch the compiled app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-compiled
+          path: ${{ runner.temp }}/compiled
+
+      - name: Pack the app around the core and the signed helpers
+        env:
+          PREBUILT_CORE: ${{ runner.temp }}/core/sikemux-host
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          mkdir -p src-tauri/binaries
+          tar -xf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
+          tar -xf "$RUNNER_TEMP/compiled/compiled.tar"
+          flags=(--publish --stage package)
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/app.tar" -C src-tauri/target/release/bundle macos/Sikemux.app dmg
+
+      - name: Keep the unsigned app
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-unsigned
+          if-no-files-found: error
+          path: ${{ runner.temp }}/app.tar
+
+  sign:
+    name: Sign and notarize the app
+    needs: [plan, sign-helpers, package]
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch app-unsigned
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-unsigned
+          path: ${{ runner.temp }}/unsigned
+
+      - name: Import the Developer ID certificate
+        if: needs.sign-helpers.outputs.notarized == '1'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          base64 --decode <<<"$APPLE_CERTIFICATE" >"$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          keychains=("$keychain")
+          while read -r existing; do keychains+=("${existing//\"/}"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychains[@]}"
+
+      - name: Sign, notarize and pack the app
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          RELEASE_NOTARIZED: ${{ vars.RELEASE_NOTARIZED || '0' }}
+          RELEASE_NOTARIZED: ${{ needs.sign-helpers.outputs.notarized }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
-          VERSION: ${{ steps.plan.outputs.version }}
-          CHANNEL: ${{ steps.plan.outputs.channel }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          flags=(--publish)
-          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
-          ./scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+          bundle=src-tauri/target/release/bundle
+          mkdir -p "$bundle"
+          tar -xf "$RUNNER_TEMP/unsigned/app.tar" -C "$bundle"
+          ./scripts/sign-mac.sh "$VERSION"
+          COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -cf "$RUNNER_TEMP/signed.tar" -C "$bundle" macos/Sikemux.app macos/Sikemux.app.tar.gz macos/Sikemux.app.tar.gz.sig dmg
 
-      - name: Keep the built artifacts on the run
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - name: Keep the signed app
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sikemux-${{ steps.plan.outputs.version }}
-          if-no-files-found: ignore
+          name: app-signed
+          if-no-files-found: error
+          path: ${{ runner.temp }}/signed.tar
+
+  verify:
+    name: Verify the signed release
+    needs: [plan, sign-helpers, sign]
+    if: ${{ !cancelled() && needs.sign.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch app-signed
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-signed
+          path: ${{ runner.temp }}/signed
+
+      - name: Fetch helpers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: helpers
+          path: ${{ runner.temp }}/helpers
+
+      - name: Verify, start the signed binaries, and write the update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTARIZED: ${{ needs.sign-helpers.outputs.notarized }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          mkdir -p src-tauri/target/release/bundle src-tauri/binaries
+          tar -xf "$RUNNER_TEMP/signed/signed.tar" -C src-tauri/target/release/bundle
+          tar -xf "$RUNNER_TEMP/helpers/helpers.tar" -C src-tauri/binaries
+          flags=()
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/verify-release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"
+
+      - name: Keep the verified release on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sikemux-${{ needs.plan.outputs.version }}
+          if-no-files-found: error
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz
@@ -162,3 +509,195 @@ jobs:
             src-tauri/binaries/sikemux-voice-*
             src-tauri/binaries/sikemux-sim-*
             latest.json
+
+  build-linux:
+    name: Build Linux packages
+    needs: approve
+    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    # The oldest runner GitHub still supports; its glibc decides the oldest distribution the packages run on.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Install the Tauri Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the deb, rpm and AppImage
+        env:
+          SIKEMUX_USAGE_REPORTING: app
+          BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
+          JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
+          VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
+        run: pnpm build:linux
+
+      - name: Keep the built packages on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sikemux-linux-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/appimage/*.AppImage
+
+  build-host:
+    name: Build the Linux host core (${{ matrix.arch }})
+    needs: approve
+    if: ${{ !cancelled() && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Debian 12's glibc is older than the runner's, so building there lets the core run on both.
+    container: rust:1.99-bookworm
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the core
+        env:
+          SIKEMUX_USAGE_REPORTING: host
+          BITBUCKET_OAUTH_SECRET: ${{ secrets.BITBUCKET_OAUTH_SECRET }}
+          JIRA_OAUTH_SECRET: ${{ secrets.JIRA_OAUTH_SECRET }}
+          VERCEL_OAUTH_SECRET: ${{ secrets.VERCEL_OAUTH_SECRET }}
+        run: cargo build --locked --release -p sikemux-host --bin sikemux-host
+        working-directory: src-tauri
+
+      - name: Check it runs without a window
+        run: scripts/package-host.sh "${{ matrix.arch }}"
+
+      - name: Install it with the installer this release publishes
+        run: scripts/smoke-host-install.sh "${{ matrix.arch }}"
+
+      - name: Keep the host core on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sikemux-host-${{ matrix.arch }}-${{ github.ref_name }}
+          if-no-files-found: error
+          path: src-tauri/target/host/*.tar.gz
+
+  sign-host:
+    name: Sign the Linux host cores
+    needs: [plan, build-host]
+    if: ${{ !cancelled() && needs.build-host.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fetch the Linux host cores
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sikemux-host-*-${{ github.ref_name }}
+          merge-multiple: true
+          path: src-tauri/target/host
+
+      - name: Sign them
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/sign-host.sh "${{ needs.plan.outputs.version }}"
+
+      - name: Keep the signatures on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: host-signatures-${{ github.ref_name }}
+          if-no-files-found: error
+          path: src-tauri/target/host/*.tar.gz.sig
+
+  publish:
+    name: Publish
+    needs:
+      [plan, verify, build-linux, build-host, sign-host, pushed-checks, checks]
+    if: >-
+      !cancelled() && needs.verify.result == 'success' && needs.build-linux.result == 'success' &&
+      needs.build-host.result == 'success' && needs.sign-host.result == 'success' &&
+      needs.pushed-checks.result == 'success' &&
+      (needs.pushed-checks.outputs.passed == 'true' || needs.checks.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the verified build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sikemux-${{ needs.plan.outputs.version }}
+
+      - name: Fetch the Linux packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sikemux-linux-${{ github.ref_name }}
+          path: src-tauri/target/release/bundle
+
+      - name: Fetch the Linux host cores
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sikemux-host-*-${{ github.ref_name }}
+          merge-multiple: true
+          path: src-tauri/target/host
+
+      - name: Fetch their signatures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: host-signatures-${{ github.ref_name }}
+          path: src-tauri/target/host
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+        run: |
+          flags=()
+          [[ "$CHANNEL" == "nightly" ]] && flags+=(--nightly)
+          ./scripts/publish-release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"

@@ -1,97 +1,262 @@
-import { useMemo } from "react";
-import { AgentStateIndicator } from "../agents/AgentStateIndicator";
+import { useMemo, useState, type MouseEvent, type ReactNode, type Ref } from "react";
+import { agentNaming } from "../agents/AgentLabel";
+import { AgentTitleInput } from "../agents/AgentTitleInput";
+import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { activeAgentId, agentIdsOf } from "../state/selectors";
-import type { Agent, AgentPresentationState } from "../state/types";
-import { AgentIcon, IconClose } from "../ui/Icons";
-import { Panel, PanelHeader } from "../ui/Panel";
+import { inTeams, type TeamLink } from "../agents/teams";
+import type { AgentDisplay } from "../state/agentStatus";
+import { activeAgentId, agentDisplayOf, hasChat, openAgents } from "../state/selectors";
+import type { Agent } from "../state/types";
+import { AgentFace } from "../buddies/Buddy";
+import { IconAgent, IconChevron, IconClose, IconPin } from "../ui/Icons";
+import { RailEmpty } from "./RailEmpty";
+import { AgentContextMenu } from "../workspace/AgentContextMenu";
+import { Panel } from "../ui/Panel";
 import { Tooltip } from "../ui/Tooltip";
+import { AgentRowProject } from "./AgentRowTree";
+import { AgentRowCard, useRowCard } from "./AgentRowCard";
+import { AgentReview } from "./AgentReview";
+import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
+import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
+import { inCoreOrder, useInbox } from "./useInbox";
+import { runningChats, usePlace } from "./HostLists";
+import { hostName } from "../hosts/hosts";
 
-type Bucket = "blocked" | "working" | "done" | "idle";
-
-const BUCKETS: { id: Bucket; label: string }[] = [
-    { id: "blocked", label: "Needs you" },
-    { id: "working", label: "Working" },
-    { id: "done", label: "Done" },
-    { id: "idle", label: "Idle" },
-];
-
-interface OpenAgent {
+interface OpenAgentRow {
+    id: string;
+    lead?: string;
     agent: Agent;
-    state: AgentPresentationState;
-    bucket: Bucket;
+    display: AgentDisplay;
     sessionName: string;
+    sessionId: string;
+    sessionCwd: string;
 }
 
-/** Every agent open in any project, grouped by what it needs from you. */
-export function AllProjectsAgents() {
+/**
+ * Every agent open in any project on `host` (none for this one), in the order the core lists them, then the chats
+ * running there that this app does not show yet.
+ */
+export function AllProjectsAgents({ showEmpty, host }: { showEmpty: boolean; host: string | undefined }) {
     const sessionOrder = useStore((s) => s.sessionOrder);
     const sessions = useStore((s) => s.sessions);
     const windows = useStore((s) => s.windows);
     const windowsBySession = useStore((s) => s.windowsBySession);
     const agents = useStore((s) => s.agents);
-    const activity = useStore((s) => s.agentActivity);
-    const background = useStore((s) => s.agentBackgroundWork);
+    const agentStatus = useStore((s) => s.agentStatus);
+    const { inbox } = useInbox();
+    const place = usePlace();
+    const where = useStore((s) => hostName(s, host));
     const shownAgentId = useStore((s) => activeAgentId(s, s.sessions[s.activeSessionId]));
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [menu, setMenu] = useState<{ agentId: string; sessionId: string; x: number; y: number } | null>(null);
 
     const open = useMemo(() => {
-        const rows: OpenAgent[] = [];
-        for (const sessionId of sessionOrder) {
-            const session = sessions[sessionId];
-            if (session?.kind !== "project") continue;
-            for (const id of agentIdsOf({ windows, windowsBySession }, sessionId)) {
-                const agent = agents[id];
-                if (!agent) continue;
-                const state = activity[id]?.state ?? "idle";
-                const working = state === "working" || (background[id] ?? 0) > 0;
-                const bucket: Bucket = state === "blocked" ? "blocked" : working ? "working" : state === "done" ? "done" : "idle";
-                rows.push({ agent, state: working && state !== "blocked" ? "working" : state, bucket, sessionName: session.name });
-            }
+        const rows: OpenAgentRow[] = [];
+        for (const { agentId, agent, session } of openAgents({ sessionOrder, sessions, windows, windowsBySession, agents })) {
+            if (agent.host !== host) continue;
+            rows.push({
+                id: agentId,
+                lead: agent.lead,
+                agent,
+                display: agentDisplayOf({ agentStatus }, agentId),
+                sessionName: session.name,
+                sessionId: session.id,
+                sessionCwd: session.cwd,
+            });
         }
         return rows;
-    }, [sessionOrder, sessions, windows, windowsBySession, agents, activity, background]);
+    }, [sessionOrder, sessions, windows, windowsBySession, agents, agentStatus, host]);
 
-    if (open.length === 0) return <div className="agent-empty">no agents open in any project</div>;
+    const { folded, toggle } = useTeamFolds();
+    const workers = useMemo(() => inbox.remoteAgents.filter((worker) => worker.hostId === host), [inbox.remoteAgents, host]);
+    const teams = useMemo(
+        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), workers)), folded, toggle),
+        [open, inbox.agents, workers, folded, toggle],
+    );
+    const running = host ? runningChats(place, agents, host, new Set(workers.map((worker) => worker.agentId))) : [];
+
+    const menuAgent = menu && agents[menu.agentId];
+    const menuSession = menu && sessions[menu.sessionId];
+
+    if (open.length + workers.length + running.length === 0)
+        return (
+            showEmpty && (
+                <RailEmpty
+                    icon={<IconAgent size={20} />}
+                    title={where ? `No chats on ${where}` : "No agents open"}
+                    shortcut="agent.new"
+                    doing="start one"
+                />
+            )
+        );
 
     return (
-        <>
-            {BUCKETS.map(({ id, label }) => {
-                const rows = open.filter((row) => row.bucket === id);
-                if (rows.length === 0) return null;
-                return (
-                    <Panel key={id} variant="group" className={`agent-group${id === "blocked" ? " agent-attention" : ""}`}>
-                        <PanelHeader label={`${label} ${rows.length}`} rule />
-                        {rows.map(({ agent, state, bucket, sessionName }) => (
-                            <div key={agent.id} className="agent-row-wrap">
-                                <button
-                                    className={`agent-row${agent.id === shownAgentId ? " active" : ""}`}
-                                    title={`${sessionName} — ${agent.title}`}
-                                    onClick={() => cmd.revealAgent(agent.id)}>
-                                    <span className={`agent-glyph ${agent.type}`}>
-                                        <AgentIcon type={agent.type} size={20} />
-                                    </span>
-                                    <span className="agent-title">{agent.title}</span>
-                                </button>
-                                {bucket !== "idle" && (
-                                    <span className="row-status">
-                                        <AgentStateIndicator state={state} />
-                                    </span>
-                                )}
-                                <Tooltip label={`Close ${agent.title}`}>
-                                    <button
-                                        type="button"
-                                        className="row-x"
-                                        aria-label={`Close ${agent.title}`}
-                                        onClick={() => cmd.closeAgent(agent.id)}>
-                                        <IconClose size={11} />
-                                    </button>
-                                </Tooltip>
-                            </div>
-                        ))}
-                    </Panel>
-                );
-            })}
-        </>
+        <div className="agent-all-projects">
+            <Panel variant="group" className="agent-group">
+                {teams.map(({ agent: row, link, fold }) =>
+                    isRemoteWorker(row) ? (
+                        <RemoteAgentRow key={row.id} agent={row.remote} link={link} />
+                    ) : (
+                        <OpenAgentRow
+                            key={row.id}
+                            agent={row.agent}
+                            display={row.display}
+                            link={link}
+                            fold={fold}
+                            active={row.id === shownAgentId}
+                            project={{ name: row.sessionName, sessionId: row.sessionId }}
+                            sessionCwd={row.sessionCwd}
+                            title={
+                                renamingId === row.id && (
+                                    <AgentTitleInput
+                                        title={row.agent.title}
+                                        className="agent-title"
+                                        onSave={(title) => cmd.renameAgent(row.id, title)}
+                                        onDone={() => setRenamingId(null)}
+                                    />
+                                )
+                            }
+                            onDoubleClick={() => setRenamingId(row.id)}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                setMenu({ agentId: row.id, sessionId: row.sessionId, x: event.clientX, y: event.clientY });
+                            }}
+                        />
+                    ),
+                )}
+                {running}
+            </Panel>
+            {menuAgent && menuSession && (
+                <AgentContextMenu
+                    agent={menuAgent}
+                    session={menuSession}
+                    x={menu.x}
+                    y={menu.y}
+                    onClose={() => setMenu(null)}
+                    onRetitle={() => setRenamingId(menuAgent.id)}
+                />
+            )}
+        </div>
+    );
+}
+
+/** An open agent's row, with its state, its close, and what it is tied to hung below. `title` replaces its label while it is renamed. */
+export function OpenAgentRow({
+    agent,
+    display,
+    link,
+    fold,
+    active,
+    project,
+    sessionCwd,
+    title,
+    wrap,
+    onOpen = () => cmd.revealAgent(agent.id),
+    onDoubleClick,
+    onContextMenu,
+}: {
+    agent: Agent;
+    display: AgentDisplay;
+    link?: TeamLink;
+    /** On a lead's row, whether its team shows and how to fold it. */
+    fold?: TeamFold;
+    active: boolean;
+    project?: { name: string; sessionId: string };
+    sessionCwd: string;
+    title?: ReactNode;
+    wrap?: { ref: Ref<HTMLDivElement>; "data-agent-id": string; "data-session": string };
+    onOpen?: () => void;
+    onDoubleClick?: () => void;
+    onContextMenu?: (event: MouseEvent) => void;
+}) {
+    const glyph = <AgentFace agent={agent} size={18} logoSize={20} logoClass={`agent-glyph ${agent.type}`} buddyClass="agent-glyph buddy-mark" />;
+    const card = useRowCard();
+    const profiles = useStore((s) => s.providerProfiles);
+    const naming = agentNaming(agent, profiles);
+    const [reviewAt, setReviewAt] = useState<DOMRect | null>(null);
+    return (
+        <div className={teamWrapClass(link, fold?.open)} {...wrap} onMouseEnter={card.enter} onMouseLeave={card.leave} onMouseDown={card.close}>
+            {fold && (
+                <button
+                    type="button"
+                    className="team-fold"
+                    aria-expanded={fold.open}
+                    aria-label={`${fold.open ? "Hide" : "Show"} the agents ${agent.title} started`}
+                    onClick={fold.toggle}>
+                    <IconChevron size={11} />
+                </button>
+            )}
+            {title ? (
+                <div className={`agent-row${active ? " active" : ""}`}>
+                    {glyph}
+                    {title}
+                </div>
+            ) : (
+                <button
+                    className={`agent-row${project ? " two-line" : ""}${active ? " active" : ""}`}
+                    onClick={() => {
+                        fold?.toggle();
+                        onOpen();
+                    }}
+                    onDoubleClick={onDoubleClick}
+                    onContextMenu={onContextMenu}>
+                    {glyph}
+                    <span className="agent-row-text">
+                        <span className="agent-title">{naming.title}</span>
+                        {project && <AgentRowProject name={project.name} />}
+                    </span>
+                    {naming.handle && <span className="agent-row-name">{naming.handle}</span>}
+                    {fold && !fold.open && <span className="team-count">+{fold.count}</span>}
+                    <BackgroundCounts display={display} />
+                </button>
+            )}
+            {showsAgentState(display) && (
+                <span className="row-status">
+                    <AgentStateIndicator display={display} />
+                </span>
+            )}
+            {agent.resumeId && <PinToggle agent={agent} chatId={agent.resumeId} project={agent.cwd || sessionCwd} />}
+            <Tooltip label={`Close ${agent.title}`}>
+                <button type="button" className="row-x" aria-label={`Close ${agent.title}`} onClick={() => cmd.closeAgent(agent.id)}>
+                    <IconClose size={11} />
+                </button>
+            </Tooltip>
+            {card.anchor && !title && (
+                <AgentRowCard
+                    agent={agent}
+                    project={project?.name}
+                    anchor={card.anchor}
+                    onStay={card.stay}
+                    onLeave={card.leave}
+                    onReview={(at) => {
+                        card.close();
+                        setReviewAt(at);
+                    }}
+                />
+            )}
+            {reviewAt && agent.worktree && (
+                <AgentReview agentId={agent.id} worktree={agent.worktree} anchor={reviewAt} onClose={() => setReviewAt(null)} />
+            )}
+        </div>
+    );
+}
+
+function PinToggle({ agent, chatId, project }: { agent: Agent; chatId: string; project: string }) {
+    const pinned = useStore((s) => s.pinnedChats.some((pin) => hasChat(agent, pin)));
+    const label = `${pinned ? "Unpin" : "Pin"} ${agent.title}`;
+    return (
+        <Tooltip label={label}>
+            <button
+                type="button"
+                className={`row-pin${pinned ? " pinned" : ""}`}
+                aria-label={label}
+                aria-pressed={pinned}
+                onClick={() =>
+                    pinned ? cmd.unpinChat(agent.type, chatId) : cmd.pinChat({ agent: agent.type, id: chatId, title: agent.title, project })
+                }>
+                <IconPin size={12} filled={pinned} />
+            </button>
+        </Tooltip>
     );
 }

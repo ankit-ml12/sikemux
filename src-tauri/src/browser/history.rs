@@ -8,9 +8,11 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Url};
 
-use super::{browser_state_dir, normalize_url};
+use super::address::{resolve, Address};
+use super::browser_state_dir;
 
 const FILE_NAME: &str = "history.json";
 const MAX_PAGES: usize = 3000;
@@ -95,10 +97,7 @@ impl History {
     }
 
     fn with_store<R>(&self, app: &AppHandle, work: impl FnOnce(&mut Store) -> R) -> R {
-        let mut slot = self
-            .store
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut slot = self.store.locked();
         let store =
             slot.get_or_insert_with(|| path(app).map(|path| load(&path)).unwrap_or_default());
         work(store)
@@ -117,11 +116,7 @@ impl History {
                 return;
             };
             let data = {
-                let slot = manager
-                    .history
-                    .store
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let slot = manager.history.store.locked();
                 match slot.as_ref().map(serde_json::to_vec) {
                     Some(Ok(data)) => data,
                     _ => return,
@@ -215,7 +210,7 @@ impl Store {
     fn suggest(&self, query: &str, now: u64) -> AddressSuggestions {
         let typed = query.trim();
         let search_url = search_url(typed);
-        let searches = normalize_url(typed) == search_url;
+        let searches = matches!(resolve(typed), Address::Search(_));
         let needle = typed.to_lowercase();
         let words: Vec<&str> = needle.split_whitespace().collect();
         if words.is_empty() {
@@ -360,10 +355,7 @@ impl Store {
         self.pages
             .iter()
             .find(|page| page.url == site && !page.title.is_empty())
-            .map_or_else(
-                || address_of(site).trim_end_matches('/').to_owned(),
-                |page| page.title.clone(),
-            )
+            .map_or_else(|| address_of(site), |page| page.title.clone())
     }
 
     fn suggestion(&self, url: &str, title: &str) -> Suggestion {
@@ -428,10 +420,15 @@ fn full_address(url: &str) -> String {
         .to_owned()
 }
 
+/// A page's address as the address bar shows it: no scheme, no `www.`, and no
+/// slash after a bare host.
 fn address_of(url: &str) -> String {
     let rest = full_address(url);
-    rest.strip_prefix("www.")
-        .map_or(rest.clone(), str::to_owned)
+    let rest = rest.strip_prefix("www.").unwrap_or(&rest);
+    match rest.strip_suffix('/') {
+        Some(host) if !host.contains('/') => host.to_owned(),
+        _ => rest.to_owned(),
+    }
 }
 
 pub(super) fn search_url(query: &str) -> String {
@@ -457,12 +454,7 @@ fn load(path: &Path) -> Store {
 }
 
 fn save(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = path.with_extension("json.partial");
-    std::fs::write(&partial, data)?;
-    std::fs::rename(&partial, path)
+    sikemux_process::files::write_atomic(path, data, false)
 }
 
 #[cfg(test)]
@@ -490,7 +482,7 @@ mod tests {
 
         let found = store.suggest("you", NOW);
         let completion = found.completion.unwrap();
-        assert_eq!(completion.address, "youtube.com/");
+        assert_eq!(completion.address, "youtube.com");
         assert_eq!(completion.url, "https://www.youtube.com/");
         assert_eq!(completion.title, "YouTube");
         assert_eq!(
@@ -651,13 +643,9 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             [
-                ("https://www.youtube.com/", "YouTube", "youtube.com/"),
-                ("https://github.com/", "github.com", "github.com/"),
-                (
-                    "http://localhost:3000/",
-                    "localhost:3000",
-                    "localhost:3000/"
-                ),
+                ("https://www.youtube.com/", "YouTube", "youtube.com"),
+                ("https://github.com/", "github.com", "github.com"),
+                ("http://localhost:3000/", "localhost:3000", "localhost:3000"),
             ]
         );
     }

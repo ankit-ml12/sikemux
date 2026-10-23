@@ -107,6 +107,7 @@ fn shutdown_sync(socket: &Path) {
     let hello = ClientMessage::Hello {
         protocol: PROTOCOL.into(),
         version: PROTOCOL_VERSION,
+        newest: None,
     };
     let shutdown = ClientMessage::Request {
         request_id: 1,
@@ -299,6 +300,7 @@ async fn handshake_succeeds_and_a_wrong_version_is_rejected() {
     let hello = ClientMessage::Hello {
         protocol: PROTOCOL.into(),
         version: PROTOCOL_VERSION + 1,
+        newest: None,
     };
     stream
         .write_all(&encode_control(&hello).expect("hello"))
@@ -725,7 +727,7 @@ fn serve_core_for_ensure_running() {
     if let Some(socket) = std::env::var_os(SERVE_ENV) {
         init_env();
         let _ = server::run(ServerConfig {
-            idle_exit: Duration::from_millis(500),
+            idle_exit: Duration::from_secs(10),
             ..ServerConfig::new(socket.into())
         });
     }
@@ -823,13 +825,21 @@ async fn a_client_on_this_host_can_watch_the_device_view_with_the_app_s_titles()
         .spawn(launch(), agent_terminal("agent-10", "sleep 1000"))
         .await
         .expect("spawn");
-    app.publish_agents(
-        Vec::new(),
-        [("agent-10".to_owned(), "Fix the login flake".to_owned())].into(),
-    )
-    .await
-    .expect("publish titles");
-    app.publish_on_screen(vec!["agent-10".into()])
+    let project = serde_json::json!({ "id": "tmp", "path": std::env::temp_dir() });
+    app.call("addProject", project).await.expect("the project");
+    let agent = serde_json::json!({
+        "id": "agent-10",
+        "provider": "claude",
+        "project": "tmp",
+        "cwd": std::env::temp_dir(),
+        "title": "Fix the login flake",
+        "permissionMode": "bypass",
+        "ptyId": id,
+    });
+    app.call("createAgent", serde_json::json!({ "agent": agent }))
+        .await
+        .expect("the agent");
+    app.publish_on_screen(vec!["agent-10".into()], true)
         .await
         .expect("publish what is on screen");
 
@@ -1160,13 +1170,14 @@ async fn an_agent_that_ends_while_watched_stays_and_a_continuation_starts_below_
             launch(),
             agent_terminal(
                 "agent-9",
-                "printf '\\033[?1000h'; echo before-$((1+1)); exit 7",
+                "printf '\\033[?1000h'; echo before-$((1+1)); read _; exit 7",
             ),
         )
         .await
         .expect("spawn");
     let attached = client.attach(ended).await.expect("attach");
     assert!(!attached.exited);
+    client.write(ended, b"\n").await.expect("write");
     assert_eq!(stream.until_exit(&client, ended).await, (Some(7), false));
     let kept = client
         .list()

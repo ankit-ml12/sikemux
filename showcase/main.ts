@@ -13,7 +13,7 @@ Object.assign(
 );
 mockIPC(
   (command) => {
-    if (command === "plugin:app|version") return "0.4.2";
+    if (command === "plugin:app|version") return "0.5.3";
     return null;
   },
   { shouldMockEvents: true },
@@ -32,7 +32,7 @@ const [commands, store, gitWorkbench, git] = await Promise.all([
   import("../src/state/gitWorkbench"),
   import("./world/git"),
 ]);
-store.useStore.setState({ paneImage: PANE_IMAGE });
+store.useStore.setState({ paneImage: PANE_IMAGE, paneStrength: 1.8, buddies: true });
 for (const [repo, draft] of Object.entries(git.COMMIT_DRAFT)) {
   gitWorkbench.setGitDraft(repo, draft);
 }

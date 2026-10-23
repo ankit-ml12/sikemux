@@ -23,9 +23,12 @@ vi.mock("./HostArea", () => ({
         branch: string | null;
         cwd: string | null;
     }) => (
-        <div data-testid="host-area">
-            {props.section} {props.repo.owner}/{props.repo.name} as {String(props.repo.account)} on {String(props.branch)} in {String(props.cwd)}
-        </div>
+        <>
+            <div data-testid="host-area">
+                {props.section} {props.repo.owner}/{props.repo.name} as {String(props.repo.account)} on {String(props.branch)} in {String(props.cwd)}
+            </div>
+            <LentAccount />
+        </>
     ),
 }));
 vi.mock("./RepoPicker", () => ({
@@ -49,9 +52,11 @@ import { invalidate, useResource } from "../../plugin-api/resources";
 import { emit } from "../../state/bus";
 import type { GitArea } from "../../state/types";
 import { pullsR } from "../resources";
-import { hostSettings, setProjectRepo } from "../state";
-import { registerTestHost, TEST_HOST } from "../testHost";
+import { setProjectRepo } from "../state";
+import { picked, registerTestHost, TEST_HOST } from "../testHost";
+import { setState } from "../../state/store";
 import { GitHostShell } from "./GitHostShell";
+import { useGitShell } from "../shellContext";
 
 const signIn = vi.hoisted(() => ({ last: null as null | ((account: string | null) => void) }));
 const host = registerTestHost(api) as { -readonly [K in keyof ReturnType<typeof registerTestHost>]: ReturnType<typeof registerTestHost>[K] };
@@ -70,11 +75,16 @@ function PullCount() {
     return <span>pulls read: {pulls.data ? "yes" : "no"}</span>;
 }
 
+/** The account the shell lends the local workbench, drawn where its side panel would draw it. */
+function LentAccount() {
+    return <>{useGitShell().account}</>;
+}
+
 function shell(area: GitArea, children = <div>local workbench</div>) {
     const onArea = vi.fn();
-    const local = [{ id: "changes", label: "Changes", icon: null, on: area === "local", onSelect: vi.fn() }];
     const view = render(
-        <GitHostShell paneId="p-git" cwd={CWD} area={area} active onArea={onArea} local={local}>
+        <GitHostShell paneId="p-git" cwd={CWD} area={area} active fetching onArea={onArea}>
+            <LentAccount />
             {children}
         </GitHostShell>,
     );
@@ -92,7 +102,7 @@ beforeEach(() => {
         .mockResolvedValue({ repo: { host: "example.test", owner: "nodelike", name: "sikemux" }, slug: "nodelike/sikemux", sameHost: true });
     api.accountFor.mockReset().mockResolvedValue("ada-id");
     api.commitAuthors.mockReset().mockResolvedValue([{ email: "Grace@Example.com", login: "grace", avatarUrl: "https://example.test/grace.png" }]);
-    hostSettings(TEST_HOST).update((settings) => ({ ...settings, repoByProject: {}, accountByProject: {} }));
+    setState({ codeHosts: {} });
     signIn.last = null;
 });
 
@@ -104,37 +114,14 @@ const openAccountMenu = async () => {
 };
 
 describe("GitHostShell", () => {
-    it("shows only the local screens for a folder on no known host", async () => {
-        api.resolveRemote.mockResolvedValue({ repo: { host: "gitlab.com", owner: "a", name: "b" }, slug: "a/b", sameHost: false });
-        shell("local");
-        await waitFor(() => expect(api.resolveRemote).toHaveBeenCalledWith(remoteUrl));
-        expect(screen.getByText("local workbench")).toBeTruthy();
-        expect(screen.getByRole("button", { name: "Changes" })).toBeTruthy();
-        expect(screen.queryByRole("button", { name: "Pull requests" })).toBeNull();
-    });
-
-    it("shows only the local screens for a folder with no remote", async () => {
-        localGit.remotes.mockResolvedValue([]);
-        shell("pulls");
-        await waitFor(() => expect(localGit.remotes).toHaveBeenCalledWith(CWD));
-        expect(screen.getByText("local workbench")).toBeTruthy();
-        expect(api.resolveRemote).not.toHaveBeenCalled();
-    });
-
-    it("adds the host's sections to the rail and opens the one pressed", async () => {
-        const { onArea } = shell("local");
-        await userEvent.click(await screen.findByRole("button", { name: "Issues" }));
-        expect(onArea).toHaveBeenCalledWith("issues");
-    });
-
     it("opens a host section on the project's repository, branch and first account that can see it", async () => {
         shell("pulls");
         expect((await screen.findByTestId("host-area")).textContent).toBe(`pulls nodelike/sikemux as ada-id on feat/x in ${CWD}`);
-        expect(api.accountFor).toHaveBeenCalledWith({ provider: TEST_HOST, owner: "nodelike", name: "sikemux" });
+        expect(api.accountFor).toHaveBeenCalledWith({ provider: TEST_HOST, owner: "nodelike", name: "sikemux", host: "example.test" });
     });
 
     it("uses the account picked for the project without asking which can see it", async () => {
-        hostSettings(TEST_HOST).update((settings) => ({ ...settings, accountByProject: { [CWD]: "grace-id" } }));
+        setState({ codeHosts: { [CWD]: { [TEST_HOST]: { account: "grace-id" } } } });
         shell("pulls");
         expect((await screen.findByTestId("host-area")).textContent).toContain("as grace-id");
         expect(api.accountFor).not.toHaveBeenCalled();
@@ -185,9 +172,9 @@ describe("GitHostShell", () => {
         shell("pulls");
         await userEvent.click(within(await openAccountMenu()).getByRole("menuitem", { name: "Choose another repository…" }));
         await userEvent.click(await screen.findByRole("button", { name: "team/fork" }));
-        expect(hostSettings(TEST_HOST).get().repoByProject).toEqual({ [CWD]: "team/fork" });
+        expect(picked(TEST_HOST, "repo")).toEqual({ [CWD]: "team/fork" });
         await userEvent.click(screen.getByRole("button", { name: "nodelike/sikemux" }));
-        expect(hostSettings(TEST_HOST).get().repoByProject).toEqual({});
+        expect(picked(TEST_HOST, "repo")).toEqual({});
         await userEvent.click(screen.getByRole("button", { name: "Close picker" }));
         expect(screen.queryByRole("dialog", { name: "picker" })).toBeNull();
     });
@@ -198,7 +185,7 @@ describe("GitHostShell", () => {
         expect(screen.getByText(/Add another Test host account/)).toBeTruthy();
         expect(screen.queryByTestId("host-area")).toBeNull();
         act(() => signIn.last?.("grace-id"));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({ [CWD]: "grace-id" });
+        expect(picked(TEST_HOST, "account")).toEqual({ [CWD]: "grace-id" });
         expect(await screen.findByTestId("host-area")).toBeTruthy();
     });
 
@@ -210,7 +197,7 @@ describe("GitHostShell", () => {
 
         await userEvent.click(within(await openAccountMenu()).getByRole("menuitem", { name: "Add another account…" }));
         act(() => signIn.last?.(null));
-        expect(hostSettings(TEST_HOST).get().accountByProject).toEqual({});
+        expect(picked(TEST_HOST, "account")).toEqual({});
         expect(await screen.findByTestId("host-area")).toBeTruthy();
     });
 });

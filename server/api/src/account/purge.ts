@@ -1,13 +1,19 @@
 import { sql, type Kysely } from "kysely";
 
+import { audit } from "../audit.ts";
 import type { Tables } from "../db.ts";
+import { pruneChallenges } from "../devices/challenge.ts";
 import type { Logger } from "../log.ts";
 
-/** How long each kind of history is kept. */
+/**
+ * How long each kind of history is kept. A host someone removed keeps its record until its
+ * account is purged, so it cannot add itself back.
+ */
 export const RETENTION_DAYS = {
   events: 400,
   removedDevices: 30,
   audit: 400,
+  shares: 30,
 } as const;
 const BATCH = 5_000;
 
@@ -22,7 +28,7 @@ export async function purgeAccounts(
   const overdue = await db
     .selectFrom("users")
     .select("id")
-    .where("purge_after", "<", sql<Date>`now()`)
+    .where("purge_after", "<", sql<Date>`now() - interval '1 day'`)
     .where("clerk_deleted_at", "is", null)
     .execute();
   if (overdue.length)
@@ -62,16 +68,12 @@ export async function purgeAccounts(
       await trx.deleteFrom("audit").where("user_id", "=", id).execute();
       await trx.deleteFrom("challenges").where("user_id", "=", id).execute();
       await trx.deleteFrom("users").where("id", "=", id).execute();
-      await trx
-        .insertInto("audit")
-        .values({
-          user_id: null,
-          actor: "system",
-          action: "account.purged",
-          subject: null,
-          detail: JSON.stringify({ devices: Number(removed.n) }),
-        })
-        .execute();
+      await audit(trx, {
+        userId: null,
+        actor: "system",
+        action: "account.purged",
+        detail: { devices: Number(removed.n) },
+      });
       return true;
     });
     if (done) purged += 1;
@@ -84,6 +86,7 @@ export interface Pruned {
   events: number;
   removedDevices: number;
   audit: number;
+  shares: number;
   challenges: number;
 }
 
@@ -125,6 +128,7 @@ export async function pruneHistory(
     table: "removed_devices" | "audit",
     column: "removed_at" | "at",
     days: number,
+    kept = sql<boolean>`false`,
   ) =>
     inBatches(async () => {
       const { rows } = await sql<{ n: string }>`
@@ -132,6 +136,7 @@ export async function pruneHistory(
           delete from ${sql.table(table)} where ctid in (
             select ctid from ${sql.table(table)}
             where ${sql.ref(column)} < now() - make_interval(days => ${days})
+              and not (${kept})
             limit ${BATCH}
           )
           returning 1
@@ -143,17 +148,24 @@ export async function pruneHistory(
     "removed_devices",
     "removed_at",
     RETENTION_DAYS.removedDevices,
+    sql<boolean>`reason = 'removed' and role = 'host'`,
   );
   const audit = await olderThan("audit", "at", RETENTION_DAYS.audit);
-  const challenges = Number(
-    (
-      await db
-        .deleteFrom("challenges")
-        .where("expires_at", "<", sql<Date>`now() - interval '1 hour'`)
-        .executeTakeFirst()
-    ).numDeletedRows,
-  );
-  const pruned = { events, removedDevices, audit, challenges };
+  const shares = await inBatches(async () => {
+    const { rows } = await sql<{ n: string }>`
+      with gone as (
+        delete from shares where id in (
+          select id from shares
+          where coalesce(ended_at, expires_at) < now() - make_interval(days => ${RETENTION_DAYS.shares})
+          limit ${BATCH}
+        )
+        returning 1
+      )
+      select count(*) as n from gone`.execute(db);
+    return Number(rows[0]?.n ?? 0);
+  });
+  const challenges = await pruneChallenges(db);
+  const pruned = { events, removedDevices, audit, shares, challenges };
   log.info(pruned, "pruned old history");
   return pruned;
 }

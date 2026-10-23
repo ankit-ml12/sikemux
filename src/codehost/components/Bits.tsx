@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
-import { openUrl, swallow } from "../../plugin-api/host";
-import { IconCheck, IconChevron, IconExternal, IconGit, IconMerge, IconPullRequest } from "../../plugin-api/ui";
+import { IconCheck, IconGit, IconMerge, IconPullRequest } from "../../plugin-api/ui";
 import type { Label } from "../api";
-import { useHost } from "../registry";
+import { PULL_STATE_LABEL, pullState } from "../project";
 import { CommentIcon, NotPlannedIcon, SectionIcon } from "./ActionsIcon";
 import { Face } from "./CommentThread";
+import { useGitShell } from "../shellContext";
+import { useHost } from "../registry";
+import { sectionLabel } from "../sections";
+import type { Section } from "../state";
 
 export function Labels({ labels }: { labels: readonly Label[] }) {
     if (labels.length === 0) return null;
@@ -47,21 +49,16 @@ export function Comments({ count }: { count: number }) {
     );
 }
 
-const PULL_LABEL: Record<string, string> = { open: "Open", closed: "Closed", merged: "Merged", draft: "Draft" };
 const ISSUE_LABEL: Record<string, string> = { open: "Open", closed: "Closed", not_planned: "Closed as not planned" };
 
-/** A draft is still open, but it reads as its own state the way GitHub shows it. */
-export function stateOf(state: string, draft: boolean): string {
-    return draft && state === "open" ? "draft" : state;
-}
-
 function toneOf(kind: "pull" | "issue", state: string, draft: boolean, reason: string | null): string {
-    return kind === "issue" && state === "closed" && reason === "not_planned" ? "not_planned" : stateOf(state, draft);
+    if (kind === "pull") return pullState({ state, draft, mergedAt: null });
+    return state === "closed" && reason === "not_planned" ? "not_planned" : state;
 }
 
 export function stateLabel(kind: "pull" | "issue", state: string, draft = false, reason: string | null = null): string {
     const tone = toneOf(kind, state, draft, reason);
-    return (kind === "pull" ? PULL_LABEL : ISSUE_LABEL)[tone] ?? tone;
+    return (kind === "pull" ? PULL_STATE_LABEL : ISSUE_LABEL)[tone] ?? tone;
 }
 
 export function StateMark({
@@ -92,48 +89,18 @@ function StateGlyph({ kind, tone, size }: { kind: "pull" | "issue"; tone: string
     return tone === "closed" ? <IconCheck size={size} /> : <SectionIcon section="issues" size={size} />;
 }
 
-export function PageHead({
-    mark,
-    title,
-    number,
-    url,
-    backLabel,
-    onBack,
-    actions,
-    children,
-}: {
-    mark: ReactNode;
-    title: string;
-    number: number;
-    url: string;
-    /** Leave both out where the list stays on screen beside the page. */
-    backLabel?: string;
-    onBack?: () => void;
-    /** Buttons before the link to the host, such as checking a pull request out. */
-    actions?: ReactNode;
-    children: ReactNode;
-}) {
+/** Who is signed in to the host, lent by the git pane's shell to whichever head a screen draws first. */
+export function ShellAccount() {
+    return <>{useGitShell().account}</>;
+}
+
+/** A full list's name with its tree icon, at the start of its head, since the screen has no title bar of its own. */
+export function ListTitle({ section }: { section: Section }) {
     const host = useHost();
     return (
-        <>
-            {backLabel && onBack && (
-                <button type="button" className="gha-back" onClick={onBack}>
-                    <IconChevron size={11} /> {backLabel}
-                </button>
-            )}
-            <div className="gha-page-head">
-                {mark}
-                <div className="gha-page-title">
-                    <h2 className="gha-title">{title}</h2>
-                    <span className="gha-page-number">#{number}</span>
-                    <span className="gha-page-spacer" />
-                    {actions}
-                    <button type="button" className="gha-btn" onClick={() => void openUrl(url).catch(swallow(`open ${host.name}`))}>
-                        <IconExternal size={12} /> On {host.name}
-                    </button>
-                </div>
-                <div className="gha-page-sub">{children}</div>
-            </div>
-        </>
+        <h2 className="gha-list-title">
+            <SectionIcon section={section} size={14} />
+            {sectionLabel(host, section)}
+        </h2>
     );
 }

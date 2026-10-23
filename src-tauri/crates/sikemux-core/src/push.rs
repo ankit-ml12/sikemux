@@ -16,7 +16,6 @@ pub const ENVELOPE_VERSION: u8 = 1;
 pub const PAD_SIZES: [usize; 3] = [512, 1024, 2048];
 pub const MAX_PLAINTEXT: usize = 2048;
 pub const NONCE_BYTES: usize = 12;
-pub const TAG_BYTES: usize = 16;
 /// What the server accepts in a push's `blob`.
 pub const MAX_BLOB_CHARS: usize = 2900;
 
@@ -154,6 +153,8 @@ pub enum NotificationKind {
     Finished,
     /// An agent reported an error or stopped unexpectedly.
     Problem,
+    /// A device asks to pair with the host; tapping opens where it is let in.
+    Pairing,
     /// Removes the card with the same `collapseId`; shows nothing.
     Clear,
 }
@@ -181,7 +182,7 @@ pub enum NotificationCategory {
 impl NotificationKind {
     pub fn channel(self) -> Option<NotificationChannel> {
         match self {
-            Self::Permission | Self::Input => Some(NotificationChannel::NeedsYou),
+            Self::Permission | Self::Input | Self::Pairing => Some(NotificationChannel::NeedsYou),
             Self::Finished => Some(NotificationChannel::Finished),
             Self::Problem => Some(NotificationChannel::Problems),
             Self::Clear => None,

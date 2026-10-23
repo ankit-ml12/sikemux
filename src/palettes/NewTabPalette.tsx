@@ -5,8 +5,10 @@ import { nearestAgentId } from "../state/selectors";
 import { useShortcutLabel } from "../commands/useShortcutLabel";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { useMouseActive } from "../hooks/useMouseActive";
-import { IconAgent, IconCommand, IconCommit, IconEditor, IconGlobe, IconPhone, IconSearch } from "../ui/Icons";
-import { IS_MACOS } from "../lib/platform";
+import { IconAgent, IconDownload, IconGlobe, IconPhone, IconTerminal, WindowIcon } from "../ui/Icons";
+import { openInstallPane } from "../hosts/hosts";
+import { PROJECT_SURFACES } from "../workbench/surfaces";
+import { simUsable, useSimStatus } from "../sim/simStatus";
 import { leavingOverlay } from "../lib/motion";
 
 interface TabChoice {
@@ -26,25 +28,28 @@ export function NewTabPalette() {
         return id ? state.agents[id] : undefined;
     });
     const project = session?.kind === "project";
+    const simulatorUsable = simUsable(useSimStatus());
     const shortcuts = {
         terminal: useShortcutLabel("terminal.new"),
         agent: useShortcutLabel("agent.choose"),
         browser: useShortcutLabel("browser.tabNew"),
         file: useShortcutLabel("palette.files"),
-        git: useShortcutLabel("window.git"),
-        search: useShortcutLabel("search.global"),
+        git: useShortcutLabel(PROJECT_SURFACES.git.shortcut),
+        search: useShortcutLabel(PROJECT_SURFACES.search.shortcut),
+        board: useShortcutLabel(PROJECT_SURFACES.board.shortcut),
     };
     const [selected, setSelected] = useState(0);
     const selectedRef = useRef(0);
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const mouseActive = useMouseActive();
-    const choices: TabChoice[] = [
+    const sshHost = useStore((state) => (state.chosenHost.kind === "ssh" ? state.chosenHost.alias : null));
+    const everyChoice: TabChoice[] = [
         {
             id: "terminal",
             label: "Terminal",
             detail: session?.kind === "ssh" ? `Another login on ${session.name}` : project ? "A new shell in this project" : "A new shell",
-            icon: <IconCommand size={14} />,
+            icon: <IconTerminal size={14} />,
             shortcut: shortcuts.terminal,
             open: cmd.newTerminal,
         },
@@ -65,7 +70,7 @@ export function NewTabPalette() {
             open: cmd.newDeskBrowserTab,
             disabled: !browserAgent,
         },
-        ...(IS_MACOS
+        ...(simulatorUsable
             ? [
                   {
                       id: "simulator",
@@ -80,32 +85,55 @@ export function NewTabPalette() {
             : []),
         {
             id: "editor",
-            label: "File",
+            label: PROJECT_SURFACES.files.label,
             detail: project ? "Open a project file" : "Open a project first",
-            icon: <IconEditor size={14} />,
+            icon: <WindowIcon role="files" size={14} />,
             shortcut: shortcuts.file,
             open: cmd.openFilePalette,
             disabled: !project,
         },
         {
             id: "git",
-            label: "Git",
+            label: PROJECT_SURFACES.git.label,
             detail: project ? "Changes, branches, remotes and stashes" : "Open a project first",
-            icon: <IconCommit size={14} />,
+            icon: <WindowIcon role="git" size={14} />,
             shortcut: shortcuts.git,
-            open: cmd.openGitWorkbench,
+            open: PROJECT_SURFACES.git.open,
             disabled: !project,
         },
         {
             id: "search",
-            label: "Search",
+            label: PROJECT_SURFACES.search.label,
             detail: project ? "Search across the project" : "Open a project first",
-            icon: <IconSearch size={14} />,
+            icon: <WindowIcon role="search" size={14} />,
             shortcut: shortcuts.search,
-            open: cmd.focusGlobalSearch,
+            open: PROJECT_SURFACES.search.open,
+            disabled: !project,
+        },
+        {
+            id: "board",
+            label: PROJECT_SURFACES.board.label,
+            detail: project ? "The cards agents and you plan the work on" : "Open a project first",
+            icon: <WindowIcon role="board" size={14} />,
+            shortcut: shortcuts.board,
+            open: PROJECT_SURFACES.board.open,
             disabled: !project,
         },
     ];
+    // An SSH host without Sikemux is a shell: a login there, or installing Sikemux (ADR 0019).
+    const choices: TabChoice[] = sshHost
+        ? [
+              everyChoice[0],
+              {
+                  id: "install",
+                  label: "Install Sikemux",
+                  detail: `What Sikemux adds on ${sshHost}, and the installer`,
+                  icon: <IconDownload size={14} />,
+                  shortcut: shortcuts.agent,
+                  open: () => openInstallPane(sshHost),
+              },
+          ]
+        : everyChoice;
     const choose = (choice: TabChoice | undefined) => {
         if (!choice || choice.disabled) return;
         cmd.closeNewTabPalette();

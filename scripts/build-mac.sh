@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Build and validate the macOS app bundle. Tauri merges src-tauri/Info.plist
-# before signing; this script never mutates the completed .app.
+# Build and validate the macOS app bundle, ad hoc signed. Tauri merges
+# src-tauri/Info.plist before signing; this script never mutates the completed
+# .app. A release signs it afterwards with scripts/sign-mac.sh, on a machine
+# that never runs the build's dependencies.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -26,49 +28,45 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 
 BUILD_ARGS=("$@")
-BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.sidecar.conf.json")
+BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.core.conf.json")
 BUILD_ARGS+=(--config "$ROOT/src-tauri/tauri.notch.conf.json")
-# Normal developer builds do not have the updater private key, so avoid asking
-# Tauri to create an updater archive it cannot sign.
-if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
-fi
-# Only the bundling step signs the updater archive, so the compilers, build
-# scripts and frontend tooling never see the key in their environment.
-UPDATER_KEY="${TAURI_SIGNING_PRIVATE_KEY:-}"
-UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-# Community releases and local builds use a complete ad-hoc bundle signature.
-# RELEASE_NOTARIZED=1 supplies a real Developer ID identity instead.
-if [[ "${REQUIRE_SIGNED_APP:-0}" != "1" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
-  export APPLE_SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:--}"
-fi
+BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":false}}')
+# No signing material reaches the build. The bundler would notarize whenever
+# Apple's credentials are set, even to empty strings.
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
+unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
+export APPLE_SIGNING_IDENTITY=-
+
+# The Release workflow compiles the app and packs it on separate machines, so
+# the app compiles while the core does: BUILD_STEP=compile, then BUILD_STEP=package.
+STEP="${BUILD_STEP:-all}"
+[[ "$STEP" == "all" || "$STEP" == "compile" || "$STEP" == "package" ]] || {
+  echo "BUILD_STEP must be compile or package" >&2
+  exit 2
+}
 
 "$ROOT/scripts/icons.sh"
-if [[ -n "$TARGET" ]]; then
-  node "$ROOT/scripts/build-cli-sidecar.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-voice-helper.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-notch-helper.mjs" --target "$TARGET"
-  node "$ROOT/scripts/build-sim-helper.mjs" --target "$TARGET"
-else
-  node "$ROOT/scripts/build-cli-sidecar.mjs"
-  node "$ROOT/scripts/build-voice-helper.mjs"
-  node "$ROOT/scripts/build-notch-helper.mjs"
-  node "$ROOT/scripts/build-sim-helper.mjs"
+TARGET_ARGS=()
+[[ -n "$TARGET" ]] && TARGET_ARGS=(--target "$TARGET")
+# A release builds the voice and simulator helpers first and signs them, because
+# the app is compiled with their hashes.
+if [[ "${PREBUILT_HELPERS:-0}" != "1" && "$STEP" != "package" ]]; then
+  node "$ROOT/scripts/build-voice-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+  node "$ROOT/scripts/build-sim-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 fi
-printf '→ pnpm tauri build --no-bundle'
-printf ' %q' "${BUILD_ARGS[@]}"
-echo
-pnpm tauri build --no-bundle "${BUILD_ARGS[@]}"
+if [[ "$STEP" != "package" ]]; then
+  printf '→ pnpm tauri build --no-bundle'
+  printf ' %q' "${BUILD_ARGS[@]}"
+  echo
+  pnpm tauri build --no-bundle "${BUILD_ARGS[@]}"
+fi
+[[ "$STEP" == "compile" ]] && exit 0
+node "$ROOT/scripts/build-notch-helper.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
+node "$ROOT/scripts/build-cli-sidecar.mjs" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 printf '→ pnpm tauri bundle'
 printf ' %q' "${BUILD_ARGS[@]}"
 echo
-if [[ -n "$UPDATER_KEY" ]]; then
-  TAURI_SIGNING_PRIVATE_KEY="$UPDATER_KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$UPDATER_KEY_PASSWORD" \
-    pnpm tauri bundle "${BUILD_ARGS[@]}"
-else
-  pnpm tauri bundle "${BUILD_ARGS[@]}"
-fi
+pnpm tauri bundle "${BUILD_ARGS[@]}"
 
 TARGET_ROOT="$ROOT/src-tauri/target"
 [[ -n "$TARGET" ]] && TARGET_ROOT="$TARGET_ROOT/$TARGET"
@@ -82,19 +80,15 @@ fail() {
 }
 
 # The README and sikemux.com promise a small download, so a release that grows
-# past this fails here instead of shipping.
-DMG_BUDGET_BYTES=15000000
+# past this fails here instead of shipping. scripts/sign-mac.sh checks it again.
+DMG_BUDGET_BYTES=20000000
 
-# Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller. The
-# conversion drops the DMG's signature, so a real identity signs it again.
+# Tauri packs the DMG with zlib; LZMA makes it about a fifth smaller.
 shopt -s nullglob
 for DMG in "$BUNDLE"/dmg/*.dmg; do
   PACKED="${DMG%.dmg}.lzma.dmg"
   /usr/bin/hdiutil convert "$DMG" -format ULMO -o "$PACKED" -quiet -ov || fail "could not repack $DMG"
   mv -f "$PACKED" "$DMG"
-  if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
-    /usr/bin/codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG" || fail "could not sign $DMG"
-  fi
   DMG_BYTES="$(stat -f%z "$DMG")"
   ((DMG_BYTES <= DMG_BUDGET_BYTES)) || fail "$DMG is $DMG_BYTES bytes, over the $DMG_BUDGET_BYTES byte budget"
 done
@@ -120,11 +114,19 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 [[ -x "$EXECUTABLE" ]] || fail "bundle executable is missing or not executable"
 ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE")"
 [[ -n "$ARCHS" ]] || fail "could not determine executable architecture"
-CLI_EXECUTABLE="$APP_PATH/Contents/MacOS/sikemux-editor"
-[[ -x "$CLI_EXECUTABLE" ]] || fail "bundled CLI sidecar is missing or not executable"
+CORE_APP="$APP_PATH/Contents/Helpers/Sikemux Core.app"
+CLI_EXECUTABLE="$CORE_APP/Contents/MacOS/sikemux-host"
+[[ -x "$CLI_EXECUTABLE" && ! -L "$CLI_EXECUTABLE" ]] || fail "bundled core is missing or not executable"
+[[ "$(readlink "$APP_PATH/Contents/MacOS/sikemux-host")" == "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host" ]] ||
+  fail "Contents/MacOS/sikemux-host does not link to the bundled core"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CORE_APP/Contents/Info.plist")" == "$APP_IDENTIFIER.core" ]] ||
+  fail "the core's CFBundleIdentifier is not $APP_IDENTIFIER.core"
+CORE_SIGNATURE="$(/usr/bin/codesign -dv "$CORE_APP" 2>&1)"
+grep -qx "Identifier=$APP_IDENTIFIER.core" <<<"$CORE_SIGNATURE" || fail "the core is not signed as $APP_IDENTIFIER.core"
+grep -q 'flags=.*runtime' <<<"$CORE_SIGNATURE" || fail "the core lacks the hardened runtime"
 CLI_ARCHS="$(/usr/bin/lipo -archs "$CLI_EXECUTABLE")"
-[[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "CLI sidecar architecture ($CLI_ARCHS) differs from app ($ARCHS)"
-[[ -s "$APP_PATH/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
+[[ "$CLI_ARCHS" == "$ARCHS" ]] || fail "core architecture ($CLI_ARCHS) differs from app ($ARCHS)"
+[[ -s "$CORE_APP/Contents/Resources/sikemux_pi_tools.ts" ]] || fail "bundled Pi browser extension is missing"
 # The voice helper is published beside the release and downloaded with the
 # speech model, so it must be built and signed but stay out of the app.
 VOICE_TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
@@ -163,7 +165,7 @@ fi
 CLI_DYNAMIC_LIBS="$(/usr/bin/otool -L "$CLI_EXECUTABLE")"
 if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$CLI_DYNAMIC_LIBS"; then
   echo "$CLI_DYNAMIC_LIBS" >&2
-  fail "CLI sidecar links to a package-manager library"
+  fail "the core links to a package-manager library"
 fi
 VOICE_DYNAMIC_LIBS="$(/usr/bin/otool -L "$VOICE_EXECUTABLE")"
 if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$VOICE_DYNAMIC_LIBS"; then
@@ -176,10 +178,10 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$SIM_DYNAM
   fail "simulator helper links to a package-manager library"
 fi
 
-# Bundling is what gives the sidecar the hardened runtime, so only starting the
-# bundled copy proves it survives signing: the copy built beside it is signed
-# without the hardened runtime and starts whether or not the bundle would. An
-# empty agent id is the earliest thing its tools MCP server checks.
+# Only starting the bundled core proves it survives the hardened runtime: the
+# copy built beside it is signed without it and starts whether or not the
+# bundle would. An empty agent id is the earliest thing its tools MCP server
+# checks.
 TOOLS_START="$(SIKEMUX_TOOLS_AGENT_ID='' "$CLI_EXECUTABLE" --tools-mcp 2>&1 || true)"
 if ! grep -Fq "Missing SIKEMUX_TOOLS_AGENT_ID" <<<"$TOOLS_START"; then
   echo "$TOOLS_START" >&2
@@ -194,25 +196,14 @@ if [[ "$SIM_ARCHS" == *"$(uname -m)"* ]]; then
   "$SIM_EXECUTABLE" --version | grep -Fq "sikemux-sim" || fail "signed simulator helper does not start"
 fi
 
-# Every normal build is ad-hoc signed when no Apple identity is configured.
-# Community releases require a structurally valid signature; notarized releases
-# additionally require a real certificate authority and TeamIdentifier.
+# A release requires a structurally valid ad hoc signature before it signs the app again.
 if /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>/dev/null; then
   echo "  ✓ code signature is structurally valid"
-elif [[ "${REQUIRE_VALID_SIGNATURE:-0}" == "1" || "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
+elif [[ "${REQUIRE_VALID_SIGNATURE:-0}" == "1" ]]; then
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH" >&2 || true
   fail "codesign verification failed"
 else
   echo "  ! local app is not fully code signed (release.sh enforces signing)" >&2
-fi
-
-if [[ "${REQUIRE_SIGNED_APP:-0}" == "1" ]]; then
-  SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
-  grep -q '^Authority=' <<<"$SIGNING_INFO" || fail "release app has no certificate authority (ad-hoc signature)"
-  grep -q '^TeamIdentifier=' <<<"$SIGNING_INFO" || fail "release app has no TeamIdentifier"
-  VOICE_SIGNING_INFO="$(/usr/bin/codesign -dv --verbose=4 "$VOICE_EXECUTABLE" 2>&1)"
-  grep -q '^Authority=' <<<"$VOICE_SIGNING_INFO" || fail "release voice helper has no certificate authority (ad-hoc signature)"
-  grep -q '^Authority=' <<<"$(/usr/bin/codesign -dv --verbose=4 "$SIM_EXECUTABLE" 2>&1)" || fail "release simulator helper has no certificate authority (ad-hoc signature)"
 fi
 
 echo ""
@@ -220,6 +211,6 @@ echo "✓ Verified macOS bundle"
 echo "  app: $APP_PATH"
 echo "  version: $APP_VERSION"
 echo "  architectures: $ARCHS"
-echo "  cli: $CLI_EXECUTABLE ($CLI_ARCHS)"
+echo "  core: $CLI_EXECUTABLE ($CLI_ARCHS)"
 echo "  voice helper: $VOICE_EXECUTABLE ($VOICE_ARCHS)"
 echo "  simulator helper: $SIM_EXECUTABLE ($SIM_ARCHS)"

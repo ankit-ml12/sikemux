@@ -741,7 +741,7 @@ checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.1",
- "rand_core 0.10.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -1020,7 +1020,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
 dependencies = [
  "hybrid-array",
- "rand_core 0.10.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -1063,9 +1063,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865"
 dependencies = [
  "cmov",
 ]
@@ -1081,7 +1081,7 @@ dependencies = [
  "curve25519-dalek-derive",
  "digest 0.11.3",
  "fiat-crypto",
- "rand_core 0.10.1",
+ "rand_core",
  "rustc_version",
  "serde",
  "subtle",
@@ -1134,20 +1134,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dashmap"
-version = "6.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
- "hashbrown 0.14.5",
- "lock_api",
- "once_cell",
- "parking_lot_core",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1170,7 +1156,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 3.0.6",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -1447,7 +1433,7 @@ checksum = "6ebaa1a2bf1290ab3bfe5a7b771d050ebffab2711c19a81691c683a5144a25de"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
- "rand_core 0.10.1",
+ "rand_core",
  "serde",
  "sha2 0.11.0",
  "signature",
@@ -2019,7 +2005,7 @@ dependencies = [
  "js-sys",
  "libc",
  "r-efi 6.0.0",
- "rand_core 0.10.1",
+ "rand_core",
  "wasm-bindgen",
 ]
 
@@ -2274,12 +2260,6 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.14.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
-
-[[package]]
-name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
@@ -2328,15 +2308,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "hkdf"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018"
-dependencies = [
- "hmac",
-]
 
 [[package]]
 name = "hmac"
@@ -2760,7 +2731,7 @@ dependencies = [
  "papaya",
  "pin-project",
  "portable-atomic",
- "rand 0.10.3",
+ "rand",
  "reqwest",
  "rustc-hash",
  "rustls",
@@ -2790,7 +2761,7 @@ dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
  "n0-error",
- "rand 0.10.3",
+ "rand",
  "serde",
  "url",
  "zeroize",
@@ -2810,7 +2781,7 @@ dependencies = [
  "n0-error",
  "n0-future",
  "portable-atomic",
- "rand 0.10.3",
+ "rand",
  "rustls",
  "simple-dns",
  "strum",
@@ -2873,7 +2844,7 @@ dependencies = [
  "num_enum",
  "pin-project",
  "postcard",
- "rand 0.10.3",
+ "rand",
  "reqwest",
  "rustls",
  "rustls-pki-types",
@@ -3205,12 +3176,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linked-hash-map"
-version = "0.5.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3450,7 +3415,7 @@ dependencies = [
  "lru",
  "mysql_common",
  "percent-encoding",
- "rand 0.10.3",
+ "rand",
  "rustls",
  "serde",
  "socket2",
@@ -3502,7 +3467,7 @@ dependencies = [
  "n0-error",
  "n0-future",
  "ndk-context",
- "rand 0.10.3",
+ "rand",
  "reqwest",
  "rustc-hash",
  "rustls",
@@ -3837,7 +3802,7 @@ dependencies = [
  "getrandom 0.4.3",
  "identity-hash",
  "lru-slab",
- "rand 0.10.3",
+ "rand",
  "rand_pcg",
  "ring",
  "rustc-hash",
@@ -4726,7 +4691,7 @@ dependencies = [
  "hmac",
  "md-5",
  "memchr",
- "rand 0.10.3",
+ "rand",
  "sha2 0.11.0",
  "stringprep",
 ]
@@ -4756,15 +4721,6 @@ name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
-
-[[package]]
-name = "ppv-lite86"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
-dependencies = [
- "zerocopy",
-]
 
 [[package]]
 name = "precomputed-hash"
@@ -4893,42 +4849,13 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rand"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
-dependencies = [
- "rand_chacha",
- "rand_core 0.9.5",
-]
-
-[[package]]
-name = "rand"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
  "chacha20",
  "getrandom 0.4.3",
- "rand_core 0.10.1",
-]
-
-[[package]]
-name = "rand_chacha"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
-dependencies = [
- "ppv-lite86",
- "rand_core 0.9.5",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
-dependencies = [
- "getrandom 0.3.4",
+ "rand_core",
 ]
 
 [[package]]
@@ -4943,7 +4870,7 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
 dependencies = [
- "rand_core 0.10.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -5176,9 +5103,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -5240,9 +5167,9 @@ checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -5745,19 +5672,16 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5"
 dependencies = [
- "rand_core 0.10.1",
+ "rand_core",
 ]
 
 [[package]]
 name = "sikemux"
-version = "0.5.0-nightly.1"
+version = "0.5.4-nightly.6"
 dependencies = [
  "base64 0.23.1",
  "block2",
- "dashmap",
  "futures",
- "getrandom 0.3.4",
- "git2",
  "globset",
  "grep-matcher",
  "grep-regex",
@@ -5765,8 +5689,9 @@ dependencies = [
  "hex",
  "ignore",
  "libc",
- "linked-hash-map",
+ "mac-notification-sys",
  "notify",
+ "notify-rust",
  "objc2",
  "objc2-app-kit",
  "objc2-av-foundation",
@@ -5779,47 +5704,55 @@ dependencies = [
  "objc2-quick-look-ui",
  "objc2-web-kit",
  "open",
- "portable-pty",
  "rayon",
  "regex",
  "reqwest",
+ "rfd",
  "rusqlite",
- "rustix",
  "rustls",
  "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "sikemux-core",
+ "sikemux-host",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-markdown",
  "sikemux-plugin-api",
- "sikemux-plugin-aws",
- "sikemux-plugin-bitbucket",
- "sikemux-plugin-bruno",
- "sikemux-plugin-database",
- "sikemux-plugin-github",
- "sikemux-plugin-jira",
- "sikemux-plugin-rundeck",
- "sikemux-plugin-signoz",
  "sikemux-process",
  "sikemux-pty",
  "tauri",
  "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
  "thiserror 1.0.69",
+ "time",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
- "trash",
+ "toml 1.1.6+spec-1.1.0",
  "url",
  "uuid",
- "vt100",
  "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-client"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "iroh",
+ "semver",
+ "serde",
+ "serde_json",
+ "sikemux-wire",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-rustls",
+ "url",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -5828,25 +5761,42 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "base64 0.22.1",
+ "block2",
+ "core-foundation 0.10.1",
  "futures-util",
+ "git2",
+ "hashlink",
  "hex",
- "hmac",
  "iroh",
  "libc",
+ "notify",
  "portable-pty",
+ "quick-xml",
+ "rayon",
+ "regex",
+ "reqwest",
  "ring",
+ "rusqlite",
+ "rustix",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sikemux-client",
+ "sikemux-keychain",
+ "sikemux-markdown",
  "sikemux-process",
  "sikemux-pty",
- "spake2",
+ "sikemux-wire",
  "tempfile",
  "thiserror 1.0.69",
+ "time",
  "tokio",
  "tokio-rustls",
  "tokio-websockets",
+ "toml 1.1.6+spec-1.1.0",
+ "trash",
  "url",
  "uuid",
  "vt100",
@@ -5855,10 +5805,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-host"
+version = "0.5.4-nightly.6"
+dependencies = [
+ "hex",
+ "libc",
+ "reqwest",
+ "rustls",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sikemux-core",
+ "sikemux-keychain",
+ "sikemux-loopback",
+ "sikemux-plugin-api",
+ "sikemux-plugin-aws",
+ "sikemux-plugin-bitbucket",
+ "sikemux-plugin-bruno",
+ "sikemux-plugin-database",
+ "sikemux-plugin-github",
+ "sikemux-plugin-gitlab",
+ "sikemux-plugin-jira",
+ "sikemux-plugin-linear",
+ "sikemux-plugin-rundeck",
+ "sikemux-plugin-signoz",
+ "sikemux-plugin-slack",
+ "sikemux-plugin-vercel",
+ "sikemux-process",
+ "sikemux-pty",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sikemux-keychain"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "security-framework",
  "sikemux-process",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-loopback"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.3.4",
+ "hex",
+ "sha2 0.11.0",
+ "tokio",
+ "url",
  "workspace-hack",
 ]
 
@@ -5869,6 +5870,16 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-markdown-wasm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sikemux-markdown",
  "workspace-hack",
 ]
 
@@ -5885,7 +5896,9 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "sikemux-client",
  "sikemux-core",
+ "sikemux-wire",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -5898,9 +5911,17 @@ dependencies = [
 name = "sikemux-plugin-api"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "reqwest",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
+ "sikemux-keychain",
+ "sikemux-loopback",
+ "sikemux-process",
+ "tokio",
+ "url",
  "workspace-hack",
 ]
 
@@ -5913,6 +5934,7 @@ dependencies = [
  "serde_json",
  "sikemux-plugin-api",
  "sikemux-process",
+ "time",
  "tokio",
  "workspace-hack",
 ]
@@ -5921,14 +5943,15 @@ dependencies = [
 name = "sikemux-plugin-bitbucket"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
  "sikemux-keychain",
+ "sikemux-loopback",
  "sikemux-plugin-api",
+ "time",
  "tokio",
  "url",
  "workspace-hack",
@@ -5955,6 +5978,7 @@ name = "sikemux-plugin-database"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "hex",
  "mysql_async",
  "rusqlite",
  "rustls",
@@ -5963,6 +5987,7 @@ dependencies = [
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
+ "sikemux-process",
  "tokio",
  "tokio-postgres",
  "tokio-rustls",
@@ -5974,9 +5999,7 @@ dependencies = [
 name = "sikemux-plugin-github"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.1",
  "futures",
- "http",
  "reqwest",
  "rustls",
  "serde",
@@ -5990,16 +6013,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "sikemux-plugin-jira"
+name = "sikemux-plugin-gitlab"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-jira"
+version = "0.1.0"
+dependencies = [
  "reqwest",
  "serde",
  "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
  "sikemux-process",
+ "tokio",
+ "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-linear"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
  "tokio",
  "url",
  "workspace-hack",
@@ -6015,22 +6068,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sikemux-plugin-api",
- "sikemux-process",
- "tempfile",
- "tokio",
- "url",
- "workspace-hack",
-]
-
-[[package]]
-name = "sikemux-plugin-signoz"
-version = "0.1.0"
-dependencies = [
- "futures",
- "reqwest",
- "serde",
- "serde_json",
  "sikemux-keychain",
  "sikemux-plugin-api",
  "sikemux-process",
@@ -6040,10 +6077,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikemux-plugin-signoz"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "time",
+ "tokio",
+ "url",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-slack"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "sikemux-process",
+ "time",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-plugin-vercel"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sikemux-keychain",
+ "sikemux-plugin-api",
+ "tokio",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sikemux-process"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "tempfile",
  "workspace-hack",
 ]
 
@@ -6052,16 +6137,27 @@ name = "sikemux-pty"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "memchr",
  "portable-pty",
  "regex",
  "serde",
  "serde_json",
  "sikemux-process",
+ "sikemux-wire",
  "tempfile",
  "thiserror 1.0.69",
  "url",
  "vt100",
  "workspace-hack",
+]
+
+[[package]]
+name = "sikemux-wire"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6181,19 +6277,6 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "spake2"
-version = "0.5.0-pre.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5601a88f45d069ad786f75c4fb13e7f127b0aadda913fb2cd65948d3c9a561"
-dependencies = [
- "curve25519-dalek",
- "getrandom 0.4.3",
- "hkdf",
- "rand_core 0.10.1",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -6333,6 +6416,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
 dependencies = [
  "proc-macro2",
+ "quote",
  "unicode-ident",
 ]
 
@@ -6617,67 +6701,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-dialog"
-version = "2.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7527c5fd1678032d116c1a82e5d609c67370e56f858ae6cfd376bbca37fe0490"
-dependencies = [
- "log",
- "raw-window-handle",
- "rfd",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "tauri-plugin-fs",
- "thiserror 2.0.21",
- "url",
-]
-
-[[package]]
-name = "tauri-plugin-fs"
-version = "2.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "466eb32466fe5021b6728b06862f9ff14a9f7e1af890047654e03a96d7c0e1bb"
-dependencies = [
- "anyhow",
- "dunce",
- "glob",
- "log",
- "objc2-foundation",
- "percent-encoding",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_repr",
- "tauri",
- "tauri-plugin",
- "tauri-utils",
- "thiserror 2.0.21",
- "toml 1.1.6+spec-1.1.0",
- "url",
-]
-
-[[package]]
-name = "tauri-plugin-notification"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9237e5cc1458bf1b31ad3c8c2c8480e86b6ecf133d00648fe6c36f25821f2f79"
-dependencies = [
- "log",
- "notify-rust",
- "rand 0.9.5",
- "serde",
- "serde_json",
- "serde_repr",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.21",
- "time",
- "url",
-]
-
-[[package]]
 name = "tauri-plugin-process"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6854,7 +6877,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7021,7 +7044,7 @@ dependencies = [
  "pin-project-lite",
  "postgres-protocol",
  "postgres-types",
- "rand 0.10.3",
+ "rand",
  "socket2",
  "tokio",
  "tokio-util",
@@ -7078,7 +7101,7 @@ dependencies = [
  "getrandom 0.4.3",
  "http",
  "httparse",
- "rand 0.10.3",
+ "rand",
  "ring",
  "rustls-pki-types",
  "sha1_smol",
@@ -7098,21 +7121,6 @@ dependencies = [
  "serde_spanned 0.6.9",
  "toml_datetime 0.6.3",
  "toml_edit 0.20.2",
-]
-
-[[package]]
-name = "toml"
-version = "0.9.12+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
-dependencies = [
- "indexmap 2.14.2",
- "serde_core",
- "serde_spanned 1.1.1",
- "toml_datetime 0.7.5+spec-1.1.0",
- "toml_parser",
- "toml_writer",
- "winnow 0.7.15",
 ]
 
 [[package]]
@@ -7137,15 +7145,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cda73e2f1397b1262d6dfdcef8aafae14d1de7748d66822d3bfeeb6d03e5e4b"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.7.5+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
-dependencies = [
- "serde_core",
 ]
 
 [[package]]
@@ -7457,7 +7456,7 @@ dependencies = [
  "serde",
  "tempfile",
  "textwrap",
- "toml 0.9.12+spec-1.1.0",
+ "toml 0.8.2",
  "uniffi_internal_macros",
  "uniffi_meta",
  "uniffi_pipeline",
@@ -7502,7 +7501,7 @@ dependencies = [
  "quote",
  "serde",
  "syn 2.0.119",
- "toml 0.9.12+spec-1.1.0",
+ "toml 0.8.2",
  "uniffi_meta",
 ]
 
@@ -7872,18 +7871,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -8520,14 +8519,12 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bitflags 2.13.2",
- "block2",
  "cc",
  "crc32fast",
  "crossbeam-utils",
  "crypto-common 0.1.7",
  "crypto-common 0.2.2",
  "data-encoding",
- "deranged",
  "derive_more",
  "derive_more-impl",
  "digest 0.11.3",
@@ -8541,6 +8538,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-task",
  "futures-util",
  "getrandom 0.3.4",
  "getrandom 0.4.3",
@@ -8574,6 +8572,8 @@ dependencies = [
  "rustls-webpki",
  "schemars 0.8.22",
  "schemars 1.2.2",
+ "security-framework",
+ "security-framework-sys",
  "semver",
  "serde",
  "serde_core",

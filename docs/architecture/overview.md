@@ -5,6 +5,35 @@ A map of the codebase for someone opening it for the first time. The
 covers setup and the checks you run before pushing.
 [ADR 0001](./0001-keep-react-tauri.md) explains why the app stays on React and Tauri.
 
+## Words
+
+One word for each idea, in the interface, docs and the core's messages.
+
+| Word                      | Means                                                                                               |
+| ------------------------- | --------------------------------------------------------------------------------------------------- |
+| host                      | Anything running the core: a server, a Mac mini, a laptop. "This host", never "this computer".      |
+| device                    | What the person holds to reach hosts: a phone, a laptop, a browser.                                 |
+| app                       | The software on a device: the desktop app, phone app, web app and the notch.                        |
+| pair                      | A device on another account joins a host, once the host's owner allows it.                          |
+| link                      | Every host on one account works for the others ([ADR 0018](./0018-the-account-is-the-trust.md)).    |
+| project                   | A folder on one host, listed under that host ([ADR 0019](./0019-projects-belong-to-their-host.md)). |
+| you                       | Devices on the host's own account with full access, which act as the person. In code, "the person". |
+| full access               | Can run any command on the host as the person.                                                      |
+| watch                     | Can read, answer questions and allow permissions, but not start or drive anything.                  |
+| shared device             | Someone else's device paired with a host. It never acts as the person.                              |
+| agent, lead, worker, team | One running agent CLI; one that started others; one another started; all of them.                   |
+| board, card, Auto         | Where work waits; one piece of work; what carries a card to merged.                                 |
+| sandbox                   | Where one card's work runs: a worktree or a virtual machine.                                        |
+| trigger, event            | A rule that adds work when something happens; one time it happened.                                 |
+| inbox, digest             | What waits on the person; what happened while they were away.                                       |
+| vault                     | The account's encrypted store of keys, plugin sign-ins and site sign-ins.                           |
+| agent sign-in             | An agent CLI's own login, kept on each host and never in the vault.                                 |
+| site sign-in              | A website login the host's browser loads for agents allowed that site.                              |
+| take over                 | Drive a host's browser tab from any device, to sign in or pass a check.                             |
+
+Never "Mac", "computer", "machine" or "node" for a host, "client" for a device, or "session" for a
+website login, which would read as a chat or terminal session.
+
 ## Processes
 
 Sikemux is a [Tauri 2](https://tauri.app) app. Tauri runs a native Rust process that
@@ -12,20 +41,25 @@ owns a window. Inside that window, a system web view (WKWebView on macOS) runs t
 React interface. The two talk over IPC: the page calls named Rust commands, and Rust
 sends events and byte streams back.
 
-| Process           | Where it lives                                        | What it does                                                                                                                                                                                                                          |
-| ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`             | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                    |
-| Background core   | `sikemux core` → `crates/sikemux-core`                | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                            |
-| App web view      | `src/main.tsx`, window label `main`                   | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                         |
-| Browser tabs      | `src-tauri/src/browser/`                              | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                     |
-| `sikemux-editor`  | `src-tauri/src/bin/sikemux-editor/` → `cli_client.rs` | The `sikemux` and `sikemux-editor` launchers, which ask the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core. |
-| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                    | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                          |
-| Shells and agents | spawned by the background core                        | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                  |
-| Language servers  | spawned by `lsp/`                                     | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                       |
+| Process           | Where it lives                                     | What it does                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Main process      | `src-tauri/src/main.rs` → `lib.rs::run()`          | Owns the window, Git calls, language servers, watchers and browser tabs, and connects to the background core for terminals and agents. `lib.rs` registers the managed state and every IPC command.                                                                                                                             |
+| Background core   | `sikemux core` → `crates/sikemux-core`             | Owns every shell, terminal agent, task and chat agent, the harness and the agents' tool endpoint. It outlives the window; see [The background core](#the-background-core).                                                                                                                                                     |
+| App web view      | `src/main.tsx`, window label `main`                | The React UI. It loads `dist/` in builds and `http://localhost:1420` in dev. A guard in `lib.rs` stops it from ever navigating anywhere else.                                                                                                                                                                                  |
+| Browser tabs      | `src-tauri/src/browser/`                           | Each tab is a native child web view placed over the main window. React draws only the tab chrome and reports where the page area is. `without_page_script.rs` keeps the app's own page scripts out of these tabs.                                                                                                              |
+| `sikemux-host`    | `src-tauri/crates/sikemux-host/` → `cli_client.rs` | The `sikemux` launcher, which asks the running app to open files and projects. With `--tools-mcp` it is the MCP server (Model Context Protocol) agents launch over stdio; with `core` it is the background core, with the built-in plugins. It never links the app's window code, so a host with no screen installs only this. |
+| `sikemux-voice`   | `src-tauri/voice/` (Swift package)                 | Speech-to-text helper, downloaded with the speech model. `voice.rs` starts it, writes JSON lines to its stdin and relays its `voice` events.                                                                                                                                                                                   |
+| Shells and agents | spawned by the background core                     | Children of the core, not of the app, so reloading, closing or quitting the app leaves them running.                                                                                                                                                                                                                           |
+| Language servers  | spawned by `lsp/`                                  | Children of the app. When the main web view reloads or the window closes, `lib.rs` drains them.                                                                                                                                                                                                                                |
 
-`sikemux-editor` ships as a Tauri sidecar, meaning an extra executable bundled next to
+`sikemux-host` ships as a Tauri sidecar, meaning an extra executable bundled next to
 the app. `scripts/build-cli-sidecar.mjs` builds it into `src-tauri/binaries/` and
-`tauri.sidecar.conf.json` adds it to the bundle. `scripts/build-voice-helper.mjs` builds
+`tauri.sidecar.conf.json` adds it to the Linux and Windows bundles. On macOS it is the
+executable of an app of its own, `Contents/Helpers/Sikemux Core.app`
+(`com.nodelike.sikemux.core`), because only an app can carry the provisioning profile
+that lets it keep secrets in the keychain group it shares with the app. `tauri.core.conf.json`
+adds it, with a `Contents/MacOS/sikemux-host` link to it for installed `sikemux`
+commands, and `scripts/sign-mac.sh` embeds the profiles in `src-tauri/macos/`. `scripts/build-voice-helper.mjs` builds
 and signs `sikemux-voice` there too, but it stays out of the app: each release publishes
 it as an asset, `build.rs` records its hash, and `voice_models.rs` downloads it with the
 speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them in place.
@@ -33,7 +67,7 @@ speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them
 ### The background core
 
 The app is a client of a long-lived background process, the core. It is the
-`sikemux-editor` sidecar run as `sikemux core`, so it adds no executable to the bundle and
+`sikemux-host` sidecar run as `sikemux core`, so it adds no executable to the bundle and
 never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
 
 - **Starting.** The app starts the core on demand, detached in its own session, logging
@@ -68,11 +102,17 @@ never loads WebKit. [ADR 0006](./0006-background-core.md) records why.
   the same pane (`src/agents/tuiRecovery.ts`); a chat agent does the same
   (`src/chat/sessionRecovery.ts`).
 - **Paired devices.** With remote access on (Settings, Devices), the core also listens on
-  an iroh endpoint, and phones that paired with a code reach it from anywhere
-  (`server/remote.rs`, `server/pairing.rs`, `src/pairing.rs`). Each request is checked
+  an iroh endpoint, and phones signed in to the same account join it from anywhere
+  (`server/remote.rs`, `server/join.rs`, `src/join.rs`). Each request is checked
   against what the device may do (`server/access.rs`). The app publishes its projects and
   how it starts each agent (`server/workspace.rs`, `src/shell/RemoteWorkspaceBridge.tsx`),
   so a device can start a chat with the window closed. [ADR 0007](./0007-remote-access-over-iroh.md)
+  records the design.
+- **Linked hosts.** Hosts on one account link with each other with the same join ticket,
+  allowed once by the other host's owner, and ask each other things over their own ALPN
+  (`server/hosts/`): an agent here starts workers there with `agent_spawn` and `host`,
+  messages, questions and reports cross the link, and a worker's commits come back to a
+  branch in its lead's checkout. [ADR 0013](./0013-hosts-link-to-run-agents-for-each-other.md)
   records the design.
 
 ### The CLI broker
@@ -89,36 +129,36 @@ go through the harness, described under [Agents](#agents).
 
 ## Frontend (`src/`)
 
-| Folder                               | Owns                                                                                            |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `state/`                             | The store, commands, persistence and the resource cache (see below)                             |
-| `api/`                               | One typed wrapper module per backend area, plus the IPC transport                               |
-| `workspace/`                         | The stage: `Workspace.tsx`, the tab bar, the agent desk and the search pane                     |
-| `terminal/`                          | xterm.js panes and the PTY client (`usePty.ts`)                                                 |
-| `editor/`                            | The CodeMirror editor pane and its find bar, insights and image viewer                          |
-| `git/`                               | The Git pane, diffs, commit review and the graph                                                |
-| `chat/`                              | The chat view for agents on ACP                                                                 |
-| `agents/`                            | Agent launching, the agent picker, lifecycle and saved-session sync                             |
-| `harness/`                           | The window half of the agent harness: inspecting, launching tasks and `ui.open`                 |
-| `rail/`                              | Side rail, file tree and agent rail                                                             |
-| `palettes/`                          | Command, file and new-tab palettes and the session switcher                                     |
-| `settings/`                          | The settings page                                                                               |
-| `shell/`                             | App-level bridges and overlays: CLI opens, harness requests, dialogs, toasts                    |
-| `actions/`                           | The action registry that palettes and shortcuts run, scoped to global, project, session or item |
-| `commands/`                          | Keymap, keybinding overrides and custom commands                                                |
-| `workbench/`                         | Per-item controllers and their runtime, navigation history, project diagnostics                 |
-| `projects/`                          | Project locations (local or SSH) and the per-project `sikemux.json` config                      |
-| `tasks/`                             | Running the tasks a project declares                                                            |
-| `extensions/`                        | Internal registry for contributed actions, workbench items and task providers                   |
-| `plugin-api/`                        | The only code plugins may import                                                                |
-| `plugins/`                           | The plugin registry and the six built-in plugins                                                |
-| `codehost/`                          | Shared GitHub and Bitbucket UI, handed to those plugins through `plugin-api/codehost.ts`        |
-| `themes/`                            | Built-in and Ghostty themes and the theme bus that writes colours onto `:root`                  |
-| `styles/`                            | Global and shared CSS (see [Styling](#styling))                                                 |
-| `ui/`, `hooks/`, `lib/`              | Shared components, React hooks, and utilities including telemetry                               |
-| `markdown/`, `languages/`, `vendor/` | Markdown rendering, the generated grammar list, and Shiki wrappers                              |
-| `voice/`, `test/`                    | The dictation client; Vitest setup and fixtures                                                 |
-| `browser/`                           | Tests for the scripts injected into browser tabs (the scripts live in `src-tauri/src/browser/`) |
+| Folder                               | Owns                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `state/`                             | The store, commands, persistence and the resource cache (see below)                              |
+| `api/`                               | One typed wrapper module per backend area, plus the IPC transport                                |
+| `workspace/`                         | The stage: `Workspace.tsx`, the tab bar, the agent desk and the search pane                      |
+| `terminal/`                          | xterm.js panes and the PTY client (`usePty.ts`)                                                  |
+| `editor/`                            | The CodeMirror editor pane and its find bar, insights and image viewer                           |
+| `git/`                               | The Git pane, diffs, commit review and the graph                                                 |
+| `chat/`                              | The chat view for agents, native and on ACP                                                      |
+| `agents/`                            | Agent launching, the agent picker, lifecycle and saved-session sync                              |
+| `harness/`                           | The window half of the agent harness: inspecting, launching tasks and `ui.open`                  |
+| `rail/`                              | Side rail, file tree and tab rail                                                                |
+| `palettes/`                          | Command, file and new-tab palettes and the session switcher                                      |
+| `settings/`                          | The settings page                                                                                |
+| `shell/`                             | App-level bridges and overlays: CLI opens, harness requests, dialogs, toasts                     |
+| `actions/`                           | The action registry that palettes and shortcuts run, scoped to global, project, session or item  |
+| `commands/`                          | Keymap, keybinding overrides and custom commands                                                 |
+| `workbench/`                         | Per-item controllers and their runtime, navigation history, project diagnostics                  |
+| `projects/`                          | Project locations (local or SSH) and the per-project `sikemux.json` config                       |
+| `tasks/`                             | Running the tasks a project declares                                                             |
+| `extensions/`                        | Internal registry for contributed actions, workbench items and task providers                    |
+| `plugin-api/`                        | The only code plugins may import                                                                 |
+| `plugins/`                           | The plugin registry and the six built-in plugins                                                 |
+| `codehost/`                          | Shared GitHub, GitLab and Bitbucket UI, handed to those plugins through `plugin-api/codehost.ts` |
+| `themes/`                            | Built-in and Ghostty themes and the theme bus that writes colours onto `:root`                   |
+| `styles/`                            | Global and shared CSS (see [Styling](#styling))                                                  |
+| `ui/`, `hooks/`, `lib/`              | Shared components, React hooks, and utilities including telemetry                                |
+| `markdown/`, `languages/`, `vendor/` | Markdown rendering, the generated grammar list, and Shiki wrappers                               |
+| `voice/`, `test/`                    | The dictation client; Vitest setup and fixtures                                                  |
+| `browser/`                           | Tests for the scripts injected into browser tabs (the scripts live in `src-tauri/src/browser/`)  |
 
 ### State
 
@@ -227,14 +267,17 @@ Internal crates in `src-tauri/crates/`:
 | `sikemux-plugin-api` | The contract between the app and a plugin: a method name and JSON in, JSON or a stream out                                                                                                                                                                                                                  |
 | `sikemux-process`    | Runs a subprocess with a timeout and an output size limit                                                                                                                                                                                                                                                   |
 | `sikemux-markdown`   | Parses markdown into the block tree the chat transcript draws (`markdown_parse`)                                                                                                                                                                                                                            |
-| `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, Bitbucket, Database, Jira and SigNoz plugins                                                                                                                                                                                           |
+| `sikemux-keychain`   | Reads and writes secrets in the system keychain; used by the GitHub, GitLab, Bitbucket, Database, Jira and SigNoz plugins                                                                                                                                                                                   |
+| `sikemux-loopback`   | Waits for the browser to come back from a sign-in, on one port where each plugin has its own path; used by the Bitbucket and Jira plugins                                                                                                                                                                   |
 | `sikemux-pty`        | The terminal engine without Tauri: the per-PTY screen, shell integration, the configured shell and login-shell environment, the `SIKEMUX_*` environment, task checks, task output paging, and `agent_detection/`, which reads an agent's screen against `manifests/*.json` to tell working, blocked or idle |
-| `sikemux-core`       | The background core (`sikemux core`): its Unix-socket server, wire protocol and client; terminals, tasks and chat agents; the harness, journal and tool endpoint; updating in place                                                                                                                         |
+| `sikemux-wire`       | What the core and its clients send each other: the frames, requests and events, the types the accounts server generates, and the terminal and CLI shapes they carry. The phone links it, so it holds data and nothing that acts on it                                                                       |
+| `sikemux-client`     | Talking to a core: the connection and its requests, reaching a paired core over iroh, the phone's side of joining a host, and what a device signs for the accounts server. The phone links it with `sikemux-wire` and nothing else of the core                                                              |
+| `sikemux-core`       | The background core (`sikemux core`): its Unix-socket server and the client the app starts it with; terminals, tasks and chat agents; the harness, journal and tool endpoint; updating in place                                                                                                             |
 
 ## Plugins
 
 Plugins are compiled into the app. There is no marketplace and no runtime loading.
-The eight built-ins are AWS, Bitbucket, Bruno, Database, GitHub, Jira, Rundeck and SigNoz. Each has two
+The nine built-ins are AWS, Bitbucket, Bruno, Database, GitHub, GitLab, Jira, Rundeck and SigNoz. Each has two
 halves:
 
 - **Rust:** a crate in `src-tauri/plugins/<name>/` that implements the `Plugin` trait
@@ -260,28 +303,46 @@ An agent runs on one of two transports.
 - **Terminal.** The agent's own CLI runs in a PTY like any shell (`sikemux-pty`'s `launch.rs`).
   Sikemux tells its state from the screen (`sikemux-pty`'s `agent_detection/`) and finds its saved
   sessions on disk (`agents/sessions/<agent>.rs`). Every agent type supports this.
-- **Chat (ACP).** [ACP](https://agentclientprotocol.com), the Agent Client Protocol, is
-  JSON-RPC over stdio between an editor and an agent. Chat agents run in the background
-  core, so a turn keeps going through a reload or a quit. `src-tauri/src/acp/mod.rs`
-  prepares the launch (the adapter, the agent binary, the browser tools, the environment)
-  and forwards prompts and permission answers to the core; `sikemux-core`'s
-  `server/chat/` runs the session and keeps what it said, so a page that attaches later
-  replays it. Claude and Codex are reached through adapter packages Sikemux installs.
-  OpenCode, OMP, Grok and Hermes speak ACP themselves (`sikemux-core`'s `acp/native.rs`).
-  `acp/air.rs` adds the Claude adapter's background task and subagent updates. On the UI
-  side, `src/chat/useAcpSession.ts` and `reducer.ts` turn events into a transcript.
+- **Chat.** Chat agents run in the background core, so a turn keeps going through a
+  reload or a quit. `src-tauri/src/acp/mod.rs` prepares the launch (the agent binary, the
+  browser tools, the environment) and forwards prompts, edits and permission answers to the
+  core; `sikemux-core`'s `server/chat/` runs the session and keeps what it said, so a page
+  that attaches later replays it. Claude and Codex are driven in their own protocols:
+  `server/chat/native/claude` speaks Claude Code's stream-json control protocol, the one
+  Anthropic's Agent SDK speaks, and `server/chat/native/codex` speaks `codex app-server`.
+  OpenCode, OMP, Grok and Hermes speak [ACP](https://agentclientprotocol.com), the Agent
+  Client Protocol (`server/chat/connection.rs`, `acp/native.rs`). Every driver tells the
+  chat the same ACP-shaped session updates, with `acp/air.rs`'s background task and
+  subagent updates on top, so the UI reads one shape: `src/chat/useAcpSession.ts` and
+  `reducer.ts` turn events into a transcript. Claude and Codex chats can take a sent
+  message back and ask again (`ChatCommand::Edit`); Claude can put the files back too.
   `CHAT_AGENT_TYPES` in `src/agents/agentLaunch.ts` lists the chat-capable agents, and
   `src/chat/AgentSurface.tsx` switches one agent between chat and terminal views.
 
+**Accounts.** A Claude or Codex account is a provider profile whose directory holds one
+sign-in (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). `src-tauri/src/agents/accounts.rs` makes extra
+ones as `~/.claude-<name>` or `~/.codex-<name>`, links the default directory's chats and
+settings into them, and signs in and out through the CLI's own login. A chat agent holds its
+sign-in from when it started, so the chat's driver starts it again on the same
+session when `acp/account.rs` reads a different account in its files, or when a turn fails
+asking for a sign-in. At a usage limit it moves the chat to the next signed-in account the
+launch names, when the person turned that on, and says so in the transcript.
+
 **Harness tools.** Agents on both transports get Sikemux's tools through
-`sikemux-editor --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
+`sikemux-host --tools-mcp`. `src-tauri/src/browser/agents.rs` knows how to register it with
 each agent host. Tools are declared once in `browser/tools.json`, one-line descriptions
 only. The protocol details live in `browser/SIKEMUX_GUIDE.md`, which agents fetch with
-the `guide` tool. The MCP binary compiles both files in. A tool call travels:
+the `guide` tool. An agent keeps its MCP process across a Sikemux update, so the process
+takes both files from the core (`tools.manifest`) and uses its own compiled-in copy only
+when the core cannot be reached. It asks again, and tells the agent its tools changed,
+when plugins change or another core takes over the endpoint. A call that cannot reach the
+core retries for 15 seconds before failing, but one the core may have received is never
+sent twice. A tool call travels:
 
 ```
-agent → sikemux-editor --tools-mcp → the core's tool endpoint
+agent → sikemux-host --tools-mcp → the core's tool endpoint
   task.read / task.stop / events.wait     → answered by the core (server/harness.rs)
+  tools.manifest                          → the core's own browser/tools.json and guide
   task.start / task.restart               → the core keeps the run, the window launches it
   everything else                         → the window: harness.rs in the app
     browser.*                             → browser/tools.rs (Rust)
@@ -343,8 +404,7 @@ pre-push hook.
 
 | Check              | Where                                                                                | How to move it                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Test coverage      | `test.coverage.thresholds` in `vite.config.ts`                                       | Raise the numbers after `pnpm test:coverage` shows coverage went up. Never lower them.                                |
 | `!important` count | `BUDGET` in `scripts/check-css-important.mjs`                                        | Lower it when you remove one. Only goes down.                                                                         |
-| Bundle size        | `scripts/check-performance-budget.mjs`, run by `pnpm perf:budget` after `pnpm build` | Every ceiling needs 10% headroom. Prefer lazy imports; raise a ceiling only with measured output and a stated reason. |
+| Bundle size        | `scripts/check-performance-budget.mjs`, run by `pnpm perf:budget` after `pnpm build` | Limits are what a person would feel, not today's size. Load the code later or split the file instead of raising them. |
 | Plugin boundaries  | `scripts/check-plugin-boundaries.mjs`                                                | Not a number: add what a plugin needs to `src/plugin-api`.                                                            |
 | Generated files    | `pnpm ipc:check`, `pnpm agent-tools:check`, `pnpm grammars:check`                    | Run the matching `:generate` script and commit its output.                                                            |

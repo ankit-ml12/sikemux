@@ -1,4 +1,6 @@
+import { ACCOUNT_AGENT_TYPES, agentBrand, agentLabel, type AccountAgentType, type AgentType } from "../../agents/catalog";
 import type { PluginKind } from "../../plugins/kinds";
+import type { SpaceIcon } from "../projectSpaces";
 
 /**
  * How a split arranges its children.
@@ -8,7 +10,9 @@ import type { PluginKind } from "../../plugins/kinds";
  * are tabs, and the active pane decides which is on top.
  */
 export type SplitDir = "row" | "column" | "stack";
-export type CorePaneKind = "terminal" | "editor" | "git" | "diff" | "search" | "agent" | "desk";
+import type { CorePaneKind, WindowRole } from "../windowRoles";
+
+export type { CorePaneKind, WindowRole };
 export type PaneKind = CorePaneKind | PluginKind;
 
 export interface PaneNode {
@@ -22,6 +26,8 @@ export interface PaneNode {
     tab?: { name: string; role: WindowRole };
     /** The terminal core session this pane shows, which outlives the app. */
     ptyId?: number;
+    /** The host the terminal runs on, by its core's key, when that is not this one. */
+    host?: string;
     /** Runtime-only marker: this pane borrows a process owned outside its renderer. */
     externalPty?: true;
     /** Runtime-only stable task identity used to reuse its presentation window. */
@@ -40,8 +46,6 @@ export type LayoutNode = PaneNode | SplitNode;
 
 export type SessionKind = "project" | "command" | "ssh" | PluginKind;
 
-export type WindowRole = "term" | "files" | "git" | "diff" | "search" | "ssh-config" | "named" | "agent" | PluginKind;
-
 export interface Window {
     id: string;
     name: string;
@@ -55,16 +59,14 @@ export interface Window {
     transient?: true;
 }
 
-export type AgentType = "claude" | "codex" | "hermes" | "pi" | "opencode" | "omp" | "grok";
+export type { AgentType };
 
-/** The permission boundary applied when starting an agent process. */
-export type AgentPermissionMode = "read-only" | "workspace-write" | "full-access" | "bypass";
+/** Whether an agent asks before it acts (the provider's own approvals and sandbox) or acts without asking. */
+export type AgentPermissionMode = "workspace-write" | "bypass";
 
 /** Provider-neutral reasoning levels; unsupported levels are normalized per CLI. */
-export type AgentEffort = "off" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-
-/** Supported profile backends. Gemini is profile-ready ahead of a dedicated agent tab. */
-export type AgentProvider = "claude" | "codex" | "gemini";
+export const AGENT_EFFORTS = ["off", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
+export type AgentEffort = (typeof AGENT_EFFORTS)[number];
 
 /**
  * Durable, non-secret configuration for an agent executable.
@@ -74,7 +76,7 @@ export type AgentProvider = "claude" | "codex" | "gemini";
 export interface ProviderProfile {
     id: string;
     name: string;
-    provider: AgentProvider;
+    provider: AccountAgentType;
     accent: string;
     executablePath?: string;
     configPath?: string;
@@ -83,27 +85,29 @@ export interface ProviderProfile {
 
 export type ProviderProfileSelection = Partial<Record<AgentType, string>>;
 
-export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = [
-    { id: "builtin-claude", name: "Claude", provider: "claude", accent: "#d97757" },
-    { id: "builtin-codex", name: "Codex", provider: "codex", accent: "#7a9dff" },
-    { id: "builtin-gemini", name: "Gemini", provider: "gemini", accent: "#4285f4" },
-];
+const builtinProfileId = (type: AccountAgentType): string => `builtin-${type}`;
 
-export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = {
-    claude: "builtin-claude",
-    codex: "builtin-codex",
-};
+export const DEFAULT_PROVIDER_PROFILES: readonly ProviderProfile[] = ACCOUNT_AGENT_TYPES.map((type) => ({
+    id: builtinProfileId(type),
+    name: agentLabel(type),
+    provider: type,
+    accent: agentBrand(type),
+}));
+
+export const DEFAULT_PROVIDER_PROFILE_SELECTION: Readonly<ProviderProfileSelection> = Object.fromEntries(
+    ACCOUNT_AGENT_TYPES.map((type) => [type, builtinProfileId(type)]),
+);
 
 export interface Agent {
     id: string;
     type: AgentType;
+    /** What the core calls this agent, such as Otter: the word the person and other agents address it by. */
+    name?: string;
+    /** The agent that started this one, by id, when an agent did rather than the person. */
+    lead?: string;
     title: string;
-    startup: string;
-    /** Runtime-only structured launch; avoids shell parsing and argv prompt exposure. */
-    directCommand?: PtyDirectCommand;
     resumeId?: string;
     createdAt?: number;
-    /** Explicit launch boundary. Absent on legacy in-memory records. */
     permissionMode?: AgentPermissionMode;
     /** Non-secret provider profile selected for this launch. */
     profileId?: string;
@@ -113,17 +117,16 @@ export interface Agent {
     cwd?: string;
     /** Optional provider model override selected at launch. */
     model?: string;
+    /** The model provider a chat runs on, by catalogue id, in place of its maker's account. */
+    modelProvider?: string;
     /** Optional provider reasoning-effort override selected at launch. */
     effort?: AgentEffort;
-    /** @deprecated Compatibility bridge for snapshots and command builders. */
-    skipPermissions?: boolean;
     /**
      * Session ids that already existed when this fresh agent launched. Used to
      * keep it from adopting a pre-existing session during reconciliation —
      * it may only attach to a session file that appeared after launch. Cleared
      * once attached.
      */
-    baselineSessionIds?: string[];
     /** Restored tabs stay dormant until the user explicitly resumes them. */
     launchState?: "live" | "dormant";
     /** Exempts a resumable live agent from automatic idle sleeping. */
@@ -134,6 +137,17 @@ export interface Agent {
     worktree?: AgentWorktree;
     /** The terminal core session running this agent's TUI, which outlives the app. */
     ptyId?: number;
+    /** The host the chat runs on, by its core's key, when that is not this one. */
+    host?: string;
+    /** The character drawn for this agent. Without a pack and shape it follows the default style in settings. */
+    buddy?: AgentBuddy;
+}
+
+export interface AgentBuddy {
+    /** A slot in the pack's palette, given out so open agents rarely share one. */
+    color: number;
+    pack?: string;
+    shape?: string;
 }
 
 export interface AgentWorktree {
@@ -155,22 +169,6 @@ export interface PtyDirectCommand {
     };
 }
 
-export type AgentBackendState = "unknown" | "working" | "blocked" | "idle" | "stopped";
-export type AgentPresentationState = AgentBackendState | "done";
-
-export interface AgentRuntimeState {
-    state: AgentPresentationState;
-    backendState: AgentBackendState;
-    unread: boolean;
-    updatedAt: number;
-    lastWorkedAt?: number;
-    sequence: number;
-    source: "screen" | "activity" | "process" | "fallback" | "acp";
-    confidence: "high" | "medium" | "low";
-    reason: string;
-    matchedRule?: string;
-}
-
 /** Identity Sikemux attaches to every shell it owns. Runtime-only. */
 export interface PtyContext {
     sessionId: string;
@@ -187,8 +185,22 @@ export interface PtyContext {
 }
 
 export type RailDensity = "comfortable" | "compact";
-/** Whether the agent rail lists the open project or every open project. */
-export type AgentRailScope = "project" | "all";
+/** What a message sent while the agent works does: goes into the running turn, or waits for it to end. */
+export type MidTurnSend = "steer" | "queue";
+/** Whether the tab rail lists the open project or every open project. */
+export type TabRailScope = "project" | "all";
+/** Which of its pages the tab rail shows: the project's agents, its terminals or its open files. */
+export type TabRailPage = "agents" | "terminals" | "files";
+
+/** A saved chat kept at the top of the tab rail, open or closed. */
+export interface PinnedChat {
+    agent: AgentType;
+    /** The agent's own id for the conversation, which resumes it. */
+    id: string;
+    title: string;
+    /** The project folder the chat ran in. */
+    project: string;
+}
 
 /** What the diff tab is reviewing: a changed file, or a whole commit. */
 export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; rev: string; subject: string };
@@ -199,8 +211,8 @@ export type DiffTarget = { kind: "worktree"; path: string } | { kind: "commit"; 
 export interface ProjectSpace {
     id: string;
     name: string;
-    /** An emoji, or empty to show the name's first letter instead. */
-    icon: string;
+    /** Empty when the person removed it; the space then shows only its name. */
+    icon: SpaceIcon | "";
 }
 
 export interface Session {
@@ -210,6 +222,8 @@ export interface Session {
     cwd: string;
     pinned: boolean;
     activeWindowId: string;
+    /** The host whose folder this is, by its core's key, for a project only another host holds. */
+    host?: string;
 }
 
 /**
@@ -241,10 +255,6 @@ export interface ProjectRoot {
      * `depth` finds beneath it. Replaces the separate pinned-projects list.
      */
     selfIndex?: boolean;
-}
-
-export interface PinnedProject {
-    path: string;
 }
 
 export interface Rect {

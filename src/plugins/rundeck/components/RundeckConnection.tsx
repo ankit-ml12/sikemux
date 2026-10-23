@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { invalidate } from "../../../plugin-api/resources";
-import { IconChevron } from "../../../plugin-api/ui";
-import { errorMessage, rundeckApi, type RundeckStatus } from "../api";
+import { Checkbox, IconChevron } from "../../../plugin-api/ui";
+import { errorText } from "../../../plugin-api/format";
+import { rundeckApi, type RundeckStatus } from "../api";
 import * as cmd from "../state";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS, splitList } from "../shape";
 import { useMenuKeys } from "./hooks";
+import { rundeck, rndJobCellsR, rndListsR, rndMatrixR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { hostFromUrl, Status } from "./parts";
 
 /** The server card at the foot of the sidebar; it opens the plugin's settings above itself. */
@@ -39,10 +40,10 @@ export function RundeckConnection({ status, onSignedOut }: { status: RundeckStat
                     <IconChevron size={11} className="rnd-conn-chev" />
                 </span>
                 <span className="rnd-conn-sub">
-                    {[status.user, status.rundeck_version && `Rundeck ${status.rundeck_version}`].filter(Boolean).join(" · ")}
+                    {[status.user, status.rundeckVersion && `Rundeck ${status.rundeckVersion}`].filter(Boolean).join(" · ")}
                 </span>
                 <span className="rnd-conn-meta">
-                    <span>{status.token_present ? "API token" : "No token"}</span>
+                    <span>{status.tokenPresent ? "API token" : "No token"}</span>
                     <Status status={status.ok ? "succeeded" : "failed"} label={status.ok ? "Connected" : "Offline"} />
                 </span>
             </button>
@@ -51,8 +52,9 @@ export function RundeckConnection({ status, onSignedOut }: { status: RundeckStat
 }
 
 function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
-    const prodEnvs = cmd.rundeckSettings.useSelect((s) => s.prodEnvs);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const prodEnvs = useProdEnvs();
+    const branchOptions = useBranchOptions();
+    const notifyWhenDone = cmd.rundeckSettings.useSelect((s) => s.notifyWhenDone);
     const [signingOut, setSigningOut] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -61,10 +63,10 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
         setError(null);
         try {
             await rundeckApi.logout();
-            invalidate((kind) => kind.startsWith("rnd."));
+            rundeck.refresh();
             onSignedOut();
         } catch (e) {
-            setError(errorMessage(e));
+            setError(errorText(e));
         } finally {
             setSigningOut(false);
         }
@@ -78,18 +80,31 @@ function SettingsForm({ onSignedOut }: { onSignedOut: () => void }) {
                 help="A job counts as production when its top folder or project name contains one of these words."
                 value={prodEnvs}
                 fallback={DEFAULT_PROD_ENVS}
-                onCommit={(list) => cmd.updateRundeckSettings({ prodEnvs: list })}
+                onCommit={(list) =>
+                    void rundeckApi
+                        .setLists({ prodEnvs: list })
+                        .then(() => rundeck.refresh(rndListsR))
+                        .catch((e: unknown) => setError(errorText(e)))
+                }
             />
             <ListField
                 label="Branch options"
                 help="Job options that hold the git branch, tried in order, in any case."
                 value={branchOptions}
                 fallback={DEFAULT_BRANCH_OPTIONS}
-                onCommit={(list) => {
-                    cmd.updateRundeckSettings({ branchOptions: list });
-                    invalidate((kind) => kind === "rnd.matrix" || kind === "rnd.jobCells" || kind === "rnd.plan");
-                }}
+                onCommit={(list) =>
+                    void rundeckApi
+                        .setLists({ branchOptions: list })
+                        .then(() => rundeck.refresh(rndListsR, rndMatrixR, rndJobCellsR, rndPlanR))
+                        .catch((e: unknown) => setError(errorText(e)))
+                }
             />
+            <div className="rnd-field">
+                <Checkbox checked={notifyWhenDone} onChange={(on) => cmd.updateRundeckSettings({ notifyWhenDone: on })}>
+                    Tell me when a run I start finishes or fails
+                </Checkbox>
+                <small className="rnd-field-help">A notification arrives even while Sikemux is in the background.</small>
+            </div>
             {error && <div className="rnd-field-error">{error}</div>}
             <div className="rnd-pop-foot">
                 <button className="rnd-btn rnd-btn-danger" onClick={() => void signOut()} disabled={signingOut}>

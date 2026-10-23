@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { errorCategory, errorText } from "../lib/format";
 
 export interface ResourceDef<Args extends unknown[], T> {
     kind: string;
@@ -15,7 +16,9 @@ interface Entry<T> {
     status: Status;
     data?: T;
     error?: string;
+    failure?: string;
     fetchedAt: number;
+    loadedAt?: number;
 }
 
 type AnyDef = ResourceDef<unknown[], unknown>;
@@ -115,23 +118,6 @@ function keyOf(kind: string, args: unknown[], def?: AnyDef): string {
     return framed("r", kind) + framed("k", k);
 }
 
-function stringifyError(err: unknown): string {
-    if (err == null) return "";
-    if (typeof err === "string") return err;
-    if (err instanceof Error) return err.message;
-    if (typeof err === "object") {
-        const e = err as { message?: unknown; category?: unknown };
-        if (typeof e.message === "string" && e.message) return e.message;
-        if (typeof e.category === "string" && e.category) return e.category;
-        try {
-            return JSON.stringify(err);
-        } catch {
-            return "unknown error";
-        }
-    }
-    return String(err);
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== "object" || value === null) return false;
     const proto = Object.getPrototypeOf(value);
@@ -181,6 +167,7 @@ function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: stri
         status: "loading",
         data: current?.data,
         fetchedAt: current?.fetchedAt ?? 0,
+        loadedAt: current?.loadedAt,
     });
     const p = def
         .fetch(...args)
@@ -193,6 +180,7 @@ function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: stri
                     status: "ok",
                     data,
                     fetchedAt: Date.now(),
+                    loadedAt: Date.now(),
                 });
             }
             return data;
@@ -204,8 +192,10 @@ function trigger<Args extends unknown[], T>(def: ResourceDef<Args, T>, key: stri
                     args,
                     status: "error",
                     data: current?.data,
-                    error: stringifyError(err),
+                    error: errorText(err),
+                    failure: errorCategory(err),
                     fetchedAt: Date.now(),
+                    loadedAt: current?.loadedAt,
                 });
             }
             throw err;
@@ -227,6 +217,10 @@ export interface ResourceHandle<T> {
     data: T | undefined;
     status: Status;
     error: string | undefined;
+    /** The category of the last failure, such as `offline` or `timeout`. */
+    failure: string | undefined;
+    /** When the data last loaded, in epoch milliseconds. */
+    loadedAt: number | undefined;
     refresh: () => Promise<void>;
 }
 
@@ -295,6 +289,8 @@ function useResourceHandle<Args extends unknown[], T>(
         data: retainCached ? retained.current.data : entry?.data,
         status: entry?.status ?? "loading",
         error: entry?.error,
+        failure: entry?.status === "error" ? entry.failure : undefined,
+        loadedAt: entry?.loadedAt,
         refresh: () => (enabled ? trigger(def, key, args).then(() => {}) : Promise.resolve()),
     };
 }
@@ -330,6 +326,17 @@ export function invalidate(predicate: (kind: string, args: unknown[]) => boolean
         }
     }
     pruneCache();
+}
+
+/** Fetches again everything on screen whose last fetch failed, as when the network comes back. */
+export function refetchFailed(): void {
+    for (const [key, entry] of [...cache]) {
+        if (entry.status !== "error" || !subs.has(key) || inflight.has(key)) continue;
+        const def = defsByKind.get(entry.kind);
+        if (!def) continue;
+        generations.set(key, (generations.get(key) ?? 0) + 1);
+        void trigger(def, key, entry.args).catch(() => {});
+    }
 }
 
 export function resetResourcesForTests(): void {

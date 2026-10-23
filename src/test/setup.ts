@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { mockConvertFileSrc } from "@tauri-apps/api/mocks";
-import { vi } from "vitest";
+import { afterAll, vi } from "vitest";
 import type { MarkdownRequest } from "../api/markdown";
 
 // jsdom implements no scrolling, so components that keep a selection in view
@@ -24,7 +24,22 @@ if (!Element.prototype.getAnimations) {
     Element.prototype.getAnimations = () => [];
 }
 
+// jsdom runs no workers, so work handed to one simply never comes back.
+if (!("Worker" in globalThis)) {
+    globalThis.Worker = class {
+        onmessage = null;
+        postMessage() {}
+        terminate() {}
+    } as unknown as typeof Worker;
+}
+
 mockConvertFileSrc("macos");
+
+// Leaving the page writes any save still waiting on a timer, as the app does when
+// it closes, so no such timer fires after the window a test ran in is gone.
+afterAll(() => {
+    window.dispatchEvent(new Event("pagehide"));
+});
 
 vi.mock("../api/markdown", async () => {
     const { parseWithFixtures } = await import("./markdownDouble");

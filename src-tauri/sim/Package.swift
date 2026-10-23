@@ -2,7 +2,7 @@
 import PackageDescription
 
 // The parts of facebook/idb (MIT) the helper drives the iOS Simulator with,
-// copied in under idb/. FBControlCore's Swift and Objective-C halves import
+// copied in under idb/ from commit 45e96c070ce62ee1df14ba21ccd8c07b720a8684. FBControlCore's Swift and Objective-C halves import
 // each other, which one SwiftPM target cannot hold, so build-sim-helper.mjs
 // builds it with XcodeGen into Frameworks/FBControlCore.xcframework first.
 let root = Context.packageDirectory
@@ -17,6 +17,9 @@ let simulatorFrameworks: SwiftSetting = .unsafeFlags(
         + privateModules.flatMap { ["-Xcc", "-fmodule-map-file=\(privateHeaders)/\($0)/module.modulemap"] }
 )
 
+/// idb's own code is kept as upstream wrote it, so its warnings are not ours to act on.
+let upstream: SwiftSetting = .unsafeFlags(["-suppress-warnings"])
+
 let package = Package(
     name: "sikemux-sim",
     platforms: [.macOS(.v15)],
@@ -25,15 +28,15 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(name: "FBControlCore", path: "Frameworks/FBControlCore.xcframework"),
-        .target(name: "CompanionUtilities", path: "idb/CompanionUtilities"),
-        .target(name: "SimulatorIPC", path: "idb/SimulatorIPC"),
-        .target(name: "SimulatorFrameworkBridgeProtocol", path: "idb/SimulatorFrameworkBridgeProtocol"),
+        .target(name: "CompanionUtilities", path: "idb/CompanionUtilities", swiftSettings: [upstream]),
+        .target(name: "SimulatorIPC", path: "idb/SimulatorIPC", swiftSettings: [upstream]),
+        .target(name: "SimulatorFrameworkBridgeProtocol", path: "idb/SimulatorFrameworkBridgeProtocol", swiftSettings: [upstream]),
         .target(
             name: "FBSimulatorControl",
             dependencies: ["FBControlCore", "CompanionUtilities", "SimulatorIPC", "SimulatorFrameworkBridgeProtocol"],
             path: "idb/FBSimulatorControl",
             exclude: ["FBSimulatorControl-Info.plist", "FBSimulatorControl.xcconfig", "FBSimulatorControl.h", "README.md"],
-            swiftSettings: [simulatorFrameworks]
+            swiftSettings: [simulatorFrameworks, upstream]
         ),
         .executableTarget(
             name: "SikemuxSim",
@@ -48,9 +51,15 @@ let package = Package(
                         ["-Xlinker", "-weak_library", "-Xlinker", "\(privateHeaders)/\($0)/\($0).tbd"]
                     }
                         // FBControlCore adds Objective-C categories that nothing references by name.
-                        + ["-Xlinker", "-all_load"]
+                        + ["-Xlinker", "-force_load", "-Xlinker", "\(root)/Frameworks/FBControlCore.a"]
                 )
             ]
+        ),
+        .testTarget(
+            name: "SikemuxSimTests",
+            dependencies: ["SikemuxSim"],
+            path: "Tests/SikemuxSimTests",
+            swiftSettings: [simulatorFrameworks]
         ),
     ]
 )

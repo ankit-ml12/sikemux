@@ -66,7 +66,7 @@ describe("repository Git work", () => {
         setGitDraft("/a", "written by me");
         vi.mocked(git.aiMessage).mockRejectedValueOnce(new Error("CLI unavailable"));
         expect(await generateGitDraft("/a")).toBe(false);
-        expect(git.aiMessage).toHaveBeenCalledWith("/a", "codex", "test-model", expect.any(Function));
+        expect(git.aiMessage).toHaveBeenCalledWith("/a", "codex", "test-model");
         expect(useGitWorkbench.getState().drafts["/a"]).toBe("written by me");
     });
     it("locks a repository while allowing independent repositories to work", async () => {

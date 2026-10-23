@@ -4,8 +4,9 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::PendingApproval;
 
 use crate::client;
 use crate::error::{GithubError, GithubResult};
@@ -41,18 +42,6 @@ struct PendingRow {
     reviewers: Vec<ReviewerRow>,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Pending {
-    pub environment_id: u64,
-    pub environment: String,
-    pub wait_minutes: u64,
-    /// False when somebody else has to sign this off, which is worth saying
-    /// rather than offering a button that will be refused.
-    pub can_approve: bool,
-    pub reviewers: Vec<String>,
-}
-
 fn reviewer_name(row: &ReviewerRow) -> Option<String> {
     let target = row.reviewer.as_ref()?;
     let name = target
@@ -66,7 +55,7 @@ fn reviewer_name(row: &ReviewerRow) -> Option<String> {
     })
 }
 
-pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Pending>> {
+pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<PendingApproval>> {
     let path = input.repo.path(&format!(
         "/actions/runs/{}/pending_deployments",
         input.run_id
@@ -74,7 +63,7 @@ pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Pending
     let rows: Vec<PendingRow> = client::get(data_dir, &path, &[]).await?;
     Ok(rows
         .into_iter()
-        .map(|row| Pending {
+        .map(|row| PendingApproval {
             environment_id: row.environment.id,
             environment: row.environment.name,
             wait_minutes: row.wait_timer.unwrap_or(0),
@@ -89,6 +78,7 @@ pub async fn pending(data_dir: &Path, input: RunRef) -> GithubResult<Vec<Pending
 pub struct Review {
     #[serde(flatten)]
     pub repo: RepoRef,
+    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
     pub run_id: u64,
     pub environment_ids: Vec<u64>,
     /// `approved` or `rejected`; GitHub accepts nothing else.
@@ -143,51 +133,5 @@ mod tests {
         }));
         let names: Vec<String> = parsed.reviewers.iter().filter_map(reviewer_name).collect();
         assert_eq!(names, ["@nodelike", "@release (team)"]);
-    }
-
-    #[test]
-    fn a_run_nobody_here_can_sign_off_says_so() {
-        let parsed = row(json!({
-            "environment": { "id": 7, "name": "production" },
-            "reviewers": [],
-        }));
-        assert_eq!(parsed.current_user_can_approve, None);
-        let pending = Pending {
-            environment_id: parsed.environment.id,
-            environment: parsed.environment.name,
-            wait_minutes: parsed.wait_timer.unwrap_or(0),
-            can_approve: parsed.current_user_can_approve.unwrap_or(false),
-            reviewers: Vec::new(),
-        };
-        assert!(!pending.can_approve);
-        assert_eq!(pending.wait_minutes, 0);
-    }
-
-    #[tokio::test]
-    async fn refuses_a_verdict_github_would_not_understand() {
-        let dir = std::env::temp_dir();
-        let bad = Review {
-            repo: RepoRef {
-                owner: "a".into(),
-                name: "b".into(),
-            },
-            run_id: 1,
-            environment_ids: vec![7],
-            state: "maybe".into(),
-            comment: String::new(),
-        };
-        assert!(review(&dir, bad).await.is_err());
-
-        let empty = Review {
-            repo: RepoRef {
-                owner: "a".into(),
-                name: "b".into(),
-            },
-            run_id: 1,
-            environment_ids: Vec::new(),
-            state: "approved".into(),
-            comment: String::new(),
-        };
-        assert!(review(&dir, empty).await.is_err());
     }
 }

@@ -5,7 +5,8 @@ import { occludeNativeViews, setNativeViewHoles, useStageMotion } from "../state
 import { useToasts } from "../state/toast";
 import { getState, setState } from "../state/store";
 import { deskEditorId } from "../state/desks";
-import { taskPtyBindings } from "../tasks/nativeRuntime";
+import { noteSimulatorActing } from "../state/simulatorAgents";
+import { setTaskRunsForTests } from "../tasks/coreTasks";
 import type { Session, Window as WindowT } from "../state/types";
 import * as cmd from "../state/commands";
 import { DeskHost } from "./Desk";
@@ -21,6 +22,8 @@ vi.mock("../terminal/TerminalPane", () => ({
         <div data-testid="desk-terminal" data-pane={context.paneId} data-visible={String(visible)} />
     ),
 }));
+
+vi.mock("../lib/platform", async () => ({ ...(await vi.importActual<typeof import("../lib/platform")>("../lib/platform")), IS_MACOS: true }));
 
 vi.mock("../sim/SimulatorPane", () => ({
     SimulatorPane: ({ simulator, visible }: { simulator: { id: string }; visible: boolean }) => (
@@ -368,17 +371,6 @@ describe("DeskHost", () => {
         expect(screen.getByRole("tab", { name: "Example" }).querySelector("img")).toBeNull();
     });
 
-    it("enables history buttons from what the page reports", async () => {
-        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ canGoBack: true, loading: true })], activeTabId: "tab-one" });
-        renderPane();
-        const back = await screen.findByRole("button", { name: "Back" });
-        expect(back).toBeEnabled();
-        expect(screen.getByRole("button", { name: "Forward" })).toBeDisabled();
-        expect(back.closest(".browser-toolbar")).toHaveClass("loading");
-        fireEvent.click(back);
-        expect(browserApi.back).toHaveBeenCalledWith("agent-one");
-    });
-
     it("shows a tab the moment the strip reports one, and asks for the first read itself", async () => {
         vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         renderPane();
@@ -407,6 +399,7 @@ describe("DeskHost", () => {
        the pane, so nothing opens until it is on screen. */
     it("opens the tabs it was restored with, once, and shows the one that was in front", async () => {
         setState({ deskRestores: { "pane-desk": restored } } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
         const view = renderPane(false);
 
@@ -570,8 +563,10 @@ describe("DeskHost", () => {
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
     });
 
-    it("keeps pages, files and terminals in one strip, in the order they arrived", async () => {
-        taskPtyBindings.bind("term-web", { executionId: "run-1", terminalKey: "task-web", ptyId: 7 } as never);
+    it("lists one kind at a time and switches kinds from the icons beside the strip", async () => {
+        setTaskRunsForTests([
+            { executionId: "run-1", taskId: "web", project: "/repo", status: "running", ptyId: 7, agentId: "agent-one", terminalKey: "task-web" },
+        ]);
         setState({
             desks: {
                 "agent-one": {
@@ -585,28 +580,78 @@ describe("DeskHost", () => {
             editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
         } as never);
         renderPane();
+        const strip = () =>
+            within(screen.getByRole("tablist", { name: "Desk tabs" }))
+                .getAllByRole("tab")
+                .map((tab) => tab.textContent?.replace(/[^\x20-\x7e]/g, ""));
+        const kinds = within(screen.getByRole("tablist", { name: "Desk views" }));
 
-        await waitFor(() => expect(screen.getByRole("tab", { name: "Example" })).toBeInTheDocument());
-        expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.replace(/[^\x20-\x7e]/g, ""))).toEqual(["a.ts", "Example", "Web"]);
-        expect(screen.getByRole("tab", { name: /a\.ts/ })).toHaveAttribute("aria-selected", "true");
+        expect(strip()).toEqual(["a.ts"]);
+        expect(kinds.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
         expect(await screen.findByTestId("desk-editor")).toHaveAttribute("data-visible", "true");
-        expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-pane", "term-web");
         expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-visible", "false");
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", null));
 
-        fireEvent.click(screen.getByRole("tab", { name: "Web" }));
+        fireEvent.click(kinds.getByRole("tab", { name: "Terminals" }));
 
         expect(getState().desks["agent-one"].active).toBe("terminal:term-web");
+        expect(strip()).toEqual(["Web"]);
         expect(screen.getByTestId("desk-terminal")).toHaveAttribute("data-visible", "true");
         expect(screen.getByTestId("desk-editor")).toHaveAttribute("data-visible", "false");
 
-        fireEvent.click(screen.getByRole("tab", { name: "Example" }));
+        fireEvent.click(kinds.getByRole("tab", { name: "Browser" }));
 
+        await waitFor(() => expect(strip()).toEqual(["Example"]));
         await waitFor(() => expect(browserApi.setBounds).toHaveBeenLastCalledWith("agent-one", placed));
-        taskPtyBindings.release("term-web");
+
+        fireEvent.click(kinds.getByRole("tab", { name: "Files" }));
+
+        expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
+        setTaskRunsForTests([]);
     });
 
-    it("names the simulator's tab after its device and shows its pane only while the tab is chosen", async () => {
+    it("cannot switch to a kind with nothing in it, but an empty browser opens a page", async () => {
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
+        setState({
+            browserStrips: {},
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], simulators: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        renderPane();
+        const kinds = within(screen.getByRole("tablist", { name: "Desk views" }));
+
+        expect(kinds.getByRole("tab", { name: "Terminals" })).toBeDisabled();
+        fireEvent.click(kinds.getByRole("tab", { name: "Browser" }));
+
+        expect(browserApi.newTab).toHaveBeenCalledWith("agent-one");
+    });
+
+    it("shows the simulator's device instead of tabs, and its pane only while the simulator is chosen", async () => {
+        setState({
+            desks: {
+                "agent-one": {
+                    order: ["file:/repo/src/a.ts", "simulator:sim-1"],
+                    active: "simulator:sim-1",
+                    terminals: [],
+                    simulators: [{ id: "sim-1", udid: "UDID-1", deviceName: "iPhone 17" }],
+                    reveal: null,
+                },
+            },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
+        } as never);
+        renderPane();
+
+        expect(await screen.findByRole("button", { name: "Device" })).toHaveTextContent("iPhone 17");
+        expect(screen.queryByRole("tablist", { name: "Desk tabs" })).not.toBeInTheDocument();
+        expect(await screen.findByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
+
+        fireEvent.click(within(screen.getByRole("tablist", { name: "Desk views" })).getByRole("tab", { name: "Files" }));
+
+        expect(getState().desks["agent-one"].active).toBe("file:/repo/src/a.ts");
+        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
+    });
+
+    it("marks the simulator's device and its kind while the agent drives it", async () => {
         setState({
             desks: {
                 "agent-one": {
@@ -620,14 +665,18 @@ describe("DeskHost", () => {
             editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/src/a.ts"], activePath: "/repo/src/a.ts" } },
         } as never);
         renderPane();
+        const kinds = screen.getByRole("tablist", { name: "Desk views" });
+        expect(within(kinds).getByRole("tab", { name: "iOS Simulator" })).not.toHaveClass("busy");
 
-        const tab = await screen.findByRole("tab", { name: /iPhone 17/ });
-        expect(await screen.findByTestId("desk-simulator")).toHaveAttribute("data-visible", "false");
+        act(() => noteSimulatorActing("agent-one", true));
+        expect(within(kinds).getByRole("tab", { name: "iOS Simulator, codex is working here" })).toHaveClass("busy");
 
-        fireEvent.click(tab);
+        fireEvent.click(within(kinds).getByRole("tab", { name: /iOS Simulator/ }));
+        const working = await screen.findByRole("img", { name: "codex is working on this device" });
+        expect(working.closest(".desk-device")).not.toBeNull();
 
-        expect(getState().desks["agent-one"].active).toBe("simulator:sim-1");
-        expect(screen.getByTestId("desk-simulator")).toHaveAttribute("data-visible", "true");
+        act(() => noteSimulatorActing("agent-one", false));
+        expect(screen.queryByRole("img", { name: "codex is working on this device" })).not.toBeInTheDocument();
     });
 
     it("stays open for a file that is still on its way to the editor", async () => {
@@ -682,40 +731,12 @@ describe("DeskHost", () => {
         await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledWith("agent-one"));
     });
 
-    it("sends forward and reload to the page and reads the strip again after each", async () => {
-        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [tab({ canGoForward: true })], activeTabId: "tab-one" });
-        renderPane();
-        const forward = await screen.findByRole("button", { name: "Forward" });
-        await waitFor(() => expect(forward).toBeEnabled());
-        vi.mocked(browserApi.snapshot).mockClear();
-
-        fireEvent.click(forward);
-        fireEvent.click(screen.getByRole("button", { name: "Reload" }));
-
-        expect(browserApi.forward).toHaveBeenCalledWith("agent-one");
-        expect(browserApi.reload).toHaveBeenCalledWith("agent-one");
-        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(2));
-    });
-
     it("reports a page action that fails", async () => {
         vi.mocked(browserApi.reload).mockRejectedValue(new Error("gone"));
         renderPane();
         fireEvent.click(await screen.findByRole("button", { name: "Reload" }));
 
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
-    });
-
-    it("drops what was typed in the address bar once it loses focus", async () => {
-        renderPane();
-        const address = await screen.findByRole("textbox", { name: "Address and search" });
-        await waitFor(() => expect(address).toHaveValue("https://example.com"));
-
-        fireEvent.focus(address);
-        fireEvent.change(address, { target: { value: "half typ" } });
-        expect(address).toHaveValue("half typ");
-        fireEvent.blur(address);
-
-        expect(address).toHaveValue("https://example.com");
     });
 
     it("opens nothing for a restore that saved no pages", async () => {
@@ -726,11 +747,15 @@ describe("DeskHost", () => {
         expect(browserApi.newTab).not.toHaveBeenCalled();
     });
 
-    it("keeps the pane when restored pages fail to open but it already holds a page", async () => {
-        setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+    it("keeps the pane when restored pages fail to open but it already holds a file", async () => {
+        setState({
+            deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } },
+            desks: { "agent-one": { order: ["file:/repo/a.ts"], active: "file:/repo/a.ts", terminals: [], simulators: [], reveal: null } },
+            editorViews: { [deskEditorId("agent-one")]: { openTabs: ["/repo/a.ts"], activePath: "/repo/a.ts" } },
+        } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockRejectedValue(new Error("no window"));
         renderPane();
-        await announceStrip(snapshot);
 
         await waitFor(() => expect(useToasts.getState().toasts.length).toBeGreaterThan(0));
         expect(onEmpty).not.toHaveBeenCalled();
@@ -738,11 +763,12 @@ describe("DeskHost", () => {
 
     it("brings no restored tab to the front when the saved front tab did not open", async () => {
         setState({ deskRestores: { "pane-desk": { ...restored, activeIndex: 5 } } } as never);
+        vi.mocked(browserApi.snapshot).mockResolvedValue({ tabs: [], activeTabId: null });
         vi.mocked(browserApi.newTab).mockImplementation(async (_agentId, url) => `tab-${url}`);
         renderPane();
 
         await waitFor(() => expect(browserApi.newTab).toHaveBeenCalledTimes(2));
-        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(browserApi.snapshot).toHaveBeenCalledTimes(3));
         expect(browserApi.switchTab).not.toHaveBeenCalled();
     });
 

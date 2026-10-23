@@ -1,7 +1,9 @@
 import type { AgentType, SessionKind, Window } from "./types";
-import { isRecord, isSessionKind, validatePersistedWindow, type LayoutValidationLimits } from "./persistValidation";
-
-const AGENT_TYPES = new Set<AgentType>(["claude", "codex", "hermes", "pi", "opencode", "omp", "grok"]);
+import { isAgentType } from "../agents/catalog";
+import { isResumeId } from "../agents/agentLaunch";
+import { isSessionKind, validatePersistedWindow, type LayoutValidationLimits } from "./persistValidation";
+import { isRecord } from "../lib/guards";
+import { chatKey } from "./selectors";
 
 export const SESSION_BUNDLE_LIMITS = {
     maxBytes: 1_048_576,
@@ -81,11 +83,12 @@ export function parseSessionBundle(raw: string): ValidSessionBundle {
         throw new Error(`session bundle exceeds the agent limit (${SESSION_BUNDLE_LIMITS.maxAgents})`);
     const claims = new Set<string>();
     const agents = decoded.agents.map((row, index): ImportedAgent => {
-        if (!isRecord(row) || !AGENT_TYPES.has(row.type as AgentType)) throw new Error(`session bundle agent ${index + 1} is unsupported`);
+        if (!isRecord(row) || !isAgentType(row.type)) throw new Error(`session bundle agent ${index + 1} is unsupported`);
         const type = row.type as AgentType;
         const title = requiredString(row.title, `agent ${index + 1} title`);
         const resumeId = requiredString(row.resumeId, `agent ${index + 1} resume id`);
-        const claim = `${type}\0${resumeId}`;
+        if (!isResumeId(type, resumeId)) throw new Error(`session bundle agent ${index + 1} resume id is invalid`);
+        const claim = chatKey(type, resumeId);
         if (claims.has(claim)) throw new Error(`duplicate agent session claim for ${type}`);
         claims.add(claim);
         return { type, title, resumeId };

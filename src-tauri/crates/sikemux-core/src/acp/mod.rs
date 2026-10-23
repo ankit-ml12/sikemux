@@ -2,8 +2,12 @@
 //! them and how it reads what they send back. The connections themselves run
 //! in the server.
 
+pub mod account;
 pub mod air;
 pub mod native;
+pub mod permission;
+pub mod pickers;
+pub mod sign_in;
 
 use std::path::PathBuf;
 
@@ -15,7 +19,10 @@ use serde_json::{json, Value};
 use url::Url;
 
 pub use agent_client_protocol::schema;
+pub use pickers::current_choice;
 
+use crate::agent_catalog::{self, ChatDriver};
+use crate::launch::PermissionMode;
 use crate::protocol::ChatContext;
 
 const MAX_PROMPT_BYTES: usize = 2 * 1024 * 1024;
@@ -50,61 +57,24 @@ pub fn ended_status(result: &Result<SessionEnd, String>, started: bool) -> Value
     }
 }
 
-/// What an update from the agent's own session says about a turn nobody here
-/// prompted: the agent woke to a message from another session or a finished
-/// background task.
-#[derive(Debug, PartialEq)]
-pub enum TurnSignal {
-    Work,
-    Closes,
-}
-
-pub fn turn_signal(provider: &str, update: &Value) -> Option<TurnSignal> {
-    let kind = update.get("sessionUpdate").and_then(Value::as_str)?;
-    match provider {
-        "claude" => match kind {
-            "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" | "tool_call" => {
-                Some(TurnSignal::Work)
-            }
-            // Claude's adapter tags the usage report that closes a turn it ran
-            // on its own with where the turn came from.
-            "usage_update" if update.pointer("/_meta/_claude~1origin").is_some() => {
-                Some(TurnSignal::Closes)
-            }
-            _ => None,
-        },
-        // Codex says outright when its thread starts and stops working.
-        "codex" if kind == "session_info_update" => {
-            match update
-                .pointer("/_meta/codex/threadStatus/type")
-                .and_then(Value::as_str)?
-            {
-                "active" => Some(TurnSignal::Work),
-                _ => Some(TurnSignal::Closes),
-            }
-        }
-        _ => None,
-    }
-}
-
 /// The session mode that carries a permission mode. Agents whose modes are not
 /// about permissions get none, and Sikemux answers their requests itself.
 pub fn permission_mode_id(
     provider: &str,
-    mode: &str,
+    mode: PermissionMode,
     setup: &Value,
 ) -> Result<Option<&'static str>, String> {
-    let expected = match (provider, mode) {
-        ("codex", "bypass") => "agent-full-access",
-        ("codex", "workspace-write") => "read-only",
-        ("claude", "bypass") => "bypassPermissions",
-        ("claude", "workspace-write") => "acceptEdits",
-        ("hermes", "bypass") => "dont_ask",
-        ("hermes", "workspace-write") => "accept_edits",
-        (_, "bypass" | "workspace-write") if native::arguments(provider).is_some() => {
-            return Ok(None)
-        }
-        _ => return Err(format!("Unsupported permission mode: {mode}")),
+    let Some(ChatDriver::Acp { modes, .. }) =
+        agent_catalog::agent(provider).and_then(|agent| agent.chat.as_ref())
+    else {
+        return Err(format!("{provider} does not chat over ACP"));
+    };
+    let Some(modes) = modes else {
+        return Ok(None);
+    };
+    let expected = match mode {
+        PermissionMode::Bypass => modes.bypass,
+        PermissionMode::WorkspaceWrite => modes.normal,
     };
     setup
         .pointer("/modes/availableModes")
@@ -123,28 +93,7 @@ pub fn permission_mode_id(
 /// Claude Code for an `rm -rf` of a computed path, and some agents have no
 /// such mode at all, so under YOLO the host says yes for the person.
 pub fn approves_for_user(mode: &str) -> bool {
-    mode == "bypass"
-}
-
-/// The config option an adapter-backed agent keeps its effort in.
-pub fn adapter_effort_id(provider: &str) -> &'static str {
-    if provider == "claude" {
-        "effort"
-    } else {
-        "reasoning_effort"
-    }
-}
-
-/// The value a select option currently holds.
-pub fn current_choice(setup: &Value, config_id: &str) -> Option<String> {
-    setup
-        .get("configOptions")?
-        .as_array()?
-        .iter()
-        .find(|option| option["id"] == config_id)?
-        .get("currentValue")?
-        .as_str()
-        .map(str::to_owned)
+    PermissionMode::parse(mode) == Ok(PermissionMode::Bypass)
 }
 
 fn resource_link(path: &str) -> Result<ContentBlock, String> {
@@ -190,8 +139,43 @@ fn context_resource(item: ChatContext) -> ContentBlock {
     ))
 }
 
+/// The message cut after each `[Image #N]` it writes, so attachment N can
+/// follow the words it was put between, and the text after the last of them.
+fn split_at_images(text: &str, attachments: usize) -> (Vec<(&str, usize)>, &str) {
+    const OPEN: &str = "[Image #";
+    let mut pieces = Vec::new();
+    let mut placed = vec![false; attachments];
+    let mut from = 0;
+    let mut search = 0;
+    while let Some(found) = text[search..].find(OPEN) {
+        let digits = search + found + OPEN.len();
+        let close = digits
+            + text[digits..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+        search = digits;
+        if !text[close..].starts_with(']') {
+            continue;
+        }
+        let Some(index) = text[digits..close]
+            .parse::<usize>()
+            .ok()
+            .and_then(|number| number.checked_sub(1))
+            .filter(|&index| index < attachments && !placed[index])
+        else {
+            continue;
+        };
+        placed[index] = true;
+        pieces.push((&text[from..=close], index));
+        from = close + 1;
+        search = from;
+    }
+    (pieces, &text[from..])
+}
+
 pub fn prompt_blocks(
-    mut text: String,
+    text: String,
     paths: Vec<String>,
     context: Vec<ChatContext>,
     embedded_context: bool,
@@ -214,26 +198,33 @@ pub fn prompt_blocks(
     if text.len() + context_bytes > MAX_PROMPT_BYTES {
         return Err("prompt is too large".into());
     }
+    let mut links = paths
+        .iter()
+        .map(|path| resource_link(path).map(Some))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (pieces, rest) = split_at_images(&text, links.len());
+    let mut rest = rest.to_owned();
     let mut resources = Vec::new();
     if embedded_context {
         resources.extend(context.into_iter().map(context_resource));
     } else {
         for item in &context {
-            if !text.trim().is_empty() {
-                text.push_str("\n\n");
+            if !rest.trim().is_empty() || !pieces.is_empty() {
+                rest.push_str("\n\n");
             }
-            text.push_str(&context_section(item));
+            rest.push_str(&context_section(item));
         }
     }
-    let mut blocks =
-        Vec::with_capacity(paths.len() + resources.len() + usize::from(!text.trim().is_empty()));
-    if !text.trim().is_empty() {
-        blocks.push(text.into());
+    let mut blocks = Vec::with_capacity(paths.len() + resources.len() + pieces.len() + 1);
+    for (said, index) in pieces {
+        blocks.push(said.to_owned().into());
+        blocks.extend(links[index].take());
+    }
+    if !rest.trim().is_empty() {
+        blocks.push(rest.into());
     }
     blocks.extend(resources);
-    for path in paths {
-        blocks.push(resource_link(&path)?);
-    }
+    blocks.extend(links.into_iter().flatten());
     if blocks.is_empty() {
         return Err("prompt is empty".into());
     }
@@ -246,35 +237,27 @@ mod tests {
 
     #[test]
     fn permissions_use_advertised_provider_modes() {
-        for (provider, normal, bypass) in [
-            ("codex", "read-only", "agent-full-access"),
-            ("claude", "acceptEdits", "bypassPermissions"),
-            ("hermes", "accept_edits", "dont_ask"),
-        ] {
-            let setup =
-                json!({ "modes": { "availableModes": [{ "id": normal }, { "id": bypass }] } });
-            assert_eq!(
-                permission_mode_id(provider, "workspace-write", &setup).unwrap(),
-                Some(normal)
-            );
-            assert_eq!(
-                permission_mode_id(provider, "bypass", &setup).unwrap(),
-                Some(bypass)
-            );
-            assert!(permission_mode_id(provider, "invalid", &setup).is_err());
-            assert!(permission_mode_id(provider, "bypass", &json!({})).is_err());
-        }
+        let setup = json!({ "modes": { "availableModes": [{ "id": "accept_edits" }, { "id": "dont_ask" }] } });
+        assert_eq!(
+            permission_mode_id("hermes", PermissionMode::WorkspaceWrite, &setup).unwrap(),
+            Some("accept_edits")
+        );
+        assert_eq!(
+            permission_mode_id("hermes", PermissionMode::Bypass, &setup).unwrap(),
+            Some("dont_ask")
+        );
+        assert!(permission_mode_id("hermes", PermissionMode::Bypass, &json!({})).is_err());
     }
 
     #[test]
     fn agents_without_permission_modes_are_answered_by_the_host() {
         for provider in ["opencode", "omp", "grok"] {
             assert_eq!(
-                permission_mode_id(provider, "bypass", &json!({})).unwrap(),
+                permission_mode_id(provider, PermissionMode::Bypass, &json!({})).unwrap(),
                 None
             );
             assert_eq!(
-                permission_mode_id(provider, "workspace-write", &json!({})).unwrap(),
+                permission_mode_id(provider, PermissionMode::WorkspaceWrite, &json!({})).unwrap(),
                 None
             );
         }
@@ -316,66 +299,6 @@ mod tests {
         assert_eq!(current_choice(&setup, "effort").as_deref(), Some("high"));
         assert_eq!(current_choice(&setup, "thinking"), None);
         assert_eq!(current_choice(&json!({}), "model"), None);
-    }
-
-    #[test]
-    fn claude_turns_open_on_work_and_close_on_the_tagged_usage_report() {
-        for kind in [
-            "user_message_chunk",
-            "agent_message_chunk",
-            "agent_thought_chunk",
-            "tool_call",
-        ] {
-            assert_eq!(
-                turn_signal("claude", &json!({ "sessionUpdate": kind })),
-                Some(TurnSignal::Work)
-            );
-        }
-        assert_eq!(
-            turn_signal(
-                "claude",
-                &json!({
-                    "sessionUpdate": "usage_update",
-                    "_meta": { "_claude/origin": { "kind": "peer" } },
-                })
-            ),
-            Some(TurnSignal::Closes)
-        );
-        for update in [
-            json!({ "sessionUpdate": "usage_update", "used": 1, "size": 10 }),
-            json!({ "sessionUpdate": "tool_call_update" }),
-            json!({ "sessionUpdate": "available_commands_update" }),
-            json!({}),
-        ] {
-            assert_eq!(turn_signal("claude", &update), None);
-        }
-    }
-
-    #[test]
-    fn codex_turns_follow_its_thread_status() {
-        let status = |kind: &str| {
-            json!({
-                "sessionUpdate": "session_info_update",
-                "_meta": { "codex": { "threadStatus": { "type": kind } } },
-            })
-        };
-        assert_eq!(
-            turn_signal("codex", &status("active")),
-            Some(TurnSignal::Work)
-        );
-        for kind in ["idle", "systemError", "notLoaded"] {
-            assert_eq!(
-                turn_signal("codex", &status(kind)),
-                Some(TurnSignal::Closes)
-            );
-        }
-        for update in [
-            json!({ "sessionUpdate": "agent_message_chunk" }),
-            json!({ "sessionUpdate": "session_info_update", "title": "Named" }),
-        ] {
-            assert_eq!(turn_signal("codex", &update), None);
-        }
-        assert_eq!(turn_signal("opencode", &status("active")), None);
     }
 
     #[test]

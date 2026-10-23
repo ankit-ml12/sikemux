@@ -1,4 +1,5 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+import type { PluginStream, PluginStreamHandlers } from "../plugin-api/backend";
 import { isPluginEnabled } from "../plugins/enabled";
 import type {
     Annotation,
@@ -78,6 +79,8 @@ export interface HostCapabilities {
         rerunJob: boolean;
         debugLogs: boolean;
         deleteRuns: boolean;
+        /** Whether a run's logs can be deleted while the run stays. */
+        deleteLogs: boolean;
     };
     pulls: {
         draft: boolean;
@@ -91,6 +94,9 @@ export interface HostCapabilities {
     releases: boolean;
     inbox: boolean;
 }
+
+/** Whether a thread belongs to a pull request or an issue. GitHub numbers both in one sequence; GitLab does not. */
+export type ThreadOf = "pull" | "issue";
 
 /** Every read and write a host answers. Each takes the repository it is about, whose `provider` names the host. */
 export interface CodeHostApi {
@@ -117,6 +123,8 @@ export interface CodeHostApi {
     jobSummary(repo: RepoRef, checkRunId: string): Promise<JobSummary | null>;
     runTiming(repo: RepoRef, runId: string): Promise<RunTiming>;
     workflowFile(repo: RepoRef, workflowId: string): Promise<WorkflowFile>;
+    /** A workflow file by its path at a commit, for hosts whose runs can call other workflow files. */
+    workflowFileAt?(repo: RepoRef, path: string, gitRef: string): Promise<WorkflowFile>;
     artifacts(repo: RepoRef, runId: string): Promise<Artifact[]>;
     pendingApprovals(repo: RepoRef, runId: string): Promise<PendingApproval[]>;
     dispatch(repo: RepoRef, workflowId: string, gitRef: string, inputs: Record<string, string>): Promise<void>;
@@ -127,17 +135,22 @@ export interface CodeHostApi {
     deleteRun(repo: RepoRef, runId: string): Promise<void>;
     reviewDeployment(repo: RepoRef, runId: string, environmentIds: number[], state: "approved" | "rejected", comment?: string): Promise<void>;
     downloadArtifact(repo: RepoRef, artifactId: string, name: string, onProgress?: (progress: DownloadProgress) => void): Promise<SavedArtifact>;
-    watchStart(repo: RepoRef, runId: string, onTick: (tick: RunTick) => void): Promise<number>;
-    watchStop(streamId: number): Promise<void>;
+    /** Follows a run while it goes, a tick a read, until it ends or the stream is stopped. */
+    watch(repo: RepoRef, runId: string, handlers: PluginStreamHandlers<RunTick>): PluginStream;
 
     pulls(repo: RepoRef, state: string): Promise<Pull[]>;
+    /** How many pull requests the repository has open and closed, for hosts that can count them cheaply. */
+    pullCounts?(repo: RepoRef): Promise<{ open: number; closed: number }>;
+    /** How many issues the repository has open and closed, for hosts that can count them cheaply. */
+    issueCounts?(repo: RepoRef): Promise<{ open: number; closed: number }>;
     pull(repo: RepoRef, number: number): Promise<Pull>;
     pullFiles(repo: RepoRef, number: number): Promise<ChangedFile[]>;
     pullCommits(repo: RepoRef, number: number): Promise<PullCommit[]>;
     /** The accounts behind recent commits' emails on a branch, so local history can show who wrote it. */
     commitAuthors?(repo: RepoRef, gitRef: string | null): Promise<CommitAuthor[]>;
     pullReviews(repo: RepoRef, number: number): Promise<Review[]>;
-    timeline(repo: RepoRef, number: number): Promise<TimelineItem[]>;
+    /** `of` says which a number names, for hosts that number pull requests and issues apart. */
+    timeline(repo: RepoRef, number: number, of?: ThreadOf): Promise<TimelineItem[]>;
     /** `sha` is the head commit the person saw; the host refuses the merge if the branch has moved since. */
     mergePull(repo: RepoRef, number: number, method: MergeMethod, sha: string): Promise<void>;
     createPull(repo: RepoRef, pull: NewPull): Promise<Pull>;
@@ -148,8 +161,8 @@ export interface CodeHostApi {
     issue(repo: RepoRef, number: number): Promise<Issue>;
     createIssue(repo: RepoRef, title: string, body: string): Promise<Issue>;
     setIssueState(repo: RepoRef, number: number, state: "open" | "closed"): Promise<void>;
-    comments(repo: RepoRef, number: number): Promise<Comment[]>;
-    addComment(repo: RepoRef, number: number, body: string): Promise<void>;
+    comments(repo: RepoRef, number: number, of?: ThreadOf): Promise<Comment[]>;
+    addComment(repo: RepoRef, number: number, body: string, of?: ThreadOf): Promise<void>;
 
     releases(repo: RepoRef): Promise<Release[]>;
     downloadAsset(repo: RepoRef, assetId: number, name: string, onProgress?: (progress: DownloadProgress) => void): Promise<SavedArtifact>;

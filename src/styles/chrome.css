@@ -22,16 +22,20 @@
 }
 
 .boot-state-mark {
-    display: grid;
-    place-items: center;
-    width: 42px;
-    height: 42px;
-    border: 1px solid color-mix(in srgb, var(--acc) 52%, var(--border));
-    border-radius: var(--radius-panel);
-    background: color-mix(in srgb, var(--acc) 14%, var(--bg-raised, var(--surface-raised)));
-    color: var(--acc);
-    font-weight: 800;
-    letter-spacing: 0.04em;
+    width: 34px;
+    height: 34px;
+    opacity: 0.9;
+}
+
+/* Hangs under the mark, so the mark stays where it was when the line appears. */
+.boot-state:has(> .boot-state-wait) {
+    position: relative;
+}
+
+.boot-state-wait {
+    position: absolute;
+    top: calc(100% + 14px);
+    width: max-content;
 }
 
 .boot-state h1 {
@@ -51,15 +55,15 @@
 .boot-state button {
     margin-top: 4px;
     padding: 8px 12px;
-    border: 1px solid color-mix(in srgb, var(--acc) 48%, var(--border));
+    border: 1px solid var(--acc);
     border-radius: var(--radius-control);
-    background: color-mix(in srgb, var(--acc) 12%, var(--bg-raised, var(--surface-raised)));
-    color: var(--text-primary);
+    background: var(--acc);
+    color: var(--on-accent);
     cursor: pointer;
 }
 
 .boot-state button:hover {
-    background: color-mix(in oklab, var(--ink) 6%, var(--bg-raised, var(--surface-raised)));
+    filter: brightness(1.08);
 }
 
 .body {
@@ -87,6 +91,7 @@
     border-bottom: 1px solid var(--border);
     position: relative;
     z-index: 5;
+    border-radius: var(--radius-2);
 }
 
 .tb-left {
@@ -97,14 +102,79 @@
     flex: 0 0 auto;
 }
 
-.tb-center {
+/* The empty middle of the bar, which drags the window. */
+.tb-grow {
     flex: 1 1 0;
-    padding-right: var(--space-3);
+    align-self: stretch;
+    min-width: 0;
+}
+
+/* Where the window is, host then project, at the bar's true middle whatever sits either side. */
+.tb-place {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     display: flex;
-    justify-content: flex-start;
+    align-items: center;
+    gap: 2px;
+    transform: translate(-50%, -50%);
+}
+
+.top-bar .tb-place .tb-place-btn {
+    height: 26px;
+    max-width: 220px;
+    padding: 0 10px;
+    border-color: transparent;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+}
+
+.top-bar .tb-place .tb-place-btn:hover,
+.top-bar .tb-place .tb-place-btn[aria-expanded="true"] {
+    border-color: transparent;
+    background: var(--surface-chosen);
+}
+
+/* Hosts and projects keep the colours the side rail gives them. */
+.place-mark {
+    display: inline-flex;
+}
+
+.place-mark.project {
+    color: var(--live);
+}
+
+.place-mark.host-sikemux {
+    color: color-mix(in oklab, var(--acc) 80%, var(--ink-dim));
+}
+
+.place-mark.host-ssh {
+    color: color-mix(in oklab, var(--cmd) 70%, var(--ink-dim));
+}
+
+.tb-place-sep {
+    display: grid;
+    place-items: center;
+    padding: 0 2px;
+    color: var(--text-tertiary);
+}
+
+/* The tabs, on a row of their own under the bar, from the window's left edge to its right. */
+/* Spaced from the hairline above and the panels below by the same gutter that parts the panels from each other. */
+.tab-row {
+    display: flex;
+    flex: 0 0 auto;
     align-items: center;
     min-width: 0;
-    padding-left: 16px;
+    padding: var(--shell-gap) var(--shell-gap) 0;
+    margin-bottom: calc(var(--shell-gap) - var(--space-1));
+}
+
+.tab-row:empty {
+    display: none;
 }
 
 .tb-right {
@@ -122,37 +192,48 @@
     flex: 0 0 auto;
 }
 
-.zoom-pill {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--warn);
-    border: 1px solid rgba(255, 202, 133, 0.3);
-    padding: 2px 7px;
-}
-
-.voice-pill {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+/* Dictation is a mic in the bar: it pulses while listening and dims while the words are written out. */
+.voice-mic {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
     color: var(--danger);
-    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
-    padding: 2px 7px;
 }
-.voice-pill-listening {
-    animation: tb-update-pulse 1.4s ease-in-out infinite;
+.voice-mic.listening::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--danger) 22%, transparent);
+    animation: voice-mic-pulse 1.4s ease-out infinite;
 }
-.voice-pill-transcribing {
+.voice-mic.transcribing {
     color: var(--ink-dim);
-    border-color: var(--line);
+    animation: voice-mic-breathe 1.6s ease-in-out infinite alternate;
+}
+@keyframes voice-mic-pulse {
+    from {
+        opacity: 1;
+        transform: scale(0.6);
+    }
+    to {
+        opacity: 0;
+        transform: scale(1.25);
+    }
+}
+@keyframes voice-mic-breathe {
+    to {
+        opacity: 0.45;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .voice-mic.listening::after,
+    .voice-mic.transcribing {
+        animation: none;
+    }
 }
 .voice-caption {
     position: fixed;
@@ -170,13 +251,12 @@
     line-height: 1.4;
     pointer-events: none;
 }
-/* Anchored to the bottom so the newest words stay in view as the text grows. */
+/* Scrolls rather than clips; the caption keeps the newest words in view. */
 .voice-caption-lines {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    max-height: 2lh;
-    overflow: hidden;
+    max-height: 4lh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
 }
 .voice-caption p {
     margin: 0;
@@ -253,49 +333,14 @@
     transition:
         color 0.12s,
         background 0.12s;
+    border-radius: var(--radius-2);
 }
 .tb-btn:hover {
     color: var(--text-secondary);
     background: var(--surface-raised);
 }
 .tb-btn.on {
-    color: var(--acc);
-}
-
-.tb-account {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    color: var(--text-tertiary);
-    user-select: none;
-    -webkit-user-select: none;
-    transition:
-        color 0.12s,
-        background 0.12s;
-}
-.tb-account:hover {
     color: var(--text-primary);
-    background: var(--surface-hover);
-}
-.tb-account-face {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    object-fit: cover;
-    box-shadow: 0 0 0 1px var(--border);
-}
-.tb-account-initials {
-    background: var(--surface-raised);
-    color: var(--text-secondary);
-    font-size: 9px;
-    font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0.02em;
 }
 
 .side-rail {
@@ -304,6 +349,7 @@
     flex: 0 0 auto;
     background: color-mix(in srgb, var(--surface) calc(var(--window-opacity, 1) * 100%), transparent);
     overflow: hidden;
+    border-radius: var(--radius-3);
 }
 .side-rail {
     width: 238px;
@@ -357,6 +403,7 @@
 .sess-row {
     gap: var(--space-2);
     width: auto;
+    border-radius: var(--radius-2);
 }
 .sess-icon-glyph {
     display: flex;
@@ -364,22 +411,16 @@
     justify-content: center;
 }
 .sess-icon.command {
-    color: var(--cmd);
+    color: var(--live);
 }
 .sess-icon.project {
     color: var(--live);
 }
-.sess-icon.aws,
-.icon-aws {
-    color: var(--brand-aws);
-}
-.icon-github {
+.icon-github,
+.icon-linear,
+.icon-vercel {
     color: var(--text-primary);
 }
-.icon-bitbucket {
-    color: var(--brand-bitbucket);
-}
-
 .sess-name {
     flex: 1;
     text-align: left;
@@ -397,6 +438,7 @@
     width: 100%;
     cursor: pointer;
     text-align: left;
+    border-radius: var(--radius-2);
 }
 .proj-row.expanded .proj-name {
     font-weight: 600;
@@ -453,7 +495,7 @@
         0 0 10px color-mix(in srgb, var(--acc) 52%, transparent);
     pointer-events: none;
     transform-origin: left center;
-    animation: project-drop-line-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: project-drop-line-in 120ms var(--ease-pan) both;
 }
 .project-row-shell.project-drop-before::before,
 .proj-tree.project-drop-before::before {
@@ -495,7 +537,7 @@
     height: 100% !important;
     min-height: 0 !important;
     margin: 0 !important;
-    animation: project-ghost-lift 110ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+    animation: project-ghost-lift 110ms var(--ease-pan) both !important;
 }
 @keyframes project-ghost-lift {
     from {
@@ -530,35 +572,6 @@
     .proj-tree.project-drop-after::after {
         animation: none;
     }
-}
-
-.proj-pip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    position: relative;
-}
-
-.proj-pip-term {
-    color: var(--live);
-}
-.proj-pip-claude {
-    color: var(--brand-claude);
-}
-.proj-pip-codex {
-    color: var(--brand-codex);
-}
-.proj-pip-hermes {
-    color: var(--brand-hermes);
-}
-.proj-pip-pi {
-    color: var(--brand-pi);
-}
-.proj-pip-opencode {
-    color: var(--brand-opencode);
 }
 
 .window-area {
@@ -636,16 +649,7 @@
 /* Those offsets have to be on screen before the travel starts, or the track
    would animate in from nothing on the first frame. */
 .window-track.sliding {
-    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
-}
-/* A close that carries on the way the hand was going starts at the speed the
-   hand had, which is what the curve above opens at. A close that goes back
-   against it cannot: the track is still travelling the other way, and a curve
-   that opens at speed puts most of the way home into the first frame, which
-   reads as the track jumping rather than coming back. So this one drifts on a
-   little the way it was going, stops, and then comes back. */
-.window-track.sliding.returning {
-    transition-timing-function: cubic-bezier(0.34, -0.1, 0.2, 1);
+    transition: transform var(--window-pan-ms) var(--ease-pan);
 }
 @media (prefers-reduced-motion: reduce) {
     .window-track.sliding {
@@ -681,12 +685,19 @@
 .window-layer:not(.painted) {
     visibility: hidden;
 }
+.window-area.holding-screens .window-layer:not(.painted) {
+    right: auto;
+    width: var(--held-screen-width);
+}
 /* A hidden layer is still a running layer. `visibility: hidden` takes it off
    the screen but leaves its animations ticking, and every tick still resolves
    style and recomputes what the compositor needs — for a pane nobody can see.
-   With a live agent per layer that was most of the window's idle cost. */
+   With a live agent per layer that was most of the window's idle cost. A pane
+   hidden behind a zoomed one and a rail page off to the side are the same. */
 .window-layer:not(.painted),
-.window-layer:not(.painted) * {
+.window-layer:not(.painted) *,
+.pane-cell.unshown *,
+.swipe-pager:not([data-moving]) .swipe-page:not(.is-current) * {
     /* `!important` earns its place here: every component writes its animation
        with the `animation` shorthand, and the shorthand resets play-state back
        to running. Any sheet loaded after this one would restart what this rule
@@ -721,7 +732,7 @@
 .window-scroll-thumb {
     height: 100%;
     background: var(--ink-faint);
-    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform var(--window-pan-ms) var(--ease-pan);
 }
 @media (prefers-reduced-motion: reduce) {
     .window-scroll-thumb {
@@ -747,7 +758,7 @@
 }
 .doc-sliding.doc-travelling > .doc-snapshot,
 .doc-sliding.doc-travelling > .doc-slide-in {
-    transition: transform var(--window-pan-ms) cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform var(--window-pan-ms) var(--ease-pan);
 }
 
 .pane-cell {
@@ -834,6 +845,12 @@
     position: absolute;
     z-index: 10;
 }
+/* The centre line is the divider's only highlight, focus included. A drag focuses
+   the handle so the arrow keys keep working, which would otherwise leave the app's
+   focus ring drawn round the whole grab area. */
+.divider[tabindex]:focus-visible {
+    box-shadow: none;
+}
 .divider-row {
     width: 11px;
     transform: translateX(-50%);
@@ -888,11 +905,9 @@
 }
 .space-switch {
     display: flex;
-    align-items: center;
-    gap: 4px;
     margin: 0 0 6px;
 }
-.space-options {
+.space-track {
     display: flex;
     flex: 1;
     min-width: 0;
@@ -900,51 +915,217 @@
     padding: 2px;
     overflow-x: auto;
     scrollbar-width: none;
-    border-radius: 6px;
-    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius-2) + 3px);
 }
-.space-options > button {
+.space-track::-webkit-scrollbar {
+    display: none;
+}
+.space-track > button {
     display: flex;
-    flex: 0 0 auto;
+    flex: 1 0 auto;
+    justify-content: center;
     align-items: center;
     gap: 5px;
-    max-width: 140px;
-    padding: 3px 8px;
-    border-radius: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid transparent;
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
+    white-space: nowrap;
     transition:
         color 0.12s,
-        background 0.12s;
+        background 0.12s,
+        border-color 0.12s;
 }
-.space-options > button:hover,
-.space-add:hover {
+.space-track > button:hover {
     color: var(--text-primary);
 }
-.space-options > button.active {
+.space-track > button.active {
     color: var(--text-primary);
-    background: var(--surface);
-    box-shadow: 0 0 0 1px var(--border);
+    background: var(--surface-active);
 }
-.space-badge {
-    flex: none;
-    line-height: 1;
+.space-track > button.active svg {
+    color: var(--text-primary);
 }
 .space-name {
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
 }
-.space-add {
+.space-new {
     display: flex;
-    flex: none;
     align-items: center;
     gap: 5px;
-    padding: 4px 6px;
-    border-radius: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px dashed var(--border);
     font-size: var(--text-2xs);
     color: var(--text-tertiary);
 }
-.space-switch.empty .space-add {
-    padding-left: 2px;
+.space-new:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+.space-pop {
+    position: fixed;
+    z-index: 61;
+    padding: 4px;
+}
+.space-icon-picker {
+    width: 212px;
+}
+.space-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+}
+.space-icon-grid > button {
+    display: grid;
+    place-items: center;
+    height: 30px;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+}
+.space-icon-grid > button:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+.space-icon-grid > button.active {
+    color: var(--text-primary);
+    background: var(--surface-chosen);
+}
+.space-icon-none {
+    width: 100%;
+    height: 26px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.space-icon-none:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+.space-icon-none.active {
+    color: var(--text-primary);
+    background: var(--surface-chosen);
+}
+.space-editor {
+    min-width: 220px;
+}
+.space-edit-list.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+}
+.space-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    padding: 0 2px;
+    border-radius: var(--radius-2);
+}
+.space-edit-row:hover,
+.space-edit-row.lifted {
+    background: var(--surface-hover);
+}
+.space-edit-grip {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 24px;
+    color: var(--text-tertiary);
+    cursor: grab;
+    touch-action: none;
+}
+.space-edit-list.dragging .space-edit-grip {
+    cursor: grabbing;
+}
+.space-edit-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 24px;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+.space-edit-icon.empty {
+    border-style: dashed;
+    color: var(--text-tertiary);
+}
+.space-edit-icon:hover {
+    border-color: var(--border-strong);
+}
+.space-edit-name {
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-sunken);
+    font: inherit;
+    font-size: var(--text-xs);
+    color: var(--text-primary);
+    outline: none;
+}
+.space-edit-name:focus {
+    border-color: var(--border-selected);
+}
+.space-edit-delete {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    color: var(--text-tertiary);
+}
+.space-edit-row:not(:hover) .space-edit-delete:not(:focus-visible) {
+    visibility: hidden;
+}
+.space-edit-delete:hover {
+    color: var(--danger);
+    background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+.space-edit-foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    padding: 4px 2px 0;
+    border-top: 1px solid var(--border);
+}
+.space-edit-foot > button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    font-size: var(--text-2xs);
+    color: var(--text-secondary);
+}
+.space-edit-foot > button:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+}
+.space-edit-foot > button.done {
+    color: var(--on-accent);
+    background: var(--acc);
+    border-color: var(--acc);
+}
+
+/* A strip that scrolls sideways fades at whichever end has more; useSideScroll says which. */
+.side-scroll.clipped-start {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 20px);
+    mask-image: linear-gradient(90deg, transparent, #000 20px);
+}
+.side-scroll.clipped-end {
+    -webkit-mask-image: linear-gradient(-90deg, transparent, #000 20px);
+    mask-image: linear-gradient(-90deg, transparent, #000 20px);
+}
+.side-scroll.clipped-start.clipped-end {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 20px, #000 calc(100% - 20px), transparent);
 }

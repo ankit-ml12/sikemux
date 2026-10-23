@@ -1,12 +1,16 @@
 import { sql, type Kysely } from "kysely";
 
+import { audit, type Actor } from "../audit.ts";
 import type { Tables } from "../db.ts";
 import { removeDevice } from "../devices/removal.ts";
 import { appendEvent } from "../events/log.ts";
 import type { Logger } from "../log.ts";
 import type { ClerkBackend } from "./clerk.ts";
 
-/** How long a deleted account's tombstones stay, so hosts that were offline still hear of it. */
+/**
+ * How long a deleted account can still be restored. Then the sign-in is deleted in Clerk and
+ * the account's records erased; until then its tombstones tell offline hosts it is gone.
+ */
 export const PURGE_AFTER_DAYS = 30;
 /** Failed calls to Clerk are retried after a minute, doubling up to an hour. */
 const RETRY_BASE_MS = 60_000;
@@ -16,8 +20,7 @@ export const ALERT_AFTER_ATTEMPTS = 6;
 
 export interface DeletionRequest {
   userId: string;
-  /** `user:<id>` when the person asked, `clerk` when Clerk's webhook said so. */
-  actor: string;
+  actor: Actor;
   via: string;
   /** Whether the user is already gone from Clerk, as when Clerk's webhook reports it. */
   deletedInClerk: boolean;
@@ -25,6 +28,7 @@ export interface DeletionRequest {
 
 export interface Deletion {
   requestedAt: Date;
+  deletesAt: Date;
   deletedInClerk: boolean;
 }
 
@@ -33,9 +37,33 @@ export function retryDelayMs(attempts: number): number {
 }
 
 /**
+ * After a call to Clerk failed for the attempts-th time: logs it, as an error once it keeps
+ * failing, and returns what to record on the row so the sweeper tries again later.
+ */
+function clerkFailed(
+  log: Logger,
+  what: string,
+  {
+    error,
+    attempts,
+    ...fields
+  }: Record<string, unknown> & { error: unknown; attempts: number },
+) {
+  const logged = { err: error, ...fields, attempts };
+  if (attempts >= ALERT_AFTER_ATTEMPTS)
+    log.error(logged, `Clerk still cannot ${what}`);
+  else log.warn(logged, `Clerk could not ${what}; retrying later`);
+  return {
+    clerk_attempts: attempts,
+    clerk_retry_at: new Date(Date.now() + retryDelayMs(attempts)),
+  };
+}
+
+/**
  * Deletes the account here, in one transaction: every device moves to a tombstone, the account
  * hears device.revoked for each and one account.deleted, and its tokens are refused from now on.
- * A repeat finds the account marked and changes nothing, except recording Clerk's deletion.
+ * The sign-in stays in Clerk until the account can no longer be restored. A repeat finds the
+ * account marked and changes nothing, except recording Clerk's deletion.
  */
 export async function markDeleted(
   db: Kysely<Tables>,
@@ -49,7 +77,7 @@ export async function markDeleted(
       .execute();
     const user = await trx
       .selectFrom("users")
-      .select(["deleted_at", "clerk_deleted_at"])
+      .select(["deleted_at", "purge_after", "clerk_deleted_at"])
       .where("id", "=", userId)
       .forUpdate()
       .executeTakeFirstOrThrow();
@@ -59,6 +87,7 @@ export async function markDeleted(
         await recordClerkDeletion(trx, userId, actor);
       return {
         requestedAt: user.deleted_at,
+        deletesAt: user.purge_after ?? user.deleted_at,
         deletedInClerk: deletedInClerk || user.clerk_deleted_at !== null,
       };
     }
@@ -69,10 +98,13 @@ export async function markDeleted(
         deleted_at: sql<Date>`now()`,
         purge_after: sql<Date>`now() + make_interval(days => ${PURGE_AFTER_DAYS})`,
         clerk_deleted_at: deletedInClerk ? sql<Date>`now()` : null,
-        clerk_retry_at: deletedInClerk ? null : sql<Date>`now()`,
+        clerk_attempts: 0,
+        clerk_retry_at: deletedInClerk
+          ? null
+          : sql<Date>`now() + make_interval(days => ${PURGE_AFTER_DAYS})`,
       })
       .where("id", "=", userId)
-      .returning("deleted_at")
+      .returning(["deleted_at", "purge_after"])
       .executeTakeFirstOrThrow();
     const devices = await trx
       .selectFrom("devices")
@@ -88,44 +120,73 @@ export async function markDeleted(
         actor,
       });
     await appendEvent(trx, { userId, type: "account.deleted" });
-    await trx
-      .insertInto("audit")
-      .values({
-        user_id: userId,
-        actor,
-        action: "account.deletion_requested",
-        subject: null,
-        detail: JSON.stringify({ via, devices: devices.length }),
-      })
-      .execute();
+    await audit(trx, {
+      userId,
+      actor,
+      action: "account.deletion_requested",
+      detail: { via, devices: devices.length },
+    });
     if (deletedInClerk) await auditClerkDeletion(trx, userId, actor);
     return {
       requestedAt: marked.deleted_at ?? new Date(),
+      deletesAt: marked.purge_after ?? new Date(),
       deletedInClerk,
     };
+  });
+}
+
+/**
+ * Takes back a deletion while the sign-in is still in Clerk. Devices removed by the deletion stay
+ * removed: each signs in again. Returns false when Clerk has already deleted the sign-in.
+ */
+export async function restoreAccount(
+  db: Kysely<Tables>,
+  userId: string,
+): Promise<boolean> {
+  return db.transaction().execute(async (trx) => {
+    const user = await trx
+      .selectFrom("users")
+      .select(["deleted_at", "clerk_deleted_at"])
+      .where("id", "=", userId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!user?.deleted_at) return true;
+    if (user.clerk_deleted_at) return false;
+    await trx
+      .updateTable("users")
+      .set({
+        deleted_at: null,
+        purge_after: null,
+        clerk_attempts: 0,
+        clerk_retry_at: null,
+      })
+      .where("id", "=", userId)
+      .execute();
+    await audit(trx, {
+      userId,
+      actor: `user:${userId}`,
+      action: "account.restored",
+    });
+    return true;
   });
 }
 
 async function auditClerkDeletion(
   trx: Kysely<Tables>,
   userId: string,
-  actor: string,
+  actor: Actor,
 ) {
-  await trx
-    .insertInto("audit")
-    .values({
-      user_id: userId,
-      actor,
-      action: "account.deleted_in_clerk",
-      subject: null,
-    })
-    .execute();
+  await audit(trx, {
+    userId,
+    actor,
+    action: "account.deleted_in_clerk",
+  });
 }
 
 async function recordClerkDeletion(
   trx: Kysely<Tables>,
   userId: string,
-  actor: string,
+  actor: Actor,
 ) {
   await trx
     .updateTable("users")
@@ -166,23 +227,17 @@ export async function deleteInClerk(
     try {
       await clerk.deleteUser(userId);
     } catch (error) {
-      const attempts = user.clerk_attempts + 1;
       await trx
         .updateTable("users")
-        .set({
-          clerk_attempts: attempts,
-          clerk_retry_at: new Date(Date.now() + retryDelayMs(attempts)),
-        })
+        .set(
+          clerkFailed(log, "delete a deleted account", {
+            error,
+            userId,
+            attempts: user.clerk_attempts + 1,
+          }),
+        )
         .where("id", "=", userId)
         .execute();
-      const fields = { err: error, userId, attempts };
-      if (attempts >= ALERT_AFTER_ATTEMPTS)
-        log.error(fields, "Clerk has still not deleted a deleted account");
-      else
-        log.warn(
-          fields,
-          "Clerk did not delete a deleted account; retrying later",
-        );
       return false;
     }
     await recordClerkDeletion(trx, userId, "system");
@@ -222,26 +277,17 @@ export async function revokeRemovedSession(
     try {
       await clerk.revokeSession(tombstone.clerk_session_id);
     } catch (error) {
-      const attempts = tombstone.clerk_attempts + 1;
       await trx
         .updateTable("removed_devices")
-        .set({
-          clerk_attempts: attempts,
-          clerk_retry_at: new Date(Date.now() + retryDelayMs(attempts)),
-        })
+        .set(
+          clerkFailed(log, "revoke a removed phone's session", {
+            error,
+            key: key.slice(0, 8),
+            attempts: tombstone.clerk_attempts + 1,
+          }),
+        )
         .where("key", "=", key)
         .execute();
-      const fields = { err: error, key: key.slice(0, 8), attempts };
-      if (attempts >= ALERT_AFTER_ATTEMPTS)
-        log.error(
-          fields,
-          "Clerk has still not revoked a removed phone's session",
-        );
-      else
-        log.warn(
-          fields,
-          "Clerk did not revoke a removed phone's session; retrying later",
-        );
       return;
     }
     await trx

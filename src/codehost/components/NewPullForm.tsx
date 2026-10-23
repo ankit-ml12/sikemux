@@ -4,6 +4,7 @@ import { CommitReview } from "../../git/CommitReview";
 import { FoldPanel } from "../../git/FoldPanel";
 import { GitColumns } from "../../git/GitColumns";
 import { GitGraph } from "../../git/GitGraph";
+import { gitStatusDecoration } from "../../git/gitFileStatus";
 import { FileIcon } from "../../ui/FileIcon";
 import { basename, dirname } from "../../lib/paths";
 import { notify, reportError } from "../../plugin-api/host";
@@ -11,12 +12,11 @@ import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { Checkbox, Dropdown, EmptyState, IconClose, IconGit, IconPush, PRIMARY_SHORTCUT, SkeletonRows, Tooltip } from "../../plugin-api/ui";
 import { requestOpenFile, setGitView } from "../../state/commands";
 import { useStore } from "../../state/store";
+import { DEFAULT_GIT_VIEW } from "../../state/types";
 import { hostApi, type RepoRef } from "../api";
 import { defaultBase, isUsualBase } from "../compose";
 import { useHost } from "../registry";
 import { hostBranchesR } from "../resources";
-
-const STATUS_CLASS = { A: "added", M: "modified", D: "deleted", R: "renamed" } as const;
 
 type Comparison = { key: string; data: GitCompare | null; error: string | null };
 
@@ -179,38 +179,36 @@ export function NewPullForm({ paneId, repo, cwd, head: startingHead, active, onC
                 </div>
             )}
             <div className="git-compose">
-                <div className="git-compose-well">
-                    <input
-                        className="pr-new-title"
-                        value={title}
-                        onChange={(event) => setTitle(event.target.value)}
-                        onKeyDown={onKeyDown}
-                        placeholder="Title"
-                        aria-label="Title"
-                        spellCheck={false}
-                    />
-                    <textarea
-                        ref={bodyRef}
-                        className="git-compose-message pr-new-body"
-                        value={body}
-                        onChange={(event) => setBody(event.target.value)}
-                        onKeyDown={onKeyDown}
-                        placeholder="What changed, and why"
-                        aria-label="Description"
-                        rows={3}
-                    />
-                    <div className="git-compose-foot">
-                        {host.capabilities.pulls.draft && (
-                            <Checkbox checked={draft} onChange={setDraft}>
-                                Draft
-                            </Checkbox>
-                        )}
-                        <Tooltip label={`${openLabel} (${PRIMARY_SHORTCUT}⏎)`}>
-                            <button type="button" className="git-compose-commit" disabled={!ready} onClick={() => void create()}>
-                                {openLabel}
-                            </button>
-                        </Tooltip>
-                    </div>
+                <input
+                    className="pr-new-title"
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder="Title"
+                    aria-label="Title"
+                    spellCheck={false}
+                />
+                <textarea
+                    ref={bodyRef}
+                    className="git-compose-message pr-new-body"
+                    value={body}
+                    onChange={(event) => setBody(event.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder="What changed, and why"
+                    aria-label="Description"
+                    rows={3}
+                />
+                <div className="git-compose-foot">
+                    {host.capabilities.pulls.draft && (
+                        <Checkbox checked={draft} onChange={setDraft}>
+                            Draft
+                        </Checkbox>
+                    )}
+                    <Tooltip label={`${openLabel} (${PRIMARY_SHORTCUT}⏎)`}>
+                        <button type="button" className="git-compose-commit" disabled={!ready} onClick={() => void create()}>
+                            {openLabel}
+                        </button>
+                    </Tooltip>
                 </div>
             </div>
             {compareKey && !compared && <SkeletonRows rows={3} label="Loading files" />}
@@ -222,6 +220,7 @@ export function NewPullForm({ paneId, repo, cwd, head: startingHead, active, onC
                     </div>
                     {files.map((file) => {
                         const dir = dirname(file.path);
+                        const status = gitStatusDecoration(file.status);
                         return (
                             <button
                                 key={file.path}
@@ -237,7 +236,11 @@ export function NewPullForm({ paneId, repo, cwd, head: startingHead, active, onC
                                     {basename(file.path)}
                                     {dir && <span className="git-row-dir">{dir}</span>}
                                 </span>
-                                <span className={`git-status ${STATUS_CLASS[file.status]}`}>{file.status}</span>
+                                {status && (
+                                    <span className={`git-status git-${status.cls}`} title={status.label}>
+                                        {status.letter}
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
@@ -310,7 +313,7 @@ function CompareHistory({
     selected: string | null;
     onSelect: (sha: string | null) => void;
 }) {
-    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? false);
+    const open = useStore((s) => s.gitViews[paneId]?.historyOpen ?? DEFAULT_GIT_VIEW.historyOpen);
     const height = useStore((s) => s.gitViews[paneId]?.historyHeight ?? null);
     const index = selected ? commits.findIndex((row) => row.full_hash === selected) : -1;
     return (

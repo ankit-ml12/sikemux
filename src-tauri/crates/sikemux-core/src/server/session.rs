@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use portable_pty::{Child, ExitStatus, NativePtySystem, PtySize, PtySystem};
+use sikemux_process::sync::Locked;
 use sikemux_pty::output_log::OutputLog;
 use sikemux_pty::process::SpawnedChildGuard;
 use sikemux_pty::screen::{
@@ -15,7 +16,7 @@ use sikemux_pty::screen::{
     MAX_ATTACH_SNAPSHOT_BYTES, PARSER_SCROLLBACK,
 };
 use sikemux_pty::shell::ShellLaunchIntegration;
-use sikemux_pty::shell_protocol::{PtyShellMetadataEvent, ShellProtocolParser};
+use sikemux_pty::shell_protocol::ShellProtocolParser;
 use sikemux_pty::task::TaskProcessExit;
 use sikemux_pty::validate_pty_dimensions;
 use tokio::io::unix::AsyncFd;
@@ -29,7 +30,7 @@ use crate::protocol::{
 use super::agent::{self, AgentActivity};
 use super::connection::{ClientConn, ClientId};
 use super::prepare::{Owner, PreparedLaunch};
-use super::{now_ms, CapacityPermit, Core, CoreError, CoreResult};
+use super::{uptime_ms, CapacityPermit, Core, CoreError, CoreResult};
 
 const OUTPUT_COALESCE: Duration = Duration::from_millis(2);
 const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
@@ -86,6 +87,8 @@ pub(crate) struct Session {
     pub(crate) shell_protocol: bool,
     subscribers: Mutex<HashMap<ClientId, Subscriber>>,
     flow_control: Notify,
+    /// Woken by output while the program has bracketed paste on.
+    pastes_on: Notify,
     pub(crate) last_activity_ms: AtomicU64,
     pub(crate) trimmed: AtomicBool,
     killed: AtomicBool,
@@ -104,8 +107,37 @@ pub(crate) struct Session {
     /// started again.
     reader_frozen: AtomicBool,
     shell_integration: Option<ShellLaunchIntegration>,
+    /// A title change waits to be sent, with any that follow it soon after.
+    title_pending: AtomicBool,
+    setup: Mutex<Option<SetupLock>>,
     _capacity_permit: CapacityPermit,
 }
+
+/// A terminal setting a host up over SSH, whose output carries the sign-in code
+/// the app approves for the account. Its terminal echoes what is typed, so only
+/// the app connection that opened it may type into it, or end the lock, until
+/// it is done or its process ends: nothing else can print a code of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SetupLock {
+    By(ClientId),
+    /// Any app connection, once a core update dropped the one that opened it.
+    AnyApp,
+}
+
+/// Who types into a terminal: the app over one of its connections, or anyone
+/// else, the core's own typing included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Typist {
+    App(ClientId),
+    Other,
+}
+
+pub(crate) const SETUP_LOCKED: &str =
+    "this terminal is setting a host up, and only the app that opened it types into it";
+
+/// Programs that animate their title, such as a spinner, send at most one
+/// change per this long.
+const TITLE_GAP: Duration = Duration::from_millis(200);
 
 /// Everything a session is made of besides its process handle and terminal,
 /// for a session spawned here or adopted from an earlier core.
@@ -124,6 +156,7 @@ pub(crate) struct SessionParts {
     pub task_log: Option<OutputLog>,
     pub agent: Option<AgentActivity>,
     pub shell_integration: Option<ShellLaunchIntegration>,
+    pub setup: Option<SetupLock>,
 }
 
 impl Session {
@@ -135,6 +168,9 @@ impl Session {
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<InputJob>) {
         let (input, input_jobs) = mpsc::unbounded_channel();
         let reported = parts.exit.is_some();
+        if let (Some(pid), Some(agent_id), false) = (parts.pid, &parts.owner.agent_id, reported) {
+            super::callers::started(pid, agent_id);
+        }
         let session = Arc::new(Session {
             id: parts.id,
             kind: parts.kind,
@@ -147,6 +183,7 @@ impl Session {
             shell_protocol: parts.shell_protocol,
             subscribers: Mutex::new(HashMap::new()),
             flow_control: Notify::new(),
+            pastes_on: Notify::new(),
             last_activity_ms: AtomicU64::new(parts.last_activity_ms),
             trimmed: AtomicBool::new(parts.trimmed),
             killed: AtomicBool::new(parts.killed),
@@ -162,9 +199,38 @@ impl Session {
             agent: parts.agent,
             reader_frozen: AtomicBool::new(false),
             shell_integration: parts.shell_integration,
+            title_pending: AtomicBool::new(false),
+            setup: Mutex::new(parts.setup),
             _capacity_permit: capacity_permit,
         });
         (session, input_jobs)
+    }
+
+    pub(crate) fn may_type(&self, typist: Typist) -> bool {
+        match (*self.setup.locked(), typist) {
+            (None, _) | (Some(SetupLock::AnyApp), Typist::App(_)) => true,
+            (Some(SetupLock::By(owner)), Typist::App(client)) => owner == client,
+            (Some(_), Typist::Other) => false,
+        }
+    }
+
+    pub(crate) fn in_setup(&self) -> bool {
+        self.setup.locked().is_some()
+    }
+
+    /// Ends the set-up lock the app connection `client` holds. Another
+    /// connection's lock stays.
+    pub(crate) fn end_setup(&self, client: ClientId) -> Result<(), &'static str> {
+        let mut setup = self.setup.locked();
+        match *setup {
+            Some(SetupLock::By(owner)) if owner != client => {
+                Err("another app connection is setting this host up")
+            }
+            _ => {
+                *setup = None;
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn owner(&self) -> &Owner {
@@ -194,7 +260,7 @@ impl Session {
     }
 
     pub(crate) fn exit(&self) -> Option<SessionExit> {
-        self.exit.lock().ok().and_then(|exit| exit.clone())
+        self.exit.locked().clone()
     }
 
     /// Holds the process handle so nothing reaps or signals it, unless a
@@ -207,7 +273,7 @@ impl Session {
 
     pub(crate) fn task_log(&self) -> Option<(Vec<u8>, u64)> {
         let task = self.task.as_ref()?;
-        task.log.lock().ok().map(|log| log.contents())
+        Some(task.log.locked().contents())
     }
 
     pub(crate) fn is_task(&self) -> bool {
@@ -218,16 +284,25 @@ impl Session {
         !self.exited.load(Ordering::Acquire)
     }
 
-    pub(crate) fn has_subscribers(&self) -> Option<bool> {
-        self.subscribers.lock().ok().map(|subs| !subs.is_empty())
+    pub(crate) fn shell_at_prompt(&self) -> bool {
+        self.is_running()
+            && self
+                .pid
+                .is_some_and(|pid| sikemux_pty::process::shell_at_prompt(self.fd(), pid))
+    }
+
+    pub(crate) fn has_subscribers(&self) -> bool {
+        !self.subscribers.locked().is_empty()
     }
 
     pub(crate) fn info(&self) -> SessionInfo {
-        let (rows, cols) = self
-            .parser
-            .lock()
-            .map(|parser| parser.screen().size())
-            .unwrap_or_default();
+        let ((rows, cols), ssh, window_title) = {
+            let parser = self.parser.locked();
+            let callbacks = parser.callbacks();
+            let ssh = callbacks.shell.as_ref().and_then(|shell| shell.ssh());
+            let title = Some(callbacks.window_title.clone()).filter(|title| !title.is_empty());
+            (parser.screen().size(), ssh, title)
+        };
         SessionInfo {
             id: self.id,
             kind: self.kind,
@@ -235,10 +310,11 @@ impl Session {
             running: self.is_running(),
             cols,
             rows,
-            attached: self.subscribers.lock().map(|subs| subs.len()).unwrap_or(0),
+            attached: self.subscribers.locked().len(),
             project: self.owner.project.clone(),
             pane_id: self.owner.pane_id.clone(),
             agent_id: self.owner.agent_id.clone(),
+            agent_name: None,
             agent_type: self.owner.agent_type.clone(),
             task_execution_id: self.owner.task_execution_id.clone(),
             agent_state: self
@@ -248,10 +324,16 @@ impl Session {
                 .map(str::to_string),
             task: self.owner.task.clone(),
             started_by: self.owner.started_by.clone(),
-            exit: self.exit.lock().ok().and_then(|exit| exit.clone()),
+            exit: self.exit.locked().clone(),
             killed: self.is_killed(),
             title: None,
+            window_title,
             unread: false,
+            active_at: None,
+            group: None,
+            status: None,
+            attention_rank: None,
+            ssh,
         }
     }
 }
@@ -283,6 +365,7 @@ impl PendingStart {
         }
         tokio::spawn(write_input(Arc::downgrade(&self.session), self.input_jobs));
         tokio::spawn(read_output(core.clone(), self.session));
+        core.ports.changed();
     }
 }
 
@@ -313,7 +396,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     if core.is_frozen() {
         return Err(super::upgrade::UPDATING.into());
     }
-    core.reclaim_exited_sessions(now_ms());
+    core.reclaim_exited_sessions(uptime_ms());
     let capacity_permit = core.capacity.try_acquire()?;
     let PreparedLaunch {
         cols,
@@ -322,8 +405,10 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
         kind,
         owner,
         shell_integration,
+        ssh,
         initial_prompt_submitted,
         continues,
+        setup,
     } = launch;
     let carried = continues
         .as_ref()
@@ -339,7 +424,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             pixel_height: 0,
         })
         .map_err(CoreError::pty)?;
-    let shell_metadata_enabled = shell_integration.is_some();
+    let shell_metadata_enabled = shell_integration.is_some() || ssh;
 
     let child = pair.slave.spawn_command(command).map_err(CoreError::pty)?;
     let pid = child.process_id();
@@ -394,7 +479,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             owner,
             parser,
             shell_protocol: shell_metadata_enabled,
-            last_activity_ms: now_ms(),
+            last_activity_ms: uptime_ms(),
             trimmed: false,
             killed: false,
             exit: None,
@@ -402,6 +487,7 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
             task_log: (kind == SessionKind::Task).then(OutputLog::default),
             agent,
             shell_integration,
+            setup,
         },
         io,
         child.into_inner(),
@@ -437,7 +523,7 @@ fn carried_screen(core: &Core, continuation: &Continuation) -> Option<CarriedScr
     if from.is_task() || from.is_running() {
         return None;
     }
-    let mut parser = from.parser.lock().ok()?;
+    let mut parser = from.parser.locked();
     parser.process(RESET_MODES);
     parser.process(b"\x1b[r");
     let (rows, cols) = parser.screen().size();
@@ -501,22 +587,57 @@ async fn write_input(session: Weak<Session>, mut jobs: mpsc::UnboundedReceiver<I
     }
 }
 
+/// `text` as typed into `session` to arrive as one paste: between paste
+/// markers when its program has turned bracketed paste on, else on one line,
+/// since a bare newline would send it.
+pub(crate) fn pasted(session: &Session, text: &str) -> Vec<u8> {
+    let plain: String = text
+        .chars()
+        .filter(|char| matches!(char, '\n' | '\t') || !char.is_control())
+        .collect();
+    let pastes = session.parser.locked().screen().bracketed_paste();
+    if pastes {
+        format!("\x1b[200~{plain}\x1b[201~").into_bytes()
+    } else {
+        plain.replace('\n', " ").into_bytes()
+    }
+}
+
+/// Waits up to `limit` for the program to turn bracketed paste on, as one
+/// does once it has started and is ready for a pasted draft.
+pub(crate) async fn until_pastes(session: &Session, limit: Duration) {
+    let turned_on = session.pastes_on.notified();
+    tokio::pin!(turned_on);
+    turned_on.as_mut().enable();
+    if session.parser.locked().screen().bracketed_paste() {
+        return;
+    }
+    let _ = tokio::time::timeout(limit, turned_on).await;
+}
+
 pub(crate) fn queue_input(
     session: &Session,
     bytes: Vec<u8>,
+    typist: Typist,
     reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
 ) {
+    if !session.may_type(typist) {
+        return reply(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            SETUP_LOCKED,
+        )));
+    }
     if let Err(mpsc::error::SendError(job)) = session.input.send(InputJob { bytes, reply }) {
         (job.reply)(Err(std::io::Error::other("session closed")));
     }
 }
 
 fn over_budget(session: &Session) -> bool {
-    session.subscribers.lock().is_ok_and(|subscribers| {
-        subscribers
-            .values()
-            .any(|subscriber| subscriber.unacked.load(Ordering::Acquire) >= MAX_UNACKED_BYTES)
-    })
+    session
+        .subscribers
+        .locked()
+        .values()
+        .any(|subscriber| subscriber.unacked.load(Ordering::Acquire) >= MAX_UNACKED_BYTES)
 }
 
 /// Holds the reader while a client is behind. False means the wait ran out.
@@ -541,10 +662,8 @@ async fn await_subscriber_credit(session: &Session) -> bool {
 }
 
 fn forgive_unacked(session: &Session) {
-    if let Ok(subscribers) = session.subscribers.lock() {
-        for subscriber in subscribers.values() {
-            subscriber.release(usize::MAX);
-        }
+    for subscriber in session.subscribers.locked().values() {
+        subscriber.release(usize::MAX);
     }
 }
 
@@ -669,19 +788,17 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
     // stay, so a command that finished before its spawn reply arrived can
     // still be read, and so do agents, so one resumed after a crash starts
     // below its last screen.
-    if !session.is_task() && session.agent.is_none() && session.has_subscribers() != Some(false) {
+    if !session.is_task() && session.agent.is_none() && session.has_subscribers() {
         core.remove_session(&session);
     }
     let _ = tokio::task::spawn_blocking(move || {
-        let status = match session.child.lock() {
-            Ok(mut child) => {
-                let status = child.wait().ok();
-                // Stamped under the child lock, so a concurrent kill or drain
-                // never signals a pid that may already be reused.
-                stamp_exited(&session);
-                status
-            }
-            Err(_) => None,
+        let status = {
+            let mut child = session.child.locked();
+            let status = child.wait().ok();
+            // Stamped under the child lock, so a concurrent kill or drain
+            // never signals a pid that may already be reused.
+            stamp_exited(&session);
+            status
         };
         report_exit(&core, &session, status.as_ref());
     })
@@ -689,7 +806,7 @@ async fn read_output(core: Arc<Core>, session: Arc<Session>) {
 }
 
 pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
-    let exited_at = now_ms().max(1);
+    let exited_at = uptime_ms().max(1);
     match session
         .exited_at_ms
         .compare_exchange(0, exited_at, Ordering::AcqRel, Ordering::Acquire)
@@ -707,6 +824,7 @@ pub(crate) fn stamp_exited(session: &Session) -> Option<u64> {
 /// parser lock, so an attach knows whether its snapshot came after it.
 pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitStatus>) {
     let exited_at = stamp_exited(session);
+    *session.setup.locked() = None;
     let (code, signal) = match status {
         Some(status) => {
             let exit = TaskProcessExit::from_status(Some(status));
@@ -714,17 +832,15 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         }
         None => (None, None),
     };
-    let parser = session.parser.lock();
+    let parser = session.parser.locked();
     if session.exit_reported.swap(true, Ordering::AcqRel) {
         session.exited.store(true, Ordering::Release);
         return;
     }
-    if let Ok(mut exit) = session.exit.lock() {
-        *exit = Some(SessionExit {
-            code,
-            signal: signal.clone(),
-        });
-    }
+    *session.exit.locked() = Some(SessionExit {
+        code,
+        signal: signal.clone(),
+    });
     session.exited.store(true, Ordering::Release);
     core.broadcast_event(&Event::Exited {
         id: session.id,
@@ -733,21 +849,46 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
         killed: session.killed.load(Ordering::Acquire),
     });
     drop(parser);
+    core.ports.changed();
     let failed = match (&code, &signal) {
         (_, Some(signal)) => Some(format!("It stopped from signal {signal}.")),
         (Some(code), None) if *code != 0 => Some(format!("It exited with code {code}.")),
         _ => None,
     };
     if session.is_task() {
-        core.harness.session_exited(session.id, code, signal);
+        if let Some(failed) = core
+            .harness
+            .session_exited(session.id, code, signal.clone())
+        {
+            super::harness::tell_agent_run_failed(core, failed);
+        }
+        super::tasks::ended(core, session.id);
     }
     if let Some(agent) = session.agent.as_ref() {
+        let mid_turn = agent.busy();
         agent::note_exit(core, agent, status);
-        if let Some(reason) = failed.filter(|_| !session.is_killed()) {
-            core.notify.send(super::notify::Signal::AgentFailed {
-                agent_id: agent.agent_id().to_owned(),
-                reason,
-            });
+        super::lifecycle::terminal_exited(
+            core,
+            session.id,
+            agent.agent_id(),
+            code,
+            signal.as_deref(),
+            session.is_killed(),
+        );
+        let failed = failed.filter(|_| !session.is_killed());
+        if let Some(reason) = &failed {
+            core.note_activity(agent.agent_id(), super::activity::Activity::Problem(reason));
+        }
+        core.note_agent_gone(agent.agent_id());
+        if mid_turn || !session.is_killed() {
+            super::spawn::terminal_turn_ended(
+                core,
+                agent.agent_id(),
+                super::spawn::Ending::Gone {
+                    reason: failed,
+                    mid_turn,
+                },
+            );
         }
     }
     if let Some(exited_at) = exited_at {
@@ -757,23 +898,19 @@ pub(crate) fn report_exit(core: &Core, session: &Session, status: Option<&ExitSt
 
 fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
     if let Some(task) = session.task.as_ref() {
-        if let Ok(mut log) = task.log.lock() {
-            log.push(bytes);
-        }
+        task.log.locked().push(bytes);
         if !task.notice_pending.swap(true, Ordering::AcqRel) {
             core.schedule_task_output_notice(session.id, TASK_OUTPUT_NOTICE_DELAY);
         }
     }
-    let output_now_ms = now_ms();
+    let output_now_ms = uptime_ms();
     session
         .last_activity_ms
         .store(output_now_ms, Ordering::Relaxed);
     if let Some(agent) = session.agent.as_ref() {
         agent::note_output(core, agent);
     }
-    let Ok(mut parser) = session.parser.lock() else {
-        return;
-    };
+    let mut parser = session.parser.locked();
     if session.trimmed.swap(false, Ordering::AcqRel) {
         reseed_parser(&mut parser, PARSER_SCROLLBACK);
     }
@@ -784,34 +921,55 @@ fn broadcast_output(core: &Arc<Core>, session: &Session, bytes: &[u8]) {
         .map(|shell| shell.process_for_events(bytes, output_now_ms))
         .unwrap_or_default();
     parser.process(bytes);
+    if parser.screen().bracketed_paste() {
+        session.pastes_on.notify_waiters();
+    }
     if let Some(agent) = session.agent.as_ref() {
         agent.note_parsed();
     }
     // Frames are queued under the parser lock, the same lock an attach holds
     // while it takes its snapshot, so a client sees every byte exactly once.
     send_to_subscribers(session, bytes);
+    let callbacks = parser.callbacks_mut();
+    callbacks.title_from_cwd();
+    let retitled = callbacks.take_title_change().is_some();
     drop(parser);
+    if retitled && !session.title_pending.swap(true, Ordering::AcqRel) {
+        let (core, id) = (core.clone(), session.id);
+        tokio::spawn(async move {
+            tokio::time::sleep(TITLE_GAP).await;
+            let Some(session) = core.session(id) else {
+                return;
+            };
+            session.title_pending.store(false, Ordering::Release);
+            let title = session.parser.locked().callbacks().window_title.clone();
+            core.broadcast_local(&Event::TerminalTitle { id, title });
+        });
+    }
     if let Some(update) = shell_output.ready {
-        core.broadcast_event(&Event::ShellMetadata(PtyShellMetadataEvent::from_update(
-            session.id, update,
-        )));
+        core.broadcast_event(&Event::ShellMetadata(update.into_event(session.id)));
+    }
+    if let Some(link) = shell_output.ssh {
+        core.broadcast_event(&Event::SshLink {
+            id: session.id,
+            link,
+        });
     }
 }
 
 /// Callers hold the parser lock, which keeps frames in the order the parser
 /// saw the bytes.
 fn send_to_subscribers(session: &Session, bytes: &[u8]) {
-    if let Ok(mut subscribers) = session.subscribers.lock() {
-        if !subscribers.is_empty() {
-            let frame: Arc<[u8]> = encode_output(session.id, bytes).into();
-            subscribers.retain(|_, subscriber| {
-                let sent = subscriber.client.send(frame.clone());
-                if sent {
-                    subscriber.unacked.fetch_add(bytes.len(), Ordering::AcqRel);
-                }
-                sent
-            });
-        }
+    let mut subscribers = session.subscribers.locked();
+    if !subscribers.is_empty() {
+        let frame: Arc<[u8]> = encode_output(session.id, bytes).into();
+        subscribers.retain(|_, subscriber| {
+            let sent = subscriber.client.send(frame.clone());
+            if sent {
+                subscriber.unacked.fetch_add(bytes.len(), Ordering::AcqRel);
+            }
+            sent
+        });
     }
 }
 
@@ -820,7 +978,7 @@ pub(crate) const RESET_MODES: &[u8] = b"\x1b>\x1b[4l\x1b[?1l\x1b[?6l\x1b[?7h\x1b
 /// Sends the same reset to the screen and every subscriber under the parser
 /// lock, so no output from the program can land between the two.
 pub(crate) fn reset_modes(session: &Session) -> CoreResult<()> {
-    let mut parser = session.parser.lock().map_err(CoreError::poisoned)?;
+    let mut parser = session.parser.locked();
     parser.process(RESET_MODES);
     send_to_subscribers(session, RESET_MODES);
     Ok(())
@@ -839,9 +997,9 @@ pub(crate) fn attach(
     client: &Arc<ClientConn>,
     request_id: RequestId,
 ) -> CoreResult<()> {
-    let mut parser = session.parser.lock().map_err(CoreError::poisoned)?;
+    let mut parser = session.parser.locked();
     let alternate_screen = parser.screen().alternate_screen();
-    let mut subscribers = session.subscribers.lock().map_err(CoreError::poisoned)?;
+    let mut subscribers = session.subscribers.locked();
     if !subscribers.contains_key(&client.id) && subscribers.len() >= MAX_SUBSCRIBERS_PER_SESSION {
         return Err("pty: PTY subscriber capacity reached".into());
     }
@@ -879,8 +1037,8 @@ pub(crate) fn subscribe(
     client: &Arc<ClientConn>,
     request_id: RequestId,
 ) -> CoreResult<()> {
-    let parser = session.parser.lock().map_err(CoreError::poisoned)?;
-    let mut subscribers = session.subscribers.lock().map_err(CoreError::poisoned)?;
+    let parser = session.parser.locked();
+    let mut subscribers = session.subscribers.locked();
     if !subscribers.contains_key(&client.id) && subscribers.len() >= MAX_SUBSCRIBERS_PER_SESSION {
         return Err("pty: PTY subscriber capacity reached".into());
     }
@@ -894,14 +1052,12 @@ pub(crate) fn subscribe(
 }
 
 pub(crate) fn detach(session: &Session, client: ClientId) {
-    let emptied = match session.subscribers.lock() {
-        Ok(mut subscribers) => {
-            if subscribers.remove(&client).is_none() {
-                return;
-            }
-            subscribers.is_empty()
+    let emptied = {
+        let mut subscribers = session.subscribers.locked();
+        if subscribers.remove(&client).is_none() {
+            return;
         }
-        Err(_) => return,
+        subscribers.is_empty()
     };
     session.flow_control.notify_waiters();
     if !emptied || session.trimmed.load(Ordering::Acquire) {
@@ -910,14 +1066,8 @@ pub(crate) fn detach(session: &Session, client: ClientId) {
     // Nobody is looking any more, so keep only what a reattach replays.
     // Re-check under the parser lock so an attach that raced us keeps its
     // history.
-    let Ok(mut parser) = session.parser.lock() else {
-        return;
-    };
-    if !session
-        .subscribers
-        .lock()
-        .is_ok_and(|subscribers| subscribers.is_empty())
-    {
+    let mut parser = session.parser.locked();
+    if session.has_subscribers() {
         return;
     }
     if screen_scrollback_len(parser.screen_mut()) <= IDLE_SCROLLBACK {
@@ -929,17 +1079,15 @@ pub(crate) fn detach(session: &Session, client: ClientId) {
 }
 
 pub(crate) fn detach_all(session: &Session) {
-    let subscribers = match session.subscribers.lock() {
-        Ok(mut subscribers) => std::mem::take(&mut *subscribers),
-        Err(_) => return,
-    };
+    let subscribers = std::mem::take(&mut *session.subscribers.locked());
     for subscriber in subscribers.values() {
         subscriber.client.note_subscription(session.id, false);
     }
 }
 
 pub(crate) fn ack(session: &Session, client: ClientId, bytes: usize) {
-    if let Ok(subscribers) = session.subscribers.lock() {
+    {
+        let subscribers = session.subscribers.locked();
         let Some(subscriber) = subscribers.get(&client) else {
             return;
         };
@@ -967,9 +1115,7 @@ pub(crate) fn resize(session: &Session, cols: u16, rows: u16) -> CoreResult<()> 
     if rc != 0 {
         return Err(os_error());
     }
-    if let Ok(mut parser) = session.parser.lock() {
-        parser.screen_mut().set_size(rows, cols);
-    }
+    session.parser.locked().screen_mut().set_size(rows, cols);
     Ok(())
 }
 
@@ -981,11 +1127,7 @@ pub(crate) fn task_output(
         .task
         .as_ref()
         .ok_or_else(|| CoreError::from("PTY is not a managed task"))?;
-    task.log
-        .lock()
-        .map_err(|_| CoreError::from("output lock poisoned"))?
-        .query(query)
-        .map_err(CoreError::from)
+    task.log.locked().query(query).map_err(CoreError::from)
 }
 
 pub(crate) fn kill(core: &Core, session: &Session) {
@@ -999,18 +1141,15 @@ pub(crate) fn kill(core: &Core, session: &Session) {
     if let Some(agent) = session.agent.as_ref() {
         agent.silence();
     }
-    let status = match session.child.lock() {
-        Ok(mut child) => {
-            let force_task_tree = sikemux_pty::task::task_process_needs_force_backstop(
-                session.is_task(),
-                session.exited_at_ms.load(Ordering::Acquire),
-            );
-            let status =
-                sikemux_pty::process::terminate_and_reap_child(&mut child, force_task_tree);
-            stamp_exited(session);
-            status
-        }
-        Err(_) => None,
+    let status = {
+        let mut child = session.child.locked();
+        let force_task_tree = sikemux_pty::task::task_process_needs_force_backstop(
+            session.is_task(),
+            session.exited_at_ms.load(Ordering::Acquire),
+        );
+        let status = sikemux_pty::process::terminate_and_reap_child(&mut child, force_task_tree);
+        stamp_exited(session);
+        status
     };
     report_exit(core, session, status.as_ref());
     if !session.is_task() {
@@ -1023,14 +1162,13 @@ pub(crate) fn kill(core: &Core, session: &Session) {
 /// First half of shutting everything down: ask the process tree to stop.
 pub(crate) fn signal_for_drain(session: &Session) {
     session.killed.store(true, Ordering::Release);
-    if let Ok(child) = session.child.lock() {
-        if sikemux_pty::task::should_signal_process_on_drain(
-            session.is_task(),
-            session.exited_at_ms.load(Ordering::Acquire),
-        ) {
-            if let Some(pid) = child.process_id() {
-                sikemux_pty::process::terminate_process_tree(pid, false);
-            }
+    let child = session.child.locked();
+    if sikemux_pty::task::should_signal_process_on_drain(
+        session.is_task(),
+        session.exited_at_ms.load(Ordering::Acquire),
+    ) {
+        if let Some(pid) = child.process_id() {
+            sikemux_pty::process::terminate_process_tree(pid, false);
         }
     }
 }
@@ -1039,31 +1177,29 @@ pub(crate) fn signal_for_drain(session: &Session) {
 pub(crate) fn finish_drain(core: &Core, session: &Session) {
     use sikemux_pty::process::{child_process_id, kill_and_reap_child, terminate_process_tree};
     use sikemux_pty::task::{should_signal_process_on_drain, task_process_needs_force_backstop};
-    let status = match session.child.lock() {
-        Ok(mut child) => {
-            let is_task = session.is_task();
-            let exited_at = session.exited_at_ms.load(Ordering::Acquire);
-            let status = if !should_signal_process_on_drain(is_task, exited_at) {
-                child.try_wait().ok().flatten()
-            } else if task_process_needs_force_backstop(is_task, exited_at) {
-                let pid = child_process_id(&mut child);
-                if let Some(pid) = pid {
-                    terminate_process_tree(pid, true);
-                }
-                match child.try_wait() {
-                    Ok(Some(status)) => Some(status),
-                    _ => kill_and_reap_child(&mut child, pid),
-                }
-            } else if let Ok(Some(status)) = child.try_wait() {
-                Some(status)
-            } else {
-                let pid = child_process_id(&mut child);
-                kill_and_reap_child(&mut child, pid)
-            };
-            stamp_exited(session);
-            status
-        }
-        Err(_) => None,
+    let status = {
+        let mut child = session.child.locked();
+        let is_task = session.is_task();
+        let exited_at = session.exited_at_ms.load(Ordering::Acquire);
+        let status = if !should_signal_process_on_drain(is_task, exited_at) {
+            child.try_wait().ok().flatten()
+        } else if task_process_needs_force_backstop(is_task, exited_at) {
+            let pid = child_process_id(&mut child);
+            if let Some(pid) = pid {
+                terminate_process_tree(pid, true);
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => Some(status),
+                _ => kill_and_reap_child(&mut child, pid),
+            }
+        } else if let Ok(Some(status)) = child.try_wait() {
+            Some(status)
+        } else {
+            let pid = child_process_id(&mut child);
+            kill_and_reap_child(&mut child, pid)
+        };
+        stamp_exited(session);
+        status
     };
     report_exit(core, session, status.as_ref());
     session.stop_reader.notify_one();
@@ -1072,18 +1208,13 @@ pub(crate) fn finish_drain(core: &Core, session: &Session) {
 pub(crate) fn trim_if_idle(session: &Session, now: u64, idle: Duration) {
     let idle_ms = idle.as_millis() as u64;
     let quiet = || now.saturating_sub(session.last_activity_ms.load(Ordering::Relaxed)) >= idle_ms;
-    if session.trimmed.load(Ordering::Relaxed)
-        || !quiet()
-        || session.has_subscribers() != Some(false)
-    {
+    if session.trimmed.load(Ordering::Relaxed) || !quiet() || session.has_subscribers() {
         return;
     }
-    let Ok(mut parser) = session.parser.lock() else {
-        return;
-    };
+    let mut parser = session.parser.locked();
     // Output and attaches take the parser lock first, so re-checking under it
     // means neither can slip in between the check and the compaction.
-    if !quiet() || session.has_subscribers() != Some(false) {
+    if !quiet() || session.has_subscribers() {
         return;
     }
     if compact_parser_for_idle(&mut parser) {

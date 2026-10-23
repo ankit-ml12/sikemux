@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiffRow } from "../api/git";
 import { DiffView, layoutRows } from "./DiffView";
 
-vi.mock("../chat/shikiTokens", () => ({
-    tokenizeLines: async (lines: readonly string[]) => lines.map((text) => [{ text, color: "#123456" }]),
+vi.mock("./diffColours", () => ({
+    finishedColours: () => undefined,
+    colourLines: (lines: readonly string[], _lang: string, _theme: unknown, _name: string, _max: number, listener: (colours: unknown) => void) => {
+        listener(lines.map((text) => [{ text, color: "#123456" }]));
+        return () => {};
+    },
 }));
 
 afterEach(cleanup);
@@ -22,18 +26,6 @@ describe("DiffView", () => {
         expect(layout.digits).toBe(4);
     });
 
-    it("colours each row by the side it came from", async () => {
-        const rows: DiffRow[] = [
-            [0, 1, "let a = 1;"],
-            [2, 2, "let b = 1;"],
-            [1, 2, "let b = 2;"],
-        ];
-        const { container, findAllByText } = render(<DiffView rows={rows} path="src/a.ts" tinted />);
-        const [coloured] = await findAllByText("let b = 1;", { selector: "span[style]" });
-        expect(coloured).toHaveStyle({ color: "#123456" });
-        expect(container.querySelectorAll(".diff-code span[style]")).toHaveLength(3);
-    });
-
     it("keeps only the rows near the viewport of a long diff in the document", () => {
         const rows: DiffRow[] = Array.from({ length: 5000 }, (_, index): DiffRow => [1, index + 1, `line ${index}`]);
         const { container } = render(
@@ -44,7 +36,6 @@ describe("DiffView", () => {
         const drawn = container.querySelectorAll(".diff-row").length;
         expect(drawn).toBeGreaterThan(0);
         expect(drawn).toBeLessThan(200);
-        const list = container.querySelector<HTMLElement>(".diff-rows")!;
-        expect(parseFloat(list.style.paddingTop) + parseFloat(list.style.paddingBottom) + drawn * 19).toBe(5000 * 19);
+        expect(container.querySelector<HTMLElement>(".diff-rows")!.style.height).toBe(`${5000 * 19}px`);
     });
 });

@@ -1,18 +1,24 @@
 //! Background tasks and subagents, which core ACP has no updates for.
 //!
-//! The Claude adapter carries both as an extension it calls AIR, nested inside
-//! `_meta` so peers that do not know it skip it. It stays silent until a client
-//! names the parts it understands in `initialize`.
+//! An ACP agent carries both as an extension called AIR, nested inside `_meta`
+//! so peers that do not know it skip it. It stays silent until a client names
+//! the parts it understands in `initialize`. The Claude and Codex drivers tell
+//! the chat the same updates.
 
-use agent_client_protocol::schema::v1::{ClientCapabilities, ContentBlock, Meta};
-use agent_client_protocol::{JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
-use serde::{Deserialize, Serialize};
+use agent_client_protocol::schema::v1::{
+    AuthCapabilities, ClientCapabilities, ClientSessionCapabilities, ContentBlock, Meta,
+    NoticeCapabilities,
+};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 const EXTENSION_VERSION: u8 = 1;
-const EXTENSION_CAPABILITIES: [&str; 2] = ["asyncTasks", "nativeSubagentSessions"];
+const EXTENSION_CAPABILITIES: [&str; 3] =
+    ["asyncTasks", "nativeSubagentSessions", "sessionFailure"];
 
-/// Asks the agent for async task and subagent session updates.
+/// Asks the agent for async task and subagent session updates, and for a
+/// failed turn's cause and its asides as data rather than as text in the
+/// transcript. An aside sent as text reads as the agent starting a turn.
 pub fn client_capabilities() -> ClientCapabilities {
     let mut meta = Meta::new();
     meta.insert(
@@ -24,18 +30,14 @@ pub fn client_capabilities() -> ClientCapabilities {
             }
         }),
     );
-    ClientCapabilities::new().meta(meta)
+    // Sikemux can run the agent's own sign-in in a terminal, so the agent may
+    // offer it. Zed's earlier form of the same capability is in `_meta`.
+    meta.insert("terminal-auth".into(), json!(true));
+    ClientCapabilities::new()
+        .session(ClientSessionCapabilities::new().notices(NoticeCapabilities::new()))
+        .auth(AuthCapabilities::new().terminal(true))
+        .meta(meta)
 }
-
-/// A `session/update` kept as raw JSON.
-///
-/// The extension adds update kinds the schema crate has never heard of, and a
-/// typed notification rejects the whole message when it meets one. Parsing is
-/// left to the frontend, which ignores what it does not recognise.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcNotification)]
-#[notification(method = "session/update")]
-#[serde(transparent)]
-pub struct SessionUpdate(pub Value);
 
 /// Whether the agent takes a message aimed at the turn already running.
 ///
@@ -52,9 +54,10 @@ pub fn steering_supported(initialize_meta: &Value) -> bool {
 ///
 /// `idleBehavior` asks for the message back when the turn settled first, rather
 /// than letting the agent open a turn of its own that this side never started
-/// and so would never see finish.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "_session/steering", response = SteerResponse)]
+/// and so would never see finish. The agent answers with its `outcome`:
+/// `injected` when the message reached the running turn, `promptRequired` when
+/// there was no turn left to reach and the message is the client's again.
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Steer {
     pub session_id: String,
@@ -64,6 +67,8 @@ pub struct Steer {
 }
 
 impl Steer {
+    pub const METHOD: &str = "_session/steering";
+
     pub fn new(session_id: String, prompt: Vec<ContentBlock>) -> Self {
         Self {
             session_id,
@@ -73,28 +78,15 @@ impl Steer {
     }
 }
 
-/// `injected` when the message reached the running turn, `promptRequired` when
-/// there was no turn left to reach and the message is the client's again.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct SteerResponse {
-    #[serde(default)]
-    pub outcome: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
-#[request(method = "_session/async_task/stop", response = StopAsyncTaskResponse)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StopAsyncTask {
     pub session_id: String,
     pub async_task_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
-#[serde(rename_all = "camelCase")]
-pub struct StopAsyncTaskResponse {
-    #[serde(default)]
-    pub stopped: bool,
+impl StopAsyncTask {
+    pub const METHOD: &str = "_session/async_task/stop";
 }
 
 #[cfg(test)]
@@ -102,14 +94,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn capabilities_offer_a_terminal_sign_in_in_both_forms() {
+        let capabilities = serde_json::to_value(client_capabilities()).unwrap();
+        assert_eq!(capabilities.pointer("/auth/terminal"), Some(&json!(true)));
+        assert_eq!(
+            capabilities.pointer("/_meta/terminal-auth"),
+            Some(&json!(true))
+        );
+    }
+
+    #[test]
     fn capabilities_name_the_extension_parts_the_frontend_renders() {
         let capabilities = serde_json::to_value(client_capabilities()).unwrap();
         assert_eq!(
             capabilities.pointer("/_meta/jetbrains/air"),
-            Some(
-                &json!({ "version": 1, "capabilities": ["asyncTasks", "nativeSubagentSessions"] })
-            )
+            Some(&json!({
+                "version": 1,
+                "capabilities": ["asyncTasks", "nativeSubagentSessions", "sessionFailure"],
+            }))
         );
+        assert_eq!(capabilities.pointer("/session/notices"), Some(&json!({})));
     }
 
     #[test]
@@ -133,15 +137,5 @@ mod tests {
             payload.pointer("/_meta/steering/idleBehavior"),
             Some(&json!("promptRequired"))
         );
-    }
-
-    #[test]
-    fn session_updates_survive_kinds_the_schema_does_not_know() {
-        let payload = json!({
-            "sessionId": "session-1",
-            "update": { "sessionUpdate": "async_task_spawned", "asyncTaskId": "task-1" },
-        });
-        let parsed: SessionUpdate = serde_json::from_value(payload.clone()).unwrap();
-        assert_eq!(parsed.0, payload);
     }
 }

@@ -1,12 +1,31 @@
+import { hasUsage } from "../../agents/catalog";
 import { pluginDocuments } from "../../plugins/documents";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { invalidate } from "../resources";
 import { getState, mutate } from "../store";
-import { agentPaneId, editorPaneOf, nextInCycle, ownerSessionId, selectTabRefs, stripOrder, tabRefKey, type TabSource } from "../selectors";
+import {
+    agentPaneId,
+    agentWindowId,
+    editorPaneOf,
+    nextInCycle,
+    ownerSessionId,
+    selectTabRefs,
+    stripOrder,
+    tabRefKey,
+    type TabSource,
+} from "../selectors";
 import { collectPanes, cloneLayout, newId } from "../layout";
 import type { Window, WindowRole, TabRef } from "../types";
 import { setEditorView } from "./editor";
-import { closeAgentDesk, closeDocument, dirtyPathsForWindow, guardDiscardDirty, makeWindow, pruneWindowViews, withActiveSession } from "./shared";
+import {
+    closeAgentDesk,
+    closeDocument,
+    dirtyPathsForWindow,
+    guardDiscardDirty,
+    guardCloseLeads,
+    makeWindow,
+    pruneWindowViews,
+    withActiveSession,
+} from "./shared";
 
 /**
  * Drops the fixed editor, diff and search tabs that older sessions were built
@@ -138,18 +157,41 @@ export function duplicateWindow(id: string): void {
 }
 
 export function closeWindowById(id: string): void {
+    closeWindowsById([id]);
+}
+
+/**
+ * Closes these tabs, asking once first if that would stop a busy agent or
+ * lose unsaved edits. `askToStop` is off only for agents already gone from the core.
+ */
+export function closeWindowsById(ids: readonly string[], askToStop = true): void {
     const st = getState();
-    const closing = st.windows[id];
-    if (!closing || closing.fixed) return;
-    guardDiscardDirty(dirtyPathsForWindow(st, closing), "close window", () => closeWindowNow(id));
+    const closing = ids.map((id) => st.windows[id]).filter((win): win is Window => !!win && !win.fixed);
+    if (closing.length === 0) return;
+    const agentIds = closing.flatMap((win) => (win.role === "agent" ? (agentPaneId(win) ?? []) : []));
+    const title =
+        closing.length === 1 && agentIds.length === 1 ? `Close ${st.agents[agentIds[0]]?.title ?? "agent"}?` : `Close ${closing.length} tabs?`;
+    const close = (workers: readonly string[] = []) =>
+        guardDiscardDirty(
+            closing.flatMap((win) => dirtyPathsForWindow(getState(), win)),
+            closing.length === 1 ? "close window" : "close windows",
+            () => {
+                closing.forEach((win) => closeWindowNow(win.id));
+                const state = getState();
+                if (workers.length > 0)
+                    closeWindowsById(
+                        workers.flatMap((id) => agentWindowId(state, id) ?? []),
+                        false,
+                    );
+            },
+        );
+    if (askToStop) guardCloseLeads(agentIds, title, close);
+    else close();
 }
 
 function closeWindowNow(id: string): void {
     const closing = getState().windows[id];
     if (!closing || closing.fixed) return;
-    const taskPaneIds = collectPanes(closing.root)
-        .filter((pane) => pane.externalPty)
-        .map((pane) => pane.id);
     const closingAgent = closing.role === "agent" ? getState().agents[agentPaneId(closing) ?? ""] : undefined;
     mutate((d) => {
         const sessionId = ownerSessionId(d, id);
@@ -180,19 +222,13 @@ function closeWindowNow(id: string): void {
         d.zoomedPaneId = null;
     });
     if (!getState().windows[id]) {
-        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
         if (closingAgent) {
             closeAgentDesk(closingAgent.id);
-            if (closingAgent.type === "claude" || closingAgent.type === "codex") {
-                invalidate((kind) => kind === "agents.catalog" || kind === "agents.models" || kind === "agents.usage");
+            if (hasUsage(closingAgent.type)) {
+                invalidate((kind) => kind === "agents.catalog" || kind === "agents.usage");
             }
         }
     }
-}
-
-export function closeActiveWindow(): void {
-    const session = getState().sessions[getState().activeSessionId];
-    if (session) closeWindowById(session.activeWindowId);
 }
 
 export function selectWindowId(id: string): void {
@@ -248,22 +284,6 @@ export function cycleTab(delta: number): void {
     const nextKey = nextTabIn({ kind: "workspace", sessionId }, delta);
     const next = nextKey ? selectTabRefs(st, sessionId).find((ref) => tabRefKey(ref) === nextKey) : undefined;
     if (next) selectTab(next);
-}
-
-export function selectWindowByIndex(index: number): void {
-    const st = getState();
-    const session = st.sessions[st.activeSessionId];
-    const id = (st.windowsBySession[session?.id ?? ""] ?? [])[index];
-    if (id) selectWindowId(id);
-}
-
-export function selectWindowByName(name: string): void {
-    const st = getState();
-    const session = st.sessions[st.activeSessionId];
-    if (!session) return;
-    const ids = st.windowsBySession[session.id] ?? [];
-    const id = ids.find((wid) => st.windows[wid]?.name === name);
-    if (id) selectWindowId(id);
 }
 
 export function selectWindowByRole(role: WindowRole): void {

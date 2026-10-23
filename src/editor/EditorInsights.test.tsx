@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { lsp } from "../api/lsp";
-import { DiagnosticsController } from "../workbench/diagnosticsController";
+import { lsp, noteServedLanguages } from "../api/lsp";
+import { ProjectProblems } from "./projectProblems";
 import { EditorInsights } from "./EditorInsights";
 
 vi.mock("../api/agents", () => ({ agentApi: { available: vi.fn(async () => []) } }));
@@ -9,32 +9,32 @@ vi.mock("../api/agents", () => ({ agentApi: { available: vi.fn(async () => []) }
 const PROJECT = "/repo";
 const PATH = "/repo/src/app.ts";
 
-function controllerWithProblem(): DiagnosticsController {
-    const controller = new DiagnosticsController(PROJECT);
-    controller.activateServer("typescript", 1);
-    controller.publish(
-        {
-            project: PROJECT,
-            language: "typescript",
-            path: PATH,
-            version: 2,
-            diagnostics: [
-                {
-                    range: { start: { line: 3, character: 4 }, end: { line: 3, character: 8 } },
-                    severity: "error",
-                    code: "TS100",
-                    source: "typescript",
-                    message: "Expected a value",
-                },
-            ],
-        },
-        1,
-    );
+function controllerWithProblem(): ProjectProblems {
+    const controller = new ProjectProblems(PROJECT);
+    controller.serverStarted("typescript");
+    controller.publish({
+        project: PROJECT,
+        language: "typescript",
+        path: PATH,
+        version: 2,
+        diagnostics: [
+            {
+                range: { start: { line: 3, character: 4 }, end: { line: 3, character: 8 } },
+                severity: "error",
+                code: "TS100",
+                source: "typescript",
+                message: "Expected a value",
+            },
+        ],
+    });
     return controller;
 }
 
 describe("EditorInsights", () => {
-    beforeEach(() => vi.restoreAllMocks());
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        noteServedLanguages(["typescript"]);
+    });
     afterEach(cleanup);
 
     it("keeps diagnostics live while collapsed and navigates from Problems", () => {
@@ -49,15 +49,6 @@ describe("EditorInsights", () => {
         fireEvent.click(screen.getByRole("button", { name: /Expected a value/ }));
         expect(onNavigate).toHaveBeenCalledWith(PATH, 3, 4);
         expect(screen.getByText("src/app.ts:4:5")).toBeInTheDocument();
-    });
-
-    it("offers to send a problem to an agent from its row's menu", () => {
-        render(<EditorInsights project={PROJECT} path={PATH} controller={controllerWithProblem()} visible onNavigate={vi.fn()} />);
-        fireEvent.click(screen.getByRole("button", { name: "Problems 1" }));
-        fireEvent.contextMenu(screen.getByRole("button", { name: /Expected a value/ }));
-        fireEvent.click(screen.getByRole("menuitem", { name: "Send to Agent…" }));
-        expect(screen.getByRole("menu")).toBeInTheDocument();
-        expect(screen.queryByRole("menuitem", { name: "Go to Problem" })).not.toBeInTheDocument();
     });
 
     it("loads a hierarchical outline only after the tab opens", async () => {

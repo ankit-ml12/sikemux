@@ -1,8 +1,7 @@
-import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { DATABASE_PLUGIN_ID } from "./kinds";
+import { createPluginBackend } from "../../plugin-api/backend";
+import { DATABASE_PLUGIN } from "./kinds";
 
-const backend = createPluginBackend(DATABASE_PLUGIN_ID);
+const backend = createPluginBackend(DATABASE_PLUGIN.id);
 
 /** PostgreSQL's `sslmode` names: whether to encrypt, and whether to check the server's certificate. */
 export type TlsMode = "disable" | "prefer" | "require" | "verify-full";
@@ -128,12 +127,6 @@ export interface HistoryEntry {
     source: "person" | "agent";
 }
 
-export function failureMessage(error: unknown): string {
-    return isPluginFailure(error) ? error.message : String(error);
-}
-
-export const refreshDatabase = () => invalidate((kind) => kind.startsWith("database."));
-
 export const databaseApi = {
     profiles: () => backend.call<DatabaseProfile[]>("profiles"),
     /** A password left out keeps the saved one; an empty one forgets it. */
@@ -146,8 +139,9 @@ export const databaseApi = {
     schemas: (id: string) => backend.call<string[]>("schemas", { id }),
     tables: (id: string, schema?: string) => backend.call<DatabaseTable[]>("tables", { id, schema }),
     describe: (id: string, table: string, schema?: string) => backend.call<TableInfo>("describe", { id, table, schema }),
-    query: (id: string, sql: string, limit?: number) => backend.call<QueryOutcome>("query", { id, sql, limit }),
-    cancel: (id: string) => backend.call<void>("cancel", { id }),
+    /** `run` names this run, so stopping it never stops another console's query on the same connection. */
+    query: (id: string, sql: string, limit?: number, run?: string) => backend.call<QueryOutcome>("query", { id, sql, limit, run }),
+    cancel: (id: string, run: string) => backend.call<void>("cancel", { id, run }),
     history: (id: string, search?: string) => backend.call<HistoryEntry[]>("history", { id, search }),
     clearHistory: (id: string) => backend.call<void>("clearHistory", { id }),
 };

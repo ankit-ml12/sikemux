@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
 import { useUser } from '@clerk/expo';
 
-import { initials } from '@/account/initials';
+import { initials } from '@mac/lib/initials';
 import { fonts, type Palette, useStyles } from '@/ui/theme';
 
-/** Clerk's image host scales the picture to the size asked for. */
+/** Clerk's image host scales the whole picture to fit the size asked for; its crop and cover fits zoom in on a slice of it. */
 function sized(url: string, size: number): string {
   const pixels = PixelRatio.getPixelSizeForLayoutSize(size);
-  return `${url}${url.includes('?') ? '&' : '?'}width=${pixels}&height=${pixels}&fit=crop&quality=100`;
+  return `${url}${url.includes('?') ? '&' : '?'}width=${pixels}&height=${pixels}&fit=scale-down&quality=100`;
 }
 
 /** The signed-in account's picture, or its initials on a neutral circle when it has none. */

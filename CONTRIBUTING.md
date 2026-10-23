@@ -4,7 +4,7 @@ Thanks for taking the time to contribute. Sikemux is a Tauri + Rust + React desk
 
 ## Getting started
 
-**Prerequisites:** [rustup](https://www.rust-lang.org/tools/install), which installs the Rust version `rust-toolchain.toml` pins, the same one CI uses (Homebrew Rust ignores that file), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Linux builds require the [Tauri Linux packages](https://v2.tauri.app/start/prerequisites/#linux) (WebKitGTK 4.1, librsvg), and `pnpm build:linux` makes a `.deb`, an `.rpm` and an AppImage; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases target Apple Silicon. Windows is not a current target: the background core that owns terminals and agents is Unix-only, so the app no longer builds there and `pnpm build:windows` does not work.
+**Prerequisites:** [rustup](https://www.rust-lang.org/tools/install), which installs the Rust version `rust-toolchain.toml` pins, the same one CI uses (Homebrew Rust ignores that file), Node.js 22+, and pnpm 10.33.0 (the version pinned in `package.json`). macOS bundles require Xcode; Linux builds require the [Tauri Linux packages](https://v2.tauri.app/start/prerequisites/#linux) (WebKitGTK 4.1, librsvg), and `pnpm build:linux` makes a `.deb`, an `.rpm` and an AppImage; Windows development requires Microsoft C++ Build Tools and WebView2. Published releases ship an Apple Silicon DMG and x86_64 Linux packages. Windows is not a current target: the background core that owns terminals and agents is Unix-only, so the app no longer builds there and `pnpm build:windows` does not work.
 
 ```bash
 git clone git@github.com:nodelike/sikemux.git
@@ -24,7 +24,7 @@ are about to push. Install it by hand in an existing clone with `make hooks`.
 | `src/state/commands/` | Every action that changes app state, one module per area                                                     |
 | `src/api/`            | Thin wrappers over Tauri `invoke` commands                                                                   |
 | `src/plugin-api/`     | The only part of the app a plugin's frontend may import                                                      |
-| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, Database, GitHub, Jira, Rundeck, SigNoz)                            |
+| `src/plugins/`        | Plugin frontends (AWS, Bitbucket, Bruno, Database, GitHub, GitLab, Jira, Rundeck, SigNoz)                    |
 | `src-tauri/src/`      | Rust core: PTY, git, LSP, file watchers, browser tabs, agents, diagnostics                                   |
 | `src-tauri/crates/`   | Shared Rust crates: the terminal engine, the background core, plugin API, process runner, keychain, markdown |
 | `src-tauri/plugins/`  | Plugin backends, one crate per plugin behind a Cargo feature                                                 |
@@ -67,7 +67,7 @@ Every phone screen is drawn first in `mobile/design/screens.src.html`, with the 
 
 `server/` holds the backend behind phone sign-in and the device list: the API at api.sikemux.com and the web app at app.sikemux.com. Like `mobile/`, it is a pnpm workspace of its own. [ADR 0009](docs/architecture/0009-accounts-and-backend.md) records the design.
 
-- `server/protocol` is the contract. Its JSON Schema in `schema/` and the routes in `routes.json` generate the TypeScript types, a bundled schema the API validates with, an OpenAPI document, and the Rust types in `src-tauri/crates/sikemux-core/src/accounts/protocol.rs`. Change the schema, then run `pnpm protocol:generate`; never edit the generated files. Every definition needs an example in `fixtures/`, which both the TypeScript and the Rust tests read.
+- `server/protocol` is the contract. Its JSON Schema in `schema/` and the routes in `routes.json` generate the TypeScript types, a bundled schema the API validates with, an OpenAPI document, and the Rust types in `src-tauri/crates/sikemux-wire/src/accounts/protocol.rs`. Change the schema, then run `pnpm protocol:generate`; never edit the generated files. Every definition needs an example in `fixtures/`, which both the TypeScript and the Rust tests read.
 - `server/api` is the API (Hono on Node, Postgres through Kysely). Schema changes are numbered SQL files in `api/migrations`; a shipped one is never edited, only followed by a new one.
 - `server/app` is the web app (Vite and React).
 - `server/deploy` is what runs it on the server: the systemd unit, the Caddy sites, the one-time setup and the script that installs a release.
@@ -92,13 +92,11 @@ make check            # every gate, regardless of what changed
 pnpm build            # production frontend build
 ```
 
-`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests with coverage, the performance budget, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. It also checks that generated files (IPC contracts, agent tools, grammars) match their sources. These are the same quality gates enforced by CI.
+`make check` runs Prettier in check mode, ShellCheck, ESLint, TypeScript, frontend tests, the performance budget, `cargo audit`, `cargo fmt --check`, Clippy with warnings denied, Rust tests, and credential-free release-tooling checks. It also checks that generated files (IPC contracts, agent tools, grammars) match their sources. These are the same quality gates enforced by CI.
 
 Some gates are floors that only move one way. Raise them when you beat them; never lower them to get a change through:
 
-- **Test coverage:** the thresholds in `vite.config.ts` under `test.coverage.thresholds`. When a change lifts coverage, set each threshold to the new measured value, rounded down.
 - **`!important` in CSS:** the budget in `scripts/check-css-important.mjs`, checked by `pnpm lint`. Remove one and lower the budget to match.
-- **Bundle size:** the ceilings checked by `pnpm perf:budget` (see below).
 
 One CI job stays out of the hook: **macOS launched desktop E2E**. Run it with `pnpm test:e2e:desktop` if you touched the launch path — it builds the whole app, so the hook leaves it to CI.
 
@@ -110,7 +108,7 @@ Releases publish only from the Release workflow ([docs/releasing.md](docs/releas
 
 Agent tools are declared once in `browser/tools.json`. Add or change one there, run `pnpm agent-tools:generate`, and commit the regenerated `src-tauri/crates/sikemux-core/src/cli/methods.rs`. `pnpm agent-tools:check` fails when a declared method has no handler, when a handler is exposed by no tool, or when the generated file is stale. Keep tool descriptions to one line: they are sent on every agent request, so protocol detail belongs in `browser/SIKEMUX_GUIDE.md`, which agents fetch once through `guide`. `pnpm agent-tools:report` prints what the surface currently costs.
 
-`pnpm perf:budget` checks the production bundle after `pnpm build`. Every startup, lazy-feature, total-JavaScript, and CSS ceiling must retain at least 10% reserve; reaching the nominal ceiling is already a failure. When adding substantial UI, prefer a feature-level dynamic import and only rebaseline a ceiling alongside measured bundle output and a documented reason.
+`pnpm perf:budget` checks the production bundle after `pnpm build` against sizes a person would feel: 2 MB of JavaScript before the first pane draws, 600 KB for any file loaded later, and 300 KB of application CSS. Ordinary features fit under these. When one fails, move the code behind a dynamic import or split the file rather than raising the limit.
 
 - **Scope** — keep PRs focused. One feature or fix per PR is much easier to review.
 - **No regressions** — keep things efficient and performant; if a change touches the editor, terminal, or git panes, verify the affected views still behave.

@@ -11,21 +11,16 @@ import { joinPath } from "../../lib/paths";
 import { copyText } from "../../lib/clipboard";
 import { reportError } from "../../state/toast";
 import { useResourceEnabled } from "../../plugin-api/resources";
-import { EmptyState, SkeletonRows } from "../../plugin-api/ui";
+import { EmptyState, IconCopy, IconMessage, SkeletonRows } from "../../plugin-api/ui";
 import { FileReviewList } from "../../git/FileReviewList";
-import { failureMessage, type ChangedFile, type RepoRef } from "../api";
+import { hostFileStatus } from "../../git/gitFileStatus";
+import { type ChangedFile, type RepoRef } from "../api";
+import { errorText } from "../../lib/format";
 import { patchToRows } from "../patchRows";
 import { pullFilesR } from "../resources";
 
 const LINE_HEIGHT = 19;
 const DIFF_PADDING = 16;
-
-const STATUS: Record<string, { letter: string; cls: string; label: string }> = {
-    added: { letter: "A", cls: "a", label: "added" },
-    removed: { letter: "D", cls: "d", label: "deleted" },
-    renamed: { letter: "R", cls: "r", label: "renamed" },
-    copied: { letter: "C", cls: "r", label: "copied" },
-};
 
 function useDarkTheme(): boolean {
     const [dark, setDark] = useState(() => currentTheme().dark);
@@ -69,10 +64,12 @@ const FileDiff = memo(function FileDiff({ file, dark, pull, cwd }: { file: Chang
                     items={[
                         {
                             label: "Copy Lines",
+                            icon: <IconCopy size={13} />,
                             run: () => void copyText(picked.map((row) => row[2]).join("\n")).catch(reportError("copy")),
                         },
                         {
                             label: picked.length === 1 ? "Send Line to Agent…" : "Send Lines to Agent…",
+                            icon: <IconMessage size={13} />,
                             run: () => setMenu({ ...menu, sending: true }),
                         },
                     ]}
@@ -109,7 +106,7 @@ export function PullFiles({ repo, pull, cwd, active, focusPath }: Props) {
     const paths = useMemo(() => (files.data ?? []).map((file) => file.path), [files.data]);
 
     if (files.status === "loading" && !files.data) return <SkeletonRows rows={6} label="Loading files" />;
-    if (files.error && !files.data) return <EmptyState title="Could not read the files" message={failureMessage(files.error)} tone="error" />;
+    if (files.error && !files.data) return <EmptyState title="Could not read the files" message={errorText(files.error)} tone="error" />;
 
     return (
         <section className="gha-pull-files">
@@ -124,7 +121,7 @@ export function PullFiles({ repo, pull, cwd, active, focusPath }: Props) {
                 status={(path) => {
                     const file = byPath.get(path);
                     if (!file) return null;
-                    const badge = STATUS[file.status] ?? { letter: "M", cls: "m", label: "modified" };
+                    const badge = hostFileStatus(file.status);
                     return (
                         <>
                             <span className="gha-diffstat">

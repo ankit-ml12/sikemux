@@ -5,13 +5,11 @@ import { Tooltip } from "../../plugin-api/ui";
 import { openGitArea } from "../../state/commands";
 import { useHostRepo } from "../project";
 import { hostStatusR, runsR } from "../resources";
-import { formatAgo, isUnfinished, outcomeOf, OUTCOME_LABEL } from "../runStatus";
-import { OutcomeIcon } from "./ActionsIcon";
-import { useEvery } from "./hooks";
+import { outcomeOf, OUTCOME_LABEL } from "../runStatus";
+import { StatusMark } from "./ActionsIcon";
+import { useCiWatch } from "../ciWatch";
 import "../topbar.css";
-
-const LIVE_REFRESH_MS = 10_000;
-const IDLE_REFRESH_MS = 20_000;
+import { formatAgo } from "../../lib/format";
 
 function HostCiGlyph({ hostId, projectCwd }: PluginTopBarProps & { hostId: string }) {
     const found = useHostRepo(projectCwd, !!projectCwd);
@@ -24,9 +22,7 @@ function HostCiGlyph({ hostId, projectCwd }: PluginTopBarProps & { hostId: strin
         perPage: 1,
     });
     const latest = runs.data?.runs[0] ?? null;
-    const live = !!latest && isUnfinished(latest);
-
-    useEvery(signedIn && !!repo, live ? LIVE_REFRESH_MS : IDLE_REFRESH_MS, () => void runs.refresh());
+    useCiWatch(repo, signedIn);
 
     if (!repo || !latest) return null;
 
@@ -35,7 +31,7 @@ function HostCiGlyph({ hostId, projectCwd }: PluginTopBarProps & { hostId: strin
     return (
         <Tooltip label={label}>
             <button type="button" className="gha-topbar" data-outcome={outcome} onClick={() => openGitArea("actions")} aria-label={label}>
-                <OutcomeIcon outcome={outcome} size={12} />
+                <StatusMark outcome={outcome} size={12} />
                 <span className="gha-topbar-number">#{latest.runNumber}</span>
             </button>
         </Tooltip>

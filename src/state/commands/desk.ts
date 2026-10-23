@@ -1,5 +1,6 @@
 import { browserApi } from "../../api/browser";
-import { taskPtyBindings, type TaskTerminalPresentationRequest } from "../../tasks/nativeRuntime";
+import { runShownIn, taskRuns } from "../../tasks/coreTasks";
+import type { TaskTerminalRequest } from "./taskTerminal";
 import { emit } from "../bus";
 import { getState, mutate, type StoreState } from "../store";
 import type { Draft } from "immer";
@@ -13,6 +14,7 @@ import {
     fileKey,
     isShown,
     shownDeskItem,
+    shownKind,
     simulatorKey,
     terminalKey,
     type DeskItem,
@@ -23,6 +25,7 @@ import { holdStageMotion } from "../nativeViews";
 import { canAnimate } from "../../lib/motion";
 import { activeAgentId, shownDeskPaneId } from "../selectors";
 import { collectPanes, computeLayout, findSplit, makePane, newId, removePane, setSplitSizes, splitPane } from "../layout";
+import { paintLayout } from "../layoutPaint";
 import type { Desk, LayoutNode, SplitNode } from "../types";
 import { setEditorView } from "./editor";
 import { dirtyPathsForPane, dropDeskPaneState, guardDiscardDirty } from "./shared";
@@ -76,7 +79,12 @@ export function toggleDesk(agentId: string): void {
     if (desk?.terminals.length || desk?.simulators.length || getState().editorViews[deskEditorId(agentId)]?.openTabs.length) return;
     void browserApi
         .snapshot(agentId)
-        .then((snapshot) => (snapshot.tabs.length === 0 ? browserApi.newTab(agentId) : undefined))
+        .then((snapshot) => {
+            if (snapshot.tabs.length > 0) return;
+            setDeskActive(agentId, BROWSER_ACTIVE);
+            openDeskAddress(agentId);
+            return browserApi.newTab(agentId);
+        })
         .catch(reportError("open browser tab"));
 }
 
@@ -166,6 +174,8 @@ interface DeskTravel {
     open: number[];
     closed: number[];
     heading: DeskHeading;
+    /** The sizes the store holds while the desk moves; it only learns where the desk lands. */
+    committed: number[];
     from: number[];
     last: number[];
     begun: number;
@@ -190,7 +200,8 @@ function windowHolding(paneId: string): string | undefined {
 
 /* The desk opens and closes the way a divider drag would: the agent gives up
    exactly the room the desk takes, so the two read as one movement. Each frame
-   is a size change like a drag's, so terminals and the browser page follow it.
+   is placed straight on the page, so terminals and the browser page follow it
+   without the whole app re-rendering, and the store hears where it lands.
    Returns false when there was nothing to move, and the caller does it at once. */
 function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): boolean {
     let travel = travels.get(paneId);
@@ -206,6 +217,7 @@ function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): bool
             open: sizes,
             closed: folded(sizes, found.index),
             heading,
+            committed: found.split.sizes,
             from: found.split.sizes,
             last: found.split.sizes,
             begun: 0,
@@ -228,7 +240,7 @@ function travelDesk(paneId: string, heading: DeskHeading, open?: number[]): bool
         heading,
         ms: travel.ms,
         openShare: shareOf(setSplitSizes(root, travel.splitId, travel.open), paneId),
-        currentShare: shareOf(root, paneId),
+        currentShare: shareOf(setSplitSizes(root, travel.splitId, travel.last), paneId),
         appearing: false,
     });
     if (!travel.frame) travel.frame = requestAnimationFrame((now) => stepDesk(paneId, now));
@@ -241,24 +253,35 @@ function stepDesk(paneId: string, now: number): void {
     travel.frame = 0;
     const current = findSplitIn(travel.windowId, travel.splitId);
     /* A divider drag or a removed pane took the split over, so it stays where it was put. */
-    if (!current || current.sizes.length !== travel.last.length || current.sizes.some((size, i) => size !== travel.last[i])) {
-        settle(paneId, travel);
+    if (!current || current.sizes.length !== travel.committed.length || current.sizes.some((size, i) => size !== travel.committed[i])) {
+        settle(paneId, travel, false);
         return;
     }
     const to = travel.heading === "open" ? travel.open : travel.closed;
     const t = Math.min(1, Math.max(0, (now - travel.begun) / travel.ms));
     const eased = 1 - (1 - t) ** 4;
     travel.last = t === 1 ? to : to.map((size, i) => travel.from[i] + (size - travel.from[i]) * eased);
-    setSizes(travel.windowId, travel.splitId, travel.last);
+    paintWindow(travel.windowId, (root) => setSplitSizes(root, travel.splitId, travel.last));
     if (t < 1) {
         travel.frame = requestAnimationFrame((next) => stepDesk(paneId, next));
         return;
     }
-    settle(paneId, travel);
+    settle(paneId, travel, true);
 }
 
-function settle(paneId: string, travel: DeskTravel): void {
+/* React only writes a style it renders differently, so the page is put back in step with the store once a move is over. */
+function paintWindow(windowId: string, sizing: (root: LayoutNode) => LayoutNode = (root) => root): void {
+    const st = getState();
+    const win = st.windows[windowId];
+    if (win) paintLayout(windowId, sizing(win.root), win.activePaneId, st.zoomedPaneId);
+}
+
+function settle(paneId: string, travel: DeskTravel, landed: boolean): void {
     travels.delete(paneId);
+    if (travel.heading === "open") {
+        if (landed) setSizes(travel.windowId, travel.splitId, travel.open);
+        paintWindow(travel.windowId);
+    }
     travel.release();
     announceDeskMotion(paneId, { kind: "settled" });
     if (travel.heading === "closed") removeDeskPane(paneId);
@@ -270,6 +293,7 @@ function shareOf(root: LayoutNode, paneId: string): number {
 }
 
 function foldDesk(paneId: string): void {
+    if (getState().deskAddressOpen === getState().deskPanes[paneId]) closeDeskAddress();
     if (!canAnimate(document.body) || !travelDesk(paneId, "closed")) removeDeskPane(paneId);
 }
 
@@ -327,10 +351,7 @@ export function consumeDeskReveal(agentId: string, seq: number): void {
  * Puts a task terminal on the agent's desk and returns the id its process is
  * bound to. A rerun of the same task comes back to the terminal it had.
  */
-export function openDeskTerminal(
-    agentId: string,
-    request: Pick<TaskTerminalPresentationRequest, "terminalKey" | "label" | "cwd" | "background">,
-): string {
+export function openDeskTerminal(agentId: string, request: Pick<TaskTerminalRequest, "terminalKey" | "label" | "cwd" | "background">): string {
     let id = "";
     mutate((d) => {
         const desk = ensureDesk(d, agentId);
@@ -349,25 +370,44 @@ export function openDeskTerminal(
     return id;
 }
 
-/** Shows the iOS Simulator on the agent's desk; a desk has one, which the person and the agent share. */
-export function openDeskSimulator(agentId: string, opts: { focus?: boolean } = {}): string {
+function agentHasPane(state: Pick<StoreState, "windows">, agentId: string): boolean {
+    return Object.values(state.windows).some((win) => collectPanes(win.root).some((pane) => pane.id === agentId));
+}
+
+/**
+ * Shows the iOS Simulator on the agent's desk; a desk has one, which the person and the agent share.
+ * Without focus it only comes to the front of a desk that shows nothing else.
+ */
+export function openDeskSimulator(agentId: string, opts: { focus?: boolean; device?: DeskSimulatorDevice } = {}): string | null {
+    if (!agentHasPane(getState(), agentId)) return null;
+    const focus = opts.focus ?? true;
     let id = "";
-    openDesk(agentId, { focus: opts.focus ?? true });
+    openDesk(agentId, { focus });
     mutate((d) => {
         const desk = ensureDesk(d, agentId);
+        const showing = shownDeskItem(desk, deskItemsOf(d, agentId));
         let simulator = desk.simulators[0];
         if (!simulator) {
             simulator = { id: newId("desk-simulator"), udid: null, deviceName: null };
             desk.simulators.push(simulator);
             desk.order.push(simulatorKey(simulator.id));
         }
-        desk.active = simulatorKey(simulator.id);
+        if (opts.device) {
+            simulator.udid = opts.device.udid;
+            simulator.deviceName = opts.device.name;
+        }
+        if (focus || showing === null) desk.active = simulatorKey(simulator.id);
         id = simulator.id;
     });
     return id;
 }
 
-export function setDeskSimulatorDevice(agentId: string, id: string, device: { udid: string; name: string } | null): void {
+export interface DeskSimulatorDevice {
+    udid: string;
+    name: string;
+}
+
+export function setDeskSimulatorDevice(agentId: string, id: string, device: DeskSimulatorDevice | null): void {
     mutate((d) => {
         const simulator = d.desks[agentId]?.simulators.find((candidate) => candidate.id === id);
         if (!simulator) return;
@@ -385,7 +425,7 @@ export function showDeskTerminal(agentId: string, id: string): void {
 export function deskTerminalFor(executionId: string): { agentId: string; id: string } | null {
     for (const [agentId, desk] of Object.entries(getState().desks))
         for (const terminal of desk.terminals)
-            if (taskPtyBindings.getSnapshot(terminal.id)?.executionId === executionId) return { agentId, id: terminal.id };
+            if (runShownIn(taskRuns.getSnapshot(), terminal.terminalKey)?.executionId === executionId) return { agentId, id: terminal.id };
     return null;
 }
 
@@ -406,10 +446,10 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
     const items = deskItemsOf(getState(), agentId);
     const desk = getState().desks[agentId] ?? EMPTY_DESK;
     const shown = shownDeskItem(desk, items);
-    const strip = getState().browserStrips[agentId];
-    if (strip && isShown(item, shown, strip)) {
-        const at = items.findIndex((candidate) => candidate.key === item.key);
-        const next = items[at + 1] ?? items[at - 1];
+    if (isShown(item, shown, getState().browserStrips[agentId] ?? EMPTY_STRIP)) {
+        const sameKind = items.filter((candidate) => candidate.kind === item.kind);
+        const at = sameKind.findIndex((candidate) => candidate.key === item.key);
+        const next = sameKind[at + 1] ?? sameKind[at - 1] ?? items.find((candidate) => candidate.key !== item.key);
         if (next) selectDeskItem(agentId, next);
     }
     if (item.kind === "browser") {
@@ -432,7 +472,6 @@ export function closeDeskItem(agentId: string, item: DeskItem): void {
         });
         return;
     }
-    taskPtyBindings.release(item.terminal.id);
     mutate((d) => {
         const current = d.desks[agentId];
         if (!current) return;
@@ -451,11 +490,13 @@ export function closeShownDeskTab(agentId: string): boolean {
     return !!item;
 }
 
+/** Moves along the tabs of the kind on show; the other kinds are a switch away. */
 export function cycleDeskTab(agentId: string, delta: number): void {
     const state = getState();
-    const items = deskItemsOf(state, agentId);
+    const everything = deskItemsOf(state, agentId);
+    const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, everything);
+    const items = everything.filter((item) => item.kind === shownKind(shown));
     if (items.length < 2) return;
-    const shown = shownDeskItem(state.desks[agentId] ?? EMPTY_DESK, items);
     const current = Math.max(
         0,
         items.findIndex((item) => isShown(item, shown, state.browserStrips[agentId] ?? EMPTY_STRIP)),

@@ -1,6 +1,7 @@
-import { createContext, memo, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Markdown as MarkdownText, MARKDOWN_GFM, type MarkdownComponents } from "../markdown/Markdown";
 import { openUrl, swallow } from "./host";
+import { showImage } from "../state/imageViewer";
 import "./prose.css";
 
 /** Turns a picture's address into one the window may show, such as a `data:` address. */
@@ -46,9 +47,22 @@ function ProseImage({ src, alt, title, inLink }: { src: string; alt: string; tit
         };
     }, [load, src]);
 
-    if (loaded?.src === src) return <img src={loaded.url} alt={alt} title={title} />;
-    const label = alt || src;
-    return inLink ? <>{label}</> : <ProseLink href={src}>{label}</ProseLink>;
+    if (loaded?.src === src) {
+        if (inLink) return <img src={loaded.url} alt={alt} title={title} />;
+        return (
+            <button
+                type="button"
+                className="prose-image"
+                aria-label={alt ? `Open ${alt}` : "Open the picture"}
+                onClick={() => showImage({ src: loaded.url, name: alt || src.split("/").pop() || "picture" })}>
+                <img src={loaded.url} alt={alt} title={title} />
+            </button>
+        );
+    }
+    // A picture with no description, such as a logo beside a name, adds nothing until it arrives; spelling out its
+    // address would push the words around it aside.
+    if (!alt) return null;
+    return inLink ? <>{alt}</> : <ProseLink href={src}>{alt}</ProseLink>;
 }
 
 const COMPONENTS: MarkdownComponents = { link: ProseLink };
@@ -66,19 +80,20 @@ export const Markdown = memo(function Markdown({
     children,
     className = "prose",
     loadImage,
+    taskBox,
 }: {
     children: string;
     className?: string;
     loadImage?: ProseImageLoader;
+    /** Draws a task list item's box, for prose whose tasks can be ticked. */
+    taskBox?: ComponentType<{ checked: boolean }>;
 }) {
+    const base = loadImage ? WITH_IMAGES : COMPONENTS;
+    const components = useMemo(() => (taskBox ? { ...base, taskBox } : base), [base, taskBox]);
     return (
         <div className={className}>
             <ImageLoaderContext.Provider value={loadImage ?? null}>
-                <MarkdownText
-                    text={children}
-                    options={loadImage ? WITH_HTML_IMAGES : MARKDOWN_GFM}
-                    components={loadImage ? WITH_IMAGES : COMPONENTS}
-                />
+                <MarkdownText text={children} options={loadImage ? WITH_HTML_IMAGES : MARKDOWN_GFM} components={components} />
             </ImageLoaderContext.Provider>
         </div>
     );

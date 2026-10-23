@@ -11,73 +11,7 @@
 // (US-QWERTY hardware key codes) so the keystroke is delivered to the right
 // process regardless of focus races + keyboard layout.
 
-use crate::bounded_process::run as run_bounded;
 use crate::error::{AppError, AppResult};
-use std::collections::HashMap;
-use std::time::Duration;
-
-const BACKGROUND_TIMEOUT: Duration = Duration::from_secs(120);
-const BACKGROUND_OUTPUT_LIMIT: usize = 16_000;
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackgroundCommandResult {
-    code: i32,
-    output: String,
-}
-
-#[tauri::command]
-pub async fn run_background_command(
-    command: String,
-    cwd: Option<String>,
-    env: HashMap<String, String>,
-) -> AppResult<BackgroundCommandResult> {
-    if command.trim().is_empty() || command.len() > 8_000 {
-        return Err(AppError::BadArg(
-            "background command must be 1..8000 characters",
-        ));
-    }
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        let mut process = if cfg!(windows) {
-            let mut child = sikemux_process::user_environment::command("powershell.exe");
-            child.args(["-NoLogo", "-NonInteractive", "-Command", &command]);
-            child
-        } else {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            let mut child = sikemux_process::user_environment::command(shell);
-            child.args(["-lc", &command]);
-            child
-        };
-        if let Some(cwd) = cwd.filter(|value| !value.is_empty()) {
-            process.current_dir(cwd);
-        }
-        for (key, value) in env {
-            if key.starts_with("SIKEMUX_")
-                && key
-                    .bytes()
-                    .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
-            {
-                process.env(key, value);
-            }
-        }
-        run_bounded(
-            &mut process,
-            None,
-            BACKGROUND_TIMEOUT,
-            BACKGROUND_OUTPUT_LIMIT,
-            None,
-        )
-    })
-    .await
-    .map_err(|error| AppError::Other(format!("background command join failed: {error}")))?
-    .map_err(|error| AppError::Other(format!("background command failed: {error}")))?;
-    let mut bytes = output.stdout;
-    bytes.extend(output.stderr);
-    Ok(BackgroundCommandResult {
-        code: output.status.code().unwrap_or(-1),
-        output: String::from_utf8_lossy(&bytes).into_owned(),
-    })
-}
 
 fn validate_external_url(raw: &str) -> AppResult<()> {
     let url = url::Url::parse(raw).map_err(|_| AppError::BadArg("invalid external URL"))?;
@@ -102,14 +36,14 @@ pub async fn open_url(url: String, app: Option<String>, shortcut: Option<String>
         {
             if let Some(app_name) = app.as_deref() {
                 run_focus(app_name, shortcut.as_deref());
-                sikemux_process::user_environment::command("open")
+                sikemux_process::user_environment::command("/usr/bin/open")
                     .arg("-a")
                     .arg(app_name)
                     .arg(&url)
                     .status()?;
                 return Ok(());
             }
-            sikemux_process::user_environment::command("open")
+            sikemux_process::user_environment::command("/usr/bin/open")
                 .arg(&url)
                 .status()?;
         }
@@ -146,7 +80,7 @@ pub async fn macos_focus_app(app: String, shortcut: Option<String>) -> AppResult
 #[cfg(target_os = "macos")]
 fn run_focus(app_name: &str, shortcut: Option<&str>) {
     let script = build_activate_and_switch(app_name, shortcut);
-    let _ = sikemux_process::user_environment::command("osascript")
+    let _ = sikemux_process::user_environment::command("/usr/bin/osascript")
         .arg("-e")
         .arg(&script)
         .status();

@@ -3,7 +3,7 @@ import type { RundeckJob } from "../api";
 import { IconCommand, IconSearch, rankBy, useMouseActive } from "../../../plugin-api/ui";
 import * as cmd from "../state";
 import { useResource } from "../../../plugin-api/resources";
-import { rndJobIndexR } from "../resources";
+import { rndJobIndexR, useProdEnvs } from "../resources";
 import { groupSegments, targetTone } from "../shape";
 import { RUNDECK_DEPLOY } from "../kinds";
 import { useActiveProjectCwd, useActiveSurfacePane } from "../../../plugin-api/host";
@@ -14,7 +14,7 @@ const MAX_RESULTS = 400;
 export function RundeckJobPalette() {
     const paneId = useActiveSurfacePane(RUNDECK_DEPLOY);
     const activeCwd = useActiveProjectCwd();
-    const prodEnvs = cmd.rundeckSettings.useSelect((s) => s.prodEnvs);
+    const prodEnvs = useProdEnvs();
 
     const [query, setQuery] = useState("");
     const [sel, setSel] = useState(0);

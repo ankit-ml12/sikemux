@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { AccountEvent, LiveServerMessage, RevokeReason } from '@protocol';
 
-import { afterByeDelay, LiveAccount, liveUrl, readEvents, reconnectDelay, type LiveDeps, type SocketHandlers } from './live';
+import { afterByeDelay, liveUrl, reconnectDelay, type SocketHandlers } from '@protocol/live';
+
+import { LiveAccount, readEvents, type LiveDeps } from './live';
 
 const OWN = 'aa'.repeat(32);
 const HOST = 'bb'.repeat(32);
@@ -75,6 +77,7 @@ beforeEach(() => {
       },
     },
     hostsChanged: vi.fn<() => void>(),
+    deviceAdded: vi.fn<(key: string) => void>(),
     gone: vi.fn<(reason: RevokeReason) => void>(),
     random: () => 0.5,
   };
@@ -275,7 +278,7 @@ describe('reconnecting', () => {
     const live = new LiveAccount(deps);
     live.start();
     latest().serverCloses(4429);
-    await vi.advanceTimersByTimeAsync(23_999);
+    await vi.advanceTimersByTimeAsync(29_999);
     expect(sockets).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(sockets).toHaveLength(2);
@@ -311,6 +314,26 @@ describe('reconnecting', () => {
     live.start();
     expect(sockets).toHaveLength(2);
   });
+
+  it('tries again at once when nudged while waiting, and leaves a working connection alone', async () => {
+    const live = new LiveAccount(deps);
+    await connected(live);
+    live.nudge();
+    expect(sockets).toHaveLength(1);
+    latest().serverCloses(1006);
+    live.nudge();
+    expect(sockets).toHaveLength(2);
+    live.stop();
+    live.nudge();
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('says when the server took the hello, each time it does', async () => {
+    const ready = vi.fn();
+    const live = new LiveAccount({ ...deps, ready });
+    await connected(live);
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('readEvents', () => {
@@ -318,11 +341,11 @@ describe('readEvents', () => {
     const read = readEvents(
       [
         event(6, 'device.revoked', { key: OWN, role: 'client', reason: 'signed_out' }),
-        event(5, 'device.added', { key: HOST, role: 'host' }),
+        event(5, 'device.added', { key: HOST, role: 'host', at: new Date().toISOString() }),
       ],
       OWN,
       4,
     );
-    expect(read).toEqual({ newest: 6, handled: 6, hostsChanged: true, gone: 'signed_out' });
+    expect(read).toEqual({ newest: 6, handled: 6, hostsChanged: true, added: [HOST], gone: 'signed_out' });
   });
 });

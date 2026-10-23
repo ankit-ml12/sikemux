@@ -2,16 +2,20 @@ import { useMemo, useState } from "react";
 import { confirmDialog, openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
 import { IconCheck, IconClock, IconClose, IconExternal, IconFetch, IconGit, IconStop, IconTimer, IconUser } from "../../../plugin-api/ui";
-import { errorMessage, rundeckApi, type RundeckStep } from "../api";
+import { errorText, formatDuration } from "../../../plugin-api/format";
+import { rundeckApi, type RundeckStep } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndJobDetailR } from "../resources";
+import { rndExecutionsR, rndJobDetailR, useBranchOptions } from "../resources";
+import { useWatchingRun, watchRun } from "../runWatch";
 import { branchOf, displayStatus, duration, formatTime, isLiveStatus } from "../shape";
 import { executionProgress } from "./executionProgress";
-import { useNow } from "./hooks";
+import { statusKind } from "./branchStyle";
+import { useNow } from "../../../plugin-api/hooks";
 import { reusableOptions } from "./options";
 import { RundeckLogView } from "./RundeckLogView";
 import { useExecutionStreams } from "./useExecutionStreams";
+import { usualSeconds } from "./runStats";
 import { FolderChip, Header, Status, levelCrumbs } from "./parts";
 
 interface Props {
@@ -34,7 +38,8 @@ const STEP_STATE: Record<string, { cls: "pending" | "running" | "ok" | "fail" | 
 export function RundeckExecution({ paneId, level, active }: Props) {
     const { execution, state, terminal, watchErr, logs } = useExecutionStreams(level.executionId, active);
     const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const history = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 30);
+    const branchOptions = useBranchOptions();
     const [stepFilter, setStepFilter] = useState<string | null>(null);
     const [aborting, setAborting] = useState(false);
     const [abortErr, setAbortErr] = useState<string | null>(null);
@@ -42,6 +47,8 @@ export function RundeckExecution({ paneId, level, active }: Props) {
     const rawStatus = execution?.status ?? state?.executionState ?? null;
     const status = displayStatus(rawStatus, execution?.customStatus);
     const live = isLiveStatus(rawStatus);
+    const watching = useWatchingRun(level.executionId);
+    const notifyWhenDone = cmd.rundeckSettings.useSelect((s) => s.notifyWhenDone);
     const now = useNow(live);
     const options = execution?.job?.options ?? null;
     const branch = branchOf(options, branchOptions);
@@ -69,7 +76,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             const result = await rundeckApi.abort(level.executionId);
             if (result.abort?.status === "failed") setAbortErr(`Rundeck refused to abort: ${result.abort.reason ?? "no reason given"}`);
         } catch (e) {
-            setAbortErr(errorMessage(e));
+            setAbortErr(errorText(e));
         } finally {
             setAborting(false);
         }
@@ -84,6 +91,9 @@ export function RundeckExecution({ paneId, level, active }: Props) {
 
     const runWord = branch ? "Deploy" : "Run";
     const doneSteps = progress?.completed ?? 0;
+    const usual = useMemo(() => usualSeconds(history.data ?? [], Date.now()), [history.data]);
+    const elapsed = started ? Math.max(0, (now - Date.parse(started)) / 1000) : null;
+    const left = live && usual !== null && elapsed !== null ? usual - elapsed : null;
 
     return (
         <div className="rnd-main">
@@ -114,6 +124,16 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                             <IconFetch size={13} />
                             {runWord} again
                         </button>
+                        {live && notifyWhenDone && (
+                            <button
+                                className="rnd-btn"
+                                disabled={watching}
+                                title={watching ? "Sikemux will tell you when this run ends" : "Get a notification when this run ends"}
+                                onClick={() => watchRun(cmd.jobRefOf(level), level.executionId)}>
+                                <IconClock size={12} />
+                                {watching ? "Will notify" : "Notify me"}
+                            </button>
+                        )}
                         {live && (
                             <button className="rnd-btn danger" disabled={aborting} onClick={() => void abort()}>
                                 <IconStop size={11} />
@@ -137,6 +157,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
             <div className="rnd-exec-top">
                 {steps.length > 0 && (
                     <div className="rnd-progress">
+                        <span className={`rnd-progress-pct ${statusKind(rawStatus)}`}>{progress ? `${progress.percent}%` : "—"}</span>
                         <div
                             className="rnd-progress-track"
                             role="progressbar"
@@ -148,7 +169,17 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                                 <i key={stepKey(step, i)} className={stepUi(step).cls} />
                             ))}
                         </div>
-                        <span className="rnd-progress-copy">{progress ? `${progress.completed} of ${progress.total} steps` : "Syncing steps"}</span>
+                        <span className="rnd-progress-copy">
+                            {progress ? `${progress.completed} of ${progress.total} steps` : "Syncing steps"}
+                            {left !== null && (left > 0 ? ` · about ${formatDuration(left * 1000)} left` : " · taking longer than usual")}
+                        </span>
+                        <div className="rnd-progress-labels" aria-hidden="true">
+                            {steps.map((step, i) => (
+                                <span key={stepKey(step, i)} className={stepUi(step).cls === "running" ? "on" : undefined}>
+                                    {stepLabel(i)}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 )}
                 <div className="rnd-metas">

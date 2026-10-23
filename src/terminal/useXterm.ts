@@ -6,7 +6,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import { invokeCommand as invoke } from "../api/invoke";
-import { currentTerminalTheme, registerTerminal } from "../themes/bus";
+import { currentTerminalTheme, refreshTerminalTheme, registerTerminal } from "../themes/bus";
 import { currentTerminalFontSize, registerTerminalFontSize } from "./fontSize";
 import { IS_MACOS } from "../lib/platform";
 import {
@@ -21,13 +21,19 @@ import { alternateScreenWheelFallbackSequence } from "./wheelNavigation";
 import { needsTerminalRedraw } from "./redraw";
 import { terminalWebglRequested, type TerminalRenderer } from "./renderer";
 import { cellWidthCorrection, lineHeightCorrection, measureChar } from "./cellMetrics";
-import { isTerminalFindShortcut, safeWebUrl, sanitizeTerminalTitle, terminalBufferText, type TerminalSearchOptions } from "./interactions";
+import { safeWebUrl } from "../lib/urls";
+import { isTerminalFindShortcut, terminalBufferText, type TerminalSearchOptions } from "./interactions";
+import { screenRows } from "./promptDraft";
+import { registerScreen } from "../state/terminalScreens";
 import { scheduleNextFrame } from "../lib/instrumentation";
+import { stageMoving, whenStageStill } from "../state/nativeViews";
 import { performanceTelemetry } from "../lib/performance";
 import type { PtyAttachment, PtyOutputChunk, PtyShellMetadataSnapshot } from "./ptyController";
 import { RendererRestartBackoff } from "./restartBackoff";
 import { copyText, readClipboardText } from "../lib/clipboard";
 import type { NativePtyController } from "./usePty";
+import { swallow } from "../state/toast";
+import { openUrl } from "../api/system";
 
 const FONT = '"JetBrainsMono NF", "JetBrainsMono Nerd Font", monospace';
 const FONT_SIZE = 13;
@@ -38,6 +44,41 @@ const MAX_RENDERER_BACKLOG_BYTES = 8 * 1024 * 1024;
 const MAX_RENDERER_BACKLOG_CHUNKS = 512;
 const RENDERER_STABLE_RESET_MS = 5_000;
 const WEBGL_REQUESTED = terminalWebglRequested(import.meta.env.VITE_TERMINAL_WEBGL);
+
+/*
+ * Starting a terminal lays out the page and draws every row, and a screen that
+ * comes on stage starts all of its terminals at once. Doing that while the
+ * screen slides in froze the slide, so they start once the stage stops, one a
+ * frame, the focused one first.
+ */
+const waitingToStart: Array<() => void> = [];
+let startFrame = 0;
+
+function startNext(): void {
+    startFrame = 0;
+    waitingToStart.shift()?.();
+    if (waitingToStart.length > 0) startFrame = requestAnimationFrame(startNext);
+}
+
+function startInTurn(start: () => void, first: boolean): () => void {
+    let queued = false;
+    const stopWaiting = whenStageStill(() => {
+        queued = true;
+        if (first) waitingToStart.unshift(start);
+        else waitingToStart.push(start);
+        if (!startFrame) startFrame = requestAnimationFrame(startNext);
+    });
+    return () => {
+        stopWaiting();
+        if (!queued) return;
+        const at = waitingToStart.indexOf(start);
+        if (at >= 0) waitingToStart.splice(at, 1);
+        if (waitingToStart.length === 0 && startFrame) {
+            cancelAnimationFrame(startFrame);
+            startFrame = 0;
+        }
+    };
+}
 
 function settlePtyOperation(operation: Promise<unknown>): void {
     // PtyLifecycleController records the operation failure. Renderer event
@@ -84,7 +125,7 @@ function openTerminalLink(event: MouseEvent, uri: string) {
     event.preventDefault();
     const url = safeWebUrl(uri);
     if (!url) return;
-    void invoke("open_url", { url, app: null, shortcut: null }).catch((error) => console.warn("open terminal link failed", error));
+    void openUrl(url).catch((error) => console.warn("open terminal link failed", error));
 }
 
 export function useXterm(opts: {
@@ -95,7 +136,6 @@ export function useXterm(opts: {
     visible: boolean;
     onFindRequest?: (seed: string) => void;
     onSearchResults?: (result: ISearchResultChangeEvent) => void;
-    onTitleChange?: (title: string) => void;
     onShellMetadata?: (metadata: PtyShellMetadataSnapshot | null) => void;
     onExit?: () => void;
 }): TerminalController {
@@ -104,8 +144,6 @@ export function useXterm(opts: {
     onFindRequestRef.current = opts.onFindRequest;
     const onSearchResultsRef = useRef(opts.onSearchResults);
     onSearchResultsRef.current = opts.onSearchResults;
-    const onTitleChangeRef = useRef(opts.onTitleChange);
-    onTitleChangeRef.current = opts.onTitleChange;
     const onShellMetadataRef = useRef(opts.onShellMetadata);
     onShellMetadataRef.current = opts.onShellMetadata;
     const onExitRef = useRef(opts.onExit);
@@ -179,11 +217,13 @@ export function useXterm(opts: {
     useEffect(() => {
         if (!shouldMount) return;
         const host = hostRef.current!;
+        const unregisterScreen = registerScreen(host, () => (targetRef.current ? screenRows(targetRef.current.term) : []));
         let disposed = false;
         let cleanup = () => {};
         let restartTimer: number | null = null;
         let stableTimer: number | null = null;
         const restartBackoff = new RendererRestartBackoff();
+        let startNow = () => {};
 
         const scheduleRendererRestart = () => {
             if (disposed || restartTimer !== null) return;
@@ -195,7 +235,8 @@ export function useXterm(opts: {
             restartTimer = window.setTimeout(() => {
                 restartTimer = null;
                 delete host.dataset.terminalOutput;
-                bootRef.current();
+                // A hidden terminal flooding past its backlog would otherwise boot, flood and restart again off screen; showing it boots it.
+                if (visibleRef.current) startNow();
             }, decision.delayMs);
         };
 
@@ -282,7 +323,7 @@ export function useXterm(opts: {
             cleanup = disposeResources;
 
             try {
-                const unregisterTheme = registerTerminal(term);
+                const unregisterTheme = registerTerminal(term, () => visibleRef.current);
                 resourceDisposers.push(unregisterTheme);
                 const fit = new FitAddon();
                 const search = new SearchAddon();
@@ -296,14 +337,6 @@ export function useXterm(opts: {
                 targetRef.current = { term, search };
                 const searchResultsSub = search.onDidChangeResults((result) => onSearchResultsRef.current?.(result));
                 resourceDisposers.push(() => searchResultsSub.dispose());
-                let lastTitle: string | null = null;
-                const titleSub = term.onTitleChange((raw) => {
-                    const title = sanitizeTerminalTitle(raw);
-                    if (!title || title === lastTitle) return;
-                    lastTitle = title;
-                    onTitleChangeRef.current?.(title);
-                });
-                resourceDisposers.push(() => titleSub.dispose());
                 let renderer: TerminalRenderer = "dom";
                 let webgl: WebglAddon | null = null;
                 let contextLossSub: { dispose(): void } | null = null;
@@ -643,6 +676,14 @@ export function useXterm(opts: {
                 let resizeFrame: number | null = null;
                 let lastCols = term.cols;
                 let lastRows = term.rows;
+                let stopWaitingForStill: (() => void) | null = null;
+                const sendSize = () => {
+                    stopWaitingForStill = null;
+                    if (term.cols === lastCols && term.rows === lastRows) return;
+                    lastCols = term.cols;
+                    lastRows = term.rows;
+                    settlePtyOperation(pty.resize(term.cols, term.rows));
+                };
                 const resizeNow = () => {
                     resizeFrame = null;
                     if (host.clientWidth === 0 || host.clientHeight === 0) return;
@@ -650,10 +691,10 @@ export function useXterm(opts: {
                     applyCellCorrection();
                     fit.fit();
                     if (stickToBottom) term.scrollToBottom();
-                    if (term.cols === lastCols && term.rows === lastRows) return;
-                    lastCols = term.cols;
-                    lastRows = term.rows;
-                    settlePtyOperation(pty.resize(term.cols, term.rows));
+                    /* A program redraws its whole screen on every resize, so a rail or desk
+                       sliding past tells it the size once, where the slide lands. */
+                    if (stageMoving()) stopWaitingForStill ??= whenStageStill(sendSize);
+                    else sendSize();
                 };
                 const resize = () => {
                     if (resizeFrame != null) return;
@@ -689,6 +730,7 @@ export function useXterm(opts: {
                     if (outputFrame != null) window.cancelAnimationFrame(outputFrame);
                     outputFrame = null;
                     if (resizeFrame != null) window.cancelAnimationFrame(resizeFrame);
+                    stopWaitingForStill?.();
                     outputPendingBytes = 0;
                     pendingChannelBytes = 0;
                     outputQueuedAt = null;
@@ -717,43 +759,54 @@ export function useXterm(opts: {
                     void Promise.all([
                         document.fonts.load(`italic ${FONT_WEIGHT} ${FONT_SIZE}px "JetBrainsMono NF"`),
                         document.fonts.load(`italic ${FONT_WEIGHT_BOLD} ${FONT_SIZE}px "JetBrainsMono NF"`),
-                    ]).catch(() => {});
+                    ]).catch(swallow("load italic fonts"));
                 }, 0);
             }, boot);
-        bootRef.current = fontsThenBoot;
+        let stopWaitingToStart: (() => void) | null = null;
+        const startWhenStill = () => {
+            if (disposed || termRef.current || bootingRef.current || stopWaitingToStart) return;
+            stopWaitingToStart = startInTurn(() => {
+                stopWaitingToStart = null;
+                fontsThenBoot();
+            }, activeRef.current);
+        };
+        bootRef.current = startWhenStill;
+        startNow = fontsThenBoot;
 
-        fontsThenBoot();
+        startWhenStill();
 
         return () => {
             disposed = true;
+            stopWaitingToStart?.();
             bootRef.current = () => {};
             if (restartTimer !== null) window.clearTimeout(restartTimer);
             if (stableTimer !== null) window.clearTimeout(stableTimer);
             restartTimer = null;
             stableTimer = null;
             delete host.dataset.terminalOutput;
+            unregisterScreen();
             cleanup();
         };
     }, [shouldMount, hostRef, ptyController]);
 
+    // A screen sliding in keeps its size, so its terminal measures itself once the slide lands rather than in the middle of it.
     useEffect(() => {
         if (!visible) return;
         if (termRef.current) {
+            refreshTerminalTheme(termRef.current);
             scheduleOutputRef.current();
-            window.requestAnimationFrame(resizeRef.current);
-        } else if (shouldMount) {
-            bootRef.current();
+            return whenStageStill(() => resizeRef.current());
         }
+        if (shouldMount) bootRef.current();
     }, [visible, shouldMount]);
 
     useEffect(() => {
         if (!active) return;
         if (termRef.current) {
-            window.requestAnimationFrame(resizeRef.current);
             termRef.current.focus();
-        } else if (shouldMount) {
-            bootRef.current();
+            return whenStageStill(() => resizeRef.current());
         }
+        if (shouldMount) bootRef.current();
     }, [active, shouldMount]);
 
     return controllerRef.current!;

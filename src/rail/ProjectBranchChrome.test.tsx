@@ -34,7 +34,7 @@ vi.mock("../state/resources", async (importOriginal) => {
 });
 
 vi.mock("../hooks/useBattery", () => ({ useBattery: () => null }));
-vi.mock("../hooks/useClock", () => ({ useClock: () => new Date("2026-08-07T12:00:00") }));
+vi.mock("../hooks/useNow", () => ({ useNow: () => new Date("2026-08-07T12:00:00").getTime() }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("test") }));
 
 const initial = getState();
@@ -61,7 +61,7 @@ beforeEach(() => {
             [sessionId]: { ...state.sessions[sessionId], kind: "project", cwd: "/repo", activeWindowId: "window-term" },
         },
         ...withAgents({ windows, windowsBySession: { [sessionId]: roles.map((role) => `window-${role}`) }, agents: {} }, sessionId, [
-            { id: "agent-only", type: "codex", title: "agent", startup: "codex", launchState: "live" },
+            { id: "agent-only", type: "codex", title: "agent", launchState: "live" },
         ]),
     });
 });

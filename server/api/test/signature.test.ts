@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import hostRequest from "../../protocol/vectors/host-request.json" with { type: "json" };
 import live from "../../protocol/vectors/live.json" with { type: "json" };
 import vector from "../../protocol/vectors/registration.json" with { type: "json" };
 import {
+  hostRequestMessage,
   liveMessage,
   registrationMessage,
   signedBy,
@@ -67,5 +69,20 @@ describe("live connection signatures", () => {
         live.signature,
       ),
     ).toBe(false);
+  });
+});
+
+describe("host request signatures", () => {
+  it("verify the vector the core signs", () => {
+    const message = hostRequestMessage(
+      hostRequest.method,
+      hostRequest.path,
+      String(hostRequest.time),
+      new TextEncoder().encode(hostRequest.body),
+    );
+    expect(message).toBe(hostRequest.message);
+    expect(signedBy(hostRequest.key, message, hostRequest.signature)).toBe(
+      true,
+    );
   });
 });

@@ -9,7 +9,7 @@ struct Composer: View {
     @FocusState private var focused: Bool
 
     private var config: LauncherConfig { LauncherConfig(store.launcher(for: island.provider)) }
-    private var project: Project? { island.project ?? store.defaultProject }
+    private var project: ProjectInfo? { island.project ?? store.defaultProject }
 
     private var modelLabel: String {
         guard let model = config.model else { return "Default model" }
@@ -169,7 +169,7 @@ struct Composer: View {
             island.draft = ""
             island.attachments = []
             island.menu = nil
-            island.tab = .agents
+            island.tab = .inbox
             island.keyboard?(.give)
         }
     }

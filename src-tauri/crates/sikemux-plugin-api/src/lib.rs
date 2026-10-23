@@ -2,9 +2,21 @@
 //! this crate: every exchange with the host is a method name and JSON, so the
 //! same plugin can later run in its own process without changing.
 
+pub mod account;
+pub mod codehost;
 mod error;
+pub mod http;
+pub mod images;
 mod manifest;
+pub mod network;
+pub mod oauth;
+pub mod ratelimit;
+pub mod service;
+pub mod signin;
+pub mod store;
+pub mod watch;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -14,6 +26,9 @@ use serde_json::Value;
 
 pub use error::{PluginError, PluginResult};
 pub use manifest::{is_valid_id, AgentTool, Manifest};
+pub use network::{unreachable, Unreachable};
+pub use service::{Service, ServiceError, ServiceResult};
+pub use signin::SignInStatus;
 
 pub type PluginFuture<'a, T> = Pin<Box<dyn Future<Output = PluginResult<T>> + Send + 'a>>;
 
@@ -48,6 +63,13 @@ pub trait Plugin: Send + Sync {
         _remotes: &'a [String],
     ) -> PluginFuture<'a, bool> {
         Box::pin(async { Ok(true) })
+    }
+
+    /// Variables every agent and terminal started in `project` gets, unless
+    /// its launch sets them already. Asked as each one starts, so it must
+    /// answer at once.
+    fn agent_environment(&self, _ctx: &PluginContext, _project: &Path) -> BTreeMap<String, String> {
+        BTreeMap::new()
     }
 
     fn diagnostics(&self) -> Value {
@@ -94,4 +116,11 @@ pub fn params<T: DeserializeOwned>(params: Value) -> PluginResult<T> {
 
 pub fn reply<T: serde::Serialize>(value: T) -> PluginResult<Value> {
     serde_json::to_value(value).map_err(|error| PluginError::new("internal", error.to_string()))
+}
+
+/// Waits for a call's work and hands back what it found as JSON.
+pub async fn answer<T: serde::Serialize, E: Into<PluginError>>(
+    work: impl Future<Output = Result<T, E>>,
+) -> PluginResult<Value> {
+    reply(work.await.map_err(Into::into)?)
 }

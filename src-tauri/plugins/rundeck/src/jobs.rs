@@ -3,13 +3,13 @@
 
 use std::time::Duration;
 
-use futures::StreamExt;
 use serde::Serialize;
 use serde_json::{Map, Value};
+use sikemux_plugin_api::http::{self, Deadline, Redirects};
 
-use crate::error::{RundeckError, RundeckResult};
+use crate::error::{Rundeck, RundeckError, RundeckResult};
 
-use crate::client::{get_json, get_json_at_version, seg, JOB_DEFINITION_API_VERSION};
+use crate::client::{get_json, get_json_at_version, seg, Session, JOB_DEFINITION_API_VERSION};
 use crate::config;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -187,9 +187,10 @@ fn parse_job_detail(definition: &Value) -> RundeckResult<JobDetail> {
     })
 }
 
-pub async fn job_detail(job_id: String) -> RundeckResult<JobDetail> {
+pub async fn job_detail(session: &Session, job_id: String) -> RundeckResult<JobDetail> {
     let id = seg(&job_id)?;
     let definition: Value = get_json_at_version(
+        session,
         JOB_DEFINITION_API_VERSION,
         &format!("/job/{id}"),
         &[("format", "json".into())],
@@ -200,10 +201,34 @@ pub async fn job_detail(job_id: String) -> RundeckResult<JobDetail> {
         detail.id = job_id;
     }
     if detail.project.is_empty() {
-        let info: Value = get_json(&format!("/job/{id}/info"), &[]).await?;
+        let info: Value = get_json(session, &format!("/job/{id}/info"), &[]).await?;
         detail.project = text(&info, "project").unwrap_or_default();
     }
     Ok(detail)
+}
+
+/// Every job in the project with its definition, in one request.
+pub async fn definitions(session: &Session, project: &str) -> RundeckResult<Vec<JobDetail>> {
+    let definitions: Value = get_json_at_version(
+        session,
+        JOB_DEFINITION_API_VERSION,
+        &format!("/project/{}/jobs/export", seg(project)?),
+        &[("format", "json".into())],
+    )
+    .await?;
+    let Value::Array(items) = definitions else {
+        return Ok(Vec::new());
+    };
+    Ok(items
+        .iter()
+        .filter_map(|item| parse_job_detail(item).ok())
+        .map(|mut detail| {
+            if detail.project.is_empty() {
+                detail.project = project.to_string();
+            }
+            detail
+        })
+        .collect())
 }
 
 // ---- remote option values -------------------------------------------------
@@ -266,10 +291,11 @@ fn object_pairs(map: &Map<String, Value>) -> Vec<OptionValue> {
 pub async fn option_values(url: String) -> RundeckResult<Vec<OptionValue>> {
     let transport = config::validate_transport(&url, true).await?;
     let client = transport
-        .pin_dns(reqwest::Client::builder())
+        .pin_dns(http::builder::<Rundeck>(
+            Redirects::Refuse,
+            Deadline::WholeAnswer,
+        ))
         .timeout(OPTION_VALUES_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent("sikemux-rundeck/0.1")
         .build()?;
     let resp = client
         .get(&url)
@@ -283,21 +309,7 @@ pub async fn option_values(url: String) -> RundeckResult<Vec<OptionValue>> {
             message: format!("option values URL answered {status}"),
         });
     }
-    if resp
-        .content_length()
-        .is_some_and(|size| size > MAX_OPTION_VALUES_BYTES as u64)
-    {
-        return Err(RundeckError::Api("option values exceed 1 MiB".into()));
-    }
-    let mut stream = resp.bytes_stream();
-    let mut bytes = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        if bytes.len() + chunk.len() > MAX_OPTION_VALUES_BYTES {
-            return Err(RundeckError::Api("option values exceed 1 MiB".into()));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = http::read_body(resp, MAX_OPTION_VALUES_BYTES).await?;
     let body: Value = serde_json::from_slice(&bytes)
         .map_err(|_| RundeckError::Api("option values URL did not return JSON".into()))?;
     parse_option_values(&body)

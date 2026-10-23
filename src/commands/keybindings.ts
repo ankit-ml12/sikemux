@@ -119,6 +119,13 @@ const coreKeybindingActions = [
         defaultBinding: on("Meta+Digit0", "Ctrl+Digit0"),
     },
     {
+        id: "theme.switch",
+        label: "Switch theme",
+        detail: "Preview each theme as you move through them, Enter keeps one",
+        category: "Workspace",
+        defaultBinding: null,
+    },
+    {
         id: "agent.new",
         label: "New agent",
         detail: "Start the agent you launched last in this project, ready to type to",
@@ -149,14 +156,14 @@ const coreKeybindingActions = [
     {
         id: "terminal.new",
         label: "New terminal",
-        detail: "A shell tab in this project, another login on this host, or a new command session",
+        detail: "A terminal tab in this project, another login on this host, or a new terminal under Terminals",
         category: "Panes",
         defaultBinding: on("Meta+KeyT", "Ctrl+Shift+KeyT"),
     },
     {
         id: "session.command",
-        label: "Focus command session",
-        detail: "Jump to the command terminal",
+        label: "Focus Terminals",
+        detail: "Jump to the terminal under Terminals",
         category: "Panes",
         defaultBinding: on("Meta+Ctrl+KeyT", "Ctrl+Alt+Shift+KeyT"),
     },
@@ -322,7 +329,7 @@ const coreKeybindingActions = [
         label: "Focus files",
         detail: "Jump to the files window",
         category: "Navigation",
-        defaultBinding: on("Meta+Alt+Digit1", "Ctrl+Alt+Digit1"),
+        defaultBinding: on("Meta+KeyE", "Ctrl+Alt+KeyE"),
     },
     {
         id: "window.terminal",
@@ -351,6 +358,13 @@ const coreKeybindingActions = [
         detail: "Jump to the search window",
         category: "Navigation",
         defaultBinding: on("Meta+Alt+Digit5", "Ctrl+Alt+Digit5"),
+    },
+    {
+        id: "window.board",
+        label: "Focus agent board",
+        detail: "Jump to the cards the project's agents work from",
+        category: "Navigation",
+        defaultBinding: on("Meta+Alt+Digit6", "Ctrl+Alt+Digit6"),
     },
     {
         id: "browser.tabNew",
@@ -569,17 +583,28 @@ export function findKeybindingConflict(overrides: KeybindingOverrides, id: Keybi
     );
 }
 
+export const ENTER_GLYPH = "↵";
+
+const MODIFIER_GLYPHS: Record<KeybindingModifier, string> = { Meta: "⌘", Ctrl: "⌃", Alt: "⌥", Shift: "⇧" };
+
+export type KeybindingModifier = "Meta" | "Ctrl" | "Alt" | "Shift";
+
+/** A modifier as shortcuts show it: the Mac's glyph, or its name elsewhere. */
+export function modifierGlyph(modifier: KeybindingModifier): string {
+    return IS_MACOS ? MODIFIER_GLYPHS[modifier] : modifier;
+}
+
 const CODE_LABELS: Record<string, string> = {
     Backquote: "`",
     Backslash: "\\",
     BracketLeft: "[",
     BracketRight: "]",
     Comma: ",",
-    Enter: "↵",
+    Enter: ENTER_GLYPH,
     Equal: "=",
     Escape: "Esc",
     Minus: "-",
-    NumpadEnter: "Num ↵",
+    NumpadEnter: `Num ${ENTER_GLYPH}`,
     Period: ".",
     Quote: "'",
     Semicolon: ";",
@@ -597,21 +622,20 @@ function codeLabel(code: string): string {
     return code.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
-export function keybindingLabel(binding: string | null): string {
-    if (!binding) return "Unassigned";
+/** A binding such as "Alt+Meta+KeyQ" as shortcuts show it: ⌥⌘Q on a Mac, Alt+Meta+Q elsewhere. */
+export function shortcutText(binding: string): string {
     const parts = binding.split("+");
     const code = parts.pop() ?? "";
-    const modifiers = parts
-        .map((part) => {
-            if (part === "Meta") return IS_MACOS ? "⌘" : "Meta+";
-            if (part === "Ctrl") return IS_MACOS ? "⌃" : "Ctrl+";
-            if (part === "Alt") return IS_MACOS ? "⌥" : "Alt+";
-            if (part === "Shift") return IS_MACOS ? "⇧" : "Shift+";
-            return part;
-        })
-        .join("");
-    return `${modifiers}${codeLabel(code)}`;
+    const modifiers = parts.map((part) => (part in MODIFIER_GLYPHS ? modifierGlyph(part as KeybindingModifier) : part));
+    return [...modifiers, codeLabel(code)].join(IS_MACOS ? "" : "+");
 }
+
+export function keybindingLabel(binding: string | null): string {
+    return binding ? shortcutText(binding) : "Unassigned";
+}
+
+/** Quit and Stop Everything is on the app menu, which only the Mac has. */
+export const QUIT_AND_STOP_SHORTCUT = IS_MACOS ? shortcutText("Alt+Meta+KeyQ") : null;
 
 export function keybindingLabelForAction(overrides: KeybindingOverrides, id: KeybindingActionId): string {
     return keybindingLabel(resolvedKeybinding(overrides, id));

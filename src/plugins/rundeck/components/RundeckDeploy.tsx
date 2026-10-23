@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { confirmDialog, git, notify } from "../../../plugin-api/host";
+import { confirmDialog, currentBranch, git, notify } from "../../../plugin-api/host";
 import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
 import { IconRun, IconWarning, SkeletonRows } from "../../../plugin-api/ui";
-import { errorMessage, rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
+import { errorText, formatDuration } from "../../../plugin-api/format";
+import { rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndMatrixR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { branchOf, branchOptionName, envOf, isLiveStatus, isProdTarget, localDateTimeToIso, qualifiedName } from "../shape";
-import { useDebounced } from "./hooks";
+import { watchRun } from "../runWatch";
+import { useDebounced } from "../../../plugin-api/hooks";
 import { initialOptionValues, runOptionValues, validateOptions, type OptionValues, type RemoteValues } from "./options";
 import { RundeckAdvanced, type AdvancedRun } from "./RundeckAdvanced";
 import { RundeckOptionsForm } from "./RundeckOptionsForm";
 import { RundeckPlan } from "./RundeckPlan";
 import { FolderChip, Header, levelCrumbs } from "./parts";
+import { usualSeconds } from "./runStats";
 
 interface Props {
     paneId: string;
@@ -23,7 +26,7 @@ interface Props {
 export function RundeckDeploy({ paneId, level, active }: Props) {
     const detail = useResourceEnabled(active, rndJobDetailR, level.jobId);
     const jobs = useResourceEnabled(active, rndJobsR, level.project);
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
+    const branchOptions = useBranchOptions();
     const permalink = jobs.data?.find((job) => job.id === level.jobId)?.permalink ?? null;
     const fallback = useMemo(() => (detail.data ? null : fallbackDetail(level, branchOptions)), [detail.data, level, branchOptions]);
 
@@ -109,8 +112,8 @@ interface FormProps extends Props {
 }
 
 function RunForm({ paneId, level, active, detail, permalink, children }: FormProps) {
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
-    const isProd = cmd.rundeckSettings.useSelect((s) => isProdTarget(level.project, level.group, s.prodEnvs));
+    const branchOptions = useBranchOptions();
+    const isProd = isProdTarget(level.project, level.group, useProdEnvs());
     const repoPath = level.repoPath ?? "";
     const branchKey = useMemo(
         () =>
@@ -131,6 +134,8 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
     const [error, setError] = useState<string | null>(null);
 
     const branch = branchKey ? (values[branchKey] ?? "").trim() : "";
+    const history = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 30);
+    const usual = useMemo(() => usualSeconds(history.data ?? [], Date.now()), [history.data]);
     const settledBranch = useDebounced(branch, 400);
     const planRequest = useMemo(
         () => ({
@@ -139,9 +144,8 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
             service: qualifiedName(level.name, level.group),
             targetBranch: settledBranch,
             repoPath,
-            branchOptions,
         }),
-        [level.jobId, level.project, level.name, level.group, settledBranch, repoPath, branchOptions],
+        [level.jobId, level.project, level.name, level.group, settledBranch, repoPath],
     );
     const plan = useResourceEnabled(active && runsBranch && !!settledBranch, rndPlanR, planRequest);
     const planReady = !runsBranch || (plan.status === "ok" && plan.data?.target_branch === branch);
@@ -193,9 +197,9 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
             }
 
             if (runsBranch && plan.data?.push_action === "will-push-current" && repoPath) {
-                const status = await git.status(repoPath);
-                if (status.branch !== branch) {
-                    setError(`The checkout is now on ${status.branch}, not ${branch}. Nothing was pushed or run.`);
+                const checkedOut = currentBranch(await git.status(repoPath));
+                if (checkedOut !== branch) {
+                    setError(`The checkout is now on ${checkedOut ?? "a detached HEAD"}, not ${branch}. Nothing was pushed or run.`);
                     return;
                 }
                 await git.push(repoPath);
@@ -203,22 +207,24 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
             }
 
             const result = await runJob(detail.options, values, advanced, detail.node_filter, level.jobId, runAtTime).catch((e: unknown) => {
-                throw pushed ? new Error(`${branch} was pushed, but Rundeck rejected the run: ${errorMessage(e)}`) : e;
+                throw pushed ? new Error(`${branch} was pushed, but Rundeck rejected the run: ${errorText(e)}`) : e;
             });
             if (result.recovered) notify("info", "The run request timed out, but the run was found in Rundeck.");
             invalidate(
-                (kind, args) => (kind === "rnd.executions" && args[0] === level.jobId) || (kind === "rnd.matrix" && args[0] === level.project),
+                (kind, args) => (kind === rndExecutionsR.kind && args[0] === level.jobId) || (kind === rndMatrixR.kind && args[0] === level.project),
             );
-            cmd.rundeckReplace(paneId, { kind: "execution", ...stripOptions(level), executionId: result.id });
+            watchRun(cmd.jobRefOf(level), result.id);
+            cmd.rundeckReplace(paneId, { kind: "execution", ...cmd.jobRefOf(level), executionId: result.id });
         } catch (e) {
-            setError(errorMessage(e));
+            setError(errorText(e));
         } finally {
             setBusy(false);
         }
     };
 
     const canSubmit = !busy && detail.execution_enabled && planReady;
-    const label = busy ? "Starting…" : isProd ? (runsBranch ? "Deploy to production" : "Run in production") : runsBranch ? "Deploy" : "Run";
+    const verb = runsBranch ? (branch ? `Deploy ${branch}` : "Deploy") : "Run";
+    const label = busy ? "Starting…" : isProd ? `${verb} to production` : verb;
 
     return (
         <form
@@ -284,6 +290,7 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
                 )}
 
                 <div className="rnd-form-foot">
+                    {usual !== null && <span className="rnd-form-usual">Usually takes {formatDuration(usual * 1000)}</span>}
                     <button type="button" className="rnd-btn lg" onClick={() => cmd.rundeckPop(paneId)} disabled={busy}>
                         Cancel
                     </button>
@@ -311,8 +318,8 @@ function BranchPicks({
     branch: string;
     onPick: (branch: string) => void;
 }) {
-    const branchOptions = cmd.rundeckSettings.useSelect((s) => s.branchOptions);
-    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 25);
+    const branchOptions = useBranchOptions();
+    const execs = useResourceEnabled(active, rndExecutionsR, level.jobId, level.project, 30);
     const picks: { name: string; note?: string }[] = [];
     const add = (name: string | null | undefined, note?: string) => {
         if (!name) return;
@@ -356,8 +363,4 @@ function runJob(
         runAtTime,
         asUser: advanced.asUser.trim() || null,
     });
-}
-
-function stripOptions(level: Props["level"]): JobRef {
-    return { project: level.project, jobId: level.jobId, name: level.name, group: level.group, repoPath: level.repoPath };
 }

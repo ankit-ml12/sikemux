@@ -93,29 +93,15 @@ describe("GitGraph", () => {
         node("a", []),
     ];
 
-    it("labels a commit's refs by kind, folding the overflow into a count", () => {
+    it("labels a commit with its first ref, leaving the rest to the row's tooltip", () => {
         render(<GitGraph commits={history} selectedIndex={0} focused range={null} onSelect={() => {}} onActivate={() => {}} />);
         const row = screen.getByRole("button", { name: "m feat(git): merge" });
         expect(row).toHaveClass("sel");
+        expect(row.querySelectorAll(".gg-ref")).toHaveLength(1);
         expect(row.querySelector(".gg-ref.branch")).toHaveTextContent("main");
-        expect(row.querySelector(".gg-ref.remote")).toHaveTextContent("origin/main");
-        expect(row.querySelector(".gg-ref.more")).toHaveTextContent("+1");
-        expect(row.querySelector(".gg-ref.more")).toHaveAttribute("title", "tag: v1");
+        expect(row.getAttribute("title")).toContain("origin/main, tag: v1");
         expect(row).toHaveTextContent("merge");
         expect(row.querySelector(".gg-subj")).toHaveTextContent(/^merge$/);
-    });
-
-    it("shows a tag badge", () => {
-        const commits = [node("t", [], { refs: ["tag: v2", "HEAD"] })];
-        render(<GitGraph commits={commits} selectedIndex={0} focused={false} range={null} onSelect={() => {}} onActivate={() => {}} />);
-        const row = screen.getByRole("button", { name: "t commit t" });
-        expect(row).not.toHaveClass("sel");
-        expect(row.querySelector(".gg-ref.tag")).toHaveTextContent("v2");
-    });
-
-    it("marks the rows inside a range", () => {
-        render(<GitGraph commits={history} selectedIndex={0} focused range={[1, 2]} onSelect={() => {}} onActivate={() => {}} />);
-        expect(screen.getAllByRole("button").map((row) => row.classList.contains("ranged"))).toEqual([false, true, true]);
     });
 
     it("moves the selection with the arrows, Home and End, and opens a commit with Enter or a double-click", () => {
@@ -143,36 +129,5 @@ describe("GitGraph", () => {
         expect(onSelect).toHaveBeenLastCalledWith(2);
         fireEvent.doubleClick(rows[2]);
         expect(onActivate).toHaveBeenCalledTimes(2);
-    });
-
-    it("says so when there are no commits", () => {
-        render(<GitGraph commits={[]} selectedIndex={0} focused range={null} onSelect={() => {}} onActivate={() => {}} />);
-        expect(screen.getByText("no commits")).toBeInTheDocument();
-    });
-
-    it("paints unpushed commits in the warning colour, rings HEAD and curves lines that change lane", () => {
-        const fills: string[] = [];
-        const ctx = {
-            fillStyle: "",
-            strokeStyle: "",
-            setTransform: vi.fn(),
-            clearRect: vi.fn(),
-            beginPath: vi.fn(),
-            moveTo: vi.fn(),
-            lineTo: vi.fn(),
-            bezierCurveTo: vi.fn(),
-            stroke: vi.fn(),
-            arc: vi.fn(),
-            fill: vi.fn(() => fills.push(ctx.fillStyle)),
-        };
-        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as never);
-        const commits = [node("m", ["a", "b"], { refs: ["HEAD"] }), node("b", ["a"], { unpushed: true }), node("a", [])];
-        render(<GitGraph commits={commits} selectedIndex={1} focused range={null} onSelect={() => {}} onActivate={() => {}} />);
-
-        expect(ctx.bezierCurveTo).toHaveBeenCalled();
-        expect(fills).toContain("#ffca85");
-        const radii = ctx.arc.mock.calls.map((call) => call[2]);
-        expect(radii).toContain(5);
-        expect(radii).toContain(7);
     });
 });

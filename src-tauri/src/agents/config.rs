@@ -1,110 +1,20 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::Value;
-use sikemux_pty::user_shell::login_shell_environment;
-
-use super::executable::expand_user_path;
-use super::home_path;
+use sikemux_core::agent_catalog::AgentKind;
+pub(crate) use sikemux_core::sessions::roots::{
+    agent_config_root, environment_path, omp_agent_root,
+};
+use sikemux_process::paths::home;
+use sikemux_process::user_environment::shell_var;
 
 const MAX_MODEL_LENGTH: usize = 256;
 
-fn environment_path(key: &str) -> Option<PathBuf> {
-    std::env::var_os(key)
-        .map(PathBuf::from)
-        .or_else(|| login_shell_environment().get(key).map(PathBuf::from))
-}
-
-fn environment_string(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .or_else(|| login_shell_environment().get(key).cloned())
-}
-
-fn omp_profile_name() -> Option<String> {
-    let raw = environment_string("OMP_PROFILE").or_else(|| environment_string("PI_PROFILE"))?;
-    let name = raw.trim();
-    (!name.is_empty()
-        && name != "default"
-        && name != "."
-        && name != ".."
-        && name.len() <= 64
-        && !name.contains(['/', '\\']))
-    .then(|| name.to_string())
-}
-
-fn omp_config_root() -> Option<PathBuf> {
-    let home = home_path()?;
-    let config = environment_string("PI_CONFIG_DIR").unwrap_or_else(|| ".omp".to_string());
-    Some(home.join(config.trim_start_matches(['/', '\\'])))
-}
-
-pub(super) fn omp_agent_root() -> Option<PathBuf> {
-    if let Some(profile) = omp_profile_name() {
-        return Some(
-            omp_config_root()?
-                .join("profiles")
-                .join(profile)
-                .join("agent"),
-        );
-    }
-    environment_path("PI_CODING_AGENT_DIR").or_else(|| Some(omp_config_root()?.join("agent")))
-}
-
-pub(super) fn omp_session_dirs() -> Vec<PathBuf> {
-    if let Some(path) = environment_path("PI_CODING_AGENT_SESSION_DIR") {
-        return vec![path];
-    }
-    let mut dirs = Vec::new();
-    if let Some(root) = omp_agent_root() {
-        dirs.push(root.join("sessions"));
-    }
-    if let Some(xdg) = environment_path("XDG_DATA_HOME") {
-        let root = xdg.join("omp");
-        let sessions = omp_profile_name()
-            .map(|profile| root.join("profiles").join(profile).join("sessions"))
-            .unwrap_or_else(|| root.join("sessions"));
-        if sessions.exists() && !dirs.contains(&sessions) {
-            dirs.push(sessions);
-        }
-    }
-    dirs
-}
-
-pub(super) fn grok_root() -> Option<PathBuf> {
-    environment_path("GROK_HOME").or_else(|| Some(home_path()?.join(".grok")))
-}
-
-pub(super) fn agent_config_root(kind: &str, configured: Option<&str>) -> Option<PathBuf> {
-    let home = home_path()?;
-    if let Some(configured) = configured.map(str::trim).filter(|value| !value.is_empty()) {
-        let path = expand_user_path(configured);
-        let is_config_file = matches!(
-            path.file_name().and_then(|value| value.to_str()),
-            Some("config.toml" | "config.yml" | "settings.json" | "settings.local.json")
-        );
-        return if is_config_file {
-            path.parent().map(Path::to_path_buf)
-        } else {
-            Some(path)
-        };
-    }
-    match kind {
-        "claude" => {
-            Some(environment_path("CLAUDE_CONFIG_DIR").unwrap_or_else(|| home.join(".claude")))
-        }
-        "codex" => Some(environment_path("CODEX_HOME").unwrap_or_else(|| home.join(".codex"))),
-        "omp" => omp_agent_root(),
-        "grok" => grok_root(),
-        _ => Some(home),
-    }
-}
-
 pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) -> Option<String> {
-    let home = home_path()?;
+    let home = home()?;
     match kind {
-        "claude" => std::env::var("ANTHROPIC_MODEL")
-            .ok()
+        "claude" => shell_var("ANTHROPIC_MODEL")
             .and_then(|value| clean_model(&value))
             .or_else(|| {
                 json_model(
@@ -124,51 +34,48 @@ pub(super) fn configured_default_model(kind: &str, config_path: Option<&str>) ->
                 .ok()
                 .and_then(|text| toml_model(&text))
         }
-        "hermes" => std::env::var("HERMES_INFERENCE_MODEL")
-            .ok()
+        "hermes" => shell_var("HERMES_INFERENCE_MODEL")
             .and_then(|value| clean_model(&value))
             .or_else(|| {
-                let text = fs::read_to_string(home.join(".hermes/config.yaml")).ok()?;
+                let text =
+                    fs::read_to_string(AgentKind::Hermes.home_root()?.join("config.yaml")).ok()?;
                 let (provider, model) = yaml_model_section(&text);
                 qualify_model(provider.as_deref(), model.as_deref())
             }),
         "pi" => {
-            let root = std::env::var_os("PI_CODING_AGENT_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".pi/agent"));
-            let value: Value =
-                serde_json::from_str(&fs::read_to_string(root.join("settings.json")).ok()?).ok()?;
+            let settings =
+                fs::read_to_string(AgentKind::Pi.home_root()?.join("settings.json")).ok()?;
+            let value: Value = serde_json::from_str(&settings).ok()?;
             qualify_model(
                 value.get("defaultProvider").and_then(Value::as_str),
                 value.get("defaultModel").and_then(Value::as_str),
             )
         }
         "opencode" => {
-            let path = std::env::var_os("OPENCODE_CONFIG")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    let config = std::env::var_os("XDG_CONFIG_HOME")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| home.join(".config"));
-                    config.join("opencode/opencode.json")
-                });
+            let path = environment_path("OPENCODE_CONFIG").unwrap_or_else(|| {
+                environment_path("XDG_CONFIG_HOME")
+                    .unwrap_or_else(|| home.join(".config"))
+                    .join("opencode/opencode.json")
+            });
             json_model(&path, "model")
         }
         "omp" => fs::read_to_string(omp_agent_root()?.join("config.yml"))
             .ok()
             .and_then(|text| yaml_top_level_scalar(&text, "defaultModel"))
             .and_then(|value| clean_model(&value)),
-        "grok" => fs::read_to_string(grok_root()?.join("config.toml"))
+        "grok" => fs::read_to_string(AgentKind::Grok.home_root()?.join("config.toml"))
             .ok()
             .and_then(|text| toml_section_string(&text, "models", "default"))
             .and_then(|value| clean_model(&value))
             .or_else(|| Some("grok-build".to_string())),
+        "muse" => shell_var("MUSE_MODEL")
+            .and_then(|value| clean_model(&value))
+            .or_else(|| json_model(&AgentKind::Muse.home_root()?.join("settings.json"), "model")),
         _ => None,
     }
 }
 
 pub(super) fn configured_default_effort(kind: &str, config_path: Option<&str>) -> Option<String> {
-    let home = home_path()?;
     match kind {
         "claude" => json_effort(
             &agent_config_root(kind, config_path)?.join("settings.local.json"),
@@ -188,24 +95,28 @@ pub(super) fn configured_default_effort(kind: &str, config_path: Option<&str>) -
                 .ok()
                 .and_then(|text| toml_effort(&text))
         }
-        "hermes" => fs::read_to_string(home.join(".hermes/config.yaml"))
+        "hermes" => fs::read_to_string(AgentKind::Hermes.home_root()?.join("config.yaml"))
             .ok()
             .and_then(|text| yaml_agent_reasoning_effort(&text))
             .and_then(|value| clean_effort(kind, &value)),
-        "pi" => {
-            let root = std::env::var_os("PI_CODING_AGENT_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".pi/agent"));
-            json_effort(&root.join("settings.json"), "defaultThinkingLevel", kind)
-        }
+        "pi" => json_effort(
+            &AgentKind::Pi.home_root()?.join("settings.json"),
+            "defaultThinkingLevel",
+            kind,
+        ),
         "omp" => fs::read_to_string(omp_agent_root()?.join("config.yml"))
             .ok()
             .and_then(|text| yaml_top_level_scalar(&text, "defaultThinkingLevel"))
             .and_then(|value| clean_effort(kind, &value)),
-        "grok" => fs::read_to_string(grok_root()?.join("config.toml"))
+        "grok" => fs::read_to_string(AgentKind::Grok.home_root()?.join("config.toml"))
             .ok()
             .and_then(|text| toml_section_string(&text, "models", "default_reasoning_effort"))
             .and_then(|value| clean_effort(kind, &value)),
+        "muse" => json_effort(
+            &AgentKind::Muse.home_root()?.join("settings.json"),
+            "reasoning_effort",
+            kind,
+        ),
         _ => None,
     }
 }
@@ -225,6 +136,7 @@ fn clean_effort(kind: &str, value: &str) -> Option<String> {
         ],
         "pi" | "omp" => &["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         "grok" => &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "muse" => &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         _ => &[],
     };
     allowed.contains(&value.as_str()).then_some(value)

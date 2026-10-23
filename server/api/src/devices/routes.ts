@@ -1,42 +1,32 @@
-import { randomBytes } from "node:crypto";
-import type {
-  Challenge,
-  Channel,
-  Device,
-  DeviceList,
-  DeviceRole,
-  Platform,
+import {
+  deviceRoleValues,
+  type DeviceList,
+  type DeviceRole,
 } from "@sikemux/protocol";
 import { Hono } from "hono";
-import { sql, type Selectable } from "kysely";
+import { sql } from "kysely";
 
 import type { ClerkBackend } from "../account/clerk.ts";
 import { revokeRemovedSession } from "../account/deletion.ts";
-import { requireIdentity, type AuthEnv, type Verifier } from "../auth.ts";
-import type { Database, Tables } from "../db.ts";
+import {
+  allow,
+  requireIdentity,
+  type AuthEnv,
+  type Verifier,
+} from "../auth.ts";
+import { audit } from "../audit.ts";
+import type { Database } from "../db.ts";
 import { appendEvent } from "../events/log.ts";
-import { ApiFailure, readBody } from "../http.ts";
+import { badRequest, readBody } from "../http.ts";
+import { joinRoutes } from "../join/routes.ts";
+import type { JoinSigner } from "../join/signer.ts";
 import { limit, type RateLimiter } from "../limits.ts";
 import { pushTokenRoutes } from "../push/routes.ts";
 import type { PushSettings } from "../push/settings.ts";
+import { issueChallenge } from "./challenge.ts";
+import { ownedDevice } from "./owned.ts";
+import { registerDevice, toDevice } from "./register.ts";
 import { removeDevice } from "./removal.ts";
-import { registrationMessage, signedBy } from "./signature.ts";
-
-const CHALLENGE_MS = 2 * 60_000;
-const ROLES: readonly DeviceRole[] = ["host", "client"];
-
-function toDevice(row: Selectable<Tables["devices"]>): Device {
-  const device: Device = {
-    key: row.key,
-    role: row.role as DeviceRole,
-    name: row.name,
-    platform: row.platform as Platform,
-    createdAt: row.created_at.toISOString(),
-    lastSeenAt: row.last_seen_at?.toISOString() ?? null,
-  };
-  if (row.channel) device.channel = row.channel as Channel;
-  return device;
-}
 
 export function deviceRoutes(
   database: Database,
@@ -44,235 +34,147 @@ export function deviceRoutes(
   limiter: RateLimiter,
   clerk: ClerkBackend | null,
   push: Pick<PushSettings, "app" | "allowSandbox">,
+  join: JoinSigner,
 ) {
   const { db } = database;
   const perUser = (name: string, perMinute: number) =>
     limit<AuthEnv>(limiter, name, perMinute, (c) => c.get("identity").userId);
 
-  return new Hono<AuthEnv>()
-    .use(requireIdentity(verifier, db))
-    .route("/", pushTokenRoutes(database, limiter, push))
-    .post("/challenge", perUser("challenge", 30), async (c) => {
-      const { userId } = c.get("identity");
-      const nonce = randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + CHALLENGE_MS);
-      await db
-        .deleteFrom("challenges")
-        .where("expires_at", "<", sql<Date>`now() - interval '1 hour'`)
-        .execute();
-      await db
-        .insertInto("challenges")
-        .values({ nonce, user_id: userId, expires_at: expiresAt })
-        .execute();
-      const body: Challenge = { nonce, expiresAt: expiresAt.toISOString() };
-      return c.json(body);
-    })
-    .post("/", perUser("register", 20), async (c) => {
-      const { userId } = c.get("identity");
-      const registration = await readBody(c, "DeviceRegistration");
-      if (
-        (registration.role === "host") !==
-        (registration.channel !== undefined)
-      ) {
-        throw new ApiFailure(
-          400,
-          "bad_request",
-          "Hosts say which channel they run; clients do not.",
-        );
-      }
-      const name = registration.name.trim();
-      if (!name)
-        throw new ApiFailure(400, "bad_request", "The device needs a name.");
-
-      const challenge = await db
-        .deleteFrom("challenges")
-        .where("nonce", "=", registration.nonce)
-        .where("user_id", "=", userId)
-        .where("expires_at", ">", sql<Date>`now()`)
-        .returning("nonce")
-        .executeTakeFirst();
-      if (!challenge) {
-        throw new ApiFailure(
-          400,
-          "bad_request",
-          "The challenge is unknown, already used, or expired.",
-        );
-      }
-      const message = registrationMessage(
-        registration.nonce,
-        userId,
-        registration.key,
-      );
-      if (!signedBy(registration.key, message, registration.signature)) {
-        throw new ApiFailure(
-          403,
-          "forbidden",
-          "The signature does not prove this device holds the key.",
-        );
-      }
-
-      const identity = c.get("identity");
-      const { row, added } = await db.transaction().execute(async (trx) => {
-        await trx
-          .insertInto("users")
-          .values({ id: userId })
-          .onConflict((oc) => oc.column("id").doNothing())
-          .execute();
-        const user = await trx
-          .selectFrom("users")
-          .select("deleted_at")
-          .where("id", "=", userId)
-          .forShare()
-          .executeTakeFirstOrThrow();
-        if (user.deleted_at)
-          throw new ApiFailure(
-            401,
-            "unauthorized",
-            "This account was deleted.",
+  return (
+    new Hono<AuthEnv>()
+      .use(
+        requireIdentity(verifier, db, {
+          accept: ["session", "host", "macRegistration"],
+        }),
+      )
+      .route("/", pushTokenRoutes(database, limiter, push))
+      .route("/", joinRoutes(database, limiter, join))
+      .post(
+        "/challenge",
+        allow("session", "macRegistration", "host"),
+        perUser("challenge", 30),
+        async (c) => c.json(await issueChallenge(db, c.get("identity").userId)),
+      )
+      .post(
+        "/",
+        allow("session", "macRegistration", "host"),
+        perUser("register", 20),
+        async (c) => {
+          const registration = await readBody(c, "DeviceRegistration");
+          const { row, added } = await registerDevice(
+            db,
+            c.get("identity"),
+            registration,
           );
-        const existing = await trx
-          .selectFrom("devices")
-          .selectAll()
-          .where("key", "=", registration.key)
-          .forUpdate()
-          .executeTakeFirst();
-        if (existing && existing.user_id !== userId) {
-          throw new ApiFailure(
-            409,
-            "conflict",
-            "This device is registered to another account.",
+          c.get("log").info(
+            { key: row.key, role: row.role, added },
+            added ? "registered a device" : "updated a device",
           );
-        }
-        if (existing && existing.role !== registration.role) {
-          throw new ApiFailure(
-            409,
-            "conflict",
-            `This device is already registered as a ${existing.role}.`,
-          );
-        }
-        const fields = {
-          name,
-          platform: registration.platform,
-          channel: registration.channel ?? null,
-          clerk_session_id:
-            registration.role === "client"
-              ? (identity.sessionId ?? null)
-              : null,
-        };
-        const eventId = await appendEvent(trx, {
-          userId,
-          type: existing ? "device.changed" : "device.added",
-          subject: registration.key,
-          subjectRole: registration.role,
-        });
-        const row = existing
-          ? await trx
-              .updateTable("devices")
-              .set({ ...fields, updated_at: sql<Date>`now()` })
-              .where("key", "=", registration.key)
-              .returningAll()
-              .executeTakeFirstOrThrow()
-          : await trx
-              .insertInto("devices")
-              .values({
-                key: registration.key,
-                user_id: userId,
-                role: registration.role,
-                acked_event_id: eventId,
-                ...fields,
-              })
-              .returningAll()
-              .executeTakeFirstOrThrow();
-        if (!existing)
-          await trx
-            .deleteFrom("removed_devices")
-            .where("key", "=", registration.key)
-            .execute();
-        await trx
-          .insertInto("audit")
-          .values({
-            user_id: userId,
-            actor: `user:${userId}`,
-            action: existing ? "device.updated" : "device.registered",
-            subject: registration.key,
-            detail: JSON.stringify({
-              role: row.role,
-              name: row.name,
-              platform: row.platform,
-              via: identity.via,
-            }),
-          })
-          .execute();
-        return { row, added: !existing };
-      });
-      c.get("log").info(
-        { key: row.key, role: row.role, added },
-        added ? "registered a device" : "updated a device",
-      );
-      return c.json(toDevice(row), added ? 201 : 200);
-    })
-    .delete("/:key", perUser("remove", 30), async (c) => {
-      const { userId, via, sessionId } = c.get("identity");
-      const key = c.req.param("key");
-      const { removed, reason } = await db
-        .transaction()
-        .execute(async (trx) => {
-          const device = await trx
-            .selectFrom("devices")
-            .select("clerk_session_id")
-            .where("key", "=", key)
-            .where("user_id", "=", userId)
-            .forUpdate()
-            .executeTakeFirst();
-          const reason =
-            sessionId !== undefined && device?.clerk_session_id === sessionId
-              ? ("signed_out" as const)
-              : ("removed" as const);
-          const removed = device
-            ? await removeDevice(trx, {
+          return c.json(toDevice(row), added ? 201 : 200);
+        },
+      )
+      // A host signs this only for the person in its own app, as it signs every request it makes
+      // here (the core refuses to sign for any other program), so it stands for the person: ADR 0018
+      // lets any device on the account take another off it. A host leaves by signing out instead.
+      .delete(
+        "/:key",
+        allow("session", "host"),
+        perUser("remove", 30),
+        async (c) => {
+          const { userId, via, sessionId, deviceKey } = c.get("identity");
+          const key = c.req.param("key");
+          if (key === deviceKey)
+            throw badRequest("A host leaves the account by signing out.");
+          const { device, reason } = await db
+            .transaction()
+            .execute(async (trx) => {
+              const device = await ownedDevice(trx, userId, key, {
+                lock: true,
+              });
+              const reason =
+                sessionId !== undefined && device.clerk_session_id === sessionId
+                  ? ("signed_out" as const)
+                  : ("removed" as const);
+              await removeDevice(trx, {
                 userId,
                 key,
                 reason,
                 actor: `user:${userId}`,
                 detail: { via },
-              })
-            : undefined;
-          return { removed, reason };
-        });
-      if (!removed)
-        throw new ApiFailure(
-          404,
-          "not_found",
-          "None of your devices has that key.",
-        );
-      c.get("log").info(
-        { key, role: removed.role, reason },
-        "removed a device",
-      );
-      if (reason === "removed" && removed.clerkSessionId)
-        await revokeRemovedSession(db, clerk, c.get("log"), key).catch(
-          (error: unknown) =>
-            c.get("log").warn({ err: error }, "could not revoke the session"),
-        );
-      return c.body(null, 204);
-    })
-    .get("/", perUser("list", 120), async (c) => {
-      const { userId } = c.get("identity");
-      const role = c.req.query("role");
-      if (role !== undefined && !ROLES.includes(role as DeviceRole)) {
-        throw new ApiFailure(
-          400,
-          "bad_request",
-          `role is one of ${ROLES.join(", ")}.`,
-        );
-      }
-      let query = db
-        .selectFrom("devices")
-        .selectAll()
-        .where("user_id", "=", userId);
-      if (role) query = query.where("role", "=", role);
-      const rows = await query.orderBy("created_at", "desc").execute();
-      const body: DeviceList = { devices: rows.map(toDevice) };
-      return c.json(body);
-    });
+              });
+              return { device, reason };
+            });
+          c.get("log").info(
+            { key, role: device.role, reason },
+            "removed a device",
+          );
+          if (reason === "removed" && device.clerk_session_id)
+            await revokeRemovedSession(db, clerk, c.get("log"), key).catch(
+              (error: unknown) =>
+                c
+                  .get("log")
+                  .warn({ err: error }, "could not revoke the session"),
+            );
+          return c.body(null, 204);
+        },
+      )
+      // Hosts sign this only for the person in their own app, as for removing a device.
+      .post(
+        "/:key/name",
+        allow("session", "host"),
+        perUser("rename", 30),
+        async (c) => {
+          const { userId, via } = c.get("identity");
+          const key = c.req.param("key");
+          const name = (await readBody(c, "DeviceRename")).name.trim();
+          if (!name) throw badRequest("The device needs a name.");
+          const row = await db.transaction().execute(async (trx) => {
+            const device = await ownedDevice(trx, userId, key, { lock: true });
+            await appendEvent(trx, {
+              userId,
+              type: "device.changed",
+              subject: key,
+              subjectRole: device.role as DeviceRole,
+            });
+            await audit(trx, {
+              userId,
+              actor: `user:${userId}`,
+              action: "device.renamed",
+              subject: key,
+              detail: { from: device.name, to: name, via },
+            });
+            return trx
+              .updateTable("devices")
+              .set({ name, updated_at: sql<Date>`now()` })
+              .where("key", "=", key)
+              .returningAll()
+              .executeTakeFirstOrThrow();
+          });
+          return c.json(toDevice(row));
+        },
+      )
+      .get(
+        "/",
+        allow("session", "host", "mac"),
+        perUser("list", 120),
+        async (c) => {
+          const { userId } = c.get("identity");
+          const role = c.req.query("role");
+          if (
+            role !== undefined &&
+            !deviceRoleValues.includes(role as DeviceRole)
+          ) {
+            throw badRequest(`role is one of ${deviceRoleValues.join(", ")}.`);
+          }
+          let query = db
+            .selectFrom("devices")
+            .selectAll()
+            .where("user_id", "=", userId);
+          if (role) query = query.where("role", "=", role);
+          const rows = await query.orderBy("created_at", "desc").execute();
+          const body: DeviceList = { devices: rows.map(toDevice) };
+          return c.json(body);
+        },
+      )
+  );
 }

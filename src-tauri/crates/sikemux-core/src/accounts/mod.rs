@@ -1,32 +1,88 @@
 //! What the core shares with the accounts server at api.sikemux.com. The types
-//! in [`protocol`] are generated from `server/protocol/schema`.
+//! in [`protocol`], [`share`] and [`host`] are generated from `server/protocol/schema`.
 
+pub mod host;
 #[cfg(unix)]
 pub mod live;
+pub mod share;
 #[cfg(unix)]
-pub mod network;
-pub mod protocol;
+pub(crate) mod socket;
 
-/// TLS for the accounts API, trusting the usual web roots.
 #[cfg(unix)]
-pub(crate) fn tls_config() -> Option<std::sync::Arc<tokio_rustls::rustls::ClientConfig>> {
-    use std::sync::{Arc, OnceLock};
-    use tokio_rustls::rustls;
-    static CONFIG: OnceLock<Option<Arc<rustls::ClientConfig>>> = OnceLock::new();
-    CONFIG
-        .get_or_init(|| {
-            let roots = rustls::RootCertStore {
-                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-            };
-            let provider = Arc::new(rustls::crypto::ring::default_provider());
-            let builder = rustls::ClientConfig::builder_with_provider(provider)
-                .with_safe_default_protocol_versions()
-                .ok()?;
-            Some(Arc::new(
-                builder.with_root_certificates(roots).with_no_client_auth(),
-            ))
-        })
-        .clone()
+pub use sikemux_client::accounts::{
+    check_live, check_registration, check_user_id, live_message, network, registration_message,
+    tls_config,
+};
+pub use sikemux_wire::accounts::protocol;
+
+/// Where the web app is. A shared chat's link opens there, and it hands the
+/// link on to the Mac or phone app when one is installed.
+pub fn app_base() -> String {
+    if cfg!(debug_assertions) {
+        std::env::var("SIKEMUX_APP_URL").unwrap_or_else(|_| "http://localhost:5173".into())
+    } else {
+        "https://app.sikemux.com".into()
+    }
+}
+
+/// What a host signs to open its share connection. The prefix keeps it from
+/// ever passing for a live connection's hello.
+pub fn share_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-share|{nonce}|{key}")
+}
+
+/// What a Mac signs to watch a shared chat as the host's account.
+pub fn share_viewer_message(nonce: &str, key: &str) -> String {
+    format!("sikemux-share-viewer|{nonce}|{key}")
+}
+
+/// One request a host makes to the accounts API as itself, signed in its
+/// `Authorization: SikemuxHost <key>.<time>.<signature>` header.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostRequest {
+    pub method: String,
+    /// The path and query exactly as sent, such as `/v1/devices?role=client`.
+    pub path: String,
+    /// Unix seconds.
+    pub time: u64,
+    /// The lowercase hex SHA-256 of the body; an empty body hashes the empty string.
+    pub body_sha256: String,
+}
+
+const HOST_REQUEST_METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const MAX_HOST_REQUEST_PATH: usize = 2048;
+
+impl HostRequest {
+    pub fn message(&self) -> String {
+        format!(
+            "sikemux-host-request|{}|{}|{}|{}",
+            self.method, self.path, self.time, self.body_sha256
+        )
+    }
+
+    /// Accepts only an HTTP request to the API, so a request to sign one
+    /// cannot make the core sign any other text.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if !HOST_REQUEST_METHODS.contains(&self.method.as_str()) {
+            return Err("the method is not one the accounts API takes");
+        }
+        let path_fits = self.path.starts_with("/v1/")
+            && self.path.len() <= MAX_HOST_REQUEST_PATH
+            && self.path.bytes().all(|b| b.is_ascii_graphic() && b != b'|');
+        if !path_fits {
+            return Err("the path is not an accounts API path");
+        }
+        let is_sha256 = self.body_sha256.len() == 64
+            && self
+                .body_sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !is_sha256 {
+            return Err("the body's hash is 64 lowercase hex characters");
+        }
+        Ok(())
+    }
 }
 
 /// Where the accounts API is. Dev builds talk to a server on this computer,
@@ -36,51 +92,6 @@ pub fn api_base() -> String {
         std::env::var("SIKEMUX_API_URL").unwrap_or_else(|_| "http://127.0.0.1:4000".into())
     } else {
         "https://api.sikemux.com".into()
-    }
-}
-
-/// What a device signs to register with an account. It binds the server's
-/// one-time challenge, the account and the key, so the signature proves
-/// nothing else. The server checks exactly this text.
-pub fn registration_message(nonce: &str, user_id: &str, key: &str) -> String {
-    format!("sikemux-register|{nonce}|{user_id}|{key}")
-}
-
-/// Accepts only a challenge and a Clerk user id, so a request to sign a
-/// registration cannot make the core sign any other text.
-pub fn check_registration(nonce: &str, user_id: &str) -> Result<(), &'static str> {
-    check_live(nonce)?;
-    check_user_id(user_id)
-}
-
-/// What a device signs to open its live connection to the account. The prefix
-/// differs from registration's, so neither signature stands in for the other.
-pub fn live_message(nonce: &str, key: &str) -> String {
-    format!("sikemux-live|{nonce}|{key}")
-}
-
-/// Accepts only a server challenge: 64 lowercase hex characters.
-pub fn check_live(nonce: &str) -> Result<(), &'static str> {
-    let is_challenge = nonce.len() == 64
-        && nonce
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    if is_challenge {
-        Ok(())
-    } else {
-        Err("the challenge is 64 lowercase hex characters")
-    }
-}
-
-/// Clerk user ids look like `user_2abcXYZ`.
-pub fn check_user_id(user_id: &str) -> Result<(), &'static str> {
-    let valid = user_id.strip_prefix("user_").is_some_and(|rest| {
-        !rest.is_empty() && rest.len() <= 64 && rest.bytes().all(|b| b.is_ascii_alphanumeric())
-    });
-    if valid {
-        Ok(())
-    } else {
-        Err("the account is a Clerk user id like user_2abc")
     }
 }
 
@@ -96,12 +107,12 @@ fn through<T: serde::de::DeserializeOwned + serde::Serialize>(json: &str) -> Rou
 mod tests {
     use std::path::Path;
 
-    /// Every example in `server/protocol/fixtures` reads as its Rust type and
-    /// writes back unchanged, so the server and the core agree on the wire.
+    /// Every example in `server/protocol/fixtures-core` reads as its Rust type
+    /// and writes back unchanged, as sikemux-wire checks the rest.
     #[test]
-    fn fixtures_round_trip() -> Result<(), Box<dyn std::error::Error>> {
+    fn core_fixtures_round_trip() -> Result<(), Box<dyn std::error::Error>> {
         let fixtures =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../server/protocol/fixtures");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../server/protocol/fixtures-core");
         let mut checked = 0;
         for kind in std::fs::read_dir(&fixtures)? {
             let kind = kind?;
@@ -109,7 +120,8 @@ mod tests {
             for example in std::fs::read_dir(kind.path())? {
                 let path = example?.path();
                 let json = std::fs::read_to_string(&path)?;
-                let written = super::protocol::round_trip(&name, &json)
+                let written = super::share::round_trip(&name, &json)
+                    .or_else(|| super::host::round_trip(&name, &json))
                     .ok_or_else(|| format!("{name} has fixtures but no Rust type"))?
                     .map_err(|error| format!("{}: {error}", path.display()))?;
                 let read: serde_json::Value = serde_json::from_str(&json)?;
@@ -123,53 +135,6 @@ mod tests {
             }
         }
         assert!(checked > 0, "no fixtures under {}", fixtures.display());
-        Ok(())
-    }
-
-    #[test]
-    fn registration_text_is_only_ever_a_challenge_and_an_account() {
-        let nonce = "a".repeat(64);
-        assert!(super::check_registration(&nonce, "user_2abc").is_ok());
-        assert!(super::check_registration("short", "user_2abc").is_err());
-        assert!(super::check_registration(&"A".repeat(64), "user_2abc").is_err());
-        assert!(super::check_registration(&nonce, "user_").is_err());
-        assert!(super::check_registration(&nonce, "org_2abc").is_err());
-        assert!(super::check_registration(&nonce, "user_2abc|anything").is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn live_hellos_sign_the_text_the_server_checks() -> Result<(), Box<dyn std::error::Error>> {
-        let vector: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../server/protocol/vectors/live.json"
-        ))?;
-        let text = |name: &str| vector[name].as_str().unwrap_or_default().to_owned();
-        let bytes: [u8; 32] = hex::decode(text("secretKey"))?
-            .try_into()
-            .map_err(|_| "the secret is 32 bytes")?;
-        let key = iroh::SecretKey::from_bytes(&bytes);
-        assert_eq!(key.public().to_string(), text("key"));
-        let message = super::live_message(&text("nonce"), &text("key"));
-        assert_eq!(message, text("message"));
-        assert_eq!(
-            hex::encode(key.sign(message.as_bytes()).to_bytes()),
-            text("signature")
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn live_text_is_only_ever_a_challenge() {
-        assert!(super::check_live(&"a".repeat(64)).is_ok());
-        assert!(super::check_live("short").is_err());
-        assert!(super::check_live(&"A".repeat(64)).is_err());
-        assert!(super::check_live(&format!("{}|x", "a".repeat(62))).is_err());
-    }
-
-    #[test]
-    fn unknown_enum_values_still_read() -> serde_json::Result<()> {
-        let code: super::protocol::ErrorCode = serde_json::from_str("\"added_later\"")?;
-        assert_eq!(code, super::protocol::ErrorCode::Unknown);
         Ok(())
     }
 }

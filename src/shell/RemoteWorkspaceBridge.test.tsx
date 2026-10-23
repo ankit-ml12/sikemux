@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteStatus } from "../api/remote";
 import { installIpcTransportForTests, MemoryIpcTransport, resetIpcTransportForTests } from "../api/transport";
 import * as cmd from "../state/commands";
+import { resetResourcesForTests } from "../state/resources";
 import { getState, setState } from "../state/store";
 import { PUBLISH_DELAY_MS, RemoteWorkspaceBridge } from "./RemoteWorkspaceBridge";
 
@@ -15,29 +16,27 @@ function status(enabled: boolean): RemoteStatus {
         addresses: [],
         devices: [],
         connected: [],
-        pairing: null,
         pending: [],
         owner: null,
         account: null,
         updateRequired: null,
         notifications: [],
+        requireApproval: false,
     };
 }
 
 let transport: MemoryIpcTransport;
-let publish: ReturnType<typeof vi.fn<(args: unknown) => void>>;
 
 beforeEach(() => {
     vi.useFakeTimers();
     setState(initial, true);
     transport = new MemoryIpcTransport();
     installIpcTransportForTests(transport);
-    publish = vi.fn<(args: unknown) => void>();
-    transport.register("remote_publish_workspace", publish);
 });
 
 afterEach(() => {
     cleanup();
+    resetResourcesForTests();
     resetIpcTransportForTests();
     vi.useRealTimers();
 });
@@ -49,30 +48,13 @@ async function settle() {
 }
 
 describe("RemoteWorkspaceBridge", () => {
-    it("publishes the workspace with remote access off, and again when a project opens", async () => {
-        transport.register("remote_status", () => status(false));
-        render(<RemoteWorkspaceBridge />);
-        await settle();
-        expect(publish).toHaveBeenCalledTimes(1);
-        const before = publish.mock.calls[0][0] as { projects: { path: string }[] };
-
-        act(() => {
-            cmd.createProjectSession("/Users/me/new-project");
-        });
-        await settle();
-        expect(publish).toHaveBeenCalledTimes(2);
-        const after = publish.mock.calls[1][0] as { projects: { path: string }[]; launchers: { id: string }[] };
-        expect(after.projects.length).toBe(before.projects.length + 1);
-        expect(after.projects.map((project) => project.path)).toContain("/Users/me/new-project");
-        expect(after.launchers.map((launcher) => launcher.id)).toContain("opencode");
-    });
-
-    it("publishes what the person named their agents and which one is on screen", async () => {
-        transport.register("remote_status", () => status(false));
-        const agents = vi.fn<(args: unknown) => void>();
+    it("publishes which agent is on screen", async () => {
+        transport.registerCoreRequest("remoteStatus", () => ({ status: status(false) }));
         const onScreen = vi.fn<(args: unknown) => void>();
-        transport.register("remote_publish_agents", agents);
-        transport.register("remote_publish_on_screen", onScreen);
+        transport.register("remote_publish", (args) => {
+            const { request } = args as { request: { op: string } };
+            if (request.op === "publishOnScreen") onScreen(request);
+        });
         render(<RemoteWorkspaceBridge />);
         await settle();
         act(() => {
@@ -81,31 +63,32 @@ describe("RemoteWorkspaceBridge", () => {
         });
         await settle();
         const agentId = Object.values(getState().agents).find((agent) => agent.title === "Fix the login flake")?.id ?? "";
-        const titles = (agents.mock.lastCall?.[0] as { titles: Record<string, string> }).titles;
-        expect(titles[agentId]).toBe("Fix the login flake");
-        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [agentId] });
+        expect(onScreen.mock.lastCall?.[0]).toMatchObject({ agentIds: [agentId] });
     });
 
-    it("publishes no agent on screen while the window is behind another app", async () => {
-        transport.register("remote_status", () => status(false));
+    it("publishes the agent on screen as unwatched while the window is behind another app", async () => {
+        transport.registerCoreRequest("remoteStatus", () => ({ status: status(false) }));
         const onScreen = vi.fn<(args: unknown) => void>();
-        transport.register("remote_publish_on_screen", onScreen);
+        transport.register("remote_publish", (args) => {
+            const { request } = args as { request: { op: string } };
+            if (request.op === "publishOnScreen") onScreen(request);
+        });
         render(<RemoteWorkspaceBridge />);
         act(() => {
             cmd.createProjectSession("/Users/me/notch");
             cmd.addAgent("claude", undefined, "Watch the build");
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+        const agentId = Object.values(getState().agents).find((agent) => agent.title === "Watch the build")?.id ?? "";
         act(() => {
             window.dispatchEvent(new Event("blur"));
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).toEqual({ agentIds: [] });
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ op: "publishOnScreen", agentIds: [agentId], focused: false });
         act(() => {
             window.dispatchEvent(new Event("focus"));
         });
         await settle();
-        expect(onScreen.mock.lastCall?.[0]).not.toEqual({ agentIds: [] });
+        expect(onScreen.mock.lastCall?.[0]).toEqual({ op: "publishOnScreen", agentIds: [agentId], focused: true });
     });
 });

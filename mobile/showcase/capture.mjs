@@ -8,15 +8,15 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from '../../node_modules/playwright-core/index.mjs';
 
+import { PANE_IMAGE_FILE } from '../../showcase/world/paneImage.ts';
+
 const here = import.meta.dirname;
 const app = resolve(here, '../app');
 const CORE = 'showcase0000000000000000000000000000000000000000000000000000core';
-const PANE_SOURCE = join(homedir(), 'wallpaper/old/jinx-graffiti-5120x2880-19975.jpg');
 const PANE = '/tmp/sikemux-phone-pane.jpg';
 
 const { values: options, positionals: only } = parseArgs({
@@ -32,12 +32,16 @@ const SCENES = [
   { name: 'home', route: '/' },
   { name: 'device', route: `/device/${CORE}` },
   { name: 'terminals', route: `/device/${CORE}`, tap: 'Terminals' },
+  { name: 'boards', route: `/device/${CORE}?tab=board` },
+  { name: 'board', route: `/device/${CORE}?tab=board`, tap: 'acme-shop' },
   { name: 'chat', route: `/device/${CORE}/chat/chat-login` },
   { name: 'asking', route: `/device/${CORE}/chat/chat-dark-mode` },
+  { name: 'question', route: `/device/${CORE}/chat/chat-release` },
+  { name: 'assumed', route: `/device/${CORE}/chat/chat-login-check` },
   { name: 'new-chat', route: `/device/${CORE}/new` },
 ].filter((scene) => only.length === 0 || only.includes(scene.name));
 
-if (existsSync(PANE_SOURCE)) execFileSync('sips', ['-Z', '1600', PANE_SOURCE, '--out', PANE], { stdio: 'ignore' });
+if (existsSync(PANE_IMAGE_FILE)) execFileSync('sips', ['-Z', '1600', PANE_IMAGE_FILE, '--out', PANE], { stdio: 'ignore' });
 
 /** The status bar, Dynamic Island and home indicator iOS draws over an app. */
 function drawPhoneChrome() {
@@ -67,6 +71,19 @@ function drawPhoneChrome() {
     <div class="island"></div>
     <div class="home"></div>`;
   document.body.append(chrome);
+}
+
+/** Gives each icon's gradient its own id: in a page every `url(#id)` finds the first one, which may be hidden. */
+function separateGradients() {
+  document.querySelectorAll('svg').forEach((svg, index) => {
+    for (const gradient of svg.querySelectorAll('[id]')) {
+      const id = gradient.id;
+      gradient.id = `${id}-${index}`;
+      for (const user of svg.querySelectorAll(`[fill="url(#${id})"], [stroke="url(#${id})"]`))
+        for (const attribute of ['fill', 'stroke'])
+          if (user.getAttribute(attribute) === `url(#${id})`) user.setAttribute(attribute, `url(#${id}-${index})`);
+    }
+  });
 }
 
 const origin = `http://localhost:${options.port}`;
@@ -119,6 +136,7 @@ for (const scene of SCENES) {
     await page.getByText(scene.tap, { exact: true }).first().click();
     await page.waitForTimeout(800);
   }
+  await page.evaluate(separateGradients);
   await page.evaluate(drawPhoneChrome);
   const path = join(options.out, `${scene.name}.png`);
   await page.screenshot({ path });

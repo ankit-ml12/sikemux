@@ -1,7 +1,8 @@
-import { fireEvent, render, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorPane } from "./EditorPane";
 import { getState, setState } from "../state/store";
+import { fileRead, wholeFile } from "../test/files";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -11,23 +12,29 @@ vi.mock("./EditorFindBar", () => ({ EditorFindBar: () => null }));
 
 const initial = getState();
 
+function queueWithoutLine() {
+    const [target] = getState().pendingEditorOpens.pane;
+    setState({ pendingEditorOpens: { pane: [{ ...target, line: undefined, column: undefined }] } });
+}
+
 Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 Range.prototype.getBoundingClientRect = () => new DOMRect();
 
 describe("EditorPane CLI queue", () => {
+    afterEach(async () => {
+        cleanup();
+        // React can still have a render queued after unmounting; let it run while the page exists.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
     beforeEach(() => {
         setState(initial, true);
         invoke.mockReset();
-        invoke.mockImplementation(async (command: string) => {
-            if (command === "read_file") return "# Preview heading\n\n**locked**\n\n| Key | Action |\n| --- | --- |\n| ⌘P | Open project |";
-            if (command === "read_file_versioned") {
-                return {
-                    content: "# Preview heading\n\n**locked**\n\n| Key | Action |\n| --- | --- |\n| ⌘P | Open project |",
-                    version: "version-1",
-                };
+        invoke.mockImplementation(async (command: string, args?: unknown) => {
+            if (fileRead(command, args)) {
+                return wholeFile("# Preview heading\n\n**locked**\n\n| Key | Action |\n| --- | --- |\n| ⌘P | Open project |", "version-1");
             }
             if (command === "cli_open_result") return undefined;
-            if (command === "repo_watch_start") return 1;
             return null;
         });
         setState({
@@ -69,13 +76,10 @@ describe("EditorPane CLI queue", () => {
         expect(getState().pendingEditorOpens).toEqual({});
     });
 
-    it("renders the in-memory Markdown and disables source editing in preview mode", async () => {
+    it("opens Markdown in preview with source editing disabled, and switches to source", async () => {
+        queueWithoutLine();
         const { container } = render(<EditorPane paneId="pane" cwd="/repo" active visible showInsights={false} />);
         const editor = within(container);
-
-        const previewButton = await editor.findByRole("button", { name: "Preview README.md" });
-        expect(previewButton.querySelector("svg")).toBeInTheDocument();
-        fireEvent.click(previewButton);
 
         expect(await editor.findByRole("heading", { name: "Preview heading" })).toBeInTheDocument();
         expect(editor.getByText("locked", { selector: "strong" })).toBeInTheDocument();
@@ -94,19 +98,19 @@ describe("EditorPane CLI queue", () => {
         expect(container.querySelector(".ed-source-host")).not.toHaveAttribute("hidden");
         expect(container.querySelector(".ed-source-host")).toHaveAttribute("aria-hidden", "false");
         expect(container.querySelector(".cm-content")).toHaveAttribute("contenteditable", "true");
+        expect(editor.getByRole("button", { name: "Preview README.md" }).querySelector("svg")).toBeInTheDocument();
     });
 
     it("opens preview links outside the app window, and relative ones as files in the editor", async () => {
         const readme = "[site](https://example.com/docs) [guide](./docs/My%20Guide.md#setup) [top](#top)";
         const fallback = invoke.getMockImplementation()!;
         invoke.mockImplementation(async (command: string, args?: unknown) => {
-            if (command === "read_file_versioned") return { content: readme, version: "version-1" };
+            if (fileRead(command, args)) return wholeFile(readme, "version-1");
             return fallback(command, args);
         });
+        queueWithoutLine();
         const { container } = render(<EditorPane paneId="pane" cwd="/repo" active visible showInsights={false} />);
         const editor = within(container);
-        fireEvent.click(await editor.findByRole("button", { name: "Preview README.md" }));
-
         expect(fireEvent.click(await editor.findByRole("link", { name: "site" }))).toBe(false);
         expect(invoke).toHaveBeenCalledWith("open_url", { url: "https://example.com/docs", app: null, shortcut: null });
 

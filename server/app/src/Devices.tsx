@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { platformName } from "@mac/remote/access";
 import type { AccountEvent, Device } from "@sikemux/protocol";
 import {
   useCallback,
@@ -8,31 +9,13 @@ import {
   type KeyboardEvent,
 } from "react";
 
-import { api } from "./api.ts";
+import { api, formatDay, problemText, signedInToken } from "./api.ts";
 import { LaptopIcon, PhoneIcon } from "./icons.tsx";
 
 export type Load =
   | { state: "loading" }
   | { state: "failed"; message: string }
   | { state: "loaded"; devices: Device[] };
-
-const PLATFORMS: Record<Device["platform"], string> = {
-  macos: "macOS",
-  ios: "iOS",
-  android: "Android",
-};
-
-function added(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /** The account's devices, read once and then kept current by `apply` and `reload`. */
 export function useDevices(ready: boolean) {
@@ -43,9 +26,8 @@ export function useDevices(ready: boolean) {
   const read = useCallback(async () => {
     const attempt = ++reading.current;
     try {
-      const token = await getToken();
-      if (!token) throw new Error("Sign in again to see your devices.");
-      const list = await api.devices(token);
+      const token = await signedInToken(getToken, "see your devices");
+      const list = await api(token).listDevices();
       if (attempt === reading.current)
         setLoad({ state: "loaded", devices: list.devices });
     } catch (error) {
@@ -53,7 +35,7 @@ export function useDevices(ready: boolean) {
       setLoad((current) =>
         current.state === "loaded"
           ? current
-          : { state: "failed", message: message(error) },
+          : { state: "failed", message: problemText(error) },
       );
     }
   }, [getToken]);
@@ -91,9 +73,8 @@ export function useDevices(ready: boolean) {
   };
 
   const remove = async (key: string) => {
-    const token = await getToken();
-    if (!token) throw new Error("Sign in again to remove a device.");
-    await api.removeDevice(token, key);
+    const token = await signedInToken(getToken, "remove a device");
+    await api(token).removeDevice(key);
     drop(key);
   };
 
@@ -193,7 +174,7 @@ function DeviceRow({
     try {
       await remove(device.key);
     } catch (error) {
-      setProblem(message(error));
+      setProblem(problemText(error));
       setBusy(false);
     }
   };
@@ -213,9 +194,9 @@ function DeviceRow({
       </span>
       <span className="name">{device.name}</span>
       <span className="detail">
-        {PLATFORMS[device.platform] ?? device.platform}
+        {platformName(device.platform)}
         {device.channel ? ` · ${device.channel}` : ""}
-        {` · added ${added(device.createdAt)}`}
+        {` · added ${formatDay(device.createdAt, "short")}`}
       </span>
       <span className="end">
         <code className="key" title={device.key}>

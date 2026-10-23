@@ -16,7 +16,7 @@ describe("worktree lifecycle", () => {
             worktreeHasLiveOwners(
                 {
                     sessions: {},
-                    agents: { agent: { id: "agent", type: "codex", title: "agent", startup: "codex", cwd: "/work/lane" } },
+                    agents: { agent: { id: "agent", type: "codex", title: "agent", cwd: "/work/lane" } },
                 },
                 "/work/lane",
             ),

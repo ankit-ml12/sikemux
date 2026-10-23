@@ -33,6 +33,9 @@ export interface TabDescriptor {
     /** Sits after the label, just before the close button, and stays visible. */
     badge?: ReactNode;
     className?: string;
+    /** Sets the label's text apart from the tab's own colour, as an agent's name is. */
+    /** Dim text after the label, such as the name of the agent a tab holds. */
+    note?: string;
     /** Tabs next to each other with the same group are outlined together, like the panes of one split. */
     group?: string;
     /** A temporary tab the next preview replaces. Drawn in italics until `onKeep` is called for it. */
@@ -64,6 +67,15 @@ function selectionSurface(wrap: HTMLElement): HTMLElement {
     const paints = style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.boxShadow !== "none";
     wrap.style.transition = kept;
     return paints ? wrap : (wrap.querySelector<HTMLElement>(".tab") ?? wrap);
+}
+
+/** A strip that changed most of its tabs at once is showing a different set, such as another project's, not opening or closing one. */
+function isSwap(seen: Set<string> | null, tabs: TabDescriptor[]): boolean {
+    if (!seen) return false;
+    const kept = tabs.filter((tab) => seen.has(tab.id)).length;
+    const added = tabs.length - kept;
+    const removed = seen.size - kept;
+    return added > 2 || removed > 2 || (kept === 0 && seen.size > 0 && tabs.length > 0);
 }
 
 function openTab(wrap: HTMLElement): void {
@@ -170,6 +182,9 @@ export function TabBar({
     const closedBoxes = useRef(new Map<string, Box>());
     const virtualizedRef = useRef(virtualized);
     virtualizedRef.current = virtualized;
+    const shownIds = useRef<Set<string> | null>(null);
+    const swappedRef = useRef(false);
+    swappedRef.current = isSwap(shownIds.current, tabs);
     const measureRef = useRef(tabVirtualizer.measureElement);
     measureRef.current = tabVirtualizer.measureElement;
     /*
@@ -190,6 +205,7 @@ export function TabBar({
                     const id = el.dataset.tabId;
                     if (id && wrapRefs.current.get(id) === el) wrapRefs.current.delete(id);
                     const strip = scrollRef.current;
+                    if (swappedRef.current) return false;
                     if (id && strip && el.classList.contains("active"))
                         closedBoxes.current.set(id, contentBox(selectionSurface(el).getBoundingClientRect(), strip));
                     return !virtualizedRef.current;
@@ -242,16 +258,17 @@ export function TabBar({
         reveal(scrollRef.current, tabRefs.current.get(activeId));
     }, [activeId]);
 
-    const shownIds = useRef<Set<string> | null>(null);
     const previousActive = useRef(activeId);
     useLayoutEffect(() => {
         const strip = scrollRef.current;
-        const ids = new Set(tabs.map((tab) => tab.id));
         const seen = shownIds.current;
-        shownIds.current = ids;
+        shownIds.current = new Set(tabs.map((tab) => tab.id));
         const from = previousActive.current;
         previousActive.current = activeId;
-        if (!strip || !seen || virtualized || reorder.dragging) return;
+        if (!strip || !seen || virtualized || reorder.dragging || isSwap(seen, tabs)) {
+            closedBoxes.current.clear();
+            return;
+        }
 
         // Measure where the selection lands before any new tab starts growing from nothing.
         if (from !== activeId && activeId !== undefined && from !== undefined) {
@@ -266,10 +283,7 @@ export function TabBar({
         }
         closedBoxes.current.clear();
 
-        // A strip that swapped most of its tabs at once is showing a different set, not opening one.
-        const added = tabs.filter((tab) => !seen.has(tab.id));
-        if (added.length === 0 || added.length > 2 || ![...seen].some((id) => ids.has(id))) return;
-        for (const tab of added) {
+        for (const tab of tabs.filter((tab) => !seen.has(tab.id))) {
             const wrap = wrapRefs.current.get(tab.id);
             if (wrap) openTab(wrap);
         }
@@ -369,6 +383,7 @@ export function TabBar({
                         }>
                         {t.icon && <span className="tab-mark">{t.icon}</span>}
                         <span className="tab-label">{t.label}</span>
+                        {t.note && <span className="tab-note">{t.note}</span>}
                         {t.badge && <span className="tab-badge">{t.badge}</span>}
                     </button>
                 </Tooltip>

@@ -308,7 +308,7 @@ describe("rust", () => {
   it("maps optional and nullable fields to Option, skipping only the optional ones", () => {
     expect(out).toContain("    pub last_seen_at: Option<String>,\n");
     expect(out).toContain(
-      '    #[serde(default, skip_serializing_if = "Option::is_none")]\n    pub channel: Option<String>,\n',
+      '    #[serde(skip_serializing_if = "Option::is_none")]\n    pub channel: Option<String>,\n',
     );
   });
 
@@ -462,7 +462,36 @@ describe("bundle and openapi", () => {
   it("refuses an unknown kind of auth", () => {
     expect(() =>
       openapi(withLive, { routes: [{ ...socket, auth: "cookie" }] }),
-    ).toThrow(/auth is one of none, session, device, webhook/);
+    ).toThrow(
+      /auth is one of none, signedIn, session, sessionOrHost, host, device, webhook/,
+    );
+  });
+
+  it("marks a request body the caller may leave out", () => {
+    const withErrors = new Map([
+      ...collect(device),
+      ...collect(document("common.json", { ApiError: { type: "string" } })),
+    ]);
+    const route = {
+      method: "post",
+      path: "/v1/devices",
+      operationId: "registerDevice",
+      summary: "",
+      auth: "session",
+      request: "Device",
+      responses: {},
+    };
+    const body = (extra: object) =>
+      openapi(withErrors, { routes: [{ ...route, ...extra }] }).paths[
+        "/v1/devices"
+      ].post.requestBody.required;
+    expect(body({})).toBe(true);
+    expect(body({ requestOptional: true })).toBe(false);
+    expect(() =>
+      openapi(withErrors, {
+        routes: [{ ...route, request: undefined, requestOptional: true }],
+      }),
+    ).toThrow(/requestOptional needs a request/);
   });
 
   it("refuses routes outside /v1", () => {

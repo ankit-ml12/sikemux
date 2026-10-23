@@ -1,11 +1,13 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, AppState, Image, PixelRatio, StyleSheet, View } from 'react-native';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, PixelRatio, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
+import { File, Paths } from 'expo-file-system';
 import { useIsFocused } from 'expo-router';
 import { ditheringFragmentShader, getShaderColorFromString, imageDitheringFragmentShader } from '@paper-design/shaders';
 
 import type { DeviceBackdrop } from '@/devices/backdrop';
+import { useAppActive, useBackdropPaused, useStill } from './motion';
 import { useColors, type Palette } from './theme';
 import { uploadPicture } from './picture';
 import { vertexShaderSource } from './vertexShader.generated';
@@ -15,10 +17,30 @@ export const BackdropContext = createContext<DeviceBackdrop | undefined>(undefin
 
 /** Every backdrop reads one clock, so the grain carries on across screens instead of restarting. */
 const ORIGIN = Date.now();
-/** The Mac ticks its grain at 30 fps, 20 on battery; a phone is always on battery. */
-const FRAME_MS = 50;
+/** The Mac ticks its grain at 30 fps, 20 on battery; a phone draws it on its JavaScript thread, so slower still. */
+const FRAME_MS = 80;
+const FADE_MS = 400;
 /** Where the grain rests when motion is reduced, as on the Mac. */
 const STILL_MS = 2500;
+
+/** Each picture's shape, measured once, and the backdrops already shown, so a screen opened later draws at once. */
+const aspects = new Map<string, number>();
+const revealed = new Set<string>();
+
+/* A picture backdrop never moves, so its first drawn frame is kept as an image, across launches,
+   and every later screen shows that instead of drawing it again. */
+function keptFrame(key: string): File {
+  let hash = 5381;
+  for (const char of key) hash = ((hash * 33) ^ char.charCodeAt(0)) >>> 0;
+  return new File(Paths.cache, `backdrop-${hash.toString(16)}.png`);
+}
+
+async function keepFrame(gl: ExpoWebGLRenderingContext, key: string): Promise<string> {
+  const shot = await GLView.takeSnapshotAsync(gl, { format: 'png' });
+  const kept = keptFrame(key);
+  new File(shot.localUri).move(kept, { overwrite: true });
+  return kept.uri;
+}
 
 type Uniform = number | boolean | number[];
 
@@ -89,6 +111,8 @@ type Surface = {
   buffer: WebGLBuffer | null;
   position: number;
   time: WebGLUniformLocation | null;
+  resolution: WebGLUniformLocation | null;
+  size: [number, number];
 };
 
 function mount(gl: ExpoWebGLRenderingContext, fragment: string, uniforms: Record<string, Uniform>): Surface | null {
@@ -125,7 +149,15 @@ function mount(gl: ExpoWebGLRenderingContext, fragment: string, uniforms: Record
     else if (value.length === 2) gl.uniform2fv(location, value);
     else gl.uniform4fv(location, value);
   }
-  return { gl, program, buffer, position, time: gl.getUniformLocation(program, 'u_time') };
+  return {
+    gl,
+    program,
+    buffer,
+    position,
+    time: gl.getUniformLocation(program, 'u_time'),
+    resolution: gl.getUniformLocation(program, 'u_resolution'),
+    size: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+  };
 }
 
 /** expo-gl presents a frame with GL calls of its own, so each frame binds everything again. */
@@ -136,6 +168,10 @@ function draw(surface: Surface, frameMs: number) {
   gl.enableVertexAttribArray(surface.position);
   gl.vertexAttribPointer(surface.position, 2, gl.FLOAT, false, 0, 0);
   gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  if (surface.size[0] !== gl.drawingBufferWidth || surface.size[1] !== gl.drawingBufferHeight) {
+    surface.size = [gl.drawingBufferWidth, gl.drawingBufferHeight];
+    if (surface.resolution) gl.uniform2fv(surface.resolution, surface.size);
+  }
   gl.clearColor(0, 0, 0, 0);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -144,26 +180,6 @@ function draw(surface: Surface, frameMs: number) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.flush();
   gl.endFrameEXP();
-}
-
-/** Whether the person asked the system to reduce motion. */
-export function useStill(): boolean {
-  const [still, setStill] = useState(false);
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setStill);
-    const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
-    return () => listener.remove();
-  }, []);
-  return still;
-}
-
-function useAppActive(): boolean {
-  const [active, setActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const listener = AppState.addEventListener('change', (state) => setActive(state === 'active'));
-    return () => listener.remove();
-  }, []);
-  return active;
 }
 
 /**
@@ -175,19 +191,52 @@ export function Backdrop() {
   const colors = useColors();
   const focused = useIsFocused();
   const active = useAppActive();
+  const paused = useBackdropPaused();
   const still = useStill();
-  const [aspect, setAspect] = useState<number>();
   const picture = backdrop?.texture ? backdrop.image : undefined;
-  const moving = !picture && focused && active && !still;
+  const window = useWindowDimensions();
+  const frameKey = backdrop?.texture
+    ? [
+        picture ? picture.slice(picture.lastIndexOf('/') + 1) : 'grain',
+        colors.ground,
+        colors.shaderDot,
+        Math.round(window.width),
+        Math.round(window.height),
+      ].join('|')
+    : undefined;
+  const [justKept, setJustKept] = useState<{ key: string; uri: string }>();
+  const onDisk = useMemo(() => {
+    if (!frameKey) return undefined;
+    const kept = keptFrame(frameKey);
+    return kept.exists ? kept.uri : undefined;
+  }, [frameKey]);
+  // Once this screen's frame is kept, the image takes the GL surface's place: an idle surface still wakes every frame.
+  const frame = onDisk ?? (justKept && justKept.key === frameKey ? justKept.uri : undefined);
+  const [measured, setMeasured] = useState<{ picture: string; aspect: number }>();
+  const aspect = picture ? (aspects.get(picture) ?? (measured?.picture === picture ? measured.aspect : undefined)) : undefined;
+  const moving = !picture && focused && active && !paused && !still;
+  // The grain animates only on the screen showing; anywhere else its kept frame stands in, with no GL surface.
+  const animating = !picture && focused && active && !still;
+  const drawing = !frame || animating;
   const loops = useRef(new Set<Loop>());
   const movingNow = useRef(moving);
+  const [shown] = useState(() => new Animated.Value(frame ? 1 : 0));
+  const show = () => {
+    const key = picture ?? 'grain';
+    if (still || revealed.has(key)) shown.setValue(1);
+    else Animated.timing(shown, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
+    revealed.add(key);
+  };
 
   useEffect(() => {
-    if (!picture) return;
+    if (!picture || aspects.has(picture)) return;
     Image.getSize(
       picture,
-      (width, height) => setAspect(width / height),
-      () => setAspect(undefined),
+      (width, height) => {
+        aspects.set(picture, width / height);
+        setMeasured({ picture, aspect: width / height });
+      },
+      () => {},
     );
   }, [picture]);
 
@@ -201,7 +250,7 @@ export function Backdrop() {
     return () => running.forEach((loop) => loop.stop());
   }, []);
 
-  if (!backdrop?.texture || (picture && !aspect)) return null;
+  if (!backdrop?.texture || (picture && !aspect && !frame)) return null;
   const { fragment, speed, uniforms } = preset(colors, Boolean(picture));
   const strength = picture ? 0.38 : 0.85;
   const band = picture ? '60%' : '50%';
@@ -222,11 +271,28 @@ export function Backdrop() {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       const loading = uploadPicture(gl, picture);
-      if (loading) loading.then(() => draw(surface, 0));
-      else draw(surface, 0);
+      const reveal = () => {
+        draw(surface, 0);
+        show();
+        if (frameKey) {
+          const key = frameKey;
+          keepFrame(gl, key)
+            .then((uri) => setJustKept({ key, uri }))
+            .catch(() => {});
+        }
+      };
+      if (loading) loading.then(reveal).catch(() => {});
+      else reveal();
       return;
     }
     draw(surface, still ? STILL_MS * speed : (Date.now() - ORIGIN) * speed);
+    show();
+    if (frameKey && !frame) {
+      const key = frameKey;
+      keepFrame(gl, key)
+        .then((uri) => setJustKept({ key, uri }))
+        .catch(() => {});
+    }
     // The loop holds this surface itself: a screen can mount more than one before settling on one.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
@@ -248,11 +314,17 @@ export function Backdrop() {
 
   return (
     <View pointerEvents="none" style={[styles.band, { height: band }]}>
-      <GLView
-        key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`}
-        style={[StyleSheet.absoluteFill, { opacity: strength }]}
-        onContextCreate={ready}
-      />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: Animated.multiply(shown, strength) }]}>
+        {frame ? <Image source={{ uri: frame }} style={StyleSheet.absoluteFill} resizeMode="stretch" /> : null}
+        {drawing ? (
+          <GLView
+            key={`${picture ?? 'grain'}:${colors.ground}:${colors.shaderDot}`}
+            style={StyleSheet.absoluteFill}
+            msaaSamples={0}
+            onContextCreate={ready}
+          />
+        ) : null}
+      </Animated.View>
       {/* The Mac masks the field out by the band's end; covering it with the ground does the same on an opaque screen. */}
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
         <Defs>

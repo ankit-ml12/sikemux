@@ -1,6 +1,9 @@
+import type { PageRef } from "../api/pages";
 import type { ToolDiff } from "./diff";
 import type { ToolOutput } from "./toolOutput";
 import type { SentContext } from "./promptContext";
+import type { QueuedMessage } from "./queuedMessages";
+import type { MdElement } from "../markdown/types";
 
 export interface AcpContentBlock {
     type: string;
@@ -61,6 +64,21 @@ export interface AcpAsyncTask {
     lastToolName?: string;
     outputFilePath?: string;
     usage?: { totalTokens: number; toolUses: number; durationMs: number };
+    /** The subagent that started it, when the chat itself did not. */
+    owner?: string;
+    /** The agents a workflow has started so far. */
+    agents?: AcpWorkflowAgent[];
+}
+
+export interface AcpWorkflowAgent {
+    index: number;
+    label: string;
+    state: "queued" | "running" | "completed" | "failed";
+    phase?: string;
+    activity?: string;
+    error?: string;
+    tokens?: number;
+    toolCalls?: number;
 }
 
 /* A subagent runs as its own ACP session, so its transcript is kept whole
@@ -72,6 +90,7 @@ export interface AcpSubagent {
     state: "running" | "completed" | "failed" | "cancelled" | "disconnected";
     messages: ChatMessage[];
     nextId: number;
+    tokens?: number;
 }
 
 /* What a background task left behind once it ended, kept in the transcript
@@ -80,21 +99,68 @@ export interface AcpTaskNotice {
     name: string;
     state: "completed" | "failed" | "stopped";
     summary?: string;
+    taskType?: string;
+    /* A subagent's notice shows that subagent's own card. */
+    subagent?: string;
 }
 
+/** Something the agent tells the person outside its reply, like a model fallback. */
+export interface AgentNotice {
+    severity: "info" | "warning" | "error";
+    title: string;
+    description?: string;
+}
+
+/** The chat moved to another of the person's accounts, by itself at a usage limit or when asked. */
+export interface AccountMove {
+    label: string;
+    from?: string;
+    reason: "limit" | "chosen";
+}
+
+/** Why the last turn failed, when it was the account's or the network's doing. */
+export interface ChatFailure {
+    kind: "signIn" | "limit" | "network" | "other";
+    /** What the agent itself said, behind the plain words. */
+    details?: string;
+    /** The profile id of the account it failed on. */
+    account: string | null;
+    /** When the core sends the stopped prompt again, once a usage limit resets, in Unix milliseconds. */
+    resumesAt?: number;
+}
+
+/* The core's markdown tree of a part's text and the length it covers, or null
+   once a change from the core did not fit the text here. */
+export type PartTree = { blocks: MdElement[]; n: number } | null;
+
 export type ChatPart =
-    | { id: string; kind: "text"; text: string }
-    | { id: string; kind: "thought"; text: string }
+    /* `letters` holds the core's tree of each message from another agent the text is made of. */
+    | { id: string; kind: "text"; text: string; md?: PartTree; letters?: MdElement[][] }
+    | { id: string; kind: "thought"; text: string; md?: PartTree }
     | { id: string; kind: "content"; content: AcpContentBlock }
     /* A finished call is read once and kept as what the transcript shows: the
        change it made, what it printed, and what it left behind when it failed. */
-    | { id: string; kind: "tool"; tool: AcpToolCall; diff?: ToolDiff; output?: ToolOutput; failure?: string; startedAt?: number; endedAt?: number }
+    | {
+          id: string;
+          kind: "tool";
+          tool: AcpToolCall;
+          diff?: ToolDiff;
+          output?: ToolOutput;
+          page?: PageRef;
+          failure?: string;
+          startedAt?: number;
+          endedAt?: number;
+      }
     | { id: string; kind: "subagent"; subagent: AcpSubagent }
-    | { id: string; kind: "notice"; notice: AcpTaskNotice };
+    | { id: string; kind: "notice"; notice: AcpTaskNotice }
+    | { id: string; kind: "agent_notice"; notice: AgentNotice }
+    | { id: string; kind: "account"; move: AccountMove };
 
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant";
+    /* What the agent knows a message the person sent by, for editing it. */
+    promptId?: string;
     parts: ChatPart[];
     attachments?: string[];
     context?: SentContext[];
@@ -109,10 +175,13 @@ export interface ChatMessage {
     sentAt?: number;
     /* When the turn this message closed finished, as this side saw it. */
     endedAt?: number;
+    /* The agent began a turn with this message, and when, if the core said. A
+       turn it began by itself follows the last one without a prompt between. */
+    opensTurn?: { at: number | null };
 }
 
 export interface ChatState {
-    connection: "connecting" | "installing" | "starting" | "initializing" | "ready" | "stopped" | "error";
+    connection: "connecting" | "starting" | "initializing" | "ready" | "stopped" | "error";
     messages: ChatMessage[];
     commands: AcpAvailableCommand[];
     permissions: AcpPermissionRequest[];
@@ -124,26 +193,51 @@ export interface ChatState {
     running: boolean;
     suppressUserEcho: boolean;
     error: string | null;
+    failure: ChatFailure | null;
     title: string | null;
     stopReason: string | null;
     nextId: number;
     revision: number;
     awaitingReplay: boolean;
+    /* The host no longer keeps the turns before the first one shown. */
+    earlierLost: boolean;
+    /* A turn has begun and its first message has not arrived yet. */
+    turnOpening: { at: number | null } | null;
+    /* The agent is retrying a request the network or its service failed. */
+    retrying: { attempt: number | null; connection: boolean } | null;
+    /* What the person sent mid-turn, waiting in the host's queue to go out once the turn ends. */
+    queued: QueuedMessage[];
 }
 
 export type ChatAction =
     | { type: "reset"; hold?: boolean }
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
-    | { type: "ready"; capabilities: Record<string, unknown>; setup: Record<string, unknown> }
-    | { type: "local_prompt"; text: string; paths: string[]; context?: SentContext[] }
-    | { type: "session_update"; sessionId: string; update: Record<string, unknown> }
-    | { type: "saved_usage"; usage: ContextUsage }
-    | { type: "turn_started" }
-    | { type: "turn_completed"; stopReason?: string }
+    | {
+          type: "ready";
+          capabilities: Record<string, unknown>;
+          setup: Record<string, unknown>;
+          /** Whether the core says a turn is running, for a chat taken up whose replay may start partway through it. */
+          running?: boolean;
+      }
+    | {
+          type: "local_prompt";
+          text: string;
+          paths: string[];
+          context?: SentContext[];
+          messageId?: string;
+          at?: number;
+          letters?: MdElement[][];
+      }
+    | { type: "rewind"; messageId: string }
+    | { type: "earlier"; messages: ChatMessage[] }
+    | { type: "session_update"; sessionId: string; update: Record<string, unknown>; main?: boolean }
+    | { type: "turn_started"; at?: number }
+    | { type: "turn_completed"; stopReason?: string; at?: number }
     | { type: "permission_requested"; request: AcpPermissionRequest }
     | { type: "permission_cleared"; requestId: string }
-    | { type: "error"; message: string };
+    | { type: "error"; message: string; failure?: ChatFailure }
+    | { type: "dismiss_error" };
 
 /* One run of a code fence that reads as one colour, and the lines they make up.
    A run with nothing set is plain text, which keeps the colour the stylesheet

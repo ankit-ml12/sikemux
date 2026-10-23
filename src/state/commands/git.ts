@@ -4,9 +4,9 @@ import { collectPanes } from "../layout";
 import type { DiffTarget } from "../types";
 import { ensureRoleWindow } from "./shared";
 
-export const openDiffPane = (): void => ensureRoleWindow("diff", "diff", "diff");
+export const openDiffPane = (): void => ensureRoleWindow("diff");
 
-export const openGitWorkbench = (): void => ensureRoleWindow("git", "git", "Git");
+export const openGitWorkbench = (): void => ensureRoleWindow("git");
 
 export function openGitPane(): void {
     openGitWorkbench();
@@ -37,14 +37,11 @@ function focusDiff(target: DiffTarget): void {
     const session = st.sessions[st.activeSessionId];
     if (!session) return;
     setState((state) => ({ diffTarget: { ...state.diffTarget, [session.cwd]: target } }));
-    ensureRoleWindow("diff", "diff", "diff");
+    ensureRoleWindow("diff");
 }
 
 /** Review one changed file in the diff tab. `path` is repo-relative. */
 export const openDiff = (path: string): void => focusDiff({ kind: "worktree", path });
-
-/** Review a whole commit in the diff tab. */
-export const openCommitDiff = (rev: string, subject: string): void => focusDiff({ kind: "commit", rev, subject });
 
 export function setGitView(paneId: string, patch: Partial<StoreState["gitViews"][string]>): void {
     mutate((d) => {

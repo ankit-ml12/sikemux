@@ -1,10 +1,16 @@
 /* ── main ───────────────────────────────────────────── */
 .settings-main {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
     background: var(--s-sunken);
+}
+/* Only its top right corner meets the rounded edge of the settings pane. */
+.settings-main > .pane-field {
+    clip-path: inset(0 round 0 calc(var(--radius-3) - 1px) 0 0);
 }
 .settings-topbar {
     display: flex;
@@ -141,6 +147,15 @@
     gap: var(--space-2) var(--space-4);
     min-height: 40px;
     padding: var(--space-2) var(--space-3);
+}
+.settings-row.has-icon {
+    grid-template-columns: 20px minmax(0, 1fr) minmax(0, auto);
+}
+.settings-row-icon {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
 }
 .settings-rows > .settings-row + .settings-row {
     border-top: 1px solid var(--border);

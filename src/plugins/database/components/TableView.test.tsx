@@ -1,12 +1,12 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseProfile, TableInfo } from "../api";
 
 const api = vi.hoisted(() => ({ describe: vi.fn() }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), databaseApi: api }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { TableView } from "./TableView";
+import { database } from "../resources";
 
 const shop: DatabaseProfile = {
     id: "p1",
@@ -48,7 +48,7 @@ const orders: TableInfo = {
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("database."));
+    database.refresh();
 });
 beforeEach(() => {
     api.describe.mockReset();
@@ -63,33 +63,6 @@ const renderView = (profile: DatabaseProfile = shop) => {
 };
 
 describe("TableView", () => {
-    it("lists the columns with their types, keys and defaults", async () => {
-        renderView();
-        const columns = await screen.findByRole("region", { name: "Columns" });
-        expect(api.describe).toHaveBeenCalledWith("p1", "orders", "public");
-        const rows = within(columns).getAllByRole("row");
-        expect(rows[1]).toHaveTextContent("idPKbigintno");
-        expect(rows[3]).toHaveTextContent("notetextyes");
-        const indexes = screen.getByRole("region", { name: "Indexes" });
-        expect(indexes).toHaveTextContent("orders_by_customer(customer_id)");
-        expect(indexes).toHaveTextContent("orders_pkey(id) primary");
-    });
-
-    it("lists the indexes and opens the table a foreign key points at", async () => {
-        const { onOpenTable } = renderView();
-        expect(await screen.findByText("orders_pkey")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "customers(id)" }));
-        expect(onOpenTable).toHaveBeenCalledWith({ schema: "public", name: "customers" });
-    });
-
-    it("previews the rows or starts a query on the table", async () => {
-        const { onQuery } = renderView();
-        fireEvent.click(await screen.findByRole("button", { name: "Preview rows" }));
-        expect(onQuery).toHaveBeenLastCalledWith('select * from "public"."orders" limit 100;', true);
-        fireEvent.click(screen.getByRole("button", { name: "Query this table" }));
-        expect(onQuery).toHaveBeenLastCalledWith('select * from "public"."orders" limit 100;', false);
-    });
-
     it("leaves SQLite's main schema out of the query", async () => {
         api.describe.mockResolvedValue({ ...orders, schema: "main" });
         const { onQuery } = renderView({

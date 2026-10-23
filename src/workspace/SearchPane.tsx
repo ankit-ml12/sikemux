@@ -10,11 +10,13 @@ import { searchApi, type SearchFile, type SearchHit, type SearchResults, type Re
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
 import { DEFAULT_GLOBAL_SEARCH_VIEW } from "../state/types";
-import { notify, errMessage } from "../state/toast";
+import { notify, swallow } from "../state/toast";
+import { errorText } from "../lib/format";
 import { FileIcon } from "../ui/FileIcon";
 import { IconSearch } from "../ui/Icons";
 import { basename, dirname, isPathWithin, joinPath, normalizePath } from "../lib/paths";
 import { PRIMARY_SHORTCUT, SHIFT_SHORTCUT } from "../lib/platform";
+import { ENTER_GLYPH } from "../commands/keybindings";
 
 const DEBOUNCE_MS = 250;
 const RESULT_FLUSH_MS = 50;
@@ -132,7 +134,7 @@ export function SearchPane({
             setSummary(null);
             setStatus("idle");
             setError(null);
-            void searchApi.cancel(cwd).catch(() => {});
+            void searchApi.cancel(cwd).catch(swallow("cancel the search"));
             return;
         }
         setStatus("searching");
@@ -145,7 +147,7 @@ export function SearchPane({
         return () => {
             window.clearTimeout(handle);
             requestId.current++;
-            if (started) void searchApi.cancel(cwd).catch(() => {});
+            if (started) void searchApi.cancel(cwd).catch(swallow("cancel the search"));
         };
     }, [cwd, visible, view.query, view.options, startSearch]);
 
@@ -221,7 +223,7 @@ export function SearchPane({
             );
             setReplacePreview(null);
         } catch (e) {
-            notify("error", `replace failed: ${errMessage(e)}`);
+            notify("error", `replace failed: ${errorText(e)}`);
             setReplacePreview(null);
         } finally {
             setReplacing(false);
@@ -869,7 +871,7 @@ function Preview({
             })
             .catch((e: unknown) => {
                 if (cancelled) return;
-                setErr(errMessage(e));
+                setErr(errorText(e));
                 setActive(null);
             });
         return () => {
@@ -1041,13 +1043,13 @@ function Footer() {
     return (
         <div className="sp-foot">
             <span>
-                <kbd>↵</kbd> open
+                <kbd>{ENTER_GLYPH}</kbd> open
             </span>
             <span>
                 <kbd>tab</kbd> replace
             </span>
             <span>
-                <kbd>{PRIMARY_SHORTCUT}↵</kbd> replace all
+                <kbd>{`${PRIMARY_SHORTCUT}${ENTER_GLYPH}`}</kbd> replace all
             </span>
             <span>
                 <kbd>

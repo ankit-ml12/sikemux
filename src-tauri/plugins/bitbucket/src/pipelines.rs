@@ -5,8 +5,11 @@
 use std::path::Path;
 
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sikemux_plugin_api::codehost::{
+    Job, JobLog, LogExcerpt, LogLine, Run, RunDetail, RunPage, RunTiming, Workflow, WorkflowFile,
+};
 
 use crate::client;
 use crate::error::{BitbucketError, BitbucketResult};
@@ -95,92 +98,65 @@ fn workflow_of(target: &Value) -> (String, String) {
     (id, name)
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Run {
-    pub id: String,
-    pub name: String,
-    pub title: String,
-    pub workflow_id: String,
-    pub path: Option<String>,
-    pub run_number: u64,
-    pub attempt: u64,
-    pub event: String,
-    pub status: String,
-    pub conclusion: Option<String>,
-    pub branch: Option<String>,
-    pub sha: String,
-    pub short_sha: String,
-    pub actor: Option<String>,
-    pub avatar_url: Option<String>,
-    pub created_at: String,
-    pub started_at: Option<String>,
-    pub updated_at: String,
-    pub pull_requests: Vec<u64>,
-    pub url: String,
-}
-
-impl Run {
-    fn from_row(repo: &RepoRef, row: &PipelineRow) -> Self {
-        let target = &row.target;
-        let (workflow_id, name) = workflow_of(target);
-        let sha = text(target, &["commit", "hash"])
-            .unwrap_or_default()
-            .to_string();
-        let pull = target
-            .get("pullrequest")
-            .and_then(|pull| pull.get("id"))
-            .and_then(Value::as_u64);
-        let branch = text(target, &["source"])
-            .or_else(|| text(target, &["ref_name"]))
-            .map(str::to_string);
-        let event = match (
-            pull,
-            row.trigger
-                .as_ref()
-                .and_then(|trigger| trigger.name.as_deref()),
-        ) {
-            (Some(_), _) => "pull_request",
-            (None, Some("MANUAL")) => "manual",
-            (None, Some("SCHEDULE")) => "schedule",
-            _ => "push",
-        };
-        let message = text(target, &["commit", "message"])
-            .and_then(|message| message.lines().next())
-            .map(str::trim)
-            .filter(|line| !line.is_empty());
-        let title = match (message, pull, &branch) {
-            (Some(line), _, _) => line.to_string(),
-            (None, Some(number), _) => format!("Pull request #{number}"),
-            (None, None, Some(branch)) => branch.clone(),
-            (None, None, None) => sha.chars().take(7).collect(),
-        };
-        let (status, conclusion) = status_of(row.state.as_ref());
-        Run {
-            id: row.uuid.clone(),
-            name,
-            title,
-            workflow_id,
-            path: Some(PIPELINES_FILE.into()),
-            run_number: row.build_number,
-            attempt: row.run_number.unwrap_or(1),
-            event: event.into(),
-            status,
-            conclusion,
-            branch,
-            short_sha: sha.chars().take(7).collect(),
-            sha,
-            actor: login_of(row.creator.as_ref()),
-            avatar_url: avatar_of(row.creator.as_ref()),
-            created_at: row.created_on.clone(),
-            started_at: Some(row.created_on.clone()),
-            updated_at: row
-                .completed_on
-                .clone()
-                .unwrap_or_else(|| row.created_on.clone()),
-            pull_requests: pull.into_iter().collect(),
-            url: repo.web(&format!("/pipelines/results/{}", row.build_number)),
-        }
+fn run_of(repo: &RepoRef, row: &PipelineRow) -> Run {
+    let target = &row.target;
+    let (workflow_id, name) = workflow_of(target);
+    let sha = text(target, &["commit", "hash"])
+        .unwrap_or_default()
+        .to_string();
+    let pull = target
+        .get("pullrequest")
+        .and_then(|pull| pull.get("id"))
+        .and_then(Value::as_u64);
+    let branch = text(target, &["source"])
+        .or_else(|| text(target, &["ref_name"]))
+        .map(str::to_string);
+    let event = match (
+        pull,
+        row.trigger
+            .as_ref()
+            .and_then(|trigger| trigger.name.as_deref()),
+    ) {
+        (Some(_), _) => "pull_request",
+        (None, Some("MANUAL")) => "manual",
+        (None, Some("SCHEDULE")) => "schedule",
+        _ => "push",
+    };
+    let message = text(target, &["commit", "message"])
+        .and_then(|message| message.lines().next())
+        .map(str::trim)
+        .filter(|line| !line.is_empty());
+    let title = match (message, pull, &branch) {
+        (Some(line), _, _) => line.to_string(),
+        (None, Some(number), _) => format!("Pull request #{number}"),
+        (None, None, Some(branch)) => branch.clone(),
+        (None, None, None) => sha.chars().take(7).collect(),
+    };
+    let (status, conclusion) = status_of(row.state.as_ref());
+    Run {
+        id: row.uuid.clone(),
+        name,
+        title,
+        workflow_id,
+        path: Some(PIPELINES_FILE.into()),
+        run_number: row.build_number,
+        attempt: row.run_number.unwrap_or(1),
+        event: event.into(),
+        status,
+        conclusion,
+        branch,
+        short_sha: sha.chars().take(7).collect(),
+        sha,
+        actor: login_of(row.creator.as_ref()),
+        avatar_url: avatar_of(row.creator.as_ref()),
+        created_at: row.created_on.clone(),
+        started_at: Some(row.created_on.clone()),
+        updated_at: row
+            .completed_on
+            .clone()
+            .unwrap_or_else(|| row.created_on.clone()),
+        pull_requests: pull.into_iter().collect(),
+        url: repo.web(&format!("/pipelines/results/{}", row.build_number)),
     }
 }
 
@@ -221,14 +197,6 @@ impl RunQuery {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunPage {
-    pub runs: Vec<Run>,
-    pub total: u64,
-    pub next_page: Option<u32>,
-}
-
 pub async fn list(data_dir: &Path, input: RunQuery) -> BitbucketResult<RunPage> {
     let page = input.page.unwrap_or(1).max(1);
     let per_page = if input.head_sha.is_some() {
@@ -251,7 +219,7 @@ pub async fn list(data_dir: &Path, input: RunQuery) -> BitbucketResult<RunPage> 
     let runs: Vec<Run> = found
         .values
         .iter()
-        .map(|row| Run::from_row(&input.repo, row))
+        .map(|row| run_of(&input.repo, row))
         .filter(|run| input.keeps(run))
         .collect();
     Ok(RunPage {
@@ -269,12 +237,32 @@ pub struct RunRef {
     pub run_id: String,
 }
 
+fn is_build_number(run_id: &str) -> bool {
+    let run_id = run_id.trim();
+    !run_id.is_empty() && run_id.chars().all(|c| c.is_ascii_digit())
+}
+
 fn pipeline_path(repo: &RepoRef, run_id: &str, rest: &str) -> BitbucketResult<String> {
-    repo.path(&format!("/pipelines/{}{rest}", uuid_segment(run_id)?))
+    let segment = if is_build_number(run_id) {
+        run_id.trim().to_string()
+    } else {
+        uuid_segment(run_id)?
+    };
+    repo.path(&format!("/pipelines/{segment}{rest}"))
 }
 
 async fn pipeline(data_dir: &Path, repo: &RepoRef, run_id: &str) -> BitbucketResult<PipelineRow> {
     client::get(data_dir, &pipeline_path(repo, run_id, "")?, &[]).await
+}
+
+/// Bitbucket finds a pipeline by its build number only when reading it, so
+/// anything else is sent to its {uuid}.
+async fn run_uuid(data_dir: &Path, repo: &RepoRef, run_id: &str) -> BitbucketResult<String> {
+    if is_build_number(run_id) {
+        Ok(pipeline(data_dir, repo, run_id).await?.uuid)
+    } else {
+        Ok(run_id.to_string())
+    }
 }
 
 #[derive(Deserialize)]
@@ -287,31 +275,21 @@ struct StepRow {
     image: Option<Named>,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Job {
-    /// The pipeline and the step, `pipeline:step`, since Bitbucket reaches a
-    /// step's log through both.
-    pub id: String,
-    pub name: String,
-    pub status: String,
-    pub conclusion: Option<String>,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
-    pub runner: Option<String>,
-    pub url: Option<String>,
-    pub check_run_id: Option<String>,
-    pub steps: Vec<Value>,
-}
-
+/// A job is named by its pipeline and step, `pipeline:step`, since Bitbucket
+/// reaches a step's log through both.
 fn job_id(run_id: &str, step_id: &str) -> String {
     format!("{run_id}:{step_id}")
 }
 
-fn split_job(job_id: &str) -> BitbucketResult<(&str, &str)> {
+fn split_job<'a>(job_id: &'a str, run_id: Option<&'a str>) -> BitbucketResult<(&'a str, &'a str)> {
     job_id
         .split_once(':')
-        .ok_or_else(|| BitbucketError::BadArg(format!("`{job_id}` is not a Bitbucket step")))
+        .or_else(|| run_id.map(|run_id| (run_id, job_id)))
+        .ok_or_else(|| {
+            BitbucketError::BadArg(format!(
+                "`{job_id}` is a step without its pipeline: pass runId too, or the pipeline:step id bitbucket_pipeline gives"
+            ))
+        })
 }
 
 async fn steps(data_dir: &Path, repo: &RepoRef, run: &Run) -> BitbucketResult<Vec<Job>> {
@@ -342,37 +320,24 @@ async fn steps(data_dir: &Path, repo: &RepoRef, run: &Run) -> BitbucketResult<Ve
         .collect())
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct RunDetail {
-    pub run: Run,
-    pub jobs: Vec<Job>,
-}
-
 pub async fn detail(data_dir: &Path, input: RunRef) -> BitbucketResult<RunDetail> {
     let row = pipeline(data_dir, &input.repo, &input.run_id).await?;
-    let run = Run::from_row(&input.repo, &row);
+    let run = run_of(&input.repo, &row);
     let jobs = steps(data_dir, &input.repo, &run).await?;
     Ok(RunDetail { run, jobs })
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Timing {
-    pub run_duration_ms: Option<u64>,
-    pub billable: Vec<Value>,
-}
-
-pub async fn timing(data_dir: &Path, input: RunRef) -> BitbucketResult<Timing> {
+pub async fn timing(data_dir: &Path, input: RunRef) -> BitbucketResult<RunTiming> {
     let row = pipeline(data_dir, &input.repo, &input.run_id).await?;
-    Ok(Timing {
+    Ok(RunTiming {
         run_duration_ms: row.duration_in_seconds.map(|secs| secs * 1000),
         billable: Vec::new(),
     })
 }
 
 pub async fn cancel(data_dir: &Path, input: RunRef) -> BitbucketResult<()> {
-    let path = pipeline_path(&input.repo, &input.run_id, "/stopPipeline")?;
+    let run_id = run_uuid(data_dir, &input.repo, &input.run_id).await?;
+    let path = pipeline_path(&input.repo, &run_id, "/stopPipeline")?;
     client::post_empty(data_dir, &path, None).await
 }
 
@@ -435,22 +400,7 @@ pub struct JobRef {
     #[serde(flatten)]
     pub repo: RepoRef,
     pub job_id: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogLine {
-    pub number: u64,
-    pub timestamp: Option<String>,
-    pub text: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JobLog {
-    pub lines: Vec<LogLine>,
-    pub expired: bool,
-    pub truncated: bool,
+    pub run_id: Option<String>,
 }
 
 fn lines_of(text: &str, truncated: bool) -> Vec<LogLine> {
@@ -476,13 +426,6 @@ pub struct Excerpt {
     pub job: JobRef,
     pub tail: Option<usize>,
     pub grep: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogExcerpt {
-    pub lines: Vec<LogLine>,
-    pub truncated: bool,
 }
 
 const DEFAULT_TAIL: usize = 200;
@@ -517,10 +460,11 @@ pub async fn excerpt(data_dir: &Path, input: Excerpt) -> BitbucketResult<LogExce
 
 /// A step that has not started yet has no log, which reads as an empty one.
 pub async fn log(data_dir: &Path, input: JobRef) -> BitbucketResult<JobLog> {
-    let (run_id, step_id) = split_job(&input.job_id)?;
+    let (run_id, step_id) = split_job(&input.job_id, input.run_id.as_deref())?;
+    let run_id = run_uuid(data_dir, &input.repo, run_id).await?;
     let path = pipeline_path(
         &input.repo,
-        run_id,
+        &run_id,
         &format!("/steps/{}/log", uuid_segment(step_id)?),
     )?;
     let (status, bytes, truncated) =
@@ -540,17 +484,6 @@ pub async fn log(data_dir: &Path, input: JobRef) -> BitbucketResult<JobLog> {
         expired: false,
         truncated,
     })
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Workflow {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub state: String,
-    pub active: bool,
-    pub url: String,
 }
 
 fn indent_of(line: &str) -> usize {
@@ -664,12 +597,6 @@ pub struct FileRef {
     pub repo: RepoRef,
 }
 
-#[derive(Serialize)]
-pub struct WorkflowFile {
-    pub path: String,
-    pub text: String,
-}
-
 pub async fn workflow_file(data_dir: &Path, input: FileRef) -> BitbucketResult<WorkflowFile> {
     Ok(WorkflowFile {
         path: PIPELINES_FILE.into(),
@@ -750,6 +677,19 @@ mod tests {
     }
 
     #[test]
+    fn a_paused_pipeline_stops_the_watch() {
+        for paused in [
+            json!({ "name": "PAUSED" }),
+            json!({ "name": "HALTED" }),
+            json!({ "name": "IN_PROGRESS", "stage": { "name": "PAUSED" } }),
+        ] {
+            assert!(crate::watch::settled(&status_of(Some(&state(paused))).0));
+        }
+        let running = json!({ "name": "IN_PROGRESS", "stage": { "name": "RUNNING" } });
+        assert!(!crate::watch::settled(&status_of(Some(&state(running))).0));
+    }
+
+    #[test]
     fn states_use_the_words_every_host_shares() {
         let cases = [
             (json!({ "name": "PENDING" }), ("queued", None)),
@@ -798,7 +738,7 @@ mod tests {
 
     #[test]
     fn a_custom_pipeline_on_a_branch_reads_as_a_manual_run_of_that_workflow() {
-        let run = Run::from_row(
+        let run = run_of(
             &repo(),
             &row(json!({
                 "uuid": "{aaaa-1}", "build_number": 42, "created_on": "t0",
@@ -827,7 +767,7 @@ mod tests {
 
     #[test]
     fn a_pull_request_pipeline_names_its_pull_request_and_source_branch() {
-        let run = Run::from_row(
+        let run = run_of(
             &repo(),
             &row(json!({
                 "uuid": "{b}", "build_number": 7, "created_on": "t0",
@@ -847,7 +787,7 @@ mod tests {
 
     #[test]
     fn a_pipeline_is_titled_by_its_commit_message_first_line() {
-        let run = Run::from_row(
+        let run = run_of(
             &repo(),
             &row(json!({
                 "uuid": "{d}", "build_number": 8, "created_on": "t0",
@@ -863,7 +803,7 @@ mod tests {
 
     #[test]
     fn filters_bitbucket_ignores_are_applied_to_the_page() {
-        let run = Run::from_row(
+        let run = run_of(
             &repo(),
             &row(json!({
                 "uuid": "{c}", "build_number": 1, "created_on": "t0",
@@ -905,14 +845,6 @@ mod tests {
                 "selector": { "type": "pull-requests", "pattern": "**" }
             })
         );
-    }
-
-    #[test]
-    fn a_step_is_named_by_its_pipeline_and_itself() -> BitbucketResult<()> {
-        let id = job_id("{p}", "{s}");
-        assert_eq!(split_job(&id)?, ("{p}", "{s}"));
-        assert!(split_job("{p}").is_err());
-        Ok(())
     }
 
     #[test]

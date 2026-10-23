@@ -1,25 +1,18 @@
-import { useAuth, useReverification } from "@clerk/react";
+import { useAuth } from "@clerk/react";
+import {
+  CONFIRM_WORD,
+  confirmsDeletion,
+  errorCode,
+  orReverify,
+} from "@sikemux/protocol/account";
 import { useId, useState, type SubmitEvent } from "react";
 
-import { api, ApiProblem } from "./api.ts";
-import { errorCode } from "./clerkErrors.ts";
+import { api, formatDay, problemText, signedInToken } from "./api.ts";
 import type { Load } from "./Devices.tsx";
 import { BackIcon } from "./icons.tsx";
-
-const CONFIRM_WORD = "delete";
+import { useReverified } from "./Reverify.tsx";
 const POLICY = "https://sikemux.com/delete-account";
 const CONTACT = "contact@nodelike.com";
-
-/** What `useReverification` takes as "ask the person to sign in again": the API wants a first factor from the last 10 minutes. */
-const NEEDS_REVERIFICATION = {
-  clerk_error: {
-    type: "forbidden",
-    reason: "reverification-error",
-    metadata: {
-      reverification: { level: "first_factor", afterMinutes: 10 },
-    },
-  },
-};
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -28,14 +21,16 @@ function count(n: number, one: string, many: string): string {
 /** Signed in: what deleting takes with it, and the one button that does it. */
 export function DeleteAccount({
   email,
+  restorableDays,
   load,
   onBack,
   onDeleted,
 }: {
   email: string | undefined;
+  restorableDays: number | undefined;
   load: Load;
   onBack: () => void;
-  onDeleted: () => void;
+  onDeleted: (deletesAt: string) => void;
 }) {
   const { getToken } = useAuth();
   const [typed, setTyped] = useState("");
@@ -43,40 +38,29 @@ export function DeleteAccount({
   const [problem, setProblem] = useState<string>();
   const fieldId = useId();
 
-  const deleteAccount = useReverification(async () => {
-    const token = await getToken({ skipCache: true });
-    if (!token) throw new Error("Sign in again to delete your account.");
-    try {
-      return await api.deleteAccount(token);
-    } catch (error) {
-      if (
-        error instanceof ApiProblem &&
-        error.status === 403 &&
-        error.message === "reverify"
-      )
-        return NEEDS_REVERIFICATION;
-      throw error;
-    }
+  const { run: deleteAccount, confirm } = useReverified(async () => {
+    const token = await signedInToken(getToken, "delete your account", {
+      fresh: true,
+    });
+    return orReverify(() => api(token).deleteAccount());
   });
 
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (typed.trim().toLowerCase() !== CONFIRM_WORD || busy) return;
+    if (!confirmsDeletion(typed) || busy) return;
     setBusy(true);
     setProblem(undefined);
     try {
-      await deleteAccount();
-      onDeleted();
+      const deletion = await deleteAccount();
+      onDeleted(deletion.deletesAt);
     } catch (error) {
       setBusy(false);
       if (errorCode(error) === "reverification_cancelled") return;
-      setProblem(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong; try again.",
-      );
+      setProblem(problemText(error));
     }
   };
+
+  if (confirm) return confirm;
 
   const devices = load.state === "loaded" ? load.devices : null;
   const hosts = devices?.filter((device) => device.role === "host") ?? [];
@@ -91,7 +75,11 @@ export function DeleteAccount({
       <h1>Delete your account</h1>
       <p className="lede">
         This deletes {email ? <span className="ink">{email}</span> : "it"} from
-        Sikemux right away. It can't be undone.
+        Sikemux. Changed your mind? Sign in again{" "}
+        {restorableDays
+          ? `within ${count(restorableDays, "day", "days")}`
+          : "soon"}{" "}
+        to restore it.
       </p>
 
       <ul className="facts">
@@ -106,8 +94,11 @@ export function DeleteAccount({
           from every host.
         </li>
         <li>
-          Your sign-in is deleted. Device keys and the account&rsquo;s history
-          are erased within 30 days, and backups within 30 days after that.
+          {restorableDays
+            ? `After ${count(restorableDays, "day", "days")},`
+            : "Once it can no longer be restored,"}{" "}
+          your sign-in, device keys and the account&rsquo;s history are erased,
+          and backups within 30 days after that.
         </li>
       </ul>
       {devices && devices.length > 0 ? (
@@ -139,7 +130,7 @@ export function DeleteAccount({
         <button
           type="submit"
           className="button danger"
-          disabled={typed.trim().toLowerCase() !== CONFIRM_WORD || busy}
+          disabled={!confirmsDeletion(typed) || busy}
           data-busy={busy || undefined}
         >
           Delete account
@@ -169,13 +160,21 @@ export function DeleteAccountIntro() {
   );
 }
 
-export function AccountDeleted() {
+export function AccountDeleted({ deletesAt }: { deletesAt?: string }) {
   return (
     <section className="panel">
       <h1>Your account is deleted</h1>
       <p>
-        Every device on it is signed out. Device keys and the account&rsquo;s
-        history are erased within 30 days.
+        Every device on it is signed out. Changed your mind? Sign in again{" "}
+        {deletesAt ? (
+          <>
+            before <span className="ink">{formatDay(deletesAt)}</span>
+          </>
+        ) : (
+          "soon"
+        )}{" "}
+        to restore it. After that, your sign-in, device keys and the
+        account&rsquo;s history are erased.
       </p>
       <p className="quiet small">
         Questions? Email <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.

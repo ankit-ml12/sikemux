@@ -1,25 +1,28 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::validate_pty_dimensions;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Notify};
 
 use crate::protocol::{
-    decode_input, encode_control, fits, read_frame, ClientMessage, Event, FrameKind,
-    HostRegistration, LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId,
-    SpawnTarget, PROTOCOL, PROTOCOL_VERSION,
+    decode_input, encode_control, fits, read_frame, ClientMessage, FrameKind, HostRegistration,
+    LaunchIdentity, Request, RequestId, Response, ServerMessage, SessionId, SpawnTarget,
+    TerminalSpawn, OLDEST_PROTOCOL_VERSION, PROTOCOL, PROTOCOL_VERSION,
 };
 
 use super::access::{self, Needs, Peer};
+use super::calls;
 use super::host;
 use super::prepare::{prepare_task, prepare_terminal};
 use super::session::{self, PendingStart};
 use super::{
-    agent, chat, harness, remote, upgrade, window, workspace, Core, CoreError, CoreResult,
+    agent, attachments, chat, local_peer, messages, remote, upgrade, window, workspace, Core,
+    CoreError, CoreResult,
 };
 
 pub(crate) type ClientId = u64;
@@ -34,6 +37,8 @@ const SHUTDOWN_FLUSH: Duration = Duration::from_secs(1);
 pub(crate) struct ClientConn {
     pub id: ClientId,
     pub peer: Peer,
+    /// The process on the other end, for a client on this host.
+    pub pid: Option<u32>,
     frames: mpsc::UnboundedSender<Arc<[u8]>>,
     queued: AtomicUsize,
     closed: AtomicBool,
@@ -59,6 +64,34 @@ impl ClientConn {
         self.foreground.store(foreground, Ordering::Release);
     }
 
+    /// A client inside the core, such as a shared chat's link, that reads the
+    /// frames sent to it from `frames` itself. The core does not list it, so
+    /// it hears only what it attaches to.
+    pub(crate) fn inside(
+        core: &Core,
+        peer: Peer,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<Arc<[u8]>>) {
+        let (frames, queue) = mpsc::unbounded_channel();
+        let client = Arc::new(Self {
+            id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
+            peer,
+            pid: None,
+            frames,
+            queued: AtomicUsize::new(0),
+            closed: AtomicBool::new(false),
+            kick: Notify::new(),
+            subscriptions: Mutex::new(HashSet::new()),
+            watches_view: AtomicBool::new(false),
+            foreground: AtomicBool::new(true),
+        });
+        (client, queue)
+    }
+
+    /// The reader of a client [`inside`](Self::inside) the core took a frame.
+    pub(crate) fn took(&self, bytes: usize) {
+        self.queued.fetch_sub(bytes, Ordering::AcqRel);
+    }
+
     /// A client with nobody on the other end, registered with the core.
     #[cfg(test)]
     pub(crate) fn stand_in(core: &Core, peer: Peer) -> Arc<Self> {
@@ -66,6 +99,7 @@ impl ClientConn {
         let client = Arc::new(Self {
             id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
             peer,
+            pid: None,
             frames,
             queued: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
@@ -79,9 +113,7 @@ impl ClientConn {
     }
 
     pub(crate) fn is_subscribed(&self, id: SessionId) -> bool {
-        self.subscriptions
-            .lock()
-            .is_ok_and(|subscriptions| subscriptions.contains(&id))
+        self.subscriptions.locked().contains(&id)
     }
 
     pub(crate) fn send(&self, frame: Arc<[u8]>) -> bool {
@@ -142,20 +174,16 @@ impl ClientConn {
     }
 
     pub(crate) fn note_subscription(&self, id: SessionId, subscribed: bool) {
-        if let Ok(mut subscriptions) = self.subscriptions.lock() {
-            if subscribed {
-                subscriptions.insert(id);
-            } else {
-                subscriptions.remove(&id);
-            }
+        let mut subscriptions = self.subscriptions.locked();
+        if subscribed {
+            subscriptions.insert(id);
+        } else {
+            subscriptions.remove(&id);
         }
     }
 
     pub(crate) fn take_subscriptions(&self) -> HashSet<SessionId> {
-        self.subscriptions
-            .lock()
-            .map(|mut subscriptions| std::mem::take(&mut *subscriptions))
-            .unwrap_or_default()
+        std::mem::take(&mut *self.subscriptions.locked())
     }
 
     pub(crate) async fn wait_flushed(&self, limit: Duration) {
@@ -173,6 +201,19 @@ async fn write_direct(writer: &mut FrameWriter, message: &ServerMessage) {
     }
 }
 
+/// The newest version both sides speak. The app and its own core ship
+/// together and must match, so a local client that differs is told to
+/// replace the core.
+fn agreed_version(peer: &Peer, oldest: u32, newest: u32) -> Option<u32> {
+    let core_oldest = if peer.is_local() {
+        PROTOCOL_VERSION
+    } else {
+        OLDEST_PROTOCOL_VERSION
+    };
+    let agreed = newest.min(PROTOCOL_VERSION);
+    (agreed >= oldest.max(core_oldest)).then_some(agreed)
+}
+
 async fn handshake(
     core: &Arc<Core>,
     peer: &Peer,
@@ -182,7 +223,7 @@ async fn handshake(
     let frame = match tokio::time::timeout(HANDSHAKE_TIMEOUT, read_frame(reader)).await {
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Control => frame,
         Ok(Ok(Some(frame))) if frame.kind == FrameKind::Frozen && peer.is_local() => {
-            upgrade::answer(core, &frame.payload, writer).await;
+            upgrade::answer(core, peer, &frame.payload, writer).await;
             return false;
         }
         _ => return false,
@@ -194,35 +235,33 @@ async fn handshake(
     }
     let pid = std::process::id();
     match serde_json::from_slice::<ClientMessage>(&frame.payload) {
-        Ok(ClientMessage::Hello { protocol, version })
-            if protocol == PROTOCOL && version == PROTOCOL_VERSION =>
-        {
-            write_direct(
-                writer,
-                &ServerMessage::HelloAck {
+        Ok(ClientMessage::Hello {
+            protocol,
+            version,
+            newest,
+        }) => {
+            let newest = newest.unwrap_or(version);
+            let agreed = (protocol == PROTOCOL)
+                .then(|| agreed_version(peer, version, newest))
+                .flatten();
+            let reply = match agreed {
+                Some(agreed) => ServerMessage::HelloAck {
                     protocol: PROTOCOL.into(),
-                    version: PROTOCOL_VERSION,
+                    version: agreed,
                     pid,
                     build: core.build.clone(),
                 },
-            )
-            .await;
-            true
-        }
-        Ok(ClientMessage::Hello { protocol, version }) => {
-            write_direct(
-                writer,
-                &ServerMessage::HelloRejected {
+                None => ServerMessage::HelloRejected {
                     protocol: PROTOCOL.into(),
                     version: PROTOCOL_VERSION,
                     pid,
                     message: format!(
-                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} version {version}"
+                        "this core speaks {PROTOCOL} version {PROTOCOL_VERSION}, the client asked for {protocol} versions {version} to {newest}"
                     ),
                 },
-            )
-            .await;
-            false
+            };
+            write_direct(writer, &reply).await;
+            agreed.is_some()
         }
         _ => {
             write_direct(
@@ -239,13 +278,16 @@ async fn handshake(
 }
 
 pub(crate) async fn serve_local(core: Arc<Core>, stream: UnixStream) {
+    let peer = local_peer::identify(&stream).await;
+    let pid = local_peer::pid(&stream);
     let (read_half, write_half) = stream.into_split();
-    serve_client(core, Peer::Local, Box::new(read_half), Box::new(write_half)).await;
+    serve_client(core, peer, pid, Box::new(read_half), Box::new(write_half)).await;
 }
 
 pub(crate) async fn serve_client(
     core: Arc<Core>,
     peer: Peer,
+    pid: Option<u32>,
     read_half: Box<dyn AsyncRead + Send + Unpin>,
     write_half: Box<dyn AsyncWrite + Send + Unpin>,
 ) {
@@ -258,6 +300,7 @@ pub(crate) async fn serve_client(
     let client = Arc::new(ClientConn {
         id: core.next_client_id.fetch_add(1, Ordering::Relaxed),
         peer,
+        pid,
         frames,
         queued: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
@@ -347,15 +390,20 @@ async fn read_requests(
                     client.respond(request_id, Err(refused));
                     continue;
                 }
+                if client.peer == Peer::Local {
+                    client.respond(request_id, Err(access::APP_ONLY.into()));
+                    continue;
+                }
                 let Some(target) = core.session(id) else {
                     client.respond(request_id, Err("invalid argument: pty not found".into()));
                     continue;
                 };
-                agent::note_input(core, &target, bytes);
                 let reply_to = client.clone();
-                session::queue_input(
+                type_input(
+                    core,
                     &target,
                     bytes.to_vec(),
+                    typist(client),
                     Box::new(move |result| {
                         reply_to.respond(
                             request_id,
@@ -367,6 +415,80 @@ async fn read_requests(
             FrameKind::Output | FrameKind::Snapshot | FrameKind::Frozen => return,
         }
     }
+}
+
+/// Who `client` types as: the app on its own connection, or anyone else.
+pub(crate) fn typist(client: &ClientConn) -> session::Typist {
+    if client.peer == Peer::App {
+        session::Typist::App(client.id)
+    } else {
+        session::Typist::Other
+    }
+}
+
+/// Types `bytes` into `target` as the person's own input.
+pub(crate) fn type_input(
+    core: &Core,
+    target: &session::Session,
+    bytes: Vec<u8>,
+    typist: session::Typist,
+    reply: Box<dyn FnOnce(std::io::Result<()>) + Send>,
+) {
+    if !target.may_type(typist) {
+        return reply(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            session::SETUP_LOCKED,
+        )));
+    }
+    agent::note_input(core, target, &bytes);
+    if let Some(agent) = target
+        .agent
+        .as_ref()
+        .filter(|_| agent::submits_line(&bytes))
+    {
+        core.harness.questions.typed(agent.agent_id());
+        messages::worked(core, agent.agent_id());
+    }
+    session::queue_input(target, bytes, typist, reply);
+}
+
+/// Opens, for the app connection `client`, a terminal that runs `startup` to
+/// set a host up over SSH, locked to that connection from the start
+/// (`SetupLock`), and answers with its id.
+pub(crate) async fn spawn_setup(
+    core: &Arc<Core>,
+    client: &ClientConn,
+    cols: u16,
+    rows: u16,
+    startup: String,
+) -> CoreResult<SessionId> {
+    if client.peer != Peer::App {
+        return Err(access::APP_ONLY.into());
+    }
+    let launch = core.launch_identity();
+    let owner = client.id;
+    let spawning = core.clone();
+    let pending = blocking(move || {
+        let mut prepared = prepare_terminal(
+            &launch,
+            TerminalSpawn {
+                cols,
+                rows,
+                cwd: None,
+                startup: Some(startup),
+                direct_command: None,
+                context: None,
+                env: HashMap::new(),
+                continues: None,
+            },
+        )?;
+        prepared.setup = Some(session::SetupLock::By(owner));
+        session::spawn_session(&spawning, prepared)
+    })
+    .await?;
+    let id = pending.id();
+    pending.start(core);
+    Ok(id)
 }
 
 pub(crate) async fn blocking<T: Send + 'static>(
@@ -400,10 +522,18 @@ async fn run_requests(
             client.respond(request_id, Err(refused));
             continue;
         }
+        if client.peer == Peer::Local && access::for_person(&request, core.remote.setup()) {
+            client.respond(request_id, Err(access::APP_ONLY.into()));
+            continue;
+        }
         match request {
             Request::Spawn { launch, target } => {
                 tokio::spawn(async move {
                     let started_by = client.peer.device_id();
+                    let launch = match started_by {
+                        Some(_) => core.launch_identity(),
+                        None => launch,
+                    };
                     match spawn(core.clone(), launch, target, started_by).await {
                         Ok(pending) => {
                             let id = pending.id();
@@ -468,17 +598,15 @@ async fn run_requests(
             }
             Request::RegisterWindow => {
                 core.window.register(client.clone());
+                if let Some(listening) = core.listening.get() {
+                    crate::waiting::wake(&listening.config.socket);
+                }
+                core.agents_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
-            Request::HarnessAwaitingTrust { execution_id } => {
-                core.harness.awaiting_trust(&execution_id);
+            Request::PluginsChanged => {
+                core.harness.plugins_changed();
                 client.respond(request_id, Ok(Response::Done));
-            }
-            Request::HarnessStopRuns { selector } => {
-                tokio::spawn(async move {
-                    harness::stop_runs(&core, selector).await;
-                    client.respond(request_id, Ok(Response::Done));
-                });
             }
             Request::Configure { manifest_dir } => {
                 tokio::spawn(async move {
@@ -499,20 +627,15 @@ async fn run_requests(
                 });
             }
             Request::ListManifests => {
-                let result = core.manifest_report();
-                client.respond(
-                    request_id,
-                    result.map(|report| Response::Manifests { report }),
-                );
+                let report = core.manifest_report();
+                client.respond(request_id, Ok(Response::Manifests { report }));
             }
             Request::ExplainAgentDetection { agent_id } => {
                 let result = match core.agent_session(&agent_id) {
                     Some(target) => {
                         let explaining = core.clone();
                         blocking(move || {
-                            let registry = explaining.detection.read().map_err(|_| {
-                                CoreError::from("agent detection registry lock poisoned")
-                            })?;
+                            let registry = explaining.detection.read_locked();
                             agent::explain(&registry, &target)
                         })
                         .await
@@ -534,8 +657,9 @@ async fn run_requests(
                     }
                     Err(error) => Err(error),
                 };
-                if let Err(error) = result {
-                    client.respond(request_id, Err(error));
+                match result {
+                    Ok(()) => core.view_changed(),
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
             }
             Request::Subscribe { id } => {
@@ -546,8 +670,9 @@ async fn run_requests(
                     }
                     Err(error) => Err(error),
                 };
-                if let Err(error) = result {
-                    client.respond(request_id, Err(error));
+                match result {
+                    Ok(()) => core.view_changed(),
+                    Err(error) => client.respond(request_id, Err(error)),
                 }
             }
             Request::ResetModes { id } => {
@@ -556,6 +681,16 @@ async fn run_requests(
                     Err(error) => Err(error),
                 };
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::ShellAtPrompt { id } => {
+                let result = match session_or_missing(&core, id) {
+                    Ok(target) => blocking(move || Ok(target.shell_at_prompt())).await,
+                    Err(error) => Err(error),
+                };
+                client.respond(
+                    request_id,
+                    result.map(|at_prompt| Response::ShellAtPrompt { at_prompt }),
+                );
             }
             Request::Detach { id } => {
                 if let Some(target) = core.session(id) {
@@ -567,6 +702,7 @@ async fn run_requests(
                     .await;
                 }
                 client.note_subscription(id, false);
+                core.view_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::Resize { id, cols, rows } => {
@@ -577,6 +713,9 @@ async fn run_requests(
                     },
                     Err(error) => Err(error.into()),
                 };
+                if result.is_ok() {
+                    core.view_changed();
+                }
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::List => {
@@ -588,7 +727,7 @@ async fn run_requests(
                 );
             }
             Request::AcpStart { launch } => {
-                match chat::begin(&core, *launch, Some(&client), None) {
+                match chat::begin(&core, *launch, Some(&client), None, false) {
                     Ok(started) => {
                         tokio::spawn(async move {
                             let result = chat::until_started(&core, started).await;
@@ -606,13 +745,27 @@ async fn run_requests(
                     chat::attach(&core, &client, request_id, &agent_id, since).await;
                 });
             }
+            Request::AcpHistory {
+                agent_id,
+                feed,
+                before,
+                turns,
+            } => {
+                tokio::spawn(async move {
+                    let reading = core.clone();
+                    let page =
+                        blocking(move || chat::history(&reading, &agent_id, &feed, before, turns))
+                            .await;
+                    client.respond(request_id, page);
+                });
+            }
             Request::AcpDetach { agent_id } => {
                 chat::detach(&core, client.id, &agent_id);
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::AcpWake { agent_id } => {
                 tokio::spawn(async move {
-                    let result = workspace::wake_chat(&core, agent_id).await;
+                    let result = super::launching::wake_chat(&core, agent_id).await;
                     client.respond(request_id, result);
                 });
             }
@@ -630,12 +783,30 @@ async fn run_requests(
             }
             Request::AcpPrompt {
                 agent_id,
+                message_id,
                 text,
                 paths,
                 context,
             } => {
-                let result = chat::prompt(&core, client.id, &agent_id, text, paths, context);
+                let result = chat::prompt(
+                    &core, client.id, &agent_id, message_id, text, paths, context,
+                );
                 client.respond(request_id, result.map(|()| Response::Done));
+            }
+            Request::AcpEdit {
+                agent_id,
+                message_id,
+                text,
+                paths,
+                context,
+            } => {
+                tokio::spawn(async move {
+                    let result = chat::edit(
+                        &core, client.id, &agent_id, message_id, text, paths, context,
+                    )
+                    .await;
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
             }
             Request::AcpSteer {
                 agent_id,
@@ -650,6 +821,38 @@ async fn run_requests(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),
                     );
+                });
+            }
+            Request::AttachFile {
+                agent_id,
+                name,
+                mime,
+                data,
+            } => {
+                let dir = core
+                    .listening
+                    .get()
+                    .and_then(|listening| listening.config.attachment_dir.clone())
+                    .ok_or_else(|| CoreError::from("this host has nowhere to keep files"));
+                match core.chats.running(&agent_id).and(dir) {
+                    Ok(dir) => {
+                        tokio::spawn(async move {
+                            let result =
+                                blocking(move || attachments::save(&dir, &name, &mime, &data))
+                                    .await;
+                            client.respond(
+                                request_id,
+                                result.map(|path| Response::Attached { path }),
+                            );
+                        });
+                    }
+                    Err(error) => client.respond(request_id, Err(error)),
+                }
+            }
+            Request::Call { method, params } => {
+                tokio::spawn(async move {
+                    let result = calls::call(core, &client, &method, params).await;
+                    client.respond(request_id, result.map(|result| Response::Called { result }));
                 });
             }
             Request::AcpCancel { agent_id } => {
@@ -669,7 +872,12 @@ async fn run_requests(
                 client.respond(request_id, result.map(|()| Response::Done));
             }
             Request::AcpStop { agent_id } => {
-                core.chats.stop(&agent_id);
+                if let Some(chat) = core.chats.get(&agent_id) {
+                    core.workspaces.note_stopping(&chat);
+                }
+                if core.chats.stop(&agent_id) {
+                    core.note_agent_gone(&agent_id);
+                }
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::AcpSetPermissionMode { agent_id, mode } => {
@@ -706,13 +914,6 @@ async fn run_requests(
                     }),
                 );
             }
-            Request::PublishWorkspace {
-                projects,
-                launchers,
-            } => {
-                let result = core.workspaces.publish(projects, launchers);
-                client.respond(request_id, result.map(|()| Response::Done));
-            }
             Request::PublishBackdrop { texture, image } => {
                 let result = core.workspaces.publish_backdrop(texture, image);
                 client.respond(request_id, result.map(|()| Response::Done));
@@ -729,16 +930,13 @@ async fn run_requests(
                 let result = core.workspaces.publish_palette(palette);
                 client.respond(request_id, result.map(|()| Response::Done));
             }
-            Request::PublishAgents { chats, titles } => {
-                let result = core.workspaces.publish_agents(chats, titles);
-                client.respond(request_id, result.map(|()| Response::Done));
-            }
-            Request::PublishOnScreen { agent_ids } => {
-                core.seen.on_screen(client.id, agent_ids);
+            Request::PublishOnScreen { agent_ids, focused } => {
+                core.seen.show(client.id, agent_ids, focused);
+                core.view_changed();
                 client.respond(request_id, Ok(Response::Done));
             }
             Request::FocusAgent { agent_id } => {
-                let shown = core.window.tell(Event::FocusAgent { agent_id });
+                let shown = core.window.focus(agent_id);
                 client.respond(
                     request_id,
                     if shown {
@@ -751,7 +949,9 @@ async fn run_requests(
             Request::SetNotifications { key_id, key, prefs } => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.set_notifications(id, key_id, &key, prefs),
-                    Peer::Local => Err("only a paired phone can ask for notifications".into()),
+                    Peer::App | Peer::Local | Peer::Share { .. } => {
+                        Err("only a paired phone can ask for notifications".into())
+                    }
                 };
                 if result.is_ok() {
                     remote::announce(&core);
@@ -761,7 +961,9 @@ async fn run_requests(
             Request::ClearNotifications => {
                 let result = match &client.peer {
                     Peer::Device { id } => core.remote.clear_notifications(id),
-                    Peer::Local => Err("only a paired phone has notifications to stop".into()),
+                    Peer::App | Peer::Local | Peer::Share { .. } => {
+                        Err("only a paired phone has notifications to stop".into())
+                    }
                 };
                 if result.is_ok() {
                     remote::announce(&core);
@@ -774,6 +976,7 @@ async fn run_requests(
             }
             Request::WatchView => {
                 client.watches_view.store(true, Ordering::Release);
+                core.view_watched.notify_one();
                 client.respond(request_id, Ok(Response::Done));
                 core.send_device_view(&client);
             }
@@ -812,11 +1015,29 @@ async fn run_requests(
                     permission_mode,
                     model,
                     effort,
+                    resume_id: None,
                 };
-                workspace::start_chat(&core, &client, request_id, choice);
+                super::launching::start_chat(&core, &client, request_id, choice);
             }
-            Request::OpenPairing => {
-                let result = core.remote.open_offer().map(|()| remote::announce(&core));
+            Request::ResumeChat {
+                recent,
+                permission_mode,
+                model,
+                effort,
+            } => {
+                let choice = workspace::ResumeChoice {
+                    recent,
+                    permission_mode,
+                    model,
+                    effort,
+                };
+                super::launching::resume_chat(&core, &client, request_id, choice);
+            }
+            Request::AnswerPairing { id, allow, access } => {
+                let result = core
+                    .remote
+                    .answer(&id, allow.then_some(access))
+                    .map(|()| remote::announce(&core));
                 client.respond(
                     request_id,
                     result.map(|status| Response::Remote {
@@ -824,21 +1045,8 @@ async fn run_requests(
                     }),
                 );
             }
-            Request::ClosePairing => {
-                core.remote.close_offer();
-                let status = remote::announce(&core);
-                client.respond(
-                    request_id,
-                    Ok(Response::Remote {
-                        status: Box::new(status),
-                    }),
-                );
-            }
-            Request::AnswerPairing { id, allow, access } => {
-                let result = core
-                    .remote
-                    .answer(&id, allow.then_some(access))
-                    .map(|()| remote::announce(&core));
+            Request::AllowDevices { devices } => {
+                let result = core.remote.allow(devices).map(|()| remote::announce(&core));
                 client.respond(
                     request_id,
                     result.map(|status| Response::Remote {
@@ -864,7 +1072,10 @@ async fn run_requests(
                 });
             }
             Request::SignRegistration { nonce, user_id } => {
-                let signed = core.remote.sign_registration(&nonce, &user_id);
+                let signed = core
+                    .remote
+                    .may_join(&user_id, &client.peer)
+                    .and_then(|()| core.remote.sign_registration(&nonce, &user_id));
                 tokio::spawn(async move {
                     let result = match signed {
                         Ok((key, signature)) => {
@@ -886,7 +1097,7 @@ async fn run_requests(
             }
             Request::SetOwner { owner } => {
                 tokio::spawn(async move {
-                    let result = remote::set_owner(&core, owner).await;
+                    let result = remote::set_owner(&core, owner, &client.peer).await;
                     client.respond(
                         request_id,
                         result.map(|status| Response::Remote {
@@ -917,25 +1128,68 @@ async fn run_requests(
                     );
                 });
             }
+            Request::AcpSwitchAccount { agent_id, account } => {
+                let result = chat::switch_account(&core, &agent_id, account);
+                client.respond(request_id, result.map(|()| Response::Done));
+            }
         }
     }
 }
 
-async fn spawn(
+pub(crate) async fn spawn(
     core: Arc<Core>,
     launch: LaunchIdentity,
-    target: Box<SpawnTarget>,
+    mut target: Box<SpawnTarget>,
     started_by: Option<String>,
 ) -> CoreResult<PendingStart> {
+    if let SpawnTarget::Terminal(spawn) = target.as_mut() {
+        super::launching::terminal_agent(&core, spawn).await;
+    }
     blocking(move || {
         let mut prepared = match *target {
-            SpawnTarget::Terminal(spawn) => prepare_terminal(&launch, spawn)?,
-            SpawnTarget::Task { request } => prepare_task(&launch, request)?,
+            SpawnTarget::Terminal(mut spawn) => {
+                let folder = spawn.cwd.clone().or_else(|| {
+                    spawn
+                        .context
+                        .as_ref()
+                        .and_then(|context| context.project.clone())
+                        .filter(|project| !project.is_empty())
+                });
+                if let Some(folder) = &folder {
+                    give_agent_environment(&core, folder, &mut spawn.env);
+                }
+                let resumed = super::activity_log::resumed_by(&spawn);
+                let prepared = prepare_terminal(&launch, spawn)?;
+                let owner = &prepared.owner;
+                if let Some(resumed) = resumed {
+                    super::activity_log::terminal_launched(&core, owner, resumed);
+                }
+                if let (Some(agent_id), Some(folder)) = (&owner.agent_id, folder) {
+                    core.name_agent(
+                        agent_id,
+                        std::path::Path::new(&folder),
+                        owner.agent_type.as_deref(),
+                        None,
+                    );
+                }
+                prepared
+            }
+            SpawnTarget::Task { mut request } => {
+                give_agent_environment(&core, &request.cwd, &mut request.env);
+                prepare_task(&launch, request)?
+            }
         };
         prepared.owner.started_by = started_by;
         session::spawn_session(&core, prepared)
     })
     .await
+}
+
+fn give_agent_environment(core: &Core, folder: &str, env: &mut HashMap<String, String>) {
+    let given = super::plugins::agent_environment(core, std::path::Path::new(folder));
+    for (key, value) in given {
+        env.entry(key).or_insert(value);
+    }
 }
 
 async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestId, stop_all: bool) {
@@ -979,5 +1233,33 @@ mod tests {
         assert_eq!(super::unreadable_request_id(later), Some(12));
         assert_eq!(super::unreadable_request_id(br#"{"type":"ack"}"#), None);
         assert_eq!(super::unreadable_request_id(b"not json"), None);
+    }
+
+    #[test]
+    fn a_device_is_served_in_the_newest_version_both_sides_speak() {
+        use super::{agreed_version, Peer, OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION};
+        let phone = Peer::Device { id: "phone".into() };
+        let (oldest, newest) = (OLDEST_PROTOCOL_VERSION, PROTOCOL_VERSION);
+        assert_eq!(agreed_version(&phone, oldest, oldest), Some(oldest));
+        assert_eq!(agreed_version(&phone, oldest, newest + 3), Some(newest));
+        assert_eq!(agreed_version(&phone, newest + 1, newest + 3), None);
+        assert_eq!(agreed_version(&phone, oldest - 2, oldest - 1), None);
+        assert_eq!(agreed_version(&Peer::Local, newest, newest), Some(newest));
+        assert_eq!(agreed_version(&Peer::Local, newest - 1, newest - 1), None);
+    }
+
+    #[test]
+    fn a_hello_from_before_versions_were_agreed_still_reads() {
+        let hello: crate::protocol::ClientMessage =
+            serde_json::from_str(r#"{"type":"hello","protocol":"sikemux-core","version":9}"#)
+                .expect("reads");
+        assert!(matches!(
+            hello,
+            crate::protocol::ClientMessage::Hello {
+                version: 9,
+                newest: None,
+                ..
+            }
+        ));
     }
 }

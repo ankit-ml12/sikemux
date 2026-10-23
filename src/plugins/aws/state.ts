@@ -1,9 +1,7 @@
 import { create } from "zustand";
 import { openSurface } from "../../plugin-api/host";
-import { invalidate } from "../../plugin-api/resources";
 import { definePluginSettings } from "../../plugin-api/settings";
-import { whenSignedOut } from "./api";
-import { AWS_CONSOLE, AWS_PLUGIN_ID } from "./kinds";
+import { AWS_CONSOLE, AWS_PLUGIN } from "./kinds";
 
 export type AwsService = "ecs" | "ec2" | "lambda" | "sqs" | "billing" | "s3";
 export const AWS_SERVICES: AwsService[] = ["ecs", "ec2", "lambda", "sqs", "billing", "s3"];
@@ -34,7 +32,7 @@ function decodeSettings(saved: unknown): AwsSettings {
     };
 }
 
-export const awsSettings = definePluginSettings(AWS_PLUGIN_ID, decodeSettings);
+export const awsSettings = definePluginSettings(AWS_PLUGIN.id, decodeSettings);
 
 export function setAwsProfile(profile: string | null): void {
     awsSettings.update((settings) => ({ ...settings, profile }));
@@ -79,5 +77,3 @@ export function setAwsCount(profile: string, service: AwsService, count: string)
 export function openAwsSession(): void {
     openSurface(AWS_CONSOLE);
 }
-
-whenSignedOut(() => invalidate((kind) => kind.startsWith("aws.")));

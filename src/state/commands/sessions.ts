@@ -2,22 +2,21 @@ import type { PluginManifest } from "../../api/plugins";
 import { fixedSessionName } from "../sessionNames";
 import { isPluginKind, pluginIdOf, type PluginKind } from "../../plugins/kinds";
 import { RAIL_GROUP_ORDER, railGroupOf } from "../railGroups";
-import { firstGrapheme, isProjectShown, spaceName } from "../projectSpaces";
+import { DEFAULT_SPACE_ICON, isProjectShown, spaceName, type SpaceIcon } from "../projectSpaces";
 import { filesApi } from "../../api/files";
 import { lsp } from "../../api/lsp";
 import { sshApi } from "../../api/ssh";
 import { dirname } from "../../lib/paths";
 import { sshStartup } from "../../terminal/sshStartup";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
-import { getState, mutate, setState, type StoreState } from "../store";
-import { reportError } from "../toast";
+import { getState, mutate, setState } from "../store";
+import { reportError, swallow } from "../toast";
 import { agentIdsOf } from "../selectors";
 import { collectPanes, newId } from "../layout";
-import type { Window } from "../types";
 import {
     attachSession,
     closeAgentDesk,
     dirtyPathsForSession,
+    ensureRoleWindow,
     disposePaneState,
     guardDiscardDirty,
     guardStopAgents,
@@ -32,7 +31,7 @@ import {
 export function createProjectSession(cwd: string): void {
     keepOpenedProjectInView(cwd);
     mutate((d) => {
-        openProjectSession(d as unknown as StoreState, cwd);
+        openProjectSession(d, cwd);
     });
 }
 
@@ -49,7 +48,7 @@ export function createCommandSession(): void {
         let n = 1;
         while (used.has(n)) n += 1;
         const win = makeWindow("", String(n));
-        attachSession(d as unknown as StoreState, makeSession("command", String(n), "", win.id), [win]);
+        attachSession(d, makeSession("command", String(n), "", win.id), [win]);
     });
 }
 
@@ -74,7 +73,7 @@ export function createSshSession(alias: string): void {
             return;
         }
         const win = makeWindow("", alias, { startup: sshStartup(alias), role: "named" });
-        attachSession(d as unknown as StoreState, makeSession("ssh", alias, "", win.id), [win]);
+        attachSession(d, makeSession("ssh", alias, "", win.id), [win]);
     });
 }
 
@@ -100,7 +99,7 @@ function openSingletonPaneSession(kind: PluginKind): void {
         }
         const title = fixedSessionName(kind) ?? kind;
         const win = makeWindow("", title, { kind, role: kind, fixed: true });
-        attachSession(d as unknown as StoreState, makeSession(kind, title, "", win.id), [win]);
+        attachSession(d, makeSession(kind, title, "", win.id), [win]);
     });
 }
 
@@ -114,7 +113,7 @@ export function setPluginEnabled(id: string, enabled: boolean): void {
         const st = getState();
         for (const sessionId of st.sessionOrder) {
             const kind = st.sessions[sessionId]?.kind;
-            if (kind && isPluginKind(kind) && pluginIdOf(kind) === id) closeSessionNow(sessionId);
+            if (kind && isPluginKind(kind) && pluginIdOf(kind) === id) dropSession(sessionId);
         }
     }
     setState((s) => ({ disabledPlugins: enabled ? s.disabledPlugins.filter((known) => known !== id) : [...new Set([...s.disabledPlugins, id])] }));
@@ -131,12 +130,18 @@ export function selectSession(id: string): void {
     });
 }
 
+/** Opens `sessionId`'s project with its settings tab in front, or the active project's. */
+export function openProjectSettings(sessionId?: string): void {
+    if (sessionId) selectSession(sessionId);
+    ensureRoleWindow("project-settings");
+}
+
 /** Makes a space and returns its id, or null when the name is blank. */
-export function createSpace(name: string, icon = ""): string | null {
+export function createSpace(name: string, icon: SpaceIcon | "" = DEFAULT_SPACE_ICON): string | null {
     const clean = spaceName(name);
     if (!clean) return null;
     const id = newId("space");
-    setState((s) => ({ spaces: [...s.spaces, { id, name: clean, icon: firstGrapheme(icon) }] }));
+    setState((s) => ({ spaces: [...s.spaces, { id, name: clean, icon }] }));
     return id;
 }
 
@@ -146,9 +151,19 @@ export function renameSpace(id: string, name: string): void {
     setState((s) => ({ spaces: s.spaces.map((space) => (space.id === id ? { ...space, name: clean } : space)) }));
 }
 
-/** Takes the first emoji or character given; an empty icon shows the name's first letter. */
-export function setSpaceIcon(id: string, icon: string): void {
-    setState((s) => ({ spaces: s.spaces.map((space) => (space.id === id ? { ...space, icon: firstGrapheme(icon) } : space)) }));
+export function setSpaceIcon(id: string, icon: SpaceIcon | ""): void {
+    setState((s) => ({ spaces: s.spaces.map((space) => (space.id === id ? { ...space, icon } : space)) }));
+}
+
+export function moveSpace(id: string, toIndex: number): void {
+    setState((s) => {
+        const from = s.spaces.findIndex((space) => space.id === id);
+        if (from < 0) return {};
+        const spaces = [...s.spaces];
+        const [space] = spaces.splice(from, 1);
+        spaces.splice(Math.max(0, Math.min(toIndex, spaces.length)), 0, space);
+        return { spaces };
+    });
 }
 
 /** Removes a space; its projects stay open and show under All. */
@@ -218,22 +233,15 @@ export function closeSession(id: string): void {
     if (!st.sessions[id] || st.sessionOrder.length <= 1) return;
     const name = st.sessions[id].name;
     guardStopAgents(agentIdsOf(st, id), `Close ${name}?`, () =>
-        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => closeSessionNow(id)),
+        guardDiscardDirty(dirtyPathsForSession(getState(), id), "close session", () => dropSession(id)),
     );
 }
 
-function closeSessionNow(id: string): void {
+/** Closes a session without asking, such as a project another client removed. */
+export function dropSession(id: string): void {
     const beforeClose = getState();
     const closingCwd = beforeClose.sessions[id]?.cwd;
     const closingAgentIds = agentIdsOf(beforeClose, id);
-    const taskPaneIds = (beforeClose.windowsBySession[id] ?? []).flatMap((windowId) => {
-        const window = beforeClose.windows[windowId];
-        return window
-            ? collectPanes(window.root)
-                  .filter((pane) => pane.externalPty)
-                  .map((pane) => pane.id)
-            : [];
-    });
     mutate((d) => {
         if (d.sessionOrder.length <= 1) return;
         const closed = d.sessions[id];
@@ -245,7 +253,7 @@ function closeSessionNow(id: string): void {
         for (const wid of winIds) {
             const w = d.windows[wid];
             if (w) {
-                for (const p of collectPanes(w.root as unknown as Window["root"])) {
+                for (const p of collectPanes(w.root)) {
                     if (d.gitModal?.ownerPaneId === p.id) d.gitModal = null;
                     disposePaneState(d, p.id);
                 }
@@ -266,14 +274,13 @@ function closeSessionNow(id: string): void {
         d.zoomedPaneId = null;
     });
     if (!getState().sessions[id]) {
-        for (const paneId of taskPaneIds) taskPtyBindings.release(paneId);
         for (const agentId of closingAgentIds) closeAgentDesk(agentId);
     }
     if (closingCwd) {
         const stillOpen = Object.values(getState().sessions).some((s) => s.cwd === closingCwd);
         if (!stillOpen) {
             filesApi.evict(closingCwd);
-            void lsp.stop(closingCwd).catch(() => {});
+            void lsp.stop(closingCwd).catch(swallow("stop the language servers"));
         }
     }
 }
@@ -409,7 +416,7 @@ export async function openSshConfigEditor(): Promise<void> {
         let configSession = owner ? d.sessions[owner] : undefined;
         if (!configSession) {
             configSession = makeSession("ssh", "SSH config", sshDir, target.id);
-            attachSession(d as unknown as StoreState, configSession, [target]);
+            attachSession(d, configSession, [target]);
             owner = configSession.id;
         } else {
             d.activeSessionId = configSession.id;

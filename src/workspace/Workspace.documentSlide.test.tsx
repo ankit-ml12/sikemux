@@ -6,6 +6,7 @@ import { agentWindowId } from "../state/selectors";
 import { withAgents } from "../test/agents";
 import { Workspace } from "./Workspace";
 import type { Agent } from "../state/types";
+import { fileRead, wholeFile } from "../test/files";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -26,7 +27,7 @@ const THIRD = "/repo/c.ts";
 beforeEach(() => {
     vi.clearAllMocks();
     setState(initial, true);
-    invoke.mockImplementation(async (command: string) => (command === "read_file_versioned" ? { content: "one\ntwo\n", version: "v1" } : null));
+    invoke.mockImplementation(async (command: string, args?: unknown) => (fileRead(command, args) ? wholeFile("one\ntwo\n", "v1") : null));
 });
 afterEach(() => {
     cleanup();
@@ -180,7 +181,7 @@ describe("document slide", () => {
     it("takes no copy when the document arrives with its own screen", async () => {
         const { container } = await editorOfDocuments();
         const editorWindow = getState().sessions[getState().activeSessionId].activeWindowId;
-        const agents: Agent[] = [{ id: "agent-0", type: "codex", title: "agent 0", startup: "codex", launchState: "live" }];
+        const agents: Agent[] = [{ id: "agent-0", type: "codex", title: "agent 0", launchState: "live" }];
         act(() => setState(withAgents(getState(), getState().activeSessionId, agents)));
         act(() => cmd.selectWindowId(agentWindowId(getState(), "agent-0")!));
         endSlide(container.querySelector(".window-track") as HTMLElement);

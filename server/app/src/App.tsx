@@ -1,19 +1,41 @@
 import { HandleSSOCallback, useAuth, useClerk, useUser } from "@clerk/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
+import { Avatar } from "./Avatar.tsx";
 import { Backdrop } from "./Backdrop.tsx";
+import { Consent, Panel, SIGNED_IN, SignedIn } from "./Consent.tsx";
 import {
   AccountDeleted,
   DeleteAccount,
   DeleteAccountIntro,
 } from "./DeleteAccount.tsx";
 import { Devices, useDevices } from "./Devices.tsx";
+import { HostApproval } from "./HostApproval.tsx";
 import { Logo } from "./icons.tsx";
 import { useLive } from "./live.ts";
-import { DELETE_ACCOUNT, takeReturn, usePath } from "./navigation.ts";
+import { RestoreAccount, useAccountState } from "./RestoreAccount.tsx";
+import {
+  appReturn,
+  CONSENT,
+  DELETE_ACCOUNT,
+  HOST,
+  isSharePath,
+  takeReturn,
+  takeShareReturn,
+  usePath,
+} from "./navigation.ts";
 import { SignIn } from "./SignIn.tsx";
+import "./app.css";
 
-const DELETED_QUERY = "?deleted";
+/** The deleted page's address, carrying when the account is deleted for good so it survives signing out. */
+function deletedPage(deletesAt?: string): string {
+  return `${DELETE_ACCOUNT}?deleted${deletesAt ? `=${encodeURIComponent(deletesAt)}` : ""}`;
+}
+
+function deletesAtOf(search: string): string | undefined {
+  const value = new URLSearchParams(search).get("deleted");
+  return value && Number.isFinite(Date.parse(value)) ? value : undefined;
+}
 
 /** Clerk leaves a nonzero `__client_uat` cookie once signed in, so the first paint can guess the right screen. */
 const SIGNED_IN_BEFORE = /(?:^|;\s*)__client_uat(?:_\w+)?=[1-9]/.test(
@@ -24,11 +46,11 @@ export function App() {
   const { isLoaded, isSignedIn } = useAuth();
   const { signOut } = useClerk();
   const { path, go, follow } = usePath();
-  const [deleted, setDeleted] = useState(false);
+  const [deleted, setDeleted] = useState<{ deletesAt?: string } | null>(null);
   const signingOut = useRef(false);
   const signedIn = isLoaded ? isSignedIn : SIGNED_IN_BEFORE;
   const showDeleted =
-    deleted ||
+    deleted !== null ||
     (path === DELETE_ACCOUNT &&
       new URLSearchParams(location.search).has("deleted") &&
       !signedIn);
@@ -40,41 +62,80 @@ export function App() {
         ? "Signing in · Sikemux"
         : path === DELETE_ACCOUNT
           ? "Delete your account · Sikemux"
-          : signedIn
-            ? "Your devices · Sikemux"
-            : "Sign in · Sikemux";
+          : path === CONSENT || path === SIGNED_IN
+            ? "Sign in on your computer · Sikemux"
+            : path === HOST
+              ? "Add a host · Sikemux"
+              : signedIn
+                ? "Your devices · Sikemux"
+                : "Sign in · Sikemux";
   }, [path, signedIn, showDeleted]);
 
-  const afterSignIn = () => go(takeReturn(), { replace: true });
+  useEffect(() => {
+    if (!signedIn || path === "/sso-callback") return;
+    const share = takeShareReturn();
+    if (share) location.replace(share);
+  }, [signedIn, path]);
+
+  const afterSignIn = () => {
+    const to = takeReturn();
+    if (isSharePath(to)) location.replace(to);
+    else go(to, { replace: true });
+  };
+  const appReturning = signedIn ? appReturn() : null;
+
+  useEffect(() => {
+    if (appReturning && isLoaded) location.replace(appReturning);
+  }, [appReturning, isLoaded]);
 
   /** Reached from this page or from the account's live connection, so it may run twice. */
-  const onDeleted = () => {
+  const onDeleted = (deletesAt?: string) => {
     if (signingOut.current) return;
     signingOut.current = true;
-    setDeleted(true);
-    go(`${DELETE_ACCOUNT}${DELETED_QUERY}`, { replace: true });
-    signOut({ redirectUrl: `${DELETE_ACCOUNT}${DELETED_QUERY}` }).catch(
-      () => undefined,
-    );
+    setDeleted({ deletesAt });
+    go(deletedPage(deletesAt), { replace: true });
+    signOut({ redirectUrl: deletedPage(deletesAt) }).catch(() => undefined);
   };
 
   return (
     <>
       <Backdrop />
       <div className="page">
-        {showDeleted ? (
+        {appReturning ? (
           <main className="center">
-            <AccountDeleted />
+            <Panel>
+              <p className="quiet">Loading…</p>
+            </Panel>
+          </main>
+        ) : showDeleted ? (
+          <main className="center">
+            <AccountDeleted
+              deletesAt={deleted?.deletesAt ?? deletesAtOf(location.search)}
+            />
           </main>
         ) : path === "/sso-callback" ? (
-          <section className="panel">
-            <p className="quiet">Signing you in…</p>
-            <HandleSSOCallback
-              navigateToApp={afterSignIn}
-              navigateToSignIn={afterSignIn}
-              navigateToSignUp={afterSignIn}
-            />
-          </section>
+          <main className="center">
+            <Panel>
+              <p className="quiet">Signing you in…</p>
+              <HandleSSOCallback
+                navigateToApp={afterSignIn}
+                navigateToSignIn={afterSignIn}
+                navigateToSignUp={afterSignIn}
+              />
+            </Panel>
+          </main>
+        ) : path === SIGNED_IN ? (
+          <main className="center">
+            <SignedIn />
+          </main>
+        ) : path === CONSENT ? (
+          <main className="center">
+            {signedIn ? <Consent /> : <SignIn ready={isLoaded} />}
+          </main>
+        ) : path === HOST ? (
+          <main className="center">
+            {signedIn ? <HostApproval /> : <SignIn ready={isLoaded} />}
+          </main>
         ) : signedIn ? (
           <Account
             ready={isLoaded}
@@ -109,18 +170,20 @@ function Account({
   deleting: boolean;
   onDelete: (event: MouseEvent<HTMLAnchorElement>) => void;
   onBack: () => void;
-  onDeleted: () => void;
+  onDeleted: (deletesAt?: string) => void;
 }) {
   const { user } = useUser();
   const { isSignedIn } = useAuth();
   const { signOut } = useClerk();
   const email = user?.primaryEmailAddress?.emailAddress;
-  const devices = useDevices(ready);
+  const { account, restored } = useAccountState(ready);
+  const active = account.state === "active";
+  const devices = useDevices(ready && active);
 
-  useLive(ready && isSignedIn === true, {
+  useLive(ready && isSignedIn === true && active, {
     onEvents: devices.apply,
     onResync: devices.reload,
-    onAccountDeleted: onDeleted,
+    onAccountDeleted: () => onDeleted(),
   });
 
   return (
@@ -144,9 +207,14 @@ function Account({
         </div>
       </header>
       <main>
-        {deleting ? (
+        {account.state === "deleting" ? (
+          <RestoreAccount deletesAt={account.deletesAt} onRestored={restored} />
+        ) : deleting ? (
           <DeleteAccount
             email={email}
+            restorableDays={
+              account.state === "active" ? account.restorableDays : undefined
+            }
             load={devices.load}
             onBack={onBack}
             onDeleted={onDeleted}
@@ -168,32 +236,5 @@ function Account({
         )}
       </main>
     </div>
-  );
-}
-
-/** The account's picture, or its initials on a neutral circle when it has none. */
-function Avatar() {
-  const { user } = useUser();
-  const [failed, setFailed] = useState<string>();
-  const picture = user?.hasImage ? user.imageUrl : undefined;
-  const initials =
-    [user?.firstName, user?.lastName]
-      .map((name) => name?.charAt(0) ?? "")
-      .join("") ||
-    (user?.primaryEmailAddress?.emailAddress.charAt(0) ?? "");
-  return (
-    <span className="avatar" aria-hidden="true">
-      {picture && picture !== failed ? (
-        <img
-          src={`${picture}${picture.includes("?") ? "&" : "?"}width=56&height=56&fit=crop&quality=100`}
-          alt=""
-          width={26}
-          height={26}
-          onError={() => setFailed(picture)}
-        />
-      ) : (
-        initials.toUpperCase()
-      )}
-    </span>
   );
 }

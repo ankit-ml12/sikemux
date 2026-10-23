@@ -150,7 +150,7 @@ describe("removing a device", () => {
     const before = await events(database);
     const response = await call(
       `/v1/devices/${mac.key}`,
-      await macToken("user_a"),
+      await sessionToken("user_a", { claims: { sid: "sess_web" } }),
       { method: "DELETE" },
     );
     expect(response.status).toBe(404);
@@ -261,10 +261,10 @@ describe("what each device may read from the log", () => {
     const otherPhone = await registered(app, userId, "client", {
       sessionId: `sess_${userId}_2`,
     });
-    await call(`/v1/devices/${otherPhone.key}`, await macToken(userId), {
+    await call(`/v1/devices/${otherPhone.key}`, await sessionToken(userId), {
       method: "DELETE",
     });
-    await call(`/v1/devices/${otherHost.key}`, await macToken(userId), {
+    await call(`/v1/devices/${otherHost.key}`, await sessionToken(userId), {
       method: "DELETE",
     });
     return { host, otherHost, phone, otherPhone };

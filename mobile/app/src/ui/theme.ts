@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { TextStyle } from 'react-native';
+import { AGENT_BRANDS, type AgentType } from '@mac/agents/catalog';
+import type { PaletteName } from '@mac/remote/palette';
+import { Platform, type TextStyle } from 'react-native';
 
 /** Aura Noir, the Mac app's default theme, with its neutral ramp mixed the same way (DESIGN.md §3). */
 export const defaultPalette = {
@@ -39,11 +41,12 @@ export const defaultPalette = {
   toolEdit: '#cdaf86',
   toolDelete: '#c25e4b',
   toolRun: '#d966ae',
+  toolMcp: '#6fd6b9',
   /** The pane grain's dots: the raised surface on a dark theme. */
   shaderDot: '#19191e',
-};
+} satisfies Palette;
 
-export type Palette = Record<keyof typeof defaultPalette, string>;
+export type Palette = Record<PaletteName, string>;
 
 /** The palette a host published, over the default for any colour it left out. */
 export function paletteFrom(published: Readonly<Record<string, string>> | undefined): Palette {
@@ -56,20 +59,41 @@ export function paletteFrom(published: Readonly<Record<string, string>> | undefi
   return palette;
 }
 
+/** The red, green and blue of a `#rrggbb` colour, each 0 to 255. */
+function channels(color: string): number[] | undefined {
+  return /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i
+    .exec(color)
+    ?.slice(1)
+    .map((part) => parseInt(part, 16));
+}
+
 /** A palette colour at some opacity, for surfaces that let the backdrop show through. */
 export function translucent(color: string, opacity: number): string {
-  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
-  if (!hex) return color;
-  const [red, green, blue] = hex.slice(1).map((part) => parseInt(part, 16));
+  const rgb = channels(color);
+  if (!rgb) return color;
+  const [red, green, blue] = rgb;
   return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+}
+
+/** Two palette colours mixed, `weight` of the first, as the Mac's stylesheet mixes its inks. */
+export function mixed(first: string, second: string, weight: number): string {
+  const [a, b] = [channels(first), channels(second)];
+  if (!a || !b) return first;
+  const [red, green, blue] = a.map((value, index) => Math.round(value * weight + b[index] * (1 - weight)));
+  return `rgb(${red}, ${green}, ${blue})`;
 }
 
 /** Whether a palette's ground is light, so the status bar's text turns dark on it. */
 export function isLight(palette: Palette): boolean {
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(palette.ground);
-  if (!match) return false;
-  const [red, green, blue] = match.slice(1).map((part) => parseInt(part, 16) / 255);
+  const rgb = channels(palette.ground.slice(0, 7));
+  if (!rgb) return false;
+  const [red, green, blue] = rgb.map((value) => value / 255);
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.5;
+}
+
+/** The system keyboard drawn to match the palette. */
+export function keyboardFor(palette: Palette): 'light' | 'dark' {
+  return isLight(palette) ? 'light' : 'dark';
 }
 
 const PaletteContext = createContext<Palette>(defaultPalette);
@@ -95,25 +119,33 @@ export function useStyles<T>(make: (colors: Palette) => T): T {
   return built.get(make) as T;
 }
 
-export const brand = {
-  claude: '#d97757',
-  codex: '#7a9dff',
-  hermes: '#e0a050',
-  opencode: '#a78bfa',
-  pi: '#7dd3fc',
-  omp: '#f97316',
-  grok: '#fcfcfc',
-} as const;
+export const brand = AGENT_BRANDS;
 
-export type Provider = keyof typeof brand;
+export type Provider = AgentType;
 
-export const fonts = {
-  ui: 'Figtree_400Regular',
-  uiMedium: 'Figtree_500Medium',
-  uiSemibold: 'Figtree_600SemiBold',
-  uiItalic: 'Figtree_400Regular_Italic',
-  mono: 'JetBrainsMono_400Regular',
-} as const;
+/* The fonts are built into the app (the expo-font plugin in app.json), where iOS names each by its PostScript name
+   and Android by its file name. A browser loads them at launch under the file name. */
+export const fonts =
+  Platform.OS === 'ios'
+    ? {
+        ui: 'Figtree-Regular',
+        uiMedium: 'Figtree-Medium',
+        uiSemibold: 'Figtree-SemiBold',
+        uiItalic: 'Figtree-Italic',
+        mono: 'JetBrainsMono-Regular',
+      }
+    : {
+        ui: 'Figtree_400Regular',
+        uiMedium: 'Figtree_500Medium',
+        uiSemibold: 'Figtree_600SemiBold',
+        uiItalic: 'Figtree_400Regular_Italic',
+        mono: 'JetBrainsMono_400Regular',
+      };
+
+/* iOS files the italic under the same family as the regular face and picks between them by style, so it is asked
+   for by style there too. */
+export const italic: TextStyle =
+  Platform.OS === 'ios' ? { fontFamily: fonts.uiItalic, fontStyle: 'italic' } : { fontFamily: fonts.uiItalic };
 
 /** Text the app says is Figtree; text the machine says is mono (DESIGN.md §1). */
 export function typeFor(colors: Palette) {

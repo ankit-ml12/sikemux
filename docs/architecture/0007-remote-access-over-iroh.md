@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Decision date: 2026-10-02
+- Superseded in part: 2026-10-21, by [ADR 0018](./0018-the-account-is-the-trust.md): a device
+  signed in to the host's own account is trusted without the host's approval
 
 ## Context
 
@@ -55,12 +57,18 @@ sees terminal bytes or prompts.
 - Remote connections drop during an in-place update; devices reconnect and take their
   sessions back with a fresh snapshot, as the app does.
 - While remote access is on, a LaunchAgent starts the core at login
-  (`src-tauri/src/login_item.rs`), so the Mac is reachable after a restart without
+  (`src-tauri/crates/sikemux-host/src/login_item.rs`), so the Mac is reachable after a restart without
   Sikemux being opened. It restarts the core only after a crash; turning remote access
   off removes it.
 - While remote access is on, the core also advertises itself over Bonjour, and a
   pairing code comes with a QR code holding the core's key, so a phone can find the Mac
   before it has paired.
+
+## Notes
+
+- 2026-10-05: Code pairing and the Bonjour advert are gone. Phones join only through the
+  account they share with the host (ADR 0009, `docs/operations/join.md`), and the person
+  still allows each one on the host. Remote access needs the host signed in.
 
 ## Alternatives considered
 

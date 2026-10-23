@@ -2,8 +2,11 @@ import { useEffect } from "react";
 import { invokeCommand } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
 import type { HarnessRequest } from "../harness/service";
+import { projectSessionId } from "../state/selectors";
 import { useStore } from "../state/store";
-import { errMessage, swallow } from "../state/toast";
+import { tasksApi } from "../tasks/coreTasks";
+import { swallow } from "../state/toast";
+import { errorText } from "../lib/format";
 
 /** Answers the tool calls the core hands to the window, and stops the harness tasks of a project or agent that closes. */
 export function HarnessBridge() {
@@ -22,7 +25,7 @@ export function HarnessBridge() {
                 const result = await (await getService()).handleHarnessRequest(request, controller.signal);
                 await invokeCommand("harness_reply", { id: request.id, result, error: null });
             } catch (error) {
-                await invokeCommand("harness_reply", { id: request.id, result: null, error: errMessage(error) }).catch(swallow("harness reply"));
+                await invokeCommand("harness_reply", { id: request.id, result: null, error: errorText(error) }).catch(swallow("harness reply"));
             }
         };
         const claim = async () => {
@@ -49,15 +52,10 @@ export function HarnessBridge() {
             );
             if (!controller.signal.aborted) await claim();
         })().catch(swallow("harness bridge"));
-        const stopRuns = (selector: { project: string } | { agentId: string }) =>
-            void invokeCommand("harness_stop_runs", selector).catch(swallow("harness stop"));
+        const stopRuns = (selector: { project: string } | { agentId: string }) => void tasksApi.stopRuns(selector).catch(swallow("harness stop"));
         const unsubscribe = useStore.subscribe((state, previous) => {
             for (const session of Object.values(previous.sessions)) {
-                if (
-                    session.kind === "project" &&
-                    !Object.values(state.sessions).some((current) => current.kind === "project" && current.cwd === session.cwd)
-                )
-                    stopRuns({ project: session.cwd });
+                if (session.kind === "project" && !projectSessionId(state, session.cwd)) stopRuns({ project: session.cwd });
             }
             if (state.agents === previous.agents) return;
             for (const agentId of Object.keys(previous.agents)) if (!state.agents[agentId]) stopRuns({ agentId });

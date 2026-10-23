@@ -7,14 +7,26 @@ import { rankBy } from "../lib/fuzzy";
 import * as cmd from "../state/commands";
 import { fetchResource, peekResource, useResource } from "../state/resources";
 import { agentCatalogR, agentSessionsR } from "../state/resources.defs";
+import { agentDisplayOf, agentForChat, agentIdsOf, chatKey, hasChat } from "../state/selectors";
 import { useStore } from "../state/store";
-import type { AgentPermissionMode, AgentType } from "../state/types";
+import type { Agent, AgentPermissionMode, AgentType, PinnedChat } from "../state/types";
+import { AgentFace } from "../buddies/Buddy";
+import { agentHandle } from "./AgentLabel";
+import { AgentStateIndicator, showsAgentState } from "./AgentStateIndicator";
+import { inCoreOrder, useInbox } from "../rail/useInbox";
 import { AgentIcon, IconSearch, IconShield, IconShieldBolt } from "../ui/Icons";
+import { formatAge } from "../lib/format";
+import { agentAbout, agentLabel, canBypassPermissions, installCommand, loginArgs } from "./catalog";
+import { installAgent, signInAgent } from "./AgentInstall";
+import { withMissingAgents } from "./setupList";
 import { leavingOverlay } from "../lib/motion";
+import { swallow } from "../state/toast";
 
 type Row = AgentSession & { type: AgentType };
-type NewAgentItem = { kind: "new"; type: AgentType };
-type ResumeAgentItem = { kind: "resume"; row: Row };
+/** A new chat, or with `signIn`, the agent's own sign-in for one that reads as signed out. */
+type NewAgentItem = { kind: "new"; type: AgentType; signIn?: true };
+/** A saved chat, with `agent` when it is open in the project. */
+type ResumeAgentItem = { kind: "resume"; row: Row; agent?: Agent };
 type AgentItem = NewAgentItem | ResumeAgentItem;
 
 const NORMAL: AgentPermissionMode = "workspace-write";
@@ -25,37 +37,55 @@ const MODE_CHOICES: { mode: AgentPermissionMode; label: string; title: string }[
     { mode: YOLO, label: "yolo", title: "YOLO mode — the agent launches without approvals." },
 ];
 
-function labelForType(type: AgentType, agents: readonly AgentInfo[]): string {
-    return agents.find((agent) => agent.type === type)?.label ?? type;
-}
-
 function sortRows(rows: Row[]): Row[] {
     return [...rows].sort((left, right) => right.mtime - left.mtime);
+}
+
+/** The project's chats as its rail lists them: open agents in the core's order, then pinned chats, then the rest newest first. */
+function railOrder(rows: Row[], open: Agent[], pins: PinnedChat[]): ResumeAgentItem[] {
+    const saved = new Map(rows.map((row) => [chatKey(row.type, row.id), row]));
+    const used = new Set<string>();
+    const take = (type: AgentType, id: string) => {
+        used.add(chatKey(type, id));
+        return saved.get(chatKey(type, id));
+    };
+    const isPinned = (agent: Agent) => pins.some((pin) => hasChat(agent, pin));
+    const opened = (agent: Agent): ResumeAgentItem => {
+        const id = agent.resumeId ?? agent.id;
+        return { kind: "resume", row: take(agent.type, id) ?? { id, title: agent.title, mtime: 0, type: agent.type }, agent };
+    };
+    const live = open.filter((agent) => !isPinned(agent)).map(opened);
+    const pinned = pins.flatMap((pin): ResumeAgentItem[] => {
+        const agent = agentForChat(open, pin);
+        if (agent) return [opened(agent)];
+        const row = take(pin.agent, pin.id);
+        return row ? [{ kind: "resume", row }] : [];
+    });
+    const rest = rows.filter((row) => !used.has(chatKey(row.type, row.id))).map((row): ResumeAgentItem => ({ kind: "resume", row }));
+    return [...live, ...pinned, ...rest];
 }
 
 function typeForItem(item: AgentItem): AgentType {
     return item.kind === "new" ? item.type : item.row.type;
 }
 
-function ago(unixSecs: number): string {
-    if (!unixSecs) return "";
-    const delta = Math.max(0, Date.now() / 1000 - unixSecs);
-    if (delta < 90) return "now";
-    if (delta < 3600) return `${Math.round(delta / 60)}m`;
-    if (delta < 86400) return `${Math.round(delta / 3600)}h`;
-    return `${Math.round(delta / 86400)}d`;
-}
-
 export function AgentPalette() {
     const modalRef = useRef<HTMLDivElement>(null);
     useModalFocus(modalRef);
     const session = useStore((state) => state.sessions[state.activeSessionId]);
+    const windowsBySession = useStore((state) => state.windowsBySession);
+    const windows = useStore((state) => state.windows);
+    const agentsById = useStore((state) => state.agents);
+    const pinnedChats = useStore((state) => state.pinnedChats);
+    const agentStatus = useStore((state) => state.agentStatus);
+    const { inbox } = useInbox();
     const profiles = useStore((state) => state.providerProfiles);
     const profileSelections = useStore((state) => state.selectedProviderProfileIds);
     const defaultMode = useStore((state) => state.defaultAgentPermissionMode);
     const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
     const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const agents = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const found = useMemo(() => catalog.data ?? [], [catalog.data]);
+    const agents = useMemo(() => (catalog.data ? withMissingAgents(catalog.data) : []), [catalog.data]);
     const origin = useRef({ sessionId: session?.id ?? "", cwd: session?.cwd ?? "" });
     const inputRef = useRef<HTMLInputElement>(null);
     const mouseActive = useMouseActive();
@@ -78,7 +108,7 @@ export function AgentPalette() {
             };
         }
 
-        const availableAgents = agents.filter((agent) => agent.available !== false);
+        const availableAgents = found.filter((agent) => agent.available !== false);
         const sessionArgs = availableAgents.map((agent) => [agent.type, origin.current.cwd, agent.configPath ?? undefined] as const);
 
         /* The open agents already keep these listings warm, so the picker opens
@@ -101,7 +131,7 @@ export function AgentPalette() {
         return () => {
             cancelled = true;
         };
-    }, [agents]);
+    }, [found, agents.length]);
 
     useEffect(() => {
         if (session && session.id !== origin.current.sessionId) cmd.forceCloseAgentPalette();
@@ -128,24 +158,51 @@ export function AgentPalette() {
     }, []);
 
     const items = useMemo(() => {
-        const fresh = agents.map(({ type }): NewAgentItem => ({ kind: "new", type }));
-        const resumable = rows.map((row): ResumeAgentItem => ({ kind: "resume", row }));
-        const rankedFresh = rankBy(query, fresh, (item) => `+ new ${labelForType(item.type, agents)} ${item.type}`);
-        const rankedResumable = rankBy(query, resumable, (item) => `${item.row.title} ${labelForType(item.row.type, agents)} ${item.row.type}`);
+        const signIns = agents
+            .filter((agent) => agent.status?.state === "signedOut" && loginArgs(agent.type))
+            .map(({ type }): NewAgentItem => ({ kind: "new", type, signIn: true }));
+        const fresh = [...agents.map(({ type }): NewAgentItem => ({ kind: "new", type })), ...signIns];
+        const { sessionId, cwd } = origin.current;
+        const open = inCoreOrder(
+            agentIdsOf({ windowsBySession, windows }, sessionId)
+                .map((id) => agentsById[id])
+                .filter((agent): agent is Agent => !!agent),
+            inbox.agents,
+        );
+        const resumable = railOrder(
+            rows,
+            open,
+            pinnedChats.filter((pin) => pin.project === cwd),
+        );
+        const rankedFresh = rankBy(query, fresh, (item) =>
+            item.signIn
+                ? `sign in to ${agentLabel(item.type)} ${item.type}`
+                : installable(
+                        item,
+                        agents.find((agent) => agent.type === item.type),
+                    )
+                  ? `install ${agentLabel(item.type)} ${item.type}`
+                  : `+ new ${agentLabel(item.type)} ${item.type}`,
+        );
+        const rankedResumable = rankBy(
+            query,
+            resumable,
+            (item) => `${item.row.title} ${agentLabel(item.row.type)} ${item.row.type}${item.agent?.name ? ` ${agentHandle(item.agent.name)}` : ""}`,
+        );
         return [...rankedFresh, ...rankedResumable];
-    }, [agents, query, rows]);
+    }, [agents, query, rows, windowsBySession, windows, agentsById, pinnedChats, inbox.agents]);
 
     const selectable = useMemo(
         () =>
             items
                 .map((item, index) => {
                     const type = typeForItem(item);
-                    const available = agents.find((agent) => agent.type === type)?.available !== false;
-                    return { index, supported: available && (mode === NORMAL || cmd.agentSupportsSkipPermissions(type)) };
+                    const provider = agents.find((agent) => agent.type === type);
+                    return { index, available: provider?.available !== false || installable(item, provider) };
                 })
-                .filter(({ supported }) => supported)
+                .filter(({ available }) => available)
                 .map(({ index }) => index),
-        [agents, items, mode],
+        [agents, items],
     );
     const firstResumeIndex = items.findIndex((item) => item.kind === "resume");
 
@@ -156,6 +213,10 @@ export function AgentPalette() {
     function chooseMode(nextMode: AgentPermissionMode) {
         setMode(nextMode);
         window.requestAnimationFrame(() => inputRef.current?.focus());
+    }
+
+    function launchMode(type: AgentType): AgentPermissionMode {
+        return mode === YOLO && !canBypassPermissions(type) ? NORMAL : mode;
     }
 
     function moveSelection(delta: number) {
@@ -169,12 +230,26 @@ export function AgentPalette() {
         if (!item || !origin.current.sessionId || !origin.current.cwd) return;
         const type = typeForItem(item);
         const provider = agents.find((agent) => agent.type === type);
+        if (installable(item, provider)) {
+            cmd.closeAgentPalette();
+            installAgent(type);
+            return;
+        }
+        if (item.kind === "new" && item.signIn && provider) {
+            cmd.closeAgentPalette();
+            signInAgent(provider);
+            return;
+        }
+        if (item.kind === "resume" && item.agent) {
+            cmd.closeAgentPalette();
+            cmd.revealAgent(item.agent.id);
+            return;
+        }
         if (!provider || provider.available === false) return;
-        if (mode === YOLO && !cmd.agentSupportsSkipPermissions(type)) return;
         const selectedProfile = selectedProviderProfile(type, profiles, profileSelections);
         const resume = item.kind === "resume" ? item.row : undefined;
         cmd.addAgent(type, resume?.id, resume?.title, {
-            permissionMode: mode,
+            permissionMode: launchMode(type),
             profileId: selectedProfile?.id,
             detectedExecutablePath: provider.command,
             cwd: origin.current.cwd,
@@ -222,7 +297,7 @@ export function AgentPalette() {
                         ref={inputRef}
                         className="picker-input"
                         aria-label="Search agent sessions"
-                        placeholder={agents.length ? `search agent sessions — ${agents.map((agent) => agent.label).join(" · ")}...` : emptyMessage}
+                        placeholder={agents.length ? "search agents" : emptyMessage}
                         value={query}
                         onChange={(event) => {
                             setQuery(event.target.value);
@@ -240,7 +315,6 @@ export function AgentPalette() {
                                 className={`yolo-switch-option${choice.mode === YOLO ? " armed" : ""}${mode === choice.mode ? " active" : ""}`}
                                 title={choice.title}
                                 onClick={() => chooseMode(choice.mode)}>
-                                {choice.mode === YOLO && mode === YOLO && <span className="yolo-ring" aria-hidden="true" />}
                                 <span className="yolo-switch-glyph" aria-hidden="true">
                                     {choice.mode === YOLO ? <IconShieldBolt size={12} /> : <IconShield size={12} />}
                                 </span>
@@ -255,7 +329,7 @@ export function AgentPalette() {
                         <div className="picker-empty" role="status">
                             {emptyMessage}
                             {catalog.status === "error" && (
-                                <button type="button" onClick={() => void catalog.refresh().catch(() => {})}>
+                                <button type="button" onClick={() => void catalog.refresh().catch(swallow("refresh the agent catalog"))}>
                                     try again
                                 </button>
                             )}
@@ -264,35 +338,68 @@ export function AgentPalette() {
                     {items.map((item, index) => {
                         const type = typeForItem(item);
                         const provider = agents.find((agent) => agent.type === type);
-                        const available = provider?.available !== false;
-                        const supported = available && (mode === NORMAL || cmd.agentSupportsSkipPermissions(type));
-                        const key = item.kind === "new" ? `new-${type}` : `${type}-${item.row.id}`;
-                        const name = item.kind === "new" ? `+ new ${labelForType(type, agents)}` : item.row.title;
+                        const install = installable(item, provider);
+                        const available = provider?.available !== false || install;
+                        const display = item.kind === "resume" && item.agent ? agentDisplayOf({ agentStatus }, item.agent.id) : null;
+                        const signIn = item.kind === "new" && !!item.signIn;
+                        const key = item.kind === "new" ? `${signIn ? "sign-in" : "new"}-${type}` : `${type}-${item.row.id}`;
+                        const name = signIn
+                            ? `Sign in to ${agentLabel(type)}`
+                            : install
+                              ? `Install ${agentLabel(type)}`
+                              : item.kind === "new"
+                                ? `+ new ${agentLabel(type)}`
+                                : item.row.title;
                         return (
                             <Fragment key={key}>
                                 {index === firstResumeIndex && firstResumeIndex > 0 && <div className="agent-palette-divider" />}
                                 <button
                                     type="button"
                                     className={`picker-item${index === selected ? " sel" : ""}`}
-                                    disabled={!supported}
-                                    aria-label={`${name} in ${mode === YOLO ? "YOLO" : "Normal"} mode`}
+                                    disabled={!available}
+                                    aria-label={install || signIn ? name : `${name} in ${launchMode(type) === YOLO ? "YOLO" : "Normal"} mode`}
                                     onMouseEnter={() => {
-                                        if (mouseActive.current && supported) setSelected(index);
+                                        if (mouseActive.current && available) setSelected(index);
                                     }}
                                     onClick={() => activate(item)}>
-                                    <span className={`picker-icon agent-glyph ${type}`}>
-                                        <AgentIcon type={type} size={14} />
-                                    </span>
+                                    {item.kind === "resume" && item.agent ? (
+                                        <AgentFace
+                                            agent={item.agent}
+                                            size={14}
+                                            logoSize={14}
+                                            logoClass={`picker-icon agent-glyph ${type}`}
+                                            buddyClass="picker-icon agent-glyph buddy-mark"
+                                        />
+                                    ) : (
+                                        <span className={`picker-icon agent-glyph ${type}`}>
+                                            <AgentIcon type={type} size={14} />
+                                        </span>
+                                    )}
                                     <span className="picker-name">{name}</span>
-                                    <span className="picker-sub">
-                                        {!available
-                                            ? provider?.error || "Agent executable is unavailable"
-                                            : !supported
-                                              ? "Normal mode only"
-                                              : item.kind === "new"
-                                                ? "start agent"
-                                                : `${labelForType(type, agents)} · ${ago(item.row.mtime)}`}
-                                    </span>
+                                    {item.kind === "resume" && item.agent?.name && <span className="picker-sub">{agentHandle(item.agent.name)}</span>}
+                                    {display && showsAgentState(display) ? (
+                                        <span className="picker-state">
+                                            <AgentStateIndicator display={display} />
+                                        </span>
+                                    ) : (
+                                        <span className="picker-sub">
+                                            {signIn
+                                                ? "Signed out"
+                                                : install
+                                                  ? agentAbout(type)
+                                                  : !available
+                                                    ? provider?.error || "Agent executable is unavailable"
+                                                    : launchMode(type) !== mode
+                                                      ? "opens safe"
+                                                      : item.kind === "new"
+                                                        ? provider?.status?.state === "signedOut"
+                                                            ? "signed out"
+                                                            : ""
+                                                        : item.row.mtime
+                                                          ? formatAge(item.row.mtime * 1000)
+                                                          : ""}
+                                        </span>
+                                    )}
                                 </button>
                             </Fragment>
                         );
@@ -301,4 +408,9 @@ export function AgentPalette() {
             </div>
         </div>
     );
+}
+
+/** A new-chat row for an agent that is not installed, which installs it instead. */
+function installable(item: AgentItem, provider: AgentInfo | undefined): boolean {
+    return item.kind === "new" && provider?.status?.state === "missing" && !!installCommand(item.type);
 }

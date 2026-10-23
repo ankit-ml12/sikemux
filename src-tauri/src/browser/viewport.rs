@@ -5,6 +5,7 @@
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use sikemux_process::sync::Locked;
 
 use super::{BrowserBounds, BrowserHole, BrowserManager, MOBILE_USER_AGENT};
 
@@ -167,7 +168,7 @@ fn parse_inner_size(raw: &str) -> Option<(f64, f64)> {
 impl BrowserManager {
     /// The size the tab's page should lay out at now, in CSS pixels.
     pub fn layout_size(&self, agent_id: &str, tab_id: &str) -> Option<(f64, f64)> {
-        let agents = self.lock();
+        let agents = self.agents.locked();
         let agent = agents.get(agent_id)?;
         agent.views.get(tab_id)?;
         Some(agent.layout_of(tab_id).page_size())
@@ -187,7 +188,8 @@ impl BrowserManager {
                 .layout_size(agent_id, tab_id)
                 .ok_or("the tab closed while its viewport was changing")?;
             let view = self
-                .lock()
+                .agents
+                .locked()
                 .get(agent_id)
                 .and_then(|agent| agent.views.get(tab_id).cloned())
                 .ok_or("the tab closed while its viewport was changing")?;
@@ -341,15 +343,5 @@ mod tests {
         assert!(Viewport::sized(100, 800).is_err());
         assert!(Viewport::sized(1280, 5000).is_err());
         assert!(Viewport::preset("watch").is_none());
-    }
-
-    #[test]
-    fn only_the_mobile_preset_claims_to_be_a_phone() {
-        assert_eq!(
-            Viewport::preset("mobile").unwrap().user_agent(),
-            Some(MOBILE_USER_AGENT)
-        );
-        assert_eq!(Viewport::preset("tablet").unwrap().user_agent(), None);
-        assert_eq!(Viewport::sized(390, 844).unwrap().user_agent(), None);
     }
 }

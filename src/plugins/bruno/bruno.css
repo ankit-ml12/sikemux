@@ -68,6 +68,10 @@
     flex: 1 1 auto;
     overflow: auto;
     padding: 4px 0 12px;
+    scrollbar-width: none;
+}
+.bruno-tree-scroll::-webkit-scrollbar {
+    display: none;
 }
 .bruno-tree-msg {
     padding: 12px;
@@ -97,9 +101,8 @@
     color: var(--ink);
 }
 .bruno-req-row.active {
-    background: var(--acc-soft);
+    background: var(--surface-chosen);
     color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--acc-line);
 }
 .bruno-chevron {
     display: inline-flex;
@@ -231,17 +234,6 @@ body.bruno-resizing {
 .bruno-urlbar .bruno-url {
     align-self: stretch;
 }
-.bruno-method-sel {
-    flex: 0 0 auto;
-    background: var(--rail-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-control);
-    padding: 4px 6px;
-    font: inherit;
-    font-weight: 800;
-    font-size: var(--text-2xs);
-    cursor: pointer;
-}
 .bruno-url {
     flex: 1 1 auto;
     min-width: 0;
@@ -277,11 +269,6 @@ body.bruno-resizing {
 .bruno-var-back.oneline {
     white-space: pre;
 }
-.bruno-varwrap.area .bruno-var-back {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    min-height: 180px;
-}
 .bruno-var-field {
     width: 100%;
     background: transparent;
@@ -289,12 +276,6 @@ body.bruno-resizing {
     caret-color: var(--ink);
     outline: none;
     resize: none;
-}
-.bruno-var-field.area {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    min-height: 180px;
-    overflow: hidden;
 }
 .bruno-var-field::placeholder {
     color: var(--ink-faint);
@@ -326,6 +307,7 @@ body.bruno-resizing {
     letter-spacing: 0.02em;
     cursor: pointer;
     transition: background 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-send-kbd {
     display: inline-flex;
@@ -345,7 +327,7 @@ body.bruno-resizing {
     transform: translateY(-2px);
 }
 .bruno-send:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--acc) 88%, white);
+    background: var(--surface-hover);
 }
 .bruno-send svg {
     flex: 0 0 auto;
@@ -372,6 +354,7 @@ body.bruno-resizing {
     transition:
         color 0.12s,
         border-color 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-save:disabled {
     opacity: 0.45;
@@ -379,11 +362,11 @@ body.bruno-resizing {
 }
 .bruno-save.dirty {
     color: var(--warn);
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-save.dirty:hover {
     color: var(--acc);
-    border-color: var(--acc);
+    border-color: var(--border-strong);
 }
 .bruno-url-preview {
     display: flex;
@@ -427,7 +410,7 @@ body.bruno-resizing {
 }
 .bruno-tab.active {
     color: var(--ink);
-    border-bottom-color: var(--acc);
+    border-bottom-color: var(--text-primary);
 }
 .bruno-tab-body {
     flex: 1 1 auto;
@@ -479,10 +462,6 @@ body.bruno-resizing {
 .bruno-kv-row.add .bruno-input {
     opacity: 0.7;
 }
-.bruno-kv-check {
-    display: inline-flex;
-    justify-content: center;
-}
 .bruno-input {
     width: 100%;
     background: var(--void);
@@ -491,6 +470,7 @@ body.bruno-resizing {
     color: var(--ink);
     font-family: var(--mono);
     font-size: var(--text-xs);
+    border-radius: var(--radius-2);
 }
 .bruno-input:focus {
     outline: none;
@@ -526,37 +506,6 @@ body.bruno-resizing {
     font-size: var(--text-xs);
     color: var(--ink);
     word-break: break-all;
-}
-
-.bruno-code {
-    width: 100%;
-    min-height: 180px;
-    background: var(--void);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-control);
-    padding: 8px;
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 12.5px;
-    line-height: 1.5;
-    resize: vertical;
-    tab-size: 2;
-    white-space: pre;
-}
-.bruno-docs {
-    white-space: pre-wrap;
-}
-.bruno-body-mode,
-.bruno-env-select {
-    align-self: flex-start;
-    background: var(--rail-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-control);
-    padding: 4px 8px;
-    color: var(--ink);
-    font: inherit;
-    font-size: var(--text-xs);
-    cursor: pointer;
 }
 .bruno-field {
     display: flex;
@@ -610,6 +559,7 @@ body.bruno-resizing {
     font-weight: 700;
     font-size: var(--text-xs);
     padding: 2px 8px;
+    border-radius: var(--radius-2);
 }
 .bruno-resp-status.ok {
     color: var(--live);
@@ -689,22 +639,23 @@ body.bruno-resizing {
     transition:
         color 0.12s,
         border-color 0.12s;
+    border-radius: var(--radius-2);
 }
 .bruno-secrets-btn:hover,
 .bruno-icon-btn:hover {
     color: var(--ink);
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-secrets-btn.active {
-    color: var(--acc);
-    border-color: var(--acc-line);
-    background: var(--acc-soft);
+    color: var(--text-primary);
+    background: var(--surface-chosen);
 }
 .bruno-icon-btn {
     width: 24px;
     height: 24px;
     padding: 0;
     justify-content: center;
+    border-radius: var(--radius-2);
 }
 .bruno-secrets-pop {
     position: absolute;
@@ -715,6 +666,7 @@ body.bruno-resizing {
     background: var(--rail-2);
     border: 1px solid var(--line);
     padding: 10px;
+    border-radius: var(--radius-4);
 }
 .bruno-secrets-head {
     font-size: var(--text-2xs);
@@ -876,8 +828,12 @@ body.bruno-resizing {
         background 0.12s,
         border-color 0.12s;
 }
+
+button.bruno-check {
+    border-radius: var(--radius-2);
+}
 .bruno-check:hover {
-    border-color: var(--acc-line);
+    border-color: var(--border-strong);
 }
 .bruno-check.on {
     background: var(--acc);
@@ -921,18 +877,6 @@ body.bruno-resizing {
     background: rgba(255, 103, 103, 0.15);
     color: var(--danger);
 }
-/* body editor (VarArea) fills its tab when it's the sole content */
-.bruno-section-fill > .bruno-varwrap.area {
-    flex: 1 1 auto;
-    min-height: 0;
-}
-.bruno-section-fill > .bruno-varwrap.area .bruno-var-back,
-.bruno-section-fill > .bruno-varwrap.area .bruno-var-field {
-    min-height: 0;
-}
-.bruno-section-fill > .bruno-varwrap.area .bruno-var-field {
-    overflow: auto;
-}
 
 /* ── request tab badges ──────────────────────────────── */
 .bruno-tab {
@@ -947,12 +891,13 @@ body.bruno-resizing {
     min-width: 15px;
     height: 14px;
     padding: 0 4px;
-    background: var(--acc-soft);
-    border: 1px solid var(--acc-line);
-    color: var(--acc);
+    background: var(--surface-chosen);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
     font-size: 9px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    border-radius: var(--radius-1);
 }
 .bruno-tab-dot {
     width: 5px;

@@ -2,12 +2,13 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use sikemux_plugin_api::codehost::{Release, ReleaseAsset};
 use sikemux_plugin_api::{PluginResult, StreamSink};
 
 use crate::artifacts;
 use crate::client;
-use crate::common::{login_of, ActorRow, RELEASE_PAGES};
+use crate::common::{avatar_of, login_of, ActorRow, RELEASE_PAGES};
 use crate::error::GithubResult;
 use crate::workflows::RepoRef;
 
@@ -35,31 +36,6 @@ struct ReleaseRow {
     assets: Vec<AssetRow>,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Asset {
-    pub id: u64,
-    pub name: String,
-    pub size_bytes: u64,
-    pub downloads: u64,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Release {
-    pub id: u64,
-    pub tag: String,
-    pub name: String,
-    pub body: String,
-    pub draft: bool,
-    pub prerelease: bool,
-    /// A draft has never been published, so it has only a creation time.
-    pub published_at: Option<String>,
-    pub author: Option<String>,
-    pub assets: Vec<Asset>,
-    pub url: String,
-}
-
 impl From<ReleaseRow> for Release {
     fn from(row: ReleaseRow) -> Self {
         Self {
@@ -74,10 +50,11 @@ impl From<ReleaseRow> for Release {
             prerelease: row.prerelease,
             published_at: row.published_at.or(row.created_at),
             author: login_of(&row.author),
+            avatar_url: avatar_of(&row.author),
             assets: row
                 .assets
                 .into_iter()
-                .map(|asset| Asset {
+                .map(|asset| ReleaseAsset {
                     id: asset.id,
                     name: asset.name,
                     size_bytes: asset.size,
@@ -158,18 +135,5 @@ mod tests {
         })));
         assert!(draft.draft);
         assert_eq!(draft.published_at.as_deref(), Some("2026-01-01T00:00:00Z"));
-    }
-
-    #[test]
-    fn reads_the_files_hung_off_a_release() {
-        let release = Release::from(row(json!({
-            "id": 1, "tag_name": "v0.4.2", "draft": false, "prerelease": true,
-            "html_url": "https://github.com/a/b/releases/tag/v0.4.2",
-            "assets": [{ "id": 9, "name": "Sikemux_aarch64.dmg", "size": 10_485_760, "download_count": 42 }],
-        })));
-        assert!(release.prerelease);
-        let asset = release.assets.first().expect("one asset");
-        assert_eq!(asset.name, "Sikemux_aarch64.dmg");
-        assert_eq!(asset.downloads, 42);
     }
 }

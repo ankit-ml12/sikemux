@@ -1,32 +1,22 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { AgentIcon, IconCheck, IconChevron } from "../ui/Icons";
-import { agentSupportsChat, CHAT_AGENT_TYPES, type ChatAgentType } from "../agents/agentLaunch";
-import { selectedAgentRuntimeProfiles } from "../agents/agentProfiles";
-import { useResource } from "../state/resources";
-import { agentCatalogR } from "../state/resources.defs";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AgentIcon, IconChevron, IconUser } from "../ui/Icons";
+import { agentLabel, hasAccounts, type AccountAgentType, type ChatAgentType } from "../agents/catalog";
+import { modelProvidersApi, modelWords, type ModelProvider, type ServedModels } from "../api/modelProviders";
+import { accountName, accountsOf, moveChat } from "../agents/accounts";
+import type { AgentUsage } from "../api/agents";
+import { accountItem } from "../rail/AgentAccounts";
+import { TreeContextMenu, type CtxItem } from "../rail/FileTree";
+import { fetchResource, peekResource } from "../state/resources";
+import { agentAccountR, agentUsageR } from "../state/resources.defs";
 import { useStore } from "../state/store";
+import { swallow } from "../state/toast";
 import { DEFAULT_PROVIDER_PROFILE_SELECTION, type Agent, type ProviderProfile } from "../state/types";
-import { leavingMenu } from "../lib/motion";
-import { pickerSlots, sessionConfigs, type ConfigChoice, type SessionConfig } from "./sessionConfig";
+import { selectedProviderProfile } from "../agents/agentProfiles";
+import * as cmd from "../state/commands";
+import PickerMenu, { type AgentChoicesProps, type Choice } from "./PickerMenu";
+import { currentLabel, pickerSlots, sessionConfigs, type SessionConfig } from "./sessionConfig";
 
-interface Choice extends ConfigChoice {
-    icon?: ReactNode;
-}
-
-const HARNESS_LABELS: Record<ChatAgentType, string> = {
-    codex: "Codex",
-    claude: "Claude",
-    opencode: "OpenCode",
-    omp: "OMP",
-    grok: "Grok",
-    hermes: "Hermes",
-};
-
-/* Claude and Codex install their adapter on first use, so they are offered
-   whether or not their CLI is found yet. The rest need their own CLI. */
-const ALWAYS_OFFERED = new Set<ChatAgentType>(["codex", "claude"]);
-
-function Picker({
+export function Picker({
     name,
     label,
     value,
@@ -34,10 +24,13 @@ function Picker({
     disabled,
     onSelect,
     icon,
-    header,
+    agents,
+    payers,
     loading = false,
     onOpen,
     compact = false,
+    field = false,
+    empty,
 }: {
     name: string;
     label: string;
@@ -46,23 +39,24 @@ function Picker({
     disabled: boolean;
     onSelect: (value: string) => void;
     icon?: ReactNode;
-    header?: ReactNode;
+    agents?: AgentChoicesProps;
+    /** Who pays for the model's turns: the agent's own account or a connected provider. */
+    payers?: ReactNode;
     /** Holds the menu open while the control is disabled, with the list waiting on new options. */
     loading?: boolean;
     onOpen?: () => void;
     /** Descriptions stay searchable but go unrendered, so the rows read as one line. */
     compact?: boolean;
+    /** Drawn as a form field that opens downward, for settings rather than the composer. */
+    field?: boolean;
+    /** What the list says when it has no options. */
+    empty?: string;
 }) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);
     const root = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement>(null);
-    const search = useRef<HTMLInputElement>(null);
-    const listId = useId();
-    const filtered = options.filter((option) =>
-        [option.label, option.value, option.description].join(" ").toLowerCase().includes(query.toLowerCase()),
-    );
     const shown = open && (!disabled || loading);
     const close = () => {
         setOpen(false);
@@ -71,7 +65,6 @@ function Picker({
 
     useEffect(() => {
         if (!open) return;
-        search.current?.focus();
         const outside = (event: PointerEvent) => {
             if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
         };
@@ -81,7 +74,7 @@ function Picker({
 
     return (
         <div
-            className="chat-picker"
+            className={`chat-picker${field ? " field" : ""}`}
             ref={root}
             onBlur={(event) => {
                 // WebKit hands focus to nobody when a button is clicked, so a blur
@@ -108,74 +101,220 @@ function Picker({
                 <IconChevron size={10} />
             </button>
             {shown && (
-                <div
-                    ref={leavingMenu}
-                    className={`chat-picker-menu${compact ? " compact" : ""}`}
-                    style={{
-                        bottom: window.innerWidth <= 650 ? window.innerHeight - (trigger.current?.getBoundingClientRect().top ?? 0) + 12 : undefined,
-                    }}>
-                    <input
-                        ref={search}
-                        value={query}
-                        aria-label={`Search ${name.toLowerCase()}`}
-                        placeholder={`Search ${name.toLowerCase()}…`}
-                        role="combobox"
-                        aria-controls={listId}
-                        aria-expanded
-                        aria-autocomplete="list"
-                        aria-activedescendant={filtered[selected] ? `${listId}-${selected}` : undefined}
-                        onChange={(event) => {
-                            setQuery(event.target.value);
-                            setSelected(0);
-                        }}
-                        onKeyDown={(event) => {
-                            if (event.key === "Escape") {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                close();
-                            }
-                            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                                event.preventDefault();
-                                setSelected((index) =>
-                                    filtered.length ? (index + (event.key === "ArrowDown" ? 1 : filtered.length - 1)) % filtered.length : 0,
-                                );
-                            }
-                            if (event.key === "Enter" && !event.nativeEvent.isComposing && !loading && filtered[selected]) {
-                                event.preventDefault();
-                                onSelect(filtered[selected].value);
-                                close();
-                            }
-                        }}
-                    />
-                    {header}
-                    <div id={listId} role="listbox" aria-label={`${name} options`} className="chat-picker-options">
-                        {loading && <div className="chat-picker-hint">Loading models…</div>}
-                        {!loading &&
-                            filtered.map((option, index) => (
-                                <button
-                                    type="button"
-                                    key={option.value}
-                                    id={`${listId}-${index}`}
-                                    role="option"
-                                    aria-selected={option.value === value}
-                                    className={index === selected ? "highlighted" : ""}
-                                    onMouseEnter={() => setSelected(index)}
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => {
-                                        onSelect(option.value);
-                                        close();
-                                    }}>
-                                    {option.icon}
-                                    <span>
-                                        <strong>{option.label}</strong>
-                                        {option.description && !compact && <small>{option.description}</small>}
-                                    </span>
-                                    {option.value === value && <IconCheck size={14} />}
-                                </button>
-                            ))}
-                        {!loading && filtered.length === 0 && <div className="chat-picker-hint">No matches</div>}
-                    </div>
-                </div>
+                <PickerMenu
+                    name={name}
+                    value={value}
+                    options={options}
+                    agents={agents}
+                    payers={payers}
+                    loading={loading}
+                    compact={compact}
+                    empty={empty}
+                    query={query}
+                    selected={selected}
+                    trigger={trigger}
+                    onQuery={setQuery}
+                    onSelected={setSelected}
+                    onSelect={onSelect}
+                    onClose={close}
+                />
+            )}
+        </div>
+    );
+}
+
+/** A connected provider this agent can run on, with the models it serves. */
+export interface Route {
+    provider: ModelProvider;
+    served: ServedModels;
+}
+
+/** The providers `agent` can run on, read when asked, since local runners are
+    probed and keyed providers asked for their models over the network. */
+export function useRoutes(type: Agent["type"], modelProvider: string | null | undefined): [Route[], () => void] {
+    const [routes, setRoutes] = useState<Route[]>([]);
+    const load = useCallback(() => {
+        void modelProvidersApi
+            .list()
+            .then((providers) =>
+                Promise.all(
+                    providers
+                        .filter((provider) => provider.connected && provider.agents.includes(type))
+                        .map(async (provider) => ({
+                            provider,
+                            served: provider.models
+                                ? { ...provider, models: provider.models }
+                                : await modelProvidersApi.models(provider.id).catch(() => ({ ...provider, models: [] })),
+                        })),
+                ),
+            )
+            .then((loaded) => setRoutes(loaded.filter((route) => route.served.models.length > 0 || route.provider.id === modelProvider)))
+            .catch(swallow("model providers"));
+    }, [type, modelProvider]);
+    useEffect(() => {
+        if (modelProvider) load();
+    }, [modelProvider, load]);
+    return [routes, load];
+}
+
+function payerTitle(provider: ModelProvider): string {
+    return provider.kind === "local" ? `Runs on ${provider.label} on this computer` : `Paid with your ${provider.label} key`;
+}
+
+export function servedLabel(route: Route, model: string): string {
+    return [model, ...modelWords(route.served, route.provider.checks, model)].join(" · ");
+}
+
+/** Who pays for the chat's turns: the agent's own account, or a provider the
+    person connected. Picking a provider moves the chat there, on its coding model. */
+export function PayerChoices({
+    type,
+    modelProvider,
+    profile,
+    routes,
+    onPick,
+}: {
+    type: Agent["type"];
+    modelProvider: string | null | undefined;
+    profile?: ProviderProfile;
+    routes: Route[];
+    onPick: (route?: Route) => void;
+}) {
+    const account = profile?.name ?? `${agentLabel(type)} account`;
+    return (
+        <div className="chat-picker-agents" role="group" aria-label="Paid by">
+            <button
+                type="button"
+                aria-pressed={!modelProvider}
+                title={`Paid by your ${account}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => modelProvider && onPick()}>
+                <span>{account}</span>
+            </button>
+            {routes.map((route) => (
+                <button
+                    type="button"
+                    key={route.provider.id}
+                    aria-pressed={route.provider.id === modelProvider}
+                    title={payerTitle(route.provider)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => route.provider.id !== modelProvider && onPick(route)}>
+                    <span>{route.provider.label}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+interface Movable {
+    account: ProviderProfile;
+    usage?: AgentUsage;
+}
+
+/** The person's other accounts with this chat's provider that can take the chat over: signed in, and once it has
+    started, keeping chats where this one does. */
+function useMovable(agent: Agent, profile: ProviderProfile | undefined, started: boolean): [Movable[], (fresh: boolean) => void] {
+    const profiles = useStore((s) => s.providerProfiles);
+    const [movable, setMovable] = useState<Movable[]>([]);
+    const provider = hasAccounts(agent.type) ? agent.type : undefined;
+    const accounts = useMemo(() => (provider ? accountsOf(provider, profiles) : []), [provider, profiles]);
+    const load = useCallback(
+        (fresh: boolean) => {
+            if (!provider || !profile) return;
+            const read = async (account: ProviderProfile) => {
+                const status =
+                    (!fresh && peekResource(agentAccountR, provider, account.configPath)) ||
+                    (await fetchResource(agentAccountR, provider, account.configPath));
+                const usage = status.signedIn
+                    ? (!fresh && peekResource(agentUsageR, provider, account.configPath)) ||
+                      (await fetchResource(agentUsageR, provider, account.configPath).catch(() => undefined))
+                    : undefined;
+                return { account, status, usage };
+            };
+            void Promise.all(accounts.map((account) => read(account).catch(() => undefined))).then((rows) => {
+                const sessions = rows.find((row) => row?.account.id === profile.id)?.status.sessions;
+                setMovable(
+                    rows.flatMap((row) =>
+                        row && row.status.signedIn && (!started || (sessions && row.status.sessions === sessions))
+                            ? [{ account: row.account, usage: row.usage }]
+                            : [],
+                    ),
+                );
+            });
+        },
+        [provider, profile, accounts, started],
+    );
+    useEffect(() => load(false), [load]);
+    return [movable, load];
+}
+
+/** Which of the person's accounts the chat runs on. A chat that has started moves there, even in the middle of a
+    turn; one that has not simply starts there. Its menu is the rail's, without signing in or out. */
+export function AccountPicker({
+    agent,
+    profile: chosen,
+    started,
+    running,
+    disabled,
+}: {
+    agent: Agent;
+    profile: ProviderProfile | undefined;
+    started: boolean;
+    running: boolean;
+    disabled: boolean;
+}) {
+    const profile = useStore(
+        (s) =>
+            chosen ??
+            selectedProviderProfile(agent.type, s.providerProfiles, { ...DEFAULT_PROVIDER_PROFILE_SELECTION, ...s.selectedProviderProfileIds }),
+    );
+    const [movable, load] = useMovable(agent, profile, started);
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+    const trigger = useRef<HTMLButtonElement>(null);
+    const provider = agent.type as AccountAgentType;
+    if (!profile || !movable.some((row) => row.account.id !== profile.id)) return null;
+    const name = accountName(profile, peekResource(agentAccountR, provider, profile.configPath));
+    const move = (account: ProviderProfile) =>
+        started
+            ? moveChat(agent, account)
+            : cmd.configureEmptyAgent(agent.id, agent.type as ChatAgentType, account.id, agent.model, agent.modelProvider);
+    const items: CtxItem[] = movable.map(({ account, usage }) => ({
+        ...accountItem(provider, account, account.id === profile.id, usage),
+        run: account.id === profile.id ? undefined : () => move(account),
+    }));
+    return (
+        <div className="chat-picker">
+            <button
+                ref={trigger}
+                type="button"
+                className="chat-picker-trigger"
+                aria-label="Account"
+                aria-haspopup="menu"
+                aria-expanded={menu !== null}
+                disabled={disabled}
+                title={running ? "Moving stops this turn and carries it on in the other account" : name}
+                onClick={() => {
+                    if (menu) return setMenu(null);
+                    load(true);
+                    const box = trigger.current!.getBoundingClientRect();
+                    setMenu({ x: box.right, y: box.top - 6 });
+                }}>
+                <IconUser size={12} />
+                <span>{name}</span>
+                <IconChevron size={10} />
+            </button>
+            {menu && (
+                <TreeContextMenu
+                    x={menu.x}
+                    y={menu.y}
+                    width={280}
+                    above
+                    alignRight
+                    className="agent-account-menu"
+                    tickBesideLabel
+                    items={items}
+                    onClose={() => setMenu(null)}
+                />
             )}
         </div>
     );
@@ -195,65 +334,33 @@ export function ComposerPickers({
     setup: Record<string, unknown>;
     disabled: boolean;
     agentLocked?: boolean;
-    onAgent: (type: ChatAgentType, profileId?: string) => void;
+    onAgent: (type: ChatAgentType, profileId?: string, model?: string, modelProvider?: string) => void;
     onConfig: (config: SessionConfig, value: string) => void;
 }) {
-    const profiles = useStore((state) => state.providerProfiles);
-    const profileSelections = useStore((state) => state.selectedProviderProfileIds);
-    const runtimeProfiles = useMemo(() => selectedAgentRuntimeProfiles(profiles, profileSelections), [profiles, profileSelections]);
-    const catalog = useResource(agentCatalogR, runtimeProfiles);
-    const installed = new Set((catalog.data ?? []).filter((item) => item.available !== false).map((item) => item.type));
     const configs = sessionConfigs(setup);
-    const harnesses = CHAT_AGENT_TYPES.filter((type) => ALWAYS_OFFERED.has(type) || type === agent.type || installed.has(type));
-    const agentOptions = harnesses.flatMap((type) => {
-        const label = HARNESS_LABELS[type];
-        const icon = <AgentIcon type={type} size={15} className={`agent-glyph ${type}`} />;
-        const owned = profiles.filter((item) => item.provider === type);
-        if (owned.length === 0) return [{ value: type, label, icon }];
-        return owned.map((item) => ({ value: item.id, label: item.name, icon }));
-    });
-    const builtin = DEFAULT_PROVIDER_PROFILE_SELECTION[agent.type];
-    const agentValue = profile?.id ?? (builtin && agentOptions.some((option) => option.value === builtin) ? builtin : agent.type);
     const agentIcon = <AgentIcon type={agent.type} size={17} className={`agent-glyph ${agent.type}`} />;
     const rowIcon = <AgentIcon type={agent.type} size={15} className={`agent-glyph ${agent.type}`} />;
     const [switching, setSwitching] = useState<Record<string, unknown>>();
+    const [routes, loadRoutes] = useRoutes(agent.type, agent.modelProvider);
     const loading = switching !== undefined && (disabled || switching === setup);
     useEffect(() => {
         if (switching && !loading) setSwitching(undefined);
     }, [switching, loading]);
-    const agentRow = (
-        <div className="chat-picker-agents" role="group" aria-label="Agent">
-            {agentOptions.map((option) => (
-                <button
-                    type="button"
-                    key={option.value}
-                    aria-pressed={option.value === agentValue}
-                    title={option.label}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                        if (option.value === agentValue) return;
-                        const next = profiles.find((item) => item.id === option.value);
-                        const type = next?.provider ?? option.value;
-                        if (!agentSupportsChat(type as Agent["type"])) return;
-                        setSwitching(setup);
-                        onAgent(type as ChatAgentType, next?.id);
-                    }}>
-                    {option.icon}
-                    <span>{option.label}</span>
-                </button>
-            ))}
-        </div>
-    );
+    const route = routes.find((item) => item.provider.id === agent.modelProvider);
+    const relaunch: typeof onAgent = (...choice) => {
+        setSwitching(setup);
+        onAgent(...choice);
+    };
     return (
         <div className="chat-pickers">
             {pickerSlots(configs, agent.type).map(({ id, config }) => {
                 const model = id === "model";
                 const name = model ? "Model" : "Reasoning effort";
-                const label =
-                    config?.options.find((option) => option.value === config.currentValue)?.label ??
-                    config?.currentValue ??
-                    (model ? agent.model || "Model" : agent.effort || "Effort");
-                const options = config?.options || [];
+                const current = currentLabel(config) ?? (model ? agent.model || "Model" : agent.effort || "Effort");
+                const label = model && route ? `${current} · ${route.provider.label}` : current;
+                const listed = config?.options || [];
+                const served = model ? (route?.served.models ?? []).filter((value) => !listed.some((option) => option.value === value)) : [];
+                const options = [...listed, ...served.map((value) => ({ value, label: route ? servedLabel(route, value) : value }))];
                 return (
                     <Picker
                         key={id}
@@ -263,9 +370,33 @@ export function ComposerPickers({
                         options={model ? options.map((option) => ({ ...option, icon: rowIcon })) : options}
                         disabled={disabled || (!options.length && (!model || agentLocked))}
                         icon={model ? agentIcon : undefined}
-                        header={model && !agentLocked ? agentRow : undefined}
+                        agents={
+                            model && !agentLocked
+                                ? { type: agent.type, profile, perAgent: true, onSwitch: (type, profileId) => relaunch(type, profileId) }
+                                : undefined
+                        }
+                        payers={
+                            model && !agentLocked && routes.length > 0 ? (
+                                <PayerChoices
+                                    type={agent.type}
+                                    modelProvider={agent.modelProvider}
+                                    profile={profile}
+                                    routes={routes}
+                                    onPick={(next) =>
+                                        relaunch(agent.type as ChatAgentType, profile?.id, next?.served.defaults[agent.type], next?.provider.id)
+                                    }
+                                />
+                            ) : undefined
+                        }
                         loading={model && loading}
-                        onOpen={model ? () => setSwitching(undefined) : undefined}
+                        onOpen={
+                            model
+                                ? () => {
+                                      setSwitching(undefined);
+                                      loadRoutes();
+                                  }
+                                : undefined
+                        }
                         compact={model}
                         onSelect={(value) => {
                             if (config && value !== config.currentValue) onConfig(config, value);

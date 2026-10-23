@@ -67,9 +67,26 @@ export interface Tables {
       string | null,
       string | null | undefined,
       string | null
+    >; /** The host that added this client to the account, when a host did. */
+    registered_by: ColumnType<
+      string | null,
+      string | null | undefined,
+      string | null
     >;
   };
   challenges: { nonce: string; user_id: string; expires_at: Date };
+  host_sign_ins: {
+    code_hash: string;
+    user_code: string;
+    key: string;
+    name: string;
+    platform: string;
+    channel: string;
+    approved_by: string | null;
+    requested_from: string | null;
+    created_at: CreatedAt;
+    expires_at: Date;
+  };
   push_tokens: {
     device_key: string;
     platform: string;
@@ -95,6 +112,28 @@ export interface Tables {
     update_id: string;
     channel: string;
     assigned_at: CreatedAt;
+    withdrawn_at: ColumnType<Date | null, never, Date | null>;
+  };
+  update_rollbacks: {
+    id: Generated<string>;
+    update_id: string;
+    platform: string;
+    runtime_version: string;
+    channel: string;
+    directive: Buffer;
+    signature: string;
+    commit_time: Date;
+    assigned_at: CreatedAt;
+  };
+  shares: {
+    id: string;
+    user_id: string;
+    host_key: string;
+    created_at: CreatedAt;
+    expires_at: Date;
+    ended_at: ColumnType<Date | null, never, Date | null>;
+    ended_reason: ColumnType<string | null, never, string | null>;
+    viewer_check: string | null;
   };
   audit: {
     id: Generated<string>;
@@ -117,7 +156,7 @@ export interface Database {
 export function openDatabase(url: string, log: Logger): Database {
   const pool = new pg.Pool({
     connectionString: url,
-    max: 10,
+    max: 20,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 3_000,
     application_name: "sikemux-api",

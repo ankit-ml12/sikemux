@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
     sessions: vi.fn(),
 }));
 
+const { installAgent, signInAgent } = vi.hoisted(() => ({ installAgent: vi.fn(), signInAgent: vi.fn() }));
+vi.mock("./AgentInstall", () => ({ installAgent, signInAgent }));
 vi.mock("../api/agents", () => ({
     agentApi: {
         available: mocks.available,
@@ -129,7 +131,7 @@ describe("AgentPalette", () => {
         expect(screen.getByRole("radio", { name: "safe" })).toBeChecked();
     });
 
-    it("opens a new CLI directly in a PTY using Normal mode", async () => {
+    it("opens a new CLI in Normal mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
@@ -140,8 +142,6 @@ describe("AgentPalette", () => {
             type: "codex",
             cwd: "/code/sikemux",
             permissionMode: "workspace-write",
-            startup: "codex --sandbox workspace-write",
-            directCommand: { program: "codex", args: ["--sandbox", "workspace-write"] },
         });
         expect(getState().agentPaletteOpen).toBe(false);
     });
@@ -173,10 +173,6 @@ describe("AgentPalette", () => {
         expect(getState().agents[id]).toMatchObject({
             profileId: "codex-work",
             executablePath: "/Applications/ChatGPT.app/Contents/Resources/codex",
-            directCommand: {
-                program: "/Applications/ChatGPT.app/Contents/Resources/codex",
-                profile: { configPath: "~/.codex-work" },
-            },
         });
     });
 
@@ -202,6 +198,62 @@ describe("AgentPalette", () => {
         expect(getState().agentPaletteOpen).toBe(true);
     });
 
+    it("offers to install an agent that is not on this machine", async () => {
+        const user = userEvent.setup();
+        openTerminal();
+        render(<AgentPalette />);
+
+        const grok = await screen.findByRole("button", { name: "Install Grok" });
+        expect(grok).toHaveTextContent("xAI's coding agent");
+        expect(screen.queryByRole("button", { name: /Install Codex/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /Muse/ })).not.toBeInTheDocument();
+
+        await user.type(screen.getByRole("textbox", { name: "Search agent sessions" }), "install gr");
+        expect(screen.getByRole("button", { name: "Install Grok" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Install Grok" }));
+        expect(installAgent).toHaveBeenCalledWith("grok");
+        expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
+        expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("offers a signed-out agent's own sign-in beside starting it", async () => {
+        const user = userEvent.setup();
+        mocks.available.mockResolvedValue([
+            { type: "codex", label: "Codex", command: "/opt/bin/codex", defaultModel: null, defaultEffort: null, status: { state: "signedOut" } },
+        ]);
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
+        openTerminal();
+        render(<AgentPalette />);
+
+        expect(await screen.findByRole("button", { name: /^\+ new Codex/ })).toBeInTheDocument();
+        await user.type(screen.getByRole("textbox", { name: "Search agent sessions" }), "sign in");
+        const signIn = screen.getByRole("button", { name: "Sign in to Codex" });
+        expect(signIn).toHaveTextContent("Signed out");
+        await user.click(signIn);
+        expect(signInAgent).toHaveBeenCalledWith(expect.objectContaining({ type: "codex", command: "/opt/bin/codex" }));
+        expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
+        expect(getState().agentPaletteOpen).toBe(false);
+    });
+
+    it("says a signed-out agent will ask to sign in, and still starts it", async () => {
+        mocks.available.mockResolvedValue([
+            {
+                type: "codex",
+                label: "Codex",
+                command: "/opt/homebrew/bin/codex",
+                available: true,
+                status: { state: "signedOut" },
+                defaultModel: null,
+                defaultEffort: null,
+            },
+        ]);
+        invalidate((kind) => kind === "agents.catalog" || kind === "agents.sessions");
+        render(<AgentPalette />);
+
+        expect(await screen.findByText("signed out")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "+ new Codex in Normal mode" })).toBeEnabled();
+    });
+
     it("resumes a historical session with the selected mode", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
@@ -215,29 +267,28 @@ describe("AgentPalette", () => {
             title: "Fix terminal tabs",
             resumeId: "codex-old",
             permissionMode: "bypass",
-            directCommand: {
-                program: "codex",
-                args: ["resume", "--dangerously-bypass-approvals-and-sandbox", "codex-old"],
-            },
         });
     });
 
-    it("toggles to YOLO and skips unsupported rows during keyboard navigation", async () => {
+    it("opens agents without YOLO support in safe mode while YOLO is on", async () => {
         const user = userEvent.setup();
         render(<AgentPalette />);
 
-        const search = await screen.findByRole("textbox", { name: "Search agent sessions" });
+        await screen.findByRole("textbox", { name: "Search agent sessions" });
         const yolo = screen.getByRole("radio", { name: "yolo" });
         yolo.focus();
         fireEvent.keyDown(yolo, { key: "Enter" });
         expect(agentIdsOf(getState(), "sess-project")).toEqual([]);
         await user.click(yolo);
         expect(yolo).toBeChecked();
-        expect(screen.getByRole("button", { name: "+ new Pi in YOLO mode" })).toBeDisabled();
-        fireEvent.keyDown(search, { key: "ArrowDown" });
-        expect(screen.getByRole("button", { name: "+ new Hermes in YOLO mode" })).toHaveClass("sel");
-        fireEvent.keyDown(search, { key: "ArrowDown" });
-        expect(await screen.findByRole("button", { name: "Generate a commit message in YOLO mode" })).toHaveClass("sel");
+        expect(screen.getByRole("button", { name: "+ new Hermes in YOLO mode" })).toBeEnabled();
+        const pi = screen.getByRole("button", { name: "+ new Pi in Normal mode" });
+        expect(pi).toHaveTextContent("opens safe");
+
+        await user.click(pi);
+
+        const id = agentIdsOf(getState(), "sess-project")[0];
+        expect(getState().agents[id]).toMatchObject({ type: "pi", permissionMode: "workspace-write" });
     });
 
     it("filters sessions and opens the selected row with Enter", async () => {

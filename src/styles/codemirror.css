@@ -3,36 +3,53 @@
     align-items: center;
     justify-content: center;
     width: 22px;
-    height: 1em;
     line-height: 1;
-    font-family: var(--mono);
     flex: 0 0 auto;
+}
+.theme-icon {
+    display: block;
+    flex: none;
+}
+.theme-light .theme-icon-dark,
+:root:not(.theme-light) .theme-icon-light {
+    display: none;
 }
 
 .tree-row.git-m,
+.git-status.git-m,
 .git-status-symbol.git-m,
 .rail-file.git-m {
     color: var(--git-modified);
 }
 .tree-row.git-u,
+.git-status.git-u,
 .git-status-symbol.git-u,
 .rail-file.git-u {
     color: var(--git-untracked);
 }
 .tree-row.git-a,
+.git-status.git-a,
 .git-status-symbol.git-a,
 .rail-file.git-a {
     color: var(--git-added);
 }
 .tree-row.git-d,
+.git-status.git-d,
 .git-status-symbol.git-d,
 .rail-file.git-d {
     color: var(--git-deleted);
 }
 .tree-row.git-r,
+.git-status.git-r,
 .git-status-symbol.git-r,
 .rail-file.git-r {
     color: var(--git-renamed);
+}
+.tree-row.git-c,
+.git-status.git-c,
+.git-status-symbol.git-c,
+.rail-file.git-c {
+    color: var(--danger);
 }
 .git-status-symbol {
     display: inline-flex;
@@ -48,6 +65,10 @@
     margin-left: auto;
     padding-left: 8px;
     opacity: 0.8;
+}
+
+.tree-git-dot {
+    font-size: 7px;
 }
 
 .cm-content {
@@ -156,7 +177,7 @@
 }
 
 .cm-peek {
-    border: 1px solid var(--border-selected);
+    border: 1px solid var(--border);
     border-radius: var(--radius-2);
     overflow: hidden;
     margin: 6px 0;

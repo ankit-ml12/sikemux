@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { addAgent, closeAgentPalette, focusAgents, saveProviderProfile, setAgentPermissionMode } from "./commands";
+import { addAgent, closeAgentPalette, focusAgents, setAgentPermissionMode } from "./commands";
 import { getState, setState } from "./store";
 import { activeAgentId, agentIdsOf } from "./selectors";
 
@@ -54,17 +54,6 @@ describe("agent launch commands", () => {
         expect(getState().agentPaletteOpen).toBe(false);
     });
 
-    it("clears a default selection when a custom profile changes provider", () => {
-        setState({
-            providerProfiles: [{ id: "local", name: "Local", provider: "claude", accent: "#abcdef" }],
-            selectedProviderProfileIds: { claude: "local" },
-        });
-
-        saveProviderProfile({ id: "local", name: "Local Codex", provider: "codex", accent: "#abcdef" });
-
-        expect(getState().selectedProviderProfileIds.claude).toBeUndefined();
-    });
-
     it("does not attach a mismatched provider profile to a launch", () => {
         setState({ providerProfiles: [{ id: "codex-only", name: "Codex", provider: "codex", accent: "#abcdef", executablePath: "/bin/codex" }] });
 
@@ -72,15 +61,6 @@ describe("agent launch commands", () => {
 
         const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
         expect(agent.profileId).toBeUndefined();
-        expect(agent.startup).toMatch(/^claude /);
-    });
-
-    it("normalizes legacy modes to Normal", () => {
-        addAgent("pi", undefined, undefined, { permissionMode: "read-only" });
-
-        const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
-        expect(agent.permissionMode).toBe("workspace-write");
-        expect(agent.startup).toBe("pi");
     });
 
     it("pins an asynchronous launch to its originating project", () => {
@@ -99,11 +79,10 @@ describe("agent launch commands", () => {
         expect(getState().activeSessionId).toBe("other");
     });
 
-    it("launches the provider directly with model and effort overrides", () => {
+    it("keeps model and effort overrides on a new agent", () => {
         addAgent("codex", undefined, "Repair parser", {
             model: "gpt-5.6-codex",
             effort: "high",
-            baselineSessionIds: ["existing-one", "existing-two"],
         });
 
         const agent = getState().agents[agentIdsOf(getState(), "project")[0]];
@@ -112,9 +91,6 @@ describe("agent launch commands", () => {
             effort: "high",
             cwd: "/code/project",
         });
-        expect(agent.baselineSessionIds).toEqual(["existing-one", "existing-two"]);
-        expect(agent.startup).toContain("--model gpt-5.6-codex");
-        expect(agent.startup).toContain("model_reasoning_effort");
         expect(agent).not.toHaveProperty("initialInput");
         expect(agent).not.toHaveProperty("worktreePath");
     });
@@ -124,12 +100,10 @@ describe("agent launch commands", () => {
         const id = agentIdsOf(getState(), "project")[0];
 
         setAgentPermissionMode(id, "bypass");
-        expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass", skipPermissions: true });
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--dangerously-bypass-approvals-and-sandbox", "session-42"]);
+        expect(getState().agents[id]).toMatchObject({ permissionMode: "bypass" });
 
         setAgentPermissionMode(id, "workspace-write");
-        expect(getState().agents[id]).toMatchObject({ permissionMode: "workspace-write", skipPermissions: false });
-        expect(getState().agents[id].directCommand?.args).toEqual(["resume", "--sandbox", "workspace-write", "session-42"]);
+        expect(getState().agents[id]).toMatchObject({ permissionMode: "workspace-write" });
     });
 
     it("relaunches a fresh CLI when its live PTY mode changes", () => {
@@ -140,8 +114,6 @@ describe("agent launch commands", () => {
 
         expect(getState().agents[id]).toMatchObject({
             permissionMode: "bypass",
-            skipPermissions: true,
-            directCommand: { program: "claude", args: ["--dangerously-skip-permissions"] },
         });
     });
 });

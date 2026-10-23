@@ -1,4 +1,5 @@
 import type { AgentType, ProviderProfile, ProviderProfileSelection } from "../state/types";
+import { ACCOUNT_AGENT_TYPES } from "./catalog";
 
 export interface AgentRuntimeProfile {
     type: AgentType;
@@ -17,7 +18,7 @@ export function selectedProviderProfile(
 }
 
 export function selectedAgentRuntimeProfiles(profiles: readonly ProviderProfile[], selections: ProviderProfileSelection): AgentRuntimeProfile[] {
-    return (["claude", "codex"] as const).map((type) => {
+    return ACCOUNT_AGENT_TYPES.map((type) => {
         const profile = selectedProviderProfile(type, profiles, selections);
         return {
             type,

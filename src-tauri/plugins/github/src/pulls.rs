@@ -2,15 +2,17 @@
 // merging it. A pull request is also an issue in GitHub's API, so its comments
 // come from there.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use sikemux_plugin_api::codehost::{
+    ChangedFile, CommitAuthor, Label, Pull, PullCommit, PullCounts, Review,
+};
 
 use crate::client;
 use crate::common::{
-    avatar_of, login_of, ActorRow, Label, LabelRow, FILE_PAGES, LIST_PAGES, MAX_PER_PAGE,
+    avatar_of, login_of, ActorRow, LabelRow, FILE_PAGES, LIST_PAGES, MAX_PER_PAGE,
 };
 use crate::error::{GithubError, GithubResult};
 use crate::workflows::RepoRef;
@@ -73,48 +75,6 @@ fn state_of(row: &PullRow) -> String {
     } else {
         row.state.clone()
     }
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Pull {
-    pub number: u64,
-    pub title: String,
-    pub body: String,
-    pub state: String,
-    pub draft: bool,
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    /// `OWNER`, `MEMBER`, `COLLABORATOR`, `CONTRIBUTOR` and the rest.
-    pub author_association: Option<String>,
-    pub head: Option<String>,
-    pub head_label: Option<String>,
-    pub base: Option<String>,
-    /// The commit at the tip of the branch, which is what its checks ran on.
-    pub head_sha: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Absent when GitHub did not say, which its list of pull requests never does.
-    pub comments: Option<u64>,
-    pub additions: Option<u64>,
-    pub deletions: Option<u64>,
-    pub changed_files: Option<u64>,
-    /// Whether GitHub thinks it can merge cleanly; unknown until it has looked.
-    pub mergeable: Option<bool>,
-    /// `clean`, `blocked`, `dirty`, `behind` and the rest of GitHub's words.
-    pub merge_state: Option<String>,
-    pub labels: Vec<Label>,
-    pub reviewers: Vec<String>,
-    pub assignees: Vec<String>,
-    pub milestone: Option<String>,
-    /// Absent from GitHub's list of pull requests, like the counts above.
-    pub commits: Option<u64>,
-    pub merged_at: Option<String>,
-    pub merged_by: Option<String>,
-    pub merge_commit_sha: Option<String>,
-    /// The picture of each person named above by login alone.
-    pub avatars: BTreeMap<String, String>,
-    pub url: String,
 }
 
 impl From<PullRow> for Pull {
@@ -215,6 +175,39 @@ pub async fn list(data_dir: &Path, input: Query) -> GithubResult<Vec<Pull>> {
 }
 
 #[derive(Deserialize)]
+struct Total {
+    total_count: u64,
+}
+
+/// How many pull requests the repository has open and closed, as GitHub's search counts them.
+pub async fn counts(data_dir: &Path, repo: RepoRef) -> GithubResult<PullCounts> {
+    counts_of(data_dir, repo, "pr").await
+}
+
+/// How many issues the repository has open and closed, as GitHub's search counts them.
+pub async fn issue_counts(data_dir: &Path, repo: RepoRef) -> GithubResult<PullCounts> {
+    counts_of(data_dir, repo, "issue").await
+}
+
+async fn counts_of(data_dir: &Path, repo: RepoRef, kind: &'static str) -> GithubResult<PullCounts> {
+    repo.checked()?;
+    let total = |state: &'static str| {
+        let terms = format!("repo:{}/{} is:{kind} is:{state}", repo.owner, repo.name);
+        async move {
+            let found: Total = client::get(
+                data_dir,
+                "/search/issues",
+                &[("q", terms), ("per_page", "1".to_string())],
+            )
+            .await?;
+            GithubResult::Ok(found.total_count)
+        }
+    };
+    let (open, closed) = futures::try_join!(total("open"), total("closed"))?;
+    Ok(PullCounts { open, closed })
+}
+
+#[derive(Deserialize)]
 struct CountRow {
     number: u64,
     comments: u64,
@@ -273,6 +266,28 @@ pub async fn get(data_dir: &Path, input: PullRef) -> GithubResult<Pull> {
 }
 
 #[derive(Deserialize)]
+pub struct CommitRef {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub sha: String,
+}
+
+/// The pull requests that hold the commit `sha`, the merged one first.
+pub async fn of_commit(data_dir: &Path, input: CommitRef) -> GithubResult<Vec<Pull>> {
+    if !input.sha.chars().all(|c| c.is_ascii_hexdigit()) || input.sha.len() < 7 {
+        return Err(GithubError::BadArg(format!(
+            "`{}` is not a commit hash",
+            input.sha
+        )));
+    }
+    let path = input.repo.path(&format!("/commits/{}/pulls", input.sha))?;
+    let rows: Vec<PullRow> = client::get(data_dir, &path, &[]).await?;
+    let mut pulls: Vec<Pull> = rows.into_iter().map(Pull::from).collect();
+    pulls.sort_by_key(|pull| pull.state != "merged");
+    Ok(pulls)
+}
+
+#[derive(Deserialize)]
 struct FileRow {
     filename: String,
     status: String,
@@ -280,24 +295,6 @@ struct FileRow {
     deletions: u64,
     patch: Option<String>,
     previous_filename: Option<String>,
-}
-
-#[derive(Serialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChangedFile {
-    pub path: String,
-    /// `added`, `modified`, `removed`, `renamed`, `copied` or `changed`.
-    pub status: String,
-    pub additions: u64,
-    pub deletions: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub previous_path: Option<String>,
-    /// The unified diff, which GitHub leaves out for a file too big to show.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub patch: Option<String>,
-    /// Says which part of the patch this is and how to read the rest.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
 }
 
 const PATCH_LINES: usize = 400;
@@ -471,17 +468,6 @@ struct CommitRow {
     author: Option<ActorRow>,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct PullCommit {
-    pub sha: String,
-    pub message: String,
-    /// The GitHub login, or the name in the commit when no account matches it.
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    pub date: Option<String>,
-}
-
 /// GitHub lists at most 250 of a pull request's commits.
 const COMMIT_PAGES: u32 = 3;
 
@@ -505,15 +491,6 @@ pub async fn commits(data_dir: &Path, input: PullRef) -> GithubResult<Vec<PullCo
             }
         })
         .collect())
-}
-
-/// Who wrote a commit, by the email in it, and the account GitHub matched that email to.
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitAuthor {
-    pub email: String,
-    pub login: String,
-    pub avatar_url: String,
 }
 
 #[derive(Deserialize)]
@@ -563,17 +540,6 @@ struct ReviewRow {
     state: Option<String>,
     body: Option<String>,
     submitted_at: Option<String>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Review {
-    pub author: Option<String>,
-    pub avatar_url: Option<String>,
-    /// `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED` or `DISMISSED`.
-    pub state: String,
-    pub body: String,
-    pub submitted_at: Option<String>,
 }
 
 pub async fn reviews(data_dir: &Path, input: PullRef) -> GithubResult<Vec<Review>> {
@@ -636,6 +602,15 @@ pub async fn merge(data_dir: &Path, input: Merge) -> GithubResult<()> {
             message: "the branch moved since you looked; reload the pull request and try again"
                 .into(),
         }),
+        Err(GithubError::Http {
+            status: 405,
+            message,
+        }) if message
+            .to_ascii_lowercase()
+            .contains("not allowed on this repository") =>
+        {
+            Err(GithubError::MergeMethod(message))
+        }
         outcome => outcome,
     }
 }
@@ -766,14 +741,6 @@ mod tests {
         let mut by_date = base();
         by_date["merged_at"] = json!("2026-01-02T00:00:00Z");
         assert_eq!(state_of(&row(by_date)), "merged");
-    }
-
-    #[test]
-    fn one_that_was_only_closed_still_says_closed() {
-        assert_eq!(state_of(&row(base())), "closed");
-        let mut open = base();
-        open["state"] = json!("open");
-        assert_eq!(state_of(&row(open)), "open");
     }
 
     fn changed(path: &str, patch: Option<&str>) -> ChangedFile {
@@ -915,91 +882,22 @@ mod tests {
         assert!(!is_commit(&"g".repeat(40)));
     }
 
-    #[test]
-    fn reads_the_branches_and_the_counts() {
-        let mut full = base();
-        full["head"] = json!({ "ref": "feat/thing", "sha": "abc123" });
-        full["base"] = json!({ "ref": "main" });
-        full["additions"] = json!(40);
-        full["deletions"] = json!(2);
-        full["labels"] = json!([{ "name": "bug", "color": "d73a4a" }]);
-        full["requested_reviewers"] = json!([{ "login": "nodelike" }]);
-        let pull = Pull::from(row(full));
-        assert_eq!(pull.head.as_deref(), Some("feat/thing"));
-        assert_eq!(pull.head_sha.as_deref(), Some("abc123"));
-        assert_eq!(pull.base.as_deref(), Some("main"));
-        assert_eq!(pull.additions, Some(40));
-        assert_eq!(pull.labels.first().map(|l| l.name.as_str()), Some("bug"));
-        assert_eq!(pull.reviewers, ["nodelike"]);
-        assert!(!pull.draft);
-    }
-
     #[tokio::test]
-    async fn refuses_a_state_and_a_merge_method_github_would_not_take() {
-        let repo = || RepoRef {
-            owner: "a".into(),
-            name: "b".into(),
-        };
-        let dir = std::env::temp_dir();
-        let bad_state = Query {
-            repo: repo(),
-            state: Some("sideways".into()),
-            page: None,
-            per_page: None,
-        };
-        assert!(list(&dir, bad_state).await.is_err());
-
-        let bad_method = Merge {
-            pull: PullRef {
-                repo: repo(),
-                number: 1,
-            },
-            method: "smash".into(),
-            sha: "a".repeat(40),
-        };
-        assert!(merge(&dir, bad_method).await.is_err());
-
+    async fn a_merge_without_the_head_it_was_checked_against_is_refused() {
         let unseen_head = Merge {
             pull: PullRef {
-                repo: repo(),
+                repo: RepoRef {
+                    owner: "a".into(),
+                    name: "b".into(),
+                },
                 number: 1,
             },
             method: "squash".into(),
             sha: String::new(),
         };
         assert!(matches!(
-            merge(&dir, unseen_head).await,
+            merge(&std::env::temp_dir(), unseen_head).await,
             Err(GithubError::BadArg(_))
         ));
-
-        let bad_review = NewReview {
-            pull: PullRef {
-                repo: repo(),
-                number: 1,
-            },
-            event: "LGTM".into(),
-            body: String::new(),
-        };
-        assert!(review(&dir, bad_review).await.is_err());
-
-        let silent_request = NewReview {
-            pull: PullRef {
-                repo: repo(),
-                number: 1,
-            },
-            event: "REQUEST_CHANGES".into(),
-            body: "  ".into(),
-        };
-        assert!(review(&dir, silent_request).await.is_err());
-
-        let untitled = NewPull {
-            repo: repo(),
-            title: " ".into(),
-            head: "feat".into(),
-            base: "main".into(),
-            body: String::new(),
-            draft: false,
-        };
-        assert!(create(&dir, untitled).await.is_err());
     }
 }

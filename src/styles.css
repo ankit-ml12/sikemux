@@ -7,10 +7,12 @@
 @import "./styles/editor-insights.css";
 @import "./styles/git.css";
 @import "./styles/agents.css";
+@import "./styles/generated/agent-brands.css";
 @import "./styles/desk.css";
 @import "./styles/codemirror.css";
 @import "./styles/feedback.css";
 @import "./styles/search.css";
+@import "./styles/kanban.css";
 @import "./styles/topbar-integrations.css";
 @import "./styles/experience.css";
 @import "./styles/command-palette.css";

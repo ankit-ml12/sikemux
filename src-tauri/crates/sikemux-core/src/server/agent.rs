@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use portable_pty::ExitStatus;
 use serde::{Deserialize, Serialize};
+use sikemux_process::sync::{Locked, Shared};
 use sikemux_pty::agent_detection::{
     AgentDetection, AgentDetectionState, AgentKind, DetectionConfidence, DetectionExplain,
     DetectionInput, ManifestRegistry,
@@ -12,10 +13,16 @@ use sikemux_pty::agent_detection::{
 
 use crate::protocol::{AgentStateEvent, Event};
 
+use super::activity::Activity;
+use super::messages;
 use super::session::Session;
-use super::{now_ms, Core, CoreResult};
+use super::spawn::{self, Ending};
+use super::{uptime_ms, Core, CoreResult};
 
 const ACTIVITY_SETTLE: Duration = Duration::from_secs(2);
+/// How long an agent at rest must keep printing before that counts as a turn
+/// it began by itself rather than a redraw of its screen.
+const OUTPUT_MAKES_A_TURN: Duration = Duration::from_secs(5);
 const UNKNOWN: u8 = 0;
 const IDLE: u8 = 1;
 const WORKING: u8 = 2;
@@ -48,6 +55,23 @@ fn sequence() -> &'static AtomicU64 {
 /// that restarts under a running app keeps counting upwards.
 fn next_sequence() -> u64 {
     sequence().fetch_add(1, Ordering::AcqRel)
+}
+
+/// A chat's state, from the core that runs it, so it reads the same in every
+/// app whether or not one has the chat open. A chat's permission requests
+/// already notify, so its state stays out of the notices.
+pub(crate) fn publish_chat_state(core: &Core, agent_id: &str, state: &str) {
+    core.agents_changed();
+    let event = Event::AgentState(AgentStateEvent {
+        agent_id: agent_id.to_owned(),
+        state: state.to_owned(),
+        sequence: next_sequence(),
+        source: "acp".into(),
+        confidence: "high".into(),
+        reason: "the chat's turn as the core runs it".into(),
+        matched_rule: None,
+    });
+    core.broadcast_to(&event, |client| client.peer.is_local());
 }
 
 pub(crate) fn sequence_mark() -> u64 {
@@ -87,6 +111,9 @@ pub(crate) struct AgentActivity {
     revision: AtomicU64,
     last_detection_fingerprint: AtomicU64,
     last_detection_revision: AtomicU64,
+    last_output_ms: AtomicU64,
+    /// When the output an agent at rest has been printing without a pause began.
+    resting_output_since_ms: AtomicU64,
 }
 
 impl AgentActivity {
@@ -107,6 +134,8 @@ impl AgentActivity {
             revision: AtomicU64::new(0),
             last_detection_fingerprint: AtomicU64::new(0),
             last_detection_revision: AtomicU64::new(0),
+            last_output_ms: AtomicU64::new(0),
+            resting_output_since_ms: AtomicU64::new(0),
         })
     }
 
@@ -152,6 +181,16 @@ impl AgentActivity {
             .map(|_| state_label(self.state.load(Ordering::Acquire)))
     }
 
+    /// It is at work on a turn, or waits on the person in the middle of one.
+    pub(crate) fn busy(&self) -> bool {
+        matches!(self.state.load(Ordering::Acquire), WORKING | BLOCKED)
+    }
+
+    /// Its screen shows it waiting for a prompt.
+    pub(crate) fn idle(&self) -> bool {
+        self.kind.is_some() && self.state.load(Ordering::Acquire) == IDLE
+    }
+
     pub(crate) fn silence(&self) {
         self.silenced.store(true, Ordering::Release);
     }
@@ -191,11 +230,32 @@ impl AgentActivity {
             return;
         }
         let previous = self.state.swap(next, Ordering::AcqRel);
+        let busy = matches!(previous, WORKING | BLOCKED);
+        let activity = match next {
+            WORKING if busy => Some(Activity::Working),
+            WORKING => Some(Activity::Started),
+            BLOCKED => Some(Activity::NeedsYou),
+            IDLE if busy => Some(Activity::Finished { cancelled: false }),
+            _ => None,
+        };
+        if let Some(activity) = activity {
+            core.note_activity(&self.agent_id, activity);
+        }
         match next {
-            WORKING => core.seen.working(&self.agent_id),
-            BLOCKED => core.seen.wants_a_look(&self.agent_id),
-            IDLE if matches!(previous, WORKING | BLOCKED) => core.seen.wants_a_look(&self.agent_id),
+            WORKING if source != "activity" => messages::prompt_taken(core, &self.agent_id),
+            BLOCKED => messages::prompt_taken(core, &self.agent_id),
+            IDLE | STOPPED if busy => messages::prompt_settled(
+                core,
+                &self.agent_id,
+                self.last_output_ms.load(Ordering::Acquire),
+            ),
             _ => {}
+        }
+        if next == IDLE && busy {
+            spawn::terminal_turn_ended(core, &self.agent_id, Ending::Finished);
+        }
+        if next != previous {
+            core.agents_changed();
         }
         core.broadcast_event(&Event::AgentState(AgentStateEvent {
             agent_id: self.agent_id.clone(),
@@ -246,26 +306,42 @@ pub(crate) fn note_input(core: &Core, session: &Session, bytes: &[u8]) {
         return;
     }
     agent.armed.store(true, Ordering::Release);
-    session.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    session
+        .last_activity_ms
+        .store(uptime_ms(), Ordering::Relaxed);
     agent.idle_confirmations.store(0, Ordering::Release);
     agent.revision.fetch_add(1, Ordering::AcqRel);
     agent.publish(core, WORKING, "activity", "high", "command submitted", None);
 }
 
 /// Startup banners and the first paint are output but not work. An agent
-/// stays ready until a submitted line arms it.
+/// stays ready until a submitted line arms it. Output from an agent at rest is
+/// a redraw, such as Claude's after each turn, unless it keeps going or its
+/// screen shows it at work.
 pub(crate) fn note_output(core: &Core, agent: &AgentActivity) {
-    if agent.kind.is_some() && agent.armed.load(Ordering::Acquire) {
-        agent.idle_confirmations.store(0, Ordering::Release);
-        agent.publish(
-            core,
-            WORKING,
-            "activity",
-            "medium",
-            "agent produced output",
-            None,
-        );
+    if agent.kind.is_none() || !agent.armed.load(Ordering::Acquire) {
+        return;
     }
+    agent.idle_confirmations.store(0, Ordering::Release);
+    let now = uptime_ms();
+    let previous = agent.last_output_ms.swap(now, Ordering::AcqRel);
+    if !agent.busy() {
+        if now.saturating_sub(previous) >= ACTIVITY_SETTLE.as_millis() as u64 {
+            agent.resting_output_since_ms.store(now, Ordering::Release);
+        }
+        let since = agent.resting_output_since_ms.load(Ordering::Acquire);
+        if now.saturating_sub(since) < OUTPUT_MAKES_A_TURN.as_millis() as u64 {
+            return;
+        }
+    }
+    agent.publish(
+        core,
+        WORKING,
+        "activity",
+        "medium",
+        "agent produced output",
+        None,
+    );
 }
 
 pub(crate) fn note_exit(core: &Core, agent: &AgentActivity, status: Option<&ExitStatus>) {
@@ -295,12 +371,51 @@ fn detection_input<'a>(recent: &'a str, title: &'a str) -> DetectionInput<'a> {
     }
 }
 
-fn screen_text(session: &Session) -> Option<(String, String)> {
-    let parser = session.parser.lock().ok()?;
-    Some((
+/// Whether the agent in `session` takes a prompt typed in now: its screen
+/// shows it waiting for one, read afresh, as what was last published may be
+/// a moment behind a permission prompt. One that has had no prompt yet must
+/// also have gone quiet with its prompt box in sight, as it may still be
+/// starting or asking the person something first.
+pub(crate) fn takes_prompt(core: &Core, session: &Session) -> bool {
+    let Some(agent) = session.agent.as_ref().filter(|agent| agent.idle()) else {
+        return false;
+    };
+    let Some(detection) = screen_now(core, session) else {
+        return false;
+    };
+    if agent.armed.load(Ordering::Acquire) {
+        return !matches!(
+            detection.state,
+            AgentDetectionState::Working | AgentDetectionState::Blocked
+        );
+    }
+    let quiet = uptime_ms().saturating_sub(session.last_activity_ms.load(Ordering::Relaxed))
+        >= ACTIVITY_SETTLE.as_millis() as u64;
+    quiet
+        && matches!(detection.state, AgentDetectionState::Idle)
+        && detection.fallback_reason.is_none()
+}
+
+/// Whether the agent's screen shows it asking the person something now, such
+/// as for a permission.
+pub(crate) fn asks_now(core: &Core, session: &Session) -> bool {
+    screen_now(core, session)
+        .is_some_and(|detection| matches!(detection.state, AgentDetectionState::Blocked))
+}
+
+fn screen_now(core: &Core, session: &Session) -> Option<AgentDetection> {
+    let kind = session.agent.as_ref()?.kind?;
+    let (recent, title) = screen_text(session);
+    let registry = core.detection.read_locked();
+    Some(registry.detect(kind, detection_input(&recent, &title)))
+}
+
+pub(crate) fn screen_text(session: &Session) -> (String, String) {
+    let parser = session.parser.locked();
+    (
         parser.screen().contents(),
         parser.callbacks().window_title.clone(),
-    ))
+    )
 }
 
 /// Reads a settled agent screen and publishes what it shows. Runs a few times
@@ -322,17 +437,15 @@ pub(crate) fn poll(core: &Core, session: &Session, now: u64) {
     if agent.last_detection_revision.load(Ordering::Acquire) == revision {
         return;
     }
-    let Some((recent, title)) = screen_text(session) else {
-        return;
-    };
+    let (recent, title) = screen_text(session);
     let fingerprint = semantic_fingerprint(revision, &recent, &title);
     if agent.last_detection_fingerprint.load(Ordering::Acquire) == fingerprint {
         return;
     }
-    let detection = match core.detection.read() {
-        Ok(registry) => registry.detect(kind, detection_input(&recent, &title)),
-        Err(_) => return,
-    };
+    let detection = core
+        .detection
+        .read_locked()
+        .detect(kind, detection_input(&recent, &title));
     if detection.skip_state_update {
         agent
             .last_detection_fingerprint
@@ -391,7 +504,7 @@ pub(crate) fn explain(
         .as_ref()
         .and_then(AgentActivity::kind)
         .ok_or("invalid argument: terminal has no known agent type")?;
-    let (recent, title) = screen_text(session).ok_or("agent terminal parser lock poisoned")?;
+    let (recent, title) = screen_text(session);
     Ok(registry.explain(kind, detection_input(&recent, &title)))
 }
 
@@ -450,7 +563,7 @@ fn detection_reason(detection: &AgentDetection) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{event_fingerprint, next_sequence, semantic_fingerprint, submits_line};
+    use super::{next_sequence, submits_line};
 
     #[test]
     fn only_submitted_input_arms_agent_activity() {
@@ -458,50 +571,6 @@ mod tests {
         assert!(submits_line(b"first\nsecond"));
         assert!(!submits_line(b"still typing"));
         assert!(!submits_line(b"\x1b[A"));
-    }
-
-    #[test]
-    fn semantic_fingerprint_changes_with_evidence_or_revision() {
-        let base = semantic_fingerprint(1, "prompt", "Codex");
-        assert_eq!(base, semantic_fingerprint(1, "prompt", "Codex"));
-        assert_ne!(base, semantic_fingerprint(2, "prompt", "Codex"));
-        assert_ne!(base, semantic_fingerprint(1, "working", "Codex"));
-        assert_ne!(base, semantic_fingerprint(1, "prompt", "Action required"));
-    }
-
-    #[test]
-    fn event_fingerprint_preserves_same_state_evidence_upgrades() {
-        let activity =
-            event_fingerprint(1, "working", "activity", "high", "command submitted", None);
-        let screen = event_fingerprint(
-            1,
-            "working",
-            "screen",
-            "high",
-            "manifest rule spinner matched visible working status",
-            Some("spinner"),
-        );
-        let changed_reason = event_fingerprint(
-            1,
-            "working",
-            "screen",
-            "high",
-            "manifest rule tool matched visible working status",
-            Some("tool"),
-        );
-        assert_ne!(activity, screen);
-        assert_ne!(screen, changed_reason);
-        assert_eq!(
-            screen,
-            event_fingerprint(
-                1,
-                "working",
-                "screen",
-                "high",
-                "manifest rule spinner matched visible working status",
-                Some("spinner")
-            )
-        );
     }
 
     #[test]

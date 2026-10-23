@@ -7,6 +7,13 @@ export interface Listener {
   close(): Promise<void>;
 }
 
+/** Told of account changes, as the live hub is. */
+export interface AccountWatcher {
+  changed(userId: string): void;
+  /** The listener was down, so any account may have changed. */
+  missed(): void;
+}
+
 const MAX_BACKOFF_MS = 30_000;
 const ALERT_AFTER_MS = 60_000;
 

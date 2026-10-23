@@ -1,51 +1,54 @@
-import { memo, useContext, useMemo, useState } from "react";
+import { memo, useContext, useMemo, useState, type ReactNode } from "react";
 import { CopyButton } from "../ui/CopyButton";
 import { basename } from "../lib/paths";
-import { AgentIcon, IconCheck, IconChevron, IconClose, IconFile, IconPlug, IconTimer, IconWarning } from "../ui/Icons";
+import {
+    AgentIcon,
+    IconCheck,
+    IconChevron,
+    IconClose,
+    IconFile,
+    IconInfo,
+    IconPencil,
+    IconPlug,
+    IconTimer,
+    IconUser,
+    IconWarning,
+    IconWorkflow,
+} from "../ui/Icons";
+import { Tooltip } from "../ui/Tooltip";
+import { AgentMark } from "../agents/AgentMark";
+import sikemuxMark from "../../brand/mark/mark-purple.svg";
+import * as cmd from "../state/commands";
+import { messageLetters, type AgentLetter, type AgentMessageLetter } from "./agentLetters";
+import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
 import { durationLabel } from "./durationLabel";
-import { localImagePath, useImagePreview } from "./imagePreview";
+import { localImagePath } from "../lib/imagePaths";
+import { useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
-import { ChatAgentContext } from "./chatAgent";
+import { ChatAgentContext, ChatSubagentsContext } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
-import { FoldedMarkdown } from "./ChatMarkdown";
+import { imageTag } from "./composerInput";
+import { FoldedMarkdown, warmChatMarkdown } from "./ChatMarkdown";
+import { ChatPage } from "./ChatPage";
 import { ToolGroup } from "./ToolGroup";
 import { ToolRow } from "./ToolRow";
-import { attachmentName, formatDetail, groupParts, subagentTask } from "./transcript";
-import type { AcpSubagent, AcpTaskNotice, ChatMessage, ChatPart } from "./types";
+import {
+    attachmentName,
+    formatDetail,
+    groupParts,
+    sentParts,
+    shownParts,
+    SUBAGENT_MARKS,
+    SUBAGENT_WORDS,
+    subagentCost,
+    subagentTask,
+    type SubagentMark,
+} from "./transcript";
+import type { AccountMove, AcpSubagent, AcpTaskNotice, AgentNotice, ChatMessage, ChatPart } from "./types";
 import { ContextChipLabel } from "./ContextChip";
-import { splitSentContext, type SentContext } from "./promptContext";
-
-function embeddedContext(content: Extract<ChatPart, { kind: "content" }>["content"]): SentContext | null {
-    if (content.type !== "resource" || !content.resource || typeof content.resource !== "object") return null;
-    const resource = content.resource as { uri?: unknown; text?: unknown };
-    if (typeof resource.uri !== "string") return null;
-    const firstLine = typeof resource.text === "string" ? resource.text.split("\n", 1)[0] : "";
-    return { uri: resource.uri, title: firstLine || resource.uri };
-}
-
-/* What a person sent with a message is shown by name: their own text stays
-   prose, and an issue they handed over stays a chip, not its whole text. */
-function sentParts(message: ChatMessage): { parts: ChatPart[]; context: SentContext[] } {
-    const context = [...(message.context ?? [])];
-    if (message.role !== "user") return { parts: message.parts, context };
-    const parts: ChatPart[] = [];
-    for (const part of message.parts) {
-        const embedded = part.kind === "content" ? embeddedContext(part.content) : null;
-        if (embedded) {
-            context.push(embedded);
-            continue;
-        }
-        if (part.kind !== "text") {
-            parts.push(part);
-            continue;
-        }
-        const split = splitSentContext(part.text);
-        context.push(...split.context);
-        if (split.text) parts.push(split.context.length ? { ...part, text: split.text } : part);
-    }
-    return { parts, context: context.filter((item, index) => context.findIndex((other) => other.uri === item.uri) === index) };
-}
+import { Shimmer } from "./Shimmer";
+import { MessageEditor } from "./MessageEditor";
 
 function ResourceLinkPart({ content }: { content: Extract<ChatPart, { kind: "content" }>["content"] }) {
     const uri = typeof content.uri === "string" ? content.uri : undefined;
@@ -82,11 +85,39 @@ function ContentPart({ part }: { part: Extract<ChatPart, { kind: "content" }> })
     return <pre className="chat-unknown-part">{formatDetail(content)}</pre>;
 }
 
+const warmed = new WeakSet<ChatMessage>();
+let warming: Promise<void> = Promise.resolve();
+
+/* A row draws its text in the frame it mounts only if that text was read
+   already; otherwise it mounts empty and grows a frame later, under the reader.
+   Messages are read newest first, since reading starts at the bottom; the last
+   one may still be growing, and the row showing it reads it anyway. */
+export function warmTranscript(messages: readonly ChatMessage[]): Promise<void> {
+    const texts: { text: string; typed: boolean }[] = [];
+    for (let index = messages.length - 2; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (warmed.has(message)) continue;
+        warmed.add(message);
+        const letters = messageLetters(message);
+        if (letters) {
+            texts.push(...letters.map((letter) => ({ text: letter.text, typed: false })));
+            continue;
+        }
+        for (const part of sentParts(message).parts) {
+            if (part.kind === "text" && !part.md) texts.push({ text: part.text, typed: message.role === "user" });
+            else if (part.kind === "thought" && !part.md) texts.push({ text: part.text, typed: false });
+        }
+    }
+    /* Settles once everything asked for so far has been read, by this call or an earlier one. */
+    if (texts.length > 0) warming = Promise.all([warming, warmChatMarkdown(texts)]).then(() => undefined);
+    return warming;
+}
+
 const MessagePart = memo(function MessagePart({ part, live, typed }: { part: ChatPart; live: boolean; typed: boolean }) {
     if (part.kind === "text") {
         return (
             <div className="chat-markdown">
-                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} />
+                <FoldedMarkdown id={part.id} text={part.text} live={live} typed={typed} tree={part.md?.blocks} />
             </div>
         );
     }
@@ -94,20 +125,29 @@ const MessagePart = memo(function MessagePart({ part, live, typed }: { part: Cha
         return (
             <div className="chat-thought">
                 <div className="chat-markdown">
-                    <FoldedMarkdown id={part.id} text={part.text} live={live} />
+                    <FoldedMarkdown id={part.id} text={part.text} live={live} tree={part.md?.blocks} />
                 </div>
             </div>
         );
     }
-    if (part.kind === "tool") return <ToolRow part={part} />;
+    if (part.kind === "tool") return part.page ? <ChatPage page={part.page} /> : <ToolRow part={part} />;
     if (part.kind === "subagent") return <SubagentPart subagent={part.subagent} />;
     if (part.kind === "notice") return <NoticePart notice={part.notice} />;
+    if (part.kind === "agent_notice") return <AgentNoticePart notice={part.notice} />;
+    if (part.kind === "account") return <AccountPart move={part.move} />;
     return <ContentPart part={part} />;
 });
 
-function SentAttachment({ path }: { path: string }) {
+function SentAttachment({ path, number }: { path: string; number: number | null }) {
     const preview = useImagePreview(path);
     const file = useFileRef(path);
+    if (preview && number !== null)
+        return (
+            <div className="chat-attachment-tagged">
+                <ChatImage src={preview} path={path} className="chat-attachment-thumb" />
+                <span className="chat-attachment-number">#{number}</span>
+            </div>
+        );
     if (preview) return <ChatImage src={preview} path={path} className="chat-attachment-thumb" />;
     if (file) return <ChatFileRef refers={file.ref} state={file.state} label={basename(path)} size={34} className="chat-attachment-file" tile />;
     return (
@@ -130,9 +170,11 @@ function PartGroups({ parts, live, typed = false }: { parts: ChatPart[]; live: b
 }
 
 function NoticePart({ notice }: { notice: AcpTaskNotice }) {
+    const subagent = useContext(ChatSubagentsContext).get(notice.subagent ?? "");
+    if (subagent) return <SubagentPart subagent={subagent} />;
     return (
         <div className={`chat-notice state-${notice.state}`} role="status">
-            <IconTimer size={12} />
+            {notice.taskType === "workflow" ? <IconWorkflow size={12} /> : <IconTimer size={12} />}
             <span className="chat-notice-name" title={notice.name}>
                 {notice.name}
             </span>
@@ -142,29 +184,47 @@ function NoticePart({ notice }: { notice: AcpTaskNotice }) {
     );
 }
 
-const SUBAGENT_WORDS: Record<AcpSubagent["state"], string> = {
-    running: "working",
-    completed: "done",
-    failed: "failed",
-    cancelled: "stopped",
-    disconnected: "lost",
+function AgentNoticePart({ notice }: { notice: AgentNotice }) {
+    return (
+        <div className={`chat-notice agent severity-${notice.severity}`} role="status">
+            {notice.severity === "info" ? <IconInfo size={12} /> : <IconWarning size={12} />}
+            <span className="chat-notice-state">{notice.title}</span>
+            {notice.description && (
+                <span className="chat-notice-summary" title={notice.description}>
+                    {notice.description}
+                </span>
+            )}
+        </div>
+    );
+}
+
+function AccountPart({ move }: { move: AccountMove }) {
+    const why = move.reason === "limit" && move.from ? `${move.from} reached its usage limit` : null;
+    return (
+        <div className="chat-notice account" role="status">
+            <IconUser size={12} />
+            <span className="chat-notice-state">Moved to</span>
+            <span className="chat-notice-name" title={move.label}>
+                {move.label}
+            </span>
+            {why && <span className="chat-notice-summary">{why}</span>}
+        </div>
+    );
+}
+
+const SUBAGENT_ICONS: Record<Exclude<SubagentMark, "spinner">, ReactNode> = {
+    check: <IconCheck size={13} />,
+    warning: <IconWarning size={12} />,
+    plug: <IconPlug size={12} />,
+    close: <IconClose size={11} />,
 };
 
 function SubagentStateMark({ state }: { state: AcpSubagent["state"] }) {
     const word = SUBAGENT_WORDS[state];
+    const mark = SUBAGENT_MARKS[state];
     return (
         <span className="chat-subagent-state" role="img" aria-label={word} title={word}>
-            {state === "running" ? (
-                <span className="chat-subagent-spinner" aria-hidden="true" />
-            ) : state === "completed" ? (
-                <IconCheck size={13} />
-            ) : state === "failed" ? (
-                <IconWarning size={12} />
-            ) : state === "disconnected" ? (
-                <IconPlug size={12} />
-            ) : (
-                <IconClose size={11} />
-            )}
+            {mark === "spinner" ? <span className="chat-subagent-spinner" aria-hidden="true" /> : SUBAGENT_ICONS[mark]}
         </span>
     );
 }
@@ -175,7 +235,7 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
     const agentType = useContext(ChatAgentContext).type;
     const [open, setOpen] = useState(false);
     const parts = subagent.messages.flatMap((message) => message.parts);
-    const calls = parts.filter((part) => part.kind === "tool").length;
+    const cost = subagentCost(subagent);
     return (
         <details className={`chat-subagent state-${subagent.state}`} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
             <summary>
@@ -184,26 +244,92 @@ function SubagentPart({ subagent }: { subagent: AcpSubagent }) {
                     <AgentIcon type={agentType} size={18} className={`agent-glyph ${agentType}`} />
                 </span>
                 <span className="chat-subagent-name">{subagent.name}</span>
-                <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
+                {subagent.state === "running" ? (
+                    <span className="chat-subagent-task chat-shimmer">
+                        <Shimmer>{subagentTask(subagent.task)}</Shimmer>
+                    </span>
+                ) : (
+                    <span className="chat-subagent-task">{subagentTask(subagent.task)}</span>
+                )}
                 <span className="chat-subagent-end">
-                    {calls > 0 && (
-                        <span className="chat-subagent-calls">
-                            {calls} {calls === 1 ? "call" : "calls"}
-                        </span>
-                    )}
+                    {cost && <span className="chat-subagent-calls">{cost}</span>}
                     <SubagentStateMark state={subagent.state} />
                 </span>
             </summary>
             {open && (
                 <div className="chat-subagent-body">
-                    {parts.length > 0 ? (
-                        <PartGroups parts={parts} live={subagent.state === "running"} />
-                    ) : (
-                        <span className="chat-subagent-empty">No output yet.</span>
-                    )}
+                    <div>
+                        {parts.length > 0 ? (
+                            <PartGroups parts={parts} live={subagent.state === "running"} />
+                        ) : (
+                            <span className="chat-subagent-empty">No output yet.</span>
+                        )}
+                    </div>
                 </div>
             )}
         </details>
+    );
+}
+
+function SentTime({ at, took }: { at: number; took: number | null }) {
+    return (
+        <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>
+            {took === null ? sentLabel(at) : `${sentLabel(at)} · took ${durationLabel(took)}`}
+        </time>
+    );
+}
+
+/** A teammate's message, headed like the agent's own "Worked for" line. */
+function TeammateLetter({ id, letter }: { id: string; letter: AgentMessageLetter }) {
+    return (
+        <div className="chat-letter" title={letter.agentId}>
+            <div className="chat-letter-top">
+                <span className="chat-letter-head">
+                    <span className="chat-work-mark" aria-hidden="true">
+                        {letter.cli === "sikemux" ? (
+                            <img src={sikemuxMark} width={17} height={17} alt="" />
+                        ) : (
+                            <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
+                        )}
+                    </span>
+                    <span>
+                        Message from{" "}
+                        <button
+                            type="button"
+                            className="chat-letter-name"
+                            title={`Open ${letter.name}`}
+                            onClick={() => cmd.revealAgent(letter.agentId)}>
+                            {letter.name}
+                        </button>
+                    </span>
+                </span>
+            </div>
+            <div className="chat-markdown">
+                <FoldedMarkdown id={id} text={letter.text} live={false} tree={letter.tree} />
+            </div>
+        </div>
+    );
+}
+
+function AgentLetters({ id, letters, at }: { id: string; letters: AgentLetter[]; at: number | null }) {
+    return (
+        <article className="chat-message agent-letter">
+            <div className="chat-message-content">
+                {letters.map((letter, index) =>
+                    letter.kind === "answer" ? (
+                        <div key={index} className="chat-letter-answer">
+                            <AnsweredQuestion letter={letter} />
+                        </div>
+                    ) : (
+                        <TeammateLetter key={index} id={`${id}-letter-${index}`} letter={letter} />
+                    ),
+                )}
+                <div className="chat-message-meta">
+                    <CopyButton value={letters.map((letter) => letter.text).join("\n\n")} label="message" size={15} />
+                    {at !== null && <SentTime at={at} took={null} />}
+                </div>
+            </div>
+        </article>
     );
 }
 
@@ -214,6 +340,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     rate,
     at,
     took,
+    onEdit,
+    from = 0,
 }: {
     message: ChatMessage;
     live: boolean;
@@ -221,16 +349,41 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     rate: number | null;
     at: number | null;
     took: number | null;
+    /** Given when the person may write this message again. */
+    onEdit?: (message: ChatMessage, text: string) => void;
+    /** Where the shown parts start, when the work before them is folded away. */
+    from?: number;
 }) {
+    const letters = useMemo(() => messageLetters(message), [message]);
     const { parts, context } = useMemo(() => sentParts(message), [message]);
+    const shown = useMemo(() => shownParts(parts, from), [parts, from]);
+    const [editing, setEditing] = useState(false);
     const attachments = message.attachments ?? [];
+    const written = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
+    if (letters) return <AgentLetters id={message.id} letters={letters} at={at} />;
+    if (editing && onEdit) {
+        return (
+            <article className={`chat-message ${message.role}`}>
+                <div className="chat-message-content">
+                    <MessageEditor
+                        initial={written}
+                        onCancel={() => setEditing(false)}
+                        onSend={(text) => {
+                            setEditing(false);
+                            onEdit(message, text);
+                        }}
+                    />
+                </div>
+            </article>
+        );
+    }
     return (
         <article className={`chat-message ${message.role}`}>
             <div className="chat-message-content">
                 {(attachments.length > 0 || context.length > 0) && (
                     <div className="chat-message-attachments">
-                        {attachments.map((path) => (
-                            <SentAttachment key={path} path={path} />
+                        {attachments.map((path, index) => (
+                            <SentAttachment key={path} path={path} number={written.includes(imageTag(index + 1)) ? index + 1 : null} />
                         ))}
                         {context.map((item) => (
                             <span key={item.uri} className="chat-context-chip" title={item.uri}>
@@ -239,15 +392,18 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                         ))}
                     </div>
                 )}
-                <PartGroups parts={parts} live={live} typed={message.role === "user"} />
+                <PartGroups parts={shown} live={live} typed={message.role === "user"} />
                 {copyable && (
                     <div className="chat-message-meta">
-                        <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
-                        {at !== null && (
-                            <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={sentTitle(at)}>
-                                {took === null ? sentLabel(at) : `${sentLabel(at)} · took ${durationLabel(took)}`}
-                            </time>
+                        {onEdit && context.length === 0 && (
+                            <Tooltip label="Edit message">
+                                <button type="button" className="copy-btn" aria-label="Edit message" onClick={() => setEditing(true)}>
+                                    <IconPencil size={15} />
+                                </button>
+                            </Tooltip>
                         )}
+                        <CopyButton value={copyable} label={message.role === "user" ? "message" : "reply"} size={15} />
+                        {at !== null && <SentTime at={at} took={took} />}
                         {rate !== null && (
                             <span className="chat-message-rate" title="Writing speed, estimated from the text that arrived">
                                 {rateLabel(rate)}

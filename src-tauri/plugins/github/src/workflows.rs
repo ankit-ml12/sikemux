@@ -2,8 +2,9 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sikemux_plugin_api::codehost::{Workflow, WorkflowFile};
 
 use crate::client;
 use crate::common::LIST_PAGES;
@@ -22,18 +23,6 @@ struct WorkflowRow {
 #[derive(Deserialize)]
 struct WorkflowList {
     workflows: Vec<WorkflowRow>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Workflow {
-    pub id: u64,
-    pub name: String,
-    pub path: String,
-    /// `active`, or one of the several ways GitHub says a workflow is switched off.
-    pub state: String,
-    pub active: bool,
-    pub url: String,
 }
 
 #[derive(Deserialize)]
@@ -77,7 +66,7 @@ pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Workflow>>
         .into_iter()
         .map(|row| Workflow {
             active: row.state == "active",
-            id: row.id,
+            id: row.id.to_string(),
             name: row.name,
             path: row.path,
             state: row.state,
@@ -91,6 +80,7 @@ pub async fn list(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<Workflow>>
 pub struct Dispatch {
     #[serde(flatten)]
     pub repo: RepoRef,
+    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
     pub workflow_id: u64,
     /// The branch or tag to run on.
     pub git_ref: String,
@@ -146,14 +136,8 @@ pub async fn dispatch(data_dir: &Path, input: Dispatch) -> GithubResult<()> {
 pub struct FileRef {
     #[serde(flatten)]
     pub repo: RepoRef,
+    #[serde(deserialize_with = "sikemux_plugin_api::codehost::numeric_id")]
     pub workflow_id: u64,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowFile {
-    pub path: String,
-    pub text: String,
 }
 
 /// A workflow somebody wrote lives under `.github`. GitHub's own, such as code
@@ -195,13 +179,46 @@ pub async fn file(data_dir: &Path, input: FileRef) -> GithubResult<WorkflowFile>
     let contents = input
         .repo
         .path(&format!("/contents/{}", encode_path(&row.path)))?;
+    read(data_dir, &contents, row.path).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileAt {
+    #[serde(flatten)]
+    pub repo: RepoRef,
+    pub path: String,
+    pub git_ref: String,
+}
+
+/// A workflow file as it was at one commit, such as the one a run came from,
+/// or one that a workflow calls by its path.
+pub async fn file_at(data_dir: &Path, input: FileAt) -> GithubResult<WorkflowFile> {
+    if !is_in_repository(&input.path) || input.path.split('/').any(|part| part == "..") {
+        return Err(GithubError::BadArg(format!(
+            "`{}` is not a workflow file in the repository",
+            input.path
+        )));
+    }
+    if !valid_ref(&input.git_ref) {
+        return Err(GithubError::BadArg(format!(
+            "`{}` is not a commit, branch or tag",
+            input.git_ref
+        )));
+    }
+    let contents = input.repo.path(&format!(
+        "/contents/{}?ref={}",
+        encode_path(&input.path),
+        encode_path(&input.git_ref)
+    ))?;
+    read(data_dir, &contents, input.path).await
+}
+
+async fn read(data_dir: &Path, contents: &str, path: String) -> GithubResult<WorkflowFile> {
     let (bytes, _) =
-        client::download_as(data_dir, &contents, "application/vnd.github.raw", false).await?;
+        client::download_as(data_dir, contents, "application/vnd.github.raw", false).await?;
     let text = String::from_utf8_lossy(&bytes).into_owned();
-    Ok(WorkflowFile {
-        path: row.path,
-        text,
-    })
+    Ok(WorkflowFile { path, text })
 }
 
 #[derive(Deserialize)]
@@ -224,22 +241,6 @@ pub async fn branches(data_dir: &Path, repo: RepoRef) -> GithubResult<Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn repo() -> RepoRef {
-        RepoRef {
-            owner: "nodelike".into(),
-            name: "sikemux".into(),
-        }
-    }
-
-    #[test]
-    fn builds_a_path_under_the_repository() -> GithubResult<()> {
-        assert_eq!(
-            repo().path("/actions/runs")?,
-            "/repos/nodelike/sikemux/actions/runs"
-        );
-        Ok(())
-    }
 
     #[test]
     fn a_repository_that_could_escape_the_path_is_refused() {
@@ -274,12 +275,6 @@ mod tests {
             ".github/workflows/a%20%231%3F.yml"
         );
         assert_eq!(encode_path("é"), "%C3%A9");
-    }
-
-    #[test]
-    fn only_a_workflow_under_github_has_a_file() {
-        assert!(is_in_repository(".github/workflows/ci.yml"));
-        assert!(!is_in_repository("dynamic/github-code-scanning/codeql"));
     }
 
     #[test]

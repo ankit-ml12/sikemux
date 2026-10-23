@@ -130,7 +130,7 @@ function resolveRef(where, ref, file, definitions) {
 }
 
 function kindOf(schema) {
-  if (schema.oneOf) return "union";
+  if (schema.oneOf) return schema.type === "integer" ? "numbered" : "union";
   if (schema.type === "object") return "object";
   if (schema.type === "string" && schema.enum) return "enum";
   return "alias";
@@ -240,6 +240,30 @@ function check({ name, file, schema }, definitions) {
         where,
         `"unknown" is reserved for values a client does not know yet`,
       );
+  } else if (kind === "numbered") {
+    onlyKeys(where, schema, new Set(["description", "type", "oneOf"]));
+    if (!Array.isArray(schema.oneOf) || schema.oneOf.length === 0)
+      fail(where, "oneOf lists the numbers");
+    const values = new Set();
+    const names = new Set();
+    for (const member of schema.oneOf) {
+      onlyKeys(where, member, new Set(["const", "title", "description"]));
+      if (!Number.isSafeInteger(member.const))
+        fail(where, `${JSON.stringify(member.const)} is not an integer`);
+      if (
+        typeof member.title !== "string" ||
+        !/^[a-z][A-Za-z0-9]*$/.test(member.title)
+      )
+        fail(where, `${member.const} needs a camelCase title to name it`);
+      if (typeof member.description !== "string")
+        fail(where, `${member.title} needs a description of what it means`);
+      if (values.has(member.const))
+        fail(where, `${member.const} is listed twice`);
+      if (names.has(member.title))
+        fail(where, `"${member.title}" names two numbers`);
+      values.add(member.const);
+      names.add(member.title);
+    }
   } else {
     propertyType(where, schema, file, definitions);
   }
@@ -251,10 +275,13 @@ function propertyType(where, schema, file, definitions) {
     fail(where, "expected a schema");
   if (schema.$ref) {
     onlyKeys(where, schema, new Set(["$ref", "description"]));
-    return {
-      ref: resolveRef(where, schema.$ref, file, definitions),
-      nullable: false,
-    };
+    const ref = resolveRef(where, schema.$ref, file, definitions);
+    if (kindOf(definitions.get(ref).schema) === "numbered")
+      fail(
+        where,
+        `"${ref}" names numbers sent outside JSON, like close codes, so it is not a property's type`,
+      );
+    return { ref, nullable: false };
   }
   if ("const" in schema) {
     onlyKeys(where, schema, new Set(["const", "description"]));
@@ -373,6 +400,14 @@ export function typescript(definitions) {
       out += `export type ${name} =\n${schema.oneOf.map((member) => `  | ${resolveRef(name, member.$ref, file, definitions)}`).join("\n")};\n`;
     } else if (kind === "enum") {
       out += `export type ${name} = ${schema.enum.map((value) => JSON.stringify(value)).join(" | ")};\n`;
+      out += `export const ${name[0].toLowerCase()}${name.slice(1)}Values: readonly ${name}[] = ${JSON.stringify(schema.enum)};\n`;
+    } else if (kind === "numbered") {
+      out += `export const ${name} = {\n`;
+      for (const member of schema.oneOf) {
+        out += docComment(member.description, "  ", "/**");
+        out += `  ${member.title}: ${member.const},\n`;
+      }
+      out += `} as const;\nexport type ${name} = (typeof ${name})[keyof typeof ${name}];\n`;
     } else {
       out += `export type ${name} = ${tsType(propertyType(name, schema, file, definitions))};\n`;
     }
@@ -411,7 +446,7 @@ function rustEq(type, definitions, file, seen = new Set()) {
   seen.add(type.ref);
   const target = definitions.get(type.ref);
   const kind = kindOf(target.schema);
-  if (kind === "enum") return true;
+  if (kind === "enum" || kind === "numbered") return true;
   if (kind === "union")
     return target.schema.oneOf.every((member) =>
       rustEq(
@@ -438,10 +473,45 @@ function rustEq(type, definitions, file, seen = new Set()) {
   );
 }
 
-export function rust(definitions) {
+/** A plain Rust enum for named numbers, read and written as the number itself. */
+function rustNumbered(name, members) {
+  const variant = (member) => pascalCase(member.title);
+  let out = "#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\n";
+  out += `pub enum ${name} {\n`;
+  for (const member of members) {
+    out += docComment(member.description, "    ", "///");
+    out += `    ${variant(member)},\n`;
+  }
+  out += "}\n\n";
+  out += `impl ${name} {\n    pub const fn code(self) -> i64 {\n        match self {\n`;
+  for (const member of members)
+    out += `            Self::${variant(member)} => ${member.const},\n`;
+  out += "        }\n    }\n\n";
+  out +=
+    "    pub const fn from_code(code: i64) -> Option<Self> {\n        match code {\n";
+  for (const member of members)
+    out += `            ${member.const} => Some(Self::${variant(member)}),\n`;
+  out += "            _ => None,\n        }\n    }\n}\n\n";
+  out += `impl Serialize for ${name} {\n`;
+  out +=
+    "    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {\n";
+  out += "        serializer.serialize_i64(self.code())\n    }\n}\n\n";
+  out += `impl<'de> Deserialize<'de> for ${name} {\n`;
+  out +=
+    "    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {\n";
+  out += "        let code = i64::deserialize(deserializer)?;\n";
+  out += "        Self::from_code(code)\n";
+  out += `            .ok_or_else(|| serde::de::Error::custom(format!("{code} is not a ${name}")))\n`;
+  out += "    }\n}\n";
+  return out;
+}
+
+/** The Rust types of the definitions `include` picks; `imports` brings in those they refer to. */
+export function rust(definitions, { include = () => true, imports = "" } = {}) {
   const unions = unionOf(definitions);
-  let out = `${HEADER}\nuse serde::{Deserialize, Serialize};\n`;
-  for (const { name, file, schema } of sortedDefinitions(definitions)) {
+  const chosen = sortedDefinitions(definitions).filter(include);
+  let out = `${HEADER}\nuse serde::{Deserialize, Serialize};\n${imports}`;
+  for (const { name, file, schema } of chosen) {
     out += "\n" + docComment(schema.description, "", "///");
     const kind = kindOf(schema);
     const eq = rustEq({ ref: name }, definitions, file) ? ", Eq" : "";
@@ -476,7 +546,7 @@ export function rust(definitions) {
         if (required.has(property)) {
           out += `    pub ${rustField(property)}: ${rustType(type)},\n`;
         } else {
-          out += `    #[serde(default, skip_serializing_if = "Option::is_none")]\n`;
+          out += `    #[serde(skip_serializing_if = "Option::is_none")]\n`;
           out += `    pub ${rustField(property)}: Option<${rustType(type)}>,\n`;
         }
       }
@@ -491,6 +561,8 @@ export function rust(definitions) {
       out +=
         "    /// A value added after this build, which it cannot act on.\n";
       out += "    #[serde(other)]\n    Unknown,\n}\n";
+    } else if (kind === "numbered") {
+      out += rustNumbered(name, schema.oneOf);
     } else {
       out += `pub type ${name} = ${rustType(propertyType(name, schema, file, definitions))};\n`;
     }
@@ -501,14 +573,35 @@ export function rust(definitions) {
     "#[cfg(test)]\npub(crate) fn round_trip(name: &str, json: &str) -> Option<super::RoundTrip> {\n";
   out += "    use super::through;\n";
   out += "    Some(match name {\n";
-  for (const { name } of sortedDefinitions(definitions))
+  for (const { name } of chosen)
     out += `        ${JSON.stringify(name)} => through::<${unions.get(name) ?? name}>(json),\n`;
   out += "        _ => return None,\n    })\n}\n";
   return out;
 }
 
-const AUTH = new Set(["none", "session", "device", "webhook"]);
+const AUTH = new Set([
+  "none",
+  "signedIn",
+  "session",
+  "sessionOrHost",
+  "host",
+  "device",
+  "webhook",
+]);
+const SECURITY = {
+  signedIn: [{ session: [] }],
+  session: [{ session: [] }],
+  sessionOrHost: [{ session: [] }, { host: [] }],
+  host: [{ host: [] }],
+};
 const AUTH_NOTES = {
+  signedIn:
+    "The phone's or the web app's sign-in, or the Mac app's OAuth token from a sign-in in the last ten minutes, which it uses only to register its host.",
+  session:
+    "Only the phone's and the web app's sign-ins; the Mac app's OAuth token is refused with 403.",
+  sessionOrHost:
+    "The phone's or the web app's sign-in, or a request signed by a host on the account.",
+  host: "Only a request signed by a host on the account.",
   device:
     "A WebSocket. The device proves who it is in its first message, since browsers cannot set headers on one. `send` is what the device sends; `receive` is what the server sends.",
   webhook: "Called by Clerk, signed with Svix's headers.",
@@ -539,6 +632,7 @@ export function openapi(definitions, routes) {
         "summary",
         "auth",
         "request",
+        "requestOptional",
         "query",
         "responses",
         "upgrade",
@@ -564,6 +658,8 @@ export function openapi(definitions, routes) {
     } else if (route.messages) {
       fail(where, "only WebSocket routes have messages");
     }
+    if (route.requestOptional !== undefined && !route.request)
+      fail(where, "requestOptional needs a request");
     if (seen.has(route.operationId))
       fail(where, `operationId "${route.operationId}" is used twice`);
     seen.add(route.operationId);
@@ -620,14 +716,19 @@ export function openapi(definitions, routes) {
     paths[route.path][route.method] = {
       operationId: route.operationId,
       summary: route.summary,
-      ...(route.auth === "session" ? {} : { security: [] }),
+      security: SECURITY[route.auth] ?? [],
       ...(AUTH_NOTES[route.auth]
         ? { description: AUTH_NOTES[route.auth] }
         : {}),
       ...messages,
       ...(parameters.length ? { parameters } : {}),
       ...(route.request
-        ? { requestBody: { required: true, content: named(route.request) } }
+        ? {
+            requestBody: {
+              required: route.requestOptional !== true,
+              content: named(route.request),
+            },
+          }
         : {}),
       responses,
     };
@@ -643,10 +744,74 @@ export function openapi(definitions, routes) {
         session: {
           type: "http",
           scheme: "bearer",
-          description: "A Clerk session token.",
+          description:
+            "A Clerk sign-in: a session token from the phone or the web app, or the Mac app's OAuth access token.",
+        },
+        host: {
+          type: "http",
+          scheme: "SikemuxHost",
+          description:
+            "`Authorization: SikemuxHost <key>.<time>.<signature>`: a host on the account signs each request with its key. `time` is the request's Unix time in seconds, within a minute of the server's, and `signature` the Ed25519 signature in hex over the UTF-8 text `sikemux-host-request|<METHOD>|<path and query>|<time>|<lowercase hex SHA-256 of the body>`. The server takes each signature once.",
         },
       },
     },
-    security: [{ session: [] }],
   };
+}
+
+/** The routes apps call, each as a typed function over one `send`; WebSockets and webhooks are left out. */
+export function client(routes) {
+  const types = new Set();
+  const calls = [];
+  for (const route of routes.routes) {
+    if (route.upgrade || route.auth === "webhook") continue;
+    const params = [...route.path.matchAll(/\{([a-z][A-Za-z]*)\}/g)].map(
+      ([, param]) => param,
+    );
+    const args = params.map((param) => `${param}: string`);
+    if (route.request) {
+      types.add(route.request);
+      args.push(`body${route.requestOptional ? "?" : ""}: ${route.request}`);
+    }
+    const query = Object.entries(route.query ?? {});
+    for (const [, type] of query) types.add(type);
+    if (query.length)
+      args.push(
+        `query: { ${query.map(([name, type]) => `${name}?: ${type}`).join("; ")} } = {}`,
+      );
+    const bodies = [
+      ...new Set(
+        Object.entries(route.responses)
+          .filter(
+            ([status, response]) => status.startsWith("2") && response.body,
+          )
+          .map(([, response]) => response.body),
+      ),
+    ];
+    for (const body of bodies) types.add(body);
+    const answer = bodies.length ? bodies.join(" | ") : "void";
+    const path =
+      "`" +
+      route.path.replace(/\{([a-z][A-Za-z]*)\}/g, "${encodeURIComponent($1)}") +
+      (query.length ? "${search(query)}" : "") +
+      "`";
+    calls.push(
+      `  /** ${route.summary}. */\n` +
+        `  ${route.operationId}: (${args.join(", ")}) =>\n` +
+        `    send<${answer}>("${route.method.toUpperCase()}", ${path}${route.request ? ", body" : ""}),`,
+    );
+  }
+  return (
+    HEADER +
+    `import type { ${[...types].sort().join(", ")} } from "./types.ts";\n\n` +
+    `export type Method = "GET" | "POST" | "PUT" | "DELETE";\n\n` +
+    `/** Makes one request and answers its JSON body, or nothing for a route that answers none. */\n` +
+    `export type Send = <Answer>(method: Method, path: string, body?: unknown) => Promise<Answer>;\n\n` +
+    `function search(query: Record<string, string | undefined>): string {\n` +
+    `  const pairs = Object.entries(query).filter((pair): pair is [string, string] => pair[1] !== undefined);\n` +
+    `  return pairs.length ? \`?\${new URLSearchParams(pairs).toString()}\` : "";\n` +
+    `}\n\n` +
+    `/** Every route in routes.json that apps call. */\n` +
+    `export function apiClient(send: Send) {\n  return {\n${calls.join("\n")}\n  };\n}\n\n` +
+    `export type ApiClient = ReturnType<typeof apiClient>;\n`
+  );
 }

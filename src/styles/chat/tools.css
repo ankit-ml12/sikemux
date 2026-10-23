@@ -21,7 +21,7 @@
     height: 22px;
     margin-left: -6px;
     padding: 0 6px;
-    border-radius: var(--radius-1);
+    border-radius: var(--radius-2);
     color: var(--ink-dim);
 }
 
@@ -224,6 +224,17 @@ button.chat-tool:hover > .chat-tool-line::after,
     white-space: nowrap;
 }
 
+/* A call with nothing to name, like a screenshot of the whole page, would
+   otherwise leave an empty column and a double gap before its time. */
+.chat-tool-target:empty {
+    display: none;
+}
+
+.chat-tool-arg {
+    margin-left: 1ch;
+    color: var(--ink-dim);
+}
+
 .chat-tool-link {
     color: var(--acc);
     text-decoration: none;
@@ -280,17 +291,6 @@ button.chat-tool:hover > .chat-tool-line::after,
     animation: chat-activity-breathe 1.5s ease-in-out infinite;
 }
 
-.chat-tool.live .chat-tool-target,
-.chat-tools-sum.live .chat-tools-label,
-.chat-subagent.state-running .chat-subagent-task,
-.chat-task-agent .chat-task-detail {
-    background: linear-gradient(90deg, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%) 100% 0 / 300% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: chat-activity-shimmer 2.2s linear infinite;
-}
-
 .chat-tool.live .chat-tool-target * {
     color: inherit;
 }
@@ -328,6 +328,7 @@ button.chat-tool:hover > .chat-tool-line::after,
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: text;
+    cursor: auto;
 }
 
 .chat-tool-terminal > * + :not(.chat-tool-exit) {
@@ -358,6 +359,8 @@ button.chat-tool:hover > .chat-tool-line::after,
 }
 
 .chat-tool-output pre {
+    max-height: 420px;
+    overflow-y: auto;
     padding: 6px 30px 7px 9px;
     color: var(--ink-dim);
 }

@@ -7,7 +7,9 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 const mocked = [
   'react-native',
   '@sikemux/native',
+  '@react-native-community/netinfo',
   'expo',
+  'expo-apple-authentication',
   'expo-application',
   'expo-clipboard',
   'expo-crypto',
@@ -23,6 +25,8 @@ export default defineConfig({
     alias: [
       { find: /^@\//, replacement: here('./src/') },
       { find: /^@mac\//, replacement: here('../../src/') },
+      { find: /^@protocol$/, replacement: here('../../server/protocol/generated/types.ts') },
+      { find: /^@protocol\//, replacement: here('../../server/protocol/src/') },
       ...mocked.map((name) => ({
         find: new RegExp(`^${name}$`),
         replacement: here(`./test/mocks/${name.replace('@', '').replace('/', '-')}.ts`),

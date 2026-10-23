@@ -1,7 +1,7 @@
 //! The island over the MacBook notch. The `sikemux-notch` helper draws it and
-//! reads the core's device view; the app starts it with the core's own launch
-//! command, so a core it starts runs as the app's would. It keeps running
-//! after the app quits, as the core does.
+//! reads the core's device view; the app gives it the core's binary, whose
+//! `start` runs the core as the app would. It keeps running after the app
+//! quits, as the core does.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -9,19 +9,13 @@ use tauri::{AppHandle, State};
 use crate::error::AppResult;
 use crate::pty::PtyManager;
 
-/// The Notch section of the settings. The helper reads all but `enabled`.
+/// The Notch section of the settings, named in `src/notch/settings.json`.
+/// The app only starts or stops the helper; the helper reads the rest.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct NotchSettings {
     enabled: bool,
-    displays: String,
-    open_with: String,
-    full_screen: String,
-    peeks: String,
-    answer_in_notch: bool,
-    sound: bool,
-    haptics: bool,
-    yield_to_dev: bool,
+    #[serde(flatten)]
+    helper: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Writes the settings the helper reads, then starts or stops it to match.
@@ -170,12 +164,7 @@ mod mac {
             .arg("--state-dir")
             .arg(&state_dir)
             .arg("--core-binary")
-            .arg(&launch.binary)
-            .arg("--core-log")
-            .arg(&launch.log);
-        for argument in &launch.args {
-            command.arg("--core-arg").arg(argument);
-        }
+            .arg(&launch.binary);
         if let Some(bundle) = bundle() {
             command.arg("--app").arg(bundle);
         }
@@ -230,11 +219,11 @@ mod mac {
             .core_launch()
             .ok_or_else(|| AppError::Other("the terminal core is not configured yet".into()))?;
         let state_dir = state_dir(&launch.socket);
-        std::fs::create_dir_all(&state_dir)?;
-        let path = settings_path(&state_dir);
-        let staged = path.with_extension("json.tmp");
-        std::fs::write(&staged, serde_json::to_vec_pretty(settings)?)?;
-        std::fs::rename(&staged, &path)?;
+        sikemux_process::files::write_atomic(
+            &settings_path(&state_dir),
+            &serde_json::to_vec_pretty(settings)?,
+            false,
+        )?;
         if !settings.enabled {
             stop(&state_dir);
             return Ok(());

@@ -12,7 +12,7 @@ else
   PNPM=(corepack pnpm)
 fi
 
-bash -n scripts/build-mac.sh scripts/release.sh scripts/icons.sh scripts/check-release.sh
+bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/mac-entitlements.sh scripts/verify-release.sh scripts/publish-release.sh scripts/sign-host.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
@@ -42,11 +42,14 @@ const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
 const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
+const linuxConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.linux.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const notchConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.notch.conf.json", "utf8"));
+const coreConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.core.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
-const release = fs.readFileSync("scripts/release.sh", "utf8");
+const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
+const releaseWorkflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
 const fail = (message) => { throw new Error(message); };
 
 if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
@@ -61,19 +64,35 @@ if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) 
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
 if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
-if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-editor"])) fail("sidecar bundle mapping is incomplete");
+if (JSON.stringify(linuxConfig.bundle?.targets) !== JSON.stringify(["deb", "rpm", "appimage"])) fail("Linux bundle targets must be deb, rpm and appimage");
+if (linuxConfig.bundle?.createUpdaterArtifacts !== false) fail("Linux builds must not require updater credentials");
+if (!pkg.scripts?.["build:linux"]?.includes("build:sidecar")) fail("Linux build does not build sidecars");
+if (!pkg.scripts?.["build:linux"]?.includes("tauri.sidecar.conf.json")) fail("Linux build does not bundle the CLI sidecar");
+if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workflow does not build the Linux packages");
+if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
+if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
+if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}"')) fail("releases do not publish the Linux host core and its signatures");
+if (!publish.includes('"${HOST_SIGS[@]}" "$INSTALLER"')) fail("releases do not publish the installer made for their files");
+if (!releaseWorkflow.includes("scripts/sign-host.sh")) fail("the Release workflow does not sign the Linux host core");
+if (!releaseWorkflow.includes("scripts/smoke-host-install.sh")) fail("the Release workflow does not install the host core with its own installer");
+if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-host"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
 if (!macBuild.includes("build-notch-helper.mjs")) fail("macOS build does not build the notch helper");
 if (!macBuild.includes("tauri.notch.conf.json")) fail("macOS build does not bundle the notch helper");
 if (notchConfig.bundle?.macOS?.files?.["Helpers/Sikemux Notch.app"] !== "binaries/notch/Sikemux Notch.app") fail("the macOS bundle must carry the notch helper app");
-if (!release.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
+if (!publish.includes('"$SIG" "$VOICE"')) fail("releases do not publish the voice helper the app downloads");
 if (!macBuild.includes("build-sim-helper.mjs")) fail("macOS build does not build the simulator helper");
-if (!release.includes('"$VOICE" "$SIM"')) fail("releases do not publish the simulator helper the app downloads");
+if (!publish.includes('"$VOICE" "$SIM"')) fail("releases do not publish the simulator helper the app downloads");
 if (sidecarConfig.bundle?.resources?.["resources/sikemux_pi_tools.ts"] !== "sikemux_pi_tools.ts") fail("Pi browser extension resource mapping is missing");
 if (!pkg.scripts?.["build:windows"]?.includes("build:sidecar")) fail("Windows build does not build sidecars");
 if (!pkg.scripts?.["build:windows"]?.includes("tauri.sidecar.conf.json")) fail("Windows build does not bundle the CLI sidecar");
 if (!macBuild.includes("build-cli-sidecar.mjs")) fail("macOS build does not build the CLI sidecar");
-if (!macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build does not bundle the CLI sidecar");
+if (!macBuild.includes("tauri.core.conf.json") || macBuild.includes("tauri.sidecar.conf.json")) fail("macOS build must bundle the core as its own app, not as a sidecar");
+if (coreConfig.bundle?.macOS?.files?.["Helpers/Sikemux Core.app"] !== "binaries/core/Helpers/Sikemux Core.app") fail("the macOS bundle must carry the core app");
+if (coreConfig.bundle?.macOS?.files?.MacOS !== "binaries/core/MacOS") fail("the macOS bundle must link Contents/MacOS/sikemux-host to the core");
+for (const profile of ["sikemux-developer-id", "sikemux-core-developer-id"]) {
+  if (!fs.existsSync(`src-tauri/macos/${profile}.provisionprofile`)) fail(`src-tauri/macos/${profile}.provisionprofile is missing`);
+}
 if (!sidecarBuild.includes("smokeBrowserSidecar")) fail("sidecar build does not run the browser smoke test");
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
@@ -92,26 +111,26 @@ grep -Fq 'releases/download/nightly/latest.json' src-tauri/src/updates.rs || {
   exit 1
 }
 # shellcheck disable=SC2016
-grep -Fq 'gh release upload nightly "$MANIFEST" --clobber' scripts/release.sh || {
+grep -Fq 'gh release upload nightly "$MANIFEST" --clobber' scripts/publish-release.sh || {
   echo "nightly feed no longer repoints its latest.json" >&2
   exit 1
 }
 # shellcheck disable=SC2016
-grep -Fq 'NIGHTLY_GH_CMD=(gh release create "v$VERSION"' scripts/release.sh || {
+grep -Fq 'NIGHTLY_GH_CMD=(gh release create "v$VERSION"' scripts/publish-release.sh || {
   echo "nightly channel does not publish an immutable versioned release" >&2
   exit 1
 }
 # shellcheck disable=SC2016
-if grep -E 'gh release (create|upload|edit) nightly' scripts/release.sh | grep -qE '\$(DMG|TAR|SIG)'; then
+if grep -E 'gh release (create|upload|edit) nightly' scripts/publish-release.sh | grep -qE '\$(DMG|TAR|SIG)'; then
   echo "nightly channel still attaches builds to the moving pointer release" >&2
   exit 1
 fi
 # shellcheck disable=SC2016
-grep -Fq 'MANIFEST="$BUNDLE/latest.json"' scripts/release.sh || {
+grep -Fq 'MANIFEST="$BUNDLE/latest.json"' scripts/verify-release.sh || {
   echo "nightly manifest is not written beside its artifacts" >&2
   exit 1
 }
-grep -Fq 'pathlib.Path("latest.json").write_text' scripts/release.sh && {
+grep -Fq 'pathlib.Path("latest.json").write_text' scripts/verify-release.sh && {
   echo "release tooling still hardcodes the repo-root manifest path" >&2
   exit 1
 }
@@ -130,7 +149,12 @@ grep -Fq '[[ "${GITHUB_ACTIONS:-}" == "true" ]] || fail "releases publish from t
 }
 # shellcheck disable=SC2016
 grep -Fq './scripts/release.sh "$VERSION" "$(cat RELEASE_NOTES.md)" "${flags[@]}"' .github/workflows/release.yml || {
-  echo "the Release workflow no longer publishes through scripts/release.sh" >&2
+  echo "the Release workflow no longer builds through scripts/release.sh" >&2
+  exit 1
+}
+# shellcheck disable=SC2016
+grep -Fq './scripts/publish-release.sh "$VERSION" "$(cat RELEASE_NOTES.md)"' .github/workflows/release.yml || {
+  echo "the Release workflow no longer publishes through scripts/publish-release.sh" >&2
   exit 1
 }
 grep -Fq 'group: release' .github/workflows/release.yml || {

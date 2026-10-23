@@ -14,15 +14,6 @@
     gap: var(--space-4);
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-}
-.settings-nav::-webkit-scrollbar {
-    width: 6px;
-}
-.settings-nav::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: var(--radius-full);
 }
 .settings-nav-group {
     display: flex;
@@ -38,7 +29,7 @@
     text-transform: uppercase;
 }
 
-/* The app's list row, at the app's list-row size. See DESIGN.md § Rows. */
+/* The app's list row, at the app's list-row size. */
 .settings-rail-item {
     display: flex;
     align-items: center;
@@ -65,8 +56,7 @@
     color: var(--text-primary);
 }
 .settings-rail-item.active {
-    background: var(--surface-selected);
-    border-color: var(--border-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .settings-rail-item:focus-visible {
@@ -161,7 +151,7 @@
     border-top: 1px solid var(--border);
 }
 .settings-result.active {
-    background: var(--surface-selected);
+    background: var(--surface-chosen);
     color: var(--text-primary);
 }
 .settings-result.active .settings-rail-icon {

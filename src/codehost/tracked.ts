@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import type { PromptContext } from "../api/acp";
 import { useResourceEnabled } from "../plugin-api/resources";
-import { failureMessage } from "./api";
-import { useHostRepo } from "./project";
+import { errorText } from "../lib/format";
+import { pullState, useHostRepo } from "./project";
 import { codeHost, hostApi } from "./registry";
 import { hostStatusR, issuesR, pullsR } from "./resources";
 import type { Comment, Issue, Pull, RepoRef } from "./types";
@@ -62,11 +62,11 @@ export function useTrackedItems(cwd: string, enabled: boolean): TrackedList {
         if (!cwd) return { state: "unavailable", message: "Open a project to pick its issues" };
         if (found.loading) return { state: "loading" };
         if (!repo || !host) return { state: "unavailable", message: "This project has no remote on a code host" };
-        if (!status.data) return status.error ? { state: "unavailable", message: failureMessage(status.error) } : { state: "loading" };
+        if (!status.data) return status.error ? { state: "unavailable", message: errorText(status.error) } : { state: "loading" };
         if (!signedIn) return { state: "unavailable", message: `Sign in to ${host.name} in the Git pane to pick from its issues` };
-        if (error) return { state: "unavailable", message: failureMessage(error) };
-        if (!pulls.data || (withIssues && !issues.data)) return { state: "loading" };
-        return { state: "ready", repo, items: trackedItems(issues.data?.issues ?? [], pulls.data) };
+        if (pulls.data && (!withIssues || issues.data)) return { state: "ready", repo, items: trackedItems(issues.data?.issues ?? [], pulls.data) };
+        if (error) return { state: "unavailable", message: errorText(error) };
+        return { state: "loading" };
     }, [cwd, found.loading, repo, host, status.data, status.error, signedIn, error, pulls.data, withIssues, issues.data]);
 }
 
@@ -84,7 +84,7 @@ export function trackedContext(kind: TrackedKind, item: Issue | Pull, comments: 
     const noun = kind === "issue" ? "Issue" : "Pull request";
     const pull = kind === "pull" ? (item as Pull) : null;
     const facts = [
-        `State: ${pull?.mergedAt ? "merged" : pull?.draft ? "draft" : item.state}`,
+        `State: ${pull ? pullState(pull) : item.state}`,
         item.labels.length > 0 ? `Labels: ${item.labels.map((label) => label.name).join(", ")}` : null,
         item.author ? `Author: @${item.author}` : null,
         pull?.head && pull.base ? `Branch: ${pull.head} → ${pull.base}` : null,

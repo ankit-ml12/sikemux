@@ -1,8 +1,8 @@
-//! Pairs with a core and talks to it from another machine, the way the phone
-//! app will, over the real network.
+//! Talks to a core from another machine, the way the phone app does, over the
+//! real network.
 //!
 //! As the Mac, against a core's socket:
-//!   remote mac <socket> on | off | code | allow | status
+//!   remote mac <socket> on | off | allow | status
 //!   remote mac <socket> spawn
 //!   remote mac <socket> publish            offers the fake agent to devices
 //!   remote mac <socket> chat [prompt]      starts a chat with it
@@ -10,9 +10,8 @@
 //!   remote mac <socket> backdrop on|off [image.jpg]  publishes the pane backdrop
 //!   remote mac <socket> palette <name=colour>…  publishes theme colours
 //!   remote mac <socket> chats              lists the chats running on the core
-//!   remote mac <socket> sleepy             lists a sleeping chat and wakes it when asked
+//!   remote mac <socket> sleepy             keeps a sleeping chat for a device to wake
 //! As a device, keeping its key in `<key-file>`:
-//!   remote device <key-file> pair <core-id> <code>
 //!   remote device <key-file> sessions <core-id>
 
 use std::path::Path;
@@ -21,11 +20,9 @@ use std::time::Duration;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMode};
 use sikemux_core::accounts::network;
-use sikemux_core::client::{ClientEvent, CoreClient};
-use sikemux_core::pairing::{self, PairingRequest};
+use sikemux_core::client::CoreClient;
 use sikemux_core::protocol::{
-    BackdropImage, ChatLaunch, ChatLauncher, DeviceAccess, Event, LaunchIdentity, ProjectInfo,
-    PublishedChat, SpawnTarget, TerminalSpawn,
+    BackdropImage, DeviceAccess, LaunchIdentity, SpawnTarget, TerminalSpawn,
 };
 use sikemux_core::remote::{self, SecretKey};
 
@@ -45,9 +42,8 @@ async fn main() -> Result<(), Failure> {
         ["mac", socket, "palette", colours @ ..] => palette(Path::new(socket), colours).await,
         ["mac", socket, "backdrop", texture, image @ ..] => backdrop(Path::new(socket), *texture == "on", image.first().copied()).await,
         ["mac", socket, action] => mac(Path::new(socket), action).await,
-        ["device", key, "pair", core, code] => pair(Path::new(key), core, code).await,
         ["device", key, "sessions", core] => sessions(Path::new(key), core).await,
-        _ => Err("usage: remote mac <socket> on|off|code|allow|status|spawn|publish|chat|say | remote device <key-file> pair <core-id> <code> | remote device <key-file> sessions <core-id>".into()),
+        _ => Err("usage: remote mac <socket> on|off|allow|status|spawn|publish|chat|say | remote device <key-file> sessions <core-id>".into()),
     }
 }
 
@@ -56,7 +52,6 @@ async fn mac(socket: &Path, action: &str) -> Result<(), Failure> {
     let status = match action {
         "on" => client.set_remote_access(true).await?,
         "off" => client.set_remote_access(false).await?,
-        "code" => client.open_pairing().await?,
         "allow" => {
             let status = client.remote_status().await?;
             let waiting = status.pending.first().ok_or("no device is waiting")?;
@@ -99,22 +94,23 @@ fn fake_agent() -> Result<std::path::PathBuf, Failure> {
 
 async fn publish(socket: &Path) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
-    let launcher = ChatLauncher {
-        id: "opencode".into(),
-        provider: "opencode".into(),
-        label: "OpenCode".into(),
-        program: fake_agent()?,
-        args: vec!["acp".into()],
-        env: Default::default(),
-        permission_mode: "workspace-write".into(),
-    };
-    let project = ProjectInfo {
-        id: "tmp".into(),
-        name: "tmp".into(),
-        path: std::env::temp_dir(),
-    };
+    let accounts = serde_json::json!({
+        "profiles": [{
+            "id": "fake",
+            "name": "Fake",
+            "provider": "opencode",
+            "accent": "#a277ff",
+            "executablePath": fake_agent()?,
+        }],
+    });
+    client.call("setAgentAccounts", accounts).await?;
+    let project = serde_json::json!({ "id": "tmp", "name": "tmp", "path": std::env::temp_dir() });
+    client.call("addProject", project).await?;
     client
-        .publish_workspace(vec![project], vec![launcher])
+        .call(
+            "setAgentDefaults",
+            serde_json::json!({ "permissionMode": "workspace-write" }),
+        )
         .await?;
     println!("published the fake agent");
     Ok(())
@@ -123,12 +119,12 @@ async fn publish(socket: &Path) -> Result<(), Failure> {
 async fn chat(socket: &Path, prompt: &str) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
     let (agent, _start) = client
-        .start_chat("opencode".into(), "tmp".into(), None)
+        .start_chat("opencode:fake".into(), "tmp".into(), None)
         .await?;
     println!("chat {agent}");
     if !prompt.is_empty() {
         client
-            .acp_prompt(agent, prompt.into(), Vec::new(), Vec::new())
+            .acp_prompt(agent, None, prompt.into(), Vec::new(), Vec::new())
             .await?;
     }
     Ok(())
@@ -190,50 +186,31 @@ async fn chats(socket: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Stands in for the app: keeps one chat asleep until a device opens it.
+/// Keeps one chat asleep, which the core wakes when a device opens it.
 async fn sleepy(socket: &Path) -> Result<(), Failure> {
-    let (client, mut events) = CoreClient::connect(socket).await?;
+    let (client, _events) = CoreClient::connect(socket).await?;
     let agent_id = "agent-sleepy".to_owned();
+    let agent = serde_json::json!({
+        "id": agent_id,
+        "provider": "opencode",
+        "project": "tmp",
+        "cwd": std::env::temp_dir(),
+        "title": "Tidy the docs",
+        "permissionMode": "workspace-write",
+        "profileId": "fake",
+        "asleep": true,
+    });
     client
-        .publish_agents(
-            vec![PublishedChat {
-                agent_id: agent_id.clone(),
-                provider: "opencode".into(),
-                title: Some("Tidy the docs".into()),
-                cwd: std::env::temp_dir(),
-                asleep: true,
-            }],
-            Default::default(),
-        )
+        .call("createAgent", serde_json::json!({ "agent": agent }))
         .await?;
     println!("{agent_id} is asleep");
-    while let Some(event) = events.recv().await {
-        let ClientEvent::Event(Event::WakeChat { agent_id: woken }) = event else {
-            continue;
-        };
-        let launch = ChatLaunch {
-            agent_id: woken.clone(),
-            provider: "opencode".into(),
-            cwd: std::env::temp_dir(),
-            program: fake_agent()?,
-            args: vec!["acp".into()],
-            env: Default::default(),
-            mcp_servers: Vec::new(),
-            resume_id: None,
-            permission_mode: "workspace-write".into(),
-            model: None,
-            effort: None,
-        };
-        client.acp_start(launch).await?;
-        println!("woke {woken}");
-    }
     Ok(())
 }
 
 async fn say(socket: &Path, agent: &str, text: &str) -> Result<(), Failure> {
     let (client, _events) = CoreClient::connect(socket).await?;
     client
-        .acp_prompt(agent.into(), text.into(), Vec::new(), Vec::new())
+        .acp_prompt(agent.into(), None, text.into(), Vec::new(), Vec::new())
         .await?;
     Ok(())
 }
@@ -262,20 +239,6 @@ async fn endpoint(key_file: &Path) -> Result<Endpoint, Failure> {
 
 fn core_addr(core: &str) -> Result<EndpointAddr, Failure> {
     Ok(EndpointAddr::new(core.parse()?).with_relay_url(network::DEFAULT_RELAY.parse()?))
-}
-
-async fn pair(key_file: &Path, core: &str, code: &str) -> Result<(), Failure> {
-    let endpoint = endpoint(key_file).await?;
-    println!("this device is {}; approve it on the Mac", endpoint.id());
-    let request = PairingRequest {
-        code,
-        name: "remote example",
-        platform: "macos",
-    };
-    let access = pairing::pair(&endpoint, core_addr(core)?, request).await?;
-    println!("paired with {access:?} access");
-    endpoint.close().await;
-    Ok(())
 }
 
 async fn sessions(key_file: &Path, core: &str) -> Result<(), Failure> {

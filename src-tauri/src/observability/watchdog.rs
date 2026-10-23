@@ -1,8 +1,10 @@
 use serde::Serialize;
 use std::fmt;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+use sikemux_process::sync::Locked;
 
 use super::heartbeat::{Heartbeat, HeartbeatSnapshot};
 use super::model::{Metadata, ScalarValue};
@@ -52,18 +54,6 @@ impl Default for HangWatchdogConfig {
             hang_threshold_ms: DEFAULT_WATCHDOG_HANG_THRESHOLD_MS,
             monitor_hidden: false,
         }
-    }
-}
-
-impl HangWatchdogConfig {
-    fn normalized(mut self, observer: &Observability) -> Self {
-        self.name = observer.sanitize_text(self.name);
-        if self.name.is_empty() {
-            self.name = "ui".to_owned();
-        }
-        self.sample_interval_ms = self.sample_interval_ms.max(1);
-        self.hang_threshold_ms = self.hang_threshold_ms.max(1);
-        self
     }
 }
 
@@ -126,23 +116,23 @@ impl WatchdogSignal {
     }
 
     fn stop(&self) {
-        self.lock_state().stopped = true;
+        self.state.locked().stopped = true;
         self.wake.notify_all();
     }
 
     pub(super) fn wake(&self) {
-        self.lock_state().woken = true;
+        self.state.locked().woken = true;
         self.wake.notify_all();
     }
 
     fn is_stopped(&self) -> bool {
-        self.lock_state().stopped
+        self.state.locked().stopped
     }
 
     /// Returns true when stopped. The predicate closes the notify-before-wait
     /// race, allowing shutdown to interrupt even a very long sample interval.
     fn wait_until_stopped(&self, timeout: Duration) -> bool {
-        let mut state = self.lock_state();
+        let mut state = self.state.locked();
         if state.stopped || std::mem::take(&mut state.woken) {
             return state.stopped;
         }
@@ -156,13 +146,6 @@ impl WatchdogSignal {
         };
         state.woken = false;
         state.stopped
-    }
-
-    fn lock_state(&self) -> MutexGuard<'_, WatchdogSignalState> {
-        match self.state.lock() {
-            Ok(state) => state,
-            Err(poisoned) => poisoned.into_inner(),
-        }
     }
 }
 
@@ -247,8 +230,6 @@ pub fn start_hang_watchdog(
     config: HangWatchdogConfig,
     on_hang: Option<Arc<dyn HangListener>>,
 ) -> std::io::Result<HangWatchdogHandle> {
-    let observer = global_observability();
-    let config = config.normalized(observer);
     let signal = Arc::new(WatchdogSignal::new());
     heartbeat.attach_waker(signal.clone());
     let thread_signal = signal.clone();
@@ -328,7 +309,7 @@ fn record_watchdog_sample(
         return;
     }
 
-    let _ = observer.increment_counter(metric_names.samples.clone(), 1);
+    observer.increment_counter(&metric_names.samples, 1);
     observer.set_gauge(metric_names.delay_gauge.clone(), delay_us as f64);
     observer.observe_latency(
         metric_names.delay_histogram.clone(),
@@ -349,7 +330,7 @@ fn record_watchdog_sample(
     };
 
     if let Some(counter_name) = counter_name {
-        let _ = observer.increment_counter(counter_name.clone(), 1);
+        observer.increment_counter(counter_name, 1);
     }
     if let Some(event_name) = event_name {
         let mut metadata = Metadata::new();
@@ -385,7 +366,6 @@ fn record_watchdog_sample(
 
 #[cfg(test)]
 mod tests {
-    use super::super::model::ObservabilityConfig;
     use super::super::ui::inactive_ui_heartbeat;
     use super::*;
     use std::time::Instant;
@@ -413,59 +393,6 @@ mod tests {
             classify_heartbeat_delay(Duration::from_millis(1), threshold, true, true),
             HeartbeatDelayClassification::Recovered
         );
-    }
-
-    #[test]
-    fn watchdog_sample_records_bounded_observability_data() {
-        let observer = Observability::new(ObservabilityConfig {
-            event_capacity: 8,
-            latency_sample_capacity: 8,
-            metric_series_capacity: 16,
-            max_metadata_entries: 8,
-            max_string_bytes: 128,
-        });
-        let watchdog_config = HangWatchdogConfig {
-            name: "ui".to_owned(),
-            sample_interval_ms: 25,
-            hang_threshold_ms: 100,
-            monitor_hidden: false,
-        };
-        let metric_names = WatchdogMetricNames::new(&watchdog_config.name);
-        let heartbeat = HeartbeatSnapshot {
-            sequence: 7,
-            last_beat_us: 1,
-            armed: true,
-            visible: true,
-        };
-
-        record_watchdog_sample(
-            &observer,
-            &watchdog_config,
-            &metric_names,
-            heartbeat,
-            125_000,
-            HeartbeatDelayClassification::HangStarted,
-            None,
-        );
-
-        let snapshot = observer.snapshot();
-        assert_eq!(snapshot.counters.get("watchdog.ui.samples"), Some(&1));
-        assert_eq!(snapshot.counters.get("watchdog.ui.hangs"), Some(&1));
-        assert_eq!(
-            snapshot.gauges.get("watchdog.ui.heartbeat_delay_us"),
-            Some(&125_000.0)
-        );
-        assert_eq!(
-            snapshot
-                .latency_histograms
-                .get("watchdog.ui.heartbeat_delay")
-                .unwrap()
-                .buckets
-                .at_least_100_ms,
-            1
-        );
-        assert_eq!(snapshot.events.len(), 1);
-        assert_eq!(snapshot.events[0].name, "watchdog.hang_started");
     }
 
     #[test]

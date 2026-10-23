@@ -20,30 +20,26 @@
     font-family: var(--ui);
 }
 
+/* Laid out from the bottom up: the browser holds the bottom still as a reply
+   grows, and holds the reader's place as rows above them change height,
+   without the transcript ever moving its own scroll position. Rows out of view
+   are still laid out: skipped with content-visibility, each one changes height
+   as it scrolls in, and WebKit draws a frame out of place at every change. */
 .chat-scroll {
+    display: flex;
+    flex-direction: column-reverse;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
-    /* The transcript holds its own scroll position; the browser guessing at one
-       as rows resize only fights it. */
-    overflow-anchor: none;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
+}
+
+/* A transcript shorter than the pane still starts at the top. */
+.chat-scroll-content {
+    flex: none;
+    margin-bottom: auto;
     padding: 25px 0 32px;
-}
-
-.chat-virtual-space {
-    position: relative;
-    width: 100%;
-}
-
-/* Size stays uncontained: the virtualizer measures each row's real height. */
-.chat-virtual-row {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    contain: layout style;
 }
 
 .chat-message {
@@ -53,8 +49,8 @@
     padding: 5px 22px;
 }
 
-/* The virtualizer absolutely positions each row, so sibling selectors never
- * match — the gap before a user turn lives on the user row's own padding. */
+/* Each message sits in a row of its own, so sibling selectors never match:
+ * the gap before a user turn lives on the user row's own padding. */
 .chat-message.user {
     padding-top: 17px;
     padding-bottom: 10px;
@@ -73,6 +69,92 @@
     font-size: calc(13.5px * var(--chat-text-em, 1));
 }
 
+.chat-message.agent-letter {
+    padding-top: 17px;
+    padding-bottom: 10px;
+}
+
+/* A teammate's message is headed like the agent's own "Worked for" line, with the same hairline under it. */
+.chat-letter + .chat-letter,
+.chat-letter-answer + .chat-letter,
+.chat-letter + .chat-letter-answer {
+    margin-top: 14px;
+}
+
+.chat-letter-top {
+    margin-bottom: 8px;
+    font-size: calc(12.5px * var(--chat-text-em, 1));
+}
+
+.chat-letter-top::after {
+    content: "";
+    display: block;
+    height: 1px;
+    margin-top: 4px;
+    background: color-mix(in oklab, var(--ink) 14%, transparent);
+}
+
+.chat-letter-head {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
+    color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
+    font-weight: var(--weight-medium);
+}
+
+.chat-letter-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--acc);
+    font: inherit;
+    font-weight: var(--weight-semibold);
+    cursor: pointer;
+}
+
+.chat-letter-name:hover,
+.chat-letter-name:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.chat-ask-who {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 22px;
+    margin-bottom: 2px;
+    color: var(--ink-dim);
+    font-size: var(--text-2xs);
+}
+
+.chat-ask-who b {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+.chat-ask-who > .agent-glyph {
+    flex: none;
+}
+
+.chat-ask-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.chat-ask-answered {
+    margin-top: 6px;
+    color: var(--ink-dim);
+    font-size: var(--text-xs);
+}
+
+.chat-ask-answer {
+    color: var(--ink);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .chat-message-content {
     flex: 1 1 auto;
     min-width: 0;
@@ -80,11 +162,23 @@
     font-size: calc(14px * var(--chat-text-em, 1));
     line-height: 1.65;
     user-select: text;
+    cursor: auto;
 }
 
-/* The virtualizer measures every row it draws, so a strip that appeared on
-   hover would resize the row under the pointer. The strip always holds its
-   height and only fades, and the whole turn is the thing you point at. */
+/* The row's own padding is the gap between messages, so a thought or tool line
+   at either end of one does not add its margin to it. */
+.chat-message-content > .chat-thought:first-child,
+.chat-message-content > .chat-tools:first-child {
+    margin-top: 0;
+}
+.chat-message-content > .chat-thought:last-child,
+.chat-message-content > .chat-tools:last-child {
+    margin-bottom: 0;
+}
+
+/* A strip that appeared on hover would resize the row under the pointer, so
+   it always holds its height and only fades, and the whole turn is the thing
+   you point at. */
 .chat-message-meta {
     display: flex;
     align-items: center;
@@ -170,7 +264,7 @@
 
 .chat-markdown :not(pre) > code {
     padding: 1px 4px;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-1);
     background: var(--acc-soft);
     color: color-mix(in srgb, var(--acc) 74%, var(--ink));
     font-size: 0.88em;
@@ -257,11 +351,30 @@
  * A bordered card, like the diff and the code block beside it, with a ruled
  * grid inside. It scrolls in its own box so a wide one cannot stretch the turn.
  */
+.chat-table-frame {
+    position: relative;
+    margin: 10px 0;
+}
+
+.chat-table-copy {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--surface-raised, var(--bg));
+    opacity: 0;
+}
+
+.chat-table-frame:hover .chat-table-copy,
+.chat-table-copy:focus-visible,
+.chat-table-copy.copied {
+    opacity: 1;
+}
+
 .chat-table {
     overflow-x: auto;
-    margin: 10px 0;
-    border: 1px solid var(--border, var(--line));
+    border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
     border-radius: var(--radius-2);
+    background: color-mix(in srgb, var(--rail-2) 72%, transparent);
 }
 
 .chat-table table {
@@ -290,12 +403,10 @@
     border-bottom: 0;
 }
 
-/* The band is an ink tint, not a dark wash: the pane is transparent, and a
-   wash only reads as a header on the nights the wallpaper is dark. The label
-   keeps a step below the cells — the uppercase tracking costs legibility, so
-   it stays a size the reader can still take in. */
+/* The label keeps a step below the cells: the uppercase tracking costs
+   legibility, so it stays a size the reader can still take in. */
 .chat-table th {
-    background: color-mix(in oklab, var(--ink) 6%, transparent);
+    background: color-mix(in oklab, var(--ink) 4%, transparent);
     border-bottom-color: color-mix(in oklab, var(--ink) 18%, transparent);
     color: var(--text-secondary, var(--ink));
     font-size: var(--text-xs);
@@ -319,6 +430,25 @@
 
 .chat-markdown a:hover {
     text-decoration: underline;
+}
+
+.chat-link-lead {
+    white-space: nowrap;
+}
+
+/* Sized to the text around it, and centred on it the way a file link's icon is. */
+.chat-link-mark {
+    display: inline-block;
+    margin-right: 4px;
+    line-height: 0;
+    vertical-align: middle;
+    user-select: none;
+}
+
+.chat-link-mark > * {
+    display: block;
+    width: 0.93em;
+    height: 0.93em;
 }
 
 /* A file the message names: the icon the rest of the app gives that file, the
@@ -377,6 +507,35 @@
     font-style: italic;
 }
 
+.chat-work {
+    width: min(100%, 800px);
+    margin: 8px auto 4px;
+    padding: 0 22px;
+    font-size: calc(12.5px * var(--chat-text-em, 1));
+}
+
+.chat-work::after {
+    content: "";
+    display: block;
+    height: 1px;
+    margin-top: 4px;
+    background: color-mix(in oklab, var(--ink) 14%, transparent);
+}
+
+.chat-work-mark {
+    display: grid;
+    flex: none;
+}
+
+.chat-work .chat-tools-sum {
+    color: color-mix(in oklab, var(--ink) 60%, var(--ink-dim));
+    font-weight: var(--weight-medium);
+}
+
+.chat-work-dot {
+    margin-inline: -2px;
+}
+
 .chat-plan {
     margin: 8px 0;
     color: var(--ink-dim);
@@ -390,4 +549,30 @@
 
 .chat-plan[open] summary {
     margin-bottom: 8px;
+}
+
+.chat-earlier {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 1px;
+    padding: var(--space-1) 0 var(--space-3);
+    color: var(--text-tertiary);
+    font-family: var(--ui);
+    font-size: var(--text-xs);
+}
+
+.chat-earlier button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.chat-earlier button:hover {
+    color: var(--text-primary);
 }

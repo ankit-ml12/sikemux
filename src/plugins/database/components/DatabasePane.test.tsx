@@ -18,8 +18,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../api", async (importOriginal) => ({ ...(await importOriginal<object>()), databaseApi: api }));
 
-import { invalidate } from "../../../plugin-api/resources";
 import { DatabasePane } from "./DatabasePane";
+import { database } from "../resources";
 
 const shop: DatabaseProfile = {
     id: "p1",
@@ -50,7 +50,7 @@ const renderPane = () => render(<DatabasePane paneId={`pane-${++pane}`} active /
 
 afterEach(() => {
     cleanup();
-    invalidate((kind) => kind.startsWith("database."));
+    database.refresh();
 });
 
 beforeEach(() => {
@@ -63,61 +63,58 @@ beforeEach(() => {
 });
 
 describe("DatabasePane", () => {
-    it("invites the first connection when none is saved", async () => {
-        api.profiles.mockResolvedValue([]);
-        renderPane();
-        expect(await screen.findByRole("heading", { name: "Connect a database" })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Add a connection" }));
-        expect(screen.getByRole("form", { name: "New connection" })).toBeInTheDocument();
-    });
-
-    it("lists each connection with its engine and where it is", async () => {
-        renderPane();
-        expect(await screen.findByText("PostgreSQL · app@db.internal:5432/shop")).toBeInTheDocument();
-        expect(screen.getByText("SQLite · app.db")).toBeInTheDocument();
-        expect(screen.getByText("Pick a connection to see it, or add a new one.")).toBeInTheDocument();
-    });
-
-    it("shows a picked connection and connects to it", async () => {
+    it("connects from the explorer, opens a console, and opens tables as tabs of their own", async () => {
         api.connect.mockResolvedValue({ id: "p1", version: "PostgreSQL 16.4" });
+        api.tables.mockResolvedValue([
+            { name: "customers", kind: "table" },
+            { name: "orders", kind: "table" },
+        ]);
         renderPane();
-        fireEvent.click(await screen.findByText("Shop"));
-        expect(screen.getByRole("article", { name: "Shop" })).toHaveTextContent("Read only");
-        expect(screen.getByText("Saved in the Keychain")).toBeInTheDocument();
-
         api.connected.mockResolvedValue([{ id: "p1", version: "PostgreSQL 16.4" }]);
-        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Connect" })));
+        await act(async () => fireEvent.click(await screen.findByRole("button", { name: /Shop/ })));
         expect(api.connect).toHaveBeenCalledWith("p1");
+        expect(await screen.findByRole("tab", { name: "Shop console" })).toHaveAttribute("aria-selected", "true");
         expect(await screen.findByRole("region", { name: "Query Shop" })).toBeInTheDocument();
-        expect(screen.getByText("PostgreSQL 16.4")).toBeInTheDocument();
-        expect(screen.getByLabelText("Connected")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
-    });
+        expect(await screen.findByLabelText("Connected")).toBeInTheDocument();
 
-    it("lists a connected database's tables and opens one", async () => {
-        api.connected.mockResolvedValue([{ id: "p1", version: "PostgreSQL 16.4" }]);
-        renderPane();
-        fireEvent.click(await screen.findByText("Shop"));
-        fireEvent.click(await screen.findByText("orders"));
-        expect(await screen.findByRole("tab", { name: "orders" })).toHaveAttribute("aria-selected", "true");
+        fireEvent.click(await screen.findByRole("button", { name: /^orders/ }));
         expect(await screen.findByRole("article", { name: "public.orders" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: /^customers/ }));
+        expect(screen.getByRole("tab", { name: "Shop customers" })).toHaveAttribute("aria-selected", "true");
+        expect(screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(["Shop console", "Shop orders", "Shop customers"]);
     });
 
-    it("says why a connection failed", async () => {
-        api.connect.mockRejectedValue({ category: "connect", message: "db.internal:5432 did not answer within 10s" });
+    it("keeps tabs from different connections side by side", async () => {
+        api.connected.mockResolvedValue([
+            { id: "p1", version: "PostgreSQL 16.4" },
+            { id: "p2", version: "SQLite 3.46.0" },
+        ]);
+        api.history.mockResolvedValue([]);
         renderPane();
-        fireEvent.click(await screen.findByText("Shop"));
-        await act(async () => fireEvent.click(screen.getByRole("button", { name: "Connect" })));
-        expect(screen.getByRole("alert")).toHaveTextContent("did not answer within 10s");
+        fireEvent.contextMenu(await screen.findByRole("button", { name: /Shop/ }));
+        fireEvent.click(screen.getByText("New console"));
+        fireEvent.contextMenu(screen.getByRole("button", { name: /Local/ }));
+        fireEvent.click(screen.getByText("History"));
+        expect(screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(["Shop console", "Local history"]);
+        expect(await screen.findByRole("region", { name: "History of Local" })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("tab", { name: "Shop console" }));
+        expect(screen.getByRole("region", { name: "Query Shop" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Close Shop console" }));
+        expect(screen.getByRole("tab", { name: "Local history" })).toHaveAttribute("aria-selected", "true");
     });
 
-    it("opens the form on the picked connection to edit it", async () => {
+    it("previews a table into its connection's console", async () => {
+        api.connected.mockResolvedValue([{ id: "p1", version: "PostgreSQL 16.4" }]);
+        api.query.mockResolvedValue({ results: [], millis: 2 });
         renderPane();
-        fireEvent.click(await screen.findByText("Local"));
-        fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-        expect(screen.getByRole("form", { name: "Edit Local" })).toBeInTheDocument();
-        expect(screen.getByLabelText("Database file")).toHaveValue("/Users/me/app.db");
-        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-        expect(screen.getByRole("article", { name: "Local" })).toBeInTheDocument();
+        fireEvent.click(await screen.findByRole("button", { name: /Shop/ }));
+        fireEvent.contextMenu(await screen.findByRole("button", { name: /public/ }));
+        fireEvent.click(screen.getByText("Refresh"));
+        fireEvent.click(screen.getByRole("button", { name: /public/ }));
+        fireEvent.click(await screen.findByRole("button", { name: /^tables/ }));
+        await act(async () => fireEvent.doubleClick(await screen.findByRole("button", { name: /^orders/ })));
+        expect(api.query).toHaveBeenCalledWith("p1", 'select * from "public"."orders" limit 100;', 500, expect.any(String));
+        expect(screen.getByRole("tab", { name: "Shop console" })).toHaveAttribute("aria-selected", "true");
     });
 });

@@ -11,10 +11,12 @@ export interface MarkdownComponents {
     readonly code?: ComponentType<{ text: string }>;
     /** A run of text outside a link. */
     readonly text?: ComponentType<{ text: string }>;
-    readonly table?: ComponentType<{ children: ReactNode }>;
+    readonly table?: ComponentType<{ children: ReactNode; table: Extract<MdElement, { t: "table" }> }>;
     readonly heading?: ComponentType<{ level: number; children: ReactNode }>;
     /** `inLink` is set when the picture is itself the content of a link. */
     readonly img?: ComponentType<{ src: string; alt: string; title?: string; inLink: boolean }>;
+    /** A task list item's box; left out, it is drawn ticked or not and cannot be changed. */
+    readonly taskBox?: ComponentType<{ checked: boolean }>;
 }
 
 export const MARKDOWN_GFM: MarkdownOptions = { gfm: true, htmlAsText: false, fileLinks: false };
@@ -27,7 +29,8 @@ function renderAll(nodes: readonly MdNode[], components: MarkdownComponents, inL
     return nodes.map((node, index) => renderNode(node, components, inLink, index));
 }
 
-function taskBox(checked: boolean): ReactNode {
+function taskBox(checked: boolean, components: MarkdownComponents): ReactNode {
+    if (components.taskBox) return createElement(components.taskBox, { key: "task", checked });
     return <input key="task" type="checkbox" checked={checked} readOnly disabled />;
 }
 
@@ -38,14 +41,14 @@ function taskItem(checked: boolean, children: readonly MdNode[], components: Mar
     if (first && typeof first !== "string" && first.t === "p") {
         return [
             <p key={0}>
-                {taskBox(checked)}
+                {taskBox(checked, components)}
                 {first.c.length > 0 && " "}
                 {renderAll(first.c, components, inLink)}
             </p>,
             ...rest.map((node, index) => renderNode(node, components, inLink, index + 1)),
         ];
     }
-    return [taskBox(checked), children.length > 0 && " ", ...renderAll(children, components, inLink)];
+    return [taskBox(checked, components), children.length > 0 && " ", ...renderAll(children, components, inLink)];
 }
 
 function footnote(n: number, children: readonly MdNode[], components: MarkdownComponents): ReactNode[] {
@@ -94,7 +97,13 @@ function renderTable(node: Extract<MdElement, { t: "table" }>, components: Markd
         ),
     ];
     const Table = components.table;
-    return Table ? <Table key={key}>{inner}</Table> : <table key={key}>{inner}</table>;
+    return Table ? (
+        <Table key={key} table={node}>
+            {inner}
+        </Table>
+    ) : (
+        <table key={key}>{inner}</table>
+    );
 }
 
 function renderNode(node: MdNode, components: MarkdownComponents, inLink: boolean, key: number): ReactNode {
@@ -191,6 +200,13 @@ function renderNode(node: MdNode, components: MarkdownComponents, inLink: boolea
         }
         case "fnref":
             return <sup key={key}>{node.n}</sup>;
+        case "details":
+            return (
+                <details key={key} open={node.open}>
+                    <summary>{node.summary || "Details"}</summary>
+                    {renderAll(node.c, components, inLink)}
+                </details>
+            );
     }
 }
 

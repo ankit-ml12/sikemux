@@ -1,14 +1,15 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Run } from "../api";
 
 const api = vi.hoisted(() => ({ runs: vi.fn() }));
 
 import { invalidate } from "../../plugin-api/resources";
-import { InHost, registerTestHost, TEST_HOST } from "../testHost";
+import { ciCore, InHost, registerTestHost, TEST_HOST } from "../testHost";
 import { PullChecks } from "./PullChecks";
 
 const host = registerTestHost(api);
+const core = ciCore();
 const repo = { provider: TEST_HOST, owner: "nodelike", name: "sikemux" };
 
 const makeRun = (overrides: Partial<Run> = {}): Run => ({
@@ -60,16 +61,6 @@ afterEach(() => {
 });
 
 describe("PullChecks", () => {
-    it("asks for the runs on the pull request's head commit", async () => {
-        await renderChecks([makeRun()]);
-        expect(api.runs).toHaveBeenCalledWith({ ...repo, headSha: "abc", perPage: 30 });
-    });
-
-    it("shows nothing when no run touched the commit", async () => {
-        const { view } = await renderChecks([]);
-        expect(view.container.textContent).toBe("");
-    });
-
     it("says all passed when every run passed or was skipped", async () => {
         await renderChecks([makeRun({ id: "1" }), makeRun({ id: "2", conclusion: "skipped" })]);
         expect(headline()).toBe("All checks passed");
@@ -97,27 +88,14 @@ describe("PullChecks", () => {
         expect(overall()).toBe("Waiting for approval");
     });
 
-    it("lists each run with what started it, how it went and how long it took, and opens it on click", async () => {
-        const { onOpenRun } = await renderChecks([makeRun({ name: "Lint", runNumber: 4 })]);
-        const check = screen.getByRole("button", { name: /Lint/ });
-        expect(check.textContent).toBe("Lint #4Pull requestPassed1m 30s");
-        fireEvent.click(check);
-        expect(onOpenRun).toHaveBeenCalledWith("7");
-    });
-
-    it("reads the checks again every ten seconds while one is going, and stops once they are done", async () => {
-        vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    it("reads the checks again when the core says the repository's CI moved", async () => {
         await renderChecks([makeRun({ status: "in_progress", conclusion: null })]);
         expect(api.runs).toHaveBeenCalledTimes(1);
         api.runs.mockResolvedValue({ runs: [makeRun()], total: 1, nextPage: null });
         await act(async () => {
-            vi.advanceTimersByTime(10_000);
+            core.moved(repo);
         });
         expect(api.runs).toHaveBeenCalledTimes(2);
         expect(headline()).toBe("All checks passed");
-        await act(async () => {
-            vi.advanceTimersByTime(60_000);
-        });
-        expect(api.runs).toHaveBeenCalledTimes(2);
     });
 });

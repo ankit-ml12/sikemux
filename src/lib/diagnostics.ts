@@ -1,13 +1,13 @@
 import { invokeCommand as invoke } from "../api/invoke";
 import { getIpcTransport } from "../api/transport";
-import { save } from "@tauri-apps/plugin-dialog";
+import { dialogsApi } from "../api/dialogs";
 import { appCacheDir } from "@tauri-apps/api/path";
 import { fsapi } from "../api/fs";
 import { busStats } from "../state/bus";
 import { resourceStats } from "../state/resources";
 import { getState } from "../state/store";
 import type { LayoutNode } from "../state/types";
-import { workbenchRuntime } from "../workbench/runtime";
+import { paneResourceCount } from "../terminal/paneResources";
 import { uiActivity, UI_ACTIVITY_LIMITS, type UiActivityRejection } from "./activity";
 import { installInteractionTiming, startEventLoopMonitor, startNativeUiHeartbeat } from "./instrumentation";
 import { joinPath } from "./paths";
@@ -189,7 +189,7 @@ function paneKindAt(node: LayoutNode, paneId: string): string | null {
     return null;
 }
 
-export function focusedPaneKind(): string | null {
+function focusedPaneKind(): string | null {
     const state = getState();
     const session = state.sessions[state.activeSessionId];
     const window = session ? state.windows[session.activeWindowId] : undefined;
@@ -246,10 +246,10 @@ function storeSnapshot() {
             keptAlive: Object.values(s.agents).filter((agent) => agent.keepAlive === true).length,
             resumable: Object.values(s.agents).filter((agent) => !!agent.resumeId).length,
         },
-        agentActivity: Object.fromEntries(
-            ["unknown", "working", "blocked", "done", "idle"].map((state) => [
-                state,
-                Object.values(s.agentActivity).filter((activity) => activity.state === state).length,
+        agentStatus: Object.fromEntries(
+            ["working", "blocked", "done", "idle", "asleep", "stopped", "starting"].map((status) => [
+                status,
+                Object.values(s.agentStatus).filter((shown) => shown.status === status).length,
             ]),
         ),
         editorViews: Object.keys(s.editorViews).length,
@@ -284,7 +284,7 @@ export function browserDiagnostics(): Record<string, unknown> {
         memory: memorySnapshot(),
         dom: domSnapshot(),
         store: storeSnapshot(),
-        workbench: workbenchRuntime.getSnapshot(),
+        heldTerminals: paneResourceCount(),
         resources: resourceStats(),
         bus: busStats(),
         shaderFields: shaderFieldDiagnostics(),
@@ -306,9 +306,8 @@ export function nativeDiagnostics(): Promise<unknown> {
 
 export async function exportDiagnosticsSnapshot(snapshot: unknown): Promise<string | null> {
     const stamp = new Date().toISOString().replaceAll(":", "-");
-    const path = await save({
+    const path = await dialogsApi.pickSavePath(`sikemux-diagnostics-${stamp}.json`, {
         title: "Save Sikemux diagnostics",
-        defaultPath: `sikemux-diagnostics-${stamp}.json`,
         filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (!path) return null;

@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import { invalidate, useResourceEnabled } from "../../plugin-api/resources";
 import { EmptyState, SkeletonRows } from "../../plugin-api/ui";
-import { failureMessage } from "../api";
+import { errorText } from "../../lib/format";
 import { LocalRepoProvider } from "../localRepo";
 import { useHost } from "../registry";
 import { hostStatusR, workflowsR } from "../resources";
-import { hostSettings, resetView, setProjectAccount, slugOf, updateView, useHostView, type Section } from "../state";
+import { hostSettings, resetView, setProjectAccount, slugOf, updateView, useHostView, type TreeSection } from "../state";
 import type { RepoRef } from "../types";
 import { DispatchDialog } from "./DispatchDialog";
-import { InboxView } from "./InboxView";
 import { IssuesView } from "./IssuesView";
 import { PullsView } from "./PullsView";
 import { RateLimitBanner } from "./RateLimitBanner";
@@ -19,7 +18,7 @@ import "../codehost.css";
 
 interface Props {
     paneId: string;
-    section: Section;
+    section: TreeSection;
     repo: RepoRef;
     /** The branch checked out in the git pane. */
     branch: string | null;
@@ -63,7 +62,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
             <div className="gha-pane" data-active={active ? "1" : "0"}>
                 <EmptyState
                     title={`Could not reach ${host.name}`}
-                    message={failureMessage(status.error)}
+                    message={errorText(status.error)}
                     tone="error"
                     action={{ label: "Try again", onClick: () => void status.refresh() }}
                 />
@@ -90,9 +89,7 @@ export function HostArea({ paneId, section, repo, branch, cwd, active }: Props) 
             <div className="gha-pane" data-active={active ? "1" : "0"}>
                 <RateLimitBanner active={active} />
                 <div className="gha-body">
-                    {section === "inbox" ? (
-                        <InboxView paneId={paneId} login={status.data?.login ?? null} active={active} />
-                    ) : section === "pulls" ? (
+                    {section === "pulls" ? (
                         <PullsView
                             paneId={paneId}
                             repo={repo}

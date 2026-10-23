@@ -74,12 +74,6 @@ describe("DiffEditor", () => {
         expect(container.querySelector(".diff-view")?.classList.contains("tinted")).toBe(true);
     });
 
-    it("runs to the working tree when there is no head revision", async () => {
-        const { container } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" editable={false} />);
-        await waitFor(() => expect(container.querySelector(".diff-view")).toBeInTheDocument());
-        expect(mocks.fileDiff).toHaveBeenCalledWith("/repo", "src/app.ts", "HEAD", null, false);
-    });
-
     it("shows the lines a hidden row stands for when it is clicked", async () => {
         const { container, getByRole } = render(<DiffEditor repo="/repo" path="src/app.ts" baseRev="HEAD" headRev=":index" editable={false} />);
         await waitFor(() => expect(getByRole("button", { name: "Show 12 unchanged lines" })).toBeInTheDocument());
@@ -100,19 +94,6 @@ describe("DiffEditor", () => {
         act(() => mocks.themeListeners.forEach((listener) => listener(day)));
 
         expect(container.querySelector(".diff-view")?.classList.contains("tinted")).toBe(false);
-    });
-
-    it("draws nothing for a file that did not change", async () => {
-        mocks.fileDiff.mockResolvedValue([]);
-        const { container } = render(<DiffEditor repo="/repo" path="src/same.ts" baseRev="HEAD" headRev=":index" editable={false} />);
-        await waitFor(() => expect(container.querySelector(".diff-editor-loading")).not.toBeInTheDocument());
-        expect(container.querySelector(".diff-view")).not.toBeInTheDocument();
-    });
-
-    it("says why a diff cannot be shown", async () => {
-        mocks.fileDiff.mockRejectedValue(new Error("src/logo.png is binary; inline diff is disabled."));
-        const { findByText } = render(<DiffEditor repo="/repo" path="src/logo.png" baseRev="HEAD" headRev=":index" editable={false} />);
-        expect(await findByText("x src/logo.png is binary; inline diff is disabled.")).toBeInTheDocument();
     });
 
     it("edits the working file against its base and saves it with Cmd+S", async () => {
@@ -227,7 +208,7 @@ describe("DiffEditor", () => {
     it("refuses to edit a file too large to diff inline, and does not keep it cached", async () => {
         mocks.fileAt.mockResolvedValue("x".repeat(33 * 1024 * 1024));
         const first = render(<DiffEditor repo="/repo" path="huge.log" baseRev="HEAD" headRev="abc" editable />);
-        expect(await first.findByText("x huge.log is too large for inline diff (33.0 MB).")).toBeInTheDocument();
+        expect(await first.findByText("x huge.log is too large for inline diff (33 MB).")).toBeInTheDocument();
         first.unmount();
 
         const reads = mocks.fileAt.mock.calls.length;

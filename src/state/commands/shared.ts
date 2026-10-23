@@ -1,15 +1,18 @@
 import { pluginDocuments } from "../../plugins/documents";
+import { forgetAgentDeliveries } from "../../agents/agentInbox";
 import { browserApi } from "../../api/browser";
 import { basename } from "../../lib/paths";
-import { taskPtyBindings } from "../../tasks/nativeRuntime";
 import { emit } from "../bus";
+import type { Draft } from "immer";
 import { getState, mutate, setState, type StoreState } from "../store";
 import { deskEditorId } from "../desks";
 import { notify, reportError } from "../toast";
-import { confirmDialog } from "../dialog";
-import { editorPaneOf } from "../selectors";
+import { choiceDialog, confirmDialog } from "../dialog";
+import { editorPaneOf, projectSessionId } from "../selectors";
+import { isAgentBusy } from "../agentStatus";
 import { collectPanes, makePane, newId } from "../layout";
-import type { PaneKind, Session, SessionKind, Window, WindowRole } from "../types";
+import type { CorePaneKind, PaneKind, Session, SessionKind, Window, WindowRole } from "../types";
+import { CORE_PANE_KINDS } from "../windowRoles";
 import { focusPane } from "./panes";
 import { selectWindowId } from "./tabs";
 
@@ -17,23 +20,23 @@ export const patchWindow = (id: string, fn: (w: Window) => Window): void =>
     mutate((d) => {
         const cur = d.windows[id];
         if (!cur) return;
-        d.windows[id] = fn(cur as Window);
+        d.windows[id] = fn(cur);
     });
 
-export const withActiveSession = (fn: (d: StoreState, session: Session) => void): void =>
+export const withActiveSession = (fn: (d: Draft<StoreState>, session: Draft<Session>) => void): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
         if (!session) return;
-        fn(d as unknown as StoreState, session as Session);
+        fn(d, session);
     });
 
-export const withActiveWindow = (fn: (d: StoreState, win: Window, session: Session) => void): void =>
+export const withActiveWindow = (fn: (d: Draft<StoreState>, win: Draft<Window>, session: Draft<Session>) => void): void =>
     mutate((d) => {
         const session = d.sessions[d.activeSessionId];
         if (!session) return;
         const win = d.windows[session.activeWindowId];
         if (!win) return;
-        fn(d as unknown as StoreState, win as Window, session as Session);
+        fn(d, win, session);
     });
 
 export function makeWindow(
@@ -77,12 +80,22 @@ const SPLITTABLE_TOOLS: ReadonlySet<PaneKind> = new Set(["git", "search"]);
  * none. `seedEditorPath` pre-opens a file so a freshly created editor hydrates
  * from the store the same way a restored session does.
  */
-export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string, seedEditorPath?: string): void {
+/** A copy of a project: its folder, on `host` when that is not this one. */
+export interface FilesPlace {
+    cwd: string;
+    host?: string;
+}
+
+const windowHost = (win: Window | undefined): string | undefined => (win ? collectPanes(win.root)[0]?.host : undefined);
+
+export function ensureRoleWindow(kind: CorePaneKind, seedEditorPath?: string, place?: FilesPlace): void {
+    const { role, title } = CORE_PANE_KINDS[kind];
     const st = getState();
     const session = st.sessions[st.activeSessionId];
     if (!session || session.kind !== "project") return;
     const ids = st.windowsBySession[session.id] ?? [];
-    const existing = ids.find((id) => st.windows[id]?.role === role);
+    const host = place ? place.host : session.host;
+    const existing = ids.find((id) => st.windows[id]?.role === role && windowHost(st.windows[id]) === host);
     if (existing) {
         selectWindowId(existing);
         return;
@@ -99,7 +112,8 @@ export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string,
     }
     mutate((d) => {
         const sess = d.sessions[session.id];
-        const w = makeWindow(sess.cwd, name, { kind, role });
+        const w = makeWindow(place?.cwd ?? sess.cwd, title, { kind, role });
+        if (host !== undefined) for (const pane of collectPanes(w.root)) pane.host = host;
         d.windows[w.id] = w;
         d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), w.id];
         if (seedEditorPath) d.editorViews[w.activePaneId] = { openTabs: [seedEditorPath], activePath: seedEditorPath };
@@ -108,7 +122,7 @@ export function ensureRoleWindow(role: WindowRole, kind: PaneKind, name: string,
     });
 }
 
-export function attachSession(d: StoreState, session: Session, windows: Window[]): void {
+export function attachSession(d: Draft<StoreState>, session: Session, windows: Window[]): void {
     d.sessions[session.id] = session;
     d.sessionOrder.push(session.id);
     for (const w of windows) d.windows[w.id] = w;
@@ -116,19 +130,6 @@ export function attachSession(d: StoreState, session: Session, windows: Window[]
     d.activeSessionId = session.id;
     d.zoomedPaneId = null;
     d.pickerOpen = false;
-}
-
-/** A project's session, opened behind the one in front if the project is not open yet. Returns its id. */
-export function projectSessionInBackground(d: StoreState, cwd: string): string {
-    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
-    if (existing) return existing.id;
-    const window = makeWindow(cwd, "Terminal", { role: "term" });
-    const session = makeSession("project", basename(cwd), cwd, window.id);
-    d.sessions[session.id] = session;
-    d.sessionOrder.push(session.id);
-    d.windows[window.id] = window;
-    d.windowsBySession[session.id] = [window.id];
-    return session.id;
 }
 
 /** Brings a project's session forward, opening one with a terminal if the project is not open yet. Returns its id. */
@@ -144,8 +145,8 @@ export function keepOpenedProjectInView(cwd: string): void {
     else setState({ projectSpaces: { ...projectSpaces, [cwd]: activeSpaceId } });
 }
 
-export function openProjectSession(d: StoreState, cwd: string): string {
-    const existing = d.sessionOrder.map((id) => d.sessions[id]).find((s) => s.cwd === cwd && s.kind === "project");
+export function openProjectSession(d: Draft<StoreState>, cwd: string): string {
+    const existing = projectSessionId(d, cwd);
     if (!existing) {
         const windows = [makeWindow(cwd, "Terminal", { role: "term" })];
         attachSession(d, makeSession("project", basename(cwd), cwd, windows[0].id), windows);
@@ -153,8 +154,8 @@ export function openProjectSession(d: StoreState, cwd: string): string {
     }
     d.pickerOpen = false;
     d.zoomedPaneId = null;
-    d.activeSessionId = existing.id;
-    return existing.id;
+    d.activeSessionId = existing;
+    return existing;
 }
 
 export function dirtyPathsForWindow(st: StoreState, win: Window | undefined): string[] {
@@ -195,10 +196,64 @@ export function guardDiscardDirty(paths: string[], action: string, proceed: () =
     });
 }
 
-export function busyAgentIds(state: Pick<StoreState, "agentActivity">, agentIds: readonly string[]): string[] {
-    return agentIds.filter((id) => {
-        const backend = state.agentActivity[id]?.backendState;
-        return backend === "working" || backend === "blocked";
+/** Closing an agent's tab stops it, so it asks first when the agent is busy. */
+export function guardCloseAgents(agentIds: readonly string[], title: string, proceed: () => void): void {
+    const { agentStatus } = getState();
+    guardStopAgents(
+        agentIds.filter((id) => isAgentBusy(agentStatus[id])),
+        title,
+        proceed,
+    );
+}
+
+/** The open agents these agents started, and the ones those started, leaving out the agents themselves. */
+function workersOf(agentIds: readonly string[]): string[] {
+    const agents = Object.values(getState().agents);
+    const team = new Set(agentIds);
+    const workers: string[] = [];
+    for (let found = true; found;) {
+        found = false;
+        for (const agent of agents) {
+            if (!agent.lead || !team.has(agent.lead) || team.has(agent.id)) continue;
+            team.add(agent.id);
+            workers.push(agent.id);
+            found = true;
+        }
+    }
+    return workers;
+}
+
+function listed(names: readonly string[]): string {
+    const shown = names.slice(0, 3);
+    if (names.length > 3) shown.push(`${names.length - 3} more`);
+    return shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+}
+
+/**
+ * Closing agents' tabs stops them. When they started others, one question asks whether those stop too or keep
+ * running on their own; otherwise it asks only when one of them is busy.
+ */
+export function guardCloseLeads(agentIds: readonly string[], title: string, proceed: (stop: readonly string[]) => void): void {
+    const workers = workersOf(agentIds);
+    if (workers.length === 0) {
+        guardCloseAgents(agentIds, title, () => proceed([]));
+        return;
+    }
+    const { agents, agentStatus } = getState();
+    const label = (id: string) => agents[id]?.name ?? agents[id]?.title ?? "agent";
+    const leads = agentIds.filter((id) => workers.some((worker) => agents[worker]?.lead === id)).map(label);
+    const busy = agentIds.filter((id) => isAgentBusy(agentStatus[id])).map(label);
+    const one = workers.length === 1;
+    const working =
+        busy.length > 0 ? `${listed(busy)} ${busy.length === 1 ? "is" : "are"} working and ${busy.length === 1 ? "stops" : "stop"} with it. ` : "";
+    void choiceDialog({
+        title: `Stop ${leads.length === 1 ? `${leads[0]}'s agents` : "their agents"} too?`,
+        body: `${working}${listed(workers.map(label))} ${one ? "was" : "were"} started by ${leads.join(" and ")}. Stop ${one ? "it" : "them"}, or keep ${one ? "it" : "them"} running on ${one ? "its" : "their"} own.`,
+        otherLabel: one ? "Keep it" : "Keep them",
+        confirmLabel: one ? "Stop it" : "Stop them",
+        destructive: true,
+    }).then((choice) => {
+        if (choice) proceed(choice === "confirm" ? workers : []);
     });
 }
 
@@ -232,7 +287,6 @@ export function dropDeskPaneState(d: StoreState, paneId: string): void {
 
 /** An agent's desk goes with the agent: its pages, its files and its terminals. */
 export function closeAgentDesk(agentId: string): void {
-    for (const terminal of getState().desks[agentId]?.terminals ?? []) taskPtyBindings.release(terminal.id);
     mutate((d) => {
         delete d.desks[agentId];
         delete d.editorViews[deskEditorId(agentId)];
@@ -249,11 +303,8 @@ export function disposePaneState(d: StoreState, paneId: string): void {
     delete d.dirtyEditorPaths[paneId];
     delete d.gitViews[paneId];
     dropDeskPaneState(d, paneId);
-    delete d.terminalTitles[paneId];
     delete d.agents[paneId];
-    delete d.agentActivity[paneId];
-    delete d.agentBackgroundWork[paneId];
-    delete d.agentSubagents[paneId];
+    forgetAgentDeliveries(paneId);
 }
 
 export function pruneWindowViews(d: StoreState, win: Window): void {

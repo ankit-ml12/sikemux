@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { openUrl, swallow } from "../../../plugin-api/host";
 import { useResourceEnabled } from "../../../plugin-api/resources";
-import { EmptyState, SkeletonRows } from "../../../plugin-api/ui";
-import { failureMessage, type DashboardPanel, type PanelData, type Scope } from "../api";
+import { EmptyState, SkeletonRows, StaleNotice } from "../../../plugin-api/ui";
+import { errorText } from "../../../plugin-api/format";
+import { type DashboardPanel, type PanelData, type Scope } from "../api";
 import { signozDashboardR, signozPanelR } from "../resources";
 import { setDashboardVariable, signozSettings } from "../state";
 import { BarList, DataTable, StatValue, TimeChart } from "./charts";
@@ -90,8 +91,8 @@ function PanelCard({
                         message={`Sikemux does not draw ${panel.kind} panels yet.`}
                         action={{ label: "Open in SigNoz", onClick: openInSignoz }}
                     />
-                ) : data.error ? (
-                    <EmptyState tone="error" message={failureMessage(data.error)} />
+                ) : data.error && !data.data ? (
+                    <EmptyState tone="error" message={errorText(data.error)} />
                 ) : !data.data ? (
                     <SkeletonRows rows={3} label={`Loading ${panel.title}`} />
                 ) : (
@@ -111,11 +112,12 @@ export function DashboardView({ dashboardId, scope, active, signozUrl }: { dashb
     );
     const openInSignoz = () => void openUrl(`${signozUrl}/dashboard/${dashboardId}`).catch(swallow("open the dashboard in SigNoz"));
 
-    if (dashboard.error) return <EmptyState tone="error" message={failureMessage(dashboard.error)} />;
+    if (dashboard.error && !dashboard.data) return <EmptyState tone="error" message={errorText(dashboard.error)} />;
     if (!dashboard.data) return <SkeletonRows rows={8} label="Loading dashboard" />;
 
     return (
         <div className="sgz-dashboard">
+            <StaleNotice handle={dashboard} />
             {dashboard.data.variables.length > 0 && (
                 <div className="sgz-variables" role="group" aria-label="Dashboard variables">
                     {dashboard.data.variables.map((variable) => (

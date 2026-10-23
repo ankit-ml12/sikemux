@@ -17,8 +17,6 @@ const check = process.argv.includes("--check");
 
 const LINE_ICONS = {
   plus: "IconPlus",
-  mic: "IconMic",
-  image: "IconImage",
   phone: "IconPhone",
   folder: "IconFolder",
   file: "IconFile",
@@ -27,8 +25,12 @@ const LINE_ICONS = {
   chevron: "IconChevron",
   check: "IconCheck",
   arrowUp: "IconArrowUp",
-  external: "IconExternal",
+  agent: "IconAgent",
+  command: "IconCommand",
 };
+
+// Line icons the app fills from its stylesheet rather than from the icon itself.
+const FILLED_ICONS = new Set(["agent"]);
 
 const MARK_FUNCTIONS = {
   claude: "IconClaude",
@@ -38,27 +40,20 @@ const MARK_FUNCTIONS = {
   hermes: "IconHermes",
 };
 
-const MARK_FILES = { codex: "codex.svg", omp: "omp.svg" };
-// The same mark as brand/mark/mark-white.svg, read from the server app's copy
-// until brand/ is in the repository.
-const BRAND_MARK = [
-  resolve(root, "brand/mark/mark-white.svg"),
-  resolve(root, "server/app/src/mark-white.svg"),
-];
+const MARK_FILES = { codex: "codex.svg", omp: "omp.svg", muse: "muse.svg" };
+const BRAND_MARK = resolve(root, "brand/mark/mark-white.svg");
 
 /** The colour each mark takes where the app paints it with its brand colour. */
-const BRAND = {
-  claude: "#d97757",
-  pi: "#7dd3fc",
-  opencode: "#a78bfa",
-  grok: "#fcfcfc",
-  hermes: "#e0a050",
-};
+const BRAND = Object.fromEntries(
+  JSON.parse(
+    await readFile(resolve(root, "src/agents/catalog.json"), "utf8"),
+  ).agents.map((agent) => [agent.type, agent.brand]),
+);
 
 function attributes(text) {
   const found = {};
   for (const [, name, quoted, braced] of text.matchAll(
-    /([a-zA-Z-]+)=(?:"([^"]*)"|\{([^}]*)\})/g,
+    /([a-zA-Z0-9-]+)=(?:"([^"]*)"|\{([^}]*)\})/g,
   )) {
     found[name] = quoted ?? braced.replace(/^"|"$/g, "");
   }
@@ -187,6 +182,12 @@ function colour(text) {
   return text;
 }
 
+function fraction(value, fallback = 0) {
+  return value?.endsWith("%")
+    ? fixed(number(value) / 100)
+    : number(value, fallback);
+}
+
 function gradients(svg) {
   const found = {};
   for (const [, open, body] of svg.matchAll(
@@ -195,11 +196,11 @@ function gradients(svg) {
     const own = attributes(open);
     const stops = [...body.matchAll(/<stop\b([^>]*)\/>/g)].map(([, stop]) => {
       const { offset, "stop-color": stopColour } = attributes(stop);
-      return { offset: number(offset), colour: colour(stopColour) };
+      return { offset: fraction(offset), colour: colour(stopColour) };
     });
     const turned = own.gradientTransform?.startsWith("matrix(0");
-    const start = turned ? [0.5, 0] : [number(own.x1), number(own.y1)];
-    const end = turned ? [0.5, 1] : [number(own.x2, 1), number(own.y2)];
+    const start = turned ? [0.5, 0] : [fraction(own.x1), fraction(own.y1)];
+    const end = turned ? [0.5, 1] : [fraction(own.x2, 1), fraction(own.y2)];
     found[own.id] = { stops, start, end };
   }
   return found;
@@ -246,7 +247,10 @@ for (const [key, name] of Object.entries(LINE_ICONS)) {
   if (!match) throw new Error(`src/ui/Icons.tsx has no ${name}`);
   const options = match[2] ?? "";
   const box = options.match(/viewBox:\s*"([^"]+)"/)?.[1];
-  const style = options.includes('fill: "currentColor"') ? "fill" : "stroke";
+  const style =
+    FILLED_ICONS.has(key) || options.includes('fill: "currentColor"')
+      ? "fill"
+      : "stroke";
   const body = shapes(match[1]).map(
     (shape) => `        ${shapeLiteral(shape, style, null, {})},`,
   );
@@ -283,9 +287,7 @@ for (const [key, file] of Object.entries(MARK_FILES)) {
   );
 }
 
-const brand = await readFile(BRAND_MARK[0], "utf8").catch(() =>
-  readFile(BRAND_MARK[1], "utf8"),
-);
+const brand = await readFile(BRAND_MARK, "utf8");
 const brandBody = shapes(brand).map(
   (shape) =>
     `        IconShape(d: ${swiftString(shape.d)}, style: .fill(.current), opacity: 1, evenOdd: false, translate: (0, 0)),`,

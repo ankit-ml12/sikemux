@@ -1,8 +1,13 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { ENTER_GLYPH } from "../commands/keybindings";
+import { hasPrimaryModifier, PRIMARY_SHORTCUT } from "../lib/platform";
+import { AgentMark } from "../agents/AgentMark";
 import { useStore } from "../state/store";
-import { IconAgent, IconCopy, IconExternal, IconWindow } from "../ui/Icons";
+import { IconAgent, IconCopy, IconExternal, IconGlobe, IconRun, IconTerminal, IconWindow } from "../ui/Icons";
+import { ThemeIcon } from "../ui/FileIcon";
 import { Tooltip } from "../ui/Tooltip";
 import { copyPortUrl, openPortExternally, openPortOnDesk, revealPortOwner } from "./portActions";
+import { processIcon } from "./processIcon";
 import { deskAgentFor, type ProjectPort } from "./projectPorts";
 import "../styles/ports-menu.css";
 
@@ -10,8 +15,8 @@ function useMenuKeys(menu: RefObject<HTMLDivElement | null>, close: () => void) 
     const closeRef = useRef(close);
     closeRef.current = close;
     useEffect(() => {
-        const items = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-        items()[0]?.focus();
+        const rows = () => [...(menu.current?.querySelectorAll<HTMLElement>(".tb-port-open") ?? [])];
+        rows()[0]?.focus();
         const onKey = (event: KeyboardEvent) => {
             if (event.key === "Escape") {
                 event.preventDefault();
@@ -20,7 +25,7 @@ function useMenuKeys(menu: RefObject<HTMLDivElement | null>, close: () => void) 
                 return;
             }
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-            const all = items();
+            const all = rows();
             if (!all.length) return;
             event.preventDefault();
             const at = all.indexOf(document.activeElement as HTMLElement);
@@ -32,25 +37,56 @@ function useMenuKeys(menu: RefObject<HTMLDivElement | null>, close: () => void) 
     }, [menu]);
 }
 
+function ProcessIcon({ process }: { process: string }) {
+    const icon = processIcon(process);
+    if (!icon) return <IconGlobe size={13} />;
+    return <ThemeIcon icon={icon} size={14} />;
+}
+
+function OwnerIcon({ owner }: { owner: ProjectPort["owner"] }) {
+    const agentId = useStore((state) => (owner.reveal?.kind === "agent" && state.agents[owner.reveal.agentId] ? owner.reveal.agentId : undefined));
+    if (agentId) return <AgentMark agentId={agentId} cli={null} size={11} />;
+    if (owner.kind === "task") return <IconRun size={11} />;
+    if (owner.kind === "agent") return <IconAgent size={11} />;
+    return <IconTerminal size={11} />;
+}
+
 function PortRow({ port, deskAgent, deskTitle, close }: { port: ProjectPort; deskAgent: string | null; deskTitle: string; close: () => void }) {
     const act = (work: () => void) => () => {
         close();
         work();
     };
+    const open = act(() => (deskAgent ? openPortOnDesk(deskAgent, port.url) : openPortExternally(port.url)));
     const { owner } = port;
     return (
         <div className="tb-port">
             <button
                 className="tb-port-open"
                 role="menuitem"
-                onClick={act(() => (deskAgent ? openPortOnDesk(deskAgent, port.url) : openPortExternally(port.url)))}
+                onClick={open}
+                onKeyDown={(event) => {
+                    if (!hasPrimaryModifier(event)) return;
+                    if (event.key === "c") {
+                        event.preventDefault();
+                        act(() => copyPortUrl(port.url))();
+                    } else if (event.key === "Enter" && deskAgent) {
+                        event.preventDefault();
+                        act(() => openPortExternally(port.url))();
+                    }
+                }}
                 aria-label={deskAgent ? `Open localhost:${port.port} on ${deskTitle}'s desk` : `Open localhost:${port.port} in your browser`}>
-                <span className="tb-port-line">
-                    <span className="tb-port-addr">localhost:{port.port}</span>
-                    {port.preview && <span className="tb-port-tag">preview</span>}
+                <span className="tb-port-lead" title={port.process || undefined}>
+                    <ProcessIcon process={port.process} />
                 </span>
-                <span className="tb-port-meta">
-                    {port.process || "process"} · {owner.label}
+                <span className="tb-port-addr">
+                    :{port.port}
+                    {port.preview && <span className="tb-port-preview" title="Preview" />}
+                </span>
+                <span className="tb-port-owner">
+                    <span className="tb-port-owner-icon">
+                        <OwnerIcon owner={owner} />
+                    </span>
+                    <span className="tb-port-owner-label">{owner.label}</span>
                 </span>
             </button>
             <span className="tb-port-actions">
@@ -59,6 +95,7 @@ function PortRow({ port, deskAgent, deskTitle, close }: { port: ProjectPort; des
                         <button
                             className="tb-port-action"
                             role="menuitem"
+                            tabIndex={-1}
                             aria-label="Open in your browser"
                             onClick={act(() => openPortExternally(port.url))}>
                             <IconExternal size={12} />
@@ -66,7 +103,7 @@ function PortRow({ port, deskAgent, deskTitle, close }: { port: ProjectPort; des
                     </Tooltip>
                 )}
                 <Tooltip label="Copy URL" side="left">
-                    <button className="tb-port-action" role="menuitem" aria-label="Copy URL" onClick={act(() => copyPortUrl(port.url))}>
+                    <button className="tb-port-action" role="menuitem" tabIndex={-1} aria-label="Copy URL" onClick={act(() => copyPortUrl(port.url))}>
                         <IconCopy size={12} />
                     </button>
                 </Tooltip>
@@ -75,6 +112,7 @@ function PortRow({ port, deskAgent, deskTitle, close }: { port: ProjectPort; des
                         <button
                             className="tb-port-action"
                             role="menuitem"
+                            tabIndex={-1}
                             aria-label={`Show ${owner.label}`}
                             onClick={act(() => revealPortOwner(owner.reveal!))}>
                             {owner.kind === "agent" ? <IconAgent size={12} /> : <IconWindow size={12} />}
@@ -96,12 +134,37 @@ export function PortsMenu({ sessionId, ports, close }: { sessionId: string; port
             <div className="env-dd-scrim" onClick={close} />
             <div className="env-dd-menu tb-ports-menu" role="menu" aria-label="Listening ports" ref={menu} data-overlay>
                 <div className="tb-ports-head">
-                    <span className="tb-ports-title">Listening</span>
-                    <span className="tb-ports-hint">{deskAgent ? `opens on ${deskTitle}'s desk` : "no agent running · opens in your browser"}</span>
+                    {deskAgent ? (
+                        <>
+                            <IconAgent size={12} />
+                            <span>Opens on</span>
+                            <span className="tb-ports-desk">{deskTitle}</span>
+                        </>
+                    ) : (
+                        <>
+                            <IconGlobe size={12} />
+                            <span>No agent running · opens in your browser</span>
+                        </>
+                    )}
                 </div>
-                {ports.map((port) => (
-                    <PortRow key={port.port} port={port} deskAgent={deskAgent} deskTitle={deskTitle} close={close} />
-                ))}
+                <div className="tb-ports-rows">
+                    {ports.map((port) => (
+                        <PortRow key={port.port} port={port} deskAgent={deskAgent} deskTitle={deskTitle} close={close} />
+                    ))}
+                </div>
+                <div className="tb-ports-keys" aria-hidden="true">
+                    <span>
+                        <kbd>{ENTER_GLYPH}</kbd> open
+                    </span>
+                    <span>
+                        <kbd>{PRIMARY_SHORTCUT}C</kbd> copy
+                    </span>
+                    {deskAgent && (
+                        <span>
+                            <kbd>{`${PRIMARY_SHORTCUT}${ENTER_GLYPH}`}</kbd> browser
+                        </span>
+                    )}
+                </div>
             </div>
         </>
     );

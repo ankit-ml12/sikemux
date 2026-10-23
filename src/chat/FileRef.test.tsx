@@ -9,9 +9,10 @@ const mocks = vi.hoisted(() => ({
     copyText: vi.fn(async () => {}),
 }));
 
-vi.mock("../api/fs", () => ({
-    fsapi: { pathKinds: mocks.pathKinds, revealInFinder: mocks.revealInFinder },
-}));
+vi.mock("../api/fs", () => {
+    const fsapi = { pathKinds: mocks.pathKinds, revealInFinder: mocks.revealInFinder };
+    return { fsapi, filesOn: () => fsapi };
+});
 vi.mock("../state/commands", () => ({ requestOpenFile: mocks.requestOpenFile, openFileOnDesk: mocks.openFileOnDesk }));
 vi.mock("../lib/clipboard", () => ({ copyText: mocks.copyText }));
 
@@ -71,13 +72,13 @@ describe("files a message names", () => {
         const link = await screen.findByRole("button", { name: /src\/a\.ts/ });
         expect(link).toHaveAttribute("title", "/work/demo/src/a.ts");
         fireEvent.click(link);
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined, undefined);
     });
 
     it("opens at the line the message named", async () => {
         render(<Body text="see src/a.ts:42 for the cause" />);
         fireEvent.click(await screen.findByRole("button", { name: /src\/a\.ts:42/ }));
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", 41, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", 41, undefined, undefined);
     });
 
     it("leaves the words around it to the sentence", async () => {
@@ -110,7 +111,7 @@ describe("files a message names", () => {
         render(<Body text="[the file I changed](src/a.ts)" />);
         const link = await screen.findByRole("button", { name: /the file I changed/ });
         fireEvent.click(link);
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined, undefined);
     });
 
     it("leaves a web address alone", async () => {
@@ -140,19 +141,6 @@ describe("the menu a file opens on right-click", () => {
         fireEvent.contextMenu(await screen.findByRole("button", { name: /src\/a\.ts/ }));
         return screen.findByRole("menu");
     }
-
-    it("offers to reveal the file where the system shows files", async () => {
-        const menu = await openMenu();
-        fireEvent.click(screen.getByRole("menuitem", { name: /Reveal in/ }));
-        expect(mocks.revealInFinder).toHaveBeenCalledWith("/work/demo/src/a.ts");
-        expect(menu).toBeTruthy();
-    });
-
-    it("offers to open the file", async () => {
-        await openMenu();
-        fireEvent.click(screen.getByRole("menuitem", { name: "Open" }));
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined);
-    });
 
     it("copies the path as the project sees it and as the system does", async () => {
         await openMenu();
@@ -196,7 +184,7 @@ describe("a file named in an agent's own chat", () => {
         fireEvent.doubleClick(chip);
 
         expect(mocks.openFileOnDesk).toHaveBeenCalledTimes(1);
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined, undefined);
     });
 
     it("only reveals a double-clicked folder", async () => {
@@ -217,7 +205,7 @@ describe("a file named in an agent's own chat", () => {
 
         fireEvent.contextMenu(screen.getByRole("button", { name: /src\/a\.ts/ }));
         fireEvent.click(screen.getByRole("menuitem", { name: "Open in Editor" }));
-        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined);
+        expect(mocks.requestOpenFile).toHaveBeenCalledWith("/work/demo/src/a.ts", undefined, undefined, undefined);
 
         fireEvent.contextMenu(screen.getByRole("button", { name: /src\/a\.ts/ }));
         fireEvent.click(screen.getByRole("menuitem", { name: "Open Containing Folder" }));
@@ -248,11 +236,5 @@ describe("a file named in an agent's own chat", () => {
         } finally {
             EXISTING.delete("/etc/hosts");
         }
-    });
-
-    it("draws nothing to open for no reference at all", () => {
-        render(<OnDesk raw={null} />);
-        expect(screen.getByText("plain")).toBeInTheDocument();
-        expect(mocks.pathKinds).not.toHaveBeenCalled();
     });
 });

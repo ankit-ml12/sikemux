@@ -1,13 +1,7 @@
-import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
-import { invalidate } from "../../plugin-api/resources";
-import { RUNDECK_PLUGIN_ID } from "./kinds";
+import { createPluginBackend, isPluginFailure, type PluginStreamHandlers } from "../../plugin-api/backend";
+import { RUNDECK_PLUGIN } from "./kinds";
 
-const backend = createPluginBackend(RUNDECK_PLUGIN_ID);
-
-export function isAuthFailure(error: unknown): boolean {
-    if (!isPluginFailure(error)) return false;
-    return error.category === "auth" || error.category === "unconfigured" || (error.category === "http" && error.status === 401);
-}
+const backend = createPluginBackend(RUNDECK_PLUGIN.id);
 
 const FORBIDDEN_ACTION: Record<string, string> = {
     projects: "list projects",
@@ -24,12 +18,10 @@ const FORBIDDEN_ACTION: Record<string, string> = {
     plan: "read this job's executions",
 };
 
-/** A lapsed sign-in makes every cached answer stale, so the next read asks again and lands on the login form. */
 async function rndInvoke<T>(method: string, params?: unknown): Promise<T> {
     try {
         return await backend.call<T>(method, params);
     } catch (error) {
-        if (isAuthFailure(error)) invalidate((kind) => kind.startsWith("rnd."));
         if (isPluginFailure(error, "forbidden")) {
             const action = FORBIDDEN_ACTION[method] ?? "do that";
             throw { ...error, message: `You don't have permission to ${action}. ${error.message}`.trim() };
@@ -38,21 +30,16 @@ async function rndInvoke<T>(method: string, params?: unknown): Promise<T> {
     }
 }
 
-export function errorMessage(error: unknown): string {
-    if (typeof error === "object" && error && "message" in error) return String((error as { message: unknown }).message);
-    return String(error);
-}
-
 export interface RundeckStatus {
     configured: boolean;
     url: string;
     user: string;
-    token_present: boolean;
-    rundeck_version: string | null;
+    tokenPresent: boolean;
+    rundeckVersion: string | null;
     ok: boolean;
-    auth_failed: boolean;
+    authFailed: boolean;
     message: string | null;
-    allow_insecure_private_http: boolean;
+    allowInsecurePrivateHttp: boolean;
 }
 
 export interface RundeckLoginRequest {
@@ -188,6 +175,11 @@ export interface RundeckExecution {
     workflowState?: RundeckWorkflowState | null;
 }
 
+export interface ProjectExecutions {
+    executions: RundeckExecution[];
+    total: number | null;
+}
+
 export type LogLevel = "DEBUG" | "VERBOSE" | "INFO" | "WARN" | "ERROR";
 
 export interface RunRequest {
@@ -268,7 +260,6 @@ export interface PlanRequest {
     service: string;
     targetBranch: string;
     repoPath: string;
-    branchOptions: string[];
 }
 
 export interface PlanResult {
@@ -289,6 +280,12 @@ export interface PlanResult {
     push_action: PushAction;
 }
 
+/** The lists people edit in the plugin's settings, kept by the core. */
+export interface RundeckLists {
+    branchOptions: string[];
+    prodEnvs: string[];
+}
+
 export const rundeckApi = {
     status: () => backend.call<RundeckStatus>("status"),
     login: (req: RundeckLoginRequest) => rndInvoke<RundeckLoginResult>("login", req),
@@ -300,22 +297,22 @@ export const rundeckApi = {
     jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
     jobDetail: (jobId: string) => rndInvoke<JobDetail>("jobDetail", { jobId }),
     optionValues: (url: string) => rndInvoke<OptionValue[]>("optionValues", { url }),
-    branchesMatrix: (project: string, branchOptions: string[]) => rndInvoke<MatrixResult>("branchesMatrix", { project, branchOptions }),
-    jobCells: (jobs: RundeckJob[], branchOptions: string[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs, branchOptions }),
+    branchesMatrix: (project: string) => rndInvoke<MatrixResult>("branchesMatrix", { project }),
+    jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
+    lists: () => backend.call<RundeckLists>("lists"),
+    setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),
 
     executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
         rndInvoke<RundeckExecution[]>("executions", { jobId, project, max, onlySucceeded }),
+    projectExecutions: (project: string, max: number, offset: number) => rndInvoke<ProjectExecutions>("projectExecutions", { project, max, offset }),
     execution: (executionId: number) => rndInvoke<RundeckExecution>("execution", { executionId }),
     executionState: (executionId: number) => rndInvoke<RundeckWorkflowState>("executionState", { executionId }),
     run: (req: RunRequest) => rndInvoke<RunResult>("run", req),
     abort: (executionId: number) => rndInvoke<AbortResult>("abort", { executionId }),
 
-    watchStart: (executionId: number, onUpdate: (u: WatchUpdate) => void) => backend.openStream("watch", { executionId }, onUpdate),
-    watchStop: (id: number) => backend.closeStream(id),
-
-    logsStart: (executionId: number, offset: string | null, backlog: number | null, onChunk: (c: LogTick) => void) =>
-        backend.openStream("logs", { executionId, offset, backlog }, onChunk),
-    logsStop: (id: number) => backend.closeStream(id),
+    watch: (executionId: number, handlers: PluginStreamHandlers<WatchUpdate>) => backend.stream("watch", { executionId }, handlers),
+    logs: (executionId: number, offset: string | null, handlers: PluginStreamHandlers<LogTick>) =>
+        backend.stream("logs", { executionId, offset, backlog: null }, handlers),
 
     plan: (req: PlanRequest) => rndInvoke<PlanResult>("plan", req),
 };

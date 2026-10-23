@@ -1,0 +1,75 @@
+---
+title: Run, test and build
+description: "The run button, the tasks Sikemux finds in your build files, and the Java it picks for them."
+---
+
+The run button sits in the top bar of a project. Press **Run** to run the task beside it, **Stop** to stop it, and click the task's name to pick another one. Its menu groups the tasks by the folder they come from, and lists under **Running now** everything else in the project that listens on a port, with who started it, you or an agent, and a ■ to stop it.
+
+## Tasks Sikemux finds for you
+
+Sikemux reads the build files at the project's root and in the folders just inside it, so a project needs no setup to run:
+
+| Build file | Tasks |
+| --- | --- |
+| `pom.xml` | Spring Boot: run, Maven: test, Maven: package |
+| `build.gradle` or `build.gradle.kts` | Spring Boot: bootRun, Gradle: run, Gradle: test, Gradle: build |
+| `package.json` | Its scripts, `dev` and `start` first, run with the package manager its lockfile names: npm, pnpm, Yarn or Bun |
+| `Cargo.toml` | Cargo: run (and one per file in `src/bin`), Cargo: test, Cargo: build |
+| `pyproject.toml`, `requirements.txt` or `manage.py` | The FastAPI or Flask app it finds, or Django's runserver, and pytest; run with the project's `.venv`, uv or Poetry |
+| `go.mod` | Go: run (and one per folder in `cmd/`), Go: test, Go: build |
+
+Spring Boot tasks appear only when the build uses Spring Boot. A project's own `./mvnw` or `./gradlew` is used when it has one. Tasks from a [`sikemux.json`](/getting-started/projects/#project-config) come first in the list.
+
+## Your own tasks
+
+When a project starts with its own script, such as `bash tool/run.sh`, add it from the run button's menu with **Add a task**: a name, the command and the folder it runs in. **For the team** saves it in `sikemux.json`, which you commit; **Only me** keeps it in a `.sikemux` folder that Git ignores, and it comes along into agent worktrees. Either way it comes first in the menu, and agents see it in `workspace_inspect`. Change or remove it in [project settings](/getting-started/projects/#project-settings). A task in `.sikemux` that you did not add here, such as one a cloned project brought with it, shows its command and asks before it runs, as `sikemux.json` does.
+
+**Find tasks with an agent** asks an agent to read the README, AGENTS.md and the project's scripts and add the commands people really use to `sikemux.json`. The request lands in the agent's input; press Return to send it.
+
+## Checked before it runs
+
+Before a task starts, Sikemux checks that its build tool is installed, that a new enough Java exists, that a Node.js project's dependencies are installed, and that the port a Spring Boot, Next.js, FastAPI, Flask or Django app listens on is free, whichever program holds it. If something is missing, a card opens under the run button with what it found; **Install and run** installs the missing pieces, with Homebrew or the project's package manager, and starts the task, **Fix and run** moves the app to the next free port when its own is taken, and **Run anyway** skips the check.
+
+Agents get the same tasks and the same check: `workspace_inspect` lists the tasks found in the build files, and `task_start` runs them, or says what is missing. When a task an agent started stops with an error, such as a dev server crashing, Sikemux tells that agent so it can look at the output.
+
+## The right Java for each project
+
+Sikemux reads the Java version a project asks for, from `.java-version`, `.sdkmanrc` or `.tool-versions`, or else from `pom.xml` or the Gradle build. It runs the task on that version if you have it, on your own Java if that is new enough, or on the closest newer one it finds: Homebrew, `/Library/Java`, SDKMAN, mise, asdf and Gradle's downloads all count. Only the task gets that Java; your terminals keep your `JAVA_HOME`.
+
+The run button shows the Java it picked. If nothing installed is new enough, the check offers to install the version the project needs.
+
+## While it runs
+
+The run button shows how the task is doing:
+
+- a spinner and a timer while it starts,
+- a green dot and the port once it is listening, with **Open localhost** in its menu,
+- a red dot and its exit code if it stops with an error, with **Why?** to open its output.
+
+## Test results
+
+When a Maven, Gradle, Vitest, Jest, pytest, Go or Cargo test task finishes, the run button shows how many tests failed or passed, read from the reports the test runner writes; Go and Cargo write none, so their test tasks keep a copy of the output, in a `.sikemux` folder that Git ignores or in Cargo's `target`. If any failed, a card lists them with the message and a link to the line that failed; **Rerun failed** runs only those tests again, and **Fix with an agent** hands just those failures to an agent you pick. When a task stops with an error, **Why?** shows the same choice. Agents read the same results from `workspace_inspect`.
+
+## Agents in their own worktrees
+
+An agent can start a teammate in a worktree of its own, so each builds and tests apart from the others' unfinished work; the teammate lands its commits on your branch when its piece is done, merged into any file you changed and have not committed. A new agent worktree gets the files a fresh checkout is missing but needs to run: the `.env` files at its root and one folder down, or the files a `.worktreeinclude` at the project's root lists, one path or pattern per line.
+
+On a macOS host, a new worktree also starts warm: Cargo's `target` and each `node_modules` whose lockfile matches your checkout's arrive as copy-on-write clones of yours, so its first build redoes only what differs instead of everything. A clone takes about a second, uses no disk until one side changes a file, and goes away with the worktree; each worktree installs into its own `node_modules`, never into yours. A folder Git ignores that you list in `.worktreeinclude`, such as Gradle's `build` or `.turbo`, is cloned the same way. Python environments and CMake build folders are never cloned, even when listed: they keep pointing at your checkout, so a `pip install` or a build there would change yours. A `target` is skipped while Cargo is building in it, and nothing is cloned when the worktree is on another disk. On other hosts, each `node_modules` whose lockfile matches is linked to yours instead, so installing there changes yours.
+
+When an agent starts a Spring Boot, Next.js, FastAPI or Flask app and its port is taken, often by another agent's copy, Sikemux runs it on the next free port and tells the agent where.
+
+## Builds take turns
+
+When several agents build at once, their Rust builds share one pool of jobs, one fewer than the host has cores, instead of each starting a job per core. Cargo, rustc and the C compilers that build scripts start draw from it, so builds take turns rather than slowing each other down. When the host runs short of memory, the pool shrinks to half, or to a single job, until memory frees up.
+
+## A check on every commit
+
+When `sikemux.json` names a `check` command, which you can set under **Check** on the project settings' Tasks page, Sikemux runs it on each commit as committed, in a checkout of its own beside the project, so the work agents have not committed yet never decides the result. The agents whose commits it failed after hear at once; you hear if the project stays broken for 15 minutes. Files a project builds from its other files and commits, such as generated types, go in `sikemux.json` under `generate`, with the command that makes them and the files it writes: after each commit Sikemux runs it there and commits what changed, so agents never commit them by hand.
+
+## Review an agent's work
+
+When an agent works in its own worktree, its branch shows under it in the agent list. Click the branch to see what it did: its last message, the files it changed, its latest test results and the address its server is running at. From there, open the preview on its desk, or send the failing tests back to it.
+
+## Java code navigation
+
+Opening a `.java` file starts the Java language server, `jdtls`, for go-to-definition, references and errors. If it isn't installed, Sikemux offers to install it with Homebrew. It needs Java 21 or newer to run, and Sikemux starts it on one even when your `JAVA_HOME` is older.

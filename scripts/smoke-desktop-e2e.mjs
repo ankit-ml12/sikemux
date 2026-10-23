@@ -7,6 +7,7 @@ import {
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rm,
   stat,
@@ -21,35 +22,29 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_PROTOCOL_VERSION = Number(
   (
     await readFile(
-      join(root, "src-tauri/crates/sikemux-core/src/protocol.rs"),
+      join(root, "src-tauri/crates/sikemux-wire/src/protocol.rs"),
       "utf8",
     )
   ).match(/pub const PROTOCOL_VERSION: u32 = (\d+);/)?.[1],
 );
 if (!Number.isInteger(CORE_PROTOCOL_VERSION))
-  throw new Error("could not read PROTOCOL_VERSION from sikemux-core");
+  throw new Error("could not read PROTOCOL_VERSION from sikemux-wire");
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
+const e2eTarget = join(root, "src-tauri", "target", "e2e");
 const appExecutable = resolve(
   process.env.SIKEMUX_E2E_APP ??
-    join(
-      root,
-      "src-tauri",
-      "target",
-      "e2e",
-      "debug",
-      `sikemux${executableSuffix}`,
-    ),
+    join(e2eTarget, "debug", `sikemux${executableSuffix}`),
 );
 const cliExecutable = resolve(
   process.env.SIKEMUX_E2E_CLI ??
-    join(
-      root,
-      "src-tauri",
-      "target",
-      "e2e",
-      "debug",
-      `sikemux-editor${executableSuffix}`,
-    ),
+    join(e2eTarget, "debug", `sikemux-host${executableSuffix}`),
+);
+// A stand-in chat agent that speaks just enough ACP, so a chat runs in the
+// core without a provider, an account or the network.
+const fakeAgent = join(
+  e2eTarget,
+  "debug",
+  `sikemux-fake-acp-agent${executableSuffix}`,
 );
 
 const exerciseHarnessTasks = process.argv.includes("--tasks");
@@ -99,20 +94,25 @@ const READY_TIMEOUT_MS = 20_000;
 const OPEN_TIMEOUT_MS = 70_000;
 const PERSIST_TIMEOUT_MS = 10_000;
 const MAX_LOG_BYTES = 64 * 1024;
+const startedAt = Date.now();
+
+function report(message) {
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log(`[${seconds}s] ${message}`);
+}
 
 function fail(message, appLog = "") {
   const suffix = appLog.trim() ? `\n\nDesktop output:\n${appLog.trim()}` : "";
   throw new Error(`desktop E2E smoke failed: ${message}${suffix}`);
 }
 
-function run(executable, args, env, timeout, argv0) {
+function run(executable, args, env, timeout) {
   const result = spawnSync(executable, args, {
     cwd: root,
     env,
     encoding: "utf8",
     timeout,
     windowsHide: true,
-    ...(argv0 ? { argv0 } : {}),
   });
   return {
     status: result.status,
@@ -137,7 +137,12 @@ function delay(milliseconds) {
 async function waitFor(description, timeout, predicate) {
   const started = Date.now();
   while (Date.now() - started < timeout) {
-    if (await predicate()) return;
+    if (await predicate()) {
+      const took = Date.now() - started;
+      if (took >= 2_000)
+        report(`${description} took ${(took / 1000).toFixed(1)}s`);
+      return;
+    }
     await delay(100);
   }
   fail(`${description} did not complete within ${timeout} ms`);
@@ -405,36 +410,113 @@ function numberOf(elements, label) {
   return index;
 }
 
-// The fixture server lives in this process, so a CLI call must not block its event loop.
-function runWhileServing(executable, args, env, timeout) {
-  return new Promise((resolveRun) => {
-    const child = spawn(executable, args, { cwd: root, env, timeout });
+// The core answers a tool call as the agent whose processes make it, so the
+// browser calls run from a relay the core starts as an agent's terminal.
+const RELAY = `import { createServer } from "node:net";
+import { spawn } from "node:child_process";
+const [socket, cli] = process.argv.slice(2);
+createServer((connection) => {
+  let input = "";
+  connection.on("data", (chunk) => {
+    input += chunk;
+    if (!input.endsWith("\\n")) return;
+    const { args, env } = JSON.parse(input);
+    const child = spawn(cli, args, { env });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => resolveRun({ error, stdout, stderr }));
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", (error) => connection.end(JSON.stringify({ error: error.message })));
     child.on("close", (status, signal) =>
-      resolveRun({ status, signal, stdout, stderr }),
+      connection.end(JSON.stringify({ status, signal, stdout, stderr })),
     );
   });
+}).listen(socket);
+`;
+
+async function startAgentRelay(agentId) {
+  const script = join(temporaryRoot, "relay.mjs");
+  const socket = join(temporaryRoot, "relay.sock");
+  await writeFile(script, RELAY, "utf8");
+  const core = await openCore(coreSocket);
+  const spawned = await core.request(
+    {
+      op: "spawn",
+      launch: { version: "e2e", cliExecutable: null, cliEndpoint: null },
+      target: {
+        kind: "terminal",
+        cols: 80,
+        rows: 24,
+        cwd: project,
+        startup: null,
+        directCommand: {
+          program: process.execPath,
+          args: [script, socket, cliExecutable],
+          profile: null,
+        },
+        context: {
+          sessionId: "e2e",
+          sessionName: "e2e",
+          sessionKind: "project",
+          project,
+          windowId: null,
+          paneId: null,
+          agentId,
+          agentType: "e2e",
+        },
+        env: {},
+        continues: null,
+      },
+    },
+    10_000,
+  );
+  const id = spawned?.response?.id;
+  if (!id)
+    fail(
+      `the core did not start the agent relay: ${JSON.stringify(spawned)}`,
+      desktopLog,
+    );
+  await waitFor("the agent relay to listen", READY_TIMEOUT_MS, () =>
+    stat(socket).then(
+      (details) => details.isSocket(),
+      () => false,
+    ),
+  );
+  const run = (args, env) =>
+    new Promise((resolveRun) => {
+      const connection = connect(socket);
+      let reply = "";
+      connection.on("data", (chunk) => {
+        reply += chunk;
+      });
+      connection.on("error", (error) => resolveRun({ error }));
+      connection.on("end", () => resolveRun(JSON.parse(reply)));
+      connection.write(`${JSON.stringify({ args, env })}\n`);
+    });
+  const stop = async () => {
+    await core.request({ op: "kill", id }, 5_000);
+    core.close();
+  };
+  return { run, stop };
 }
 
 // Each step is its own CLI process, so element numbers must survive between calls.
 async function exerciseBrowserTools(harnessEnv) {
-  const env = { ...harnessEnv, SIKEMUX_AGENT_ID: BROWSER_AGENT_ID };
+  const relay = await startAgentRelay(BROWSER_AGENT_ID);
+  try {
+    await driveBrowser(relay, harnessEnv);
+  } finally {
+    await relay.stop();
+  }
+}
+
+async function driveBrowser(relay, env) {
   const tool = async (method, params = {}) => {
-    const result = await runWhileServing(
-      cliExecutable,
+    const result = await relay.run(
       ["tool", method, JSON.stringify(params)],
       env,
-      70_000,
     );
-    if (result.error) fail(`${method}: ${result.error.message}`, desktopLog);
+    if (result.error) fail(`${method}: ${result.error}`, desktopLog);
     if (result.status !== 0) fail(`${method}: ${result.stderr}`, desktopLog);
     return JSON.parse(result.stdout);
   };
@@ -497,12 +579,15 @@ async function exerciseBrowserTools(harnessEnv) {
     const title = await evaluate("document.title");
     if (title !== FIXTURE_TITLE) fail(`evaluate returned ${title}`, desktopLog);
 
+    const clicked = Date.now();
     await tool("browser.click", { selector: "#later" });
+    const clickTook = Date.now() - clicked;
     const waited = await tool("browser.wait", {
       text: "Loaded late",
       timeoutMs: 5000,
     });
-    if (!waited.met || waited.waitedMs < 100)
+    // On a slow runner the click can return after the text's 800 ms delay, leaving nothing to wait for.
+    if (!waited.met || (waited.waitedMs < 100 && clickTook < 700))
       fail(`wait for text returned ${JSON.stringify(waited)}`, desktopLog);
     const missing = await tool("browser.wait", {
       selector: "#never",
@@ -592,7 +677,7 @@ async function exerciseBrowserTools(harnessEnv) {
     server.close();
     server.closeAllConnections();
   }
-  console.log(
+  report(
     "✓ Browser harness E2E passed: navigate, state, click by number across calls, find, click by text, type, screenshot, evaluate, wait on conditions, click by point, reload, Meta+a and replace, element screenshot, desktop viewport, local file",
   );
 }
@@ -641,6 +726,33 @@ async function stateMentions(text) {
     ),
   );
   return contents.some((bytes) => bytes.includes(text));
+}
+
+// The core keeps every agent, with the terminal it runs in, in its workspace.json.
+async function coreWorkspaceMentions(text) {
+  const files = (await readdir(isolatedHome, { recursive: true })).filter(
+    (path) => path.endsWith("workspace.json"),
+  );
+  const contents = await Promise.all(
+    files.map((path) =>
+      readFile(join(isolatedHome, path), "utf8").catch(() => ""),
+    ),
+  );
+  return contents.some((json) => json.includes(text));
+}
+
+async function coreWorkspaceAgents() {
+  const files = (await readdir(isolatedHome, { recursive: true })).filter(
+    (path) => path.endsWith("workspace.json"),
+  );
+  const saved = await Promise.all(
+    files.map((path) =>
+      readFile(join(isolatedHome, path), "utf8")
+        .then((json) => JSON.stringify(JSON.parse(json).agents ?? null))
+        .catch((error) => String(error)),
+    ),
+  );
+  return `${files.join(", ")}: ${saved.join(" ")}`;
 }
 
 async function coreSession(core, id) {
@@ -699,9 +811,9 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   const { cursor } = json(tool("workspace.inspect"), "harness inspect");
 
   await quitDesktop();
-  const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-  if (!/its window is closed/u.test(status.stdout))
-    fail(`status did not say the window is closed: ${status.stdout}`);
+  const status = hostStatus();
+  if (status.running !== true || status.window !== false)
+    fail(`status did not say the window is closed: ${JSON.stringify(status)}`);
   const read = json(
     tool("task.read", { executionId: started.executionId, plain: true }),
     "task.read with the window closed",
@@ -728,7 +840,7 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
     "workspace.inspect with the window closed",
   );
   if (
-    inspected.window !== null ||
+    "windows" in inspected ||
     !inspected.note ||
     !inspected.runs.some((run) => run.executionId === started.executionId)
   )
@@ -742,7 +854,7 @@ async function exerciseHarnessWithWindowClosed(harnessEnv) {
   );
   if (!resumed.events.some((event) => event.kind === "task.stopped"))
     fail("an event cursor did not survive the relaunch");
-  console.log(
+  report(
     "Harness with the window closed passed: task.read, task.stop, events.wait and inspect answered by the core, cursor kept across relaunch",
   );
 }
@@ -775,7 +887,20 @@ async function exerciseQuitKeepsTerminals() {
     "the pane's terminal saved in the layout",
     PERSIST_TIMEOUT_MS,
     () => stateMentions(`"ptyId":${shell.id}`),
-  );
+  ).catch(async (error) => {
+    const saved = await Promise.all(
+      [stateDatabase, `${stateDatabase}-wal`].map((path) =>
+        readFile(path, "latin1").catch(() => ""),
+      ),
+    );
+    const terminals = [
+      ...new Set(saved.join("").match(/"ptyId":\d+/g) ?? []),
+    ].join(", ");
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; terminal ${JSON.stringify(shell)}, terminals the saved state names: ${terminals || "none"}`,
+      desktopLog,
+    );
+  });
 
   await quitDesktop();
 
@@ -816,36 +941,10 @@ async function exerciseQuitKeepsTerminals() {
   if (!replay.includes("kept-45"))
     fail("the reattached terminal lost its earlier output", desktopLog);
   watcher.close();
-  console.log(
+  report(
     `Quit and relaunch passed: terminal ${shell.id} (pid ${shell.pid}) kept running and its pane took it back with its output`,
   );
   return shell;
-}
-
-// A stand-in chat agent that speaks just enough ACP, so a chat runs in the
-// core without a provider, an account or the network.
-function buildFakeAgent() {
-  const built = run(
-    "cargo",
-    [
-      "build",
-      "--manifest-path",
-      join(root, "src-tauri", "Cargo.toml"),
-      "-p",
-      "sikemux-core",
-      "--bin",
-      "sikemux-fake-acp-agent",
-    ],
-    process.env,
-    600_000,
-  );
-  if (built.status !== 0)
-    fail(`could not build the stand-in chat agent: ${built.stderr}`);
-  return join(
-    process.env.CARGO_TARGET_DIR ?? join(root, "src-tauri", "target"),
-    "debug",
-    `sikemux-fake-acp-agent${executableSuffix}`,
-  );
 }
 
 const CHAT_AGENT_ID = "e2e-chat";
@@ -983,7 +1082,7 @@ async function exerciseChatKeepsGoing(fakeAgent) {
   )
     fail("the answered permission did not reach the chat", desktopLog);
   watcher.close();
-  console.log(
+  report(
     `Chat with the app closed passed: chat ${CHAT_AGENT_ID} finished its turn, held a permission request and came back with its replay`,
   );
   return sessionId;
@@ -1002,20 +1101,6 @@ async function expectChatResumed(sessionId) {
       desktopLog,
     );
   watcher.close();
-}
-
-// The app stops a chat no pane shows once the launch grace is over.
-async function expectUnshownChatStopped() {
-  const watcher = await openCore(coreSocket);
-  await waitFor(
-    "the app to stop the chat no pane took back",
-    45_000,
-    async () => !(await coreChat(watcher)),
-  );
-  watcher.close();
-  console.log(
-    `Unclaimed chat passed: the app stopped chat ${CHAT_AGENT_ID}, which no pane showed`,
-  );
 }
 
 // A sidecar that reports another build, so the core has something newer to
@@ -1094,7 +1179,7 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   await waitForBroker(desktop);
   await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
   await expectChatResumed(chatSession);
-  console.log(
+  report(
     `Update on launch passed: core ${corePid} now runs e2e-next, terminal ${shell.id} (pid ${shell.pid}) kept running with its output and chat ${CHAT_AGENT_ID} resumed on its session`,
   );
 
@@ -1108,7 +1193,7 @@ async function exerciseUpdateKeepsTerminals(shell, chatSession) {
   // The open app finds its core on another build and moves it back to its
   // own sidecar, in the same process again.
   await expectTerminalKept(shell, corePid, "e2e-next", "updated-64");
-  console.log(
+  report(
     `Update while open passed: the app reconnected to core ${corePid}, updated it back to its own build and took terminal ${shell.id} back`,
   );
 }
@@ -1162,6 +1247,8 @@ async function expectTuiAgentResumed(core, previous, runs) {
     "the terminal agent to come back in a new terminal",
     READY_TIMEOUT_MS,
     async () => Boolean((resumed = await tuiAgentSession(core, previous))),
+  ).catch((error) =>
+    fail(error.message.replace("desktop E2E smoke failed: ", ""), desktopLog),
   );
   if (await coreSession(core, previous))
     fail("the crashed agent's old terminal was left behind", desktopLog);
@@ -1193,7 +1280,7 @@ async function exerciseTerminalAgentResumes() {
   if (
     !openDeepLink(
       desktop.pid,
-      `sikemux://agent/pi/${TUI_AGENT_RESUME_ID}?project=${encodeURIComponent(project)}`,
+      `sikemux://agent/pi/${TUI_AGENT_RESUME_ID}?project=${encodeURIComponent(await realpath(project))}`,
     )
   ) {
     console.warn(
@@ -1205,7 +1292,13 @@ async function exerciseTerminalAgentResumes() {
   let first;
   await waitFor("the terminal agent to start", READY_TIMEOUT_MS, async () =>
     Boolean((first = await tuiAgentSession(core))),
-  );
+  ).catch(async (error) => {
+    const listed = await core.request({ op: "list" }, 5_000);
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; the core's terminals: ${JSON.stringify(listed?.response?.sessions ?? []).slice(0, 2_000)}`,
+      desktopLog,
+    );
+  });
   let screen = "";
   await waitFor("the terminal agent to print", 10_000, async () => {
     screen = await core.attachReplay(first.id);
@@ -1218,37 +1311,35 @@ async function exerciseTerminalAgentResumes() {
   );
   process.kill(first.pid, "SIGKILL");
   const second = await expectTuiAgentResumed(core, first.id, 2);
+  const secondStartedAt = Date.now();
   core.close();
   await waitFor(
-    "the resumed agent's terminal saved in the layout",
+    "the core to save the resumed agent's terminal",
     PERSIST_TIMEOUT_MS,
-    () => stateMentions(`"ptyId":${second.id}`),
+    () => coreWorkspaceMentions(`${second.id}`),
+  ).catch(async (error) =>
+    fail(
+      `${error.message.replace("desktop E2E smoke failed: ", "")}; terminal ${second.id}, saved agents: ${(await coreWorkspaceAgents()).slice(0, 2_000)}`,
+      desktopLog,
+    ),
   );
-  console.log(
+  report(
     `Terminal agent resume passed: agent terminal ${first.id} was killed and came back as ${second.id} below its old screen`,
   );
 
   await quitDesktop();
   const closed = await openCore(coreSocket);
+  // The core leaves an agent that crashes again within half a minute of coming back to the person.
+  await delay(Math.max(0, secondStartedAt + 31_000 - Date.now()));
   process.kill(second.pid, "SIGKILL");
-  await waitFor(
-    "the core to keep the crashed agent's terminal",
-    10_000,
-    async () => {
-      const ended = await coreSession(closed, second.id);
-      return ended && !ended.running && !ended.killed;
-    },
-  );
+  const third = await expectTuiAgentResumed(closed, second.id, 3);
   closed.close();
+  report(
+    `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the core resumed it as ${third.id}`,
+  );
 
   desktop = launchDesktop();
   await waitForBroker(desktop);
-  const watcher = await openCore(coreSocket);
-  const third = await expectTuiAgentResumed(watcher, second.id, 3);
-  watcher.close();
-  console.log(
-    `Terminal agent resume with the app closed passed: terminal ${second.id} crashed while Sikemux was closed and the next launch resumed it as ${third.id}`,
-  );
 }
 
 // Quit and Stop Everything ends what Quit left running, and the core with it.
@@ -1270,14 +1361,14 @@ async function exerciseQuitAndStopEverything(shell) {
     gone?.close();
     return !gone;
   });
-  console.log(
+  report(
     `Quit and Stop Everything passed${stopByMenu ? "" : " (by the core, not the menu)"}: terminal ${shell.id} and the core stopped`,
   );
 }
 
 await executableExists(appExecutable, "debug desktop executable");
 await executableExists(cliExecutable, "debug editor CLI");
-const fakeAgent = buildFakeAgent();
+await executableExists(fakeAgent, "stand-in chat agent");
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "sikemux-desktop-e2e-"));
 const isolatedHome = join(temporaryRoot, "home");
@@ -1361,6 +1452,7 @@ const isolatedEnvironment = {
   SIKEMUX_CLI_ENDPOINT_PUBLISH: endpoint,
   SIKEMUX_SIDECAR_PATH: cliExecutable,
   SIKEMUX_CORE_SOCKET: coreSocket,
+  SIKEMUX_RUN_WHEN_COVERED: "1",
 };
 delete isolatedEnvironment.SIKEMUX_APP_EXECUTABLE;
 // Run from a Sikemux agent terminal, this names an agent the test app has never seen.
@@ -1387,6 +1479,21 @@ function launchDesktop(environment = {}) {
   return child;
 }
 
+function hostStatus() {
+  const status = run(
+    cliExecutable,
+    ["status", "--json"],
+    isolatedEnvironment,
+    2_000,
+    "sikemux",
+  );
+  try {
+    return JSON.parse(status.stdout);
+  } catch {
+    return { running: false, window: null };
+  }
+}
+
 async function waitForBroker(child) {
   await waitFor(
     "the desktop window behind the CLI endpoint",
@@ -1399,18 +1506,50 @@ async function waitForBroker(child) {
           desktopLog,
         );
       }
-      const status = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-      return (
-        status.status === 0 &&
-        /^Sikemux \S+ is running\s*$/u.test(status.stdout)
-      );
+      const status = hostStatus();
+      return status.running === true && status.window === true;
     },
   );
 }
 
-let desktop = launchDesktop();
+// A dev build's core trusts the program that started it as Sikemux's own
+// window, so this smoke starts the core the app would, with the app's
+// arguments, and may then type into terminals, run chats and update the core.
+const appIdentifier = JSON.parse(
+  await readFile(join(root, "src-tauri", "tauri.e2e.conf.json"), "utf8"),
+).identifier;
+const appData =
+  process.platform === "darwin"
+    ? join(isolatedHome, "Library", "Application Support", appIdentifier)
+    : join(isolatedHome, ".local", "share", appIdentifier);
+const ownCore = spawn(
+  cliExecutable,
+  [
+    "core",
+    "--socket",
+    coreSocket,
+    "--cli-endpoint",
+    endpoint,
+    "--data-dir",
+    appData,
+  ],
+  { cwd: project, env: isolatedEnvironment, stdio: ["ignore", "pipe", "pipe"] },
+);
+for (const stream of [ownCore.stdout, ownCore.stderr])
+  stream.on("data", (chunk) => {
+    desktopLog = boundedAppend(desktopLog, chunk);
+  });
+let desktop;
 
 try {
+  await waitFor("the core to answer", READY_TIMEOUT_MS, async () => {
+    if (ownCore.exitCode !== null)
+      fail("the core exited as it started", desktopLog);
+    const core = await openCore(coreSocket).catch(() => null);
+    core?.close();
+    return Boolean(core);
+  });
+  desktop = launchDesktop();
   await waitForBroker(desktop);
 
   // The window registers with the core as soon as the app connects to it,
@@ -1426,7 +1565,6 @@ try {
   const keptShell = await exerciseQuitKeepsTerminals();
   const chatSession = await exerciseChatKeepsGoing(fakeAgent);
   await exerciseUpdateKeepsTerminals(keptShell, chatSession);
-  await expectUnshownChatStopped();
   await waitFor(
     "WebView boot and persistence after relaunch",
     PERSIST_TIMEOUT_MS,
@@ -1444,11 +1582,6 @@ try {
     ["open", "--project", project, `${source}:2:3`],
     isolatedEnvironment,
     OPEN_TIMEOUT_MS,
-    // The sidecar executable is named `sikemux-editor`, which deliberately
-    // defaults to --wait for $EDITOR callers. Exercise ordinary non-waiting
-    // `sikemux open` semantics by setting only argv[0], not by renaming or
-    // copying the signed sidecar.
-    "sikemux",
   );
   if (opened.error) fail(opened.error.message, desktopLog);
   if (opened.signal)
@@ -1495,7 +1628,7 @@ try {
   if (!(await core.output(shell.id, "core-42", 10_000)))
     fail("the project terminal did not run a command in the core", desktopLog);
   core.close();
-  console.log(
+  report(
     `Terminal core passed: pid ${core.hello.pid}, build ${core.hello.build.commit}, ${terminals.length} terminal(s)`,
   );
 
@@ -1558,7 +1691,7 @@ try {
       if (result.status !== 0) fail(`${method}: ${result.stderr}`, desktopLog);
       return JSON.parse(result.stdout);
     };
-    console.log(
+    report(
       "Waiting for fixture project trust in the isolated Sikemux window...",
     );
     const started = tool("task.start", {
@@ -1636,17 +1769,17 @@ try {
         .executionId !== started.executionId
     )
       fail("retry after stop spawned a new process");
-    console.log(
+    report(
       "Harness task E2E passed: trust, launch, deduplication, output cursor, terminal reveal, stop, retained output, exit code",
     );
   }
 
   if (exerciseBrowser) await exerciseBrowserTools(harnessEnv);
 
-  const afterOpen = run(cliExecutable, ["status"], isolatedEnvironment, 2_000);
-  if (afterOpen.status !== 0) {
+  const afterOpen = hostStatus();
+  if (afterOpen.running !== true || afterOpen.window !== true) {
     fail(
-      `desktop stopped responding after the editor flow: ${afterOpen.stderr}`,
+      `desktop stopped responding after the editor flow: ${JSON.stringify(afterOpen)}`,
       desktopLog,
     );
   }
@@ -1654,12 +1787,13 @@ try {
   await exerciseTerminalAgentResumes();
   await exerciseQuitAndStopEverything(keptShell);
 
-  console.log(
+  report(
     "✓ Desktop E2E smoke passed: process → core endpoint → Tauri event/commands → WebView editor → SQLite → quit and relaunch → update in place",
   );
 } finally {
-  await stopExactChild(desktop);
+  if (desktop) await stopExactChild(desktop);
   await stopCore(coreSocket);
+  await stopExactChild(ownCore);
   await rm(temporaryRoot, {
     recursive: true,
     force: true,

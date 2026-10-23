@@ -2,8 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 
 import { markDeleted } from "../account/deletion.ts";
+import { audit } from "../audit.ts";
 import type { Database } from "../db.ts";
-import { ApiFailure, type Env } from "../http.ts";
+import { ApiFailure, type Env, badRequest, unauthorized } from "../http.ts";
 
 /** How far a webhook's timestamp may be from now, either way. */
 const TOLERANCE_S = 5 * 60;
@@ -79,18 +80,14 @@ export function clerkWebhookRoutes({ db }: Database, secret: string | null) {
       body,
     );
     if (!signed || !id)
-      throw new ApiFailure(
-        401,
-        "unauthorized",
-        "The webhook signature is not valid.",
-      );
+      throw unauthorized("The webhook signature is not valid.");
     if (seen.has(id)) return c.body(null, 204);
 
     let event: ClerkEvent;
     try {
       event = JSON.parse(body) as ClerkEvent;
     } catch {
-      throw new ApiFailure(400, "bad_request", "The body is not JSON.");
+      throw badRequest("The body is not JSON.");
     }
     const userId = event.data?.id;
     if (event.type !== "user.deleted" || typeof userId !== "string") {
@@ -98,11 +95,7 @@ export function clerkWebhookRoutes({ db }: Database, secret: string | null) {
       return c.body(null, 204);
     }
     if (!/^user_[A-Za-z0-9]+$/.test(userId))
-      throw new ApiFailure(
-        400,
-        "bad_request",
-        "The event names no Clerk user.",
-      );
+      throw badRequest("The event names no Clerk user.");
 
     await markDeleted(db, {
       userId,
@@ -110,15 +103,12 @@ export function clerkWebhookRoutes({ db }: Database, secret: string | null) {
       via: "webhook",
       deletedInClerk: true,
     });
-    await db
-      .insertInto("audit")
-      .values({
-        user_id: userId,
-        actor: "clerk",
-        action: "webhook.user_deleted",
-        subject: id,
-      })
-      .execute();
+    await audit(db, {
+      userId,
+      actor: "clerk",
+      action: "webhook.user_deleted",
+      subject: id,
+    });
     seen.remember(id);
     c.get("log").info({ userId }, "Clerk deleted a user");
     return c.body(null, 204);

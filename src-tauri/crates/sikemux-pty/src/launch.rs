@@ -2,44 +2,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
+use sikemux_process::vars;
+pub use sikemux_wire::pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
 use crate::error::{PtyError, PtyResult};
 use crate::shell::{detect_shell_kind, ShellKind};
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PtyContext {
-    pub session_id: String,
-    pub session_name: String,
-    pub session_kind: String,
-    pub project: Option<String>,
-    pub window_id: Option<String>,
-    pub pane_id: Option<String>,
-    pub agent_id: Option<String>,
-    pub agent_type: Option<String>,
-    #[serde(default)]
-    pub initial_prompt_submitted: bool,
-    /// Explicit opt-in. Absent/false preserves the exact historical shell
-    /// launch path and performs no startup-file or argv injection.
-    #[serde(default)]
-    pub shell_integration: bool,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PtyAgentProfile {
-    pub config_path: Option<String>,
-    #[serde(default)]
-    environment_keys: Vec<String>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PtyDirectCommand {
-    pub program: String,
-    pub args: Vec<String>,
-    pub profile: Option<PtyAgentProfile>,
-}
 
 pub fn validate_direct_command(
     command: &PtyDirectCommand,
@@ -94,17 +61,29 @@ pub fn validate_direct_command(
     Ok(())
 }
 
+/// Runs `launch` in `shell`, as the person's interactive login shell would,
+/// with `path_first` put ahead on PATH again after their profile has run.
 pub fn configure_interactive_command(
     command: &mut CommandBuilder,
     shell: &str,
     launch: &PtyDirectCommand,
+    path_first: Option<&Path>,
 ) {
     let kind = detect_shell_kind(shell);
-    let invocation = std::iter::once(&launch.program)
+    let mut invocation = std::iter::once(&launch.program)
         .chain(launch.args.iter())
         .map(|value| quote_shell_word(value, kind))
         .collect::<Vec<_>>()
         .join(" ");
+    if let Some(folder) = path_first {
+        let folder = quote_shell_word(&folder.to_string_lossy(), kind);
+        let put_first = match kind {
+            Some(ShellKind::Fish) => format!("set -gx PATH {folder} $PATH; "),
+            Some(ShellKind::PowerShell) => format!("$env:PATH = {folder} + ':' + $env:PATH; "),
+            _ => format!("export PATH={folder}:\"$PATH\"; "),
+        };
+        invocation.insert_str(0, &put_first);
+    }
     #[cfg(unix)]
     command.args(["-l", "-i", "-c", &invocation]);
     #[cfg(windows)]
@@ -122,79 +101,43 @@ fn quote_shell_word(value: &str, kind: Option<ShellKind>) -> String {
     }
 }
 
-fn agent_profile_config_root(path: &str, home: &Path) -> PathBuf {
-    let trimmed = path.trim();
-    let expanded = if trimmed == "~" {
-        home.to_path_buf()
-    } else if let Some(rest) = trimmed
-        .strip_prefix("~/")
-        .or_else(|| trimmed.strip_prefix("~\\"))
-    {
-        home.join(rest)
-    } else {
-        PathBuf::from(trimmed)
-    };
-    if matches!(
-        expanded.file_name().and_then(|value| value.to_str()),
-        Some("config.toml" | "settings.json" | "settings.local.json")
-    ) {
-        expanded.parent().map(Path::to_path_buf).unwrap_or(expanded)
-    } else {
-        expanded
+/// The account folder a profile's config path names: the path itself, or the
+/// folder of the config file it points at.
+pub fn account_dir(config_path: &str) -> PathBuf {
+    let path = sikemux_process::paths::expand_home(config_path.trim());
+    let names_config_file = matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("config.toml" | "config.yml" | "settings.json" | "settings.local.json")
+    );
+    match path.parent() {
+        Some(parent) if names_config_file => parent.to_path_buf(),
+        _ => path,
     }
 }
 
-pub fn apply_agent_profile(
-    command: &mut CommandBuilder,
-    context: Option<&PtyContext>,
-    profile: Option<&PtyAgentProfile>,
-    home: &Path,
-) {
-    let Some(root) = profile
-        .and_then(|profile| profile.config_path.as_deref())
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(|path| agent_profile_config_root(path, home))
-    else {
-        return;
-    };
-    match context.and_then(|context| context.agent_type.as_deref()) {
-        Some("codex") => command.env("CODEX_HOME", root),
-        Some("claude") => command.env("CLAUDE_CONFIG_DIR", root),
-        _ => {}
-    }
-}
-
+/// Removed from every terminal before its own are set, so none inherits the
+/// identity of the terminal the app was started from.
 pub const OPTIONAL_PTY_ENV: &[&str] = &[
-    "SIKEMUX_SHELL",
-    "SIKEMUX_SESSION_ID",
-    "SIKEMUX_SESSION_NAME",
-    "SIKEMUX_SESSION_KIND",
-    "SIKEMUX_PROJECT",
-    "SIKEMUX_WINDOW_ID",
-    "SIKEMUX_PANE_ID",
-    "SIKEMUX_AGENT_ID",
-    "SIKEMUX_AGENT_TYPE",
-    "SIKEMUX_BIN_PATH",
-    "SIKEMUX_CLI_ENDPOINT",
-    "SIKEMUX_CLI_ENDPOINT_PUBLISH",
-    "SIKEMUX_SHELL_INTEGRATION",
-    "SIKEMUX_ORIGINAL_ZDOTDIR",
-    "SIKEMUX_ORIGINAL_ZDOTDIR_SET",
-    "SIKEMUX_TEMP_ZDOTDIR",
-    "SIKEMUX_ORIGINAL_XDG_CONFIG_HOME",
-    "SIKEMUX_ORIGINAL_FISH_CONFIG",
-    "SIKEMUX_TASK_EXECUTION_ID",
-    "SIKEMUX_TASK_TERMINAL_KEY",
-    "SIKEMUX_TASK_ID",
-    "SIKEMUX_TASK_SOURCE",
-    "SIKEMUX_BROWSER_STATE_DIR",
-    "SIKEMUX_BROWSER_CDP_URL",
-    "SIKEMUX_BROWSER_BROKER_URL",
-    "SIKEMUX_BROWSER_BROKER_TOKEN",
-    "SIKEMUX_TOOLS_MCP_COMMAND",
-    "SIKEMUX_TOOLS_MCP_ARGS",
-    "SIKEMUX_TOOLS_AGENT_ID",
+    vars::SHELL,
+    vars::SESSION_ID,
+    vars::SESSION_NAME,
+    vars::SESSION_KIND,
+    vars::PROJECT,
+    vars::WINDOW_ID,
+    vars::PANE_ID,
+    vars::AGENT_ID,
+    vars::AGENT_TYPE,
+    vars::BIN_PATH,
+    vars::CLI_ENDPOINT,
+    vars::CLI_ENDPOINT_PUBLISH,
+    vars::SHELL_INTEGRATION,
+    vars::TASK_EXECUTION_ID,
+    vars::TASK_TERMINAL_KEY,
+    vars::TASK_ID,
+    vars::TASK_SOURCE,
+    vars::TOOLS_MCP_COMMAND,
+    vars::TOOLS_MCP_ARGS,
+    vars::TOOLS_AGENT_ID,
 ];
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
@@ -202,6 +145,10 @@ fn non_empty(value: &Option<String>) -> Option<&str> {
 }
 
 fn editor_command(path: &Path) -> String {
+    format!("{} open --wait", shell_word(path))
+}
+
+fn shell_word(path: &Path) -> String {
     let raw = path.to_string_lossy();
     let shell_safe = raw.bytes().all(|byte| {
         byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'\\' | b':' | b'.' | b'_' | b'-')
@@ -235,6 +182,11 @@ pub fn configure_pty_environment(
             cmd.env(key, value);
         }
     }
+    if let Some((key, value)) = sikemux_process::jobs::variable() {
+        if cmd.get_env(key).is_none() {
+            cmd.env(key, value);
+        }
+    }
 
     for key in OPTIONAL_PTY_ENV {
         cmd.env_remove(key);
@@ -245,31 +197,31 @@ pub fn configure_pty_environment(
     cmd.env("TERM_PROGRAM", "Sikemux");
     cmd.env("TERM_PROGRAM_VERSION", version);
     cmd.env("SIKEMUX", "1");
-    cmd.env("SIKEMUX_VERSION", version);
+    cmd.env(vars::VERSION, version);
 
     if let Some(context) = context {
-        cmd.env("SIKEMUX_SESSION_ID", &context.session_id);
-        cmd.env("SIKEMUX_SESSION_NAME", &context.session_name);
-        cmd.env("SIKEMUX_SESSION_KIND", &context.session_kind);
+        cmd.env(vars::SESSION_ID, &context.session_id);
+        cmd.env(vars::SESSION_NAME, &context.session_name);
+        cmd.env(vars::SESSION_KIND, &context.session_kind);
         if let Some(project) = non_empty(&context.project) {
-            cmd.env("SIKEMUX_PROJECT", project);
+            cmd.env(vars::PROJECT, project);
         }
         if let Some(window_id) = non_empty(&context.window_id) {
-            cmd.env("SIKEMUX_WINDOW_ID", window_id);
+            cmd.env(vars::WINDOW_ID, window_id);
         }
         if let Some(pane_id) = non_empty(&context.pane_id) {
-            cmd.env("SIKEMUX_PANE_ID", pane_id);
+            cmd.env(vars::PANE_ID, pane_id);
         }
         if let Some(agent_id) = non_empty(&context.agent_id) {
-            cmd.env("SIKEMUX_AGENT_ID", agent_id);
+            cmd.env(vars::AGENT_ID, agent_id);
         }
         if let Some(agent_type) = non_empty(&context.agent_type) {
-            cmd.env("SIKEMUX_AGENT_TYPE", agent_type);
+            cmd.env(vars::AGENT_TYPE, agent_type);
         }
     }
 
     if let Some(path) = cli_executable {
-        cmd.env("SIKEMUX_BIN_PATH", path);
+        cmd.env(vars::BIN_PATH, path);
         if cmd.get_env("EDITOR").is_none() && cmd.get_env("VISUAL").is_none() {
             let editor = editor_command(path);
             cmd.env("EDITOR", &editor);
@@ -277,14 +229,14 @@ pub fn configure_pty_environment(
         }
     }
     if let Some(path) = cli_endpoint {
-        cmd.env("SIKEMUX_CLI_ENDPOINT", path);
+        cmd.env(vars::CLI_ENDPOINT, path);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_agent_profile, configure_pty_environment, PtyAgentProfile, PtyContext};
-    use crate::tests::{env, local_shell_context};
+    use super::{configure_pty_environment, PtyContext};
+    use crate::tests::env;
     use portable_pty::CommandBuilder;
     use std::collections::HashMap;
     use std::path::Path;
@@ -310,6 +262,7 @@ mod tests {
                 args: vec![argument.into()],
                 profile: None,
             },
+            None,
         );
         let pair = NativePtySystem::default()
             .openpty(PtySize {
@@ -348,38 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_profiles_pin_provider_config_directories() {
-        let profile = PtyAgentProfile {
-            config_path: Some("/profiles/work/config.toml".into()),
-            environment_keys: Vec::new(),
-        };
-        let mut codex = CommandBuilder::new("codex");
-        let mut context = local_shell_context();
-        context.agent_id = Some("agent-1".into());
-        context.agent_type = Some("codex".into());
-        apply_agent_profile(
-            &mut codex,
-            Some(&context),
-            Some(&profile),
-            Path::new("/home"),
-        );
-        assert_eq!(env(&codex, "CODEX_HOME"), Some("/profiles/work".into()));
-
-        let mut claude = CommandBuilder::new("claude");
-        context.agent_type = Some("claude".into());
-        apply_agent_profile(
-            &mut claude,
-            Some(&context),
-            Some(&profile),
-            Path::new("/home"),
-        );
-        assert_eq!(
-            env(&claude, "CLAUDE_CONFIG_DIR"),
-            Some("/profiles/work".into())
-        );
-    }
-
-    #[test]
     fn pty_environment_has_terminal_and_typed_sikemux_identity() {
         let mut command = CommandBuilder::new("shell");
         command.env("SIKEMUX_AGENT_ID", "stale-agent");
@@ -408,7 +329,7 @@ mod tests {
             &mut command,
             Some(&context),
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             Some(Path::new("/runtime/cli.json")),
             &HashMap::new(),
         );
@@ -447,14 +368,20 @@ mod tests {
         }
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
-            Some("/app/sikemux-editor".into())
+            Some("/app/sikemux-host".into())
         );
         assert_eq!(
             env(&command, "SIKEMUX_CLI_ENDPOINT"),
             Some("/runtime/cli.json".into())
         );
-        assert_eq!(env(&command, "EDITOR"), Some("/app/sikemux-editor".into()));
-        assert_eq!(env(&command, "VISUAL"), Some("/app/sikemux-editor".into()));
+        assert_eq!(
+            env(&command, "EDITOR"),
+            Some("/app/sikemux-host open --wait".into())
+        );
+        assert_eq!(
+            env(&command, "VISUAL"),
+            Some("/app/sikemux-host open --wait".into())
+        );
     }
 
     #[test]
@@ -466,7 +393,7 @@ mod tests {
             &mut editor_only,
             None,
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             None,
             &HashMap::new(),
         );
@@ -480,7 +407,7 @@ mod tests {
             &mut visual_only,
             None,
             "1.2.3",
-            Some(Path::new("/app/sikemux-editor")),
+            Some(Path::new("/app/sikemux-host")),
             None,
             &HashMap::new(),
         );
@@ -498,7 +425,7 @@ mod tests {
             None,
             "1.2.3",
             Some(Path::new(
-                "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor",
+                "/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host",
             )),
             None,
             &HashMap::new(),
@@ -506,17 +433,23 @@ mod tests {
 
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
-            Some("/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor".into())
+            Some("/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host".into())
         );
         #[cfg(not(windows))]
         assert_eq!(
             env(&command, "EDITOR"),
-            Some("'/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor'".into())
+            Some(
+                "'/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host' open --wait"
+                    .into()
+            )
         );
         #[cfg(windows)]
         assert_eq!(
             env(&command, "EDITOR"),
-            Some("\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-editor\"".into())
+            Some(
+                "\"/Applications/Sikemux Preview.app/Contents/MacOS/sikemux-host\" open --wait"
+                    .into()
+            )
         );
     }
 

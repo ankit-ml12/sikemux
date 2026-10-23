@@ -1,103 +1,114 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject } from "react";
-import { acpApi, type PromptContext } from "../api/acp";
+import { useCallback, useEffect, useState, type Dispatch, type RefObject } from "react";
+import { errorText } from "../lib/format";
+import { acpApi } from "../api/acp";
 import type { Agent } from "../state/types";
-import * as cmd from "../state/commands";
-import { combineQueued, nextBatch, type OutgoingMessage, type QueuedMessage } from "./queuedMessages";
+import { unknownCommand } from "./composerInput";
+import type { OutgoingMessage, QueuedMessage } from "./queuedMessages";
 import type { AcpAvailableCommand, ChatAction, ChatState } from "./types";
 
-/* Left off when there is none, so a plain message goes out exactly as before. */
-const contextArgs = (context: PromptContext[]): [] | [PromptContext[]] => (context.length ? [context] : []);
-
+/**
+ * Sends what the person writes. Written mid-turn, a message waits in the core's queue, which every app shows and the
+ * core sends on once the turn ends; written while the agent is still starting, they go out in order once it can take them.
+ */
 export function usePromptQueue({
     agentRef,
     agentId,
     cwd,
     connection,
     running,
+    replaying,
+    queued,
     commands,
     steerable,
     dispatch,
     onError,
+    onSent,
 }: {
     agentRef: RefObject<Agent>;
     agentId: string;
     cwd: string;
     connection: ChatState["connection"];
     running: boolean;
+    replaying: boolean;
+    queued: QueuedMessage[];
     commands: AcpAvailableCommand[];
     steerable: boolean;
     dispatch: Dispatch<ChatAction>;
     onError: (message: string | null) => void;
+    onSent: () => void;
 }) {
-    const [queued, setQueued] = useState<QueuedMessage[]>([]);
-    const queuedCount = useRef(0);
+    /* Only the first shows before the agent can take it, and not while the chat it takes up is still replaying. */
+    const [early, setEarly] = useState<{ message: OutgoingMessage; messageId?: string }[]>([]);
 
-    useEffect(() => setQueued([]), [agentId, cwd]);
+    useEffect(() => setEarly([]), [agentId, cwd]);
 
-    const promptNow = useCallback(
-        async ({ text, paths, context }: OutgoingMessage) => {
-            dispatch({ type: "local_prompt", text, paths, context });
-            cmd.titleAgentFromPrompt(agentRef.current.id, text || context[0]?.title || "");
-            try {
-                await acpApi.prompt(agentRef.current.id, text, paths, ...contextArgs(context));
-            } catch (error) {
-                dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-            }
+    const showPrompt = useCallback(
+        ({ text, paths, context }: OutgoingMessage) => {
+            const messageId = crypto.randomUUID();
+            dispatch({ type: "local_prompt", text, paths, context, messageId });
+            return messageId;
         },
-        [agentRef, dispatch],
+        [dispatch],
     );
 
-    /* Messages written mid-turn wait, then go out together as one prompt once
-       the running turn ends, so nothing in flight is cut short. */
-    useEffect(() => {
-        if (connection !== "ready" || running || queued.length === 0) return;
-        const batch = nextBatch(queued);
-        const sent = new Set(batch.map((message) => message.id));
-        setQueued((current) => current.filter((message) => !sent.has(message.id)));
-        void promptNow(combineQueued(batch));
-    }, [promptNow, queued, connection, running]);
+    const deliver = useCallback(
+        async ({ text, paths, context }: OutgoingMessage, messageId?: string) => {
+            try {
+                await acpApi.prompt(agentRef.current.id, text, paths, context, messageId);
+                onSent();
+            } catch (error) {
+                dispatch({ type: "error", message: errorText(error) });
+            }
+        },
+        [agentRef, dispatch, onSent],
+    );
 
-    /* Steering stops whatever the agent has in flight so it reads this message
-       now, so a message only goes this way when it is asked to. */
-    const steer = async (messages: QueuedMessage[]) => {
-        const steered = new Set(messages.map((message) => message.id));
-        setQueued((current) => current.filter((candidate) => !steered.has(candidate.id)));
-        const message = combineQueued(messages);
-        dispatch({ type: "local_prompt", text: message.text, paths: message.paths, context: message.context });
-        try {
-            if ((await acpApi.steer(agentId, message.text, message.paths, ...contextArgs(message.context))) !== "promptRequired") return;
-            await acpApi.prompt(agentId, message.text, message.paths, ...contextArgs(message.context));
-        } catch (error) {
-            dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        }
-    };
+    useEffect(() => {
+        if (connection !== "ready" || early.length === 0) return;
+        setEarly([]);
+        const [first, ...rest] = early;
+        const sent = deliver(first.message, first.messageId ?? showPrompt(first.message));
+        void rest.reduce((before, { message }) => before.then(() => deliver(message)), sent);
+    }, [connection, early, deliver, showPrompt]);
+
+    const failed = (error: unknown) => dispatch({ type: "error", message: errorText(error) });
+
+    /* Steering puts messages into what the agent has in flight, so a message only goes this way when it is asked to. */
+    const steer = (messages: QueuedMessage[], message?: OutgoingMessage) =>
+        acpApi
+            .steerQueued(
+                agentId,
+                messages.map((queued) => queued.id),
+                message,
+            )
+            .catch(failed);
 
     /** Says whether the composer may clear what it just handed over. */
     const send = (outgoing: OutgoingMessage, steerNow: boolean): boolean => {
-        const commandName = outgoing.text.match(/^\/([^\s]+)/)?.[1];
-        if (commandName && commands.length > 0 && !commands.some((command) => command.name === commandName)) {
-            onError(`/${commandName} is not available in this session`);
+        const unknown = unknownCommand(outgoing.text, commands);
+        if (unknown) {
+            onError(`/${unknown} is not available in this session`);
             return false;
         }
         onError(null);
-        if (connection === "ready" && !running) {
-            void promptNow(outgoing);
+        if (running && steerNow && steerable) {
+            void steer(queued, outgoing);
             return true;
         }
-
-        /* Written mid-turn, or while the session is still coming up: it waits
-           in the queue and goes out with the rest of it once the session is free. */
-        queuedCount.current += 1;
-        const message: QueuedMessage = { id: `queued-${queuedCount.current}`, ...outgoing };
-        if (steerNow && steerable && running) {
-            void steer([...queued, message]);
+        if (running) {
+            void deliver(outgoing);
             return true;
         }
-        setQueued((current) => [...current, message]);
+        if (connection === "ready") {
+            void deliver(outgoing, showPrompt(outgoing));
+            return true;
+        }
+        const shown = early.length === 0 && !replaying;
+        setEarly([...early, { message: outgoing, ...(shown && { messageId: showPrompt(outgoing) }) }]);
         return true;
     };
 
-    const drop = (id: string) => setQueued((current) => current.filter((message) => message.id !== id));
+    const drop = (id: string) => void acpApi.dropQueued(agentId, [id]).catch(failed);
 
     return { queued, send, steer, drop };
 }

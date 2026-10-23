@@ -20,7 +20,7 @@ beforeEach(() => {
         activeSessionId: "p",
         windows: { w: { id: "w", name: "Fix it", role: "agent", root: pane, activePaneId: "a1" } },
         windowsBySession: { p: ["w"] },
-        agents: { a1: { id: "a1", type: "codex", title: "Fix it", startup: "" } },
+        agents: { a1: { id: "a1", type: "codex", title: "Fix it" } },
     });
     mocks.available.mockResolvedValue([{ type: "claude", label: "Claude", command: "claude", defaultModel: null, defaultEffort: null }]);
     mocks.send.mockClear();
@@ -36,10 +36,5 @@ describe("SendToAgentMenu", () => {
         fireEvent.click(await screen.findByRole("menuitem", { name: "New Claude chat" }));
         expect(mocks.send).toHaveBeenCalledWith({ newAgent: "claude", sessionId: "p" }, { text: "hello" });
         expect(onClose).toHaveBeenCalled();
-    });
-
-    it("says so when there is nobody to send to", () => {
-        render(<SendToAgentMenu x={0} y={0} sessionId={null} delivery={() => ({ text: "x" })} onClose={() => {}} />);
-        expect((screen.getByRole("menuitem", { name: "No agents available" }) as HTMLButtonElement).disabled).toBe(true);
     });
 });

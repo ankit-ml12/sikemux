@@ -6,15 +6,21 @@ import { getState, useStore } from "../store";
 import { notify } from "../toast";
 import { addAgent } from "./agents";
 import { newBrowserTab, openDeskSimulator, toggleDesk } from "./desk";
-import { createCommandSession, newSshTerminal } from "./sessions";
+import { createCommandSession } from "./sessions";
 import { newWindow, selectTab, selectWindowId } from "./tabs";
+import { makeWindow, withActiveSession } from "./shared";
+import { takeSpareShell, type SpareShell } from "../../terminal/spareShell";
+import type { PaneNode } from "../types";
 import { openAgentPalette, openPicker } from "./ui";
+import { hostProjectOf, newRemoteTerminal, newSshTerminalOn, newWorkHost, openInstallPane } from "../../hosts/hosts";
 
 /** Starts the agent launched last, or the first one installed, in the project in front. */
 export async function startAgent(): Promise<void> {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (session?.kind !== "project") {
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") return openInstallPane(here.alias);
+    if (session?.kind !== "project" && !here.host) {
         continueInPickedProject(() => void startAgent());
         return;
     }
@@ -29,15 +35,17 @@ export async function startAgent(): Promise<void> {
     addAgent(agent.type, undefined, undefined, {
         profileId: selectedProviderProfile(agent.type, st.providerProfiles, st.selectedProviderProfileIds)?.id,
         detectedExecutablePath: agent.command,
-        cwd: session.cwd,
-        sessionId: session.id,
+        cwd: session?.cwd,
+        sessionId: session?.id,
     });
 }
 
 /** The agent picker, after a project to hold it when there is none in front. */
 export function chooseAgent(): void {
     const st = getState();
-    if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") openInstallPane(here.alias);
+    else if (st.sessions[st.activeSessionId]?.kind === "project") openAgentPalette();
     else continueInPickedProject(openAgentPalette);
 }
 
@@ -55,13 +63,35 @@ function continueInPickedProject(then: () => void): void {
     });
 }
 
-/** A shell where the person is: a tab in this project or command session, a new login on this host, or a fresh command session. */
+/**
+ * A shell where new work starts: another login on an SSH host, a terminal on another host in the project's copy there,
+ * or here a tab in this project or command session, or a fresh command session.
+ */
 export function newTerminal(): void {
     const st = getState();
     const session = st.sessions[st.activeSessionId];
-    if (session?.kind === "project" || session?.kind === "command") newWindow();
-    else if (session?.kind === "ssh") newSshTerminal(session.name);
-    else createCommandSession();
+    const here = newWorkHost(st);
+    if (here.kind === "ssh") return newSshTerminalOn(here.alias);
+    if (here.host) {
+        const place = session?.host === here.host ? hostProjectOf(st, session) : undefined;
+        return newRemoteTerminal(place && session ? session.id : null, here.host, place?.project.path ?? "");
+    }
+    if ((session?.kind === "project" || session?.kind === "command") && !session.host) {
+        const spare = takeSpareShell(session);
+        if (spare) openSpareShell(spare);
+        else newWindow();
+    } else createCommandSession();
+}
+
+function openSpareShell(spare: SpareShell): void {
+    withActiveSession((d, session) => {
+        const made = makeWindow(session.cwd, "Terminal");
+        const pane: PaneNode = { ...(made.root as PaneNode), id: spare.paneId, ptyId: spare.ptyId };
+        d.windows[spare.windowId] = { ...made, id: spare.windowId, root: pane, activePaneId: pane.id };
+        d.windowsBySession[session.id] = [...(d.windowsBySession[session.id] ?? []), spare.windowId];
+        d.sessions[session.id].activeWindowId = spare.windowId;
+        d.zoomedPaneId = null;
+    });
 }
 
 function bringAgentForward(): string | null {
