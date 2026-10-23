@@ -26,6 +26,7 @@ use crate::workbench::Workbench;
 mod database;
 mod jira;
 mod linear;
+mod signoz;
 
 /// How many views a pane keeps, the least lately asked for going first.
 const KEPT_AT_MOST: usize = 32;
@@ -46,6 +47,7 @@ fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
         "sikemux.database" => Some(Box::<database::Database>::default()),
         "sikemux.jira" => Some(Box::<jira::Jira>::default()),
         "sikemux.linear" => Some(Box::<linear::Linear>::default()),
+        "sikemux.signoz" => Some(Box::<signoz::Signoz>::default()),
         _ => None,
     }
 }
@@ -56,6 +58,7 @@ pub fn surface(plugin: &str) -> Option<&'static str> {
         "sikemux.database" => Some("browser"),
         "sikemux.jira" => Some("issues"),
         "sikemux.linear" => Some("issues"),
+        "sikemux.signoz" => Some("explore"),
         _ => None,
     }
 }
