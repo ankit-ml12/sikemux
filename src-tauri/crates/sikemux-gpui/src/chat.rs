@@ -3465,7 +3465,9 @@ impl Tints {
 /// Colours a code block once syntax.rs has worked it out: the first draw asks for it,
 /// and the chat redraws when it arrives. Plain text takes the editor's text colour.
 fn code_colours(reader: Entity<Reading>, plain: Hsla) -> CodeColours {
-    let asked = RefCell::new(HashSet::<(SharedString, SharedString)>::new());
+    // The texts asked to be coloured in the theme of this version; a new theme drops the colours
+    // worked out in the old one, so they are asked for again.
+    let asked = RefCell::new((0, HashSet::<(SharedString, SharedString)>::new()));
     Rc::new(move |lang, code, cx| {
         let language = SharedString::from(lang?.to_lowercase());
         if !syntax::knows(&language) {
@@ -3476,7 +3478,12 @@ fn code_colours(reader: Entity<Reading>, plain: Hsla) -> CodeColours {
         }
         #[cfg(feature = "counts")]
         gpui_transcript::counts::add(&gpui_transcript::counts::UNCOLOURED, 1);
-        if asked.borrow_mut().insert((language.clone(), code.clone())) {
+        let mut asked = asked.borrow_mut();
+        let version = syntax::version(cx);
+        if asked.0 != version {
+            *asked = (version, HashSet::new());
+        }
+        if asked.1.insert((language.clone(), code.clone())) {
             let coloured = syntax::colour_lines(&language, code.clone(), cx);
             let reader = reader.downgrade();
             cx.spawn(async move |cx| {
