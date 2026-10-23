@@ -34,28 +34,11 @@ type CardAsk = Pick<AgentQuestion, "agentId" | "state">;
 export const cardQuestion = <Q extends CardAsk>(card: BoardCard, questions: readonly Q[]): Q | undefined =>
     card.owner && card.status === "progress" ? questions.find((question) => question.agentId === card.owner && question.state === "open") : undefined;
 
-/** The column a card shows in, at `status` while a move to it is on its way. */
-export function cardColumn(card: BoardCard, questions: readonly CardAsk[], status: CardStatus = card.status): BoardColumn {
-    if (status === "done") return status;
-    if (card.auto && RUN_WAITS_ON_PERSON.has(card.auto.stage)) return "needs";
-    return status === "progress" && cardQuestion(card, questions) ? "needs" : status;
-}
-
 /** The first words of a title, for a chip that points at the card. */
 export const shortTitle = (title: string): string => {
     const words = title.split(/\s+/);
     return words.length > 3 ? `${words.slice(0, 3).join(" ")}…` : title;
 };
-
-/** The ticket a card is filed under: its own, or the nearest card above it that has one. */
-export function ticketAbove(card: BoardCard, byId: ReadonlyMap<number, BoardCard>): string | null {
-    let current = card.parent === null ? undefined : byId.get(card.parent);
-    for (let steps = 0; current && steps < byId.size; steps += 1) {
-        if (current.ticket) return current.ticket.key;
-        current = current.parent === null ? undefined : byId.get(current.parent);
-    }
-    return null;
-}
 
 /** What the person may change on a card. A parent of 0 takes the card out from under one. */
 export interface CardChanges {

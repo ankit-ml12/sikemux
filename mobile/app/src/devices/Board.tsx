@@ -4,12 +4,10 @@ import { router } from 'expo-router';
 import type { ConnectionLike } from '@sikemux/native';
 
 import {
-  cardColumn,
   cardQuestion,
   COLUMN_LABELS,
   RUN_WAITS_ON_PERSON,
   shortTitle,
-  ticketAbove,
   type BoardCard,
   type BoardColumn,
   type ProjectBoard,
@@ -59,7 +57,7 @@ export function Board({
       {scope ? (
         <OneBoard core={core} connection={connection} snapshot={snapshot} scope={scope} questions={questions} seen={seen} />
       ) : (
-        <AllBoards connection={connection} snapshot={snapshot} questions={questions} seen={seen} onScope={onScope} />
+        <AllBoards connection={connection} snapshot={snapshot} seen={seen} onScope={onScope} />
       )}
     </>
   );
@@ -93,7 +91,7 @@ function OneBoard({
     <>
       {cards.length ? null : <EmptyState icon="IconBoard" text={`No cards on ${scope.name}'s board.`} />}
       {COLUMNS.map((column) => {
-        const shown = cards.filter((card) => cardColumn(card, questions) === column);
+        const shown = cards.filter((card) => card.column === column);
         if (!shown.length) return null;
         return (
           <View key={column}>
@@ -175,7 +173,7 @@ function CardRow({
 }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
-  const column = cardColumn(card, questions);
+  const column = card.column;
   const chat = card.owner ? snapshot.chats.find((known) => known.agentId === card.owner) : undefined;
   const terminal = card.owner ? snapshot.sessions.find((session) => session.agentId === card.owner && session.running) : undefined;
   const owner = chat?.name ?? terminal?.agentName ?? card.ownerName;
@@ -189,7 +187,7 @@ function CardRow({
   const done = under.filter((other) => other.status === 'done').length;
   const waits = card.waitsOn.map((id) => byId.get(id)).filter((other): other is BoardCard => !!other);
   const after = waits[0] ?? (card.dependsOn.length ? byId.get(card.dependsOn[0]) : undefined);
-  const filed = card.ticket ? null : ticketAbove(card, byId);
+  const filed = card.ticket ? null : card.ticketAbove;
   const parent = card.parent === null ? undefined : byId.get(card.parent);
   const place = card.ticket ? (
     <>
@@ -249,13 +247,11 @@ function CardRow({
 function AllBoards({
   connection,
   snapshot,
-  questions,
   seen,
   onScope,
 }: {
   connection: ConnectionLike | undefined;
   snapshot: Snapshot;
-  questions: readonly AgentQuestion[];
   seen: string;
   onScope: (project: string) => void;
 }) {
@@ -272,10 +268,10 @@ function AllBoards({
         {boards.map((board) => {
           const project = projectAt(snapshot, board.project);
           const counts = COLUMNS.map((column) => {
-            const count = board.cards.filter((card) => cardColumn(card, questions) === column).length;
+            const count = board.cards.filter((card) => card.column === column).length;
             return count ? `${count} ${COLUMN_LABELS[column].toLowerCase()}` : null;
           }).filter(Boolean);
-          const needs = board.cards.some((card) => cardColumn(card, questions) === 'needs');
+          const needs = board.cards.some((card) => card.column === 'needs');
           return (
             <Row
               key={board.project}
