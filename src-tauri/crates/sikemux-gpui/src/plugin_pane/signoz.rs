@@ -1,7 +1,7 @@
 //! SigNoz's pane: the services with their health, a service's page, logs, traces and one
 //! trace, and dashboards, all narrowed by a time window, an environment and filters.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -11,14 +11,14 @@ use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, rgb, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Task, Window,
+    InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, Window,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sikemux_wire::signoz::{
     Dashboard, DashboardSummary, LogLine, LogPage, Panel as Chart, PanelData, Point, ServicePage,
-    ServiceSort, Services, Trace, TracePage, TraceSummary, VolumeBucket,
+    ServiceSort, Services, TailTick, Trace, TracePage, TraceSummary, VolumeBucket,
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
@@ -29,6 +29,8 @@ use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
 const WINDOWS: [u32; 5] = [5, 15, 60, 360, 1440];
 const SEVERITIES: [&str; 5] = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"];
 const LOG_PAGE: u32 = 200;
+/// How many lines a live feed keeps, dropping the oldest past it.
+const KEPT_LINES: usize = 3_000;
 const TRACE_PAGE: u32 = 100;
 const VOLUME_BUCKETS: u32 = 90;
 const OPERATIONS_SHOWN: usize = 12;
@@ -162,6 +164,16 @@ impl<T> More<T> {
     }
 }
 
+/// Lines followed live, oldest first, the latest few thousand of them.
+#[derive(Default)]
+struct Feed {
+    key: String,
+    lines: VecDeque<LogLine>,
+    error: Option<SharedString>,
+    scroll: ScrollHandle,
+    tail: Option<Task<()>>,
+}
+
 #[derive(Clone, Copy, PartialEq, Default)]
 enum Method {
     #[default]
@@ -216,6 +228,7 @@ pub struct Signoz {
     expanded: HashSet<String>,
     picked: Vec<String>,
     older: More<LogLine>,
+    feed: Feed,
     more_traces: More<TraceSummary>,
     form: Option<SignIn>,
     typing: Vec<Subscription>,
@@ -248,6 +261,7 @@ impl Default for Signoz {
             expanded: HashSet::new(),
             picked: Vec::new(),
             older: More::default(),
+            feed: Feed::default(),
             more_traces: More::default(),
             form: None,
             typing: Vec::new(),
@@ -316,12 +330,17 @@ impl Panel for Signoz {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
+        let following = self.live && self.trace.is_none() && self.signal() == Some(Signal::Logs);
+        if !following && self.feed.tail.is_some() {
+            self.feed = Feed::default();
+        }
         let status = match host.status(cx).read::<Value>() {
             Ok(Some(status)) => status,
             Ok(None) => return super::loading(cx),
             Err(failure) => return super::failure(&failure, cx),
         };
         if status["ok"] != Value::Bool(true) {
+            self.feed = Feed::default();
             return self.sign_in(host, &status, window, cx);
         }
         self.form = None;
@@ -2014,12 +2033,6 @@ impl Signoz {
             .read::<Vec<VolumeBucket>>()
             .ok()
             .flatten();
-        let mut asked = search.clone();
-        asked.insert("limit".into(), json!(LOG_PAGE));
-        let key = Value::Object(asked.clone()).to_string();
-        let page = host
-            .view("logsView", Value::Object(asked.clone()), cx)
-            .read::<LogPage>();
         let strip = self.volume(volume.as_deref().map(Vec::as_slice), cx);
         let show_service = !search.contains_key("service");
         let mut heads = vec![("Time", 96.), ("Level", 52.)];
@@ -2038,38 +2051,63 @@ impl Signoz {
                 0. => div().flex_1().child(ui::caps(label, cx)),
                 width => div().w(px(width)).flex_none().child(ui::caps(label, cx)),
             }));
-        let page = match page {
-            Ok(Some(page)) => page,
-            Ok(None) => {
-                return div()
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .child(strip)
-                    .child(columns)
-                    .child(super::loading(cx))
-                    .into_any_element()
-            }
-            Err(failure) => {
-                return div()
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .child(strip)
-                    .child(columns)
-                    .child(super::failure(&failure, cx))
-                    .into_any_element()
-            }
+        let mut asked = search;
+        asked.insert("limit".into(), json!(LOG_PAGE));
+        let (lines, error, older) = if self.live {
+            self.follow(host, asked, cx);
+            let error = self.feed.error.clone();
+            (
+                self.feed.lines.iter().cloned().collect::<Vec<_>>(),
+                error,
+                None,
+            )
+        } else {
+            self.feed = Feed::default();
+            let key = Value::Object(asked.clone()).to_string();
+            let page = match host
+                .view("logsView", Value::Object(asked), cx)
+                .read::<LogPage>()
+            {
+                Ok(Some(page)) => page,
+                Ok(None) => {
+                    return div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .child(strip)
+                        .child(columns)
+                        .child(super::loading(cx))
+                        .into_any_element()
+                }
+                Err(failure) => {
+                    return div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .child(strip)
+                        .child(columns)
+                        .child(super::failure(&failure, cx))
+                        .into_any_element()
+                }
+            };
+            let older = self.older.of(&key, page.next_offset);
+            let lines = page
+                .lines
+                .iter()
+                .chain(older.rows.iter())
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>();
+            (lines, None, older.next.map(|_| older.reading))
         };
-        let older = self.older.of(&key, page.next_offset);
-        let lines: Vec<LogLine> = page
-            .lines
-            .iter()
-            .chain(older.rows.iter())
-            .cloned()
-            .collect();
-        let can_read_older = !self.live && older.next.is_some();
-        let reading = older.reading;
+        let banner = error.map(|error| {
+            div()
+                .px(px(16.))
+                .py(px(6.))
+                .border_b_1()
+                .border_color(t.border)
+                .child(ui::text(error, 12., FontWeight::NORMAL).text_color(t.danger))
+        });
         if lines.is_empty() {
             let errors_only = !self.severities.is_empty()
                 && self
@@ -2087,6 +2125,7 @@ impl Signoz {
                 .flex_col()
                 .child(strip)
                 .child(columns)
+                .children(banner)
                 .child(super::empty(said, cx))
                 .into_any_element();
         }
@@ -2100,7 +2139,7 @@ impl Signoz {
             .enumerate()
             .map(|(index, line)| self.log_row(line, index, show_service, &lines, &agents, cx))
             .collect();
-        let older_button = can_read_older.then(|| {
+        let older_button = older.map(|reading| {
             div().p(px(10.)).flex().justify_center().child(
                 Button::new(
                     "signoz-older",
@@ -2123,16 +2162,68 @@ impl Signoz {
             .flex_col()
             .child(strip)
             .child(columns)
+            .children(banner)
             .child(
                 div()
                     .id("signoz-lines")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .children(rows)
-                    .children(older_button),
+                    .track_scroll(&self.feed.scroll)
+                    .children(older_button)
+                    .children(rows),
             )
             .into_any_element()
+    }
+
+    /// Follows new lines as SigNoz takes them in, starting again when the search changes.
+    fn follow(&mut self, host: &Host, asked: Map<String, Value>, cx: &mut Context<PluginPane>) {
+        let key = Value::Object(asked.clone()).to_string();
+        if self.feed.key == key {
+            return;
+        }
+        self.feed = Feed {
+            key: key.clone(),
+            ..Feed::default()
+        };
+        self.feed.scroll.scroll_to_bottom();
+        let tail = host.stream::<Signoz>(
+            "tailLogs",
+            Value::Object(asked),
+            cx,
+            move |signoz, _, streamed, _| {
+                let feed = &mut signoz.feed;
+                if feed.key != key {
+                    return;
+                }
+                match streamed {
+                    super::Streamed::Item(item) => {
+                        let Ok(tick) = serde_json::from_value::<TailTick>(item) else {
+                            return;
+                        };
+                        feed.error = tick.error.map(SharedString::from);
+                        if tick.lines.is_empty() {
+                            return;
+                        }
+                        let at_bottom =
+                            -feed.scroll.offset().y >= feed.scroll.max_offset().y - px(48.);
+                        feed.lines.extend(tick.lines);
+                        while feed.lines.len() > KEPT_LINES {
+                            feed.lines.pop_front();
+                        }
+                        if at_bottom {
+                            feed.scroll.scroll_to_bottom();
+                        }
+                    }
+                    super::Streamed::Ended(failure) => {
+                        if let Some(failure) = failure {
+                            feed.error = Some(failure.message);
+                        }
+                    }
+                }
+            },
+        );
+        self.feed.tail = Some(tail);
     }
 
     fn read_older(&mut self, host: &Host, cx: &mut Context<PluginPane>) {

@@ -119,6 +119,15 @@ pub struct LogPage {
     pub next_offset: Option<u32>,
 }
 
+/// What a live tail sends each time it reads: the lines new since the last, oldest first,
+/// or why it could not read.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TailTick {
+    pub lines: Vec<LogLine>,
+    pub error: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct VolumeBucket {

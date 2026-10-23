@@ -10,7 +10,7 @@ use crate::client;
 use crate::error::{SignozError, SignozResult};
 use crate::filter::Scope;
 use crate::query::{self, all_of, quote, View};
-pub use sikemux_plugin_api::signoz::{LogLine, LogPage, VolumeBucket};
+pub use sikemux_plugin_api::signoz::{LogLine, LogPage, TailTick, VolumeBucket};
 
 const DEFAULT_LIMIT: u32 = 30;
 const MAX_LIMIT: u32 = 500;
@@ -88,12 +88,6 @@ pub struct LogDigest {
 pub enum LogReply {
     Lines(LogPage),
     Digest(LogDigest),
-}
-
-#[derive(Serialize)]
-struct TailTick {
-    lines: Vec<LogLine>,
-    error: Option<String>,
 }
 
 fn present(value: &Option<String>) -> Option<&str> {
