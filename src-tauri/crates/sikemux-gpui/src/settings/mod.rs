@@ -21,6 +21,7 @@ use crate::workbench::Workbench;
 
 mod index;
 mod pages;
+pub(crate) use pages::session_sent;
 pub(crate) mod rows;
 
 pub use index::Page;

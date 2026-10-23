@@ -136,6 +136,7 @@ use Page::*;
 pub const ENTRIES: &[Entry] = &[
     section(Plugins, "Built-in plugins", "aws bitbucket bruno database postgres postgresql mysql sqlite sql github actions gitlab jira rundeck signoz slack enable disable switch off turn on extensions integrations"),
     section(General, "Project folders", "repos repositories directories roots scan depth index picker"),
+    section(General, "Session transfer", "send move copy host machine chats tabs another server transfer"),
     section(Appearance, "Theme", "colours colors palette dark light custom fork editor"),
     section(Appearance, "Interface", ""),
     row(Appearance, "Interface", "Text size", "font zoom scale larger smaller accessibility"),

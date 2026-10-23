@@ -642,24 +642,7 @@ fn project_menu(
     let bench_entity = cx.weak_entity();
     let (id, current) = (project.id.clone(), project.space.clone());
     let path = project.path.clone();
-    // Every other Sikemux host the project can open on: this one while another is in front.
-    let shown = bench.chosen_host();
-    let own_key = bench.remote.as_ref().map(|remote| remote.core_id.clone());
-    let others: Vec<(String, SharedString, bool, HostChoice)> = bench
-        .host_choices()
-        .into_iter()
-        .filter(|option| option.choice != shown)
-        .filter_map(|option| match option.choice {
-            HostChoice::This => Some((own_key.clone()?, option.label, true, HostChoice::This)),
-            HostChoice::Account(key) => Some((
-                key.clone(),
-                option.label,
-                bench.hosts_reached.contains(&key),
-                HostChoice::Account(key),
-            )),
-            HostChoice::Ssh(_) => None,
-        })
-        .collect();
+    let others = bench.other_hosts();
     let spaces: Vec<(String, String, Option<Icon>)> =
         bench.view.as_ref().map_or(Vec::new(), |view| {
             view.workspace

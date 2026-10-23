@@ -15,6 +15,7 @@ mod cli;
 mod cloud;
 mod devices;
 mod general;
+pub(crate) use general::sent as session_sent;
 mod keybindings;
 mod plugins;
 pub mod theme_editor;

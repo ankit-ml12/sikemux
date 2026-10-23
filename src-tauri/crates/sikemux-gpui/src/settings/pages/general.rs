@@ -1,4 +1,5 @@
-//! The folders the person keeps projects in, and how deep each is searched.
+//! The folders the person keeps projects in, and how deep each is searched; and sending the
+//! project in front, with its chats and tabs, to another host.
 
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -16,7 +17,7 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
-pub const SECTIONS: &[&str] = &["Project folders"];
+pub const SECTIONS: &[&str] = &["Project folders", "Session transfer"];
 
 /// The folder being added: its path as typed, how deep to search it, and
 /// whether it is a project itself.
@@ -25,6 +26,25 @@ pub struct Fields {
     depth: u32,
     itself: bool,
     _entering: Subscription,
+    transfer: Transfer,
+}
+
+/// Where the project in front is to go, and how, and what came of the last send.
+#[derive(Default)]
+struct Transfer {
+    host: Option<String>,
+    moving: bool,
+    uncommitted: bool,
+    sending: bool,
+    said: Option<SharedString>,
+}
+
+/// Notes that a send went out, with none, or came back, with what it said.
+pub fn sent(bench: &mut Workbench, said: Option<SharedString>) {
+    if let Some(fields) = form_of(bench) {
+        fields.transfer.sending = said.is_none();
+        fields.transfer.said = said;
+    }
 }
 
 fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
@@ -41,6 +61,7 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
             depth: 1,
             itself: false,
             _entering: entering,
+            transfer: Transfer::default(),
         });
     }
     bench.parts.redraw(&bench.parts.stage, cx);
@@ -335,12 +356,158 @@ pub fn render(
             "Indexing a folder itself offers it in the picker even when it is not a repo — useful for a scratch directory.",
             cx,
         ));
-    vec![rows::section(
-        "Project folders",
-        Some(format!("{count} {}", if count == 1 { "folder" } else { "folders" }).into()),
-        Some("Each folder is scanned for git repos, as deep as its depth allows.".into()),
-        lit("Project folders"),
-        body,
-        cx,
-    )]
+    vec![
+        rows::section(
+            "Project folders",
+            Some(format!("{count} {}", if count == 1 { "folder" } else { "folders" }).into()),
+            Some("Each folder is scanned for git repos, as deep as its depth allows.".into()),
+            lit("Project folders"),
+            body,
+            cx,
+        ),
+        rows::section(
+            "Session transfer",
+            None,
+            Some("Send the project in front to another host, with its chats and tabs.".into()),
+            lit("Session transfer"),
+            transfer(bench, &fields.transfer, this, cx),
+            cx,
+        ),
+    ]
+}
+
+/// Changes how the project in front is to go.
+fn set_transfer(this: &Entity<Workbench>, change: impl FnOnce(&mut Transfer), cx: &mut App) {
+    this.update(cx, |bench, cx| {
+        if let Some(fields) = form_of(bench) {
+            change(&mut fields.transfer);
+        }
+        bench.parts.redraw(&bench.parts.stage, cx);
+    })
+}
+
+fn transfer(
+    bench: &Workbench,
+    transfer: &Transfer,
+    this: &Entity<Workbench>,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let Some(project) = bench.project().cloned() else {
+        return rows::note("Open a project to send it to another host.", cx);
+    };
+    let hosts: Vec<_> = bench
+        .other_hosts()
+        .into_iter()
+        .filter(|(.., reached, _)| *reached)
+        .collect();
+    if hosts.is_empty() {
+        return rows::note(
+            "Link another Sikemux host under Devices, then send projects there.",
+            cx,
+        );
+    }
+    let chosen = transfer
+        .host
+        .as_ref()
+        .and_then(|key| hosts.iter().position(|(host, ..)| host == key))
+        .unwrap_or(0);
+    let (host, label, _, after) = hosts[chosen].clone();
+    let keys: Vec<String> = hosts.iter().map(|(key, ..)| key.clone()).collect();
+    let (pick_host, pick_way, pick_changes, send) =
+        (this.clone(), this.clone(), this.clone(), this.clone());
+    let moving = transfer.moving;
+    let verb = if moving { "Move" } else { "Copy" };
+    let name = project.name.clone();
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap(px(10.))
+        .p(px(14.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .flex_wrap()
+                .child(
+                    ui::Segmented::words(
+                        "transfer-host",
+                        hosts.iter().map(|(_, label, ..)| (label.clone(), None)).collect(),
+                        chosen,
+                    )
+                    .on_select(move |at: &usize, _, cx| {
+                        let key = keys.get(*at).cloned();
+                        set_transfer(&pick_host, |transfer| transfer.host = key, cx)
+                    }),
+                )
+                .child(
+                    ui::Segmented::words(
+                        "transfer-way",
+                        vec![("Copy".into(), None), ("Move".into(), None)],
+                        usize::from(moving),
+                    )
+                    .on_select(move |at: &usize, _, cx| {
+                        let moving = *at == 1;
+                        set_transfer(&pick_way, |transfer| transfer.moving = moving, cx)
+                    }),
+                ),
+        )
+        .child(
+            Checkbox::new("transfer-uncommitted")
+                .label("Bring uncommitted changes")
+                .checked(transfer.uncommitted)
+                .on_click(move |on: &bool, _, cx| {
+                    let on = *on;
+                    set_transfer(&pick_changes, |transfer| transfer.uncommitted = on, cx)
+                }),
+        )
+        .child(
+            div().flex().child(
+                ui::Button::new(
+                    "transfer-send",
+                    format!("{verb} {name} to {label}"),
+                    ui::Variant::Primary,
+                )
+                .disabled(transfer.sending)
+                .on_click({
+                    let uncommitted = transfer.uncommitted;
+                    move |_, _, cx| {
+                        let sending = crate::hosts::Sending {
+                            project: project.id.clone(),
+                            name: project.name.clone(),
+                            host: host.clone(),
+                            label: label.clone(),
+                            after: after.clone(),
+                            moving,
+                            uncommitted,
+                        };
+                        send.update(cx, |bench, cx| {
+                            if !sending.moving {
+                                return bench.send_session(sending, cx);
+                            }
+                            let title = format!("Move {} to {}?", sending.name, sending.label);
+                            let held = std::cell::RefCell::new(Some(sending));
+                            bench.confirm(
+                                title,
+                                "Its chats are closed here and their saved conversations removed, once the other host has every chat and tab. If anything does not arrive whole, nothing here changes.",
+                                "Move",
+                                true,
+                                move |bench, yes, _, cx| {
+                                    if let Some(sending) = held.borrow_mut().take().filter(|_| yes) {
+                                        bench.send_session(sending, cx);
+                                    }
+                                },
+                                cx,
+                            );
+                        })
+                    }
+                }),
+            ),
+        )
+        .children(transfer.said.clone().map(|said| rows::note(said, cx)))
+        .child(rows::note(
+            "Chats come along when their agent keeps them in files, as Claude and Codex do; the others stay here. A chat that came along starts on the other host's sign-in when you next send to it.",
+            cx,
+        ));
+    body.into_any_element()
 }

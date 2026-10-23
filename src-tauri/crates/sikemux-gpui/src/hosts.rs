@@ -175,6 +175,53 @@ impl Workbench {
         .detach();
     }
 
+    /// Sends the project `project` of the host in front to `host`, with its chats and tabs and,
+    /// when asked, its uncommitted changes. A move then removes the chats here, once that host
+    /// has every one. The person is then on that host, in that project.
+    pub fn send_session(&mut self, sending: Sending, cx: &mut Context<Self>) {
+        let params = json!({
+            "project": sending.project,
+            "host": sending.host,
+            "move": sending.moving,
+            "uncommitted": sending.uncommitted,
+        });
+        // The project's own host sends it, so the call goes to the host in front.
+        let asked = self.target().request("sendSession", params);
+        let verb = if sending.moving { "Moving" } else { "Copying" };
+        crate::settings::session_sent(self, None);
+        self.notify(
+            Notification::info(format!("{verb} {} to {}…", sending.name, sending.label)),
+            cx,
+        );
+        cx.spawn(async move |bench, cx| {
+            let answer = asked.await;
+            let _ = bench.update(cx, |bench, cx| {
+                let said = match &answer {
+                    Ok(sent) => sent_summary(sent, &sending),
+                    Err(error) => format!("It did not go to {}: {error}", sending.label),
+                };
+                match &answer {
+                    Ok(_) => bench.notify(Notification::success(said.clone()), cx),
+                    Err(_) => bench.notify(Notification::error(said.clone()), cx),
+                }
+                crate::settings::session_sent(bench, Some(said.into()));
+                let Ok(sent) = answer else {
+                    return;
+                };
+                let place = match &sending.after {
+                    HostChoice::Account(key) => Place::Account(key.clone()),
+                    _ => Place::This,
+                };
+                bench.choose_host(sending.after.clone(), cx);
+                if let Some(project) = sent["project"].as_str() {
+                    core::Target::new(&bench.asks, place)
+                        .call("activateProject", json!({ "project": project }));
+                }
+            });
+        })
+        .detach();
+    }
+
     /// Sets Sikemux up on the SSH host `alias` as `set_up` says, over the person's own ssh in a
     /// terminal of its strip, signing it in to the account where that takes a code; its row
     /// says how it goes.
@@ -388,6 +435,28 @@ impl Workbench {
         self.notify(note, cx);
     }
 
+    /// Every other Sikemux host a project in front could go to, this one while another is in
+    /// front: its key, its label, whether this app reaches it, and the choice that puts the
+    /// person there.
+    pub fn other_hosts(&self) -> Vec<(String, SharedString, bool, HostChoice)> {
+        let shown = self.chosen_host();
+        let own_key = self.remote.as_ref().map(|remote| remote.core_id.clone());
+        self.host_choices()
+            .into_iter()
+            .filter(|option| option.choice != shown)
+            .filter_map(|option| match option.choice {
+                HostChoice::This => Some((own_key.clone()?, option.label, true, HostChoice::This)),
+                HostChoice::Account(key) => Some((
+                    key.clone(),
+                    option.label,
+                    self.hosts_reached.contains(&key),
+                    HostChoice::Account(key),
+                )),
+                HostChoice::Ssh(_) => None,
+            })
+            .collect()
+    }
+
     /// Puts the person on `choice`, which the rail and the tab list then follow.
     pub fn choose_host(&mut self, choice: HostChoice, cx: &mut Context<Self>) {
         self.call("chooseHost", json!({ "host": choice.key() }));
@@ -401,4 +470,56 @@ pub fn load_label(load: &sikemux_wire::protocol::HostLoad) -> String {
         Some(bytes) => format!("{}% · {:.1} GB", load.cpu, bytes as f64 / 1024f64.powi(3)),
         None => format!("{}%", load.cpu),
     }
+}
+
+/// A project's session on its way to another host, as the person asked for it.
+pub struct Sending {
+    pub project: String,
+    pub name: String,
+    pub host: String,
+    pub label: SharedString,
+    pub after: HostChoice,
+    pub moving: bool,
+    pub uncommitted: bool,
+}
+
+/// One line on what went, what stayed here and how the uncommitted changes went.
+fn sent_summary(sent: &Value, sending: &Sending) -> String {
+    let carried = sent["carried"].as_array().map_or(0, Vec::len);
+    let chats = match carried {
+        1 => "1 chat".to_owned(),
+        count => format!("{count} chats"),
+    };
+    let done = match (sending.moving, sent["moved"] == true) {
+        (true, true) => "Moved",
+        _ => "Copied",
+    };
+    let mut said = format!(
+        "{done} {} to {} with {chats} and its tabs.",
+        sending.name, sending.label
+    );
+    if sending.moving && sent["moved"] != true {
+        said.push_str(" Nothing was removed here, since not everything arrived whole.");
+    }
+    let left: Vec<String> = sent["left"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|left| {
+            format!(
+                "{} ({})",
+                left["title"].as_str().unwrap_or_default(),
+                left["why"].as_str().unwrap_or_default()
+            )
+        })
+        .collect();
+    if !left.is_empty() {
+        said.push_str(&format!(" Stayed here: {}.", left.join(", ")));
+    }
+    match sent["uncommitted"].as_str() {
+        Some("applied") => said.push_str(" Uncommitted changes went too."),
+        Some(error) => said.push_str(&format!(" Uncommitted changes stayed here: {error}.")),
+        None => {}
+    }
+    said
 }
