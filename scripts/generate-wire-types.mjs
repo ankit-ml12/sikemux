@@ -52,6 +52,7 @@ const SOURCES = [
   `${WIRE}/rundeck.rs`,
   `${WIRE}/linear.rs`,
   `${WIRE}/slack.rs`,
+  `${WIRE}/vercel.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -120,6 +121,23 @@ const RUNDECK_TYPES = [
   "ExecutionPage",
 ];
 
+/** Vercel's types are known as Vercel's. */
+const VERCEL_TYPES = [
+  "Production",
+  "Project",
+  "Target",
+  "Deployment",
+  "LogLine",
+  "Log",
+  "Domain",
+  "Variable",
+  "Projects",
+  "Deployments",
+  "OpenLog",
+  "Domains",
+  "Variables",
+];
+
 /** Slack's types are known as Slack's. */
 const SLACK_TYPES = [
   "ChannelKind",
@@ -184,6 +202,9 @@ const RENAMES = {
   ),
   [`${WIRE}/slack.rs`]: Object.fromEntries(
     SLACK_TYPES.map((name) => [name, `Slack${name}`]),
+  ),
+  [`${WIRE}/vercel.rs`]: Object.fromEntries(
+    VERCEL_TYPES.map((name) => [name, `Vercel${name}`]),
   ),
 };
 
@@ -290,6 +311,15 @@ const RUNDECK_ROOTS = [
 /** What the Slack plugin's views hand its pane. */
 const SLACK_ROOTS = ["SlackChannels", "SlackHistory", "SlackOpenThread"];
 
+/** What the Vercel plugin's views hand its pane. */
+const VERCEL_ROOTS = [
+  "VercelProjects",
+  "VercelDeployments",
+  "VercelOpenLog",
+  "VercelDomains",
+  "VercelVariables",
+];
+
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
   DeviceView: "workspace chats sessions attentions inbox faceStyle",
@@ -347,6 +377,7 @@ const OUTPUTS = {
   rundeck: "src/plugins/rundeck/types.generated.ts",
   linear: "src/plugins/linear/types.generated.ts",
   slack: "src/plugins/slack/types.generated.ts",
+  vercel: "src/plugins/vercel/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -1040,5 +1071,6 @@ await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
 await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
 await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
+await emit(OUTPUTS.vercel, typescript(false, VERCEL_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());
