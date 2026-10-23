@@ -9,6 +9,7 @@ pub use sikemux_wire::database;
 pub use sikemux_wire::jira;
 pub use sikemux_wire::linear;
 pub use sikemux_wire::rundeck;
+pub use sikemux_wire::signoz;
 pub use sikemux_wire::slack;
 pub use sikemux_wire::vercel;
 mod error;

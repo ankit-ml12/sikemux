@@ -55,6 +55,7 @@ const SOURCES = [
   `${WIRE}/database.rs`,
   `${WIRE}/slack.rs`,
   `${WIRE}/vercel.rs`,
+  `${WIRE}/signoz.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -139,6 +140,35 @@ const AWS_TYPES = [
   "AgentProfiles",
   "LogLine",
   "LogLevel",
+];
+
+/** SigNoz's types are known as SigNoz's, as Jira's are known as Jira's. */
+const SIGNOZ_TYPES = [
+  "Point",
+  "ServiceHealth",
+  "ServiceRow",
+  "ServiceSort",
+  "Services",
+  "Overview",
+  "Operation",
+  "ErrorGroup",
+  "ServicePage",
+  "LogLine",
+  "LogPage",
+  "VolumeBucket",
+  "TraceSummary",
+  "TracePage",
+  "TraceSpan",
+  "Trace",
+  "DashboardSummary",
+  "Variable",
+  "Layout",
+  "Panel",
+  "Dashboard",
+  "Series",
+  "Column",
+  "PanelData",
+  "FieldKey",
 ];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
@@ -268,6 +298,9 @@ const RENAMES = {
   [`${WIRE}/vercel.rs`]: Object.fromEntries(
     VERCEL_TYPES.map((name) => [name, `Vercel${name}`]),
   ),
+  [`${WIRE}/signoz.rs`]: Object.fromEntries(
+    SIGNOZ_TYPES.map((name) => [name, `Signoz${name}`]),
+  ),
 };
 
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
@@ -395,6 +428,20 @@ const RUNDECK_ROOTS = [
   "RundeckStyledText",
 ];
 
+/** What the SigNoz plugin's views hand its pane. */
+const SIGNOZ_ROOTS = [
+  "SignozServices",
+  "SignozServicePage",
+  "SignozLogPage",
+  "SignozVolumeBucket",
+  "SignozTracePage",
+  "SignozTrace",
+  "SignozDashboardSummary",
+  "SignozDashboard",
+  "SignozPanelData",
+  "SignozFieldKey",
+];
+
 /** What the Slack plugin's views hand its pane. */
 const SLACK_ROOTS = ["SlackChannels", "SlackHistory", "SlackOpenThread"];
 
@@ -467,6 +514,7 @@ const OUTPUTS = {
   database: "src/plugins/database/types.generated.ts",
   slack: "src/plugins/slack/types.generated.ts",
   vercel: "src/plugins/vercel/types.generated.ts",
+  signoz: "src/plugins/signoz/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -685,9 +733,14 @@ const PRIMITIVES = {
   ),
 };
 
-/** A Rust type as `{ kind, ... }`: primitive, option, list, map or named. */
+/** A Rust type as `{ kind, ... }`: primitive, option, list, map, tuple or named. */
 function parseType(text, file) {
   text = text.trim().replace(/^&(?:'\w+\s+)?/, "");
+  if (/^\(.*\)$/s.test(text))
+    return {
+      kind: "tuple",
+      of: splitTop(text.slice(1, -1)).map((part) => parseType(part, file)),
+    };
   const generic = /^([\w:]+)\s*<(.*)>$/s.exec(text);
   const path = (generic?.[1] ?? text).split("::").at(-1);
   const args = generic ? splitTop(generic[2]) : [];
@@ -839,6 +892,7 @@ function parse(item) {
 
 function named(type) {
   if (type.kind === "named") return [type.name];
+  if (type.kind === "tuple") return type.of.flatMap(named);
   if (type.of) return named(type.of);
   return [];
 }
@@ -907,6 +961,8 @@ function typescript(phone, roots, preamble) {
       }
       case "map":
         return `Record<string, ${tsType(type.of)}>`;
+      case "tuple":
+        return `[${type.of.map(tsType).join(", ")}]`;
       case "option":
         return phone ? tsType(type.of) : `${tsType(type.of)} | null`;
     }
@@ -1163,5 +1219,6 @@ await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
 await emit(OUTPUTS.database, typescript(false, DATABASE_ROOTS, ""));
 await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
 await emit(OUTPUTS.vercel, typescript(false, VERCEL_ROOTS, ""));
+await emit(OUTPUTS.signoz, typescript(false, SIGNOZ_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());
