@@ -13,6 +13,8 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 
+use sikemux_wire::protocol::{Pane, PaneKind};
+
 use crate::core::Target;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
@@ -176,6 +178,9 @@ impl Workbench {
     pub fn toggle_finder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.finder.is_some() {
             return self.close_finder(window, cx);
+        }
+        if let Some(palette) = self.plugin_palette_in_front() {
+            return self.open_plugin_palette(palette, window, cx);
         }
         self.close_palette(window, cx);
         self.finder = Some(Finder::open(window, cx));
@@ -410,4 +415,20 @@ fn row(bench: &Workbench, place: usize, cx: &mut Context<Workbench>) -> AnyEleme
                 .child(dir.to_owned()),
         )
         .into_any_element()
+}
+
+impl Workbench {
+    /// The first palette of the plugin whose pane is the tab in front, which ⌘P opens in place
+    /// of the project's files.
+    fn plugin_palette_in_front(&self) -> Option<&'static crate::plugin_pane::PluginPalette> {
+        let Pane::View {
+            kind: PaneKind::Plugin,
+            target,
+            ..
+        } = &self.tab()?.pane
+        else {
+            return None;
+        };
+        crate::plugin_pane::palettes(crate::plugin_pane::parts(target).0).first()
+    }
 }
