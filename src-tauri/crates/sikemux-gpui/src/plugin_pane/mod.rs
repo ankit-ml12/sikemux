@@ -33,6 +33,7 @@ macro_rules! plugins {
 }
 
 plugins! {
+    aws,
     database,
     jira,
     linear,
@@ -538,9 +539,14 @@ impl Host {
 
     /// Signs in through the plugin's own browser sign-in, opening the page it names.
     pub fn sign_in_with_browser(&self, cx: &mut Context<PluginPane>) {
+        self.sign_in_through("signInWithBrowser", json!({}), cx);
+    }
+
+    /// Signs in through the plugin's streamed `method`, opening any page it names.
+    pub fn sign_in_through(&self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
         let mut streaming = self.target.stream(
             "pluginStream",
-            json!({ "plugin": self.plugin, "method": "signInWithBrowser", "params": {} }),
+            json!({ "plugin": self.plugin, "method": method, "params": params }),
         );
         let bench = self.bench.clone();
         cx.spawn(async move |_, cx| {
