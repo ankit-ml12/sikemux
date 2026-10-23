@@ -533,8 +533,18 @@ fn divider(tab: &str, split: &str, at: usize, across: bool) -> impl IntoElement 
         split: split.to_owned(),
         at,
     };
+    handle(format!("{split}-divider-{at}"), value, across)
+}
+
+/// The gap between two panes that a drag resizes, carrying `value` to whatever hears the
+/// drag move: side by side when `across`, else one over the other.
+pub(crate) fn handle<T: Clone + 'static>(
+    id: impl Into<SharedString>,
+    value: T,
+    across: bool,
+) -> impl IntoElement {
     div()
-        .id(SharedString::from(format!("{split}-divider-{at}")))
+        .id(id.into())
         .flex_none()
         .when(across, |divider| {
             divider

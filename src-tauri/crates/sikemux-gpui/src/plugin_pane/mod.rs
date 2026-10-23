@@ -417,6 +417,47 @@ impl Host {
         }
     }
 
+    /// What the plugin's panes saved with the workspace, under its id.
+    pub fn settings(&self, cx: &App) -> Value {
+        self.bench
+            .upgrade()
+            .and_then(|bench| {
+                bench
+                    .read(cx)
+                    .preferences()
+                    .plugin_settings
+                    .get(&self.plugin)
+                    .cloned()
+            })
+            .unwrap_or(Value::Null)
+    }
+
+    /// Changes the plugin's saved settings as `change` does to their JSON.
+    pub fn save_settings(
+        &self,
+        change: impl FnOnce(&mut serde_json::Map<String, Value>),
+        cx: &mut App,
+    ) {
+        let Some(bench) = self.bench.upgrade() else {
+            return;
+        };
+        let mut all = bench.read(cx).preferences().plugin_settings;
+        let mut kept = all.remove(&self.plugin).unwrap_or_else(|| json!({}));
+        if !kept.is_object() {
+            kept = json!({});
+        }
+        if let Some(kept) = kept.as_object_mut() {
+            change(kept);
+        }
+        all.insert(self.plugin.clone(), kept);
+        bench.update(cx, |bench, _| {
+            bench.call(
+                "setPreference",
+                json!({ "key": "pluginSettings", "value": all }),
+            )
+        });
+    }
+
     /// Someone's picture, fetched through the plugin's `image` call, or their initials.
     pub fn face(&self, name: &str, url: Option<&str>, size: f32, cx: &App) -> AnyElement {
         self.faces.face(name, url, size, cx)

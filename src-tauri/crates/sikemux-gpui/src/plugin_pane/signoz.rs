@@ -26,7 +26,6 @@ use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
 
-const PLUGIN: &str = "sikemux.signoz";
 const WINDOWS: [u32; 5] = [5, 15, 60, 360, 1440];
 const SEVERITIES: [&str; 5] = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"];
 const LOG_PAGE: u32 = 200;
@@ -258,40 +257,7 @@ fn now_ms() -> u64 {
 }
 
 fn saved(host: &Host, cx: &App) -> Settings {
-    host.bench()
-        .upgrade()
-        .and_then(|bench| {
-            let saved = bench
-                .read(cx)
-                .preferences()
-                .plugin_settings
-                .get(PLUGIN)
-                .cloned()?;
-            serde_json::from_value(saved).ok()
-        })
-        .unwrap_or_default()
-}
-
-/// Changes the pane's saved settings as `change` does to their JSON.
-fn save(host: &Host, change: impl FnOnce(&mut Map<String, Value>), cx: &mut App) {
-    let Some(bench) = host.bench().upgrade() else {
-        return;
-    };
-    let mut all = bench.read(cx).preferences().plugin_settings;
-    let mut kept = all.remove(PLUGIN).unwrap_or_else(|| json!({}));
-    if !kept.is_object() {
-        kept = json!({});
-    }
-    if let Some(kept) = kept.as_object_mut() {
-        change(kept);
-    }
-    all.insert(PLUGIN.to_owned(), kept);
-    bench.update(cx, |bench, _| {
-        bench.call(
-            "setPreference",
-            json!({ "key": "pluginSettings", "value": all }),
-        )
-    });
+    serde_json::from_value(host.settings(cx)).unwrap_or_default()
 }
 
 /// What a field does as the person types in it, presses Return or leaves it.
@@ -527,8 +493,7 @@ impl Signoz {
             false,
             listen::<Signoz, SharedString>(cx, |_, host, picked, _, cx| {
                 let picked = picked.to_string();
-                save(
-                    host,
+                host.save_settings(
                     |kept| {
                         kept.insert(
                             "environment".into(),
@@ -874,8 +839,7 @@ impl Signoz {
                 Toggle::new("signoz-pin", if pinned { "Pinned" } else { "Pin" }, pinned).on_click(
                     listen::<Signoz, _>(cx, move |_, host, _, _, cx| {
                         let pin = pin.clone();
-                        save(
-                            host,
+                        host.save_settings(
                             |kept| {
                                 let mut pins: Vec<Value> = kept
                                     .get("pins")
@@ -936,8 +900,7 @@ impl Signoz {
                     cx,
                     |signoz, host, index, _, cx| {
                         let minutes = WINDOWS[*index];
-                        save(
-                            host,
+                        host.save_settings(
                             |kept| {
                                 kept.insert("minutes".into(), json!(minutes));
                             },
@@ -1292,8 +1255,7 @@ impl Signoz {
                                 .when(by == sort, |head| head.text_color(t.text_primary)),
                         )
                         .on_click(listen::<Signoz, _>(cx, move |_, host, _, _, cx| {
-                            save(
-                                host,
+                            host.save_settings(
                                 |kept| {
                                     kept.insert("serviceSort".into(), json!(by));
                                 },
@@ -3185,8 +3147,7 @@ impl Signoz {
                         listen::<Signoz, SharedString>(cx, move |_, host, picked, _, cx| {
                             let (dashboard_id, name, picked) =
                                 (dashboard_id.clone(), name.clone(), picked.to_string());
-                            save(
-                                host,
+                            host.save_settings(
                                 |kept| {
                                     let all = kept
                                         .entry("dashboardVariables")

@@ -9,9 +9,10 @@ use gpui_kit::component::input::{InputEvent, InputState, Textarea, TextareaState
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, radians, rgb, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Transformation, WeakEntity, Window,
+    div, px, radians, rgb, AnyElement, App, AppContext, Context, Div, DragMoveEvent, Entity,
+    FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, MouseUpEvent, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, Subscription, Transformation, WeakEntity,
+    Window,
 };
 use gpui_transcript::{Markdown, Pen};
 use serde_json::{json, Value};
@@ -176,6 +177,8 @@ pub struct Jira {
     commenting: bool,
     /// Each text drawn as markdown, by its words, for the issue open.
     docs: HashMap<String, Rc<Markdown>>,
+    /// How wide the open issue is while its edge is dragged and after.
+    detail_width: Option<f32>,
 }
 
 impl Panel for Jira {
@@ -220,14 +223,38 @@ impl Panel for Jira {
             )),
             None => None,
         };
+        let saved = host.settings(cx)["detailWidth"]
+            .as_f64()
+            .map(|width| width as f32);
+        let width = self.detail_width.or(saved);
         let t = Tokens::get(cx);
         div()
+            .id("jira-columns")
             .size_full()
             .flex()
             .overflow_hidden()
+            .on_drag_move(listen::<Jira, DragMoveEvent<DetailEdge>>(
+                cx,
+                |jira, _, event, _, cx| {
+                    let bounds = event.bounds;
+                    let room =
+                        f32::from(bounds.size.width) - SIDEBAR - LIST_MIN - crate::panes::GAP;
+                    let wanted =
+                        f32::from(bounds.right() - event.event.position.x) - crate::panes::GAP / 2.;
+                    jira.detail_width = Some(wanted.clamp(DETAIL_MIN, room.max(DETAIL_MIN)));
+                    cx.notify();
+                },
+            ))
+            .on_drop(listen::<Jira, DetailEdge>(cx, |jira, host, _, _, cx| {
+                jira.keep_width(host, cx)
+            }))
+            .on_mouse_up_out(
+                MouseButton::Left,
+                listen::<Jira, MouseUpEvent>(cx, |jira, host, _, _, cx| jira.keep_width(host, cx)),
+            )
             .child(
                 div()
-                    .w(px(212.))
+                    .w(px(SIDEBAR))
                     .flex_none()
                     .h_full()
                     .border_r_1()
@@ -235,19 +262,32 @@ impl Panel for Jira {
                     .child(sidebar),
             )
             .child(div().flex_1().min_w_0().h_full().child(middle))
-            .children(detail.map(|detail| {
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .max_w(px(560.))
-                    .h_full()
-                    .border_l_1()
-                    .border_color(t.border)
-                    .child(detail)
-            }))
+            .when_some(detail, |columns, detail| {
+                columns
+                    .child(crate::panes::handle("jira-detail-edge", DetailEdge, true))
+                    .child(
+                        div()
+                            .map(|column| match width {
+                                Some(width) => column.w(px(width)).flex_none(),
+                                None => column.flex_1().min_w(px(DETAIL_MIN)).max_w(px(560.)),
+                            })
+                            .h_full()
+                            .border_l_1()
+                            .border_color(t.border)
+                            .child(detail),
+                    )
+            })
             .into_any_element()
     }
 }
+
+const SIDEBAR: f32 = 212.;
+const LIST_MIN: f32 = 260.;
+const DETAIL_MIN: f32 = 360.;
+
+/// What a drag of the edge between the list and the open issue carries.
+#[derive(Clone)]
+struct DetailEdge;
 
 /// The value a view's `site` takes: none for the plugin's default site.
 fn site_of(site: &str) -> Value {
@@ -346,6 +386,18 @@ impl Jira {
             cx,
         );
         cx.notify();
+    }
+
+    /// Saves the open issue's width once its edge is let go, as every pane's.
+    fn keep_width(&mut self, host: &Host, cx: &mut Context<PluginPane>) {
+        if let Some(width) = self.detail_width {
+            host.save_settings(
+                |kept| {
+                    kept.insert("detailWidth".into(), json!(width.round()));
+                },
+                cx,
+            );
+        }
     }
 
     fn markdown(&mut self, text: &str) -> Rc<Markdown> {
