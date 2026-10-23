@@ -2889,11 +2889,24 @@ impl Workbench {
         cx.notify();
     }
 
-    pub fn remove_space_icon(&self, id: &str) {
+    /// Marks the space with `icon`, or with none when it is empty.
+    pub fn set_space_icon(&self, id: &str, icon: &str) {
         self.edit_spaces(|spaces| {
             if let Some(space) = spaces.iter_mut().find(|space| space.id == id) {
-                space.icon.clear();
+                space.icon = icon.to_owned();
             }
+        });
+    }
+
+    /// Moves the space `by` places along the switch.
+    pub fn move_space(&self, id: &str, by: isize) {
+        self.edit_spaces(|spaces| {
+            let Some(at) = spaces.iter().position(|space| space.id == id) else {
+                return;
+            };
+            let to = at.saturating_add_signed(by).min(spaces.len() - 1);
+            let space = spaces.remove(at);
+            spaces.insert(to, space);
         });
     }
 

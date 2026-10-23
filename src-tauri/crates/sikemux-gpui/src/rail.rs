@@ -920,7 +920,6 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let chosen = bench.space.clone();
     let chip = |id: Option<String>, glyph: Option<Icon>, name: SharedString| {
         let on = chosen == id;
-        let has_icon = glyph.is_some();
         let chip = div()
             .id(SharedString::from(format!(
                 "space-{}",
@@ -952,13 +951,27 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
             )
             .on_click({
                 let id = id.clone();
-                cx.listener(move |bench, _, _, cx| bench.show_space(id.clone(), cx))
+                cx.listener(move |bench, event: &ClickEvent, _, cx| {
+                    match (event.click_count(), &id) {
+                        (2, Some(space)) => bench.rename_space(space.clone(), cx),
+                        _ => bench.show_space(id.clone(), cx),
+                    }
+                })
             });
         match id {
             Some(space) => {
                 let bench = cx.entity();
-                chip.context_menu(move |popup, _, _| space_menu(popup, &bench, &space, has_icon))
-                    .into_any_element()
+                let place = spaces.iter().position(|known| known.id == space);
+                let ends = (place == Some(0), place == Some(spaces.len() - 1));
+                let icon = spaces
+                    .iter()
+                    .find(|known| known.id == space)
+                    .map(|known| known.icon.clone())
+                    .unwrap_or_default();
+                chip.context_menu(move |popup, window, cx| {
+                    space_menu(popup, window, cx, &bench, &space, &icon, ends)
+                })
+                .into_any_element()
             }
             None => chip.into_any_element(),
         }
@@ -995,12 +1008,38 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .into_any_element()
 }
 
-/// What a right click on a space offers, as the Mac's space switch does.
+/// The icons a space can wear, as the Mac offers them.
+const SPACE_ICONS: [&str; 18] = [
+    "folder",
+    "user",
+    "globe",
+    "laptop",
+    "building",
+    "home",
+    "briefcase",
+    "code",
+    "flask",
+    "rocket",
+    "star",
+    "heart",
+    "book",
+    "bolt",
+    "leaf",
+    "cube",
+    "terminal",
+    "music",
+];
+
+/// What a right click on a space offers, as the Mac's space switch does; `ends` says whether it
+/// is first and last along the switch.
 fn space_menu(
     popup: PopupMenu,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
     bench: &Entity<Workbench>,
     space: &str,
-    has_icon: bool,
+    icon: &str,
+    ends: (bool, bool),
 ) -> PopupMenu {
     let item = |label: &'static str,
                 icon: Icon,
@@ -1012,15 +1051,45 @@ fn space_menu(
                 bench.update(cx, |bench, cx| act(bench, space.clone(), cx));
             })
     };
-    let mut popup = popup.item(item("Rename…", Icon::Pencil, |bench, space, cx| {
-        bench.rename_space(space, cx)
-    }));
-    if has_icon {
+    let icons = {
+        let (bench, space, worn) = (bench.clone(), space.to_owned(), icon.to_owned());
+        move |mut submenu: PopupMenu, _: &mut Window, _: &mut Context<PopupMenu>| {
+            for name in SPACE_ICONS {
+                let (bench, space) = (bench.clone(), space.clone());
+                let mut choice =
+                    PopupMenuItem::new(name)
+                        .checked(worn == name)
+                        .on_click(move |_, _, cx| {
+                            bench.read(cx).set_space_icon(&space, name);
+                        });
+                if let Some(glyph) = Icon::named(name) {
+                    choice = choice.icon(glyph);
+                }
+                submenu = submenu.item(choice);
+            }
+            submenu
+        }
+    };
+    let mut popup = popup
+        .item(item("Rename…", Icon::Pencil, |bench, space, cx| {
+            bench.rename_space(space, cx)
+        }))
+        .submenu_with_icon(Some(Icon::Pencil.into()), "Change Icon", window, cx, icons);
+    if !icon.is_empty() {
         popup = popup.item(item("Remove Icon", Icon::Trash, |bench, space, _| {
-            bench.remove_space_icon(&space)
+            bench.set_space_icon(&space, "")
         }));
     }
+    let shift = |label: &'static str, by: isize, end: bool| {
+        let (bench, space) = (bench.clone(), space.to_owned());
+        PopupMenuItem::new(label)
+            .disabled(end)
+            .on_click(move |_, _, cx| bench.read(cx).move_space(&space, by))
+    };
     popup
+        .separator()
+        .item(shift("Move Left", -1, ends.0))
+        .item(shift("Move Right", 1, ends.1))
         .separator()
         .item(item("New Space…", Icon::Plus, |bench, _, cx| {
             bench.new_space(None, cx)
