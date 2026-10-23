@@ -34,6 +34,7 @@ macro_rules! plugins {
 
 plugins! {
     aws,
+    bruno,
     database,
     jira,
     linear,
