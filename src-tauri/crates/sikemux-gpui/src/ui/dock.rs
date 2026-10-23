@@ -58,12 +58,23 @@ impl DockRow {
     }
 }
 
+/// One of the kinds of thing a menu can list, in its heading: the key that asks for it and its
+/// name. A click switches the menu to it.
+pub struct DockScope {
+    pub key: SharedString,
+    pub label: SharedString,
+    pub on: bool,
+    pub choose: Choose,
+}
+
 #[derive(IntoElement)]
 pub struct DockMenu {
     rows: Vec<DockRow>,
     selected: usize,
     /// What the menu says while it has no rows.
     empty: Option<SharedString>,
+    /// The kinds it can list, and what taking a row does, over its rows.
+    heading: Option<(Vec<DockScope>, SharedString)>,
 }
 
 impl DockMenu {
@@ -72,6 +83,7 @@ impl DockMenu {
             rows,
             selected,
             empty: None,
+            heading: None,
         }
     }
 
@@ -81,7 +93,13 @@ impl DockMenu {
             rows: Vec::new(),
             selected: 0,
             empty: Some(text.into()),
+            heading: None,
         }
+    }
+
+    pub fn heading(mut self, scopes: Vec<DockScope>, aside: impl Into<SharedString>) -> Self {
+        self.heading = Some((scopes, aside.into()));
+        self
     }
 }
 
@@ -155,6 +173,55 @@ impl RenderOnce for DockMenu {
                 .into_any_element();
             heading.into_iter().chain([line])
         });
+        let heading = self.heading.map(|(scopes, aside)| {
+            div()
+                .min_h(px(26.))
+                .px(px(6.))
+                .pb(px(3.))
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .children(scopes.into_iter().enumerate().map(|(index, scope)| {
+                    let choose = scope.choose;
+                    div()
+                        .id(("dock-scope", index))
+                        .h(px(22.))
+                        .px(px(6.))
+                        .flex()
+                        .items_center()
+                        .gap(px(5.))
+                        .rounded(theme::RADIUS_2)
+                        .cursor_pointer()
+                        .text_size(crate::theme::ui_text(10.5))
+                        .text_color(if scope.on {
+                            t.text_primary
+                        } else {
+                            t.text_tertiary
+                        })
+                        .when(scope.on, |chip| chip.bg(t.surface_chosen))
+                        .hover(move |chip| chip.text_color(t.text_primary))
+                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                            cx.stop_propagation();
+                            choose(window, cx);
+                        })
+                        .child(
+                            div()
+                                .font_family(theme::MONO)
+                                .text_size(crate::theme::ui_text(9.5))
+                                .child(scope.key),
+                        )
+                        .child(scope.label)
+                }))
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .pr(px(4.))
+                        .font_family(theme::MONO)
+                        .text_size(crate::theme::ui_text(9.5))
+                        .text_color(t.text_disabled)
+                        .child(aside),
+                )
+        });
         let empty = self.empty.map(|text| {
             div()
                 .min_h(px(30.))
@@ -181,6 +248,7 @@ impl RenderOnce for DockMenu {
             .rounded_t(theme::RADIUS_3)
             .bg(t.surface_composer)
             .occlude()
+            .children(heading)
             .children(rows)
             .children(empty)
     }

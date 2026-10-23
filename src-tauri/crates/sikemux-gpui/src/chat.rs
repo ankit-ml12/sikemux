@@ -2612,7 +2612,12 @@ fn composer(
         .menu
         .as_ref()
         .filter(|menu| menu.answers(composing.draft.read(cx)))
-        .and_then(|menu| mention::dock(&agent.id, menu, &bench.project_files, cx));
+        .and_then(|menu| {
+            let repo = (bench.project())
+                .and_then(|project| project.code_host.as_ref())
+                .map(|host| host.repo.clone());
+            mention::dock(&agent.id, menu, &bench.project_files, repo.as_deref(), cx)
+        });
     let offering = dock.is_some();
     let head = chat.state.as_ref();
     let kinds = bench.read("catalog").and_then(Value::as_array);

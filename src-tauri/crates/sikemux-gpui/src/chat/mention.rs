@@ -19,7 +19,7 @@ use sikemux_wire::protocol::{ChatContext, ProjectInfo};
 use super::Composing;
 use crate::finder::ProjectFiles;
 use crate::icons::Icon;
-use crate::ui::{self, DockMenu, DockRow};
+use crate::ui::{self, DockMenu, DockRow, DockScope};
 use crate::workbench::Workbench;
 
 const SHOWN: usize = 8;
@@ -596,6 +596,37 @@ impl Workbench {
         }
     }
 
+    /// Makes the word the menu answers ask for another kind of thing, as a click on its
+    /// heading does, keeping what was typed after its key.
+    pub fn switch_scope(
+        &mut self,
+        agent: &str,
+        trigger: char,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(composing) = self
+            .chats
+            .get_mut(agent)
+            .and_then(|chat| chat.composer.as_mut())
+        else {
+            return;
+        };
+        let Some(start) = (composing.menu.as_ref())
+            .filter(|menu| menu.typed.trigger != trigger)
+            .map(|menu| menu.typed.start)
+        else {
+            return;
+        };
+        composing.draft.update(cx, |draft, cx| {
+            let caret = draft.cursor();
+            draft.set_selected_range(start..start + 1, cx);
+            draft.replace(trigger.to_string(), window, cx);
+            draft.set_selected_range(caret..caret, cx);
+        });
+        self.offer(agent, cx);
+    }
+
     pub fn dismiss_menu(&mut self, agent: &str, cx: &mut Context<Self>) {
         if let Some(composing) = self
             .chats
@@ -769,16 +800,53 @@ fn ranked_entries(needle: &str, files: &Arc<Vec<String>>) -> Vec<Choice> {
         .collect()
 }
 
-/// The menu over the draft of `agent`'s chat, while it offers anything.
+/// The kinds of thing the menu names, in the order its heading lists them.
+const SCOPES: [(char, &str); 4] = [
+    ('@', "Agents"),
+    ('#', "Issues"),
+    ('!', "Pull requests"),
+    ('+', "Files"),
+];
+
+/// The menu over the draft of `agent`'s chat, while it offers anything, under a heading of the
+/// kinds of thing it names; `repo` is the project's on its code host.
 pub fn dock(
     agent: &str,
     menu: &Menu,
     files: &ProjectFiles,
+    repo: Option<&str>,
     cx: &mut Context<Workbench>,
 ) -> Option<DockMenu> {
+    let trigger = menu.typed.trigger;
+    let headed = |dock: DockMenu| {
+        if trigger == '/' {
+            return dock;
+        }
+        let scopes = SCOPES
+            .iter()
+            .map(|&(key, label)| {
+                let (this, agent) = (cx.weak_entity(), agent.to_owned());
+                DockScope {
+                    key: key.to_string().into(),
+                    label: label.into(),
+                    on: key == trigger,
+                    choose: Rc::new(move |window: &mut Window, cx: &mut App| {
+                        this.update(cx, |bench, cx| bench.switch_scope(&agent, key, window, cx))
+                            .ok();
+                    }),
+                }
+            })
+            .collect();
+        let aside = match trigger {
+            '+' => "attach",
+            '#' | '!' => repo.unwrap_or_default(),
+            _ => "mention",
+        };
+        dock.heading(scopes, aside.to_owned())
+    };
     if menu.choices.is_empty() {
         let blank = menu.typed.needle.is_empty();
-        return match menu.typed.trigger {
+        let empty = match trigger {
             '@' if blank => Some(DockMenu::empty("No other agent yet")),
             '@' => Some(DockMenu::empty("No agent or earlier chat matches")),
             '+' if files.project.is_none() => {
@@ -788,6 +856,7 @@ pub fn dock(
             '+' => Some(DockMenu::empty("Nothing in the project matches")),
             _ => menu.empty.clone().map(DockMenu::empty),
         };
+        return empty.map(headed);
     }
     let this = cx.weak_entity();
     let tint = crate::theme::Tokens::get(cx).text_tertiary;
@@ -880,5 +949,6 @@ pub fn dock(
             }
         }
     });
-    Some(DockMenu::new(rows.collect(), menu.selected))
+    let rows: Vec<DockRow> = rows.collect();
+    Some(headed(DockMenu::new(rows, menu.selected)))
 }
