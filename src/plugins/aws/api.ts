@@ -81,33 +81,6 @@ export interface EcsTask {
     private_ip: string | null;
 }
 
-export interface Ec2Instance {
-    instance_id: string;
-    name: string | null;
-    state: string | null;
-    instance_type: string | null;
-    private_ip: string | null;
-    public_ip: string | null;
-    launch_time: string | null;
-}
-
-export interface LambdaFn {
-    name: string;
-    runtime: string | null;
-    last_modified: string | null;
-    memory_size: number | null;
-    timeout: number | null;
-    handler: string | null;
-}
-
-export interface SqsQueue {
-    name: string;
-    url: string;
-    messages: string | null;
-    in_flight: string | null;
-    delayed: string | null;
-}
-
 export interface EcsTaskLog {
     log_group: string;
     log_stream: string;
@@ -119,11 +92,6 @@ export interface EcsServiceLog {
     log_group: string;
     container_name: string;
     region: string | null;
-}
-
-export interface S3Bucket {
-    name: string;
-    created_at: string | null;
 }
 
 /** Whether AWS calls work as the profile the pane shows. */
@@ -153,10 +121,6 @@ export const awsApi = {
         backend.call<EcsTaskLog>("ecsTaskLogConfig", { profile, cluster, taskArn }),
     ecsServiceLogConfig: (profile: string, cluster: string, service: string) =>
         backend.call<EcsServiceLog>("ecsServiceLogConfig", { profile, cluster, service }),
-    ec2Instances: (profile: string) => backend.call<Ec2Instance[]>("ec2Instances", { profile }),
-    lambdaFunctions: (profile: string) => backend.call<LambdaFn[]>("lambdaFunctions", { profile }),
-    sqsQueues: (profile: string) => backend.call<SqsQueue[]>("sqsQueues", { profile }),
-    s3Buckets: (profile: string) => backend.call<S3Bucket[]>("s3Buckets", { profile }),
 
     /** Waits for the person to approve in their browser, so it streams rather than calls: a call would time out. */
     ssoLogin: (profile: string) =>

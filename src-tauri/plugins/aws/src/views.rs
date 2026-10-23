@@ -3,11 +3,15 @@
 
 use std::collections::HashMap;
 
-use sikemux_plugin_api::aws::{Billing, BillingChange, BillingCharge, BillingMonth};
+use sikemux_plugin_api::aws::{
+    Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance, Health, Lambda,
+    LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
+};
+use sikemux_plugin_api::PluginContext;
 
-use crate::billing;
 use crate::common::Target;
 use crate::error::AwsResult;
+use crate::{auth, billing, ec2, lambda, s3, sqs};
 
 const MONTH_NAMES: [&str; 12] = [
     "January",
@@ -26,6 +30,258 @@ const MONTH_NAMES: [&str; 12] = [
 
 /// Amounts under half a cent are nothing.
 const NOTHING: f64 = 0.005;
+
+/// Where the console opens when a profile names no region.
+const FALLBACK_REGION: &str = "us-east-1";
+
+const DEPRECATED_RUNTIMES: [&str; 11] = [
+    "python3.7",
+    "python3.8",
+    "python3.9",
+    "nodejs12.x",
+    "nodejs14.x",
+    "nodejs16.x",
+    "nodejs18.x",
+    "go1.x",
+    "java8",
+    "dotnet6",
+    "ruby2.7",
+];
+
+const RUNTIME_FAMILIES: [(&str, &str); 7] = [
+    ("nodejs", "Node"),
+    ("python", "Python"),
+    ("java", "Java"),
+    ("go", "Go"),
+    ("dotnet", ".NET"),
+    ("ruby", "Ruby"),
+    ("provided", "Custom"),
+];
+
+/// The smallest share of a bar a queue holding anything gets, so it still shows.
+const SLIVER: f64 = 0.03;
+
+/// The profile's own region, which is the one its calls run in.
+async fn targeted(ctx: &PluginContext, asked: Target) -> AwsResult<(Target, String)> {
+    let target = auth::resolve(ctx, asked).await?;
+    let region = target
+        .region
+        .clone()
+        .unwrap_or_else(|| FALLBACK_REGION.to_owned());
+    Ok((target, region))
+}
+
+pub(crate) async fn ec2(ctx: &PluginContext, asked: Target) -> AwsResult<Ec2> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let instances: Vec<Ec2Instance> = ec2::instances(&target)
+        .await?
+        .into_iter()
+        .map(|instance| instance_of(instance, &region))
+        .collect();
+    Ok(Ec2 {
+        running: instances
+            .iter()
+            .filter(|instance| instance.state.as_deref() == Some("running"))
+            .count() as u32,
+        instances,
+        region,
+    })
+}
+
+fn instance_of(instance: ec2::Ec2Instance, region: &str) -> Ec2Instance {
+    let (health, label) = match instance.state.as_deref() {
+        Some("running") => (Health::Ok, "Running"),
+        Some("pending") => (Health::Warn, "Starting"),
+        Some("stopping") => (Health::Warn, "Stopping"),
+        Some("shutting-down") => (Health::Warn, "Shutting down"),
+        Some("stopped") => (Health::Off, "Stopped"),
+        Some("terminated") => (Health::Off, "Terminated"),
+        Some(other) => (Health::Off, other),
+        None => (Health::Off, "Unknown"),
+    };
+    Ec2Instance {
+        state_label: label.to_owned(),
+        health,
+        idle: matches!(instance.state.as_deref(), Some("stopped" | "terminated")),
+        console_url: format!(
+            "https://{region}.console.aws.amazon.com/ec2/home?region={region}#InstanceDetails:instanceId={}",
+            instance.instance_id
+        ),
+        id: instance.instance_id,
+        name: instance.name,
+        state: instance.state,
+        instance_type: instance.instance_type,
+        private_ip: instance.private_ip,
+        public_ip: instance.public_ip,
+        launched_at: instance.launch_time,
+    }
+}
+
+pub(crate) async fn lambda(ctx: &PluginContext, asked: Target) -> AwsResult<Lambda> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let raw = lambda::functions(&target).await?;
+    let most = raw
+        .iter()
+        .filter_map(|function| function.memory_size)
+        .fold(1024, i64::max);
+    let functions: Vec<LambdaFunction> = raw
+        .into_iter()
+        .map(|function| function_of(function, most, &region))
+        .collect();
+    let mut families: Vec<RuntimeFamily> = Vec::new();
+    for function in &functions {
+        match families
+            .iter_mut()
+            .find(|family| family.key == function.family)
+        {
+            Some(family) => family.count += 1,
+            None => families.push(RuntimeFamily {
+                key: function.family.clone(),
+                label: family_label(&function.family).to_owned(),
+                count: 1,
+            }),
+        }
+    }
+    families.sort_by_key(|family| std::cmp::Reverse(family.count));
+    Ok(Lambda {
+        region,
+        families,
+        functions,
+    })
+}
+
+fn family_label(key: &str) -> &'static str {
+    RUNTIME_FAMILIES
+        .iter()
+        .find(|(family, _)| *family == key)
+        .map_or("Other", |(_, label)| *label)
+}
+
+fn function_of(function: lambda::LambdaFn, most_memory: i64, region: &str) -> LambdaFunction {
+    let family = function
+        .runtime
+        .as_deref()
+        .and_then(|runtime| {
+            RUNTIME_FAMILIES
+                .iter()
+                .find(|(family, _)| runtime.starts_with(family))
+        })
+        .map_or("other", |(family, _)| *family);
+    let memory_mb = function
+        .memory_size
+        .and_then(|mb| u32::try_from(mb).ok())
+        .filter(|mb| *mb > 0);
+    LambdaFunction {
+        family: family.to_owned(),
+        deprecated: function
+            .runtime
+            .as_deref()
+            .is_some_and(|runtime| DEPRECATED_RUNTIMES.contains(&runtime)),
+        memory_label: memory_mb.map_or_else(|| "—".to_owned(), memory_label),
+        memory_ratio: memory_mb.map_or(0., |mb| f64::from(mb) / most_memory as f64),
+        memory_mb,
+        timeout_secs: function.timeout.and_then(|secs| u32::try_from(secs).ok()),
+        handler: function.handler,
+        modified_at: function.last_modified,
+        log_group: format!("/aws/lambda/{}", function.name),
+        console_url: format!(
+            "https://{region}.console.aws.amazon.com/lambda/home?region={region}#/functions/{}",
+            encoded(&function.name)
+        ),
+        runtime: function.runtime,
+        name: function.name,
+    }
+}
+
+/// `512 MB`, or `1.5 GB` from a gigabyte up.
+fn memory_label(mb: u32) -> String {
+    if mb < 1024 {
+        return format!("{mb} MB");
+    }
+    let gb = format!("{:.1}", f64::from(mb) / 1024.);
+    format!("{} GB", gb.strip_suffix(".0").unwrap_or(&gb))
+}
+
+pub(crate) async fn sqs(ctx: &PluginContext, asked: Target) -> AwsResult<Sqs> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let raw = sqs::queues(&target).await?;
+    let count = |value: &Option<String>| value.as_deref().and_then(|n| n.parse::<u64>().ok());
+    let most = raw
+        .iter()
+        .filter_map(|queue| count(&queue.messages))
+        .fold(1, u64::max);
+    let queues: Vec<SqsQueue> = raw
+        .into_iter()
+        .map(|queue| {
+            let available = count(&queue.messages);
+            let dead_letter = is_dead_letter(&queue.name);
+            SqsQueue {
+                fifo: queue.name.ends_with(".fifo"),
+                dead_letter,
+                ratio: available
+                    .filter(|n| *n > 0)
+                    .map_or(0., |n| (n as f64 / most as f64).sqrt().max(SLIVER)),
+                needs_look: dead_letter && available.is_some_and(|n| n > 0),
+                in_flight: count(&queue.in_flight),
+                delayed: count(&queue.delayed),
+                available,
+                console_url: format!(
+                    "https://{region}.console.aws.amazon.com/sqs/v3/home?region={region}#/queues/{}",
+                    encoded(&queue.url)
+                ),
+                name: queue.name,
+                url: queue.url,
+            }
+        })
+        .collect();
+    Ok(Sqs {
+        region,
+        dead_letters: queues.iter().filter(|queue| queue.dead_letter).count() as u32,
+        queues,
+    })
+}
+
+/// Named as a dead-letter queue: `-dlq`, `_dlq`, `-dead-letter` or `-deadletter` at its end.
+fn is_dead_letter(name: &str) -> bool {
+    let name = name.to_lowercase();
+    let name = name.strip_suffix(".fifo").unwrap_or(&name);
+    ["dlq", "dead-letter", "deadletter"].iter().any(|ending| {
+        name.strip_suffix(ending)
+            .is_some_and(|rest| rest.ends_with('-') || rest.ends_with('_'))
+    })
+}
+
+pub(crate) async fn s3(ctx: &PluginContext, asked: Target) -> AwsResult<S3> {
+    let (target, region) = targeted(ctx, asked).await?;
+    let buckets = s3::buckets(&target)
+        .await?
+        .into_iter()
+        .map(|bucket| S3Bucket {
+            uri: format!("s3://{}", bucket.name),
+            arn: format!("arn:aws:s3:::{}", bucket.name),
+            console_url: format!(
+                "https://s3.console.aws.amazon.com/s3/buckets/{}",
+                encoded(&bucket.name)
+            ),
+            name: bucket.name,
+            created_at: bucket.created_at,
+        })
+        .collect();
+    Ok(S3 { region, buckets })
+}
+
+/// `text` made safe to put in a URL, as a browser's `encodeURIComponent` makes it.
+fn encoded(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
 
 pub(crate) async fn billing(target: &Target, months_back: u32) -> AwsResult<Billing> {
     let mut months = billing::months(target, months_back).await?;

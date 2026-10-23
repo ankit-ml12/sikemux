@@ -185,10 +185,10 @@ impl Plugin for Aws {
                     } = params(input)?;
                     answer(ecs::service_log_config(&target, &cluster, &service)).await
                 }
-                "ec2Instances" => answer(ec2::instances(&params(input)?)).await,
-                "lambdaFunctions" => answer(lambda::functions(&params(input)?)).await,
-                "sqsQueues" => answer(sqs::queues(&params(input)?)).await,
-                "s3Buckets" => answer(s3::buckets(&params(input)?)).await,
+                "ec2View" => answer(views::ec2(ctx, params(input)?)).await,
+                "lambdaView" => answer(views::lambda(ctx, params(input)?)).await,
+                "sqsView" => answer(views::sqs(ctx, params(input)?)).await,
+                "s3View" => answer(views::s3(ctx, params(input)?)).await,
                 "billingView" => {
                     let BillingParams {
                         target,

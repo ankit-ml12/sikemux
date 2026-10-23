@@ -5,7 +5,11 @@
   "sikemux": ">=0.4",
   "callTimeoutSecs": 150,
   "views": {
-    "billingView": { "everySecs": 600 }
+    "billingView": { "everySecs": 600 },
+    "ec2View": { "everySecs": 60 },
+    "lambdaView": { "everySecs": 60 },
+    "sqsView": { "everySecs": 60 },
+    "s3View": { "everySecs": 300 }
   },
   "environment": [
     "AWS_CLI",

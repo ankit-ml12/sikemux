@@ -77,3 +77,105 @@ export type AwsBillingChange =
           kind: "down";
           pct: number;
       };
+
+/** The EC2 instances in the profile's region. */
+export interface AwsEc2 {
+    region: string;
+    running: number;
+    instances: AwsEc2Instance[];
+}
+
+export interface AwsEc2Instance {
+    id: string;
+    name: string | null;
+    state: string | null;
+    /** `Running`, `Starting`, `Stopped` and the like. */
+    stateLabel: string;
+    health: AwsHealth;
+    /** Stopped or terminated, so a pane draws it faded. */
+    idle: boolean;
+    instanceType: string | null;
+    privateIp: string | null;
+    publicIp: string | null;
+    launchedAt: string | null;
+    consoleUrl: string;
+}
+
+/** How a resource is doing, as a pane colours it. */
+export type AwsHealth = "ok" | "warn" | "fail" | "off";
+
+/** The Lambda functions in the profile's region. */
+export interface AwsLambda {
+    region: string;
+    /** The runtimes the functions are written in, the most used first. */
+    families: AwsRuntimeFamily[];
+    functions: AwsLambdaFunction[];
+}
+
+export interface AwsRuntimeFamily {
+    /** `nodejs`, `python`, `java`, `go`, `dotnet`, `ruby`, `provided` or `other`. */
+    key: string;
+    /** `Node`, `Python`, `.NET`, `Custom` and the like. */
+    label: string;
+    count: number;
+}
+
+export interface AwsLambdaFunction {
+    name: string;
+    runtime: string | null;
+    /** The key of its runtime's family. */
+    family: string;
+    /** Its runtime is one AWS no longer supports. */
+    deprecated: boolean;
+    memoryMb: number | null;
+    /** `512 MB`, `1.5 GB`. */
+    memoryLabel: string;
+    /** Its memory over the most any function has, and never under a gigabyte's worth. */
+    memoryRatio: number;
+    timeoutSecs: number | null;
+    handler: string | null;
+    modifiedAt: string | null;
+    logGroup: string;
+    consoleUrl: string;
+}
+
+/** The SQS queues in the profile's region. */
+export interface AwsSqs {
+    region: string;
+    deadLetters: number;
+    queues: AwsSqsQueue[];
+}
+
+export interface AwsSqsQueue {
+    name: string;
+    url: string;
+    fifo: boolean;
+    /** Named as a dead-letter queue, `-dlq` or `-dead-letter` at its end. */
+    deadLetter: boolean;
+    available: number | null;
+    inFlight: number | null;
+    delayed: number | null;
+    /**
+     * How full its bar is beside the fullest queue's: on a square-root scale, so small queues
+     * still show, and never under a sliver while it holds anything.
+     */
+    ratio: number;
+    /** A dead-letter queue holding messages, which someone should look at. */
+    needsLook: boolean;
+    consoleUrl: string;
+}
+
+/** The account's S3 buckets. */
+export interface AwsS3 {
+    region: string;
+    buckets: AwsS3Bucket[];
+}
+
+export interface AwsS3Bucket {
+    name: string;
+    createdAt: string | null;
+    /** `s3://name`. */
+    uri: string;
+    arn: string;
+    consoleUrl: string;
+}

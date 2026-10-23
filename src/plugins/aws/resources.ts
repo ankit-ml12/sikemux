@@ -1,7 +1,7 @@
 import { defineService } from "../../plugin-api/service";
 import { awsApi } from "./api";
 import { AWS_PLUGIN } from "./kinds";
-import type { AwsBilling } from "./types.generated";
+import type { AwsBilling, AwsEc2, AwsLambda, AwsS3, AwsSqs } from "./types.generated";
 
 export const aws = defineService(AWS_PLUGIN, () => awsApi.status());
 
@@ -29,16 +29,16 @@ export const ecsServiceLogConfigR = aws.resource("ecs.serviceLogConfig", (profil
     awsApi.ecsServiceLogConfig(profile, cluster, service),
 );
 
-export const ec2InstancesR = aws.resource("ec2.instances", (profile: string) => awsApi.ec2Instances(profile), 60_000);
-
-export const lambdaFnsR = aws.resource("lambda.functions", (profile: string) => awsApi.lambdaFunctions(profile), 60_000);
-
-export const sqsQueuesR = aws.resource("sqs.queues", (profile: string) => awsApi.sqsQueues(profile), 60_000);
-
 /** How many closed months the costs reach back over, beside the month in progress. */
 const MONTHS_BACK = 5;
 
 /** The account's costs by month, worked out by the plugin and kept by the core. */
 export const billingV = aws.view<[profile: string], AwsBilling>("billingView", (profile) => ({ profile, monthsBack: MONTHS_BACK }));
 
-export const s3BucketsR = aws.resource("s3.buckets", (profile: string) => awsApi.s3Buckets(profile), 5 * 60_000);
+export const ec2V = aws.view<[profile: string], AwsEc2>("ec2View", (profile) => ({ profile }));
+
+export const lambdaV = aws.view<[profile: string], AwsLambda>("lambdaView", (profile) => ({ profile }));
+
+export const sqsV = aws.view<[profile: string], AwsSqs>("sqsView", (profile) => ({ profile }));
+
+export const s3V = aws.view<[profile: string], AwsS3>("s3View", (profile) => ({ profile }));

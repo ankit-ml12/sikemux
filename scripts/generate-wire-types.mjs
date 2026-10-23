@@ -95,7 +95,22 @@ const LINEAR_TYPES = [
 ];
 
 /** The AWS plugin's types, known as its own beside the others'. */
-const AWS_TYPES = ["Billing", "BillingMonth", "BillingCharge", "BillingChange"];
+const AWS_TYPES = [
+  "Billing",
+  "BillingMonth",
+  "BillingCharge",
+  "BillingChange",
+  "Health",
+  "Ec2",
+  "Ec2Instance",
+  "Lambda",
+  "RuntimeFamily",
+  "LambdaFunction",
+  "Sqs",
+  "SqsQueue",
+  "S3",
+  "S3Bucket",
+];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
 const RUNDECK_TYPES = [
@@ -311,7 +326,7 @@ const JIRA_ROOTS = [
 const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
 /** What the AWS plugin's views hand its pane. */
-const AWS_ROOTS = ["AwsBilling"];
+const AWS_ROOTS = ["AwsBilling", "AwsEc2", "AwsLambda", "AwsSqs", "AwsS3"];
 
 /** What the Rundeck plugin's views hand its pane. */
 const RUNDECK_ROOTS = [

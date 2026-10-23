@@ -24,6 +24,9 @@ const LOG_LINES = [
   "INFO  request completed method=GET path=/v1/invoices status=200 latency_ms=77",
 ];
 
+const REGION = "eu-west-1";
+const CONSOLE = `https://${REGION}.console.aws.amazon.com`;
+
 const EC2 = [
   ["bastion", "i-0a41f93c2d7e81b05", "running", "t3.micro", "10.0.1.24", "34.242.18.201", 120],
   ["ci-runner-1", "i-07c2e5b1af3d90c44", "running", "c6i.xlarge", "10.0.2.61", null, 21],
@@ -182,38 +185,75 @@ export const AWS: Record<string, (params: Params) => unknown> = {
     region: "eu-west-1",
   }),
   billingView: () => billing(),
-  ec2Instances: () =>
-    EC2.map(([name, id, state, type, privateIp, publicIp, days]) => ({
-      instance_id: id,
+  ec2View: () => ({
+    region: REGION,
+    running: EC2.filter(([, , state]) => state === "running").length,
+    instances: EC2.map(([name, id, state, type, privateIp, publicIp, days]) => ({
+      id,
       name,
       state,
-      instance_type: type,
-      private_ip: privateIp,
-      public_ip: publicIp,
-      launch_time: minutesAgo(days * 1440),
+      stateLabel: state === "running" ? "Running" : "Stopped",
+      health: state === "running" ? "ok" : "off",
+      idle: state !== "running",
+      instanceType: type,
+      privateIp,
+      publicIp,
+      launchedAt: minutesAgo(days * 1440),
+      consoleUrl: `${CONSOLE}/ec2/home?region=${REGION}#InstanceDetails:instanceId=${id}`,
     })),
-  lambdaFunctions: () =>
-    LAMBDAS.map(([name, runtime, memory, timeout, days, handler]) => ({
+  }),
+  lambdaView: () => ({
+    region: REGION,
+    families: [
+      { key: "nodejs", label: "Node", count: 3 },
+      { key: "python", label: "Python", count: 3 },
+      { key: "java", label: "Java", count: 1 },
+    ],
+    functions: LAMBDAS.map(([name, runtime, memory, timeout, days, handler]) => ({
       name,
       runtime,
-      memory_size: memory,
-      timeout,
-      last_modified: minutesAgo(days * 1440),
+      family: runtime.replace(/[\d.]+x?$/, ""),
+      deprecated: runtime === "nodejs18.x" || runtime === "python3.9",
+      memoryMb: memory,
+      memoryLabel: memory >= 1024 ? `${+(memory / 1024).toFixed(1)} GB` : `${memory} MB`,
+      memoryRatio: memory / 3008,
+      timeoutSecs: timeout,
       handler,
+      modifiedAt: minutesAgo(days * 1440),
+      logGroup: `/aws/lambda/${name}`,
+      consoleUrl: `${CONSOLE}/lambda/home?region=${REGION}#/functions/${name}`,
     })),
-  sqsQueues: () =>
-    QUEUES.map(([name, messages, inFlight, delayed]) => ({
+  }),
+  sqsView: () => ({
+    region: REGION,
+    deadLetters: QUEUES.filter(([name]) => name.endsWith("-dlq")).length,
+    queues: QUEUES.map(([name, available, inFlight, delayed]) => {
+      const url = `https://sqs.${REGION}.amazonaws.com/123456789012/${name}`;
+      const deadLetter = name.endsWith("-dlq");
+      return {
+        name,
+        url,
+        fifo: name.endsWith(".fifo"),
+        deadLetter,
+        available,
+        inFlight,
+        delayed,
+        ratio: available ? Math.max(0.03, Math.sqrt(available / 5210)) : 0,
+        needsLook: deadLetter && available > 0,
+        consoleUrl: `${CONSOLE}/sqs/v3/home?region=${REGION}#/queues/${encodeURIComponent(url)}`,
+      };
+    }),
+  }),
+  s3View: () => ({
+    region: REGION,
+    buckets: BUCKETS.map(([name, days]) => ({
       name,
-      url: `https://sqs.eu-west-1.amazonaws.com/123456789012/${name}`,
-      messages: String(messages),
-      in_flight: String(inFlight),
-      delayed: String(delayed),
+      createdAt: minutesAgo(days * 1440),
+      uri: `s3://${name}`,
+      arn: `arn:aws:s3:::${name}`,
+      consoleUrl: `https://s3.console.aws.amazon.com/s3/buckets/${name}`,
     })),
-  s3Buckets: () =>
-    BUCKETS.map(([name, days]) => ({
-      name,
-      created_at: minutesAgo(days * 1440),
-    })),
+  }),
 };
 
 /** The costs view the plugin works out, for the months above, oldest first. */
