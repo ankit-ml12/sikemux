@@ -183,11 +183,7 @@ mod tests {
     }
 
     async fn history(database: &Arc<dyn Plugin>, ctx: &PluginContext, ask: Value) -> Value {
-        database
-            .call(ctx, "historyView", ask)
-            .await
-            .unwrap()["entries"]
-            .clone()
+        database.call(ctx, "historyView", ask).await.unwrap()["entries"].clone()
     }
 
     #[tokio::test]
