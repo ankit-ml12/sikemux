@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod aws;
 pub mod chat;
 pub mod codehost;
+pub mod database;
 pub mod grid;
 pub mod jira;
 pub mod linear;

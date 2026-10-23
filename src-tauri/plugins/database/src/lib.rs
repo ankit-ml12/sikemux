@@ -8,6 +8,7 @@
 //   history     — the SQL run against each saved database, to find and run again
 //   queries     — running SQL against a saved database, and stopping it
 //   values      — query results, the same for every engine
+//   views       — what the pane shows: the explorer, a table's structure and the history
 
 mod agent;
 mod connections;
@@ -18,6 +19,7 @@ mod profiles;
 mod queries;
 mod schema;
 mod values;
+mod views;
 
 use std::sync::Arc;
 
@@ -112,6 +114,13 @@ impl Plugin for Database {
                     ))
                     .await
                 }
+                "explorerView" => {
+                    answer(views::explorer_view(&self.pool, data_dir, params(input)?)).await
+                }
+                "tableView" => {
+                    answer(views::table_view(&self.pool, data_dir, params(input)?)).await
+                }
+                "historyView" => answer(views::history_view(data_dir, params(input)?)).await,
                 "agentDatabases" => reply(agent::databases(&data_dir)?),
                 "agentTables" => answer(agent::tables(&self.pool, &data_dir, params(input)?)).await,
                 "agentDescribe" => {

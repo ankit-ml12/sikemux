@@ -52,6 +52,7 @@ const SOURCES = [
   `${WIRE}/rundeck.rs`,
   `${WIRE}/aws.rs`,
   `${WIRE}/linear.rs`,
+  `${WIRE}/database.rs`,
   `${WIRE}/slack.rs`,
   `${WIRE}/vercel.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
@@ -82,6 +83,24 @@ const JIRA_TYPES = [
   "Swimlane",
   "IssueView",
   "Activity",
+];
+
+/** The Database plugin's types are known as its own. */
+const DATABASE_TYPES = [
+  "Engine",
+  "TableKind",
+  "Explorer",
+  "Connection",
+  "Fact",
+  "Schema",
+  "TableGroup",
+  "TableEntry",
+  "Column",
+  "TableView",
+  "IndexRow",
+  "ForeignKeyRow",
+  "History",
+  "HistoryEntry",
 ];
 
 /** Linear's types are known as Linear's, as Jira's are known as Jira's. */
@@ -229,6 +248,9 @@ const RENAMES = {
   [`${WIRE}/jira.rs`]: Object.fromEntries(
     JIRA_TYPES.map((name) => [name, `Jira${name}`]),
   ),
+  [`${WIRE}/database.rs`]: Object.fromEntries(
+    DATABASE_TYPES.map((name) => [name, `Database${name}`]),
+  ),
   [`${WIRE}/linear.rs`]: Object.fromEntries(
     LINEAR_TYPES.map((name) => [name, `Linear${name}`]),
   ),
@@ -328,6 +350,13 @@ const JIRA_ROOTS = [
   "JiraSpaces",
   "JiraBoardPage",
   "JiraIssueView",
+];
+
+/** What the Database plugin's views hand its pane. */
+const DATABASE_ROOTS = [
+  "DatabaseExplorer",
+  "DatabaseTableView",
+  "DatabaseHistory",
 ];
 
 /** What the Linear plugin's views hand its pane. */
@@ -432,6 +461,7 @@ const OUTPUTS = {
   rundeck: "src/plugins/rundeck/types.generated.ts",
   aws: "src/plugins/aws/types.generated.ts",
   linear: "src/plugins/linear/types.generated.ts",
+  database: "src/plugins/database/types.generated.ts",
   slack: "src/plugins/slack/types.generated.ts",
   vercel: "src/plugins/vercel/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
@@ -1127,6 +1157,7 @@ await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
 await emit(OUTPUTS.aws, typescript(false, AWS_ROOTS, ""));
 await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
+await emit(OUTPUTS.database, typescript(false, DATABASE_ROOTS, ""));
 await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
 await emit(OUTPUTS.vercel, typescript(false, VERCEL_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
