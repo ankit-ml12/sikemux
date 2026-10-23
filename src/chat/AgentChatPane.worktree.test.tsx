@@ -31,13 +31,12 @@ vi.mock("../api/core", async (importOriginal) => {
 });
 vi.mock("../api/acp", () => ({
     acpApi: {
+        composing: vi.fn(async () => {}),
         subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async () => {
-            const start = mocks.started;
+        attach: vi.fn(async (agentId: string) => {
+            const start = mocks.started ?? (await mocks.start(agentId));
             mocks.started = null;
-            return start
-                ? { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null }
-                : { status: "missing" };
+            return { status: "live", start, permissionMode: "workspace-write", running: false, turned: false, feed: "feed-1", olderBefore: null };
         }),
         startChat: vi.fn(async (agentId: string) => {
             mocks.started = await mocks.start(agentId);

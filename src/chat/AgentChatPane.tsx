@@ -98,18 +98,29 @@ export const AgentChatPane = memo(function AgentChatPane({
     const [state, dispatch] = useReducer(chatReducer, initialChatState);
     const [foldMemory] = useState(newFoldMemory);
     const [composerError, setComposerError] = useState<string | null>(null);
-    const { agentRef, sessionIdRef, recovery, retry, replaying, changingPermissions, appliedPermissionMode, permissionMode, earlier, loadEarlier } =
-        useAcpSession({
-            active,
-            visible,
-            agent,
-            profile,
-            cwd,
-            connection: state.connection,
-            foldMemory,
-            dispatch,
-            onError: setComposerError,
-        });
+    const {
+        agentRef,
+        sessionIdRef,
+        recovery,
+        retry,
+        woke,
+        replaying,
+        changingPermissions,
+        appliedPermissionMode,
+        permissionMode,
+        earlier,
+        loadEarlier,
+    } = useAcpSession({
+        active,
+        visible,
+        agent,
+        profile,
+        cwd,
+        connection: state.connection,
+        foldMemory,
+        dispatch,
+        onError: setComposerError,
+    });
 
     /* A resumed session sends its history back over many frames. The pane keeps
        showing what it had until the history is all in and its text has been
@@ -164,6 +175,7 @@ export const AgentChatPane = memo(function AgentChatPane({
         steerable,
         dispatch,
         onError: setComposerError,
+        onSent: woke,
     });
     const started = state.messages.length > 0 || Boolean(agent.resumeId);
     const worktree = useChatWorktree({

@@ -22,6 +22,7 @@ export function usePromptQueue({
     steerable,
     dispatch,
     onError,
+    onSent,
 }: {
     agentRef: RefObject<Agent>;
     agentId: string;
@@ -34,6 +35,7 @@ export function usePromptQueue({
     steerable: boolean;
     dispatch: Dispatch<ChatAction>;
     onError: (message: string | null) => void;
+    onSent: () => void;
 }) {
     /* Only the first shows before the agent can take it, and not while the chat it takes up is still replaying. */
     const [early, setEarly] = useState<{ message: OutgoingMessage; messageId?: string }[]>([]);
@@ -53,11 +55,12 @@ export function usePromptQueue({
         async ({ text, paths, context }: OutgoingMessage, messageId?: string) => {
             try {
                 await acpApi.prompt(agentRef.current.id, text, paths, context, messageId);
+                onSent();
             } catch (error) {
                 dispatch({ type: "error", message: errorText(error) });
             }
         },
-        [agentRef, dispatch],
+        [agentRef, dispatch, onSent],
     );
 
     useEffect(() => {

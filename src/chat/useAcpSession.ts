@@ -66,6 +66,10 @@ export function useAcpSession({
     /* Set when the core came back still running this chat: the session is
        taken up again rather than stopped and started. */
     const reattachingRef = useRef(false);
+    /* A chat whose agent is not running stays that way when shown: only the person's message,
+       or their asking it to reconnect, starts it. */
+    const dormantRef = useRef(false);
+    const startWantedRef = useRef(false);
     const [changingPermissions, setChangingPermissions] = useState(false);
     const [appliedPermissionMode, setAppliedPermissionMode] = useState<string | null>(null);
     /* True while a resumed or reattached session is sending its history back,
@@ -85,6 +89,7 @@ export function useAcpSession({
     }, [connection, updateRecovery]);
 
     const retry = useCallback(() => {
+        startWantedRef.current = true;
         updateRecovery(agentRef.current.resumeId ? { phase: "resuming" } : null);
         setRestartKey((value) => value + 1);
     }, [updateRecovery]);
@@ -153,7 +158,7 @@ export function useAcpSession({
             }
             /* The core starts the agent again under a running chat after a
                sign-in or on another account, sometimes on a new session. */
-            if (event.kind === "ready" && typeof event.payload.sessionId === "string" && sessionIdRef.current)
+            if (event.kind === "ready" && typeof event.payload.sessionId === "string" && sessionIdRef.current !== null)
                 sessionIdRef.current = event.payload.sessionId;
             const actions = chatActions(event);
             const history = historyRef.current;
@@ -192,6 +197,15 @@ export function useAcpSession({
                 let attached = await attach();
                 if (!mounted) return;
                 if (attached.status !== "live") {
+                    if (!startWantedRef.current) {
+                        dormantRef.current = true;
+                        flushUpdates();
+                        dispatch({ type: "ready", capabilities: {}, setup: {}, running: false });
+                        setReplaying(false);
+                        setAppliedPermissionMode(permissionModeOf(current));
+                        return;
+                    }
+                    startWantedRef.current = false;
                     await workspaceSent();
                     await acpApi.startChat(current.id);
                     if (!mounted) return;
@@ -303,11 +317,20 @@ export function useAcpSession({
         );
     }, [agent.id, dispatch, earlier]);
 
+    /** A message reached a chat whose agent was not running, so the core started it: take it up. */
+    const woke = useCallback(() => {
+        if (!dormantRef.current) return;
+        dormantRef.current = false;
+        reattachingRef.current = true;
+        setRestartKey((value) => value + 1);
+    }, []);
+
     return {
         agentRef,
         sessionIdRef,
         recovery,
         retry,
+        woke,
         replaying,
         changingPermissions,
         appliedPermissionMode,
