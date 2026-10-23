@@ -6,7 +6,7 @@ import { errorText, formatDuration } from "../../../plugin-api/format";
 import { rundeckApi, type JobDetail, type JobOption, type PlanResult } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndExecutionsR, rndJobDetailR, rndJobsR, rndMatrixR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
+import { rndExecutionsR, rndJobDetailR, rndJobsR, rndPlanR, useBranchOptions, useProdEnvs } from "../resources";
 import { branchOf, branchOptionName, envOf, isLiveStatus, isProdTarget, localDateTimeToIso, qualifiedName } from "../shape";
 import { watchRun } from "../runWatch";
 import { useDebounced } from "../../../plugin-api/hooks";
@@ -210,9 +210,7 @@ function RunForm({ paneId, level, active, detail, permalink, children }: FormPro
                 throw pushed ? new Error(`${branch} was pushed, but Rundeck rejected the run: ${errorText(e)}`) : e;
             });
             if (result.recovered) notify("info", "The run request timed out, but the run was found in Rundeck.");
-            invalidate(
-                (kind, args) => (kind === rndExecutionsR.kind && args[0] === level.jobId) || (kind === rndMatrixR.kind && args[0] === level.project),
-            );
+            invalidate((kind, args) => kind === rndExecutionsR.kind && args[0] === level.jobId);
             watchRun(cmd.jobRefOf(level), result.id);
             cmd.rundeckReplace(paneId, { kind: "execution", ...cmd.jobRefOf(level), executionId: result.id });
         } catch (e) {

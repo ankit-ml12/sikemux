@@ -96,6 +96,93 @@ const cells = ENVS.flatMap((env, envIndex) =>
   }),
 );
 
+type Cell = (typeof cells)[number];
+
+const runOf = (run: Cell["latest"]) => ({
+  executionId: run.execution_id,
+  status: run.status,
+  statusKind: run.status,
+  live: run.status === "running",
+  user: run.user,
+  startedAt: run.started_at,
+  endedAt: run.ended_at,
+  branch: run.branch,
+});
+
+const sectionsBy = (
+  shown: Cell[],
+  here: string[],
+  key: (below: string[]) => string | null,
+) => {
+  const by = new Map<string | null, string[]>();
+  for (const cell of shown) {
+    const segment = key(cell.group.split("/").slice(here.length));
+    by.set(segment, [...(by.get(segment) ?? []), cell.job_id]);
+  }
+  return [...by.entries()]
+    .sort(([a], [b]) => (a ?? "").localeCompare(b ?? ""))
+    .map(([segment, ids]) => {
+      const path = [...here, ...(segment ? [segment] : [])].join("/");
+      return {
+        segment,
+        path,
+        label: path || PROJECT,
+        prod: path.includes("production"),
+        jobs: ids,
+      };
+    });
+};
+
+const jobsView = ({ group }: Params) => {
+  const here = typeof group === "string" && group ? group.split("/") : [];
+  const shown = cells
+    .filter(
+      (cell) =>
+        cell.group.split("/").slice(0, here.length).join("/") ===
+        here.join("/"),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const rows = shown.map((cell) => {
+    const latest = runOf(cell.latest);
+    const deployed = runOf(cell.deployed);
+    return {
+      jobId: cell.job_id,
+      name: cell.name,
+      group: cell.group,
+      enabled: true,
+      scheduled: false,
+      error: null,
+      latest,
+      deployed,
+      branch: latest.branch,
+      runWord: "Deploy",
+      liveBranch:
+        latest.live && deployed.branch !== latest.branch
+          ? deployed.branch
+          : null,
+    };
+  });
+  const compare = sectionsBy(shown, here, (below) => below[0] ?? null).filter(
+    (section) => section.segment !== null,
+  );
+  return {
+    project: PROJECT,
+    group: here.length ? here.join("/") : null,
+    title: here.at(-1) ?? PROJECT,
+    error: null,
+    partial: false,
+    timedOut: 0,
+    running: rows.filter((row) => row.latest.live).length,
+    failed: rows.filter((row) => row.latest.statusKind === "failed").length,
+    jobs: rows,
+    list: sectionsBy(shown, here, (below) => below.join("/") || null),
+    compare: compare.length > 1 ? compare : [],
+    shared: compare.length > 1 ? SERVICES.length : 0,
+    loose: 0,
+    livePaths: ["", "deploy", "deploy/production"],
+  };
+};
+
 const LIVE_EXECUTION = 48_199;
 const steps = [
   "Checkout",
@@ -201,13 +288,31 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
     { project: "data", jobs: [], error: null },
   ],
   jobs: () => jobs,
-  branchesMatrix: () => ({
-    project: PROJECT,
-    cells,
-    error: null,
-    partial: false,
-    elapsed_ms: 412,
+  treeView: () => ({
+    projects: [
+      {
+        name: PROJECT,
+        error: null,
+        total: jobs.length,
+        ungrouped: 0,
+        groups: [
+          {
+            name: "deploy",
+            path: "deploy",
+            count: jobs.length,
+            children: ENVS.map((env) => ({
+              name: env,
+              path: `deploy/${env}`,
+              count: SERVICES.length,
+              children: [],
+            })),
+          },
+        ],
+      },
+      { name: "data", error: null, total: 0, ungrouped: 0, groups: [] },
+    ],
   }),
+  jobsView,
   jobCells: () => cells,
   jobDetail: ({ jobId: id }) => {
     const job = jobs.find((candidate) => candidate.id === id) ?? jobs[0];

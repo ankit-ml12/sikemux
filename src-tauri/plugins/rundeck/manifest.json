@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 65,
+  "views": {
+    "treeView": { "everySecs": 300 },
+    "jobsView": { "everySecs": 30 }
+  },
+  "writes": ["run", "agentRun", "abort", "setLists"],
   "tools": [
     {
       "name": "rundeck_projects",

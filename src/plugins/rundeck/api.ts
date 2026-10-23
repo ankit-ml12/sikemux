@@ -8,7 +8,6 @@ const FORBIDDEN_ACTION: Record<string, string> = {
     jobs: "list this project's jobs",
     jobIndex: "list jobs",
     jobDetail: "read this job",
-    branchesMatrix: "read this project's executions",
     jobCells: "read these jobs' executions",
     executions: "read this job's executions",
     execution: "read this execution",
@@ -145,14 +144,6 @@ export interface MatrixCell {
     latest: ExecSummary | null;
     deployed: ExecSummary | null;
     error: string | null;
-}
-
-export interface MatrixResult {
-    project: string;
-    cells: MatrixCell[];
-    error: string | null;
-    partial: boolean;
-    elapsed_ms: number;
 }
 
 export interface RundeckExecution {
@@ -297,7 +288,6 @@ export const rundeckApi = {
     jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
     jobDetail: (jobId: string) => rndInvoke<JobDetail>("jobDetail", { jobId }),
     optionValues: (url: string) => rndInvoke<OptionValue[]>("optionValues", { url }),
-    branchesMatrix: (project: string) => rndInvoke<MatrixResult>("branchesMatrix", { project }),
     jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
     lists: () => backend.call<RundeckLists>("lists"),
     setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),

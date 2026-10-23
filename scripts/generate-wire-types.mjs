@@ -49,6 +49,7 @@ const SOURCES = [
   ].map((file) => `${CORE}/git/${file}.rs`),
   `${WIRE}/codehost.rs`,
   `${WIRE}/jira.rs`,
+  `${WIRE}/rundeck.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -77,6 +78,18 @@ const JIRA_TYPES = [
   "Swimlane",
   "IssueView",
   "Activity",
+];
+
+/** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
+const RUNDECK_TYPES = [
+  "Tree",
+  "TreeProject",
+  "GroupNode",
+  "StatusKind",
+  "RunSummary",
+  "JobRow",
+  "Section",
+  "Jobs",
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -123,6 +136,9 @@ const RENAMES = {
   [`${PLUGIN_API}/ratelimit.rs`]: { Budget: "RateLimit" },
   [`${WIRE}/jira.rs`]: Object.fromEntries(
     JIRA_TYPES.map((name) => [name, `Jira${name}`]),
+  ),
+  [`${WIRE}/rundeck.rs`]: Object.fromEntries(
+    RUNDECK_TYPES.map((name) => [name, `Rundeck${name}`]),
   ),
 };
 
@@ -210,6 +226,9 @@ const JIRA_ROOTS = [
   "JiraIssueView",
 ];
 
+/** What the Rundeck plugin's views hand its pane. */
+const RUNDECK_ROOTS = ["RundeckTree", "RundeckJobs"];
+
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {
   DeviceView: "workspace chats sessions attentions inbox faceStyle",
@@ -264,6 +283,7 @@ const OUTPUTS = {
   mac: "src/api/generated/wire.ts",
   codehost: "src/codehost/types.generated.ts",
   jira: "src/plugins/jira/types.generated.ts",
+  rundeck: "src/plugins/rundeck/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -954,5 +974,6 @@ await emit(
 );
 await emit(OUTPUTS.codehost, typescript(false, CODEHOST_ROOTS, ""));
 await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
+await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());

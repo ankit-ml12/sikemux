@@ -277,6 +277,8 @@ pub(crate) async fn listed() -> Vec<Listed> {
 pub(crate) fn sign_in_moved(core: &Core, plugin: &str, method: &str) {
     if method.starts_with("signIn")
         || method.starts_with("signOut")
+        || method.starts_with("login")
+        || method == "logout"
         || method == "setDefaultAccount"
     {
         core.changes.changed(Topic::Plugins, None, None);

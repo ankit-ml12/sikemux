@@ -24,6 +24,8 @@ mod jobs;
 mod logs;
 mod plan;
 mod projects;
+mod shape;
+mod views;
 mod watch;
 
 use std::sync::Arc;
@@ -182,6 +184,10 @@ impl Plugin for Rundeck {
             let session = &session;
             let branch_options = &saved.settings.branch_options;
             match method {
+                "treeView" => answer(views::tree_view(session)).await,
+                "jobsView" => {
+                    answer(views::jobs_view(session, &saved.settings, params(input)?)).await
+                }
                 "projects" => answer(projects::projects(session)).await,
                 "jobs" => {
                     let ProjectParams { project } = params(input)?;

@@ -10,4 +10,5 @@ pub mod jira;
 pub mod notch;
 pub mod protocol;
 pub mod pty;
+pub mod rundeck;
 pub mod theme;

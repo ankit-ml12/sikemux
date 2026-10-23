@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
     branchOf,
-    childSegment,
     displayStatus,
     envOf,
     envTone,
-    inGroup,
     isLiveStatus,
     isProdEnv,
     isProdTarget,
@@ -37,15 +35,7 @@ describe("groups", () => {
         expect(envOf("Deployments", null)).toBe("Deployments");
     });
 
-    it("matches a group and everything below it", () => {
-        expect(inGroup("prod/backend/api", "prod")).toBe(true);
-        expect(inGroup("prod", "prod")).toBe(true);
-        expect(inGroup("production/api", "prod")).toBe(false);
-        expect(inGroup(null, null)).toBe(true);
-        expect(inGroup(null, "prod")).toBe(false);
-        expect(childSegment("prod/backend/api", "prod")).toBe("backend");
-        expect(childSegment("prod", "prod")).toBeNull();
-        expect(childSegment("prod/backend", null)).toBe("prod");
+    it("qualifies a job's name with its group", () => {
         expect(qualifiedName("api", "prod/backend")).toBe("prod/backend/api");
         expect(qualifiedName("api", null)).toBe("api");
     });

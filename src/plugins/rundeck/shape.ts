@@ -66,19 +66,6 @@ export function targetTone(project: string, group: string | null | undefined, pr
     return isProdTarget(project, group, prodEnvs) ? "prod" : envTone(envOf(project, group));
 }
 
-export function inGroup(jobGroup: string | null | undefined, activeGroup: string | null | undefined): boolean {
-    if (!activeGroup) return true;
-    const path = groupSegments(jobGroup).join("/");
-    const active = groupSegments(activeGroup).join("/");
-    return path === active || path.startsWith(`${active}/`);
-}
-
-/** The group segment directly below `activeGroup`, or null when the job sits in `activeGroup` itself. */
-export function childSegment(jobGroup: string | null | undefined, activeGroup: string | null | undefined): string | null {
-    const depth = groupSegments(activeGroup).length;
-    return groupSegments(jobGroup)[depth] ?? null;
-}
-
 export function qualifiedName(name: string, group: string | null | undefined): string {
     const path = groupSegments(group).join("/");
     return path ? `${path}/${name}` : name;

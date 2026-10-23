@@ -2,6 +2,7 @@ import { peekResource, useResource } from "../../plugin-api/resources";
 import { defineService } from "../../plugin-api/service";
 import { rundeckApi, type PlanRequest, type RundeckJob } from "./api";
 import { RUNDECK_PLUGIN } from "./kinds";
+import type { RundeckJobs, RundeckTree } from "./types.generated";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
 export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
@@ -16,7 +17,14 @@ export const rndJobDetailR = rundeck.resource("jobDetail", (jobId: string) => ru
 
 export const rndOptionValuesR = rundeck.resource("optionValues", (url: string) => rundeckApi.optionValues(url), 60_000);
 
-export const rndMatrixR = rundeck.resource("matrix", (project: string) => rundeckApi.branchesMatrix(project), 30_000);
+/** The projects' folders of jobs, kept by the core for the pane's tree. */
+export const rndTreeV = rundeck.view<[], RundeckTree>("treeView", () => ({}));
+
+/** A folder's jobs with how each last ran, kept by the core; `group` empty for the project's root. */
+export const rndJobsV = rundeck.view<[project: string, group: string], RundeckJobs>("jobsView", (project, group) => ({
+    project,
+    group: group || undefined,
+}));
 
 export const rndJobCellsR = rundeck.resource("jobCells", (jobs: RundeckJob[]) => rundeckApi.jobCells(jobs), 30_000);
 
