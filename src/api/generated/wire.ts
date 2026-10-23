@@ -27,6 +27,8 @@ export interface DeviceView {
     /** Who this host is signed in to Sikemux as; none while nobody is. */
     account: AccountInfo | null;
     faceStyle: FaceStyle;
+    /** How busy this host is, while a client that shows it is attached. */
+    load?: HostLoad;
 }
 
 export interface Workspace {
@@ -743,6 +745,14 @@ export interface FaceStyle {
     shape: string;
     /** Faces move with what their agents are doing. */
     motion: boolean;
+}
+
+/** How busy a host is, for the rows clients show it in. */
+export interface HostLoad {
+    /** The last minute's load as a share of the host's cores, in percent. */
+    cpu: number;
+    /** Memory in use, in bytes, where the host says. */
+    memoryUsed: number | null;
 }
 
 /**

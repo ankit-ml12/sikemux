@@ -210,8 +210,6 @@ pub struct Workbench {
     pub host_views: HashMap<String, DeviceView>,
     /// The account's other hosts this app is connected to now, by key.
     pub hosts_reached: HashSet<String>,
-    /// How busy each reached host was when last read, as its row shows it.
-    pub host_loads: HashMap<String, SharedString>,
     /// Whether each host asks the person before a new device joins, by key, none for this one.
     pub approvals: HashMap<Option<String>, bool>,
     /// Why this app reaches none of the account's other hosts, when it cannot.
@@ -491,7 +489,6 @@ impl Workbench {
             }
         })
         .detach();
-        crate::hosts::watch_loads(window, cx);
         let voice = cx.new(|_| crate::voice::Dictation::default());
         let voice_heard = [
             cx.subscribe_in(&voice, window, |bench, _, heard, window, cx| {
@@ -579,7 +576,6 @@ impl Workbench {
             asking: None,
             host_views: HashMap::new(),
             hosts_reached: HashSet::new(),
-            host_loads: HashMap::new(),
             approvals: HashMap::new(),
             hosts_unavailable: None,
             track: crate::track::Slide::default(),
@@ -691,10 +687,8 @@ impl Workbench {
                 if reached {
                     self.hosts_reached.insert(host.clone());
                     self.read_approval(Some(host.clone()), cx);
-                    crate::hosts::read_load_now(host, cx);
                 } else {
                     self.hosts_reached.remove(&host);
-                    self.host_loads.remove(&host);
                 }
                 self.parts.redraw(&self.parts.stage, cx);
             }
@@ -709,7 +703,6 @@ impl Workbench {
                 };
                 self.host_views.retain(|id, _| linked(id));
                 self.hosts_reached.retain(linked);
-                self.host_loads.retain(|id, _| linked(id));
                 self.approvals
                     .retain(|id, _| id.as_ref().is_none_or(linked));
                 if !self.approvals.contains_key(&None) {

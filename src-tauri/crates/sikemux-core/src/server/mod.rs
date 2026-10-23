@@ -419,6 +419,8 @@ pub(crate) struct Core {
     /// The view each client was last sent: by the device with what it has in front of its
     /// own, or under none for every other client.
     device_view: Mutex<HashMap<Option<String>, Vec<u8>>>,
+    /// What the rows showed of this host's load in the view that last went out.
+    shown_load: Mutex<Option<(u32, Option<u64>)>>,
     /// The app's terminal theme, which programs asking for colours are told.
     terminal_colors: Mutex<sikemux_wire::grid::TerminalColors>,
     /// The person's theme resolved, kept until their preferences change.
@@ -516,6 +518,7 @@ impl Core {
             drafts: drafts::Drafts::new(data_dir),
             streams: streams::Streams::default(),
             device_view: Mutex::default(),
+            shown_load: Mutex::default(),
             terminal_colors: Mutex::default(),
             palette: Mutex::new(themes::default_palette()),
         });
@@ -950,6 +953,11 @@ impl Core {
             layout,
             account: self.account.shown().map(Box::new),
             face_style: Box::new(self.faces.style()),
+            load: self.shows_load().then(|| {
+                let load = load::now();
+                *self.shown_load.locked() = Some(load::shown(&load));
+                load
+            }),
         };
         let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView { view },
@@ -965,6 +973,25 @@ impl Core {
             .into_iter()
             .filter(|client| !client.peer.is_local() || client.watches_view())
             .collect()
+    }
+
+    /// Whether a client that shows this host's load watches the view: the app on this host, or
+    /// another host's app joined as a device. Phones show no load.
+    pub(crate) fn shows_load(&self) -> bool {
+        self.view_watchers()
+            .iter()
+            .any(|client| match &client.peer {
+                access::Peer::Device { id } => !self
+                    .remote
+                    .device_platform(id)
+                    .is_some_and(|platform| matches!(platform.as_str(), "ios" | "android")),
+                peer => !matches!(peer, access::Peer::Share { .. }),
+            })
+    }
+
+    /// Whether what the rows show of `load` moved since the view last went out.
+    pub(crate) fn load_moved(&self, load: &crate::protocol::HostLoad) -> bool {
+        *self.shown_load.locked() != Some(load::shown(load))
     }
 
     /// Whether anything in the view moves by itself.
@@ -1305,6 +1332,7 @@ pub(crate) async fn run_core(
         tokio::spawn(poll_sessions(core.clone())),
         tokio::spawn(sweep(core.clone())),
         tokio::spawn(device_views(core.clone())),
+        tokio::spawn(load::watch(core.clone())),
         tokio::spawn(lifecycle::serve(core.clone())),
         tokio::spawn(updates::serve(core.clone())),
         tokio::spawn(changed::serve(core.clone())),

@@ -236,8 +236,10 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .map_or(0, |view| view.workspace.agents.len());
             let load = host["id"]
                 .as_str()
-                .and_then(|id| bench.host_loads.get(id))
-                .filter(|_| reach == "connected");
+                .and_then(|id| bench.host_views.get(id))
+                .and_then(|view| view.load.as_ref())
+                .filter(|_| reach == "connected")
+                .map(crate::hosts::load_label);
             let detail = match reach {
                 "away" if linked => Some("out of reach".to_owned()),
                 "connecting" if linked => Some("connecting".to_owned()),

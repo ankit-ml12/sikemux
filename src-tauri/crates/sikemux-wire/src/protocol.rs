@@ -1463,6 +1463,16 @@ pub enum DeviceAccess {
     Watch,
 }
 
+/// How busy a host is, for the rows clients show it in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostLoad {
+    /// The last minute's load as a share of the host's cores, in percent.
+    pub cpu: u32,
+    /// Memory in use, in bytes, where the host says.
+    pub memory_used: Option<u64>,
+}
+
 /// The computer a core runs on, as a person would recognise it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1954,6 +1964,9 @@ pub struct DeviceView {
     pub account: Option<Box<AccountInfo>>,
     #[serde(default)]
     pub face_style: Box<FaceStyle>,
+    /// How busy this host is, while a client that shows it is attached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load: Option<HostLoad>,
 }
 
 /// The Sikemux account this host is signed in to, as clients show it.
@@ -2351,6 +2364,7 @@ mod tests {
             layout: Box::default(),
             account: None,
             face_style: Box::default(),
+            load: None,
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");
