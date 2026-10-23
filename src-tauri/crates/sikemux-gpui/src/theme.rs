@@ -258,6 +258,11 @@ pub fn install(cx: &mut App) {
         .add_fonts(fonts.into_iter().map(Cow::Borrowed).collect())
         .expect("bundled fonts load");
     cx.text_system().set_antialiased_only(true);
+    // A trial for the person to compare against the default; never on unless they set it.
+    let light_text_curve = std::env::var("SIKEMUX_TRIAL_TEXT_CURVE")
+        .ok()
+        .and_then(|exponent| exponent.parse().ok());
+    cx.text_system().set_light_text_curve(light_text_curve);
 
     apply(&sikemux_core::server::themes::default_palette(), cx);
     let toasts = &mut KitTheme::global_mut(cx).notification;
