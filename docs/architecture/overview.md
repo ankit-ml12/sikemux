@@ -57,9 +57,9 @@ the app. `scripts/build-cli-sidecar.mjs` builds it into `src-tauri/binaries/` an
 `tauri.sidecar.conf.json` adds it to the Linux and Windows bundles. On macOS it is the
 executable of an app of its own, `Contents/Helpers/Sikemux Core.app`
 (`com.nodelike.sikemux.core`), because only an app can carry the provisioning profile
-that lets it keep secrets in the keychain group it shares with the app. `tauri.core.conf.json`
-adds it, with a `Contents/MacOS/sikemux-host` link to it for installed `sikemux`
-commands, and `scripts/sign-mac.sh` embeds the profiles in `src-tauri/macos/`. `scripts/build-voice-helper.mjs` builds
+that lets it keep secrets in the keychain group it shares with the app. `scripts/build-mac.sh`
+puts it in the bundle beside the GPUI app and the notch helper, with a
+`Contents/MacOS/sikemux-host` link to it for installed `sikemux` commands, and `scripts/sign-mac.sh` embeds the profiles in `src-tauri/macos/`. `scripts/build-voice-helper.mjs` builds
 and signs `sikemux-voice` there too, but it stays out of the app: each release publishes
 it as an asset, and the `sikemux-voice` crate records its hash and downloads it with the
 speech model. `pnpm sidecar:dev` builds both beside the dev app, which runs them in place.
