@@ -20,7 +20,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_wire::chat::{ChatChange, ChatPage, QueuedMessage, SentContext, ToolDetail};
 
 use super::super::connection::{ClientConn, ClientId};
-use super::history::{History, HistoryState, Page, Recovered, MAX_HISTORY_BYTES};
+use super::history::{History, HistoryState, Page, Reader, Recovered, MAX_HISTORY_BYTES};
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
 use sikemux_fold::Fold;
@@ -70,6 +70,14 @@ struct Entry {
     /// A page of history can start here.
     point: bool,
     on_disk: bool,
+}
+
+/// Where a page's events come from.
+enum PageSource {
+    /// The history on disk, read outside the chat's lock.
+    Disk(Reader),
+    /// The replay in memory, already read.
+    Held(Page),
 }
 
 /// The ordered events a late client replays. Text streamed into one message
@@ -995,24 +1003,45 @@ impl Replay {
 
     /// The events of the turns before `before`, from the history on disk, or
     /// from the replay when the chat keeps none.
+    #[cfg(test)]
     pub(crate) fn page(&self, before: u64, turns: usize) -> Result<Page, String> {
-        let mut page = match self
+        let turns = turns.clamp(1, MAX_PAGE_TURNS);
+        let page = match self.page_source(before, turns)? {
+            PageSource::Held(page) => page,
+            PageSource::Disk(reader) => reader
+                .page(before, turns, PAGE_BYTES)
+                .map_err(|error| error.to_string())?,
+        };
+        Ok(self.with_spawns(page))
+    }
+
+    /// Where the turns before `before` are read from: the history on disk, by a reader taken
+    /// now and read once the chat's lock is let go, or the replay held in memory.
+    fn page_source(&self, before: u64, turns: usize) -> Result<PageSource, String> {
+        let history = self
             .history
             .as_ref()
-            .filter(|history| history.first().is_some())
-        {
-            Some(history) => history
-                .page(before, turns.clamp(1, MAX_PAGE_TURNS), PAGE_BYTES)
-                .map_err(|error| error.to_string())?,
-            None => self.page_held(before, turns.clamp(1, MAX_PAGE_TURNS)),
-        };
+            .filter(|history| history.first().is_some());
+        let reader = history
+            .map(History::reader)
+            .transpose()
+            .map_err(|error| error.to_string())?
+            .flatten();
+        Ok(match reader {
+            Some(reader) => PageSource::Disk(reader),
+            None => PageSource::Held(self.page_held(before, turns)),
+        })
+    }
+
+    /// `page` with the starts of the subagents it speaks of that began before it.
+    fn with_spawns(&self, mut page: Page) -> Page {
         let spawns: Vec<(u64, ChatEvent)> = self
             .spawns_before(page.events.iter().map(|(_, event)| event), page.first)
             .into_iter()
             .map(|(index, event)| (index, event.clone()))
             .collect();
         page.events.splice(0..0, spawns);
-        Ok(page)
+        page
     }
 
     fn page_held(&self, before: u64, turns: usize) -> Page {
@@ -1921,11 +1950,28 @@ impl Feed {
         if feed != self.id {
             return Err("the chat started again; open it again to see its history".into());
         }
-        let mut inner = self.inner.locked();
-        let page = inner.replay.page(before, turns)?;
-        Ok(self
-            .fold(&mut inner)
-            .page(&page.events, before, page.older_before))
+        let turns = turns.clamp(1, MAX_PAGE_TURNS);
+        for _ in 0..2 {
+            let source = self.inner.locked().replay.page_source(before, turns)?;
+            let page = match source {
+                PageSource::Held(page) => page,
+                PageSource::Disk(reader) => {
+                    let page = reader
+                        .page(before, turns, PAGE_BYTES)
+                        .map_err(|error| error.to_string())?;
+                    if !reader.still_current() {
+                        continue;
+                    }
+                    page
+                }
+            };
+            let mut inner = self.inner.locked();
+            let page = inner.replay.with_spawns(page);
+            return Ok(self
+                .fold(&mut inner)
+                .page(&page.events, before, page.older_before));
+        }
+        Err("that part of the chat changed; ask again".into())
     }
 
     /// A tool call's change and output, line by line, for a client that opened its row.

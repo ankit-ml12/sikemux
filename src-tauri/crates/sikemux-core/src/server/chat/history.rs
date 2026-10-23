@@ -3,8 +3,11 @@
 //! it reads the rest from here, a page of whole turns at a time.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +55,21 @@ pub(crate) struct History {
     /// One past the index of the last event written.
     next: u64,
     points: Vec<Point>,
+    /// Counts the times the file was rewritten, cut back or given up, so a page read outside
+    /// the chat's lock can tell its file changed under it.
+    rewrites: Arc<AtomicU64>,
+}
+
+/// What a page needs of a history file, taken under the chat's lock so the reading itself can
+/// happen outside it while the chat goes on streaming.
+pub(crate) struct Reader {
+    file: File,
+    first: u64,
+    next: u64,
+    bytes: u64,
+    points: Vec<Point>,
+    rewrites: Arc<AtomicU64>,
+    taken_at: u64,
 }
 
 /// A history file let go of whole, for a core that takes the chat over to
@@ -122,6 +140,7 @@ impl History {
             first: 0,
             next: 0,
             points: Vec::new(),
+            rewrites: Arc::default(),
         }
     }
 
@@ -155,6 +174,7 @@ impl History {
             first: 0,
             next: 0,
             points: Vec::new(),
+            rewrites: Arc::default(),
         };
         let mut reader = BufReader::new(&file);
         let mut line = Vec::new();
@@ -240,6 +260,7 @@ impl History {
             first: state.first,
             next: state.next,
             points: if kept { state.points } else { Vec::new() },
+            rewrites: Arc::default(),
         }
     }
 
@@ -296,10 +317,12 @@ impl History {
         );
         self.file = None;
         self.points.clear();
+        self.rewrites.fetch_add(1, Ordering::SeqCst);
         let _ = fs::remove_file(&self.path);
     }
 
     fn drop_oldest_half(&mut self) -> io::Result<()> {
+        self.rewrites.fetch_add(1, Ordering::SeqCst);
         let half = self.bytes / 2;
         let after_half = |point: &&Point| point.offset >= half && point.offset > 0;
         let cut = self
@@ -347,6 +370,7 @@ impl History {
         if self.file.is_none() || index >= self.next {
             return;
         }
+        self.rewrites.fetch_add(1, Ordering::SeqCst);
         let offset = match self.points.iter().find(|point| point.index == index) {
             Some(point) if index > self.first => point.offset,
             _ => 0,
@@ -384,12 +408,47 @@ impl History {
         None
     }
 
+    /// Whole turns from before the event at `before`, as many as `turns` while they stay under
+    /// `max_bytes`, read here and now.
+    #[cfg(test)]
+    pub(crate) fn page(&self, before: u64, turns: usize, max_bytes: u64) -> io::Result<Page> {
+        match self.reader()? {
+            Some(reader) => reader.page(before, turns, max_bytes),
+            None => Ok(Page::default()),
+        }
+    }
+
+    /// What a page read needs of the file, to read outside the chat's lock; none while no file
+    /// is kept.
+    pub(crate) fn reader(&self) -> io::Result<Option<Reader>> {
+        if self.file.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Reader {
+            file: File::open(&self.path)?,
+            first: self.first,
+            next: self.next,
+            bytes: self.bytes,
+            points: self.points.clone(),
+            rewrites: self.rewrites.clone(),
+            taken_at: self.rewrites.load(Ordering::SeqCst),
+        }))
+    }
+}
+
+impl Reader {
+    /// Whether the file is still as it was when the reader was taken: nothing was cut back or
+    /// rewritten since, so what was read from it holds.
+    pub(crate) fn still_current(&self) -> bool {
+        self.rewrites.load(Ordering::SeqCst) == self.taken_at
+    }
+
     /// Whole turns from before the event at `before`, as many as `turns`
     /// while they stay under `max_bytes`. A turn too big for a page on its
     /// own comes in pieces. Permission requests are left out: they were
     /// answered long ago.
     pub(crate) fn page(&self, before: u64, turns: usize, max_bytes: u64) -> io::Result<Page> {
-        if self.file.is_none() || before <= self.first {
+        if before <= self.first {
             return Ok(Page::default());
         }
         let end = match self
@@ -422,10 +481,8 @@ impl History {
             return Ok(Page::default());
         };
         let start = candidates[chosen];
-        let mut file = File::open(&self.path)?;
-        file.seek(SeekFrom::Start(start.offset))?;
-        let mut text = Vec::with_capacity((end - start.offset) as usize);
-        file.take(end - start.offset).read_to_end(&mut text)?;
+        let mut text = vec![0; (end - start.offset) as usize];
+        self.file.read_exact_at(&mut text, start.offset)?;
         let events = text
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
