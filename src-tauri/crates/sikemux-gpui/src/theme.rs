@@ -257,6 +257,7 @@ pub fn install(cx: &mut App) {
     cx.text_system()
         .add_fonts(fonts.into_iter().map(Cow::Borrowed).collect())
         .expect("bundled fonts load");
+    cx.text_system().set_antialiased_only(true);
 
     apply(&sikemux_core::server::themes::default_palette(), cx);
     let toasts = &mut KitTheme::global_mut(cx).notification;
