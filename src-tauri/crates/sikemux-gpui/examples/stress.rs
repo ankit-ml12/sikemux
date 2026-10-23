@@ -904,11 +904,20 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
     let done = Cell::new(false);
     let (mut waits, mut stuck_since, mut stalled) = (Vec::new(), None::<Instant>, false);
     let mut last = run.row_ids(chat).last().cloned();
+    // The first and last rows held before each frame, to name what a slow frame was doing.
+    let mut held = Vec::new();
+    let scrolling = Instant::now();
     let scrolled = run.measure_while(
         |began, _| !done.get() && began.elapsed() < Duration::from_secs(120),
         |run, _| {
             run.wheel(middle, -12.);
-            let now = run.row_ids(chat).last().cloned();
+            let ids = run.row_ids(chat);
+            let now = ids.last().cloned();
+            held.push((
+                scrolling.elapsed().as_secs_f64() * 1e3,
+                ids.first().cloned(),
+                now.clone(),
+            ));
             if now != last {
                 waits.push(
                     stuck_since
@@ -942,6 +951,31 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
             waits.iter().copied().fold(0., f64::max),
             scrolled.frames.iter().copied().fold(0., f64::max),
             spread(scrolled.frames.clone())
+        );
+    }
+    let slow = scrolled
+        .frames
+        .iter()
+        .enumerate()
+        .filter(|(_, ms)| **ms > 16.);
+    for (frame, ms) in slow.take(10) {
+        let (Some(before), after) = (held.get(frame), held.get(frame + 1)) else {
+            continue;
+        };
+        let mut doing = Vec::new();
+        if after.is_some_and(|after| after.2 != before.2) {
+            doing.push("page insert");
+        }
+        if after.is_some_and(|after| after.1 != before.1) {
+            doing.push("trim");
+        }
+        if doing.is_empty() {
+            doing.push("scroll only (no rows came or went)");
+        }
+        println!(
+            "windowed slow frame: #{frame} at {:.0} ms into the scroll took {ms:.1} ms, during {}",
+            before.0,
+            doing.join(" and ")
         );
     }
     let began = Instant::now();
