@@ -113,6 +113,8 @@ pub struct Rundeck {
     /// Runs the person asked to hear about when they end.
     watching: HashMap<u64, Task<()>>,
     sign_in: Option<SignIn>,
+    /// The run an abort was asked for, until Rundeck answers.
+    aborting: Option<u64>,
     typing: Vec<Subscription>,
 }
 
@@ -3075,8 +3077,17 @@ impl Rundeck {
                             )),
                         )
                         .child(
-                            Button::new("rundeck-abort", "Abort", Variant::Outline)
-                                .icon(Icon::Stop)
+                            Button::new(
+                                "rundeck-abort",
+                                if self.aborting == Some(id) {
+                                    "Aborting…"
+                                } else {
+                                    "Abort"
+                                },
+                                Variant::Outline,
+                            )
+                            .icon(Icon::Stop)
+                            .disabled(self.aborting == Some(id))
                                 .on_click(listen::<Rundeck, ClickEvent>(
                                     cx,
                                     move |_, host, _, _, cx| {
@@ -3640,9 +3651,15 @@ fn abort(host: &Host, job: &JobRef, id: u64, cx: &mut Context<PluginPane>) {
                 }
                 let _ = pane.update(cx, |pane, cx| {
                     let stopped = pane.host.call("abort", json!({ "executionId": id }));
+                    if let Some((rd, _)) = pane.parts::<Rundeck>() {
+                        rd.aborting = Some(id);
+                    }
+                    cx.notify();
                     after::<Rundeck, _>(
                         stopped,
-                        |_, host, done, cx| match done {
+                        |rd, host, done, cx| {
+                            rd.aborting = None;
+                            match done {
                             Ok(result) if result["abort"]["status"] == "failed" => {
                                 let reason = result["abort"]["reason"]
                                     .as_str()
@@ -3656,6 +3673,7 @@ fn abort(host: &Host, job: &JobRef, id: u64, cx: &mut Context<PluginPane>) {
                             }
                             Ok(_) => {}
                             Err(failure) => host.said(&failure.titled("Abort"), cx),
+                            }
                         },
                         cx,
                     );
@@ -3789,7 +3807,7 @@ impl Rundeck {
                             .child(labelled("Password", &form.password))
                     })
                     .child(
-                        Toggle::new(
+                        div().flex().child(Toggle::new(
                             "rundeck-insecure",
                             "Allow plain HTTP on a private network",
                             form.insecure,
@@ -3802,7 +3820,7 @@ impl Rundeck {
                                 }
                                 cx.notify();
                             },
-                        )),
+                        ))),
                     )
                     .child(
                         Button::new(
