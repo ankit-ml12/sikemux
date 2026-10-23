@@ -463,26 +463,34 @@ def spot(run, name):
     return ((run.state() or {}).get("spots") or {}).get(name)
 
 
+def pills(run):
+    spots = (run.state() or {}).get("spots") or {}
+    return {name: frame for name, frame in spots.items() if name.startswith((f"desk-page-{run.agent}-", f"desk-item-{run.agent}-"))}
+
+
 def in_view(run, name):
-    """Scrolls the desk's tab strip, as a person would, until the pill `name` lies clear of the
-    desk's edges and its + and close, and returns where it is then."""
-    pinned = 64
-    sign = 1
+    """Scrolls the desk's tab strip with the wheel, as a person would, until the pill `name` shows
+    whole, and returns where it is then. A pill scrolled out of view has no spot."""
+    strip = spot(run, f"desk-tabs-{run.agent}")
     pill = spot(run, name)
-    for _ in range(12):
-        desk = spot(run, f"pane-Desk-{run.agent}")
-        if not (desk and pill):
+    if not strip:
+        return pill
+    x, y = middle(strip)
+    left, right = strip[0] + 0.5, strip[0] + strip[2] - 0.5
+    earlier = True
+    for _ in range(16):
+        if pill and pill[0] >= left and pill[0] + pill[2] <= right:
             return pill
-        left, right = desk[0], desk[0] + desk[2] - pinned
-        if pill[0] >= left and pill[0] + pill[2] <= right:
-            return pill
-        off = left - pill[0] if pill[0] < left else pill[0] + pill[2] - right
-        towards = 1 if pill[0] < left else -1
-        run.drive(f"scroll {desk[0] + desk[2] / 2:.0f} {pill[1] + pill[3] / 2:.0f} {towards * sign * 60} 0 5", "wait 0.3")
-        moved = spot(run, name) or pill
-        if (left - moved[0] if moved[0] < left else moved[0] + moved[2] - right) > off:
-            sign = -sign
-        pill = moved
+        if pill:
+            earlier = pill[0] < left
+        before = pills(run)
+        run.drive(f"scroll {x:.0f} {y:.0f} 0 {60 if earlier else -60} 5", "wait 0.3")
+        after = pills(run)
+        if after == before:
+            if pill:
+                return pill
+            earlier = not earlier
+        pill = after.get(name)
     return pill
 
 
@@ -497,7 +505,7 @@ def page_in_front(run):
         run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
         until(lambda: active_page(run.desk()).get("title"), 10)
     if run.desk().get("front"):
-        frame = spot(run, f"desk-page-{run.agent}-{active_page(run.desk()).get('title', '')}")
+        frame = in_view(run, f"desk-page-{run.agent}-{active_page(run.desk()).get('title', '')}")
         if frame:
             x, y = middle(frame)
             run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
@@ -525,14 +533,15 @@ def df2(run):
     run.prompt(json_tool("ui.open", {"kind": "file", "path": path}))
     until(lambda: (run.desk().get("front") or {}).get("file") == path, 10)
     title = active_page(run.desk()).get("title", "")
-    page, item = spot(run, f"desk-page-{run.agent}-{title}"), spot(run, f"desk-item-{run.agent}-a.txt")
-    if not (page and item):
-        return run.report("DF2", False, f"no spot for the page pill {title!r} ({page}) or the file pill ({item})")
-    page = in_view(run, f"desk-page-{run.agent}-{title}") or page
+    page = in_view(run, f"desk-page-{run.agent}-{title}")
+    if not page:
+        return run.report("DF2", False, f"the page pill {title!r} never came into view (desk {spot(run, f'pane-Desk-{run.agent}')})")
     x, y = middle(page)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_page = run.desk().get("front") is None
-    item = in_view(run, f"desk-item-{run.agent}-a.txt") or item
+    item = in_view(run, f"desk-item-{run.agent}-a.txt")
+    if not item:
+        return run.report("DF2", False, f"the file pill never came into view (desk {spot(run, f'pane-Desk-{run.agent}')})")
     x, y = middle(item)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_file = (run.desk().get("front") or {}).get("file") == path

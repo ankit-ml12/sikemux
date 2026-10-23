@@ -294,17 +294,21 @@ thread_local! {
 pub fn spot(name: String) -> gpui_kit::AnyElement {
     use gpui_kit::{IntoElement, Styled};
     gpui_kit::canvas(
-        move |bounds, _, _| {
-            let frame = [
-                bounds.left(),
-                bounds.top(),
-                bounds.size.width,
-                bounds.size.height,
-            ];
+        move |bounds, window, _| {
+            let shown = bounds.intersect(&window.content_mask().bounds);
             SPOTS.with(|spots| {
-                spots
-                    .borrow_mut()
-                    .insert(name.clone(), frame.map(f32::from))
+                let mut spots = spots.borrow_mut();
+                if shown.size.width <= gpui_kit::px(0.) || shown.size.height <= gpui_kit::px(0.) {
+                    spots.remove(&name);
+                    return;
+                }
+                let frame = [
+                    shown.left(),
+                    shown.top(),
+                    shown.size.width,
+                    shown.size.height,
+                ];
+                spots.insert(name.clone(), frame.map(f32::from));
             });
         },
         |_, _, _, _| {},
@@ -314,7 +318,8 @@ pub fn spot(name: String) -> gpui_kit::AnyElement {
     .into_any_element()
 }
 
-/// Every spot's last frame, left, top, width and height, by name.
+/// Every spot's last frame, left, top, width and height, by name: the part of it not clipped
+/// away, as where a click can land; one scrolled wholly out of view has none.
 pub fn spots() -> serde_json::Value {
     SPOTS.with(|spots| serde_json::json!(*spots.borrow()))
 }
