@@ -1386,7 +1386,9 @@ pub fn pane(
                 .flex()
                 .flex_col()
                 .child(head)
-                .child(bar)
+                .when(strip.is_some_and(|strip| !strip.tabs.is_empty()), |pane| {
+                    pane.child(bar)
+                })
                 .child(body),
         )
         .into_any_element()
