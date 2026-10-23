@@ -750,11 +750,11 @@ export class ShowcaseBackend implements IpcTransport {
         parent: null,
       };
     });
-    this.onCore(["inbox", "agentMessages"], ({ method, params }) => {
-      if (method === "agentMessages")
+    this.onCore(["inbox", "agentMessageRows"], ({ method, params }) => {
+      if (method === "agentMessageRows")
         return {
           project: (params as { project: string }).project,
-          entries: DEMO_MESSAGES,
+          rows: DEMO_MESSAGES,
         };
       return {
         items: [],

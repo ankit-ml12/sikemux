@@ -12,7 +12,7 @@ import {
   type BoardColumn,
   type ProjectBoard,
 } from '@mac/agents/agentBoard';
-import { kindLabel, messageRows, messageTone, outcomeLabel, type AgentMessageLog } from '@mac/agents/agentMessages';
+import { kindLabel, outcomeLabel, rowKeys, whoLabel, type AgentMessageRows } from '@mac/agents/agentMessages';
 import { formatAge } from '@mac/lib/format';
 import type { AgentQuestion, ProjectInfo, Snapshot } from '@/core/protocol';
 import { useHostCall } from '@/core/hostCalls';
@@ -117,30 +117,29 @@ function BetweenAgents({ connection, snapshot, project }: { connection: Connecti
   const styles = useStyles(makeStyles);
   const [logged, setLogged] = useState(project);
   const latest = snapshot.inbox.agentMessages[logged] ?? 0;
-  const read = useHostCall<AgentMessageLog>(connection, 'agentMessages', { project, limit: MESSAGES_SHOWN * 5 }, String(latest));
+  const read = useHostCall<AgentMessageRows>(connection, 'agentMessageRows', { project }, String(latest));
   const answered = read.data?.project;
   if (answered && answered !== logged) setLogged(answered);
   if (read.problem) return <Problem what="the messages between agents" text={read.problem} />;
   if (!read.data) return null;
-  const agentOf = (id: string) => {
-    const chat = snapshot.chats.find((known) => known.agentId === id);
-    const terminal = snapshot.sessions.find((session) => session.agentId === id);
-    return { name: chat?.name ?? terminal?.agentName, cli: chat?.provider ?? terminal?.agentType };
-  };
-  const rows = messageRows(read.data.entries, (id) => agentOf(id).name).slice(0, MESSAGES_SHOWN);
+  const cliOf = (id: string) =>
+    snapshot.chats.find((known) => known.agentId === id)?.provider ??
+    snapshot.sessions.find((session) => session.agentId === id)?.agentType;
+  const rows = read.data.rows.slice(0, MESSAGES_SHOWN);
   if (!rows.length) return null;
+  const keys = rowKeys(rows);
   return (
     <View>
       <SectionLabel>Between agents</SectionLabel>
       <Rows>
-        {rows.map((row) => {
-          const cli = row.from ? agentOf(row.from).cli : undefined;
-          const tone = messageTone(row.outcome);
+        {rows.map((row, index) => {
+          const cli = row.from ? cliOf(row.from) : undefined;
+          const tone = row.tone;
           return (
             <Row
-              key={row.key}
+              key={keys[index]}
               mark={cli ? <AgentIcon provider={cli} size={20} /> : <Dot color={colors.rest} size={9} hollow />}
-              title={`${row.fromName} to ${row.toName}`}
+              title={`${whoLabel(row.from, row.fromName)} to ${whoLabel(row.to, row.toName)}`}
               detail={
                 <>
                   {kindLabel(row.kind)} ·{' '}
