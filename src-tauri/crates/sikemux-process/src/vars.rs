@@ -6,6 +6,8 @@ pub const TOOLS_AGENT_ID: &str = "SIKEMUX_TOOLS_AGENT_ID";
 pub const CLI_ENDPOINT: &str = "SIKEMUX_CLI_ENDPOINT";
 pub const CONFIG_DIR: &str = "SIKEMUX_CONFIG_DIR";
 pub const TRYOUT_SEEDED_AT: &str = "SIKEMUX_TRYOUT_SEEDED_AT";
+/// Set when the app opens, it opens its window without coming in front of the app in use.
+pub const LAUNCH_BEHIND: &str = "SIKEMUX_LAUNCH_BEHIND";
 pub const CLI_ENDPOINT_PUBLISH: &str = "SIKEMUX_CLI_ENDPOINT_PUBLISH";
 pub const REAL_GIT: &str = "SIKEMUX_REAL_GIT";
 pub const PROJECT: &str = "SIKEMUX_PROJECT";

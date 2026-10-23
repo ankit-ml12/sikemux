@@ -21,6 +21,9 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             theme::install(cx);
+            let behind = std::env::var_os(sikemux_process::vars::LAUNCH_BEHIND).is_some();
+            #[cfg(feature = "drive")]
+            let behind = behind || sikemux_gpui::drive::stays_behind();
             let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -31,6 +34,7 @@ fn main() {
                     // The top of the 14 pt lights, which centres them in the 36 pt top bar.
                     traffic_light_position: Some(point(px(16.), px(11.))),
                 }),
+                focus: !behind,
                 ..Default::default()
             };
             let (window, _bench) = gpui_kit::open_window(options, cx, |window, cx| {
@@ -49,10 +53,6 @@ fn main() {
             }
             #[cfg(feature = "drive")]
             sikemux_gpui::drive::listen(window, _bench, cx);
-            #[cfg(feature = "drive")]
-            let behind = sikemux_gpui::drive::stays_behind();
-            #[cfg(not(feature = "drive"))]
-            let behind = false;
             if !behind {
                 cx.activate(true);
             }
