@@ -180,7 +180,6 @@ impl AgentMenu {
                     }),
             );
         }
-        popup = popup.separator();
         if let Some(resume) = &agent.resume_id {
             let pin = PinnedChat {
                 provider: agent.provider.clone(),

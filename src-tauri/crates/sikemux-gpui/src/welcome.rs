@@ -5,9 +5,9 @@ use std::cell::Cell;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, relative, AnyElement, App, Context, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, WindowControlArea,
+    actions, div, px, relative, AnyElement, App, Context, Entity, FocusHandle, FontWeight, Hsla,
+    InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, WindowControlArea,
 };
 use serde_json::json;
 use sikemux_core::agent_accounts::status::AgentStatus;
@@ -50,8 +50,10 @@ const MOVES: [(&str, &str, &str, Icon); 4] = [
 ];
 
 pub struct Welcome {
+    /// The welcome itself, which holds the keys until they choose a move.
+    root: FocusHandle,
     moves: [FocusHandle; 4],
-    /// Whether the first move has taken the focus, which it does when the welcome first draws.
+    /// Whether the welcome has taken the focus, which it does when it first draws.
     focused: Cell<bool>,
     git_missing: bool,
 }
@@ -59,6 +61,7 @@ pub struct Welcome {
 impl Welcome {
     pub fn new(cx: &mut Context<Workbench>) -> Self {
         Self {
+            root: cx.focus_handle(),
             moves: std::array::from_fn(|_| cx.focus_handle()),
             focused: Cell::new(false),
             git_missing: false,
@@ -94,8 +97,40 @@ fn take(id: &'static str, window: &mut Window, cx: &mut Context<Workbench>, benc
     keymap::dispatch(id, window, cx);
 }
 
-/// The welcome's keys: a move's own shortcut does it, the arrows step between the moves,
-/// Return takes the one in focus, and Esc skips.
+actions!(welcome, [Next, Previous]);
+
+/// Tab and the arrows step between the moves, from the first or the last while none is chosen.
+pub fn install(cx: &mut App) {
+    let context = Some("Onboarding");
+    cx.bind_keys([
+        KeyBinding::new("tab", Next, context),
+        KeyBinding::new("down", Next, context),
+        KeyBinding::new("shift-tab", Previous, context),
+        KeyBinding::new("up", Previous, context),
+    ]);
+}
+
+fn step(bench: &mut Workbench, forward: bool, window: &mut Window, cx: &mut Context<Workbench>) {
+    let Some(welcome) = welcome_of(bench) else {
+        return;
+    };
+    let last = MOVES.len() - 1;
+    let focused = welcome
+        .moves
+        .iter()
+        .position(|handle| handle.is_focused(window));
+    let to = match (focused, forward) {
+        (None, true) => 0,
+        (None, false) => last,
+        (Some(at), true) => (at + 1) % MOVES.len(),
+        (Some(at), false) => (at + last) % MOVES.len(),
+    };
+    welcome.moves[to].focus(window, cx);
+    bench.parts.redraw(&bench.parts.over, cx);
+}
+
+/// The welcome's keys: a move's own shortcut does it, Return takes the one in focus, and Esc
+/// skips.
 fn key_down(
     bench: &mut Workbench,
     event: &KeyDownEvent,
@@ -117,27 +152,19 @@ fn key_down(
         .moves
         .iter()
         .position(|handle| handle.is_focused(window));
-    let step = |by: usize| focused.map(|at| (at + by) % MOVES.len());
-    let to = match keystroke.key.as_str() {
+    match keystroke.key.as_str() {
         "escape" => {
             cx.stop_propagation();
-            return experience::close(bench, cx);
+            experience::close(bench, cx)
         }
         "enter" => {
             let Some(at) = focused else {
                 return;
             };
             cx.stop_propagation();
-            return take(MOVES[at].0, window, cx, bench);
+            take(MOVES[at].0, window, cx, bench)
         }
-        "down" => step(1),
-        "up" => step(MOVES.len() - 1),
-        _ => None,
-    };
-    if let Some(to) = to {
-        welcome.moves[to].focus(window, cx);
-        cx.stop_propagation();
-        bench.parts.redraw(&bench.parts.over, cx);
+        _ => {}
     }
 }
 
@@ -151,8 +178,8 @@ pub fn render(
         return div().into_any_element();
     };
     if !welcome.focused.replace(true) {
-        let first = welcome.moves[0].clone();
-        window.defer(cx, move |window, cx| first.focus(window, cx));
+        let root = welcome.root.clone();
+        window.defer(cx, move |window, cx| root.focus(window, cx));
     }
     let t = Tokens::get(cx).clone();
     let moves = MOVES
@@ -304,6 +331,17 @@ pub fn render(
     div()
         .id("welcome")
         .key_context("Modal Onboarding")
+        .track_focus(&welcome.root)
+        .on_action({
+            let this = this.clone();
+            move |_: &Next, window, cx| this.update(cx, |bench, cx| step(bench, true, window, cx))
+        })
+        .on_action({
+            let this = this.clone();
+            move |_: &Previous, window, cx| {
+                this.update(cx, |bench, cx| step(bench, false, window, cx))
+            }
+        })
         .absolute()
         .inset_0()
         .flex()

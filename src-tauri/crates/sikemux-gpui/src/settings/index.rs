@@ -65,14 +65,14 @@ impl Page {
 
     pub fn icon(self) -> Icon {
         match self {
-            Page::General => Icon::Settings,
-            Page::Appearance => Icon::Eye,
-            Page::Keybindings => Icon::Keyboard,
+            Page::General => Icon::Folder,
+            Page::Appearance => Icon::Contrast,
+            Page::Keybindings => Icon::Command,
             Page::Activity => Icon::Activity,
-            Page::About => Icon::Logo,
-            Page::Agents => Icon::Agents,
-            Page::Actions => Icon::Actions,
-            Page::Cli => Icon::Terminal,
+            Page::About => Icon::InfoCircle,
+            Page::Agents => Icon::Agent,
+            Page::Actions => Icon::Run,
+            Page::Cli => Icon::Editor,
             Page::Devices => Icon::Phone,
             Page::Cloud => Icon::Globe,
             Page::Plugins => Icon::Plug,

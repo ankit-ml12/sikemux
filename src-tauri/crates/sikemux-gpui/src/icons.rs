@@ -58,6 +58,7 @@ icons!(
     Codex => "codex",
     CollapseAll => "collapse-all",
     Command => "command",
+    Contrast => "contrast",
     Commit => "commit",
     Copy => "copy",
     Cube => "cube",

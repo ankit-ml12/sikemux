@@ -17,6 +17,10 @@ use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
 
+/// How wide the project folders' "Index itself" and depth columns are.
+const INDEX_COLUMN: f32 = 104.;
+const DEPTH_COLUMN: f32 = 108.;
+
 pub const SECTIONS: &[&str] = &["Project folders", "Session transfer"];
 
 /// The folder being added: its path as typed, how deep to search it, and
@@ -160,7 +164,7 @@ fn stepper(
         .child(
             ui::IconButton::new(
                 SharedString::from(format!("{id}-less-{key}")),
-                Icon::ArrowDown,
+                Icon::Minus,
                 "One level less",
             )
             .small()
@@ -177,7 +181,7 @@ fn stepper(
         .child(
             ui::IconButton::new(
                 SharedString::from(format!("{id}-more-{key}")),
-                Icon::ArrowUp,
+                Icon::Plus,
                 "One level more",
             )
             .small()
@@ -223,51 +227,60 @@ pub fn render(
                     .child(pretty(&root.path)),
             )
             .child(
-                Checkbox::new(SharedString::from(format!("root-itself-{key}")))
-                    .label("Index itself")
-                    .checked(root.self_index)
-                    .on_click(move |on: &bool, _, cx| {
-                        let (on, path) = (*on, path_a.clone());
-                        itself.update(cx, |bench, _| {
-                            change(bench, |roots| {
-                                roots
-                                    .iter_mut()
-                                    .filter(|root| root.path == path)
-                                    .for_each(|root| root.self_index = on)
+                div().w(px(INDEX_COLUMN)).flex().justify_center().child(
+                    Checkbox::new(SharedString::from(format!("root-itself-{key}")))
+                        .accessibility_label("Index itself")
+                        .checked(root.self_index)
+                        .on_click(move |on: &bool, _, cx| {
+                            let (on, path) = (*on, path_a.clone());
+                            itself.update(cx, |bench, _| {
+                                change(bench, |roots| {
+                                    roots
+                                        .iter_mut()
+                                        .filter(|root| root.path == path)
+                                        .for_each(|root| root.self_index = on)
+                                })
                             })
-                        })
-                    }),
+                        }),
+                ),
             )
-            .child(stepper(
-                "root-depth",
-                key.clone(),
-                root.depth,
-                move |depth, cx| {
-                    let path = path_b.clone();
-                    deeper.update(cx, |bench, _| {
-                        change(bench, |roots| {
-                            roots
-                                .iter_mut()
-                                .filter(|root| root.path == path)
-                                .for_each(|root| root.depth = depth)
-                        })
-                    })
-                },
-                cx,
-            ))
             .child(
-                ui::IconButton::new(
-                    SharedString::from(format!("root-remove-{key}")),
-                    Icon::Close,
-                    "Remove",
-                )
-                .small()
-                .on_click(move |_, _, cx| {
-                    let path = path_c.clone();
-                    remove.update(cx, |bench, _| {
-                        change(bench, |roots| roots.retain(|root| root.path != path))
-                    })
-                }),
+                div()
+                    .w(px(DEPTH_COLUMN))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(stepper(
+                        "root-depth",
+                        key.clone(),
+                        root.depth,
+                        move |depth, cx| {
+                            let path = path_b.clone();
+                            deeper.update(cx, |bench, _| {
+                                change(bench, |roots| {
+                                    roots
+                                        .iter_mut()
+                                        .filter(|root| root.path == path)
+                                        .for_each(|root| root.depth = depth)
+                                })
+                            })
+                        },
+                        cx,
+                    ))
+                    .child(
+                        ui::IconButton::new(
+                            SharedString::from(format!("root-remove-{key}")),
+                            Icon::Close,
+                            "Remove",
+                        )
+                        .small()
+                        .on_click(move |_, _, cx| {
+                            let path = path_c.clone();
+                            remove.update(cx, |bench, _| {
+                                change(bench, |roots| roots.retain(|root| root.path != path))
+                            })
+                        }),
+                    ),
             )
     });
     let adding = {
@@ -325,7 +338,7 @@ pub fn render(
                         ),
                     )
                     .child(
-                        ui::Button::new("root-add", "Add", ui::Variant::Primary)
+                        ui::Button::new("root-add", "Add", ui::Variant::Outline)
                             .icon(Icon::Plus)
                             .disabled(empty)
                             .on_click(move |_, window, cx| {
@@ -349,7 +362,28 @@ pub fn render(
             )
     };
     let count = roots.len();
+    let heads = (count > 0).then(|| {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(12.))
+            .px(px(14.))
+            .pt(px(10.))
+            .pb(px(4.))
+            .border_b_1()
+            .border_color(t.line_soft)
+            .child(div().flex_1().child(ui::caps("Folder", cx)))
+            .child(
+                div()
+                    .w(px(INDEX_COLUMN))
+                    .flex()
+                    .justify_center()
+                    .child(ui::caps("Index itself", cx)),
+            )
+            .child(div().w(px(DEPTH_COLUMN)).child(ui::caps("Depth", cx)))
+    });
     let body = div()
+        .children(heads)
         .children(listed)
         .child(adding)
         .child(rows::note(

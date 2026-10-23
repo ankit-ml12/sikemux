@@ -47,6 +47,7 @@ const DRAWN = {
   "log-out": [ICONS, "IconLogOut"],
   settings: [ICONS, "IconSettings"],
   command: [ICONS, "IconCommand"],
+  contrast: [ICONS, "IconContrast"],
   focus: [ICONS, "IconFocus"],
   pencil: [ICONS, "IconPencil"],
   server: [ICONS, "IconServer"],

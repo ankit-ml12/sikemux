@@ -414,13 +414,7 @@ pub fn pane(
                         .truncate()
                         .child(name),
                 )
-                .child(
-                    div()
-                        .text_size(crate::theme::ui_text(11.5))
-                        .text_color(t.text_tertiary)
-                        .truncate()
-                        .child(crate::chat::tilde(Path::new(folder))),
-                ),
+                .child(ui::mono(crate::chat::tilde(Path::new(folder)), 10., cx).truncate()),
         )
         .children(nav)
         .child(div().flex_1())

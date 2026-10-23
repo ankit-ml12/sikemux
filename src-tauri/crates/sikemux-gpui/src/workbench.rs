@@ -379,6 +379,7 @@ impl Workbench {
         crate::syntax::install(cx);
         crate::finder::install(cx);
         crate::palette::install(cx);
+        crate::welcome::install(cx);
         crate::keymap::install(cx);
         crate::chat::install(cx);
         crate::terminal::install(cx);
