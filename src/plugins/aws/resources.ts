@@ -1,15 +1,13 @@
 import { defineService } from "../../plugin-api/service";
 import { awsApi } from "./api";
 import { AWS_PLUGIN } from "./kinds";
-import type { AwsBilling, AwsEc2, AwsEcsClusters, AwsEcsServices, AwsEcsTasks, AwsLambda, AwsS3, AwsSqs } from "./types.generated";
+import type { AwsAgentProfiles, AwsBilling, AwsEc2, AwsEcsClusters, AwsEcsServices, AwsEcsTasks, AwsLambda, AwsS3, AwsSqs } from "./types.generated";
 
 export const aws = defineService(AWS_PLUGIN, () => awsApi.status());
 
 export const awsProfileR = aws.resource("profile", () => awsApi.profile());
 
 export const awsProfilesR = aws.resource("profiles", () => awsApi.profiles());
-
-export const awsAgentProfileR = aws.resource("agentProfile", (project: string | null) => awsApi.agentProfilePicks(project));
 
 export const awsSetupR = aws.resource("setup", () => awsApi.setup());
 
@@ -18,6 +16,9 @@ export const awsIdentityR = aws.resource("identity", (profile: string, force: bo
 export const ecsServiceLogConfigR = aws.resource("ecs.serviceLogConfig", (profile: string, cluster: string, service: string) =>
     awsApi.ecsServiceLogConfig(profile, cluster, service),
 );
+
+/** The profile agents start on, for a project and for every other one. */
+export const agentProfileV = aws.view<[project: string | null], AwsAgentProfiles>("agentProfileView", (project) => ({ project }));
 
 /** How many closed months the costs reach back over, beside the month in progress. */
 const MONTHS_BACK = 5;

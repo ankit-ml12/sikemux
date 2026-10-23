@@ -127,6 +127,15 @@ export const AWS: Record<string, (params: Params) => unknown> = {
     status: "authed",
     message: null,
   }),
+  agentProfileView: () => ({
+    project: null,
+    default: null,
+    effective: "acme-prod",
+    fromShell: null,
+    projectUnset: "Default",
+    defaultUnset: "Automatic (acme-prod)",
+    profiles: ["acme-prod"],
+  }),
   ecsClustersView: () => ({
     region: REGION,
     envs: [

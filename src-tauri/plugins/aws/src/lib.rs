@@ -134,9 +134,9 @@ impl Plugin for Aws {
         Box::pin(async move {
             match method {
                 "profiles" => reply(auth::profiles().await),
-                "agentProfilePicks" => {
+                "agentProfileView" => {
                     let AgentProfilePicksParams { project } = params(input)?;
-                    reply(agent_profile::picks(ctx, project.as_deref()))
+                    reply(views::agent_profiles(ctx, project.as_deref()))
                 }
                 "pickAgentProfile" => {
                     let PickAgentProfileParams { project, profile } = params(input)?;
@@ -214,7 +214,7 @@ impl Plugin for Aws {
     ) -> PluginFuture<'a, ()> {
         Box::pin(async move {
             match method {
-                "ssoLogin" => {
+                "signIn" => {
                     let ProfileParams { profile } = params(input)?;
                     sink.send(reply(auth::sso_login(profile).await)?)
                 }

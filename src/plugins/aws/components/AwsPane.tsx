@@ -66,7 +66,7 @@ export function AwsPane({ paneId, active }: { paneId: string; active: boolean })
 
     return (
         <div className="aws-pane" onKeyDown={onKeyDown}>
-            <AwsServiceNav profile={auth.profile} signedIn={!signedOut} />
+            <AwsServiceNav paneId={paneId} profile={auth.profile} signedIn={!signedOut} active={active} />
             {signedOut ? (
                 <AwsAuthEmpty mode="unauthed" profile={auth.profile} />
             ) : (

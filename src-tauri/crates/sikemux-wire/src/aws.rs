@@ -300,3 +300,22 @@ pub struct EcsTaskRow {
     pub size: Option<String>,
     pub started_at: Option<String>,
 }
+
+/// The profile agents start on as `AWS_PROFILE`, for one project and for every other, and the
+/// profiles there are to pick from.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProfiles {
+    /// What the person picked for the project, and for every other one.
+    pub project: Option<String>,
+    pub default: Option<String>,
+    /// What the project's agents get, all picks and the shell taken together.
+    pub effective: Option<String>,
+    /// The person's shell sets the profile or keys itself, which Sikemux never overrides: what
+    /// a pane says of it instead of offering picks, such as `prod, from your shell`.
+    pub from_shell: Option<String>,
+    /// What leaving each pick unset reads as, such as `Default (prod)` and `Automatic (prod)`.
+    pub project_unset: String,
+    pub default_unset: String,
+    pub profiles: Vec<String>,
+}

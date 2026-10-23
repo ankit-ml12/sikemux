@@ -117,6 +117,7 @@ const AWS_TYPES = [
   "EcsServiceRow",
   "EcsTasks",
   "EcsTaskRow",
+  "AgentProfiles",
 ];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
@@ -334,6 +335,7 @@ const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
 /** What the AWS plugin's views hand its pane. */
 const AWS_ROOTS = [
+  "AwsAgentProfiles",
   "AwsBilling",
   "AwsEcsClusters",
   "AwsEcsServices",

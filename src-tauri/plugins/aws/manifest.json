@@ -5,6 +5,7 @@
   "sikemux": ">=0.4",
   "callTimeoutSecs": 150,
   "views": {
+    "agentProfileView": { "everySecs": 300 },
     "billingView": { "everySecs": 600 },
     "ecsClustersView": { "everySecs": 30 },
     "ecsServicesView": { "everySecs": 30 },
@@ -14,6 +15,7 @@
     "sqsView": { "everySecs": 60 },
     "s3View": { "everySecs": 300 }
   },
+  "writes": ["pickAgentProfile"],
   "environment": [
     "AWS_CLI",
     "AWS_CONFIG_FILE",

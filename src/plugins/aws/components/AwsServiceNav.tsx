@@ -17,14 +17,14 @@ const META: Record<AwsService, { label: string; hint: string }> = {
     s3: { label: "S3", hint: "Buckets" },
 };
 
-export function AwsServiceNav({ profile, signedIn }: { profile: string; signedIn: boolean }) {
-    const active = awsSettings.useSelect((s) => s.service);
+export function AwsServiceNav({ paneId, profile, signedIn, active }: { paneId: string; profile: string; signedIn: boolean; active: boolean }) {
+    const current = awsSettings.useSelect((s) => s.service);
     const counts = useAws((s) => s.counts[profile]);
     return (
         <nav className="aws-nav" aria-label="AWS services">
             <div className="aws-nav-label">Services</div>
             {AWS_SERVICES.map((s, i) => {
-                const sel = signedIn && active === s;
+                const sel = signedIn && current === s;
                 return (
                     <button
                         key={s}
@@ -41,7 +41,7 @@ export function AwsServiceNav({ profile, signedIn }: { profile: string; signedIn
                     </button>
                 );
             })}
-            <AwsAgentProfile />
+            <AwsAgentProfile paneId={paneId} active={active} />
             <Account profile={profile} />
         </nav>
     );

@@ -26,15 +26,6 @@ export interface AwsIdentity {
     message: string | null;
 }
 
-export type AgentProfileSource = "environment" | "project" | "default" | "automatic";
-
-/** What a project's agents start on as AWS_PROFILE, and what the person picked for it. */
-export interface AgentProfilePicks {
-    project: string | null;
-    default: string | null;
-    effective: { profile: string | null; source: AgentProfileSource } | null;
-}
-
 /** Whether the AWS CLI is installed, and whether Homebrew is there to install it. */
 export interface AwsSetup {
     cli: boolean;
@@ -77,8 +68,7 @@ export const awsApi = {
     pickProfile: (profile: string | null) => backend.call<{ profile: string | null }>("setDefaultAccount", { profile }),
     profiles: () => backend.call<AwsProfile[]>("profiles", {}),
     setup: () => backend.call<AwsSetup>("setup", {}),
-    agentProfilePicks: (project: string | null) => backend.call<AgentProfilePicks>("agentProfilePicks", { project }),
-    pickAgentProfile: (project: string | null, profile: string | null) => backend.call<AgentProfilePicks>("pickAgentProfile", { project, profile }),
+    pickAgentProfile: (project: string | null, profile: string | null) => backend.call<unknown>("pickAgentProfile", { project, profile }),
     identity: (profile: string, force = false) => backend.call<AwsIdentity>("identity", { profile, force }),
     ecsTaskLogConfig: (profile: string, cluster: string, taskArn: string) =>
         backend.call<EcsTaskLog>("ecsTaskLogConfig", { profile, cluster, taskArn }),
@@ -87,7 +77,7 @@ export const awsApi = {
 
     /** Waits for the person to approve in their browser, so it streams rather than calls: a call would time out. */
     ssoLogin: (profile: string) =>
-        browserSignIn<AwsLoginResult>(backend, "ssoLogin", (url) => void openSignInUrl(url).catch(swallow("open AWS")), { profile }),
+        browserSignIn<AwsLoginResult>(backend, "signIn", (url) => void openSignInUrl(url).catch(swallow("open AWS")), { profile }),
 
     tailLogs: (
         params: { profile: string; logGroup: string; logStream: string | null; since: string },

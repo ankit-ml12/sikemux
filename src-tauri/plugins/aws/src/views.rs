@@ -2,17 +2,19 @@
 //! draws the same thing.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use sikemux_plugin_api::aws::{
-    Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance, EcsClusterRow,
-    EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow, EcsTasks, Health, Lambda,
-    LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
+    AgentProfiles, Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance,
+    EcsClusterRow, EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow, EcsTasks, Health,
+    Lambda, LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
 };
 use sikemux_plugin_api::PluginContext;
 
+use crate::agent_profile::AgentProfileSource;
 use crate::common::Target;
 use crate::error::AwsResult;
-use crate::{auth, billing, ec2, ecs, lambda, s3, sqs};
+use crate::{agent_profile, auth, billing, ec2, ecs, lambda, s3, sqs};
 
 const MONTH_NAMES: [&str; 12] = [
     "January",
@@ -496,6 +498,35 @@ fn capitalised(text: &str) -> String {
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()
     })
+}
+
+pub(crate) fn agent_profiles(ctx: &PluginContext, project: Option<&Path>) -> AgentProfiles {
+    let picks = agent_profile::picks(ctx, project);
+    let effective = picks.effective.as_ref();
+    let from_shell = effective
+        .filter(|effective| effective.source == AgentProfileSource::Environment)
+        .map(|effective| match &effective.profile {
+            Some(profile) => format!("{profile}, from your shell"),
+            None => "The AWS keys your shell sets".to_owned(),
+        });
+    let automatic = effective
+        .filter(|effective| effective.source == AgentProfileSource::Automatic)
+        .and_then(|effective| effective.profile.as_deref());
+    AgentProfiles {
+        project_unset: picks.default.as_deref().map_or_else(
+            || "Default".to_owned(),
+            |default| format!("Default ({default})"),
+        ),
+        default_unset: automatic.map_or_else(
+            || "None".to_owned(),
+            |profile| format!("Automatic ({profile})"),
+        ),
+        effective: effective.and_then(|effective| effective.profile.clone()),
+        from_shell,
+        project: picks.project,
+        default: picks.default,
+        profiles: auth::profile_names(),
+    }
 }
 
 /// `text` made safe to put in a URL, as a browser's `encodeURIComponent` makes it.

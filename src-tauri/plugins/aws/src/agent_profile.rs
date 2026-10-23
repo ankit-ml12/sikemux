@@ -64,9 +64,9 @@ pub struct AgentProfile {
 /// What the pane shows: the picks for one project, and what they come to.
 #[derive(Serialize)]
 pub struct AgentProfilePicks {
-    project: Option<String>,
-    default: Option<String>,
-    effective: Option<AgentProfile>,
+    pub(crate) project: Option<String>,
+    pub(crate) default: Option<String>,
+    pub(crate) effective: Option<AgentProfile>,
 }
 
 /// The profile agents started in `project` get, or in any project not
