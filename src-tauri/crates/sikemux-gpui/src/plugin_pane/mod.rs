@@ -138,7 +138,7 @@ pub struct Failure {
 }
 
 impl Failure {
-    fn of(failed: &Value) -> Self {
+    pub(crate) fn of(failed: &Value) -> Self {
         Self {
             category: failed["category"]
                 .as_str()
@@ -153,7 +153,7 @@ impl Failure {
         }
     }
 
-    fn core(error: String) -> Self {
+    pub(crate) fn core(error: String) -> Self {
         Self {
             category: "core".into(),
             message: error.into(),

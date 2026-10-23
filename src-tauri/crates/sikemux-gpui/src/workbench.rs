@@ -3260,6 +3260,14 @@ impl Workbench {
             None => spec,
         };
         self.toggle_palette(spec, window, cx);
+        self.read_plugin_palette(palette, cx);
+    }
+
+    fn read_plugin_palette(
+        &mut self,
+        palette: &'static crate::plugin_pane::PluginPalette,
+        cx: &mut Context<Self>,
+    ) {
         let settings = self
             .preferences()
             .plugin_settings
@@ -3279,12 +3287,12 @@ impl Workbench {
             }),
         );
         cx.spawn(async move |this, cx| {
-            let Ok(answer) = asked.await else {
-                return;
-            };
-            let rows = match answer.get("value") {
-                Some(value) => (palette.rows)(value),
-                None => Vec::new(),
+            let read = match asked.await {
+                Ok(answer) => match answer.get("failed") {
+                    Some(failed) => Err(crate::plugin_pane::Failure::of(failed)),
+                    None => Ok((palette.rows)(&answer["value"])),
+                },
+                Err(error) => Err(crate::plugin_pane::Failure::core(error)),
             };
             let _ = this.update(cx, |bench, cx| {
                 if let Some(open) = bench
@@ -3292,7 +3300,20 @@ impl Workbench {
                     .as_mut()
                     .filter(|open| open.id() == palette.id)
                 {
-                    open.refill(rows, cx);
+                    match read {
+                        Ok(rows) => open.refill(rows, cx),
+                        Err(failure) => open.failed(
+                            failure,
+                            move |bench, _, cx| {
+                                if let Some(open) = bench.palette.as_mut() {
+                                    open.refill(Vec::new(), cx);
+                                }
+                                bench.parts.redraw(&bench.parts.finder, cx);
+                                bench.read_plugin_palette(palette, cx);
+                            },
+                            cx,
+                        ),
+                    }
                     bench.parts.redraw(&bench.parts.finder, cx);
                 }
             });

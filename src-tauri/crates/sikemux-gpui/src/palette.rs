@@ -15,6 +15,7 @@ use gpui_kit::{
 };
 
 use crate::icons::Icon;
+use crate::plugin_pane::Failure;
 use crate::theme::{self, Tokens};
 use crate::ui;
 use crate::workbench::Workbench;
@@ -332,6 +333,8 @@ pub struct Palette {
     before: Option<FocusHandle>,
     /// The last row is the one made of what was typed.
     typed_shown: bool,
+    /// Why its rows could not be read, and how to read them again.
+    failed: Option<(Failure, Leave)>,
     _typing: Subscription,
 }
 
@@ -420,6 +423,7 @@ impl Palette {
     /// and the row they had reached.
     pub fn refill(&mut self, rows: Vec<Row>, cx: &App) {
         let reached = self.highlighted();
+        self.failed = None;
         self.spec.rows = rows;
         self.typed_shown = false;
         let query = self.input.read(cx).value().to_string();
@@ -427,6 +431,17 @@ impl Palette {
         if let Some(line) = reached.and_then(|key| self.line_of(&key)) {
             self.select(Some(line));
         }
+    }
+
+    /// Offers nothing, saying why in place of the rows, with `retry` to read them again.
+    pub fn failed(
+        &mut self,
+        failure: Failure,
+        retry: impl Fn(&mut Workbench, &mut Window, &mut Context<Workbench>) + 'static,
+        cx: &App,
+    ) {
+        self.refill(Vec::new(), cx);
+        self.failed = Some((failure, Rc::new(retry)));
     }
 
     fn choosable(&self, line: usize) -> bool {
@@ -535,6 +550,7 @@ impl Workbench {
             list: ListState::new(0, ListAlignment::Top, px(ROW_HEIGHT * 8.)),
             before,
             typed_shown: false,
+            failed: None,
             _typing: typing,
         };
         palette.filter("");
@@ -753,6 +769,28 @@ pub fn overlay(
                             ),
                     )
                     .map(|panel| {
+                        if let Some((failure, retry)) = palette.failed.clone() {
+                            return panel.child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .pb(px(20.))
+                                    .child(crate::plugin_pane::failure(&failure, cx))
+                                    .child(
+                                        ui::Button::new(
+                                            "palette-retry",
+                                            "Try again",
+                                            ui::Variant::Outline,
+                                        )
+                                        .on_click(
+                                            cx.listener(move |bench, _, window, cx| {
+                                                retry(bench, window, cx)
+                                            }),
+                                        ),
+                                    ),
+                            );
+                        }
                         if count == 0 {
                             return panel.child(
                                 div()
