@@ -152,6 +152,22 @@ fn rss_mb(pid: u32) -> Option<f64> {
     Some(kb / 1024.)
 }
 
+/// Memory a process has written, in MB, counting what macOS compressed or swapped out: what
+/// Activity Monitor shows, which resident memory understates once pages are compressed.
+fn footprint_mb(pid: u32) -> Option<f64> {
+    // SAFETY: an all-zero rusage_info_v2 is valid, and proc_pid_rusage writes at most one.
+    let (read, info) = unsafe {
+        let mut info: libc::rusage_info_v2 = std::mem::zeroed();
+        let read = libc::proc_pid_rusage(
+            pid as libc::c_int,
+            libc::RUSAGE_INFO_V2,
+            (&mut info as *mut libc::rusage_info_v2).cast(),
+        );
+        (read, info)
+    };
+    (read == 0).then(|| info.ri_phys_footprint as f64 / 1_048_576.)
+}
+
 fn core_pid(socket: &str) -> Option<u32> {
     let out = sikemux_process::user_environment::command("/usr/bin/pgrep")
         .args(["-f", &format!("socket {socket}")])
@@ -740,11 +756,12 @@ fn windowed(run: &mut Run, driver: &Arc<Driver>) {
     run.until(30, |run| run.front_chat().is_some());
     let filled = Instant::now();
     for index in 0..rows / 2 {
+        // The long chat's mix of text and code, without its command and tool turns, which take
+        // seconds each.
         let text = match index {
             0 => format!("message 0: {FIRST_PHRASE}"),
-            _ => format!(
-                "message {index}: the core folds each event into rows and sends only what changed"
-            ),
+            _ if matches!(index % 20, 0 | 3) => long_chat_prompt(1),
+            _ => long_chat_prompt(index),
         };
         driver.prompt(&chat, text);
         std::thread::sleep(Duration::from_millis(25));
@@ -752,20 +769,27 @@ fn windowed(run: &mut Run, driver: &Arc<Driver>) {
             run.frames(2);
         }
     }
-    // The app may hold only the chat's end, so the fill is done once its last row stops changing.
+    // The app may hold only the chat's end, so the fill is also done once its last row stops changing.
     let (mut last, mut since) = (None, Instant::now());
-    run.until(120, |run| {
-        let now = run.row_ids(&chat).pop();
+    run.until(180, |run| {
+        let ids = run.row_ids(&chat);
+        if ids.len() >= rows {
+            return true;
+        }
+        let now = ids.last().cloned();
         if now != last {
             (last, since) = (now, Instant::now());
         }
-        since.elapsed() > Duration::from_secs(3)
+        since.elapsed() > Duration::from_secs(5)
     });
     run.frames(240);
-    let (app, core) = run.memory();
+    let (app, core) = (
+        footprint_mb(run.pid).unwrap_or(0.),
+        run.core.and_then(footprint_mb).unwrap_or(0.),
+    );
     let held = run.row_ids(&chat);
     println!(
-        "windowed {rows} rows: app {app:.0} MB, core {core:.0} MB, the app holds {} rows, filled in {:.0}s",
+        "windowed {rows} rows: footprint app {app:.0} MB, core {core:.0} MB, the app holds {} rows, filled in {:.0}s",
         held.len(),
         filled.elapsed().as_secs_f64()
     );
@@ -783,29 +807,40 @@ fn windowed(run: &mut Run, driver: &Arc<Driver>) {
             return;
         }
     };
-    let asked = json!({ "agentId": chat, "feed": feed, "query": FIRST_PHRASE, "limit": 5 });
-    match driver
-        .runtime
-        .block_on(driver.client.call("chatFind", asked))
-    {
-        Ok(answer) => {
-            let hits: Vec<&str> = answer["hits"]
+    // The core scans a slice of the chat per call, newest first, and hands back where to go on.
+    let (mut hits, mut from, mut steps) = (Vec::new(), Value::Null, 0);
+    let began = Instant::now();
+    loop {
+        let asked = json!({ "agentId": chat, "feed": feed, "query": FIRST_PHRASE, "limit": 5, "from": from });
+        let answer = match driver
+            .runtime
+            .block_on(driver.client.call("chatFind", asked))
+        {
+            Ok(answer) => answer,
+            Err(error) => {
+                println!("windowed find: chatFind failed: {error}");
+                return;
+            }
+        };
+        steps += 1;
+        hits.extend(
+            answer["hits"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|hit| hit["row"].as_str())
-                .collect();
-            let loaded = hits
-                .iter()
-                .filter(|row| held.iter().any(|id| id == *row))
-                .count();
-            println!(
-                "windowed find: {} hits for the first message, {loaded} in rows the app holds",
-                hits.len()
-            );
+                .filter_map(|hit| hit["row"].as_str().map(str::to_owned)),
+        );
+        from = answer["next"].clone();
+        if !hits.is_empty() || from.is_null() || steps == 500 {
+            break;
         }
-        Err(error) => println!("windowed find: chatFind failed: {error}"),
     }
+    let loaded = hits.iter().filter(|row| held.contains(row)).count();
+    println!(
+        "windowed find: {} hits for the first message, {loaded} in rows the app holds, after {steps} calls in {:.1}s",
+        hits.len(),
+        began.elapsed().as_secs_f64()
+    );
 }
 
 fn long(run: &mut Run, driver: &Arc<Driver>) {
