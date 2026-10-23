@@ -13,8 +13,9 @@
 //! into), `flood` (a terminal flooding beside a streaming chat), `repo <folder>` (a
 //! large repository's Git tab, files, search and finder), `newchat` (⌘N beside three
 //! open chats), `soak` (`agents` for `minutes`, ten by default, watching memory), and
-//! `windowed` (a chat filled to `STRESS_WINDOWED_ROWS` rows, its memory once settled, and the
-//! core's find asked for its first message).
+//! `windowed` (a chat filled to `STRESS_WINDOWED_ROWS` rows, its memory once settled, its
+//! first message found by the core and then by the find bar, asleep with
+//! `STRESS_WINDOWED_SLEEP`).
 //! Each ends by typing in the front chat's composer while its load runs. `make-repo <folder> [files]` writes a
 //! generated repository to stress `repo` with.
 
@@ -854,6 +855,11 @@ fn windowed(run: &mut Run, driver: &Arc<Driver>) {
         hits.len(),
         began.elapsed().as_secs_f64()
     );
+    if std::env::var_os("STRESS_WINDOWED_SLEEP").is_some() {
+        driver.call("sleepAgent", json!({ "agentId": chat }));
+        run.frames(120);
+        println!("windowed sleep: the chat sleeps before the find bar looks");
+    }
     if let Some(first) = hits.first() {
         find_jump(run, &chat, first, held.last().cloned());
     }
