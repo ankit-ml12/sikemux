@@ -10,7 +10,7 @@ const REMEMBERED_CHARS_PER_KIND = 4_000_000;
 const remembered = new Map<string, { texts: Map<string, MdElement[]>; chars: number }>();
 
 function kindOf(options: MarkdownOptions): string {
-    return `${+options.gfm}${+options.htmlAsText}${+options.fileLinks}`;
+    return `${+options.gfm}${+options.htmlAsText}${+options.fileLinks}${+!!options.filePaths}`;
 }
 
 function recall(options: MarkdownOptions, text: string): MdElement[] | undefined {

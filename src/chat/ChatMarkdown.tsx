@@ -14,7 +14,6 @@ import { CodeTokens, fenceLanguage, useCodeTokens, useDiffTokens } from "./codeH
 import { localImagePath } from "../lib/imagePaths";
 import { useImagePreview } from "./imagePreview";
 import { ChatFileRef, useFileRef } from "./FileRef";
-import { pathComponents, type PathGuess } from "./markdownPaths";
 import { cutLongBlocks, cutLongText, showRestLabel, useLongTextFold } from "./longText";
 import { ChatAgentContext, openLink } from "./chatAgent";
 import { ChatImage } from "./ChatImage";
@@ -43,6 +42,9 @@ function MarkedText({ mark, children }: { mark: ReactNode; children?: ReactNode 
         </>
     );
 }
+
+/** A link made from a name the message only mentioned: written plainly, or between backticks. */
+type PathGuess = "text" | "code";
 
 function ChatLink({ href, guess, children }: { href: string; guess?: PathGuess; children?: ReactNode }) {
     const imagePath = localImagePath(href);
@@ -140,10 +142,19 @@ function ChatTable({ children, table }: { children?: ReactNode; table: Extract<M
     );
 }
 
-const markdownComponents: MarkdownComponents = { link: ChatLink, fence: ChatFence, table: ChatTable, ...pathComponents(ChatLink) };
-const AGENT_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: false, fileLinks: true };
+/* Whether the file a name points at is really there is settled when its link is drawn. */
+function ChatPath({ href, code, children }: { href: string; code: boolean; children: ReactNode }) {
+    return (
+        <ChatLink href={href} guess={code ? "code" : "text"}>
+            {children}
+        </ChatLink>
+    );
+}
+
+const markdownComponents: MarkdownComponents = { link: ChatLink, fence: ChatFence, table: ChatTable, path: ChatPath };
+const AGENT_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: false, fileLinks: true, filePaths: true };
 /* What a person typed shows its markup as the characters they typed. */
-const TYPED_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: true, fileLinks: true };
+const TYPED_MARKDOWN: MarkdownOptions = { gfm: true, htmlAsText: true, fileLinks: true, filePaths: true };
 
 /** Reads finished texts ahead of the transcript drawing them, in the folded form it first shows, in the order given. */
 export function warmChatMarkdown(texts: readonly { text: string; typed: boolean }[]): Promise<void> {

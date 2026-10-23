@@ -50,4 +50,6 @@ export interface MarkdownOptions {
     readonly fileLinks: boolean;
     /** Keeps the pictures in embedded `<img>` tags while the rest of the markup is dropped. */
     readonly htmlImages?: boolean;
+    /** Marks the words outside links and code blocks that name a file, as `path` nodes. */
+    readonly filePaths?: boolean;
 }
