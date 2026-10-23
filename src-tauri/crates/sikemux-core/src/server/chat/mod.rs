@@ -3,6 +3,7 @@
 //! permission request waits for the person to come back.
 
 pub(crate) mod feed;
+pub(crate) mod find;
 mod history;
 mod kept;
 pub(crate) mod mentions;
@@ -1971,6 +1972,19 @@ pub(crate) fn page(
         .running(&params.agent_id)?
         .feed
         .page(&params.feed, anchor, turns)?)
+}
+
+/// One step of `client`'s find through a chat: what it found, and where to go on from.
+pub(crate) fn find(
+    core: &Core,
+    client: ClientId,
+    params: find::FindParams,
+) -> CoreResult<find::FindAnswer> {
+    Ok(core
+        .chats
+        .running(&params.agent_id)?
+        .feed
+        .find(client, &params)?)
 }
 
 /// The change a chat's tool call made and what it printed, for a client that

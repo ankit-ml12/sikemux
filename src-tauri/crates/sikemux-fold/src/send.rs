@@ -43,6 +43,8 @@ pub enum PageOf {
     Before(u64),
     /// Those opened after the event.
     After(u64),
+    /// Those opened by the event or after it.
+    From(u64),
 }
 
 impl PageOf {
@@ -50,6 +52,7 @@ impl PageOf {
         match self {
             PageOf::Before(before) => index < before,
             PageOf::After(after) => index > after,
+            PageOf::From(from) => index >= from,
         }
     }
 }
@@ -181,8 +184,12 @@ fn open_part(transcript: &Transcript, position: usize) -> Option<usize> {
 
 /// The row with every tree read, for a client that holds none of it.
 fn whole_row(row: &Row) -> ChatMessage {
-    let mut msg = row.msg.clone();
-    if row.msg.role == ChatRole::Assistant {
+    with_trees(row.msg.clone())
+}
+
+/// `msg` with the tree of each text the agent wrote read, as clients are sent it.
+pub fn with_trees(mut msg: ChatMessage) -> ChatMessage {
+    if msg.role == ChatRole::Assistant {
         for part in &mut msg.parts {
             if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = part {
                 *md = Some(read(text));
@@ -428,6 +435,29 @@ impl Fold {
         }
     }
 
+    /// The rows this fold holds that `wanted` asks for, as they stand, without their trees:
+    /// the nearest to the event first, as many as fit in about `budget` bytes, at least one.
+    /// Says whether they reach the last row on the far side.
+    pub fn held(&self, wanted: PageOf, budget: usize) -> (Vec<ChatMessage>, bool) {
+        let rows = &self.main.rows;
+        let mut taken = Vec::new();
+        let mut bytes = 0;
+        let order: Box<dyn Iterator<Item = &Row>> = match wanted {
+            PageOf::Before(_) => Box::new(rows.iter().rev()),
+            PageOf::After(_) | PageOf::From(_) => Box::new(rows.iter()),
+        };
+        let mut all = true;
+        for row in order.filter(|row| wanted.keeps(row.index)) {
+            if !taken.is_empty() && bytes + row.bytes > budget {
+                all = false;
+                break;
+            }
+            bytes += row.bytes;
+            taken.push(row.msg.clone());
+        }
+        (taken, all)
+    }
+
     /// The index of the event the fold's first row came from.
     pub fn floor(&self) -> Option<u64> {
         self.main.rows.first().map(|row| row.index)
@@ -641,7 +671,7 @@ impl Fold {
                 sent.first().and_then(|row| row.from_event).filter(|_| more),
                 None,
             ),
-            PageOf::After(_) => (
+            PageOf::After(_) | PageOf::From(_) => (
                 None,
                 sent.last().and_then(|row| row.from_event).filter(|_| more),
             ),

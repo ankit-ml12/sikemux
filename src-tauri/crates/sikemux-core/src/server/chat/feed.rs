@@ -72,6 +72,51 @@ struct Entry {
     on_disk: bool,
 }
 
+/// The rows a find reads: those the fold holds while the place it reads from is among them,
+/// else pages of the chat's history.
+struct FindRows<'a> {
+    feed: &'a Feed,
+    client: ClientId,
+    number: u64,
+}
+
+impl super::find::Rows for FindRows<'_> {
+    fn batch(
+        &self,
+        wanted: PageOf,
+        budget: usize,
+    ) -> Result<(Vec<sikemux_wire::chat::ChatMessage>, bool), String> {
+        let held = {
+            let mut inner = self.feed.inner.locked();
+            let fold = self.feed.fold(&mut inner);
+            let inside = fold.floor().is_some_and(|floor| match wanted {
+                PageOf::Before(before) => before > floor,
+                PageOf::After(after) => after >= floor,
+                PageOf::From(from) => from >= floor,
+            });
+            inside.then(|| fold.held(wanted, budget))
+        };
+        if let Some((rows, all)) = held {
+            let last = all && !matches!(wanted, PageOf::Before(_));
+            return Ok((rows, last));
+        }
+        let page = self.feed.page_of(wanted, MAX_PAGE_TURNS, budget)?;
+        let last = match wanted {
+            PageOf::Before(_) => page.older_before.is_none(),
+            PageOf::After(_) | PageOf::From(_) => page.newer_after.is_none(),
+        };
+        let mut rows = page.rows;
+        if matches!(wanted, PageOf::Before(_)) {
+            rows.reverse();
+        }
+        Ok((rows, last))
+    }
+
+    fn superseded(&self) -> bool {
+        self.feed.finding.locked().get(&self.client) != Some(&self.number)
+    }
+}
+
 /// Which rows of a chat a client asks for, by event index.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Anchor {
@@ -1064,6 +1109,24 @@ impl Replay {
         }
         let next = self.next_index;
         let budget = PAGE_BYTES;
+        let forward = |from: u64| {
+            let start = points
+                .iter()
+                .rev()
+                .find(|(index, _, starts)| *index <= from && *starts)
+                .or_else(|| points.iter().rev().find(|(index, _, _)| *index <= from))
+                .map_or((first, 0), |&(index, at, _)| (index, at));
+            let mut hi = next;
+            let mut counted = 1;
+            for &(index, at, starts) in points.iter().filter(|(index, _, _)| *index > start.0) {
+                if at - start.1 > budget || (starts && counted >= turns) {
+                    hi = index;
+                    break;
+                }
+                counted += usize::from(starts);
+            }
+            (start.0, hi, hi < next)
+        };
         let (lo, hi, beyond) = match side {
             PageOf::Before(before) => {
                 let before = before.min(next);
@@ -1103,25 +1166,8 @@ impl Replay {
                     .unwrap_or(first);
                 (lo, hi, lo > first)
             }
-            PageOf::After(after) => {
-                let from = after.saturating_add(1);
-                let start = points
-                    .iter()
-                    .rev()
-                    .find(|(index, _, starts)| *index <= from && *starts)
-                    .or_else(|| points.iter().rev().find(|(index, _, _)| *index <= from))
-                    .map_or((first, 0), |&(index, at, _)| (index, at));
-                let mut hi = next;
-                let mut counted = 1;
-                for &(index, at, starts) in points.iter().filter(|(index, _, _)| *index > start.0) {
-                    if at - start.1 > budget || (starts && counted >= turns) {
-                        hi = index;
-                        break;
-                    }
-                    counted += usize::from(starts);
-                }
-                (start.0, hi, hi < next)
-            }
+            PageOf::After(after) => forward(after.saturating_add(1)),
+            PageOf::From(from) => forward(from),
         };
         let held = self
             .entries
@@ -1262,6 +1308,8 @@ pub(crate) struct Feed {
     id: String,
     runtime: tokio::runtime::Handle,
     inner: Mutex<Inner>,
+    /// Each client's latest find in this chat, by number, so a newer one stops the one before.
+    finding: Mutex<HashMap<ClientId, u64>>,
 }
 
 fn queued_view(queued: &[Queued]) -> Vec<QueuedMessage> {
@@ -1327,6 +1375,7 @@ impl Feed {
             agent_id,
             id,
             runtime: tokio::runtime::Handle::current(),
+            finding: Mutex::default(),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: 0,
@@ -1394,6 +1443,7 @@ impl Feed {
             agent_id,
             id: state.id,
             runtime: tokio::runtime::Handle::current(),
+            finding: Mutex::default(),
             inner: Mutex::new(Inner {
                 subscribers: HashMap::new(),
                 seq: state.seq,
@@ -2058,6 +2108,34 @@ impl Feed {
                 Ok(page)
             }
         }
+    }
+
+    /// One step of `client`'s find through this run of the chat.
+    pub(crate) fn find(
+        &self,
+        client: ClientId,
+        params: &super::find::FindParams,
+    ) -> Result<super::find::FindAnswer, String> {
+        if params.feed != self.id {
+            return Err("the chat started again; open it again to find in it".into());
+        }
+        let number = {
+            let mut finding = self.finding.locked();
+            let number = finding.get(&client).map_or(0, |number| number + 1);
+            finding.insert(client, number);
+            number
+        };
+        let rows = FindRows {
+            feed: self,
+            client,
+            number,
+        };
+        let answer = super::find::step(&rows, params);
+        let mut finding = self.finding.locked();
+        if finding.get(&client) == Some(&number) {
+            finding.remove(&client);
+        }
+        answer
     }
 
     fn page_of(&self, side: PageOf, turns: usize, budget: usize) -> Result<ChatPage, String> {

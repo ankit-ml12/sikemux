@@ -127,7 +127,12 @@ calls! { core, client, params;
     "chatPage": Watch, any_program => {
         let params: ChatPageParams = parse(params)?;
         let reading = core.clone();
-        answer(super::connection::blocking(move || super::chat::page(&reading, params)).await?)
+        answer(blocking(move || super::chat::page(&reading, params)).await?)
+    },
+    "chatFind": Watch, any_program => {
+        let params: super::chat::find::FindParams = parse(params)?;
+        let (reading, client) = (core.clone(), client.id);
+        answer(blocking(move || super::chat::find(&reading, client, params)).await?)
     },
     "chatToolDetail": Watch, any_program => {
         let params: ToolDetailParams = parse(params)?;

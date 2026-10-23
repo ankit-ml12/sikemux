@@ -4,6 +4,7 @@
 //! agent's own messages and a streamed token costs only itself.
 
 mod event;
+mod find;
 pub mod pickers;
 mod prompt;
 mod row;
@@ -31,7 +32,8 @@ use sikemux_wire::chat::{
 use tools::WithRow;
 
 pub use event::{ChatEvent, ChatEventKind};
-pub use send::{PageOf, PAGE_BYTES, TAIL_TURNS};
+pub use find::{found_in, matches, searchable, Found, Query};
+pub use send::{with_trees, PageOf, PAGE_BYTES, TAIL_TURNS};
 
 /// The change a call made and what it printed, from everything said of it.
 pub fn detail_of(raw: &Map<String, Value>, work: Option<(&Path, &Place)>) -> ToolDetail {
