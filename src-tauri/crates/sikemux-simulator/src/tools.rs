@@ -321,13 +321,23 @@ pub(super) async fn run(
         "sim.rotate" => {
             let device = attached(manager, agent_id)?;
             let orientation = text("orientation").ok_or("orientation is required")?;
+            let before = read_screen(manager, &device)
+                .await
+                .ok()
+                .and_then(|read| read.size);
             manager
                 .request(
                     "orientation",
                     json!({ "udid": device.udid, "orientation": orientation }),
                 )
                 .await?;
-            turned(manager, &device).await?;
+            turned(
+                manager,
+                &device,
+                before,
+                orientation.starts_with("landscape"),
+            )
+            .await?;
             settled_state(manager, agent_id, None, Report::Full).await
         }
         other => Err(format!("unknown simulator method {other}")),
@@ -940,10 +950,24 @@ pub(super) fn app_size(reply: &Value) -> Option<(f64, f64)> {
     (size.0 > 0.0 && size.1 > 0.0).then_some(size)
 }
 
-/// Waits for the picture on screen to stop moving after a turn. The app reports its turned
-/// layout as soon as the turn begins, but the screen comes round for a moment more, and a touch
-/// sent before it has is dropped.
-async fn turned(manager: &SimulatorManager, device: &Device) -> Result<(), String> {
+/// Waits for a turn to finish: for the app in front to report its turned shape, when the turn
+/// changes it, then for the picture on screen to stop moving. A busy device can start the turn
+/// late, and a touch sent before the screen has come round is dropped.
+async fn turned(
+    manager: &SimulatorManager,
+    device: &Device,
+    before: Option<(f64, f64)>,
+    wide: bool,
+) -> Result<(), String> {
+    if before.is_some_and(|(width, height)| (width > height) != wide) {
+        for _ in 0..TURN_READS {
+            let size = read_screen(manager, device).await?.size;
+            if near_deadline() || size.is_some_and(|(width, height)| (width > height) == wide) {
+                break;
+            }
+            pause(TURN_STEP).await?;
+        }
+    }
     let mut last = None;
     for _ in 0..TURN_READS {
         if near_deadline() {
