@@ -26,6 +26,7 @@ use crate::workbench::Workbench;
 mod database;
 mod jira;
 mod linear;
+mod rundeck;
 mod signoz;
 
 /// How many views a pane keeps, the least lately asked for going first.
@@ -47,6 +48,7 @@ fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
         "sikemux.database" => Some(Box::<database::Database>::default()),
         "sikemux.jira" => Some(Box::<jira::Jira>::default()),
         "sikemux.linear" => Some(Box::<linear::Linear>::default()),
+        "sikemux.rundeck" => Some(Box::<rundeck::Rundeck>::default()),
         "sikemux.signoz" => Some(Box::<signoz::Signoz>::default()),
         _ => None,
     }
@@ -58,6 +60,7 @@ pub fn surface(plugin: &str) -> Option<&'static str> {
         "sikemux.database" => Some("browser"),
         "sikemux.jira" => Some("issues"),
         "sikemux.linear" => Some("issues"),
+        "sikemux.rundeck" => Some("deploy"),
         "sikemux.signoz" => Some("explore"),
         _ => None,
     }
@@ -113,6 +116,12 @@ impl Failure {
         matches!(self.category.as_ref(), "auth" | "unconfigured")
             || (self.category == "http" && self.status == Some(401))
     }
+}
+
+/// What a plugin's stream hands its panel: an item, or the end, with why it failed if it did.
+pub enum Streamed {
+    Item(Value),
+    Ended(Option<Failure>),
 }
 
 /// A view as the pane has it now.
@@ -286,6 +295,56 @@ impl Host {
                 None => Ok(answer["value"].clone()),
             }
         }
+    }
+
+    /// Follows the plugin's streamed `method`, handing panel `P` each item as it arrives and
+    /// then how the stream ended. Dropping the task stops the stream.
+    pub fn stream<P: Panel>(
+        &self,
+        method: &str,
+        params: Value,
+        cx: &mut Context<PluginPane>,
+        each: impl Fn(&mut P, &mut Host, Streamed, &mut Context<PluginPane>) + 'static,
+    ) -> Task<()> {
+        let mut streaming = self.target.stream(
+            "pluginStream",
+            json!({ "plugin": self.plugin, "method": method, "params": params }),
+        );
+        cx.spawn(async move |pane, cx| loop {
+            let part = streaming.parts.recv().await;
+            let ended = part
+                .as_ref()
+                .is_none_or(|part| part.done || part.error.is_some());
+            let gone = pane
+                .update(cx, |pane, cx| {
+                    let Some((panel, host)) = pane.parts::<P>() else {
+                        return;
+                    };
+                    let failure = part.as_ref().and_then(|part| part.error.as_ref());
+                    let failure = failure.map(Failure::of);
+                    for item in part.into_iter().flat_map(|part| part.items) {
+                        each(panel, host, Streamed::Item(item), cx);
+                    }
+                    if ended {
+                        each(panel, host, Streamed::Ended(failure), cx);
+                    }
+                    cx.notify();
+                })
+                .is_err();
+            if ended || gone {
+                break;
+            }
+        })
+    }
+
+    /// Asks the core one of its own methods, such as `git.push`.
+    pub fn core(
+        &self,
+        method: &'static str,
+        params: Value,
+    ) -> impl Future<Output = Result<Value, Failure>> + 'static {
+        let asked = self.target.request(method, params);
+        async move { asked.await.map_err(Failure::core) }
     }
 
     /// What the plugin's `status` call says of its sign-in, such as its accounts or sites,
