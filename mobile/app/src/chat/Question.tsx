@@ -66,7 +66,7 @@ export function AnsweredQuestion({
 }
 
 /** The answer to a secret question, typed into a masked field that keeps nothing once it is sent. */
-function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; busy: boolean; onSend: (text: string) => Promise<boolean> }) {
+function SecretAnswer({ question, onSend }: { question: AgentQuestion; onSend: (text: string) => Promise<boolean> }) {
   const colors = useColors();
   const styles = useStyles(makeStyles);
   const [text, setText] = useState('');
@@ -88,12 +88,11 @@ function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; bus
           textContentType="none"
           importantForAutofill="no"
           returnKeyType="send"
-          editable={!busy}
           placeholder="Type the answer"
           accessibilityLabel={`Private answer to ${question.name}`}
           style={styles.secretInput}
         />
-        <Chip title="Send" primary busy={busy} onPress={send} />
+        <Chip title="Send" primary onPress={send} />
       </View>
       <View style={styles.private}>
         <Icon name="IconLock" size={12} color={colors.inkFaint} />
@@ -111,7 +110,6 @@ function SecretAnswer({ question, busy, onSend }: { question: AgentQuestion; bus
 export function OpenQuestion({
   question,
   canAnswer,
-  busy,
   writing,
   onChoose,
   onWrite,
@@ -119,7 +117,6 @@ export function OpenQuestion({
 }: {
   question: AgentQuestion;
   canAnswer: boolean;
-  busy: boolean;
   writing: boolean;
   onChoose: (choice: number) => void;
   onWrite: () => void;
@@ -131,15 +128,13 @@ export function OpenQuestion({
   const row = (key: string | number, number: number, label: string, detail: string | undefined, other: boolean, onPress: () => void) => (
     <Pressable
       key={key}
-      disabled={busy}
       onPress={() => {
         haptics.select();
         onPress();
       }}
       style={({ pressed }) => [styles.option, (pressed || (other && writing)) && { backgroundColor: colors.active }]}
       accessibilityRole="button"
-      accessibilityLabel={detail ? `${label}, ${detail}` : label}
-      accessibilityState={{ disabled: busy }}>
+      accessibilityLabel={detail ? `${label}, ${detail}` : label}>
       <Text style={styles.key}>{number}</Text>
       <Text style={[styles.label, other && { color: colors.inkDim }]}>
         {label}
@@ -163,7 +158,7 @@ export function OpenQuestion({
             : row('other', question.choices.length + 1, 'Something else…', writing ? 'answering below' : undefined, true, onWrite)}
         </View>
       ) : null}
-      {canAnswer && question.secret ? <SecretAnswer question={question} busy={busy} onSend={onSecret} /> : null}
+      {canAnswer && question.secret ? <SecretAnswer question={question} onSend={onSecret} /> : null}
     </View>
   );
 }
@@ -172,13 +167,11 @@ export function OpenQuestion({
 export function AssumedQuestion({
   question,
   canAnswer,
-  busy,
   onFine,
   onChange,
 }: {
   question: AgentQuestion;
   canAnswer: boolean;
-  busy: boolean;
   onFine: () => void;
   onChange: () => void;
 }) {
@@ -187,7 +180,6 @@ export function AssumedQuestion({
   const act = (label: string, onPress: () => void) => (
     <Text
       style={styles.act}
-      disabled={busy}
       onPress={() => {
         haptics.select();
         onPress();

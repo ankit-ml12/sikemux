@@ -41,6 +41,8 @@ export type ChatSnapshot = {
   answering: ReadonlySet<string>;
   /** Background tasks this phone asked the host to stop. */
   stopping: ReadonlySet<string>;
+  /** This phone asked the running turn to stop and the host has not ended it yet. */
+  stoppingTurn: boolean;
   /** How the chat asks before acting, as this phone last set it or the host last said; null before either. */
   permissionMode: string | null;
   changingMode: boolean;
@@ -76,8 +78,36 @@ export type OpenTimes = {
   drawn: number;
 };
 
-/** `sent` is taken by the host and not shown by it yet. */
-type Outgoing = { messageId: string; text: string; paths: string[]; at: number; state: Unsent['state'] | 'sent'; problem?: string };
+/**
+ * `sent` is taken by the host and not shown by it yet. Its `files` go up behind it, each named in the row by the
+ * host's path once it is there and by this phone's copy before. `waiting` was sent before the chat was attached,
+ * and goes out once it is.
+ */
+type Outgoing = {
+  messageId: string;
+  text: string;
+  files: Attachment[];
+  at: number;
+  state: Unsent['state'] | 'sent';
+  problem?: string;
+  waiting?: boolean;
+};
+
+/** A message sent behind the running turn, shown in the queue until the host's own queue holds it. */
+type Holding = Held & { key: number; taken: boolean };
+
+const shownPath = (file: Attachment) => file.path ?? file.uri;
+
+/** The messages in `holding` the host's queue does not hold yet, matched one for one by text. */
+function notQueued(holding: readonly Holding[], host: readonly Held[]): Holding[] {
+  const left = host.map((held) => held.text);
+  return holding.filter((held) => {
+    const at = left.indexOf(held.text);
+    if (at < 0) return true;
+    left.splice(at, 1);
+    return false;
+  });
+}
 
 /** Turns of earlier rows asked for at a time. */
 const PAGE_TURNS = 20;
@@ -106,7 +136,7 @@ function ownRow(outgoing: Outgoing): ChatMessage {
     role: 'user',
     promptId: outgoing.messageId,
     parts: outgoing.text.trim() ? [{ kind: 'text', id: `${outgoing.messageId}/text`, text: outgoing.text }] : [],
-    attachments: outgoing.paths,
+    attachments: outgoing.files.map(shownPath),
     sentAt: outgoing.at,
   };
 }
@@ -125,6 +155,13 @@ export class ChatSession {
   private problem: string | null = null;
   private notice: string | null = null;
   private outbox: Outgoing[] = [];
+  private holding: Holding[] = [];
+  private held = 0;
+  /** Messages reach the host in the order they were sent, however long their files take. */
+  private line: Promise<void> = Promise.resolve();
+  private stoppingTurn = false;
+  /** Model and effort picks this phone made, by picker id, shown until the host says what it runs on. */
+  private chosen: ReadonlyMap<string, string> = new Map();
   private attachments: Attachment[] = [];
   private sentFiles: ReadonlyMap<string, Attachment> = new Map();
   private answering: ReadonlySet<string> = new Set();
@@ -257,23 +294,23 @@ export class ChatSession {
   };
 
   /**
-   * Sends the message once every file picked for it is on the host. Answers whether it went out
-   * or waits behind the turn; when a file did not get there, it stays in the composer to try again.
+   * Shows the message at once, behind the running turn when there is one, and puts its files on the host
+   * before sending it. Answers whether the composer can let it go.
    */
   send = async (text: string): Promise<boolean> => {
+    if (this.uploading()) return false;
     this.notice = null;
-    const attachments = this.attachments.length ? await this.upload() : [];
-    if (!attachments) return false;
-    const paths = pathsOf(attachments);
-    if (this.busy()) {
-      void this.ask((connection) => this.prompt(connection, randomUUID(), text, paths), 'Could not send the message');
-      return true;
-    }
-    const entry: Outgoing = { messageId: randomUUID(), text, paths, at: this.now(), state: 'sending' };
-    this.outbox = [...this.outbox, entry];
-    this.emit();
-    this.push(entry);
+    const files = this.attachments;
+    this.attachments = [];
+    if (this.outbox.some((outgoing) => outgoing.waiting)) this.deliver(text, files, true);
+    else if (this.busy()) this.queue(text, files);
+    else this.deliver(text, files);
     return true;
+  };
+
+  /** Shows a message begun on another screen at once, with its files already on the host, and sends it once the chat is attached. */
+  sendWhenAttached = (text: string, uploaded: Attachment[]) => {
+    this.deliver(text, uploaded, true);
   };
 
   /**
@@ -299,10 +336,13 @@ export class ChatSession {
 
   /** Puts waiting messages into the running turn now, as one, instead of after it. */
   steer = (ids: readonly string[]) => {
+    ids = this.onHostQueue(ids);
+    if (!ids.length) return;
     void this.ask((connection) => connection.call('steerQueued', JSON.stringify({ agentId: this.agentId, ids })), 'Could not steer');
   };
 
   dropQueued = (id: string) => {
+    if (!this.onHostQueue([id]).length) return;
     void this.ask(
       (connection) => connection.call('dropQueued', JSON.stringify({ agentId: this.agentId, ids: [id] })),
       'Could not take it back',
@@ -323,8 +363,16 @@ export class ChatSession {
       this.attachments = [...sent, ...this.attachments];
     }
     this.notice = null;
+    if (this.chat.running) this.stoppingTurn = true;
     this.emit();
-    this.ask((connection) => connection.cancel(this.agentId), 'Could not stop the turn');
+    this.ask(
+      (connection) => connection.cancel(this.agentId),
+      'Could not stop the turn',
+      undefined,
+      () => {
+        this.stoppingTurn = false;
+      },
+    );
   };
 
   answer = (requestId: string, optionId: string | null) => {
@@ -358,14 +406,17 @@ export class ChatSession {
   /** `bypass` runs without asking; `workspace-write` asks first. */
   setPermissionMode = (mode: string) => {
     if (this.changingMode) return;
+    const before = this.mode;
+    this.mode = mode;
     this.changingMode = true;
     this.notice = null;
     this.emit();
     this.ask(
       (connection) => connection.setPermissionMode(this.agentId, mode),
       'Could not change permissions',
+      undefined,
       () => {
-        this.mode = mode;
+        if (this.mode === mode) this.mode = before;
       },
     ).finally(() => {
       this.changingMode = false;
@@ -386,10 +437,22 @@ export class ChatSession {
     return stopped;
   };
 
+  /** Shows the pick at once, and goes back to what the host runs on if it refuses it. */
   setConfig = (configId: string, value: string) => {
     this.notice = null;
+    this.chosen = new Map(this.chosen).set(configId, value);
     this.emit();
-    this.ask((connection) => connection.setChatConfig(this.agentId, configId, value), 'Could not change the setting');
+    this.ask(
+      (connection) => connection.setChatConfig(this.agentId, configId, value),
+      'Could not change the setting',
+      undefined,
+      () => {
+        if (this.chosen.get(configId) !== value) return;
+        const chosen = new Map(this.chosen);
+        chosen.delete(configId);
+        this.chosen = chosen;
+      },
+    );
   };
 
   /** Says what went wrong where the person is looking. */
@@ -473,12 +536,13 @@ export class ChatSession {
   private build(): ChatSnapshot {
     const now = this.now();
     const onHost = this.onHost;
+    const answering = this.answering;
     const all = this.chat.permissions;
-    const permissions = onHost
-      ? all.filter(
-          (request) => onHost.has(request.requestId) || now - (this.arrived.get(request.requestId) ?? -Infinity) < PERMISSION_GRACE_MS,
-        )
-      : all;
+    const permissions = all.filter(
+      (request) =>
+        !answering.has(request.requestId) &&
+        (!onHost || onHost.has(request.requestId) || now - (this.arrived.get(request.requestId) ?? -Infinity) < PERMISSION_GRACE_MS),
+    );
     return {
       view: this.view(),
       permissions: permissions.length === all.length ? all : permissions,
@@ -490,6 +554,7 @@ export class ChatSession {
       sentFiles: this.sentFiles,
       answering: this.answering,
       stopping: this.stopping,
+      stoppingTurn: this.stoppingTurn,
       permissionMode: this.mode ?? (this.chat.permissionMode || null),
       changingMode: this.changingMode,
       hasEarlier: this.chat.olderBefore !== null,
@@ -498,19 +563,32 @@ export class ChatSession {
     };
   }
 
-  private viewOf: { chat: ChatRows; outbox: Outgoing[]; view: ChatRows } | undefined;
+  private viewOf:
+    { chat: ChatRows; outbox: Outgoing[]; holding: Holding[]; chosen: ReadonlyMap<string, string>; view: ChatRows } | undefined;
 
+  /** The chat as the host folds it, with what this phone sent and picked that the host does not show yet. */
   private view(): ChatRows {
-    if (this.viewOf?.chat === this.chat && this.viewOf.outbox === this.outbox) return this.viewOf.view;
-    const waiting = this.outbox.filter((outgoing) => outgoing.state !== 'failed');
-    const view = this.outbox.length
-      ? {
-          ...this.chat,
-          messages: [...this.chat.messages, ...this.outbox.map(ownRow)],
-          running: this.chat.running || waiting.length > 0,
-        }
-      : this.chat;
-    this.viewOf = { chat: this.chat, outbox: this.outbox, view };
+    const { chat, outbox, holding, chosen } = this;
+    const kept = this.viewOf;
+    if (kept?.chat === chat && kept.outbox === outbox && kept.holding === holding && kept.chosen === chosen) return kept.view;
+    const waiting = outbox.filter((outgoing) => outgoing.state !== 'failed');
+    const behind = holding.length ? notQueued(holding, chat.queued) : [];
+    const picked = (picker: ChatRows['model']) => {
+      const value = picker && chosen.get(picker.id);
+      return picker && value !== undefined ? { ...picker, current: value } : picker;
+    };
+    const view =
+      outbox.length || behind.length || chosen.size
+        ? {
+            ...chat,
+            messages: outbox.length ? [...chat.messages, ...outbox.map(ownRow)] : chat.messages,
+            running: chat.running || waiting.length > 0,
+            queued: behind.length ? [...chat.queued, ...behind] : chat.queued,
+            model: picked(chat.model),
+            effort: picked(chat.effort),
+          }
+        : chat;
+    this.viewOf = { chat, outbox, holding, chosen, view };
     return view;
   }
 
@@ -551,9 +629,24 @@ export class ChatSession {
   /** Puts the picked files on the host and takes them out of the composer, or answers null when one did not get there. */
   private async upload(): Promise<Attachment[] | null> {
     if (this.uploading()) return null;
-    const connection = this.connection;
+    try {
+      const sent = await this.putFiles(this.connection, this.attachments, (id, change) => this.patch(id, change));
+      this.attachments = [];
+      return sent;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Puts each of `files` the host does not have yet on it, answering them all with their paths or throwing why one did not get there. */
+  private async putFiles(
+    connection: ConnectionLike | undefined,
+    files: readonly Attachment[],
+    mark: (id: string, change: Partial<Attachment>) => void,
+  ): Promise<Attachment[]> {
+    let why = '';
     const sent = await uploadEach(
-      this.attachments,
+      files,
       async (attachment) => {
         if (!connection?.isOpen()) throw new Error('the host is not connected');
         const bytes = await (this.options.read ?? readFile)(attachment.uri);
@@ -561,11 +654,18 @@ export class ChatSession {
         this.sentFiles = new Map([...this.sentFiles, [path, attachment]]);
         return path;
       },
-      (id, change) => this.patch(id, change),
-      problemOf,
+      mark,
+      (error) => {
+        why ||= problemOf(error);
+        return problemOf(error);
+      },
     );
-    if (sent) this.attachments = [];
+    if (!sent) throw new Error(why);
     return sent;
+  }
+
+  private showFiles(files: readonly Attachment[]) {
+    if (files.length) this.sentFiles = new Map([...this.sentFiles, ...files.map((file) => [shownPath(file), file] as const)]);
   }
 
   private busy() {
@@ -577,7 +677,10 @@ export class ChatSession {
     const before = this.chat;
     this.chat = change(before);
     if (!before.running && this.chat.running) this.turnSince = this.now();
+    if (!this.chat.running) this.stoppingTurn = false;
     if (this.chat.permissionMode !== before.permissionMode) this.mode = null;
+    if (this.chat.queued !== before.queued || this.chat.running !== before.running) this.dropTaken();
+    if (this.chosen.size && (this.chat.model !== before.model || this.chat.effort !== before.effort)) this.chosen = new Map();
     if (live && this.chat.permissions !== before.permissions) {
       for (const request of this.chat.permissions) {
         if (before.permissions.some((held) => held.requestId === request.requestId)) continue;
@@ -586,6 +689,16 @@ export class ChatSession {
       }
     }
     this.settleOutbox(before.running && !this.chat.running);
+  }
+
+  /** Lets go of queued messages the host has taken, now that its own queue or turn says where they went. */
+  private dropTaken() {
+    if (this.holding.some((held) => held.taken)) this.holding = this.holding.filter((held) => !held.taken);
+  }
+
+  /** Of `ids`, the ones in the host's queue rather than still on their way to it. */
+  private onHostQueue(ids: readonly string[]) {
+    return ids.filter((id) => !this.holding.some((held) => held.id === id));
   }
 
   /* The host shows a message as the row that carries its id; one that met a running turn waits in
@@ -601,7 +714,8 @@ export class ChatSession {
     const kept = this.outbox.filter(
       (outgoing) =>
         outgoing.state !== 'sent' ||
-        (!shown.has(outgoing.messageId) && !queued.some((held) => held.text === outgoing.text && sameItems(held.paths, outgoing.paths))),
+        (!shown.has(outgoing.messageId) &&
+          !queued.some((held) => held.text === outgoing.text && sameItems(held.paths, pathsOf(outgoing.files)))),
     );
     if (kept.length !== this.outbox.length) this.outbox = kept;
   }
@@ -707,6 +821,7 @@ export class ChatSession {
           timed('resumed', attachment.inner.changesJson.length);
         } else {
           this.attached = 'missing';
+          this.failWaiting('the chat is gone from the host');
           this.emit();
           timed('missing', 0);
           return;
@@ -717,12 +832,14 @@ export class ChatSession {
         held = undefined;
         this.attached = 'live';
         this.take(waiting);
+        this.pushWaiting();
         this.emit();
       })
       .catch((error: unknown) => {
         if (run !== this.run) return;
         this.problem = problemOf(error);
         this.attached = 'missing';
+        this.failWaiting(this.problem);
         this.emit();
       });
   }
@@ -731,20 +848,82 @@ export class ChatSession {
     return connection.prompt(this.agentId, messageId, text, paths);
   }
 
+  private deliver(text: string, files: Attachment[], waiting = false) {
+    this.showFiles(files);
+    const entry: Outgoing = { messageId: randomUUID(), text, files, at: this.now(), state: 'sending', waiting };
+    this.outbox = [...this.outbox, entry];
+    this.emit();
+    if (!waiting) this.push(entry);
+  }
+
+  /** Sends what was shown before the chat was attached, now that it is. */
+  private pushWaiting() {
+    const waiting = this.outbox.filter((outgoing) => outgoing.waiting);
+    if (!waiting.length) return;
+    this.outbox = this.outbox.map((outgoing) => (outgoing.waiting ? { ...outgoing, waiting: false } : outgoing));
+    waiting.forEach((entry) => this.push(entry));
+  }
+
+  private failWaiting(problem: string) {
+    if (!this.outbox.some((outgoing) => outgoing.waiting)) return;
+    this.outbox = this.outbox.map((outgoing) => (outgoing.waiting ? { ...outgoing, waiting: false, state: 'failed', problem } : outgoing));
+  }
+
+  /** Sends the message behind the running turn, showing it queued at once; when it does not go, it goes back to the composer. */
+  private queue(text: string, files: Attachment[]) {
+    const key = (this.held += 1);
+    this.showFiles(files);
+    this.holding = [...this.holding, { id: `phone-${key}`, key, text, paths: files.map(shownPath), context: [], taken: false }];
+    this.emit();
+    const connection = this.connection;
+    this.inOrder(async () => {
+      if (!connection?.isOpen()) throw new Error('the host is not connected');
+      const sent = await this.putFiles(connection, files, () => {});
+      await this.prompt(connection, randomUUID(), text, pathsOf(sent));
+    })
+      .then(() => {
+        const held = this.holding.find((holding) => holding.key === key);
+        if (held && !notQueued([held], this.chat.queued).length) this.holding = this.holding.filter((holding) => holding !== held);
+        else this.holding = this.holding.map((holding) => (holding.key === key ? { ...holding, taken: true } : holding));
+        this.emit();
+      })
+      .catch((error: unknown) => {
+        this.holding = this.holding.filter((holding) => holding.key !== key);
+        this.draft = [text, this.draft].filter(Boolean).join('\n\n');
+        this.attachments = [...files, ...this.attachments];
+        this.notice = `Could not send the message: ${problemOf(error)}`;
+        this.emit();
+      });
+  }
+
+  private inOrder(work: () => Promise<void>): Promise<void> {
+    const next = this.line.then(work);
+    this.line = next.catch(() => {});
+    return next;
+  }
+
   private push(entry: Outgoing) {
     const connection = this.connection;
-    Promise.resolve()
+    const id = entry.messageId;
+    this.inOrder(async () => {
+      if (!connection?.isOpen()) throw new Error('the host is not connected');
+      const files = this.outbox.find((outgoing) => outgoing.messageId === id)?.files ?? entry.files;
+      const sent = await this.putFiles(connection, files, (fileId, change) => {
+        this.outbox = this.outbox.map((outgoing) =>
+          outgoing.messageId === id
+            ? { ...outgoing, files: outgoing.files.map((file) => (file.id === fileId ? { ...file, ...change } : file)) }
+            : outgoing,
+        );
+      });
+      await this.prompt(connection, id, entry.text, pathsOf(sent));
+    })
       .then(() => {
-        if (!connection?.isOpen()) throw new Error('the host is not connected');
-        return this.prompt(connection, entry.messageId, entry.text, entry.paths);
-      })
-      .then(() => {
-        this.update(entry.messageId, { state: 'sent' });
+        this.update(id, { state: 'sent' });
         this.settleOutbox();
         this.emit();
       })
       .catch((error: unknown) => {
-        this.update(entry.messageId, { state: 'failed', problem: problemOf(error) });
+        this.update(id, { state: 'failed', problem: problemOf(error) });
       });
   }
 
@@ -753,7 +932,12 @@ export class ChatSession {
     this.emit();
   }
 
-  private ask<T>(request: (connection: ConnectionLike) => Promise<T>, what: string, then?: (answer: T) => void): Promise<void> {
+  private ask<T>(
+    request: (connection: ConnectionLike) => Promise<T>,
+    what: string,
+    then?: (answer: T) => void,
+    undo?: () => void,
+  ): Promise<void> {
     const connection = this.connection;
     return Promise.resolve()
       .then(() => {
@@ -765,6 +949,7 @@ export class ChatSession {
         this.emit();
       })
       .catch((error: unknown) => {
+        undo?.();
         this.notice = `${what}: ${problemOf(error)}`;
         this.emit();
       });
