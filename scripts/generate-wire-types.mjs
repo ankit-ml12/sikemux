@@ -53,6 +53,7 @@ const SOURCES = [
   `${WIRE}/aws.rs`,
   `${WIRE}/linear.rs`,
   `${WIRE}/database.rs`,
+  `${WIRE}/bruno.rs`,
   `${WIRE}/slack.rs`,
   `${WIRE}/vercel.rs`,
   `${WIRE}/signoz.rs`,
@@ -84,6 +85,33 @@ const JIRA_TYPES = [
   "Swimlane",
   "IssueView",
   "Activity",
+];
+
+/** The Bruno plugin's types are known as its own, as the pane always named them. */
+const BRUNO_TYPES = [
+  "HttpMethod",
+  "KeyVal",
+  "BodyMode",
+  "GraphqlBody",
+  "Body",
+  "AuthMode",
+  "KeyPlacement",
+  "BearerAuth",
+  "BasicAuth",
+  "KeyAuth",
+  "Auth",
+  "Meta",
+  "RequestSettings",
+  "RawBlock",
+  "Params",
+  "Vars",
+  "Scripts",
+  "Request",
+  "Scope",
+  "Env",
+  "TreeNode",
+  "Collection",
+  "RequestView",
 ];
 
 /** The Database plugin's types are known as its own. */
@@ -290,6 +318,9 @@ const RENAMES = {
   [`${WIRE}/jira.rs`]: Object.fromEntries(
     JIRA_TYPES.map((name) => [name, `Jira${name}`]),
   ),
+  [`${WIRE}/bruno.rs`]: Object.fromEntries(
+    BRUNO_TYPES.map((name) => [name, `Bru${name}`]),
+  ),
   [`${WIRE}/database.rs`]: Object.fromEntries(
     DATABASE_TYPES.map((name) => [name, `Database${name}`]),
   ),
@@ -396,6 +427,9 @@ const JIRA_ROOTS = [
   "JiraBoardPage",
   "JiraIssueView",
 ];
+
+/** What the Bruno plugin's views hand its pane. */
+const BRUNO_ROOTS = ["BruCollection", "BruRequestView"];
 
 /** What the Database plugin's views hand its pane. */
 const DATABASE_ROOTS = [
@@ -526,6 +560,7 @@ const OUTPUTS = {
   aws: "src/plugins/aws/types.generated.ts",
   linear: "src/plugins/linear/types.generated.ts",
   database: "src/plugins/database/types.generated.ts",
+  bruno: "src/plugins/bruno/types.generated.ts",
   slack: "src/plugins/slack/types.generated.ts",
   vercel: "src/plugins/vercel/types.generated.ts",
   signoz: "src/plugins/signoz/types.generated.ts",
@@ -1231,6 +1266,7 @@ await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
 await emit(OUTPUTS.aws, typescript(false, AWS_ROOTS, ""));
 await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
 await emit(OUTPUTS.database, typescript(false, DATABASE_ROOTS, ""));
+await emit(OUTPUTS.bruno, typescript(false, BRUNO_ROOTS, ""));
 await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
 await emit(OUTPUTS.vercel, typescript(false, VERCEL_ROOTS, ""));
 await emit(OUTPUTS.signoz, typescript(false, SIGNOZ_ROOTS, ""));

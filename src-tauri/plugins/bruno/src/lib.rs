@@ -1,12 +1,15 @@
+mod bru;
+mod collection;
 mod error;
 mod send;
 
 use std::sync::Arc;
 
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 use sikemux_plugin_api::{
-    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture,
+    params, reply, Manifest, Plugin, PluginContext, PluginError, PluginFuture, PluginResult,
 };
 
 use crate::send::BruSendRequest;
@@ -43,10 +46,33 @@ impl Plugin for Bruno {
                     let SendParams { req } = params(input)?;
                     reply(send::send(req).await?)
                 }
+                "collectionView" => on_disk(input, |ask| collection::collection(&ask)).await,
+                "requestView" => on_disk(input, |ask| collection::request(&ask)).await,
+                "saveRequest" => on_disk(input, collection::save).await,
+                "newRequest" => on_disk(input, collection::new_request).await,
+                "newFolder" => on_disk(input, collection::new_folder).await,
+                "renameRequest" => on_disk(input, collection::rename).await,
+                "deletePath" => on_disk(input, collection::delete).await,
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
     }
+}
+
+/// Runs `work` on the asked params off the async threads, since it reads and writes files.
+async fn on_disk<Ask, Out>(
+    input: Value,
+    work: impl FnOnce(Ask) -> error::BrunoResult<Out> + Send + 'static,
+) -> PluginResult<Value>
+where
+    Ask: DeserializeOwned + Send + 'static,
+    Out: serde::Serialize + Send + 'static,
+{
+    let ask: Ask = params(input)?;
+    let done = tokio::task::spawn_blocking(move || work(ask))
+        .await
+        .map_err(|error| PluginError::new("internal", error.to_string()))?;
+    reply(done?)
 }
 
 #[cfg(test)]

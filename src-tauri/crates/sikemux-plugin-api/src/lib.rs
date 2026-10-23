@@ -4,6 +4,7 @@
 
 pub mod account;
 pub use sikemux_wire::aws;
+pub use sikemux_wire::bruno;
 pub use sikemux_wire::codehost;
 pub use sikemux_wire::database;
 pub use sikemux_wire::jira;

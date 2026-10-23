@@ -22,12 +22,7 @@ import { VERCEL } from "./world/vercel";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
 import { demoActivity } from "./world/activity";
-import {
-  BRUNO_COLLECTION,
-  BRUNO_FILES,
-  CHECKOUT_RESPONSE,
-  brunoDir,
-} from "./world/bruno";
+import { BRUNO_VIEWS, CHECKOUT_RESPONSE } from "./world/bruno";
 import {
   BROWSER_TABS,
   placeBrowserPage,
@@ -474,16 +469,8 @@ export class ShowcaseBackend implements IpcTransport {
     this.on("markdown_parse", ({ requests }) =>
       server("markdown", { requests }),
     );
-    this.on(
-      "read_file",
-      ({ path }) =>
-        BRUNO_FILES[path as string] ?? server("read_file", { path }),
-    );
-    this.on("read_dir", ({ path }) =>
-      (path as string).startsWith(BRUNO_COLLECTION)
-        ? brunoDir(path as string)
-        : [],
-    );
+    this.on("read_file", ({ path }) => server("read_file", { path }));
+    this.on("read_dir", () => []);
     this.on("preview_file", ({ path }) =>
       path === PANE_IMAGE ? { mime: "image/jpeg", size: 0, modified: 0 } : null,
     );
@@ -809,7 +796,10 @@ export class ShowcaseBackend implements IpcTransport {
       this.startAgent(agentId, agent?.type ?? "claude");
       return null;
     });
-    this.onCore(["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"], constant([]));
+    this.onCore(
+      ["ports", "taskRuns", "trustAsks", "closedAgents", "agentSignIns"],
+      constant([]),
+    );
     this.onCore(["agentNameTheme"], constant({ theme: "anime" }));
     this.onCore(["setAgentNameTheme"], ({ params }) => params);
     this.onCore(["tasks"], ({ params }) => ({
@@ -834,7 +824,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.rundeck": RUNDECK,
       "sikemux.signoz": SIGNOZ,
       "sikemux.aws": AWS,
-      "sikemux.bruno": { send: () => CHECKOUT_RESPONSE },
+      "sikemux.bruno": { ...BRUNO_VIEWS, send: () => CHECKOUT_RESPONSE },
       "sikemux.github": GITHUB,
       "sikemux.database": DATABASE,
       "sikemux.jira": JIRA,

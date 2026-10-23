@@ -164,7 +164,27 @@ describe("frontend persistence", () => {
     it("omits Bruno secrets and drafts", async () => {
         // These live outside the persisted store entirely; the snapshot must come back without them.
         setBrunoSecret("pane-bruno", "token", "do-not-persist");
-        setBrunoDraft("pane-bruno", "/collections/demo/login.bru", "Authorization: Bearer do-not-persist");
+        setBrunoDraft("pane-bruno", "/collections/demo/login.bru", {
+            meta: { name: "login", type: "http", seq: null },
+            method: "post",
+            url: "https://example.test/login",
+            params: { query: [], path: [] },
+            headers: [{ name: "Authorization", value: "Bearer do-not-persist", enabled: true }],
+            body: { mode: "none", text: "", graphql: { query: "", variables: "" }, form: [] },
+            auth: {
+                mode: "inherit",
+                bearer: { token: "" },
+                basic: { username: "", password: "" },
+                apikey: { key: "", value: "", placement: "header" },
+            },
+            vars: { req: [], res: [] },
+            scripts: { pre: "", post: "" },
+            assertions: [],
+            tests: "",
+            docs: "",
+            settings: { encodeUrl: true, timeout: 0 },
+            extra: [],
+        });
         flushBrunoDrafts();
         invoke.mockResolvedValue(undefined);
 

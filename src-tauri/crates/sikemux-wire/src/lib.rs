@@ -4,6 +4,7 @@
 
 pub mod accounts;
 pub mod aws;
+pub mod bruno;
 pub mod chat;
 pub mod codehost;
 pub mod database;
