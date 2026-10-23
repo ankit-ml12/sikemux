@@ -212,3 +212,14 @@ export interface BruCheck {
     passed: boolean;
     error: string | null;
 }
+
+/** The folders opened before, the one open now left out. */
+export interface BruKnownWorkspaces {
+    workspaces: BruKnownWorkspace[];
+}
+
+/** A collection folder the person opened before, named as Bruno names it. */
+export interface BruKnownWorkspace {
+    path: string;
+    name: string;
+}

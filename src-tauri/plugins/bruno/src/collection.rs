@@ -7,7 +7,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use sikemux_plugin_api::bruno::{Collection, Env, Request, RequestView, Scope, TreeNode};
+use sikemux_plugin_api::bruno::{
+    Collection, Env, KnownWorkspace, KnownWorkspaces, Request, RequestView, Scope, TreeNode,
+};
 
 use crate::bru;
 use crate::error::{BrunoError, BrunoResult};
@@ -208,6 +210,53 @@ pub fn collection(ask: &CollectionAsk) -> BrunoResult<Collection> {
         tree: tree(entries, &collection)?
             .into_iter()
             .map(|(_, node)| node)
+            .collect(),
+    })
+}
+
+#[derive(Deserialize, Default)]
+pub struct WorkspacesAsk {
+    /// The folders opened before, most recent first.
+    #[serde(default)]
+    pub known: Vec<String>,
+    /// The folder open now.
+    #[serde(default)]
+    pub loaded: String,
+}
+
+/// The folders opened before, each named by its `bruno.json` or `collection.bru` when it has
+/// one, else by the folder; the one open now is left out.
+pub fn workspaces(ask: &WorkspacesAsk) -> BrunoResult<KnownWorkspaces> {
+    let named = |path: &str| -> String {
+        let folder = Path::new(path);
+        let from_json = fs::read_to_string(folder.join("bruno.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|config| {
+                config
+                    .get("name")
+                    .and_then(|name| name.as_str())
+                    .map(str::to_owned)
+            });
+        let from_scope = || {
+            fs::read_to_string(folder.join("collection.bru"))
+                .ok()
+                .map(|text| bru::scope(&text, "").meta.name)
+        };
+        from_json
+            .or_else(from_scope)
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| base_name(folder))
+    };
+    Ok(KnownWorkspaces {
+        workspaces: ask
+            .known
+            .iter()
+            .filter(|path| **path != ask.loaded)
+            .map(|path| KnownWorkspace {
+                name: named(path),
+                path: path.clone(),
+            })
             .collect(),
     })
 }

@@ -309,3 +309,18 @@ pub struct RunResult {
     /// Variables the run's scripts changed, for the session to keep for later runs.
     pub env_updates: std::collections::BTreeMap<String, String>,
 }
+
+/// A collection folder the person opened before, named as Bruno names it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownWorkspace {
+    pub path: String,
+    pub name: String,
+}
+
+/// The folders opened before, the one open now left out.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownWorkspaces {
+    pub workspaces: Vec<KnownWorkspace>,
+}

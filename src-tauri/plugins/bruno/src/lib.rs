@@ -51,6 +51,7 @@ impl Plugin for Bruno {
                 }
                 "collectionView" => on_disk(input, |ask| collection::collection(&ask)).await,
                 "requestView" => on_disk(input, |ask| collection::request(&ask)).await,
+                "workspacesView" => on_disk(input, |ask| collection::workspaces(&ask)).await,
                 "saveRequest" => on_disk(input, collection::save).await,
                 "newRequest" => on_disk(input, collection::new_request).await,
                 "newFolder" => on_disk(input, collection::new_folder).await,

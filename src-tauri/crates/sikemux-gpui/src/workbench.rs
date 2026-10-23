@@ -3260,12 +3260,21 @@ impl Workbench {
             None => spec,
         };
         self.toggle_palette(spec, window, cx);
+        let settings = self
+            .preferences()
+            .plugin_settings
+            .get(palette.plugin)
+            .cloned()
+            .unwrap_or(Value::Null);
+        let params = palette
+            .params
+            .map_or_else(|| json!({}), |params| params(&settings));
         let asked = self.target().request(
             "pluginView",
             json!({
                 "plugin": palette.plugin,
                 "method": palette.view,
-                "params": {},
+                "params": params,
                 "slot": format!("{}/palette", palette.plugin),
             }),
         );

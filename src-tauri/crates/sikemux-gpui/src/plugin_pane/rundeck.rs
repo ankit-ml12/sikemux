@@ -280,6 +280,7 @@ pub const PALETTES: &[super::PluginPalette] = &[super::PluginPalette {
     title: "Find a Rundeck job",
     placeholder: "search Rundeck jobs…",
     view: "catalogView",
+    params: None,
     rows: job_rows,
     typed: None,
 }];

@@ -6,7 +6,8 @@
   "callTimeoutSecs": 150,
   "views": {
     "collectionView": { "everySecs": 60 },
-    "requestView": { "everySecs": 30 }
+    "requestView": { "everySecs": 30 },
+    "workspacesView": { "everySecs": 300 }
   },
   "writes": ["saveRequest", "newRequest", "newFolder", "renameRequest", "deletePath"]
 }

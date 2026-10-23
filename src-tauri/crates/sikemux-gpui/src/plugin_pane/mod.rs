@@ -107,6 +107,8 @@ pub struct PluginPalette {
     pub title: &'static str,
     pub placeholder: &'static str,
     pub view: &'static str,
+    /// The view's params, from what the plugin's panes saved; none asks with no params.
+    pub params: Option<fn(&Value) -> Value>,
     pub rows: fn(&Value) -> Vec<crate::palette::Row>,
     /// A row made of what is typed, such as an id to open, when the words read as one.
     pub typed: Option<fn(&str) -> Option<crate::palette::Row>>,

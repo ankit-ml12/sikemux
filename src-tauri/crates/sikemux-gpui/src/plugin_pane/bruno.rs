@@ -15,8 +15,8 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 use sikemux_wire::bruno::{
-    AuthMode, BodyMode, Collection, Env, HttpMethod, KeyPlacement, Request, RequestView,
-    RunResult, TreeNode,
+    AuthMode, BodyMode, Collection, Env, HttpMethod, KeyPlacement, KnownWorkspaces, Request,
+    RequestView, RunResult, TreeNode,
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
@@ -33,8 +33,112 @@ pub const REGISTRATION: super::Registration = super::Registration {
     surface: "client",
     pane: super::boxed::<Bruno>,
     top_bar: None,
-    palettes: &[],
+    palettes: PALETTES,
 };
+
+/// Bruno's palettes: a request to open, an environment to send with, a workspace to switch to.
+const PALETTES: &[super::PluginPalette] = &[
+    super::PluginPalette {
+        plugin: "sikemux.bruno",
+        id: "bruno.requests",
+        title: "Find a Bruno request",
+        placeholder: "search requests…",
+        view: "collectionView",
+        params: Some(collection_params),
+        rows: request_rows,
+        typed: None,
+    },
+    super::PluginPalette {
+        plugin: "sikemux.bruno",
+        id: "bruno.environments",
+        title: "Pick a Bruno environment",
+        placeholder: "search environments…",
+        view: "collectionView",
+        params: Some(collection_params),
+        rows: environment_rows,
+        typed: None,
+    },
+    super::PluginPalette {
+        plugin: "sikemux.bruno",
+        id: "bruno.workspaces",
+        title: "Switch Bruno workspace",
+        placeholder: "switch bruno workspace…",
+        view: "workspacesView",
+        params: Some(workspace_params),
+        rows: workspace_rows,
+        typed: None,
+    },
+];
+
+fn collection_params(settings: &Value) -> Value {
+    json!({ "root": settings["collectionPath"] })
+}
+
+fn workspace_params(settings: &Value) -> Value {
+    json!({ "known": settings["workspaces"], "loaded": settings["collectionPath"] })
+}
+
+fn request_rows(collection: &Value) -> Vec<crate::palette::Row> {
+    fn walk(nodes: &[TreeNode], trail: &mut Vec<String>, rows: &mut Vec<crate::palette::Row>) {
+        for node in nodes {
+            match node {
+                TreeNode::Folder { name, children, .. } => {
+                    trail.push(name.clone());
+                    walk(children, trail, rows);
+                    trail.pop();
+                }
+                TreeNode::Request { name, path, method, .. } => {
+                    let folders = trail.join(" / ");
+                    let meta = match folders.is_empty() {
+                        true => method_word(*method).to_owned(),
+                        false => format!("{} · {folders}", method_word(*method)),
+                    };
+                    rows.push(crate::palette::Row::new(format!("request:{path}"), name.clone()).meta(meta).also(&folders));
+                }
+            }
+        }
+    }
+    let Ok(collection) = serde_json::from_value::<Collection>(collection.clone()) else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    walk(&collection.tree, &mut Vec::new(), &mut rows);
+    rows
+}
+
+fn environment_rows(collection: &Value) -> Vec<crate::palette::Row> {
+    let Ok(collection) = serde_json::from_value::<Collection>(collection.clone()) else {
+        return Vec::new();
+    };
+    let mut owners: Vec<(String, String)> = Vec::new();
+    for env in &collection.envs {
+        if !owners.iter().any(|(path, _)| *path == env.collection_path) {
+            owners.push((env.collection_path.clone(), env.collection_name.clone()));
+        }
+    }
+    let none = owners.iter().map(|(path, name)| {
+        crate::palette::Row::new(format!("env-none:{path}"), "No environment").meta(name.clone())
+    });
+    let envs = collection
+        .envs
+        .iter()
+        .map(|env| crate::palette::Row::new(format!("env:{}", env.id), env.name.clone()).meta(env.collection_name.clone()));
+    envs.chain(none).collect()
+}
+
+fn workspace_rows(known: &Value) -> Vec<crate::palette::Row> {
+    let Ok(known) = serde_json::from_value::<KnownWorkspaces>(known.clone()) else {
+        return Vec::new();
+    };
+    known
+        .workspaces
+        .into_iter()
+        .map(|workspace| {
+            crate::palette::Row::new(format!("workspace:{}", workspace.path), workspace.name).meta(workspace.path)
+        })
+        .chain([crate::palette::Row::new("workspace-add", "Add a folder…")])
+        .collect()
+}
 
 const METHODS: [HttpMethod; 7] = [
     HttpMethod::Get,
@@ -114,6 +218,25 @@ fn find<'a>(nodes: &'a [TreeNode], path: &str) -> Option<&'a TreeNode> {
 }
 
 impl Panel for Bruno {
+    fn open_at(&mut self, at: &str, host: &mut Host, cx: &mut Context<PluginPane>) {
+        if let Some(path) = at.strip_prefix("request:") {
+            self.show(path);
+        } else if let Some(id) = at.strip_prefix("env:") {
+            let owner = id.rsplit_once("::").map_or(String::new(), |(owner, _)| owner.to_owned());
+            let id = id.to_owned();
+            host.save_settings(move |settings| choose_env(settings, owner, Some(id)), cx);
+        } else if let Some(owner) = at.strip_prefix("env-none:") {
+            let owner = owner.to_owned();
+            host.save_settings(move |settings| choose_env(settings, owner, None), cx);
+        } else if let Some(folder) = at.strip_prefix("workspace:") {
+            *self = Bruno::default();
+            open_collection(host, folder.to_owned(), cx);
+        } else if at == "workspace-add" {
+            choose_collection(cx);
+        }
+        cx.notify();
+    }
+
     fn render(&mut self, host: &mut Host, window: &mut Window, cx: &mut Context<PluginPane>) -> AnyElement {
         let settings = host.settings(cx);
         let root = settings["collectionPath"].as_str().unwrap_or_default().to_owned();
@@ -282,7 +405,7 @@ impl Bruno {
             .child(
                 IconButton::new("bruno-workspace", Icon::Folder, "Open another collection")
                     .small()
-                    .on_click(listen::<Bruno, _>(cx, |_, _, _, window, cx| choose_collection(window, cx))),
+                    .on_click(listen::<Bruno, _>(cx, |_, _, _, _, cx| choose_collection(cx))),
             );
         div()
             .w(px(260.))
@@ -588,18 +711,8 @@ impl Bruno {
             false,
             listen::<Bruno, SharedString>(cx, move |_, host, picked, _, cx| {
                 let (owner, picked) = (owner.clone(), picked.to_string());
-                host.save_settings(
-                    move |settings| {
-                        let envs = settings.entry("selectedEnvs").or_insert_with(|| json!({}));
-                        if let Some(envs) = envs.as_object_mut() {
-                            match picked.is_empty() {
-                                true => envs.remove(&owner),
-                                false => envs.insert(owner, Value::String(picked)),
-                            };
-                        }
-                    },
-                    cx,
-                );
+                let picked = (!picked.is_empty()).then_some(picked);
+                host.save_settings(move |settings| choose_env(settings, owner, picked), cx);
             }),
             cx,
         );
@@ -1117,20 +1230,49 @@ fn welcome(cx: &mut Context<PluginPane>) -> AnyElement {
         )
         .child(
             Button::new("bruno-open", "Open a folder", Variant::Primary)
-                .on_click(listen::<Bruno, _>(cx, |_, _, _, window, cx| choose_collection(window, cx))),
+                .on_click(listen::<Bruno, _>(cx, |_, _, _, _, cx| choose_collection(cx))),
         )
         .into_any_element()
 }
 
+/// The environment `id` chosen for the collection `owner`, or none.
+fn choose_env(settings: &mut serde_json::Map<String, Value>, owner: String, id: Option<String>) {
+    let envs = settings.entry("selectedEnvs").or_insert_with(|| json!({}));
+    if let Some(envs) = envs.as_object_mut() {
+        match id {
+            Some(id) => envs.insert(owner, Value::String(id)),
+            None => envs.remove(&owner),
+        };
+    }
+}
+
+/// Opens the collection in `folder`, first among the folders opened before.
+fn open_collection(host: &Host, folder: String, cx: &mut App) {
+    host.save_settings(
+        move |settings| {
+            let mut known: Vec<Value> = settings
+                .get("workspaces")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            known.retain(|known| known.as_str() != Some(folder.as_str()));
+            known.insert(0, Value::String(folder.clone()));
+            settings.insert("workspaces".into(), Value::Array(known));
+            settings.insert("collectionPath".into(), Value::String(folder));
+        },
+        cx,
+    );
+}
+
 /// Asks for a collection folder, and opens it.
-fn choose_collection(window: &mut Window, cx: &mut Context<PluginPane>) {
+fn choose_collection(cx: &mut Context<PluginPane>) {
     let picked = cx.prompt_for_paths(PathPromptOptions {
         files: false,
         directories: true,
         multiple: false,
         prompt: None,
     });
-    cx.spawn_in(window, async move |pane, cx| {
+    cx.spawn(async move |pane, cx| {
         let Ok(Ok(Some(paths))) = picked.await else {
             return;
         };
@@ -1140,20 +1282,7 @@ fn choose_collection(window: &mut Window, cx: &mut Context<PluginPane>) {
         let _ = pane.update(cx, |pane, cx| {
             if let Some((bruno, host)) = pane.parts::<Bruno>() {
                 *bruno = Bruno::default();
-                host.save_settings(
-                    move |settings| {
-                        let mut known: Vec<Value> = settings
-                            .get("workspaces")
-                            .and_then(Value::as_array)
-                            .cloned()
-                            .unwrap_or_default();
-                        known.retain(|known| known.as_str() != Some(folder.as_str()));
-                        known.insert(0, Value::String(folder.clone()));
-                        settings.insert("workspaces".into(), Value::Array(known));
-                        settings.insert("collectionPath".into(), Value::String(folder));
-                    },
-                    cx,
-                );
+                open_collection(host, folder, cx);
             }
             cx.notify();
         });
