@@ -1017,6 +1017,24 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
             counted_in(frame)
         );
     }
+    #[cfg(feature = "counts")]
+    COUNTED.with_borrow(|counted| {
+        let total = |at: &[(&'static str, u64)], name: &str| {
+            at.iter()
+                .find(|(counter, _)| *counter == name)
+                .map_or(0, |(_, value)| *value)
+        };
+        let (Some(start), end) = (counted.first(), gpui_transcript::counts::now()) else {
+            return;
+        };
+        let lines = total(&end, "NEW_CODE_LINES") - total(start, "NEW_CODE_LINES");
+        let micros = total(&end, "NEW_CODE_US") - total(start, "NEW_CODE_US");
+        println!(
+            "windowed code: {lines} lines laid out for the first time in {:.1} ms, {:.0} µs a line",
+            micros as f64 / 1e3,
+            micros as f64 / lines.max(1) as f64
+        );
+    });
     let began = Instant::now();
     let to = chat.to_owned();
     run.bench

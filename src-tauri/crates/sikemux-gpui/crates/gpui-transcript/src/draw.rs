@@ -512,6 +512,12 @@ impl Code {
                 if let Some(budget) = &self.budget {
                     budget.spend(began.elapsed());
                 }
+                #[cfg(feature = "counts")]
+                {
+                    crate::counts::add(&crate::counts::NEW_CODE_LINES, lines.len() as u64);
+                    let micros = began.elapsed().as_micros() as u64;
+                    crate::counts::add(&crate::counts::NEW_CODE_US, micros);
+                }
             }
             #[cfg(feature = "counts")]
             {
@@ -542,13 +548,19 @@ impl Code {
                 continue;
             }
             let began = Instant::now();
-            let Some((text, ..)) = self.part(chunk) else {
+            let Some((text, _lines, ..)) = self.part(chunk) else {
                 continue;
             };
             text.into_any_element().layout_as_root(space, window, cx);
             if !warm {
                 laid.insert(chunk);
                 budget.spend(began.elapsed());
+                #[cfg(feature = "counts")]
+                {
+                    crate::counts::add(&crate::counts::NEW_CODE_LINES, _lines.len() as u64);
+                    let micros = began.elapsed().as_micros() as u64;
+                    crate::counts::add(&crate::counts::NEW_CODE_US, micros);
+                }
             }
             #[cfg(feature = "counts")]
             crate::counts::add(&crate::counts::CODE_US, began.elapsed().as_micros() as u64);

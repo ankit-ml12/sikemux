@@ -20,6 +20,8 @@ counters! {
     CODE_CHUNKS: "Parts of code blocks laid out.",
     CODE_LINES: "Lines of code blocks laid out.",
     CODE_US: "Microseconds spent laying out parts of code blocks.",
+    NEW_CODE_LINES: "Lines of code blocks laid out for the first time.",
+    NEW_CODE_US: "Microseconds spent laying out parts of code blocks for the first time.",
     UNCOLOURED: "Code blocks drawn before their colours were ready.",
     COLOURED: "Code blocks whose colours arrived.",
     TRIMS: "Times a chat dropped rows it held.",
