@@ -181,13 +181,7 @@ export const AWS: Record<string, (params: Params) => unknown> = {
     container_name: "api-gateway",
     region: "eu-west-1",
   }),
-  billingMonths: () => [
-    month(0, 1843.2, true),
-    month(1, 2210.75),
-    month(2, 2064.1),
-    month(3, 1988.4),
-    month(4, 1712.9),
-  ],
+  billingView: () => billing(),
   ec2Instances: () =>
     EC2.map(([name, id, state, type, privateIp, publicIp, days]) => ({
       instance_id: id,
@@ -221,6 +215,61 @@ export const AWS: Record<string, (params: Params) => unknown> = {
       created_at: minutesAgo(days * 1440),
     })),
 };
+
+/** The costs view the plugin works out, for the months above, oldest first. */
+function billing() {
+  const totals = [1843.2, 2210.75, 2064.1, 1988.4, 1712.9];
+  const months = [4, 3, 2, 1, 0].map((offset) => month(offset, totals[offset], offset === 0));
+  const tallest = Math.max(...months.map((m) => Number(m.total)));
+  const name = (start: string) => new Date(`${start}T00:00:00Z`).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+  const label = (start: string) => `${name(start).slice(0, 3)} ${start.slice(2, 4)}`;
+  const shaped = months.map((m, index) => {
+    const gross = Number(m.total);
+    const before = months[index - 1];
+    const charges = m.by_service.map((line) => {
+      const amount = Number(line.amount);
+      const was = Number(before?.by_service.find((b) => b.service === line.service)?.amount);
+      const pct = before ? ((amount - was) / was) * 100 : null;
+      return {
+        service: line.service,
+        shortName: line.service.replace(/^(Amazon|AWS) /, ""),
+        amount,
+        ratio: amount / Number(m.by_service[0].amount),
+        change: pct === null ? null : Math.abs(pct) < 1 ? { kind: "flat" } : pct > 0 ? { kind: "up", pct } : { kind: "down", pct },
+      };
+    });
+    return {
+      periodStart: m.period_start,
+      label: label(m.period_start),
+      name: name(m.period_start),
+      longLabel: `${name(m.period_start)} ${m.period_start.slice(0, 4)}`,
+      inProgress: m.is_current,
+      day: m.is_current ? 18 : null,
+      days: 30,
+      gross,
+      credits: 0,
+      net: gross,
+      ratio: gross / tallest,
+      comparedTo: before ? label(before.period_start) : null,
+      charges,
+      creditLines: [],
+    };
+  });
+  const closed = shaped.slice(0, -1);
+  const average = closed.reduce((sum, m) => sum + m.gross, 0) / closed.length;
+  const forecast = (shaped[shaped.length - 1].gross / 18) * 30;
+  const last = closed[closed.length - 1].gross;
+  return {
+    unit: "USD",
+    months: shaped,
+    current: shaped.length - 1,
+    forecast,
+    lastClosed: closed.length - 1,
+    changePct: ((forecast - last) / last) * 100,
+    average,
+    averageRatio: average / tallest,
+  };
+}
 
 export function awsLogLines(): string[] {
   return LOG_LINES.map(

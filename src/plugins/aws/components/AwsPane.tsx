@@ -10,7 +10,7 @@ import { AwsEc2View, AwsLambdaView, AwsS3View, AwsSqsView } from "./AwsListViews
 import { AwsAuthEmpty } from "./AwsAuthEmpty";
 import "../aws.css";
 
-type AwsViewProps = { profile: string; active: boolean };
+type AwsViewProps = { paneId: string; profile: string; active: boolean };
 
 const AWS_VIEW: Record<AwsService, ComponentType<AwsViewProps>> = {
     ecs: AwsEcsView,
@@ -38,7 +38,7 @@ function goBack(profile: string, service: AwsService): boolean {
     return true;
 }
 
-export function AwsPane({ active }: { active: boolean }) {
+export function AwsPane({ paneId, active }: { paneId: string; active: boolean }) {
     const picked = useResource(awsProfileR);
     const profile = picked.data?.profile ?? null;
     const service = awsSettings.useSelect((s) => s.service);
@@ -67,7 +67,11 @@ export function AwsPane({ active }: { active: boolean }) {
     return (
         <div className="aws-pane" onKeyDown={onKeyDown}>
             <AwsServiceNav profile={auth.profile} signedIn={!signedOut} />
-            {signedOut ? <AwsAuthEmpty mode="unauthed" profile={auth.profile} /> : <ServiceView profile={auth.profile} active={active} />}
+            {signedOut ? (
+                <AwsAuthEmpty mode="unauthed" profile={auth.profile} />
+            ) : (
+                <ServiceView paneId={paneId} profile={auth.profile} active={active} />
+            )}
         </div>
     );
 }

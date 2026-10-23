@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "sikemux": ">=0.4",
   "callTimeoutSecs": 150,
+  "views": {
+    "billingView": { "everySecs": 600 }
+  },
   "environment": [
     "AWS_CLI",
     "AWS_CONFIG_FILE",

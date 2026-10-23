@@ -50,6 +50,7 @@ const SOURCES = [
   `${WIRE}/codehost.rs`,
   `${WIRE}/jira.rs`,
   `${WIRE}/rundeck.rs`,
+  `${WIRE}/aws.rs`,
   `${WIRE}/linear.rs`,
   `${WIRE}/slack.rs`,
   `${WIRE}/vercel.rs`,
@@ -92,6 +93,9 @@ const LINEAR_TYPES = [
   "Comment",
   "IssueView",
 ];
+
+/** The AWS plugin's types, known as its own beside the others'. */
+const AWS_TYPES = ["Billing", "BillingMonth", "BillingCharge", "BillingChange"];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
 const RUNDECK_TYPES = [
@@ -208,6 +212,9 @@ const RENAMES = {
   [`${WIRE}/rundeck.rs`]: Object.fromEntries(
     RUNDECK_TYPES.map((name) => [name, `Rundeck${name}`]),
   ),
+  [`${WIRE}/aws.rs`]: Object.fromEntries(
+    AWS_TYPES.map((name) => [name, `Aws${name}`]),
+  ),
   [`${WIRE}/slack.rs`]: Object.fromEntries(
     SLACK_TYPES.map((name) => [name, `Slack${name}`]),
   ),
@@ -303,6 +310,9 @@ const JIRA_ROOTS = [
 /** What the Linear plugin's views hand its pane. */
 const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
+/** What the AWS plugin's views hand its pane. */
+const AWS_ROOTS = ["AwsBilling"];
+
 /** What the Rundeck plugin's views hand its pane. */
 const RUNDECK_ROOTS = [
   "RundeckTree",
@@ -387,6 +397,7 @@ const OUTPUTS = {
   codehost: "src/codehost/types.generated.ts",
   jira: "src/plugins/jira/types.generated.ts",
   rundeck: "src/plugins/rundeck/types.generated.ts",
+  aws: "src/plugins/aws/types.generated.ts",
   linear: "src/plugins/linear/types.generated.ts",
   slack: "src/plugins/slack/types.generated.ts",
   vercel: "src/plugins/vercel/types.generated.ts",
@@ -1081,6 +1092,7 @@ await emit(
 await emit(OUTPUTS.codehost, typescript(false, CODEHOST_ROOTS, ""));
 await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
+await emit(OUTPUTS.aws, typescript(false, AWS_ROOTS, ""));
 await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
 await emit(OUTPUTS.slack, typescript(false, SLACK_ROOTS, ""));
 await emit(OUTPUTS.vercel, typescript(false, VERCEL_ROOTS, ""));

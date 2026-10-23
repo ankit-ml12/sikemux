@@ -14,7 +14,7 @@ registerFrontendPlugin({
             kind: AWS_CONSOLE,
             title: AWS_PLUGIN.name,
             icon: (size) => <IconAws size={size} />,
-            render: ({ visible }) => <AwsPane active={visible} />,
+            render: ({ paneId, visible }) => <AwsPane paneId={paneId} active={visible} />,
         },
     ],
     open: openAwsSession,

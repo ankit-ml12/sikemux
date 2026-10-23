@@ -19,6 +19,7 @@ mod logs;
 mod metrics;
 mod s3;
 mod sqs;
+mod views;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -187,14 +188,14 @@ impl Plugin for Aws {
                 "ec2Instances" => answer(ec2::instances(&params(input)?)).await,
                 "lambdaFunctions" => answer(lambda::functions(&params(input)?)).await,
                 "sqsQueues" => answer(sqs::queues(&params(input)?)).await,
-                "billingMonths" => {
+                "s3Buckets" => answer(s3::buckets(&params(input)?)).await,
+                "billingView" => {
                     let BillingParams {
                         target,
                         months_back,
                     } = params(input)?;
-                    answer(billing::months(&target, months_back)).await
+                    answer(views::billing(&target, months_back)).await
                 }
-                "s3Buckets" => answer(s3::buckets(&params(input)?)).await,
                 "setup" => reply(auth::setup()),
                 _ => match agent::call(ctx, method, input).await {
                     Some(answer) => answer,

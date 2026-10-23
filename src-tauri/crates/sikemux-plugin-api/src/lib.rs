@@ -3,6 +3,7 @@
 //! same plugin can later run in its own process without changing.
 
 pub mod account;
+pub use sikemux_wire::aws;
 pub use sikemux_wire::codehost;
 pub use sikemux_wire::jira;
 pub use sikemux_wire::linear;

@@ -54,7 +54,7 @@ beforeEach(() => {
 describe("AwsPane", () => {
     it("lists the profiles to pick from, then asks to sign in to one whose session ran out", async () => {
         await act(async () => {
-            render(<AwsPane active />);
+            render(<AwsPane paneId="pane-1" active />);
         });
         expect(screen.getByText("Pick an AWS profile")).toBeInTheDocument();
 

@@ -1,6 +1,7 @@
 import { defineService } from "../../plugin-api/service";
 import { awsApi } from "./api";
 import { AWS_PLUGIN } from "./kinds";
+import type { AwsBilling } from "./types.generated";
 
 export const aws = defineService(AWS_PLUGIN, () => awsApi.status());
 
@@ -34,10 +35,10 @@ export const lambdaFnsR = aws.resource("lambda.functions", (profile: string) => 
 
 export const sqsQueuesR = aws.resource("sqs.queues", (profile: string) => awsApi.sqsQueues(profile), 60_000);
 
-export const billingMonthsR = aws.resource(
-    "billing.months",
-    (profile: string, monthsBack: number) => awsApi.billingMonths(profile, monthsBack),
-    5 * 60_000,
-);
+/** How many closed months the costs reach back over, beside the month in progress. */
+const MONTHS_BACK = 5;
+
+/** The account's costs by month, worked out by the plugin and kept by the core. */
+export const billingV = aws.view<[profile: string], AwsBilling>("billingView", (profile) => ({ profile, monthsBack: MONTHS_BACK }));
 
 export const s3BucketsR = aws.resource("s3.buckets", (profile: string) => awsApi.s3Buckets(profile), 5 * 60_000);

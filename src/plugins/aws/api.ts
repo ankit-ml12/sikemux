@@ -121,21 +121,6 @@ export interface EcsServiceLog {
     region: string | null;
 }
 
-export interface BillingService {
-    service: string;
-    amount: string;
-    unit: string;
-}
-
-export interface BillingMonth {
-    period_start: string;
-    period_end: string;
-    total: string;
-    unit: string;
-    is_current: boolean;
-    by_service: BillingService[];
-}
-
 export interface S3Bucket {
     name: string;
     created_at: string | null;
@@ -171,7 +156,6 @@ export const awsApi = {
     ec2Instances: (profile: string) => backend.call<Ec2Instance[]>("ec2Instances", { profile }),
     lambdaFunctions: (profile: string) => backend.call<LambdaFn[]>("lambdaFunctions", { profile }),
     sqsQueues: (profile: string) => backend.call<SqsQueue[]>("sqsQueues", { profile }),
-    billingMonths: (profile: string, monthsBack = 5) => backend.call<BillingMonth[]>("billingMonths", { profile, monthsBack }),
     s3Buckets: (profile: string) => backend.call<S3Bucket[]>("s3Buckets", { profile }),
 
     /** Waits for the person to approve in their browser, so it streams rather than calls: a call would time out. */
