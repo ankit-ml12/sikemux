@@ -110,3 +110,84 @@ export interface RundeckSection {
     /** Its jobs' ids, by name. */
     jobs: string[];
 }
+
+/** A job with its recent runs and how they went. */
+export interface RundeckJobPage {
+    jobId: string;
+    name: string;
+    group: string | null;
+    project: string;
+    description: string | null;
+    permalink: string | null;
+    executionEnabled: boolean;
+    nodeFilter: string | null;
+    prod: boolean;
+    /** It takes a branch, so starting it is a deploy. */
+    runsBranch: boolean;
+    runWord: string;
+    runs: RundeckRun[];
+    live: RundeckLiveRun | null;
+    /** The newest run that succeeded, with a branch when the job takes one. */
+    lastGood: RundeckRun | null;
+    /** That run's options, but the secure ones, to start it again with. */
+    repeatOptions: Record<string, string>;
+    finished: number;
+    succeeded: number;
+    usualSecs: number | null;
+    fastestSecs: number | null;
+    slowestSecs: number | null;
+    /** While a run goes on, how soon the core reads it again. */
+    readAgainSecs: number | null;
+}
+
+/** One run in a job's or a project's history, newest first. */
+export interface RundeckRun {
+    executionId: number;
+    status: string;
+    statusKind: RundeckStatusKind;
+    live: boolean;
+    user: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+    /** How long it took, once it ended. */
+    secs: number | null;
+    branch: string | null;
+    jobId: string | null;
+    jobName: string | null;
+    jobGroup: string | null;
+    /** How long its job's runs that succeeded usually take, of those read. */
+    usualSecs: number | null;
+}
+
+/** The run of a job going on now, step by step. */
+export interface RundeckLiveRun {
+    executionId: number;
+    user: string | null;
+    startedAt: string | null;
+    branch: string | null;
+    steps: RundeckLiveStep[];
+    completed: number;
+    total: number;
+}
+
+export interface RundeckLiveStep {
+    name: string;
+    state: RundeckStepState;
+}
+
+export type RundeckStepState = "pending" | "running" | "ok" | "fail" | "skip";
+
+/** A project's recent runs of every job. */
+export interface RundeckActivityPage {
+    project: string;
+    /** Who the sign-in is, to pick out their runs. */
+    me: string | null;
+    runs: RundeckRun[];
+    /** Every run Rundeck holds for the project. */
+    total: number | null;
+    running: number;
+    failed: number;
+    mine: number;
+    /** While a run goes on, how soon the core reads it again. */
+    readAgainSecs: number | null;
+}

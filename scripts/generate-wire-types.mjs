@@ -94,6 +94,12 @@ const RUNDECK_TYPES = [
   "JobRow",
   "Section",
   "Jobs",
+  "Run",
+  "StepState",
+  "LiveStep",
+  "LiveRun",
+  "JobPage",
+  "ActivityPage",
 ];
 
 /** Names the clients know a type by where the Rust one would clash or say too little. */
@@ -237,7 +243,12 @@ const JIRA_ROOTS = [
 const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
 /** What the Rundeck plugin's views hand its pane. */
-const RUNDECK_ROOTS = ["RundeckTree", "RundeckJobs"];
+const RUNDECK_ROOTS = [
+  "RundeckTree",
+  "RundeckJobs",
+  "RundeckJobPage",
+  "RundeckActivityPage",
+];
 
 /** The fields the notch reads of each type. Swift's decoder ignores the rest. */
 const SWIFT_FIELDS = {

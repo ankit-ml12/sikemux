@@ -30,7 +30,7 @@ export function watchRun(job: JobRef, executionId: number, hasFocus: () => boole
         stream.stop();
         setWatching(executionId, false);
         invalidate((kind, args) => kind === rndExecutionsR.kind && args[0] === job.jobId);
-        void rundeck.readAgain("jobsView").catch(swallow("read the jobs again"));
+        void rundeck.readAgain().catch(swallow("read the runs again"));
         if (!rundeckSettings.get().notifyWhenDone) return;
         const notice = endedNotice(job, executionId, update);
         notify(notice.ok ? "success" : "error", notice.title, { action: { label: "Open", run: () => openRundeckExecution(job, executionId) } });

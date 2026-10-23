@@ -188,6 +188,17 @@ impl Plugin for Rundeck {
                 "jobsView" => {
                     answer(views::jobs_view(session, &saved.settings, params(input)?)).await
                 }
+                "jobView" => {
+                    answer(views::job_view(session, &saved.settings, params(input)?)).await
+                }
+                "activityView" => {
+                    answer(views::activity_view(
+                        session,
+                        &saved.settings,
+                        params(input)?,
+                    ))
+                    .await
+                }
                 "projects" => answer(projects::projects(session)).await,
                 "jobs" => {
                     let ProjectParams { project } = params(input)?;

@@ -345,7 +345,8 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
     };
   },
   executions: ({ jobId: id }) => history(String(id)),
-  projectExecutions: () => projectExecutions(),
+  jobView: ({ jobId: id }) => jobView(String(id)),
+  activityView: () => activityView(),
   plan: ({ targetBranch }) => ({
     project: PROJECT,
     service: "deploy/production/billing-service",
@@ -422,6 +423,111 @@ function history(id: string) {
       workflowState: running ? workflow : null,
     };
   });
+}
+
+type HistoryRun = ReturnType<typeof history>[number];
+
+const median = (times: number[]) =>
+  times.length
+    ? [...times].sort((a, b) => a - b)[Math.floor(times.length / 2)]
+    : null;
+
+const usualOf = (runs: HistoryRun[]) =>
+  median(runs.filter((run) => run.status === "succeeded").map(secsOf));
+
+function secsOf(run: HistoryRun): number {
+  return run["date-ended"]
+    ? Math.round(
+        (run["date-ended"].unixtime - run["date-started"].unixtime) / 1000,
+      )
+    : 0;
+}
+
+function pastRunOf(run: HistoryRun, usual: number | null) {
+  return {
+    executionId: run.id,
+    status: run.status,
+    statusKind: run.status,
+    live: run.status === "running",
+    user: run.user,
+    startedAt: run["date-started"].date,
+    endedAt: run["date-ended"]?.date ?? null,
+    secs: run["date-ended"] ? secsOf(run) : null,
+    branch: run.job.options.BRANCH,
+    jobId: run.job.id,
+    jobName: run.job.name,
+    jobGroup: run.job.group,
+    usualSecs: usual,
+  };
+}
+
+function jobView(id: string) {
+  const job = jobs.find((candidate) => candidate.id === id) ?? jobs[0];
+  const past = history(job.id);
+  const usual = usualOf(past);
+  const runs = past.map((run) => pastRunOf(run, usual));
+  const succeeded = runs.filter((run) => run.status === "succeeded");
+  const times = succeeded.map((run) => run.secs ?? 0);
+  const live = runs.find((run) => run.live);
+  return {
+    jobId: job.id,
+    name: job.name,
+    group: job.group,
+    project: PROJECT,
+    description: job.description,
+    permalink: null,
+    executionEnabled: true,
+    nodeFilter: null,
+    prod: job.group.includes("production"),
+    runsBranch: true,
+    runWord: "Deploy",
+    runs,
+    live: live && {
+      executionId: live.executionId,
+      user: live.user,
+      startedAt: live.startedAt,
+      branch: live.branch,
+      steps: workflow.steps.map((step, index) => ({
+        name: steps[index],
+        state:
+          step.executionState === "SUCCEEDED"
+            ? "ok"
+            : step.executionState === "RUNNING"
+              ? "running"
+              : "pending",
+      })),
+      completed: 4,
+      total: steps.length,
+    },
+    lastGood: succeeded[0] ?? null,
+    repeatOptions: succeeded[0]
+      ? { BRANCH: succeeded[0].branch, ENV: job.group.split("/")[1] }
+      : {},
+    finished: runs.filter((run) => !run.live).length,
+    succeeded: succeeded.length,
+    usualSecs: usual,
+    fastestSecs: times.length ? Math.min(...times) : null,
+    slowestSecs: times.length ? Math.max(...times) : null,
+    readAgainSecs: live ? 3 : null,
+  };
+}
+
+function activityView() {
+  const { executions, total } = projectExecutions();
+  const usual = new Map(jobs.map((job) => [job.id, usualOf(history(job.id))]));
+  const runs = executions.map((run) =>
+    pastRunOf(run, usual.get(run.job.id) ?? null),
+  );
+  return {
+    project: PROJECT,
+    me: "edon",
+    runs,
+    total,
+    running: runs.filter((run) => run.live).length,
+    failed: runs.filter((run) => run.statusKind === "failed").length,
+    mine: runs.filter((run) => run.user === "edon").length,
+    readAgainSecs: runs.some((run) => run.live) ? 5 : null,
+  };
 }
 
 function projectExecutions() {

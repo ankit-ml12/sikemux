@@ -2,7 +2,7 @@ import { peekResource, useResource } from "../../plugin-api/resources";
 import { defineService } from "../../plugin-api/service";
 import { rundeckApi, type PlanRequest, type RundeckJob } from "./api";
 import { RUNDECK_PLUGIN } from "./kinds";
-import type { RundeckJobs, RundeckTree } from "./types.generated";
+import type { RundeckActivityPage, RundeckJobPage, RundeckJobs, RundeckTree } from "./types.generated";
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
 export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
@@ -26,17 +26,20 @@ export const rndJobsV = rundeck.view<[project: string, group: string], RundeckJo
     group: group || undefined,
 }));
 
+/** A job with its recent runs, kept by the core and read every few seconds while one goes on. */
+export const rndJobV = rundeck.view<[jobId: string, project: string], RundeckJobPage>("jobView", (jobId, project) => ({ jobId, project }));
+
+/** A project's newest `max` runs of every job, kept by the core. */
+export const rndActivityV = rundeck.view<[project: string, max: number], RundeckActivityPage>("activityView", (project, max) => ({
+    project,
+    max,
+}));
+
 export const rndJobCellsR = rundeck.resource("jobCells", (jobs: RundeckJob[]) => rundeckApi.jobCells(jobs), 30_000);
 
 export const rndExecutionsR = rundeck.resource(
     "executions",
     (jobId: string, project: string, max: number) => rundeckApi.executions(jobId, project, max),
-    15_000,
-);
-
-export const rndProjectExecutionsR = rundeck.resource(
-    "projectExecutions",
-    (project: string, max: number) => rundeckApi.projectExecutions(project, max, 0),
     15_000,
 );
 

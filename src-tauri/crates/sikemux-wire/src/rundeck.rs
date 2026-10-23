@@ -1,5 +1,7 @@
-//! What the Rundeck plugin's views hand a pane: the projects' folders and a
-//! folder's jobs with how each last ran.
+//! What the Rundeck plugin's views hand a pane: the projects' folders, a
+//! folder's jobs with how each last ran, and a job's or a project's runs.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -128,4 +130,103 @@ pub struct Jobs {
     /// Every folder in the project, and the folders above it, holding a running job; the
     /// project itself is the empty path.
     pub live_paths: Vec<String>,
+}
+
+/// One run in a job's or a project's history, newest first.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Run {
+    pub execution_id: u64,
+    pub status: String,
+    pub status_kind: StatusKind,
+    pub live: bool,
+    pub user: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    /// How long it took, once it ended.
+    pub secs: Option<u64>,
+    pub branch: Option<String>,
+    pub job_id: Option<String>,
+    pub job_name: Option<String>,
+    pub job_group: Option<String>,
+    /// How long its job's runs that succeeded usually take, of those read.
+    pub usual_secs: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum StepState {
+    Pending,
+    Running,
+    Ok,
+    Fail,
+    Skip,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveStep {
+    pub name: String,
+    pub state: StepState,
+}
+
+/// The run of a job going on now, step by step.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveRun {
+    pub execution_id: u64,
+    pub user: Option<String>,
+    pub started_at: Option<String>,
+    pub branch: Option<String>,
+    pub steps: Vec<LiveStep>,
+    pub completed: u32,
+    pub total: u32,
+}
+
+/// A job with its recent runs and how they went.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobPage {
+    pub job_id: String,
+    pub name: String,
+    pub group: Option<String>,
+    pub project: String,
+    pub description: Option<String>,
+    pub permalink: Option<String>,
+    pub execution_enabled: bool,
+    pub node_filter: Option<String>,
+    pub prod: bool,
+    /// It takes a branch, so starting it is a deploy.
+    pub runs_branch: bool,
+    pub run_word: String,
+    pub runs: Vec<Run>,
+    pub live: Option<LiveRun>,
+    /// The newest run that succeeded, with a branch when the job takes one.
+    pub last_good: Option<Run>,
+    /// That run's options, but the secure ones, to start it again with.
+    pub repeat_options: BTreeMap<String, String>,
+    pub finished: u32,
+    pub succeeded: u32,
+    pub usual_secs: Option<u64>,
+    pub fastest_secs: Option<u64>,
+    pub slowest_secs: Option<u64>,
+    /// While a run goes on, how soon the core reads it again.
+    pub read_again_secs: Option<u64>,
+}
+
+/// A project's recent runs of every job.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityPage {
+    pub project: String,
+    /// Who the sign-in is, to pick out their runs.
+    pub me: Option<String>,
+    pub runs: Vec<Run>,
+    /// Every run Rundeck holds for the project.
+    pub total: Option<u64>,
+    pub running: u32,
+    pub failed: u32,
+    pub mine: u32,
+    /// While a run goes on, how soon the core reads it again.
+    pub read_again_secs: Option<u64>,
 }

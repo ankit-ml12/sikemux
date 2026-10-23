@@ -130,14 +130,22 @@ pub(crate) async fn view(core: &Arc<Core>, client: ClientId, asked: ViewParams) 
     }
 }
 
+/// How long `answer` stays fresh: the manifest's pace, or sooner when the
+/// view asks for it, such as while a run it shows goes on.
+fn pace(answer: &Value, every: Duration) -> Duration {
+    answer["readAgainSecs"]
+        .as_u64()
+        .map_or(every, |secs| Duration::from_secs(secs.max(1)).min(every))
+}
+
 fn keep(core: &Arc<Core>, key: Key, answer: Value, every: Duration) {
     {
         let mut state = core.plugin_views.state.locked();
         let now = Instant::now();
         let kept = Kept {
+            fresh: pace(&answer, every),
             answer,
             read: now,
-            fresh: every,
             every,
             asked: now,
         };
@@ -230,7 +238,7 @@ async fn refresh(core: &Arc<Core>, keys: Vec<Key>) {
             kept.fresh = (kept.fresh * 2).min(LONGEST_BACKOFF.max(kept.every));
             continue;
         };
-        kept.fresh = kept.every;
+        kept.fresh = pace(&answer, kept.every);
         if kept.answer != answer {
             kept.answer = answer;
             moved.insert(key.path());

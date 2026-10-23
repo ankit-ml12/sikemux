@@ -1,19 +1,25 @@
-//! What the Rundeck pane shows: the projects' folders, and a folder's jobs with
-//! how each last ran. The core keeps each and reads it again on the pace the
-//! manifest gives.
+//! What the Rundeck pane shows: the projects' folders, a folder's jobs with
+//! how each last ran, and a job's or a project's runs. The core keeps each and
+//! reads it again on the pace the manifest gives.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use futures::future::try_join;
 use serde::Deserialize;
 use sikemux_plugin_api::rundeck::{
-    GroupNode, JobRow, Jobs, Section, StatusKind, Tree, TreeProject,
+    ActivityPage, GroupNode, JobPage, JobRow, Jobs, LiveRun, LiveStep, Run, Section, StatusKind,
+    StepState, Tree, TreeProject,
 };
 
 use crate::client::Session;
 use crate::config::Settings;
 use crate::error::RundeckResult;
+use crate::executions::{self, deployed_branch, Execution};
+use crate::jobs;
 use crate::projects::{self, MatrixCell};
-use crate::shape::{group_segments, is_production, run_summary};
+use crate::shape::{
+    display_status, group_segments, is_live, is_production, run_summary, status_kind,
+};
 
 pub async fn tree_view(session: &Session) -> RundeckResult<Tree> {
     let projects = projects::job_index(session)
@@ -261,5 +267,259 @@ fn row(cell: &MatrixCell) -> JobRow {
         latest,
         deployed,
         live_branch,
+    }
+}
+
+/// How many of a job's runs its page shows.
+const JOB_RUNS: u32 = 30;
+/// How soon a page with a run going on is read again.
+const LIVE_JOB_SECS: u64 = 3;
+const LIVE_ACTIVITY_SECS: u64 = 5;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRequest {
+    job_id: String,
+    project: String,
+}
+
+pub async fn job_view(
+    session: &Session,
+    settings: &Settings,
+    request: JobRequest,
+) -> RundeckResult<JobPage> {
+    let (detail, executions) = try_join(
+        jobs::job_detail(session, request.job_id.clone()),
+        executions::executions(
+            session,
+            request.job_id.clone(),
+            request.project.clone(),
+            Some(JOB_RUNS),
+            None,
+        ),
+    )
+    .await?;
+    let branch_options = &settings.branch_options;
+    let runs = runs_of(&executions, branch_options);
+    let runs_branch = detail.options.iter().any(|option| {
+        branch_options
+            .iter()
+            .any(|wanted| wanted.eq_ignore_ascii_case(&option.name))
+    });
+    let usual = usual_secs(&runs);
+    let runs: Vec<Run> = runs
+        .into_iter()
+        .map(|run| Run {
+            usual_secs: usual,
+            ..run
+        })
+        .collect();
+    let succeeded_secs: Vec<u64> = runs
+        .iter()
+        .filter(|run| run.status_kind == StatusKind::Succeeded)
+        .filter_map(|run| run.secs)
+        .collect();
+    let last_good = runs
+        .iter()
+        .find(|run| {
+            run.status_kind == StatusKind::Succeeded && (!runs_branch || run.branch.is_some())
+        })
+        .cloned();
+    let secure: BTreeSet<&str> = detail
+        .options
+        .iter()
+        .filter(|option| option.secure)
+        .map(|option| option.name.as_str())
+        .collect();
+    let repeat_options = last_good
+        .as_ref()
+        .and_then(|good| executions.iter().find(|ex| ex.id == good.execution_id))
+        .and_then(|ex| ex.job.as_ref()?.options.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(name, _)| !secure.contains(name.as_str()))
+        .collect();
+    let live = executions
+        .iter()
+        .zip(&runs)
+        .find(|(_, run)| run.live)
+        .map(|(ex, run)| live_run(ex, run, &detail.steps));
+    let finished = runs.iter().filter(|run| !run.live).count() as u32;
+    Ok(JobPage {
+        permalink: Some(format!(
+            "{}/project/{}/job/show/{}",
+            session.url.trim_end_matches('/'),
+            detail.project,
+            detail.id
+        )),
+        prod: is_production(
+            &detail.project,
+            detail.group.as_deref(),
+            &settings.prod_envs,
+        ),
+        run_word: if runs_branch { "Deploy" } else { "Run" }.to_owned(),
+        runs_branch,
+        execution_enabled: detail.execution_enabled,
+        node_filter: detail.node_filter,
+        description: detail.description,
+        job_id: detail.id,
+        name: detail.name,
+        group: detail.group,
+        project: detail.project,
+        read_again_secs: live.is_some().then_some(LIVE_JOB_SECS),
+        live,
+        last_good,
+        repeat_options,
+        finished,
+        succeeded: succeeded_secs.len() as u32,
+        usual_secs: usual,
+        fastest_secs: succeeded_secs.iter().min().copied(),
+        slowest_secs: succeeded_secs.iter().max().copied(),
+        runs,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityRequest {
+    project: String,
+    max: u32,
+}
+
+pub async fn activity_view(
+    session: &Session,
+    settings: &Settings,
+    request: ActivityRequest,
+) -> RundeckResult<ActivityPage> {
+    let page =
+        executions::project_executions(session, request.project.clone(), Some(request.max), None)
+            .await?;
+    let mut runs = runs_of(&page.executions, &settings.branch_options);
+    let mut by_job: BTreeMap<String, Vec<Run>> = BTreeMap::new();
+    for run in &runs {
+        if let Some(job) = &run.job_id {
+            by_job.entry(job.clone()).or_default().push(run.clone());
+        }
+    }
+    let usual: BTreeMap<String, Option<u64>> = by_job
+        .into_iter()
+        .map(|(job, runs)| (job, usual_secs(&runs)))
+        .collect();
+    for run in &mut runs {
+        run.usual_secs = run
+            .job_id
+            .as_ref()
+            .and_then(|job| usual.get(job).copied().flatten());
+    }
+    let me = Some(session.user.clone()).filter(|user| !user.is_empty());
+    let running = runs.iter().filter(|run| run.live).count() as u32;
+    Ok(ActivityPage {
+        project: request.project,
+        failed: runs
+            .iter()
+            .filter(|run| run.status_kind == StatusKind::Failed)
+            .count() as u32,
+        mine: me.as_ref().map_or(0, |me| {
+            runs.iter()
+                .filter(|run| run.user.as_ref() == Some(me))
+                .count() as u32
+        }),
+        me,
+        running,
+        total: page.total,
+        read_again_secs: (running > 0).then_some(LIVE_ACTIVITY_SECS),
+        runs,
+    })
+}
+
+fn runs_of(executions: &[Execution], branch_options: &[String]) -> Vec<Run> {
+    let mut runs: Vec<(i64, Run)> = executions
+        .iter()
+        .map(|ex| {
+            let started = ex.date_started.as_ref().and_then(|date| date.unixtime);
+            let ended = ex.date_ended.as_ref().and_then(|date| date.unixtime);
+            let job = ex.job.as_ref();
+            let run = Run {
+                execution_id: ex.id,
+                status: display_status(ex.status.as_deref(), ex.custom_status.as_deref()),
+                status_kind: status_kind(ex.status.as_deref()),
+                live: is_live(ex.status.as_deref()),
+                user: ex.user.clone(),
+                started_at: ex.date_started.as_ref().and_then(|date| date.date.clone()),
+                ended_at: ex.date_ended.as_ref().and_then(|date| date.date.clone()),
+                secs: started
+                    .zip(ended)
+                    .map(|(started, ended)| (ended - started).max(0) as u64 / 1000),
+                branch: deployed_branch(ex, branch_options).filter(|branch| !branch.is_empty()),
+                job_id: job.and_then(|job| job.id.clone()),
+                job_name: job.and_then(|job| job.name.clone()),
+                job_group: job
+                    .and_then(|job| job.group.clone())
+                    .filter(|group| !group.is_empty()),
+                usual_secs: None,
+            };
+            (started.unwrap_or(0), run)
+        })
+        .collect();
+    runs.sort_by(|(a, left), (b, right)| {
+        b.cmp(a)
+            .then_with(|| right.execution_id.cmp(&left.execution_id))
+    });
+    runs.into_iter().map(|(_, run)| run).collect()
+}
+
+/// The middle time of the runs that succeeded, so one stuck or instant run does not skew it.
+fn usual_secs(runs: &[Run]) -> Option<u64> {
+    let mut times: Vec<u64> = runs
+        .iter()
+        .filter(|run| run.status_kind == StatusKind::Succeeded)
+        .filter_map(|run| run.secs)
+        .collect();
+    times.sort_unstable();
+    times.get(times.len() / 2).copied()
+}
+
+fn live_run(execution: &Execution, run: &Run, step_names: &[String]) -> LiveRun {
+    let state = execution.workflow_state.as_ref();
+    let steps: Vec<LiveStep> = state
+        .map(|state| state.steps.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(at, step)| LiveStep {
+            name: step_names
+                .get(at)
+                .filter(|name| !name.is_empty())
+                .cloned()
+                .unwrap_or_else(|| format!("step {}", at + 1)),
+            state: step_state(step.execution_state.as_deref()),
+        })
+        .collect();
+    let total = state
+        .and_then(|state| state.step_count)
+        .unwrap_or(0)
+        .max(steps.len() as u32);
+    let completed = steps
+        .iter()
+        .filter(|step| !matches!(step.state, StepState::Pending | StepState::Running))
+        .count() as u32;
+    LiveRun {
+        execution_id: run.execution_id,
+        user: run.user.clone(),
+        started_at: run.started_at.clone(),
+        branch: run.branch.clone(),
+        completed: completed.min(total),
+        total,
+        steps,
+    }
+}
+
+fn step_state(state: Option<&str>) -> StepState {
+    match state.unwrap_or_default().to_ascii_uppercase().as_str() {
+        "RUNNING" | "RUNNING_HANDLER" => StepState::Running,
+        "SUCCEEDED" => StepState::Ok,
+        "FAILED" | "ABORTED" => StepState::Fail,
+        "NOT_ELIGIBLE" | "SKIPPED" => StepState::Skip,
+        _ => StepState::Pending,
     }
 }

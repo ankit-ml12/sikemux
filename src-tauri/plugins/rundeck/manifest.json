@@ -6,7 +6,9 @@
   "callTimeoutSecs": 65,
   "views": {
     "treeView": { "everySecs": 300 },
-    "jobsView": { "everySecs": 30 }
+    "jobsView": { "everySecs": 30 },
+    "jobView": { "everySecs": 20 },
+    "activityView": { "everySecs": 30 }
   },
   "writes": ["run", "agentRun", "abort", "setLists"],
   "tools": [
