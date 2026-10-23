@@ -23,11 +23,22 @@ use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
 
-mod database;
-mod jira;
-mod linear;
-mod rundeck;
-mod signoz;
+/// Every plugin that draws a panel, one line each, sorted: its module declares the rest in
+/// its own `REGISTRATION`.
+macro_rules! plugins {
+    ($($name:ident),* $(,)?) => {
+        $(mod $name;)*
+        const PLUGINS: &[Registration] = &[$($name::REGISTRATION),*];
+    };
+}
+
+plugins! {
+    database,
+    jira,
+    linear,
+    rundeck,
+    signoz,
+}
 
 /// How many views a pane keeps, the least lately asked for going first.
 const KEPT_AT_MOST: usize = 32;
@@ -48,24 +59,39 @@ pub trait Panel: Any {
 /// The surface of a plugin's item in the window's top bar.
 pub const TOP_BAR: &str = "topbar";
 
-/// The panel of `plugin`, for the plugins that draw a pane.
+/// What a plugin's panel module says of itself: the plugin, the surface its pane opens on,
+/// what draws the pane and its top-bar item, and the palettes it offers.
+pub struct Registration {
+    pub plugin: &'static str,
+    pub surface: &'static str,
+    pub pane: fn() -> Box<dyn Panel>,
+    pub top_bar: Option<fn() -> Box<dyn Panel>>,
+    pub palettes: &'static [PluginPalette],
+}
+
+/// A panel of type `P`, for a registration to name.
+pub fn boxed<P: Panel + Default>() -> Box<dyn Panel> {
+    Box::<P>::default()
+}
+
+fn registration(plugin: &str) -> Option<&'static Registration> {
+    PLUGINS
+        .iter()
+        .find(|registered| registered.plugin == plugin)
+}
+
 /// What `plugin` draws on `surface`: its pane, or its item in the top bar.
 fn panel(plugin: &str, surface: &str) -> Option<Box<dyn Panel>> {
-    match (plugin, surface) {
-        ("sikemux.rundeck", TOP_BAR) => Some(Box::<rundeck::DeployChip>::default()),
-        (_, TOP_BAR) => None,
-        ("sikemux.database", _) => Some(Box::<database::Database>::default()),
-        ("sikemux.jira", _) => Some(Box::<jira::Jira>::default()),
-        ("sikemux.linear", _) => Some(Box::<linear::Linear>::default()),
-        ("sikemux.rundeck", _) => Some(Box::<rundeck::Rundeck>::default()),
-        ("sikemux.signoz", _) => Some(Box::<signoz::Signoz>::default()),
-        _ => None,
+    let registered = registration(plugin)?;
+    match surface {
+        TOP_BAR => registered.top_bar.map(|top_bar| top_bar()),
+        _ => Some((registered.pane)()),
     }
 }
 
 /// Whether `plugin` draws an item in the window's top bar.
 pub fn has_top_bar(plugin: &str) -> bool {
-    panel(plugin, TOP_BAR).is_some()
+    registration(plugin).is_some_and(|registered| registered.top_bar.is_some())
 }
 
 /// A list a plugin offers in the command palette, read from one of its views; picking a row
@@ -82,22 +108,12 @@ pub struct PluginPalette {
 
 /// The palettes `plugin` offers.
 pub fn palettes(plugin: &str) -> &'static [PluginPalette] {
-    match plugin {
-        "sikemux.rundeck" => rundeck::PALETTES,
-        _ => &[],
-    }
+    registration(plugin).map_or(&[], |registered| registered.palettes)
 }
 
 /// The surface a plugin's pane opens on, for the plugins that draw one.
 pub fn surface(plugin: &str) -> Option<&'static str> {
-    match plugin {
-        "sikemux.database" => Some("browser"),
-        "sikemux.jira" => Some("issues"),
-        "sikemux.linear" => Some("issues"),
-        "sikemux.rundeck" => Some("deploy"),
-        "sikemux.signoz" => Some("explore"),
-        _ => None,
-    }
+    registration(plugin).map(|registered| registered.surface)
 }
 
 /// The plugin and the surface a pane's target names, as `<plugin>:<surface>`.

@@ -184,6 +184,14 @@ struct SignIn {
     error: Option<SharedString>,
 }
 
+pub const REGISTRATION: super::Registration = super::Registration {
+    plugin: "sikemux.signoz",
+    surface: "explore",
+    pane: super::boxed::<Signoz>,
+    top_bar: None,
+    palettes: &[],
+};
+
 pub struct Signoz {
     section: Section,
     service: Option<String>,

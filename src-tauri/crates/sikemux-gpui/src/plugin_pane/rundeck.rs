@@ -87,6 +87,14 @@ enum LinesShown {
     Problems,
 }
 
+pub const REGISTRATION: super::Registration = super::Registration {
+    plugin: "sikemux.rundeck",
+    surface: "deploy",
+    pane: super::boxed::<Rundeck>,
+    top_bar: Some(super::boxed::<DeployChip>),
+    palettes: PALETTES,
+};
+
 #[derive(Default)]
 pub struct Rundeck {
     /// What the main area shows over the folder's jobs, newest last.

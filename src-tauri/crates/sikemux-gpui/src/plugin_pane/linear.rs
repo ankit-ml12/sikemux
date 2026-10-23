@@ -22,6 +22,14 @@ use crate::ui::{self, Button, IconButton, Pick, Variant};
 
 const PITCH: &str = "The issues you are working on, beside the code.";
 
+pub const REGISTRATION: super::Registration = super::Registration {
+    plugin: "sikemux.linear",
+    surface: "issues",
+    pane: super::boxed::<Linear>,
+    top_bar: None,
+    palettes: &[],
+};
+
 #[derive(Default)]
 pub struct Linear {
     picked: Option<Entity<Picked>>,

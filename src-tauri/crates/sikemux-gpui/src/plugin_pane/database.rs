@@ -24,6 +24,14 @@ use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Variant};
 
+pub const REGISTRATION: super::Registration = super::Registration {
+    plugin: "sikemux.database",
+    surface: "browser",
+    pane: super::boxed::<Database>,
+    top_bar: None,
+    palettes: &[],
+};
+
 #[derive(Default)]
 pub struct Database {
     /// The explorer's open nodes.

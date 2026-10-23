@@ -142,6 +142,14 @@ struct TokenForm {
 /// What a field does as the person types in it or presses Return.
 type Typed = fn(&mut Jira, &mut Host, &str, &mut Context<PluginPane>);
 
+pub const REGISTRATION: super::Registration = super::Registration {
+    plugin: "sikemux.jira",
+    surface: "issues",
+    pane: super::boxed::<Jira>,
+    top_bar: None,
+    palettes: &[],
+};
+
 #[derive(Default)]
 pub struct Jira {
     list: List,
