@@ -201,8 +201,55 @@ pub const REGISTRATION: super::Registration = super::Registration {
     surface: "explore",
     pane: super::boxed::<Signoz>,
     top_bar: None,
-    palettes: &[],
+    palettes: &[
+        super::PluginPalette {
+            plugin: "sikemux.signoz",
+            id: "signoz.services",
+            title: "Open a SigNoz service",
+            placeholder: "search services…",
+            view: "servicesView",
+            rows: service_rows,
+        },
+        super::PluginPalette {
+            plugin: "sikemux.signoz",
+            id: "signoz.dashboards",
+            title: "Open a SigNoz dashboard",
+            placeholder: "search dashboards…",
+            view: "dashboardsView",
+            rows: dashboard_rows,
+        },
+    ],
 };
+
+fn service_rows(services: &Value) -> Vec<crate::palette::Row> {
+    let Ok(services) = serde_json::from_value::<Services>(services.clone()) else {
+        return Vec::new();
+    };
+    services
+        .rows
+        .into_iter()
+        .map(|row| {
+            let meta = match row.errors {
+                0 => "no errors".to_owned(),
+                _ => format!("{} errors", percent(row.error_rate)),
+            };
+            crate::palette::Row::new(format!("service:{}", row.service), row.service).meta(meta)
+        })
+        .collect()
+}
+
+fn dashboard_rows(dashboards: &Value) -> Vec<crate::palette::Row> {
+    let Ok(dashboards) = serde_json::from_value::<Vec<DashboardSummary>>(dashboards.clone()) else {
+        return Vec::new();
+    };
+    dashboards
+        .into_iter()
+        .map(|dashboard| {
+            crate::palette::Row::new(format!("dashboard:{}", dashboard.id), dashboard.title)
+                .meta(dashboard.tags.join(" · "))
+        })
+        .collect()
+}
 
 pub struct Signoz {
     section: Section,
@@ -324,6 +371,17 @@ fn words(input: &Option<Entity<InputState>>, cx: &App) -> String {
 }
 
 impl Panel for Signoz {
+    fn open_at(&mut self, at: &str, _: &mut Host, _: &mut Context<PluginPane>) {
+        match at.split_once(':') {
+            Some(("service", service)) => self.show_service(service.to_owned(), Tab::Overview),
+            Some(("dashboard", id)) => {
+                self.show_section(Section::Dashboards);
+                self.dashboard = Some(id.to_owned());
+            }
+            _ => {}
+        }
+    }
+
     fn render(
         &mut self,
         host: &mut Host,
