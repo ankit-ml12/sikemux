@@ -51,6 +51,7 @@ mod panes;
 mod picker;
 mod picture;
 mod places;
+mod plugin_pane;
 mod ports;
 mod project_settings;
 pub mod project_switcher;

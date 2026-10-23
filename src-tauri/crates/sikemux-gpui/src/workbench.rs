@@ -200,6 +200,8 @@ pub struct Workbench {
     /// The Search pane of the project whose Search tab was last in front.
     pub search: Option<Entity<SearchPane>>,
     pub board: Option<Entity<crate::board::BoardPane>>,
+    /// The plugin panes of the strip in front, by view.
+    pub plugin_panes: HashMap<String, Entity<crate::plugin_pane::PluginPane>>,
     /// Settings, while they take the stage's place.
     pub settings: Option<crate::settings::Settings>,
     /// The agent whose title is being edited in place in its header.
@@ -622,6 +624,7 @@ impl Workbench {
             git_listing: false,
             search: None,
             board: None,
+            plugin_panes: HashMap::new(),
             settings: None,
             focus: cx.focus_handle(),
             window: window.window_handle(),
@@ -977,6 +980,11 @@ impl Workbench {
                     return self.terminals.redraw(key, cx);
                 }
             }
+            Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if topic == "pluginView") => {
+                if let Update::Changed { paths, .. } = *update {
+                    self.plugin_views_changed(&Place::Account(host), paths.as_deref(), cx);
+                }
+            }
             Update::From(host, update) if matches!(&*update, Update::Changed { topic, .. } if topic == "files" || topic == "git") => {
                 if let Update::Changed {
                     topic,
@@ -1037,6 +1045,9 @@ impl Workbench {
                     if let Some(board) = &self.board {
                         board.update(cx, |board, cx| board.changed(cx));
                     }
+                }
+                if topic == "pluginView" {
+                    self.plugin_views_changed(&Place::This, paths.as_deref(), cx);
                 }
                 if topic == "lsp" {
                     crate::editor::diagnostics_changed(
@@ -3136,6 +3147,55 @@ impl Workbench {
         self.search = Some(cx.new(|cx| SearchPane::new(target, project, cx)));
     }
 
+    /// Keeps a pane for each plugin view of the strip in front, so a plugin's tab keeps what
+    /// was picked in it while another tab is in front, and lets go of the rest.
+    fn plugin_panes(&mut self, cx: &mut Context<Self>) {
+        fn plugin_views(pane: &Pane, into: &mut Vec<(String, String)>) {
+            match pane {
+                Pane::View {
+                    id,
+                    kind: PaneKind::Plugin,
+                    target,
+                } => into.push((id.clone(), target.clone())),
+                Pane::View { .. } => {}
+                Pane::Split { panes, .. } => panes.iter().for_each(|pane| plugin_views(pane, into)),
+            }
+        }
+        let mut shown = Vec::new();
+        if let Some(strip) = self.strip() {
+            for tab in self.tabs(&strip) {
+                plugin_views(&tab.pane, &mut shown);
+            }
+        }
+        self.plugin_panes
+            .retain(|id, _| shown.iter().any(|(kept, _)| kept == id));
+        for (id, target) in shown {
+            if self.plugin_panes.contains_key(&id) {
+                continue;
+            }
+            let (core, bench) = (self.target(), cx.entity().downgrade());
+            let pane =
+                cx.new(|_| crate::plugin_pane::PluginPane::new(&target, id.clone(), core, bench));
+            self.plugin_panes.insert(id, pane);
+        }
+    }
+
+    /// Tells the plugin panes on `place` that some of their plugins' views changed.
+    fn plugin_views_changed(
+        &self,
+        place: &Place,
+        paths: Option<&[String]>,
+        cx: &mut Context<Self>,
+    ) {
+        for pane in self.plugin_panes.values() {
+            pane.update(cx, |pane, cx| {
+                if pane.host.place() == place {
+                    pane.changed(paths, cx);
+                }
+            });
+        }
+    }
+
     /// Makes the board pane when the project's board tab comes to the front.
     fn board_pane(&mut self, cx: &mut Context<Self>) {
         let front = self.tab().and_then(|tab| tabs::first_view(&tab.pane));
@@ -3779,6 +3839,7 @@ impl Parts {
                     bench.host_area(cx);
                     bench.search_pane(cx);
                     bench.board_pane(cx);
+                    bench.plugin_panes(cx);
                     crate::desk::prepare(bench, window, cx);
                     bench.settle_takes_keys();
                     let frame = bench.stage_frame.clone();

@@ -434,8 +434,9 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
 }
 
 /// The plugins that are on and draw in the rail, signed in or not.
-fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
+fn plugins(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
     let ink = Tokens::get(cx).text_secondary;
+    let strip = bench.strip();
     rows(bench.read("plugins"))
         .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
         .filter_map(|plugin| {
@@ -444,14 +445,26 @@ fn plugins(bench: &Workbench, cx: &App) -> Vec<AnyElement> {
                 plugin["signedIn"]
                     .as_bool()
                     .map(|signed_in| if signed_in { Tone::Ok } else { Tone::Idle });
+            let id = plugin["id"].as_str()?;
+            let opens =
+                crate::plugin_pane::surface(id)
+                    .zip(strip.clone())
+                    .map(|(surface, strip)| {
+                        let target = format!("{id}:{surface}");
+                        cx.listener(move |bench: &mut Workbench, _, _, _| {
+                            let params = json!({ "kind": PaneKind::Plugin, "target": target });
+                            bench.call_in_front("openTab", strip.with(params));
+                        })
+                    });
             Some(
                 Row::new(
-                    SharedString::from(format!("plugin-{}", plugin["id"].as_str()?)),
+                    SharedString::from(format!("plugin-{id}")),
                     plugin["name"].as_str()?.to_owned(),
                 )
                 .mark(16., ui::picture(mark, 13., ink))
                 .quiet()
                 .status(tone.map(|tone| ui::dot(tone, cx)))
+                .when_some(opens, |row, opens| row.on_click(opens))
                 .into_any_element(),
             )
         })
