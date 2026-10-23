@@ -904,7 +904,8 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
     let done = Cell::new(false);
     let (mut waits, mut stuck_since, mut stalled) = (Vec::new(), None::<Instant>, false);
     let mut last = run.row_ids(chat).last().cloned();
-    // The first and last rows held before each frame, to name what a slow frame was doing.
+    // Before each step: the frames drawn so far, when, and the first and last rows held, to name
+    // what a slow frame was doing.
     let mut held = Vec::new();
     let scrolling = Instant::now();
     let scrolled = run.measure_while(
@@ -914,6 +915,7 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
             let ids = run.row_ids(chat);
             let now = ids.last().cloned();
             held.push((
+                DRAWS.with_borrow(Vec::len),
                 scrolling.elapsed().as_secs_f64() * 1e3,
                 ids.first().cloned(),
                 now.clone(),
@@ -959,14 +961,19 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
         .enumerate()
         .filter(|(_, ms)| **ms > 16.);
     for (frame, ms) in slow.take(10) {
-        let (Some(before), after) = (held.get(frame), held.get(frame + 1)) else {
+        // The window may draw more than once between two steps; a frame belongs to the last step
+        // that came before it, and what changed shows in the step after.
+        let step = held
+            .partition_point(|seen| seen.0 <= frame)
+            .saturating_sub(1);
+        let (Some(before), after) = (held.get(step), held.get(step + 1)) else {
             continue;
         };
         let mut doing = Vec::new();
-        if after.is_some_and(|after| after.2 != before.2) {
+        if after.is_some_and(|after| after.3 != before.3) {
             doing.push("page insert");
         }
-        if after.is_some_and(|after| after.1 != before.1) {
+        if after.is_some_and(|after| after.2 != before.2) {
             doing.push("trim");
         }
         if doing.is_empty() {
@@ -974,7 +981,7 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
         }
         println!(
             "windowed slow frame: #{frame} at {:.0} ms into the scroll took {ms:.1} ms, during {}",
-            before.0,
+            before.1,
             doing.join(" and ")
         );
     }
