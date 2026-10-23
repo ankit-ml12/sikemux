@@ -196,18 +196,23 @@ impl Workbench {
         }
         whole.counted = whole.counted.max(found.counted.matches);
         whole.complete = found.counted.complete;
-        let stepping = std::mem::take(&mut whole.stepping);
         let count_on = !whole.complete && whole.counted < MOST_COUNTED;
-        if stepping {
-            self.step_find(agent, false, cx);
-        } else if let (true, Some(from), Some(mut params)) =
-            (count_on, found.next, self.find_params(agent, cx))
-        {
+        // A long chat's first slice scanned may hold no place at all, so places are asked
+        // for until one comes, before the count goes on alone.
+        let more = match (whole.hits.is_empty(), whole.next.clone()) {
+            (true, Some(from)) => Some((from, false)),
+            _ if std::mem::take(&mut whole.stepping) => {
+                self.step_find(agent, false, cx);
+                None
+            }
+            _ => found.next.filter(|_| count_on).map(|from| (from, true)),
+        };
+        if let (Some((from, counting)), Some(mut params)) = (more, self.find_params(agent, cx)) {
             params["from"] = from;
-            params["countOnly"] = json!(true);
+            params["countOnly"] = json!(counting);
             let asked = ASKED.fetch_add(1, Ordering::Relaxed);
             if let Some(finding) = self.finding_mut(agent) {
-                (finding.whole.asked, finding.whole.counting) = (asked, true);
+                (finding.whole.asked, finding.whole.counting) = (asked, counting);
             }
             self.ask_chat(ChatAsk::Find {
                 agent: agent.to_owned(),
@@ -261,8 +266,12 @@ impl Workbench {
             return;
         };
         if whole.hits.is_empty() {
-            chat.transcript
-                .update(cx, |transcript, cx| transcript.step(forward, cx));
+            match whole.next.is_some() {
+                true => whole.stepping = true,
+                false => chat
+                    .transcript
+                    .update(cx, |transcript, cx| transcript.step(forward, cx)),
+            }
             return;
         }
         let here = whole.at.or_else(|| {
