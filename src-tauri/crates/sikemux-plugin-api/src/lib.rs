@@ -5,6 +5,7 @@
 pub mod account;
 pub use sikemux_wire::codehost;
 pub use sikemux_wire::jira;
+pub use sikemux_wire::linear;
 pub use sikemux_wire::rundeck;
 mod error;
 pub mod http;

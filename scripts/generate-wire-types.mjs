@@ -50,6 +50,7 @@ const SOURCES = [
   `${WIRE}/codehost.rs`,
   `${WIRE}/jira.rs`,
   `${WIRE}/rundeck.rs`,
+  `${WIRE}/linear.rs`,
   `${PLUGIN_API}/ratelimit.rs`,
 ];
 
@@ -79,6 +80,9 @@ const JIRA_TYPES = [
   "IssueView",
   "Activity",
 ];
+
+/** Linear's types are known as Linear's, as Jira's are known as Jira's. */
+const LINEAR_TYPES = ["State", "IssueRow", "IssueList", "Label", "Comment", "IssueView"];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
 const RUNDECK_TYPES = [
@@ -136,6 +140,9 @@ const RENAMES = {
   [`${PLUGIN_API}/ratelimit.rs`]: { Budget: "RateLimit" },
   [`${WIRE}/jira.rs`]: Object.fromEntries(
     JIRA_TYPES.map((name) => [name, `Jira${name}`]),
+  ),
+  [`${WIRE}/linear.rs`]: Object.fromEntries(
+    LINEAR_TYPES.map((name) => [name, `Linear${name}`]),
   ),
   [`${WIRE}/rundeck.rs`]: Object.fromEntries(
     RUNDECK_TYPES.map((name) => [name, `Rundeck${name}`]),
@@ -226,6 +233,9 @@ const JIRA_ROOTS = [
   "JiraIssueView",
 ];
 
+/** What the Linear plugin's views hand its pane. */
+const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
+
 /** What the Rundeck plugin's views hand its pane. */
 const RUNDECK_ROOTS = ["RundeckTree", "RundeckJobs"];
 
@@ -284,6 +294,7 @@ const OUTPUTS = {
   codehost: "src/codehost/types.generated.ts",
   jira: "src/plugins/jira/types.generated.ts",
   rundeck: "src/plugins/rundeck/types.generated.ts",
+  linear: "src/plugins/linear/types.generated.ts",
   phone: "mobile/app/src/core/wire.generated.ts",
   notch: "src-tauri/notch/Sources/NotchKit/Wire.generated.swift",
 };
@@ -975,5 +986,6 @@ await emit(
 await emit(OUTPUTS.codehost, typescript(false, CODEHOST_ROOTS, ""));
 await emit(OUTPUTS.jira, typescript(false, JIRA_ROOTS, ""));
 await emit(OUTPUTS.rundeck, typescript(false, RUNDECK_ROOTS, ""));
+await emit(OUTPUTS.linear, typescript(false, LINEAR_ROOTS, ""));
 await emit(OUTPUTS.phone, typescript(true, TS_ROOTS, `${limits}\n\n`));
 await emit(OUTPUTS.notch, swift());
