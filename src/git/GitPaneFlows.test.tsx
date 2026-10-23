@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GitPane } from "./GitPane";
 import { remoteRepoR } from "../codehost/project";
-import { gitChangeOwnersR, gitOverviewR } from "../state/resources.defs";
+import { gitChangeOwnersR, gitOverviewR, gitStatusR } from "../state/resources.defs";
 import { getState, setState } from "../state/store";
 import { useGitWorkbench } from "../state/gitWorkbench";
 import { useStageMotion } from "../state/nativeViews";
@@ -27,6 +27,7 @@ vi.mock("../state/resources", async (original) => ({
     useCachedResourceEnabled: (enabled: boolean, definition: unknown) => {
         if (definition === gitChangeOwnersR) return resources.owners;
         if (definition === remoteRepoR) return { status: "ok", data: null, refresh: vi.fn() };
+        if (definition === gitStatusR) return { status: "error", error: "could not find repository", refresh: vi.fn() };
         if (definition !== gitOverviewR) return resources.empty;
         resources.overviewEnabled = enabled;
         return resources.overview;
@@ -103,15 +104,15 @@ it("reuses the diff preview across repeated warm switches", async () => {
     expect(resources.reviewRender).not.toHaveBeenCalled();
 });
 
-it("keeps the repository picker up while a folder that is not a repository refetches", () => {
+it("keeps every repository's changes up while a folder that is not a repository refetches", () => {
     const overview = resources.overview;
     try {
         resources.overview = { status: "error", error: "could not find repository at '/work'", refresh: vi.fn() } as never;
         const { rerender } = render(<GitPane paneId="git-test" cwd="/work" active visible />);
-        expect(screen.getByText("Not a repository")).toBeInTheDocument();
+        expect(screen.getByText("No repository in work, or in the folders directly inside it.")).toBeInTheDocument();
         resources.overview = { status: "loading", refresh: vi.fn() } as never;
         rerender(<GitPane paneId="git-test" cwd="/work" active visible />);
-        expect(screen.getByText("Not a repository")).toBeInTheDocument();
+        expect(screen.getByText("No repository in work, or in the folders directly inside it.")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Stashes" })).toBeNull();
     } finally {
         resources.overview = overview;
