@@ -1,49 +1,8 @@
 import { createPluginBackend } from "../../plugin-api/backend";
 import { DATABASE_PLUGIN } from "./kinds";
-import type { DatabaseCopyFormat, DatabaseQueryOutcome, DatabaseResultSet } from "./types.generated";
+import type { DatabaseCopyFormat, DatabaseProfileDraft, DatabaseProfileForm, DatabaseQueryOutcome, DatabaseResultSet } from "./types.generated";
 
 const backend = createPluginBackend(DATABASE_PLUGIN.id);
-
-/** PostgreSQL's `sslmode` names: whether to encrypt, and whether to check the server's certificate. */
-export type TlsMode = "disable" | "prefer" | "require" | "verify-full";
-
-/** A database server reached over the network; an empty port means the engine's usual one. */
-export interface ServerFields {
-    host: string;
-    port: number | null;
-    database: string;
-    user: string;
-    tls: TlsMode;
-}
-
-export type PostgresTarget = ServerFields & { engine: "postgres" };
-export type MysqlTarget = ServerFields & { engine: "mysql" };
-
-export interface SqliteTarget {
-    engine: "sqlite";
-    path: string;
-}
-
-export type Target = PostgresTarget | MysqlTarget | SqliteTarget;
-export type ServerTarget = PostgresTarget | MysqlTarget;
-export type Engine = Target["engine"];
-
-export type DatabaseProfile = Target & {
-    id: string;
-    name: string;
-    readOnly: boolean;
-    /** Agents may run statements that change data; otherwise their connection is read-only. */
-    agentWrites: boolean;
-    hasPassword: boolean;
-};
-
-/** A profile as the form holds it: no id until it is first saved. */
-export type ProfileDraft = Target & {
-    id?: string;
-    name: string;
-    readOnly: boolean;
-    agentWrites: boolean;
-};
 
 export interface Tested {
     version: string;
@@ -51,11 +10,12 @@ export interface Tested {
 }
 
 export const databaseApi = {
-    profiles: () => backend.call<DatabaseProfile[]>("profiles"),
+    /** The form for the saved connection with this id, or for a new one. */
+    form: (id?: string) => backend.call<DatabaseProfileForm>("form", { id }),
     /** A password left out keeps the saved one; an empty one forgets it. */
-    save: (profile: ProfileDraft, password?: string) => backend.call<DatabaseProfile>("save", { profile, password }),
+    save: (profile: DatabaseProfileDraft, password?: string) => backend.call<void>("save", { profile, password }),
     remove: (id: string) => backend.call<void>("remove", { id }),
-    test: (profile: ProfileDraft, password?: string) => backend.call<Tested>("test", { profile, password }),
+    test: (profile: DatabaseProfileDraft, password?: string) => backend.call<Tested>("test", { profile, password }),
     connect: (id: string) => backend.call<void>("connect", { id }),
     disconnect: (id: string) => backend.call<void>("disconnect", { id }),
     /** `run` names this run, so stopping it never stops another console's query on the same connection. */

@@ -4,10 +4,9 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { readViewsAgain } from "../../../plugin-api/views";
 import { EmptyState, IconMinus, IconPlus, IconRefresh, SkeletonRows } from "../../../plugin-api/ui";
 import { databaseApi } from "../api";
-import { blankDraft, draftOf } from "../profileForm";
 import { loadQuery, runQuery } from "../queryState";
 import { DATABASE_PLUGIN } from "../kinds";
-import { database, databaseExplorerV, databaseProfilesR } from "../resources";
+import { database, databaseExplorerV, databaseFormR } from "../resources";
 import {
     closeConnectionTabs,
     closeDatabaseTab,
@@ -32,8 +31,8 @@ import "../database.css";
 export function DatabasePane({ paneId, active }: { paneId: string; active: boolean }) {
     const view = useDatabaseView(paneId);
     const explorer = useResourceEnabled(active, databaseExplorerV, `${paneId}/explorer`, openNodes(view.expanded));
-    const editingSaved = view.editing !== null && view.editing !== "new";
-    const profiles = useResourceEnabled(active && editingSaved, databaseProfilesR);
+    const editingSaved = view.editing === "new" ? null : view.editing;
+    const form = useResourceEnabled(active && view.editing !== null, databaseFormR, editingSaved ?? "");
     const [filter, setFilter] = useState("");
     const shown = useRef<DatabaseExplorer | undefined>(undefined);
     if (explorer.data) shown.current = explorer.data;
@@ -88,10 +87,9 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
     }
 
     const saved = () => {
-        database.refresh(databaseProfilesR);
+        database.refresh(databaseFormR);
         open({ editing: null });
     };
-    const editing = editingSaved ? (profiles.data?.find((profile) => profile.id === view.editing) ?? null) : null;
     const tab = view.tabs.find((each) => each.id === view.active) ?? null;
     const tabProfile = tab ? connectionOf(tab.profile) : null;
     const consoleProfile = [tabProfile, ...list].find((profile) => profile?.connected) ?? null;
@@ -141,24 +139,16 @@ export function DatabasePane({ paneId, active }: { paneId: string; active: boole
                 />
             </nav>
             <section className="db-main">
-                {view.editing === "new" ? (
-                    <ProfileForm
-                        key="new"
-                        initial={blankDraft()}
-                        saved={null}
-                        onSaved={saved}
-                        onRemoved={() => open({ editing: null })}
-                        onCancel={() => open({ editing: null })}
-                    />
-                ) : editingSaved && !profiles.data ? (
+                {view.editing !== null && form.status === "error" ? (
+                    <EmptyState message={form.error ?? "Sikemux could not read the connection."} tone="error" />
+                ) : view.editing !== null && !form.data ? (
                     <SkeletonRows rows={4} label="Loading the connection" />
-                ) : editing ? (
+                ) : view.editing !== null && form.data ? (
                     <ProfileForm
-                        key={editing.id}
-                        initial={draftOf(editing)}
-                        saved={editing}
+                        key={view.editing}
+                        form={form.data}
                         onSaved={saved}
-                        onRemoved={() => closeConnectionTabs(paneId, editing.id)}
+                        onRemoved={() => (editingSaved ? closeConnectionTabs(paneId, editingSaved) : open({ editing: null }))}
                         onCancel={() => open({ editing: null })}
                     />
                 ) : (

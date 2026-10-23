@@ -106,6 +106,10 @@ const DATABASE_TYPES = [
   "ResultSet",
   "ResultColumn",
   "CopyFormat",
+  "ProfileForm",
+  "EngineChoice",
+  "TlsChoice",
+  "ProfileDraft",
 ];
 
 /** Linear's types are known as Linear's, as Jira's are known as Jira's. */
@@ -400,6 +404,7 @@ const DATABASE_ROOTS = [
   "DatabaseHistory",
   "DatabaseQueryOutcome",
   "DatabaseCopyFormat",
+  "DatabaseProfileForm",
 ];
 
 /** What the Linear plugin's views hand its pane. */

@@ -204,3 +204,57 @@ pub enum CopyFormat {
     Tsv,
     Csv,
 }
+
+/// The connection form: the connection as it starts and the choices it offers.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileForm {
+    pub draft: ProfileDraft,
+    /// A password is saved for it, so the form says so rather than showing one.
+    pub has_password: bool,
+    pub engines: Vec<EngineChoice>,
+    pub tls_modes: Vec<TlsChoice>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineChoice {
+    pub engine: Engine,
+    pub label: String,
+    /// The port it is reached on when none is typed; none for a file.
+    pub default_port: Option<u16>,
+    /// What the empty fields suggest for it.
+    pub name_hint: String,
+    pub user_hint: String,
+    pub database_hint: String,
+    pub path_hint: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsChoice {
+    pub value: String,
+    pub label: String,
+    pub detail: String,
+}
+
+/// A connection as the form edits it. The fields its engine does not use are kept, so
+/// switching back finds them as they were.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileDraft {
+    /// None until it is first saved.
+    pub id: Option<String>,
+    pub name: String,
+    pub engine: Engine,
+    pub host: String,
+    /// As typed; empty for the engine's usual port.
+    pub port: String,
+    pub database: String,
+    pub user: String,
+    pub tls: String,
+    pub path: String,
+    pub read_only: bool,
+    /// Agents may run statements that change data; never while it is read only.
+    pub agent_writes: bool,
+}

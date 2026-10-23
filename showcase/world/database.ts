@@ -76,7 +76,40 @@ const ROWS: [number, string, string, string, string][] = [
 ];
 
 export const DATABASE: Record<string, (params: Args) => unknown> = {
-  profiles: () => [PROFILE],
+  form: () => ({
+    draft: {
+      id: PROFILE.id,
+      name: PROFILE.name,
+      engine: "postgres",
+      host: PROFILE.host,
+      port: String(PROFILE.port),
+      database: PROFILE.database,
+      user: PROFILE.user,
+      tls: PROFILE.tls,
+      path: "",
+      readOnly: PROFILE.readOnly,
+      agentWrites: PROFILE.agentWrites,
+    },
+    hasPassword: PROFILE.hasPassword,
+    engines: [
+      {
+        engine: "postgres",
+        label: "PostgreSQL",
+        defaultPort: 5432,
+        nameHint: "Production",
+        userHint: "postgres",
+        databaseHint: "Same as the user name",
+        pathHint: "",
+      },
+    ],
+    tlsModes: [
+      {
+        value: "require",
+        label: "Require",
+        detail: "Always encrypt, any certificate",
+      },
+    ],
+  }),
   connect: () => null,
   explorerView: ({ open }) => {
     const opened = (open as Opened[]).find((each) => each.id === PROFILE.id);

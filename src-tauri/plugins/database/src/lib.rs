@@ -2,6 +2,7 @@
 //
 //   agent       — the tools agents call: databases by name, tables, and SQL on a connection of their own
 //   profiles    — the databases saved here, and their passwords in the Keychain
+//   form        — the connection form, and a filled-in one read back as a profile
 //   engines     — one open connection, whichever engine the database runs on
 //   connections — trying a connection, and keeping one open per saved database
 //   schema      — tables, columns, indexes and keys, the same for every engine
@@ -15,6 +16,7 @@ mod agent;
 mod connections;
 mod engines;
 mod error;
+mod form;
 mod history;
 mod profiles;
 mod queries;
@@ -56,9 +58,13 @@ impl Plugin for Database {
         Box::pin(async move {
             let data_dir = ctx.data_dir().to_path_buf();
             match method {
-                "profiles" => reply(profiles::load(&data_dir)?.profiles),
+                "form" => reply(form::form(&data_dir, params(input)?)?),
                 "save" => {
-                    let request: profiles::SaveRequest = params(input)?;
+                    let form::Filled { profile, password } = params(input)?;
+                    let request = profiles::SaveRequest {
+                        profile: form::profile(profile)?,
+                        password,
+                    };
                     let saved =
                         profiles::blocking(move || profiles::save(&data_dir, request)).await?;
                     self.pool.forget(&saved.id).await;
@@ -73,7 +79,14 @@ impl Plugin for Database {
                     }))
                     .await
                 }
-                "test" => answer(connections::test(data_dir, params(input)?)).await,
+                "test" => {
+                    let form::Filled { profile, password } = params(input)?;
+                    let request = connections::TestRequest {
+                        profile: form::profile(profile)?,
+                        password,
+                    };
+                    answer(connections::test(data_dir, request)).await
+                }
                 "connect" => {
                     let profiles::IdRequest { id } = params(input)?;
                     answer(self.pool.connect(&data_dir, &id)).await

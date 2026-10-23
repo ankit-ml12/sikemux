@@ -6,8 +6,8 @@ import type { DatabaseExplorer, DatabaseHistory, DatabaseTableView } from "./typ
 
 export const database = pluginResources(DATABASE_PLUGIN);
 
-/** The saved databases as the form edits them. */
-export const databaseProfilesR = database.resource("profiles", () => databaseApi.profiles(), 300_000);
+/** The connection form for the saved connection with this id, or for a new one when it is empty. */
+export const databaseFormR = database.resource("form", (id: string) => databaseApi.form(id || undefined), 0);
 
 /** What the explorer has open in one connection: its schemas, and the tables whose columns show. */
 export interface OpenNodes {

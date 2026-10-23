@@ -151,3 +151,51 @@ export interface DatabaseResultColumn {
 
 /** How a result is copied: tab-separated, as spreadsheets paste it, or comma-separated. */
 export type DatabaseCopyFormat = "tsv" | "csv";
+
+/** The connection form: the connection as it starts and the choices it offers. */
+export interface DatabaseProfileForm {
+    draft: DatabaseProfileDraft;
+    /** A password is saved for it, so the form says so rather than showing one. */
+    hasPassword: boolean;
+    engines: DatabaseEngineChoice[];
+    tlsModes: DatabaseTlsChoice[];
+}
+
+/**
+ * A connection as the form edits it. The fields its engine does not use are kept, so
+ * switching back finds them as they were.
+ */
+export interface DatabaseProfileDraft {
+    /** None until it is first saved. */
+    id: string | null;
+    name: string;
+    engine: DatabaseEngine;
+    host: string;
+    /** As typed; empty for the engine's usual port. */
+    port: string;
+    database: string;
+    user: string;
+    tls: string;
+    path: string;
+    readOnly: boolean;
+    /** Agents may run statements that change data; never while it is read only. */
+    agentWrites: boolean;
+}
+
+export interface DatabaseEngineChoice {
+    engine: DatabaseEngine;
+    label: string;
+    /** The port it is reached on when none is typed; none for a file. */
+    defaultPort: number | null;
+    /** What the empty fields suggest for it. */
+    nameHint: string;
+    userHint: string;
+    databaseHint: string;
+    pathHint: string;
+}
+
+export interface DatabaseTlsChoice {
+    value: string;
+    label: string;
+    detail: string;
+}
