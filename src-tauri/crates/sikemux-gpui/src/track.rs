@@ -20,7 +20,12 @@ thread_local! {
     /// The innermost row under the pointer as the gesture began, which alone follows it, so
     /// the Git pane's lists swipe without the stage's tabs swiping around them.
     static OWNER: Cell<usize> = const { Cell::new(0) };
+    /// Where things that scroll sideways were last drawn; a swipe starting over one is theirs.
+    static SCROLLERS: std::cell::RefCell<Vec<gpui_kit::Bounds<gpui_kit::Pixels>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
+
+/// The owner while a swipe began over a sideways scroller, which no row ever is.
+const SIDEWAYS: usize = usize::MAX;
 
 /// One row of things that slide: what a hand or a switch is doing to it now.
 pub struct Slide<K> {
@@ -435,6 +440,11 @@ fn listener(
         |_, _, _| {},
         move |bounds, _, window, _| {
             width.set(f32::from(bounds.size.width));
+            SCROLLERS.with(|scrollers| {
+                scrollers
+                    .borrow_mut()
+                    .retain(|scroller| !bounds.contains(&scroller.center()))
+            });
             let swiped = swiped.clone();
             let me = Rc::as_ptr(&width) as usize;
             window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
@@ -442,7 +452,13 @@ fn listener(
                     return;
                 }
                 if event.touch_phase == TouchPhase::Started {
-                    OWNER.set(me);
+                    let over = SCROLLERS.with(|scrollers| {
+                        scrollers
+                            .borrow()
+                            .iter()
+                            .any(|scroller| scroller.contains(&event.position))
+                    });
+                    OWNER.set(if over { SIDEWAYS } else { me });
                 }
                 if OWNER.get() == me && swiped(event, cx) {
                     cx.stop_propagation();
@@ -452,4 +468,15 @@ fn listener(
     )
     .absolute()
     .size_full()
+}
+
+/// Laid over something that scrolls sideways, such as a strip of tabs, so a swipe that starts
+/// over it scrolls it rather than swiping the rows around it.
+pub(crate) fn sideways_scroller() -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, _, _| SCROLLERS.with(|scrollers| scrollers.borrow_mut().push(bounds)),
+    )
+    .absolute()
+    .inset_0()
 }

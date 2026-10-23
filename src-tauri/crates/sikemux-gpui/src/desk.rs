@@ -1163,9 +1163,8 @@ pub fn pane(
         .clone();
     let mut pills = div()
         .id("desk-tabs")
-        .flex_1()
+        .size_full()
         .min_w_0()
-        .h_full()
         .flex()
         .items_center()
         .gap(px(4.))
@@ -1329,7 +1328,16 @@ pub fn pane(
         }
     }
     head = head
-        .child(pills)
+        .child(
+            div()
+                .relative()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .child(pills)
+                .child(crate::track::sideways_scroller())
+                .children(ui::spot(|| format!("desk-tabs-{agent}"))),
+        )
         .child(
             div().flex_none().child(
                 IconButton::new("desk-new-page", Icon::Plus, "New page")
