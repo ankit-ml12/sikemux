@@ -839,7 +839,7 @@ fn label_chip(label: &Label, cx: &App) -> Div {
 }
 
 /// When something happened, as how long ago, from the host's RFC 3339 time.
-fn ago(at: &str) -> String {
+pub(crate) fn ago(at: &str) -> String {
     let Ok(at) = chrono::DateTime::parse_from_rfc3339(at) else {
         return String::new();
     };

@@ -15,11 +15,13 @@ use serde_json::{json, Value};
 
 use crate::core::Target;
 use crate::icons::Icon;
+use crate::send_to::{self, Choice, Recipient};
 use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
 
 mod jira;
+mod linear;
 
 /// How many views a pane keeps, the least lately asked for going first.
 const KEPT_AT_MOST: usize = 32;
@@ -38,6 +40,7 @@ pub trait Panel {
 fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
     match plugin {
         "sikemux.jira" => Some(Box::new(jira::Jira)),
+        "sikemux.linear" => Some(Box::new(linear::Linear::default())),
         _ => None,
     }
 }
@@ -46,6 +49,7 @@ fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
 pub fn surface(plugin: &str) -> Option<&'static str> {
     match plugin {
         "sikemux.jira" => Some("issues"),
+        "sikemux.linear" => Some("issues"),
         _ => None,
     }
 }
@@ -308,6 +312,22 @@ impl Host {
             }
         })
         .detach();
+    }
+
+    /// The agents the pane can hand text to.
+    pub fn agents(&self, cx: &App) -> Vec<Choice> {
+        self.bench
+            .upgrade()
+            .map_or_else(Vec::new, |bench| send_to::choices(bench.read(cx)))
+    }
+
+    /// Puts `text` in the composer of the agent `to` names and brings it forward.
+    pub fn send_to_agent(&self, to: Recipient, text: String, window: &mut Window, cx: &mut App) {
+        if let Some(bench) = self.bench.upgrade() {
+            bench.update(cx, |bench, cx| {
+                send_to::send(bench, to, async move { Some(text) }, window, cx)
+            });
+        }
     }
 
     /// Says what went wrong with a call, over the window.
