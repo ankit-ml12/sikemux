@@ -1138,39 +1138,41 @@ fn table_page(
             .text_color(t.text_secondary)
             .mt(px(6.))
     };
-    let cell = |width: Option<f32>| {
+    let cell = |share: Option<f32>| {
         let cell = div().min_w_0().truncate();
-        match width {
-            Some(width) => cell.w(px(width)).flex_none(),
+        match share {
+            Some(share) => cell.w(gpui_kit::relative(share)).flex_none(),
             None => cell.flex_1(),
         }
     };
     let header = div()
+        .w_full()
         .flex()
         .gap(px(12.))
         .py(px(4.))
         .border_b_1()
         .border_color(t.border)
-        .child(cell(Some(200.)).child(ui::meta("Name", cx)))
-        .child(cell(Some(160.)).child(ui::meta("Type", cx)))
-        .child(cell(Some(40.)).child(ui::meta("Null", cx)))
+        .child(cell(Some(0.3)).child(ui::meta("Name", cx)))
+        .child(cell(Some(0.24)).child(ui::meta("Type", cx)))
+        .child(cell(Some(0.07)).child(ui::meta("Null", cx)))
         .child(cell(None).child(ui::meta("Default", cx)));
     let columns = info.columns.iter().map(|column| {
         div()
+            .w_full()
             .flex()
             .items_center()
             .gap(px(12.))
             .py(px(3.))
             .child(
-                cell(Some(200.))
+                cell(Some(0.3))
                     .flex()
                     .items_center()
                     .gap(px(6.))
                     .child(ui::mono(column.name.clone(), 11.5, cx).text_color(t.text_primary))
                     .children(column.primary_key.then(|| ui::caps("PK", cx))),
             )
-            .child(cell(Some(160.)).child(ui::mono(column.type_name.clone(), 11.5, cx)))
-            .child(cell(Some(40.)).child(ui::meta(if column.nullable { "yes" } else { "no" }, cx)))
+            .child(cell(Some(0.24)).child(ui::mono(column.type_name.clone(), 11.5, cx)))
+            .child(cell(Some(0.07)).child(ui::meta(if column.nullable { "yes" } else { "no" }, cx)))
             .child(
                 cell(None).child(
                     ui::mono(column.default.clone().unwrap_or_default(), 11.5, cx)

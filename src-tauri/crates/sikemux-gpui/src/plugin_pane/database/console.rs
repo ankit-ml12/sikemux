@@ -453,6 +453,7 @@ fn grid(
                 .filter_map(|row| Some((row, result.rows.get(row)?)))
                 .map(|(row, cells)| {
                     div()
+                        .w(px(width))
                         .h(px(ROW_HEIGHT))
                         .flex()
                         .items_center()
