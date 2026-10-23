@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use crate::markdown::{superscript, Kind, Markdown, Marks, Node, Piece, Rich};
-use crate::select::{Selecting, Shown};
+use crate::select::{Key, Selecting, Shown};
 
 /// A fenced code block, for a host that draws its own.
 pub struct Fence {
@@ -422,6 +422,144 @@ impl Element for Tall {
     }
 }
 
+/// How a text's bytes are drawn, by range.
+type Looks = Vec<(Range<usize>, HighlightStyle)>;
+
+/// How many lines of a code block are laid out together.
+const CODE_CHUNK: usize = 16;
+
+/// A code block's text, which does not wrap, so each line's place is known before it is laid
+/// out: only the lines in view are, a few at a time, as a long block shows only some in its box.
+struct Code {
+    text: SharedString,
+    looks: Looks,
+    shown: Option<(Key, Rc<RefCell<Vec<Shown>>>)>,
+}
+
+impl Code {
+    /// Where each line starts.
+    fn starts(&self) -> Vec<usize> {
+        std::iter::once(0)
+            .chain(self.text.match_indices('\n').map(|(at, _)| at + 1))
+            .collect()
+    }
+}
+
+impl IntoElement for Code {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for Code {
+    type RequestLayoutState = Pixels;
+    type PrepaintState = Vec<AnyElement>;
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        _: &mut App,
+    ) -> (LayoutId, Pixels) {
+        let style = window.text_style();
+        let font_size = style.font_size.to_pixels(window.rem_size());
+        let line_height = window.pixel_snap(
+            style
+                .line_height
+                .to_pixels(font_size.into(), window.rem_size()),
+        );
+        let font = window.text_system().resolve_font(&style.font());
+        let advance = (window.text_system().advance(font, font_size, 'm'))
+            .map_or(font_size * 0.6, |advance| advance.width);
+        let widest = self.text.split('\n').map(|line| line.chars().count()).max();
+        let width = advance * widest.unwrap_or(0) as f32;
+        let height = line_height * self.starts().len() as f32;
+        let layout =
+            window.request_measured_layout(gpui::Style::default(), move |known, _, _, _| {
+                size(known.width.unwrap_or(width), known.height.unwrap_or(height))
+            });
+        (layout, line_height)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        line_height: &mut Pixels,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Vec<AnyElement> {
+        let line_height = *line_height;
+        let starts = self.starts();
+        let view = window.content_mask().bounds;
+        let line_at = |y: Pixels| ((y - bounds.top()) / line_height).max(0.) as usize;
+        let first = line_at(view.top()) / CODE_CHUNK;
+        let last = line_at(view.bottom()).min(starts.len().saturating_sub(1)) / CODE_CHUNK;
+        let mut drawn = Vec::new();
+        if view.bottom() < bounds.top() || view.top() > bounds.bottom() {
+            return drawn;
+        }
+        for chunk in first..=last {
+            let lines = chunk * CODE_CHUNK..((chunk + 1) * CODE_CHUNK).min(starts.len());
+            let Some(&start) = starts.get(lines.start) else {
+                break;
+            };
+            let end = starts
+                .get(lines.end)
+                .map_or(self.text.len(), |next| next - 1);
+            let looks = self.looks.iter().filter_map(|(range, look)| {
+                let (from, to) = (range.start.max(start), range.end.min(end));
+                (from < to).then(|| (from - start..to - start, *look))
+            });
+            let text = StyledText::new(SharedString::from(self.text[start..end].to_owned()))
+                .with_highlights(looks);
+            let layout = text.layout().clone();
+            let mut element = text.into_any_element();
+            let space = size(AvailableSpace::MaxContent, AvailableSpace::MinContent);
+            element.layout_as_root(space, window, cx);
+            let top = bounds.top() + line_height * lines.start as f32;
+            element.prepaint_at(point(bounds.left(), top), window, cx);
+            drawn.push(element);
+            if let Some((key, shown)) = &self.shown {
+                shown.borrow_mut().push(Shown {
+                    key: key.clone(),
+                    layout,
+                    len: end - start,
+                    offset: start,
+                });
+            }
+        }
+        drawn
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut Pixels,
+        drawn: &mut Vec<AnyElement>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        for element in drawn {
+            element.paint(window, cx);
+        }
+    }
+}
+
 /// Draws one block. The texts it draws and the folds it meets are counted in
 /// the order `Node::walk` lists them, so a selection's places match the copy.
 struct Draw<'a> {
@@ -533,20 +671,16 @@ impl Draw<'_> {
         self.coloured(rich, None, cx)
     }
 
-    /// Text with `colours` beneath its own marks and the selection.
-    fn coloured(&mut self, rich: &Rich, colours: Option<CodeRuns>, cx: &mut App) -> AnyElement {
+    /// The next text's place among those drawn, and its own marks with the selection and the
+    /// places found over them.
+    fn marked(&mut self, rich: &Rich) -> ((usize, usize, u32), Looks) {
         let on = self.on;
-        let style = &*on.style;
         self.texts += 1;
         let place = (on.doc, self.block, self.texts);
         let selected = on.selecting.as_ref().and_then(|selecting| {
             let span = selecting.span?;
             span.range((selecting.ix, place.0, place.1, place.2), rich.text.len())
         });
-        let mono = rich
-            .marks
-            .iter()
-            .filter(|(_, marks)| marks.has(Marks::CODE));
         let found: Vec<(Range<usize>, bool)> = on
             .selecting
             .as_ref()
@@ -559,6 +693,37 @@ impl Draw<'_> {
                     .collect()
             })
             .unwrap_or_default();
+        (place, highlights(rich, selected, &found, &on.style))
+    }
+
+    /// A code block's text with `colours` beneath the selection, its lines drawn as they show.
+    fn code(&mut self, rich: &Rich, colours: Option<CodeRuns>) -> AnyElement {
+        let (place, own) = self.marked(rich);
+        let looks = match colours {
+            Some(colours) => combine_highlights(colours.iter().cloned(), own).collect(),
+            None => own,
+        };
+        let shown = self.on.selecting.as_ref().map(|selecting| {
+            let key = (selecting.row.clone(), place.0, place.1, place.2);
+            (key, selecting.shown.clone())
+        });
+        Code {
+            text: rich.text.clone(),
+            looks,
+            shown,
+        }
+        .into_any_element()
+    }
+
+    /// Text with `colours` beneath its own marks and the selection.
+    fn coloured(&mut self, rich: &Rich, colours: Option<CodeRuns>, cx: &mut App) -> AnyElement {
+        let on = self.on;
+        let style = &*on.style;
+        let (place, own) = self.marked(rich);
+        let mono = rich
+            .marks
+            .iter()
+            .filter(|(_, marks)| marks.has(Marks::CODE));
         let files: Vec<(Range<usize>, SharedString, FileKind)> = match &style.file_of {
             Some(file_of) => rich
                 .paths
@@ -568,7 +733,6 @@ impl Draw<'_> {
                 .collect(),
             None => Vec::new(),
         };
-        let own = highlights(rich, selected, &found, style);
         let file_looks = files.iter().map(|(range, _, _)| {
             let look = HighlightStyle {
                 color: Some(style.accent),
@@ -709,6 +873,7 @@ impl Draw<'_> {
             key,
             layout,
             len: rich.text.len(),
+            offset: 0,
         }));
         let all = selecting.shown.clone();
         div()
@@ -807,14 +972,15 @@ impl Draw<'_> {
         let body = div()
             .id(id)
             .max_h(px(420.))
-            .overflow_y_scroll()
+            .overflow_scroll()
             .px(px(12.))
             .py(px(9.))
             .font(style.mono.clone())
             .text_size(style.code_size)
             .line_height(relative(1.55))
+            .whitespace_nowrap()
             .text_color(style.ink_dim)
-            .child(self.coloured(code, colours, cx));
+            .child(self.code(code, colours));
         let frame = div()
             .rounded(style.radius)
             .border_1()

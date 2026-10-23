@@ -70,6 +70,9 @@ pub enum Change<R> {
     /// Every row before this one goes.
     DropBefore(SharedString),
     Reset(Vec<R>),
+    /// Rows from the middle of the history in place of all held, the reader kept where they
+    /// scroll as rows arrive below rather than following the newest.
+    Place(Vec<R>),
 }
 
 type DrawRow<R> = Rc<dyn Fn(&[R], usize, &Pen, &mut Window, &mut App) -> AnyElement>;
@@ -364,10 +367,14 @@ impl<R: Row> Transcript<R> {
             .borrow()
             .iter()
             .find(|text| {
-                text.key.0.as_ref() == id && (text.key.1, text.key.2, text.key.3) == (doc, block, n)
+                text.key.0.as_ref() == id
+                    && (text.key.1, text.key.2, text.key.3) == (doc, block, n)
+                    && (text.offset..=text.offset + text.len).contains(&hit.range.start)
             })
             .and_then(|text| {
-                let at = text.layout.position_for_index(hit.range.start)?;
+                let at = text
+                    .layout
+                    .position_for_index(hit.range.start - text.offset)?;
                 Some((at.y, text.layout.line_height()))
             });
         if let Some((top, height)) = line {
@@ -474,6 +481,31 @@ impl<R: Row> Transcript<R> {
         cx.notify();
     }
 
+    fn reset(&mut self, rows: Vec<R>, follow: FollowMode) {
+        self.stale = Stale::All;
+        self.rows = rows;
+        self.list.reset(self.rows.len());
+        self.list.set_follow_mode(follow);
+        self.asked_earlier = false;
+        self.asked_later = false;
+    }
+
+    /// Where the reader is, as a row and how far into it. A list scrolled to its end says only
+    /// that it is at the end, which rows added below would move, scrolling the reader past them.
+    fn place_now(&self) -> ListOffset {
+        let place = self.list.logical_scroll_top();
+        if place.item_ix < self.rows.len() {
+            return place;
+        }
+        let top = self.list.viewport_bounds().top();
+        let row = self.visible.start;
+        let offset = (self.list.bounds_for_item(row)).map_or(px(0.), |row| top - row.top());
+        ListOffset {
+            item_ix: row,
+            offset_in_item: offset.max(px(0.)),
+        }
+    }
+
     /// Most changes reach the newest rows, so the search starts from the end.
     fn position(&self, id: &str) -> Option<usize> {
         self.rows.iter().rposition(|row| row.id() == id)
@@ -542,7 +574,9 @@ impl<R: Row> Transcript<R> {
                         .into_iter()
                         .filter(|row| !held.contains(row.id()))
                         .collect();
+                    let place = self.place_now();
                     self.list.splice(end..end, later.len());
+                    self.list.scroll_to(place);
                     self.rows.extend(later);
                     self.stale = Stale::All;
                     self.asked_later = false;
@@ -554,14 +588,8 @@ impl<R: Row> Transcript<R> {
                         self.stale = Stale::All;
                     }
                 }
-                Change::Reset(rows) => {
-                    self.stale = Stale::All;
-                    self.rows = rows;
-                    self.list.reset(self.rows.len());
-                    self.list.set_follow_mode(FollowMode::Tail);
-                    self.asked_earlier = false;
-                    self.asked_later = false;
-                }
+                Change::Reset(rows) => self.reset(rows, FollowMode::Tail),
+                Change::Place(rows) => self.reset(rows, FollowMode::Normal),
             }
         }
         self.arrived

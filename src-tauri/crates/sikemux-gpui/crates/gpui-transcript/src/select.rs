@@ -54,6 +54,8 @@ pub(crate) struct Shown {
     pub key: Key,
     pub layout: TextLayout,
     pub len: usize,
+    /// Where in its text the part laid out starts, for a text drawn in parts.
+    pub offset: usize,
 }
 
 impl Shown {
@@ -82,7 +84,7 @@ pub(crate) fn spot_at(shown: &[Shown], point: Point<Pixels>) -> Option<Spot> {
         a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1))
     })?;
     let at = match nearest.layout.index_for_position(point) {
-        Ok(at) | Err(at) => at.min(nearest.len),
+        Ok(at) | Err(at) => at.min(nearest.len) + nearest.offset,
     };
     Some(Spot {
         key: nearest.key.clone(),
