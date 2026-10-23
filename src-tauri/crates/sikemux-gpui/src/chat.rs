@@ -3162,6 +3162,11 @@ impl Workbench {
         if !self.focus.is_focused(window) {
             return None;
         }
+        self.front_asks()
+    }
+
+    /// The chat in front, while it shows a question its keys answer.
+    pub fn front_asks(&self) -> Option<String> {
         let agent = self.agent()?;
         let chat = self.chats.get(&agent.id)?;
         let open: Vec<&Question> = self

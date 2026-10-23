@@ -728,7 +728,7 @@ impl Workbench {
     }
 
     /// Puts the keys in the view `id` of the tab in front: a terminal's screen or a chat's draft.
-    fn focus_view(&self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus_view(&self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.place() != crate::hosts::Place::This {
             return self.focus.focus(window, cx);
         }

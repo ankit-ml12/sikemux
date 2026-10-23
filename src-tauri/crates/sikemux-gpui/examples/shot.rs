@@ -16,7 +16,8 @@
 //!                                 "clipboard" prints the text copied; "state" prints one line of what
 //!                                 the window shows (Settings, any modal, the front view, the focus, the tabs,
 //!                                 the chosen host, a trust question, the front chat's tool details held and
-//!                                 open); "open-tool" opens the front chat's first tool call; "host this",
+//!                                 open); "activate" brings the window forward, as switching to the app does;
+//!                                 "open-tool" opens the front chat's first tool call; "host this",
 //!                                 "host host:<key>" or "host ssh:<alias>" chooses the host in front, as a
 //!                                 click on its row does; "film N prefix" saves N frames at least 16 ms apart,
 //!                                 as prefix-00.png on, straight after the step before it, printing when each
@@ -265,6 +266,7 @@ fn main() -> anyhow::Result<()> {
                         );
                     }
                 }
+                "activate" => window.activate_window(),
                 "open-tool" => {
                     if let Some(bench) = bench.borrow().clone() {
                         bench.update(cx, |bench, cx| bench.open_first_tool(cx));

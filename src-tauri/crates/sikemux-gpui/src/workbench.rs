@@ -72,9 +72,12 @@ pub struct Workbench {
     /// Dictation, heard into the chat or terminal holding the keyboard.
     pub voice: Entity<crate::voice::Dictation>,
     _voice_heard: [Subscription; 4],
-    _shortcuts_over_settings: Subscription,
-    /// Gives the workbench the keyboard whenever nothing in the window holds it.
-    _focus_lost: Subscription,
+    /// Catches the keys pressed while nothing holds the keyboard, and the shortcuts Settings
+    /// answers first.
+    _before_shortcuts: Subscription,
+    /// Give the view in front the keyboard whenever nothing else holds it: once a view in
+    /// focus stops being drawn, the window comes forward or the workbench itself is given it.
+    _keys_settle: [Subscription; 3],
     /// What the person just opened, which takes the keyboard once it shows.
     takes_keys: Cell<Option<PendingKeys>>,
     /// The project the per-project watches were last made for, by path.
@@ -497,6 +500,7 @@ impl Workbench {
             }
         })
         .detach();
+        let focus = cx.focus_handle();
         let voice = cx.new(|_| crate::voice::Dictation::default());
         let voice_heard = [
             cx.subscribe_in(&voice, window, |bench, _, heard, window, cx| {
@@ -526,20 +530,27 @@ impl Workbench {
             slow_start: false,
             voice,
             _voice_heard: voice_heard,
-            _shortcuts_over_settings: {
+            _before_shortcuts: {
                 let this = cx.weak_entity();
                 cx.intercept_keystrokes(move |event, window, cx| {
                     let _ = this.update(cx, |bench, cx| {
-                        crate::settings::before_shortcut(bench, &event.keystroke, window, cx)
+                        if !bench.catch_loose_keys(event, window, cx) {
+                            crate::settings::before_shortcut(bench, &event.keystroke, window, cx)
+                        }
                     });
                 })
             },
-            _focus_lost: cx.on_focus_lost(window, |bench, window, cx| {
-                // A view asked for the keys but is not drawn yet; it takes them once it is.
-                if window.focused(cx).is_none() {
-                    bench.focus.focus(window, cx)
-                }
-            }),
+            _keys_settle: [
+                cx.on_focus_lost(window, |bench, window, cx| bench.settle_keys(window, cx)),
+                cx.observe_window_activation(window, |bench, window, cx| {
+                    if window.is_window_active() {
+                        bench.settle_keys(window, cx)
+                    }
+                }),
+                cx.on_focus(&focus, window, |bench, window, cx| {
+                    bench.settle_keys(window, cx)
+                }),
+            ],
             takes_keys: Cell::new(None),
             watched_project: None,
             watched_place: crate::hosts::Place::This,
@@ -634,7 +645,7 @@ impl Workbench {
             plugin_opening: HashMap::new(),
             top_bar_hovered: false,
             settings: None,
-            focus: cx.focus_handle(),
+            focus,
             window: window.window_handle(),
             parts: Parts::new(cx),
             panes: crate::panes::Panes::default(),
@@ -3076,6 +3087,84 @@ impl Workbench {
         }
     }
 
+    /// What holds the keyboard, as the last frame drawn tells.
+    fn keys(&self, window: &Window, cx: &App) -> Keys {
+        let Some(held) = window.focused(cx) else {
+            return Keys::Loose;
+        };
+        if held == self.focus {
+            return Keys::Loose;
+        }
+        let stack = window.context_stack();
+        match stack.last() {
+            None => Keys::Gone,
+            Some(own) if stack.len() == 1 || own.contains(crate::keymap::SHELL) => Keys::Loose,
+            Some(_) => Keys::Held,
+        }
+    }
+
+    /// Gives the keyboard to the view in front, its terminal or its chat's draft, when nothing
+    /// with keys of its own holds it: nothing, a view no longer drawn, the workbench itself or a
+    /// button of its chrome. The workbench keeps it over Settings, a palette or a question, and
+    /// while a view waits to take it.
+    pub(crate) fn settle_keys(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.keys(window, cx) == Keys::Held {
+            return;
+        }
+        let held = window.focused(cx);
+        let kept = self.settings.is_some()
+            || self.experience.is_some()
+            || self.palette.is_some()
+            || self.finder.is_some()
+            || self.switcher.is_some()
+            || self.front_asks().is_some()
+            || self.waits_for_keys();
+        if kept {
+            // What holds them may be a field not drawn yet, which takes them once it is.
+            if held.is_none() {
+                self.focus.focus(window, cx);
+            }
+            return;
+        }
+        if let Some(view) = self.focused_view() {
+            self.focus_view(&view, window, cx);
+        }
+        if window.focused(cx) == held {
+            self.focus.focus(window, cx);
+        }
+    }
+
+    /// Presses a key again on the workbench when nothing in it held the keyboard, such as a view
+    /// no longer drawn, so the window's shortcuts work wherever the focus was.
+    fn catch_loose_keys(
+        &mut self,
+        event: &gpui_kit::KeystrokeEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        // Below the window's own root, anything in focus has a context of its own.
+        if event.context_stack.len() > 1 {
+            return false;
+        }
+        self.focus.focus(window, cx);
+        if !self.focus.is_focused(window) {
+            return false;
+        }
+        cx.stop_propagation();
+        let keystroke = event.keystroke.clone();
+        window.defer(cx, move |window, cx| {
+            window.dispatch_keystroke(keystroke, cx);
+        });
+        true
+    }
+
+    fn waits_for_keys(&self) -> bool {
+        let pending = self.takes_keys.take();
+        let waits = pending.is_some();
+        self.takes_keys.set(pending);
+        waits
+    }
+
     /// Stops waiting to give the keyboard away once another kind of tab comes to the front,
     /// so what failed to open never takes the keys later.
     fn settle_takes_keys(&self) {
@@ -3935,6 +4024,15 @@ impl TakesKeys {
     }
 }
 
+#[derive(PartialEq)]
+enum Keys {
+    /// Nothing with keys of its own holds the keyboard.
+    Loose,
+    /// A view the last frame did not draw holds it: one gone, or one not drawn yet.
+    Gone,
+    Held,
+}
+
 /// A view waiting to take the keyboard, and the tab in front when it was asked for.
 struct PendingKeys {
     wants: TakesKeys,
@@ -3991,6 +4089,10 @@ impl Parts {
                     bench.plugin_panes(cx);
                     crate::desk::prepare(bench, window, cx);
                     bench.settle_takes_keys();
+                    // The frame being drawn is not done, so a view not drawn yet may still show in it.
+                    if bench.keys(window, cx) == Keys::Loose {
+                        cx.defer_in(window, |bench, window, cx| bench.settle_keys(window, cx));
+                    }
                     let frame = bench.stage_frame.clone();
                     div()
                         .relative()
@@ -4141,9 +4243,6 @@ impl Render for Workbench {
         #[cfg(feature = "drive")]
         if asked.is_some() {
             crate::drive::trace(format_args!("question drawn"));
-        }
-        if window.focused(cx).is_none() {
-            self.focus.focus(window, cx);
         }
         let asking = self.asking_freely(window);
         let this = cx.weak_entity();
