@@ -562,6 +562,19 @@ impl Run {
         })
     }
 
+    /// Waits until the chat's last row has not changed for three seconds: the app holds only the
+    /// chat's end, so how many rows it holds does not say a fill is done.
+    fn settle(&mut self, chat: &str) {
+        let (mut last, mut since) = (None, Instant::now());
+        self.until(120, |run| {
+            let now = run.row_ids(chat).pop();
+            if now != last {
+                (last, since) = (now, Instant::now());
+            }
+            since.elapsed() > Duration::from_secs(3)
+        });
+    }
+
     fn row_ids(&mut self, chat: &str) -> Vec<String> {
         let chat = chat.to_owned();
         self.bench.read_with(&self.cx, |bench, cx| {
@@ -841,6 +854,60 @@ fn windowed(run: &mut Run, driver: &Arc<Driver>) {
         hits.len(),
         began.elapsed().as_secs_f64()
     );
+    if let Some(first) = hits.first() {
+        find_jump(run, &chat, first, held.last().cloned());
+    }
+}
+
+/// Finds the first message from the chat's find bar, which brings in the rows around it, then
+/// goes back to the latest rows, timing each.
+fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
+    run.key("cmd-f");
+    for key in FIRST_PHRASE.chars() {
+        run.key(&if key == ' ' {
+            "space".into()
+        } else {
+            key.to_string()
+        });
+    }
+    run.frames(120);
+    let began = Instant::now();
+    run.key("enter");
+    let came = run.until(15, |run| run.row_ids(chat).iter().any(|id| id == row));
+    println!(
+        "windowed jump: the first message {} in {:.0} ms, the app holds {} rows",
+        if came { "came" } else { "never came" },
+        began.elapsed().as_secs_f64() * 1e3,
+        run.row_ids(chat).len()
+    );
+    run.key("escape");
+    let began = Instant::now();
+    let middle = (WINDOW_SIZE.0 / 2., WINDOW_SIZE.1 / 2.);
+    let down = run.until(60, |run| {
+        run.wheel(middle, -12.);
+        run.row_ids(chat).last() == latest.as_ref()
+    });
+    println!(
+        "windowed down: {} the latest rows in {:.0} ms, the app holds {} rows",
+        if down {
+            "paged down to"
+        } else {
+            "never paged down to"
+        },
+        began.elapsed().as_secs_f64() * 1e3,
+        run.row_ids(chat).len()
+    );
+    let began = Instant::now();
+    let to = chat.to_owned();
+    run.bench
+        .update(&mut run.cx, |bench, cx| bench.to_latest(&to, cx));
+    let back = run.until(15, |run| run.row_ids(chat).last() == latest.as_ref());
+    println!(
+        "windowed latest: {} in {:.0} ms, the app holds {} rows",
+        if back { "back" } else { "never back" },
+        began.elapsed().as_secs_f64() * 1e3,
+        run.row_ids(chat).len()
+    );
 }
 
 fn long(run: &mut Run, driver: &Arc<Driver>) {
@@ -861,10 +928,10 @@ fn long(run: &mut Run, driver: &Arc<Driver>) {
             run.frames(2);
         }
     }
-    run.until(600, |run| run.rows(&chat) >= rows);
+    run.settle(&chat);
     let (app, core) = run.memory();
     println!(
-        "long chat: {} rows in {:.0}s · app {app:.0} MB, core {core:.0} MB",
+        "long chat: {rows} rows, {} held, in {:.0}s · app {app:.0} MB, core {core:.0} MB",
         run.rows(&chat),
         filled.elapsed().as_secs_f64()
     );
