@@ -21,7 +21,6 @@ counters! {
     CODE_LINES: "Lines of code blocks laid out.",
     UNCOLOURED: "Code blocks drawn before their colours were ready.",
     COLOURED: "Code blocks whose colours arrived.",
-    PARSED: "Texts the app read as markdown itself.",
     TRIMS: "Times a chat dropped rows it held.",
 }
 

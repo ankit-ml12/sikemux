@@ -771,7 +771,7 @@ mod reducer {
         ));
         let rows = chat.rows();
         assert_eq!(
-            rows.last().expect("a row").parts,
+            plain(&rows.last().expect("a row").parts),
             vec![text("m0.0", "why does <b>bold</b> render oddly")]
         );
     }
@@ -1664,7 +1664,7 @@ mod acp_events {
         chat.prompt(json!({ "text": "fix the test", "paths": ["/tmp/a.ts", 3] }));
         let rows = chat.rows();
         assert_eq!(rows[0].role, ChatRole::User);
-        assert_eq!(rows[0].parts, vec![text("m0.0", "fix the test")]);
+        assert_eq!(plain(&rows[0].parts), vec![text("m0.0", "fix the test")]);
         assert_eq!(rows[0].attachments, vec!["/tmp/a.ts".to_owned()]);
     }
 

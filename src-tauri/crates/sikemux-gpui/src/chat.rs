@@ -23,7 +23,6 @@ use gpui_transcript::{
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use sikemux_markdown::{Doc as MarkdownDoc, Op, Options};
 use sikemux_wire::chat::{
     ChatChange, ChatConnection, ChatHead, ChatMessage, ChatPage, ChatPart, ChatRole, ChatView,
     LetterKind, MoveReason, NoticeSeverity, NoticeState, PartTree, PermissionAsk, SubagentCard,
@@ -103,7 +102,7 @@ impl Doc {
         let units = text.encode_utf16().count();
         let markdown = match md {
             Some(tree) => Markdown::new(&tree.blocks, units_of(tree.n)),
-            None => Markdown::new(&typed(text), units),
+            None => Markdown::new(&paragraphs(text), units),
         };
         Doc {
             part: part.to_owned(),
@@ -117,24 +116,24 @@ fn units_of(n: u64) -> usize {
     usize::try_from(n).unwrap_or(usize::MAX)
 }
 
-/// How text the core sends without a tree is read: as markdown, as the Mac reads it, with any
-/// markup the person typed shown as they typed it.
-const TYPED: Options = Options {
-    gfm: true,
-    html_as_text: true,
-    file_links: true,
-    html_images: false,
-    file_paths: true,
-};
-
-/// Text the core sends without a tree, such as what the person sent, as the tree it reads as.
-fn typed(text: &str) -> Value {
-    #[cfg(feature = "counts")]
-    gpui_transcript::counts::add(&gpui_transcript::counts::PARSED, 1);
-    match MarkdownDoc::read(text, TYPED).into_iter().next() {
-        Some(Op::List { c, .. }) => Value::Array(c),
-        _ => Value::Array(Vec::new()),
-    }
+/// Text the core sends without a tree, as the paragraphs it was written in.
+fn paragraphs(text: &str) -> Value {
+    let lines = |paragraph: &str| -> Vec<Value> {
+        let mut nodes = Vec::new();
+        for (ix, line) in paragraph.lines().enumerate() {
+            if ix > 0 {
+                nodes.push(json!({ "t": "br" }));
+            }
+            nodes.push(json!(line));
+        }
+        nodes
+    };
+    Value::Array(
+        text.split("\n\n")
+            .filter(|paragraph| !paragraph.trim().is_empty())
+            .map(|paragraph| json!({ "t": "p", "c": lines(paragraph) }))
+            .collect(),
+    )
 }
 
 fn text_of(part: &ChatPart) -> Option<(&str, Option<&PartTree>)> {

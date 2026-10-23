@@ -23,6 +23,21 @@ const ANSWER: Options = Options {
     file_paths: true,
 };
 
+/// What the person sent reads as the agent's text does, but shows any markup they typed as they
+/// typed it.
+const TYPED: Options = Options {
+    html_as_text: true,
+    ..ANSWER
+};
+
+/// How a role's texts are read into trees.
+fn reading(role: ChatRole) -> Options {
+    match role {
+        ChatRole::Assistant => ANSWER,
+        ChatRole::User => TYPED,
+    }
+}
+
 /// A client opening a chat is sent its last 40 turns or 1 MB of their JSON, whichever is
 /// less, and pages back through the rest. A turn longer than that, such as one full of
 /// screenshots, is cut between its rows; the last row always goes whole.
@@ -126,27 +141,29 @@ fn units(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
-/// The whole tree of `text`, read from scratch.
+/// The whole tree of the agent's `text`, read from scratch.
 pub(super) fn read(text: &str) -> PartTree {
-    tree_of(Doc::read(text, ANSWER), units(text))
+    read_as(text, ANSWER)
 }
 
-/// A part as clients get it, with the tree of its text when the agent wrote it.
+fn read_as(text: &str, options: Options) -> PartTree {
+    tree_of(Doc::read(text, options), units(text))
+}
+
+/// A part as clients get it, with the tree of its text when the agent or the person wrote it.
 fn shown(part: &ChatPart, role: ChatRole, side: Option<&mut Side>, open: bool) -> ChatPart {
     let mut part = part.clone();
-    if role != ChatRole::Assistant {
-        return part;
-    }
+    let options = reading(role);
     if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = &mut part {
         *md = Some(match side {
             Some(side) if open => {
-                let mut doc = Doc::new(ANSWER);
+                let mut doc = Doc::new(options);
                 doc.push(text);
                 let tree = tree_of(doc.patch(), doc.units());
                 side.doc = Some(doc);
                 tree
             }
-            _ => read(text),
+            _ => read_as(text, options),
         });
     }
     part
@@ -198,7 +215,7 @@ fn fit_frame(mut msg: ChatMessage) -> ChatMessage {
     if serde_json::to_vec(&msg).map_or(0, |json| json.len()) <= ROW_FRAME_BYTES {
         return msg;
     }
-    let tree = msg.role == ChatRole::Assistant;
+    let options = reading(msg.role);
     for part in &mut msg.parts {
         if let ChatPart::Text {
             text,
@@ -222,21 +239,18 @@ fn fit_frame(mut msg: ChatMessage) -> ChatMessage {
             }
             *cut_bytes = Some((text.len() - keep) as u64);
             text.truncate(keep);
-            if tree {
-                *md = Some(read(text));
-            }
+            *md = Some(read_as(text, options));
         }
     }
     msg
 }
 
-/// `msg` with the tree of each text the agent wrote read, as clients are sent it.
+/// `msg` with the tree of each text the agent or the person wrote read, as clients are sent it.
 pub fn with_trees(mut msg: ChatMessage) -> ChatMessage {
-    if msg.role == ChatRole::Assistant {
-        for part in &mut msg.parts {
-            if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = part {
-                *md = Some(read(text));
-            }
+    let options = reading(msg.role);
+    for part in &mut msg.parts {
+        if let ChatPart::Text { text, md, .. } | ChatPart::Thought { text, md, .. } = part {
+            *md = Some(read_as(text, options));
         }
     }
     msg
@@ -331,9 +345,9 @@ fn row_changes(
             continue;
         };
         let more = text[side.sent..].to_owned();
-        let md = (role == ChatRole::Assistant).then(|| {
+        let md = Some({
             let doc = side.doc.get_or_insert_with(|| {
-                let mut doc = Doc::new(ANSWER);
+                let mut doc = Doc::new(reading(role));
                 doc.push(text);
                 doc
             });
