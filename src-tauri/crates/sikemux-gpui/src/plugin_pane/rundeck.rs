@@ -226,8 +226,9 @@ impl Panel for Rundeck {
         let Some((job, deploy)) = place_of(at) else {
             return;
         };
-        self.project = job.project.clone();
-        self.group = job.group.clone();
+        self.stack.clear();
+        self.open.remove(&job.project);
+        self.pick(&job.project, job.group.clone());
         self.form = None;
         self.stack = vec![match deploy {
             Some(branch) => Level::Deploy {
@@ -1065,33 +1066,49 @@ impl Rundeck {
             ))
             .child(
                 div()
-                    .w(px(220.))
-                    .flex_none()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
                     .flex()
-                    .items_center()
-                    .gap(px(6.))
+                    .flex_col()
+                    .gap(px(2.))
                     .child(
-                        ui::text(job.name.clone(), 12.5, FontWeight::MEDIUM)
-                            .text_color(t.text_primary)
-                            .truncate(),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .child(
+                                ui::text(job.name.clone(), 12.5, FontWeight::MEDIUM)
+                                    .text_color(t.text_primary)
+                                    .min_w_0()
+                                    .truncate(),
+                            )
+                            .children(tags.into_iter().flatten()),
                     )
-                    .children(tags.into_iter().flatten()),
+                    .child(
+                        ui::meta(
+                            match &job.latest {
+                                Some(run) => format!(
+                                    "{} · {when} · took {took_for}",
+                                    run.user.clone().unwrap_or_else(|| "—".into())
+                                ),
+                                None => "Never run".into(),
+                            },
+                            cx,
+                        )
+                        .truncate(),
+                    ),
             )
             .child(
                 div()
-                    .w(px(180.))
+                    .w(px(150.))
                     .flex_none()
+                    .overflow_hidden()
                     .child(branch_chip(job.branch.as_deref(), cx)),
             )
-            .child(div().flex_1().min_w_0().child(match &job.latest {
-                Some(run) => ui::meta(run.user.clone().unwrap_or_else(|| "—".into()), cx),
-                None => ui::meta("Never run", cx),
-            }))
-            .child(ui::meta(when, cx).w(px(70.)).flex_none())
-            .child(ui::meta(took_for, cx).w(px(60.)).flex_none())
             .child(
                 div()
-                    .w(px(90.))
+                    .w(px(84.))
                     .flex_none()
                     .flex()
                     .justify_end()
@@ -1634,7 +1651,7 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                         .rounded(theme::RADIUS_2)
                         .flex()
                         .items_center()
-                        .gap(px(10.))
+                        .gap(px(8.))
                         .when(clickable, |row| {
                             row.cursor_pointer()
                                 .hover(move |row| row.bg(hover))
@@ -1650,7 +1667,7 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                                 ))
                         })
                         .child(status_dot(Some(run.status_kind), cx))
-                        .child(ui::mono(format!("#{id}"), 11.5, cx).w(px(64.)).flex_none())
+                        .child(ui::mono(format!("#{id}"), 11.5, cx).w(px(56.)).flex_none())
                         .when(with_job, |row| {
                             row.child(
                                 ui::text(
@@ -1659,21 +1676,25 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                                     FontWeight::MEDIUM,
                                 )
                                 .text_color(t.text_primary)
-                                .w(px(180.))
-                                .flex_none()
+                                .w(px(160.))
+                                .flex_shrink(1.)
+                                .min_w(px(60.))
                                 .truncate(),
                             )
                         })
                         .child(
                             div()
-                                .w(px(160.))
-                                .flex_none()
+                                .w(px(130.))
+                                .flex_shrink(1.)
+                                .min_w(px(40.))
+                                .overflow_hidden()
                                 .child(branch_chip(run.branch.as_deref(), cx)),
                         )
                         .child(
                             ui::meta(run.user.clone().unwrap_or_else(|| "—".into()), cx)
-                                .w(px(110.))
-                                .flex_none()
+                                .w(px(84.))
+                                .flex_shrink(1.)
+                                .min_w(px(30.))
                                 .truncate(),
                         )
                         .child(
@@ -1681,13 +1702,13 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                                 run.started_at.as_deref().map(clock_of).unwrap_or_default(),
                                 cx,
                             )
-                            .w(px(48.))
+                            .w(px(40.))
                             .flex_none(),
                         )
                         .child(
                             div()
                                 .flex_1()
-                                .min_w_0()
+                                .min_w(px(48.))
                                 .h(px(4.))
                                 .rounded_full()
                                 .bg(t.line_soft)
@@ -1722,7 +1743,7 @@ fn history(runs: &[Run], with_job: bool, job: &JobRef, cx: &mut Context<PluginPa
                                 cx,
                             )
                             .when(run.live, |meta| meta.text_color(t.warn))
-                            .w(px(64.))
+                            .w(px(52.))
                             .flex_none()
                             .flex()
                             .justify_end(),
@@ -2080,16 +2101,17 @@ impl Rundeck {
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .gap(px(14.))
                             .items_start()
-                            .child(div().flex_1().min_w_0().child(card(
+                            .child(div().flex_1().min_w(px(320.)).child(card(
                                 "Options",
                                 form_data.description.clone().unwrap_or_default(),
                                 options.into_any_element(),
                                 cx,
                             )))
                             .children(
-                                plan_view.map(|plan| div().w(px(380.)).flex_none().child(plan)),
+                                plan_view.map(|plan| div().flex_1().min_w(px(320.)).child(plan)),
                             ),
                     )
                     .when(form_data.prod, |page| {
@@ -3869,6 +3891,7 @@ fn header(
         .child(
             div()
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .gap(px(10.))
                 .child(ui::text(title, 17., FontWeight::SEMIBOLD).text_color(t.text_primary))
