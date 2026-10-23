@@ -610,10 +610,6 @@ pub struct ChatInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_provider: Option<String>,
     pub effort: Option<String>,
-    /// Why it can be read here but not continued, such as a try-out's chat from the
-    /// person's own Sikemux. Its agent never starts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub read_only: Option<String>,
     /// The app stopped its agent while idle; `AcpWake` starts it again.
     pub asleep: bool,
     /// It finished a turn or asked for something while the person was not

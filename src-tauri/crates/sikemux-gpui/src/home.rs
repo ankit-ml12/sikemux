@@ -103,13 +103,12 @@ pub fn agent_view(
         .as_ref()
         .and_then(|agent| Some((agent, bench.chats.get(&agent.id)?)))
     {
-        let resumes = bench.read_only(&agent.id).is_none()
-            && bench.shown().is_some_and(|view| {
-                view.workspace
-                    .agents
-                    .iter()
-                    .any(|saved| saved.id == agent.id && saved.resume_id.is_some())
-            });
+        let resumes = bench.shown().is_some_and(|view| {
+            view.workspace
+                .agents
+                .iter()
+                .any(|saved| saved.id == agent.id && saved.resume_id.is_some())
+        });
         let welcome = chat.is_empty(cx).then(|| {
             chat::connection_note(agent, chat, resumes, cx)
                 .unwrap_or_else(|| welcome(bench, Some(agent), cx).into_any_element())

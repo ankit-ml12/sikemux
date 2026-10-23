@@ -26,7 +26,7 @@ signoz = ["dep:sikemux-plugin-signoz"]
 slack = ["dep:sikemux-plugin-slack"]
 vercel = ["dep:sikemux-plugin-vercel"]
 # Test kits only: plugins answer from dev/plugins files and never reach a service. Never on in a
-# try-out or release.
+# release.
 fake-plugins = []
 
 [build-dependencies]

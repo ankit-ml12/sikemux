@@ -131,7 +131,7 @@ struct Asset {
 }
 
 /// The app bundle this core was started from, when it is a published release
-/// that can replace itself. A build made anywhere else, such as a local try-out,
+/// that can replace itself. A build made anywhere else, such as a local build,
 /// never updates, so a release can never take its place.
 fn own_bundle() -> Option<PathBuf> {
     if !crate::usage::Install::App.published() || !cfg!(target_os = "macos") {

@@ -430,11 +430,6 @@ export interface ChatInfo {
   /** The provider its turns are paid with, in place of the agent's own account. */
   modelProvider?: string;
   effort?: string;
-  /**
-   * Why it can be read here but not continued, such as a try-out's chat from the
-   * person's own Sikemux. Its agent never starts.
-   */
-  readOnly?: string;
   /** The app stopped its agent while idle; `AcpWake` starts it again. */
   asleep: boolean;
   /**

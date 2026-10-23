@@ -7,7 +7,7 @@ description = "Reaching the account's other hosts as a device of the person's ow
 
 [features]
 # Test kits only: dial hosts also at the addresses dev/host-addresses.json names, as local test
-# cores have no relay to meet through. Never on in a try-out or release.
+# cores have no relay to meet through. Never on in a release.
 host-addresses-file = []
 
 # Beside sikemux-client rather than inside it, so the phone's store builds never depend on it,

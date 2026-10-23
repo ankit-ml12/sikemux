@@ -549,9 +549,6 @@ pub(crate) async fn run<B: Backend>(
                 chat.running.store(true, Ordering::Release);
             }
             chat.note_agent(backend.pid());
-            if let Some(core) = chat.core.upgrade() {
-                super::super::tryout_began(&core, &provider, &state.session_id);
-            }
             let start = state.start();
             crate::server::chat::offered::remember(&provider, &start.setup);
             chat.mark_ready(start.clone());

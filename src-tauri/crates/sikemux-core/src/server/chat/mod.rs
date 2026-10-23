@@ -236,9 +236,6 @@ pub(crate) struct Chat {
     /// A new chat starts its agent only once the person writes in it or something is sent to it.
     unstarted: AtomicBool,
     wanted: tokio::sync::Notify,
-    /// Why the chat can be read here but never continued, such as a try-out's chat from the
-    /// person's own Sikemux. Its agent never starts.
-    read_only: std::sync::OnceLock<String>,
     /// The saved history of the session it resumes is shown already, so the agent's own
     /// replay of it as it starts stays quiet.
     pub(crate) saved_shown: AtomicBool,
@@ -866,25 +863,17 @@ impl Chat {
                     let _ = reply.send(Err("it had not started".into()));
                     return Ok(());
                 }
-                _ => match self.read_only() {
-                    Some(why) => return Err(why.to_owned().into()),
-                    None => self.start_agent(),
-                },
+                _ => self.start_agent(),
             }
         }
         self.commands.send(command).map_err(|_| STOPPED.into())
     }
 
     /// Starts the agent of a chat that waited for the person, once; later calls do nothing.
-    /// A chat that is only read never starts one.
     pub(crate) fn start_agent(&self) {
-        if self.read_only().is_none() && self.unstarted.swap(false, Ordering::AcqRel) {
+        if self.unstarted.swap(false, Ordering::AcqRel) {
             self.wanted.notify_one();
         }
-    }
-
-    pub(crate) fn read_only(&self) -> Option<&str> {
-        self.read_only.get().map(String::as_str)
     }
 
     /// The chat waits for the person before its agent starts.
@@ -933,7 +922,6 @@ impl Chat {
             model: self.launch.model.clone(),
             model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
             effort: self.launch.effort.clone(),
-            read_only: self.read_only().map(str::to_owned),
             asleep: false,
             unread: false,
             active_at: None,
@@ -1519,7 +1507,6 @@ impl Chats {
             published: Mutex::new("unknown"),
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
-            read_only: std::sync::OnceLock::new(),
             saved_shown: AtomicBool::new(history_shown),
             current: Mutex::new(launch.clone()),
             launch,
@@ -1592,55 +1579,6 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
         validate_account(account)?;
     }
     Ok(())
-}
-
-/// What a try-out core says of a chat it opens only to be read.
-const TRYOUT_READ_ONLY: &str = "This try-out continues only the chats it started, so it never writes into a session your Sikemux could be using. Continue this one in Sikemux.";
-
-/// The sessions a try-out core began itself, one `provider<TAB>session` a line, in its data folder.
-const TRYOUT_SESSIONS: &str = "tryout-sessions";
-
-fn in_tryout() -> bool {
-    sikemux_process::paths::TRYOUT
-        || std::env::var_os(sikemux_process::vars::TRYOUT_SEEDED_AT).is_some()
-}
-
-fn tryout_record(core: &Core) -> Option<PathBuf> {
-    Some(core.harness.data_dir.as_ref()?.join(TRYOUT_SESSIONS))
-}
-
-fn tryout_owns(core: &Core, provider: &str, session: &str) -> bool {
-    let entry = format!("{provider}\t{session}");
-    tryout_record(core)
-        .and_then(|record| std::fs::read_to_string(record).ok())
-        .is_some_and(|record| record.lines().any(|line| line == entry))
-}
-
-/// A try-out core shares the agents' saved sessions with the person's own core, so it takes
-/// up again only a session its own record says it began, and opens any other to be read.
-fn tryout_refusal(core: &Core, launch: &ChatLaunch) -> Option<String> {
-    let session = launch.resume_id.as_deref()?;
-    (in_tryout() && !tryout_owns(core, &launch.provider, session))
-        .then(|| TRYOUT_READ_ONLY.to_owned())
-}
-
-/// Notes in a try-out core's record that it began `session`, so it may take it up again.
-pub(crate) fn tryout_began(core: &Core, provider: &str, session: &str) {
-    use std::io::Write;
-    if !in_tryout() || session.is_empty() || tryout_owns(core, provider, session) {
-        return;
-    }
-    let Some(record) = tryout_record(core) else {
-        return;
-    };
-    let noted = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&record)
-        .and_then(|mut file| writeln!(file, "{provider}\t{session}"));
-    if let Err(error) = noted {
-        eprintln!("sikemux core: could not note the try-out's session {session}: {error}");
-    }
 }
 
 /// Starts the chat's connection. The task ends the chat however the
@@ -1758,20 +1696,9 @@ fn start(
         launch_spec.env.entry(key).or_insert(value);
     }
     validate(&launch_spec)?;
-    let read_only = tryout_refusal(core, &launch_spec);
-    let waits_for_person = waits_for_person || read_only.is_some();
     let resume_id = launch_spec.resume_id.clone();
     let waking = core.workspaces.agent(&launch_spec.agent_id).is_some();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
-    if let Some(why) = read_only {
-        eprintln!(
-            "sikemux core: {} opens {} session {} to be read only: {why}",
-            chat.agent_id(),
-            chat.provider(),
-            resume_id.as_deref().unwrap_or_default()
-        );
-        let _ = chat.read_only.set(why);
-    }
     core.workspaces.note_begun(&chat);
     super::model_providers::chat_begun(core, &chat.launch);
     let naming = (
@@ -1791,9 +1718,7 @@ fn start(
         super::activity_log::chat_launched(core, &chat.launch);
     }
     chat.unstarted.store(waits_for_person, Ordering::Release);
-    if chat.read_only().is_none() {
-        chat.keep(kept::Progress::STARTING);
-    }
+    chat.keep(kept::Progress::STARTING);
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -2345,7 +2270,7 @@ pub(crate) async fn letter(core: &Core, agent_id: &str, text: String) -> CoreRes
 pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) -> CoreResult<()> {
     validate_account(&account)?;
     if let Some(chat) = core.chats.get(agent_id) {
-        if chat.read_only().is_some() || !chat.unstarted() {
+        if !chat.unstarted() {
             return chat.send(ChatCommand::SwitchAccount { account });
         }
         // A chat waiting for the person starts on the account chosen, as on a model chosen.
@@ -2473,12 +2398,7 @@ fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
 /// offered anything has its agent's CLI asked once, with no session; after that only its own
 /// sessions change what it offers.
 fn offer_options(core: &Arc<Core>, chat: &Arc<Chat>) {
-    let Some(launcher) = chat
-        .origin
-        .launcher
-        .clone()
-        .filter(|_| chat.read_only().is_none())
-    else {
+    let Some(launcher) = chat.origin.launcher.clone() else {
         return;
     };
     if core.workspaces.launcher_options(&launcher).is_some() {

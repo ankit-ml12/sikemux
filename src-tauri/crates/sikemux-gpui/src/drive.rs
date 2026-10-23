@@ -1,5 +1,5 @@
 //! Drives the window from step files, for the real-window checks of the test bundle only: it
-//! is built with the `drive` feature, which no try-out or release build turns on. Steps come
+//! is built with the `drive` feature, which no release build turns on. Steps come
 //! over the socket named by `SIKEMUX_GPUI_DRIVE` and go through the window's own event
 //! dispatch, so nothing is posted to the system and no Accessibility grant is needed.
 //!
