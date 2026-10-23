@@ -179,3 +179,48 @@ fn for_agent(issue: &IssueView) -> String {
     ];
     parts.into_iter().flatten().collect::<Vec<_>>().join("\n\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hands_an_agent_the_issue_with_what_it_needs_to_update_it() {
+        let state = State {
+            id: "s1".into(),
+            name: "Todo".into(),
+            kind: "unstarted".into(),
+            color: "#e2e2e2".into(),
+        };
+        let issue = IssueView {
+            id: "i1".into(),
+            identifier: "ENG-12".into(),
+            title: "Fix the login flake".into(),
+            url: "https://linear.app/acme/issue/ENG-12".into(),
+            branch_name: "ankit/eng-12-fix-the-login-flake".into(),
+            state: state.clone(),
+            states: vec![state],
+            assignee: None,
+            priority: Some("High".into()),
+            labels: Vec::new(),
+            description: Some("It fails one run in ten.".into()),
+            comments: vec![Comment {
+                id: "c1".into(),
+                author: "irwan".into(),
+                created_at: "2026-10-15T10:00:00Z".into(),
+                body: "Seen it on CI too.".into(),
+            }],
+            for_agent: String::new(),
+        };
+        let text = for_agent(&issue);
+        for said in [
+            "Linear issue ENG-12: Fix the login flake — https://linear.app/acme/issue/ENG-12",
+            "State: Todo",
+            "Branch: ankit/eng-12-fix-the-login-flake",
+            "**irwan**: Seen it on CI too.",
+            "linear_update or linear_comment with id ENG-12",
+        ] {
+            assert!(text.contains(said), "{said} is missing from:\n{text}");
+        }
+    }
+}
