@@ -3243,7 +3243,7 @@ impl Rundeck {
             }));
         div()
             .id("rundeck-steps")
-            .w(px(240.))
+            .w(px(200.))
             .flex_none()
             .h_full()
             .overflow_y_scroll()
@@ -3446,6 +3446,7 @@ impl Rundeck {
                     .px(px(12.))
                     .py(px(8.))
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .gap(px(10.))
                     .border_b_1()
