@@ -157,6 +157,25 @@ pub(crate) fn set(bench: &Workbench, key: &str, value: impl Into<Value>) {
     });
 }
 
+/// Opens settings on `page` with `section` brought into view and lit, as a search hit is.
+pub fn open_at(
+    bench: &mut Workbench,
+    page: Page,
+    section: &'static str,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    open(bench, page, window, cx);
+    let entry = index::Entry {
+        page,
+        section,
+        label: section,
+        keywords: "",
+        shortcut: None,
+    };
+    go_to(bench, entry, window, cx);
+}
+
 /// Takes the person to the place a search found, and lights it.
 fn go_to(
     bench: &mut Workbench,

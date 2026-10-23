@@ -1075,22 +1075,64 @@ fn account(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement {
             account.name.as_ref().and(account.email.clone()),
             |row, email| row.subtitle(ui::meta(email, cx)),
         );
-    let sign_out = Rc::new(cx.listener(|bench, _, _, _| bench.sign_out()));
+    use crate::settings::Page;
+    let settings_keys = keymap::hint("settings.toggle", cx);
+    let act = |act: fn(&mut Workbench, &mut Window, &mut Context<Workbench>)| {
+        Rc::new(cx.listener(move |bench, _: &ClickEvent, window, cx| act(bench, window, cx)))
+    };
+    let items = [
+        (
+            "your-account",
+            "Your account",
+            Icon::User,
+            None,
+            act(|bench, window, cx| {
+                crate::settings::open_at(bench, Page::Devices, "Your account", window, cx)
+            }),
+        ),
+        (
+            "devices",
+            "Devices",
+            Icon::Laptop,
+            None,
+            act(|bench, window, cx| bench.open_settings(Page::Devices, window, cx)),
+        ),
+        (
+            "settings",
+            "Settings",
+            Icon::Settings,
+            settings_keys,
+            act(|bench, window, cx| bench.open_settings(Page::default(), window, cx)),
+        ),
+    ];
+    let sign_out = act(|bench, _, _| bench.sign_out());
     let menu = Popover::new("account-menu")
         .anchor(Anchor::BottomLeft)
         .offset(px(4.))
         .trigger(row)
         .content(move |_, _, cx| {
             let popover = cx.entity();
-            let sign_out = sign_out.clone();
-            Menu::new().child(
-                MenuItem::new("sign-out", "Sign out")
-                    .icon(Icon::LogOut)
-                    .on_click(move |event, window, cx| {
-                        sign_out(event, window, cx);
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    }),
-            )
+            let item =
+                |id: &'static str,
+                 label: &'static str,
+                 icon: Icon,
+                 act: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>| {
+                    let popover = popover.clone();
+                    MenuItem::new(id, label)
+                        .icon(icon)
+                        .on_click(move |event, window, cx| {
+                            act(event, window, cx);
+                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                        })
+                };
+            let mut menu = Menu::new();
+            for (id, label, icon, hint, act) in items.iter().cloned() {
+                menu = menu.child(
+                    item(id, label, icon, act).when_some(hint, |item, keys| item.hint(keys)),
+                );
+            }
+            menu.separator(cx)
+                .child(item("sign-out", "Sign out", Icon::LogOut, sign_out.clone()))
         });
     div()
         .flex_none()
