@@ -13,8 +13,10 @@ use sikemux_plugin_api::bruno::{Check, ScriptLog};
 
 use crate::send::{BruBodyWire, BruSendRequest, BruTrust};
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "quickjs")))]
 mod jsc;
+#[cfg(any(target_os = "linux", feature = "quickjs"))]
+mod quickjs;
 
 /// How long one script, or one expression, may run.
 const TIME_LIMIT: Duration = Duration::from_secs(15);
@@ -91,7 +93,7 @@ fn evaluate(input: Value, trust: BruTrust) -> Result<String, String> {
         .map_err(|_| "script timed out".to_owned())?
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "quickjs")))]
 fn engine(
     source: &str,
     input: &str,
@@ -100,7 +102,17 @@ fn engine(
     jsc::run(source, input, send, TIME_LIMIT)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "linux", feature = "quickjs"))]
+fn engine(
+    source: &str,
+    input: &str,
+    send: Box<dyn FnMut(&str) -> String>,
+) -> Result<String, String> {
+    quickjs::run(source, input, send, TIME_LIMIT)
+}
+
+/// A host with neither engine runs no scripts rather than run them unguarded.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn engine(_: &str, _: &str, _: Box<dyn FnMut(&str) -> String>) -> Result<String, String> {
     Err("scripts are not supported on this host yet".to_owned())
 }
@@ -244,7 +256,7 @@ mod trust_tests {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod tests {
     use super::*;
 
