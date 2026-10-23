@@ -112,6 +112,12 @@ const BRUNO_TYPES = [
   "TreeNode",
   "Collection",
   "RequestView",
+  "Header",
+  "Response",
+  "Sent",
+  "ScriptLog",
+  "Check",
+  "RunResult",
 ];
 
 /** The Database plugin's types are known as its own. */
@@ -429,7 +435,7 @@ const JIRA_ROOTS = [
 ];
 
 /** What the Bruno plugin's views hand its pane. */
-const BRUNO_ROOTS = ["BruCollection", "BruRequestView"];
+const BRUNO_ROOTS = ["BruCollection", "BruRequestView", "BruRunResult"];
 
 /** What the Database plugin's views hand its pane. */
 const DATABASE_ROOTS = [

@@ -248,3 +248,64 @@ pub struct RequestView {
     /// The collection's scope, then each folder's above the request, outermost first.
     pub scopes: Vec<Scope>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Header {
+    pub name: String,
+    pub value: String,
+}
+
+/// What came back from a request.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Response {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<Header>,
+    pub body: String,
+    pub is_binary: bool,
+    pub size_bytes: u64,
+    pub duration_ms: u64,
+}
+
+/// The request as it went, after scripts, variables and auth.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Sent {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<Header>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptLog {
+    /// `log`, `info`, `warn`, `error` or `debug`.
+    pub level: String,
+    pub text: String,
+}
+
+/// A script's `test` or an `assert` row, and how it went.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Check {
+    pub name: String,
+    pub passed: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// One run of a request: what went, what came back or why nothing did, and what its scripts
+/// logged, tested and set.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunResult {
+    pub response: Option<Response>,
+    pub error: Option<String>,
+    pub sent: Sent,
+    pub logs: Vec<ScriptLog>,
+    pub tests: Vec<Check>,
+    /// Variables the run's scripts changed, for the session to keep for later runs.
+    pub env_updates: std::collections::BTreeMap<String, String>,
+}

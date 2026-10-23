@@ -5996,6 +5996,7 @@ dependencies = [
 name = "sikemux-plugin-bruno"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures",
  "libc",
  "reqwest",

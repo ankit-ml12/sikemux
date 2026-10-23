@@ -1,6 +1,7 @@
 import { createPluginBackend, isPluginFailure } from "../../plugin-api/backend";
 import { BRUNO_PLUGIN } from "./kinds";
 import type { BruRequest } from "./lib/types";
+import type { BruRunResult } from "./types.generated";
 
 const backend = createPluginBackend(BRUNO_PLUGIN.id);
 
@@ -46,6 +47,16 @@ export const brunoApi = {
     renameRequest: (root: string, path: string, name: string, request?: BruRequest) =>
         backend.call<string>("renameRequest", { root, path, name, request }),
     deletePath: (root: string, path: string) => backend.call<void>("deletePath", { root, path }),
+    /** Runs the request as edited, with its scripts when the collection is trusted, and says how it went. */
+    run: (asked: {
+        root: string;
+        path: string;
+        request?: BruRequest;
+        env?: string;
+        secrets: Record<string, string>;
+        runtime: Record<string, string>;
+        trusted: boolean;
+    }) => backend.call<BruRunResult>("run", asked),
     /** The host names the plugin in front of every error; a request's error reads better without it. */
     async send(req: BruSendRequest): Promise<BruSendResponse> {
         try {

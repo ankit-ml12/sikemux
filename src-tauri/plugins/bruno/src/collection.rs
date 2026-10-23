@@ -255,6 +255,11 @@ pub fn request(ask: &RequestAsk) -> BrunoResult<RequestView> {
     })
 }
 
+/// Makes sure `path` lies inside the folder the pane opened.
+pub fn check_inside(root: &str, path: &str) -> BrunoResult<()> {
+    inside(root, path).map(|_| ())
+}
+
 /// `path`, made sure to lie inside the folder the pane opened, and that folder.
 fn inside(root: &str, path: &str) -> BrunoResult<PathBuf> {
     let root = fs::canonicalize(root)?;

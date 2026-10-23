@@ -6,7 +6,8 @@ import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconBruno, IconChevron } from "../../../plugin-api/ui";
 import { mergeScope, type Scope } from "../lib/interpolate";
 import { buildScope, findRequest, requestVars, selectedEnvOf } from "../lib/resolve";
-import { runRequest, type RunResult } from "../lib/run";
+import { brunoApi } from "../api";
+import type { BruRunResult as RunResult } from "../types.generated";
 import type { BruRequest } from "../lib/types";
 import { useBrunoDrafts, useBrunoSecretVars } from "../runtime";
 import {
@@ -115,7 +116,15 @@ export function BrunoPane({ paneId, active }: Props) {
         }
         setRunning((r) => ({ ...r, [path]: true }));
         try {
-            const result = await runRequest({ request: effectiveRequest, scopes: scopes ?? [], vars: scope, trust: trusted, collectionPath });
+            const result = await brunoApi.run({
+                root: collectionPath,
+                path,
+                request: effectiveRequest,
+                env: selectedEnvId ?? undefined,
+                secrets: secretVars,
+                runtime,
+                trusted,
+            });
             setResults((r) => ({ ...r, [path]: result }));
             if (Object.keys(result.envUpdates).length) {
                 setRuntime((prev) => ({ ...prev, ...result.envUpdates }));
@@ -124,10 +133,12 @@ export function BrunoPane({ paneId, active }: Props) {
                     if (secretNames.includes(k)) brunoSetSecret(paneId, k, v);
                 }
             }
+        } catch (error) {
+            reportError("send the request")(error);
         } finally {
             setRunning((r) => ({ ...r, [path]: false }));
         }
-    }, [path, effectiveRequest, collection, scopes, scope, secretNames, paneId, trustedCollection, collectionPath]);
+    }, [path, effectiveRequest, collection, selectedEnvId, secretVars, runtime, secretNames, paneId, trustedCollection, collectionPath]);
 
     const onSave = useCallback(() => {
         if (!path) return;

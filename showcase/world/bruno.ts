@@ -134,6 +134,7 @@ export const BRUNO_VIEWS: Record<string, (params: Args) => unknown> = {
       row("health.bru"),
     ],
   }),
+  run: () => checkoutRun(),
   requestView: ({ path }) => {
     const file = String(path).slice(BRUNO_COLLECTION.length + 1);
     const [inside, made] = REQUESTS[file] ?? [
@@ -148,7 +149,31 @@ export const BRUNO_VIEWS: Record<string, (params: Args) => unknown> = {
   },
 };
 
-export const CHECKOUT_RESPONSE = {
+const checkoutRun = () => ({
+  response: {
+    status: CHECKOUT_RESPONSE.status,
+    statusText: CHECKOUT_RESPONSE.status_text,
+    headers: CHECKOUT_RESPONSE.headers.map(([name, value]) => ({
+      name,
+      value,
+    })),
+    body: CHECKOUT_RESPONSE.body,
+    isBinary: false,
+    sizeBytes: CHECKOUT_RESPONSE.size_bytes,
+    durationMs: CHECKOUT_RESPONSE.duration_ms,
+  },
+  error: null,
+  sent: {
+    method: "POST",
+    url: "https://api.acme.dev/v1/checkout",
+    headers: [{ name: "Authorization", value: "Bearer sk_live_demo" }],
+  },
+  logs: [],
+  tests: [],
+  envUpdates: {},
+});
+
+const CHECKOUT_RESPONSE = {
   status: 201,
   status_text: "Created",
   headers: [

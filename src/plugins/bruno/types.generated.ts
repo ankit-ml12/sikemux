@@ -162,3 +162,53 @@ export interface BruScope {
     scripts: BruScripts;
     extra: BruRawBlock[];
 }
+
+/**
+ * One run of a request: what went, what came back or why nothing did, and what its scripts
+ * logged, tested and set.
+ */
+export interface BruRunResult {
+    response: BruResponse | null;
+    error: string | null;
+    sent: BruSent;
+    logs: BruScriptLog[];
+    tests: BruCheck[];
+    /** Variables the run's scripts changed, for the session to keep for later runs. */
+    envUpdates: Record<string, string>;
+}
+
+/** What came back from a request. */
+export interface BruResponse {
+    status: number;
+    statusText: string;
+    headers: BruHeader[];
+    body: string;
+    isBinary: boolean;
+    sizeBytes: number;
+    durationMs: number;
+}
+
+export interface BruHeader {
+    name: string;
+    value: string;
+}
+
+/** The request as it went, after scripts, variables and auth. */
+export interface BruSent {
+    method: string;
+    url: string;
+    headers: BruHeader[];
+}
+
+export interface BruScriptLog {
+    /** `log`, `info`, `warn`, `error` or `debug`. */
+    level: string;
+    text: string;
+}
+
+/** A script's `test` or an `assert` row, and how it went. */
+export interface BruCheck {
+    name: string;
+    passed: boolean;
+    error: string | null;
+}

@@ -22,7 +22,7 @@ import { VERCEL } from "./world/vercel";
 import { SIGNOZ, signozTail } from "./world/signoz";
 import { AWS, awsLogLines } from "./world/aws";
 import { demoActivity } from "./world/activity";
-import { BRUNO_VIEWS, CHECKOUT_RESPONSE } from "./world/bruno";
+import { BRUNO_VIEWS } from "./world/bruno";
 import {
   BROWSER_TABS,
   placeBrowserPage,
@@ -824,7 +824,7 @@ export class ShowcaseBackend implements IpcTransport {
       "sikemux.rundeck": RUNDECK,
       "sikemux.signoz": SIGNOZ,
       "sikemux.aws": AWS,
-      "sikemux.bruno": { ...BRUNO_VIEWS, send: () => CHECKOUT_RESPONSE },
+      "sikemux.bruno": BRUNO_VIEWS,
       "sikemux.github": GITHUB,
       "sikemux.database": DATABASE,
       "sikemux.jira": JIRA,

@@ -1,7 +1,10 @@
 mod bru;
 mod collection;
 mod error;
+mod run;
+mod scripts;
 mod send;
+mod vars;
 
 use std::sync::Arc;
 
@@ -53,6 +56,7 @@ impl Plugin for Bruno {
                 "newFolder" => on_disk(input, collection::new_folder).await,
                 "renameRequest" => on_disk(input, collection::rename).await,
                 "deletePath" => on_disk(input, collection::delete).await,
+                "run" => reply(run::run(params(input)?).await?),
                 _ => Err(PluginError::unknown_method(method)),
             }
         })
