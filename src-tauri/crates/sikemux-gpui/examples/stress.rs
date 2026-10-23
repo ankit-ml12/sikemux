@@ -19,7 +19,7 @@
 //! Each ends by typing in the front chat's composer while its load runs. `make-repo <folder> [files]` writes a
 //! generated repository to stress `repo` with.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -576,6 +576,17 @@ impl Run {
         });
     }
 
+    /// Whether the last row held is in view, where the reader waits for the next page.
+    fn at_last_held(&mut self, chat: &str) -> bool {
+        let chat = chat.to_owned();
+        self.bench.read_with(&self.cx, |bench, cx| {
+            bench.chats.get(&chat).is_some_and(|chat| {
+                let transcript = chat.transcript.read(cx);
+                !transcript.rows().is_empty() && transcript.visible().end >= transcript.rows().len()
+            })
+        })
+    }
+
     fn row_ids(&mut self, chat: &str) -> Vec<String> {
         let chat = chat.to_owned();
         self.bench.read_with(&self.cx, |bench, cx| {
@@ -887,22 +898,52 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
         run.row_ids(chat).len()
     );
     run.key("escape");
-    let began = Instant::now();
+    // Scrolls down from the first message for 20 pages. A page that came before the reader reached
+    // the last row held cost no wait; otherwise the wait runs from reaching it to the page coming.
     let middle = (WINDOW_SIZE.0 / 2., WINDOW_SIZE.1 / 2.);
-    let down = run.until(60, |run| {
-        run.wheel(middle, -12.);
-        run.row_ids(chat).last() == latest.as_ref()
-    });
-    println!(
-        "windowed down: {} the latest rows in {:.0} ms, the app holds {} rows",
-        if down {
-            "paged down to"
-        } else {
-            "never paged down to"
+    let done = Cell::new(false);
+    let (mut waits, mut stuck_since, mut stalled) = (Vec::new(), None::<Instant>, false);
+    let mut last = run.row_ids(chat).last().cloned();
+    let scrolled = run.measure_while(
+        |began, _| !done.get() && began.elapsed() < Duration::from_secs(120),
+        |run, _| {
+            run.wheel(middle, -12.);
+            let now = run.row_ids(chat).last().cloned();
+            if now != last {
+                waits.push(
+                    stuck_since
+                        .take()
+                        .map_or(0., |since| since.elapsed().as_secs_f64() * 1e3),
+                );
+                last = now;
+                if waits.len() == 20 || last == latest {
+                    done.set(true);
+                }
+            } else if let Some(since) = stuck_since {
+                if since.elapsed() > Duration::from_secs(5) {
+                    stalled = true;
+                    done.set(true);
+                }
+            } else if run.at_last_held(chat) {
+                stuck_since = Some(Instant::now());
+            }
         },
-        began.elapsed().as_secs_f64() * 1e3,
-        run.row_ids(chat).len()
     );
+    if stalled {
+        println!(
+            "windowed down: a page never came within 5 s of reaching the last row held, after {} pages",
+            waits.len()
+        );
+    } else {
+        println!(
+            "windowed down: {} pages{}, longest wait at the last row held {:.0} ms, slowest frame {:.1} ms · {}",
+            waits.len(),
+            if last == latest { ", reaching the latest rows" } else { "" },
+            waits.iter().copied().fold(0., f64::max),
+            scrolled.frames.iter().copied().fold(0., f64::max),
+            spread(scrolled.frames.clone())
+        );
+    }
     let began = Instant::now();
     let to = chat.to_owned();
     run.bench
