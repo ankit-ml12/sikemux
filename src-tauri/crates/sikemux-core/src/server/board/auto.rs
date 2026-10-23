@@ -560,8 +560,8 @@ async fn start(core: &Arc<Core>, project: &str, id: u64, agent: &str) -> Result<
         return Ok(());
     }
     super::tell_clients(core);
-    let chat =
-        chat::begin(core, launch, None, Some(launcher)).map_err(|error| error.to_string())?;
+    let chat = chat::begin(core, launch, None, Some(launcher), false)
+        .map_err(|error| error.to_string())?;
     let worktree = json!({
         "repo": tree.repo,
         "path": tree.path,

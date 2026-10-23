@@ -139,6 +139,15 @@ pub fn read_key(elsewhere: bool) -> &'static str {
 
 impl Workbench {
     /// Keeps `agent`'s draft once the person pauses.
+    /// The person began writing, so a new chat's agent starts while they write. A host whose
+    /// core predates this answers that it does not know the method, which nobody needs to hear.
+    pub fn began_writing(&self, agent: &str) {
+        drop(
+            self.chat_target(agent)
+                .request("composing", json!({ "agentId": agent })),
+        );
+    }
+
     pub fn typed_draft(&mut self, agent: &str, cx: &mut Context<Self>) {
         let Some(composing) = self
             .chats

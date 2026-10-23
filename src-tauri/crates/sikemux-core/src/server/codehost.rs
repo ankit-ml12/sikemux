@@ -1070,6 +1070,7 @@ pub(crate) async fn work_on(core: &Arc<Core>, params: WorkOnParams) -> Answer {
         account: None,
         fallbacks: Vec::new(),
         program: None,
+        waits_for_person: true,
     };
     if let Err(error) = super::launching::start(core, None, chosen).await {
         return failed(&error.to_string());

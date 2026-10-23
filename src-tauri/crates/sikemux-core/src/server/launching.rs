@@ -225,6 +225,8 @@ pub(crate) struct Launch {
     pub fallbacks: Vec<ChatAccount>,
     /// The program to run in place of the launcher's own, for a chat a client started with one.
     pub program: Option<PathBuf>,
+    /// A new chat whose agent starts only once the person writes in it or sends to it.
+    pub waits_for_person: bool,
 }
 
 /// Starts the chat `chosen` describes, with `by` hearing it from its first
@@ -240,6 +242,7 @@ pub(crate) async fn start(
         None => launcher.agent.program().await?,
     };
     let launcher_id = launcher.id.clone();
+    let waits_for_person = chosen.waits_for_person;
     let owner = core.clone();
     let (cwd, model_provider, model) = (chosen.cwd, chosen.model_provider, chosen.model);
     let mut launch = blocking(move || {
@@ -257,7 +260,7 @@ pub(crate) async fn start(
     launch.effort = chosen.effort;
     launch.account = chosen.account;
     launch.fallbacks = chosen.fallbacks;
-    let started = chat::begin(core, launch, by, Some(launcher_id))?;
+    let started = chat::begin(core, launch, by, Some(launcher_id), waits_for_person)?;
     core.broadcast_local(&Event::ChatBegun {
         chat: started.info(),
     });
@@ -288,6 +291,7 @@ pub(crate) async fn start_agent(
         account: kept.account,
         fallbacks: kept.fallbacks,
         program: kept.program,
+        waits_for_person: false,
     };
     start(core, by, chosen).await
 }
@@ -297,6 +301,9 @@ pub(crate) async fn start_agent(
 pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
     lifecycle::ensure_running(core, agent_id).await?;
     let started = core.chats.running(agent_id)?;
+    if started.unstarted() {
+        return Ok(());
+    }
     chat::until_started(core, started).await.map(drop)
 }
 
@@ -347,6 +354,7 @@ async fn start_new(
     choice: ChatChoice,
 ) -> CoreResult<(String, ChatStart)> {
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
+    let waits_for_person = choice.resume_id.is_none();
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
@@ -359,6 +367,7 @@ async fn start_new(
         account: None,
         fallbacks: Vec::new(),
         program: None,
+        waits_for_person,
     };
     let kind = chosen
         .launcher
@@ -368,6 +377,14 @@ async fn start_new(
         .to_owned();
     let started = start(core, client, chosen).await?;
     remember_kind(core, &kind);
+    if started.unstarted() {
+        let start = ChatStart {
+            session_id: String::new(),
+            capabilities: Value::Null,
+            setup: Value::Null,
+        };
+        return Ok((agent_id, start));
+    }
     match chat::until_started(core, started).await {
         Ok(start) => Ok((agent_id, start)),
         Err(error) => {

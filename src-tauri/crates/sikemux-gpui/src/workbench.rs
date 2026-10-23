@@ -1157,6 +1157,9 @@ impl Workbench {
                     InputEvent::Change => {
                         let empty = draft.read(cx).value().is_empty();
                         if was_empty.replace(empty) != empty {
+                            if !empty {
+                                bench.began_writing(&agent);
+                            }
                             cx.notify();
                         }
                         bench.offer(&agent, cx);

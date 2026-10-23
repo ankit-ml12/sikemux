@@ -272,8 +272,8 @@ async fn start(core: &Arc<Core>, step: &Step, agent: &str, head: &str) -> Result
         run.note = Some(format!("{name}, on {cli}, reviews it blind"));
     });
     let text = task(&step.card, &checkout.cwd, head, &from, &diff, cut);
-    let chat =
-        chat::begin(core, launch, None, Some(launcher)).map_err(|error| error.to_string())?;
+    let chat = chat::begin(core, launch, None, Some(launcher), false)
+        .map_err(|error| error.to_string())?;
     core.broadcast_local(&Event::ChatBegun { chat: chat.info() });
     core.view_changed();
     chat::until_started(core, chat)
