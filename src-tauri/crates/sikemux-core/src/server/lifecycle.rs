@@ -132,7 +132,8 @@ pub(crate) fn sleep(core: &Core, agent_id: &str) -> bool {
         core.workspaces.note_stopping(chat);
     }
     let stopped = core.chats.stop_if_idle(agent_id);
-    if stopped && chat.is_some() {
+    if let Some(chat) = chat.filter(|_| stopped) {
+        core.chats.rest(&chat);
         core.workspaces.set_asleep(agent_id, true);
         core.note_agent_gone(agent_id);
     }

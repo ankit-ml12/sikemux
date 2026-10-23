@@ -2044,6 +2044,7 @@ fn agents_closed(core: &Core, before: HashSet<String>) {
     let gone: Vec<&String> = before.difference(&kept).collect();
     for agent_id in &gone {
         core.chats.stop(agent_id);
+        core.chats.forget_rest(agent_id);
     }
     let forgotten = core
         .drafts

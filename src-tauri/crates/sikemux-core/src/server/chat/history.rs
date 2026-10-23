@@ -264,6 +264,11 @@ impl History {
         }
     }
 
+    /// How many bytes the file holds.
+    pub(crate) fn size(&self) -> u64 {
+        self.bytes
+    }
+
     /// The index of the oldest event a page can still return.
     pub(crate) fn first(&self) -> Option<u64> {
         self.file.as_ref().map(|_| self.first)

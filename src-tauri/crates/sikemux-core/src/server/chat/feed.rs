@@ -569,6 +569,23 @@ impl Replay {
         self.trim();
     }
 
+    /// Writes every event not yet on disk to the history and lets go of them in memory, for a
+    /// chat that sleeps; answers how many bytes the history keeps.
+    fn rest(&mut self) -> u64 {
+        for entry in &mut self.entries {
+            Self::write(&mut self.history, entry);
+        }
+        if self
+            .history
+            .as_ref()
+            .is_some_and(|history| history.first().is_some())
+        {
+            self.entries.clear();
+            self.bytes = 0;
+        }
+        self.history.as_ref().map_or(0, History::size)
+    }
+
     /// Writes the newest event to the history, which nothing joins after.
     fn settle(&mut self) {
         if let Some(last) = self.entries.back_mut() {
@@ -1909,6 +1926,16 @@ impl Feed {
     pub(crate) fn close(&self) {
         let mut inner = self.inner.locked();
         inner.closed = true;
+    }
+
+    /// Lets go of everything the chat holds in memory once it sleeps, writing out what is not
+    /// yet on disk, so clients can still page and find through its history. Answers how many
+    /// bytes of history it keeps.
+    pub(crate) fn rest(&self) -> u64 {
+        let mut inner = self.inner.locked();
+        inner.fold = None;
+        inner.subscribers.clear();
+        inner.replay.rest()
     }
 
     /// Keeps what the agent says from the clients until [`Feed::let_out`]. A

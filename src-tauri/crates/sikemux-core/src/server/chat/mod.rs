@@ -1143,7 +1143,21 @@ pub(crate) struct Chats {
     /// Where each chat is written down, for a core that starts after this one.
     kept: Option<PathBuf>,
     pub(crate) resets: reset::Resets,
+    /// The feeds of chats asleep, their history kept on disk for clients to page and find
+    /// through without waking anything.
+    resting: Mutex<Vec<Resting>>,
 }
+
+/// A sleeping chat's feed, how much history it keeps, and when a client last read it.
+struct Resting {
+    agent_id: String,
+    feed: Arc<Feed>,
+    bytes: u64,
+    read: std::time::Instant,
+}
+
+/// The most history kept for sleeping chats in all; past it, the one read least lately goes.
+const RESTING_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 impl Chats {
     pub(crate) fn new(data_dir: Option<&std::path::Path>) -> Self {
@@ -1202,6 +1216,48 @@ impl Chats {
 
     pub(crate) fn running(&self, agent_id: &str) -> CoreResult<Arc<Chat>> {
         self.get(agent_id).ok_or_else(|| NOT_RUNNING.into())
+    }
+
+    /// The feed a client reads the agent's chat from: the running chat's, else the one it
+    /// kept when it went to sleep. Reading a sleeping chat starts nothing.
+    pub(crate) fn readable(&self, agent_id: &str) -> CoreResult<Arc<Feed>> {
+        if let Some(chat) = self.get(agent_id) {
+            return Ok(chat.feed.clone());
+        }
+        let mut resting = self.resting.locked();
+        let kept = resting
+            .iter_mut()
+            .find(|resting| resting.agent_id == agent_id);
+        let kept = kept.ok_or_else(|| CoreError::from(NOT_RUNNING))?;
+        kept.read = std::time::Instant::now();
+        Ok(kept.feed.clone())
+    }
+
+    /// Keeps the feed of `chat`, which went to sleep, with only its history on disk, letting
+    /// go of the history read least lately once all those kept pass their size.
+    pub(crate) fn rest(&self, chat: &Chat) {
+        let bytes = chat.feed.rest();
+        let mut resting = self.resting.locked();
+        resting.retain(|resting| resting.agent_id != chat.agent_id());
+        resting.push(Resting {
+            agent_id: chat.agent_id().to_owned(),
+            feed: chat.feed.clone(),
+            bytes,
+            read: std::time::Instant::now(),
+        });
+        while resting.iter().map(|resting| resting.bytes).sum::<u64>() > RESTING_BYTES {
+            let Some(oldest) = (0..resting.len()).min_by_key(|&at| resting[at].read) else {
+                break;
+            };
+            resting.remove(oldest);
+        }
+    }
+
+    /// Lets go of what a chat that will not wake again kept while it slept.
+    pub(crate) fn forget_rest(&self, agent_id: &str) {
+        self.resting
+            .locked()
+            .retain(|resting| resting.agent_id != agent_id);
     }
 
     pub(crate) fn count(&self) -> usize {
@@ -1403,6 +1459,9 @@ impl Chats {
             origin,
             core: Arc::downgrade(core),
         });
+        self.resting
+            .locked()
+            .retain(|resting| resting.agent_id != chat.agent_id());
         chats.insert(chat.agent_id().to_owned(), chat.clone());
         Ok((chat, queue))
     }
@@ -1940,8 +1999,7 @@ pub(crate) fn history(
 ) -> CoreResult<Response> {
     let page = core
         .chats
-        .running(agent_id)?
-        .feed
+        .readable(agent_id)?
         .history(feed, before, turns as usize)?;
     Ok(Response::ChatHistory {
         page: serde_json::to_value(page).map_err(|error| CoreError::from(error.to_string()))?,
@@ -1964,7 +2022,7 @@ pub(crate) fn page(
     let turns = params
         .turns
         .map_or(sikemux_fold::TAIL_TURNS, |turns| turns as usize);
-    Ok(core.chats.running(&params.agent_id)?.feed.page(
+    Ok(core.chats.readable(&params.agent_id)?.page(
         &params.feed,
         anchor,
         turns,
@@ -1980,8 +2038,7 @@ pub(crate) fn find(
 ) -> CoreResult<find::FindAnswer> {
     Ok(core
         .chats
-        .running(&params.agent_id)?
-        .feed
+        .readable(&params.agent_id)?
         .find(client, &params)?)
 }
 
