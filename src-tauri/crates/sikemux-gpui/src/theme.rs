@@ -231,6 +231,7 @@ pub fn brand(provider: &str) -> Hsla {
         "omp" => 0xf97316,
         "grok" => 0xfcfcfc,
         "muse" => 0x0081fb,
+        "sikemux" => 0xa277ff,
         _ => 0x8b8898,
     })
     .into()

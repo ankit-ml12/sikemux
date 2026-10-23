@@ -252,6 +252,7 @@ pub fn agent(provider: &str) -> Icon {
         "omp" => Icon::Omp,
         "opencode" => Icon::OpenCode,
         "pi" => Icon::Pi,
+        "sikemux" => Icon::Logo,
         _ => Icon::Agent,
     }
 }
