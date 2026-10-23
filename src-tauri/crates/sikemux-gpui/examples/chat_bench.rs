@@ -23,7 +23,7 @@ use gpui::{
 use gpui_transcript::Row;
 use serde_json::{json, Value};
 use sikemux_client::client::{ClientEvent, CoreClient};
-use sikemux_fold::{ChatEvent, Fold};
+use sikemux_fold::{ChatEvent, Fold, PageOf, PAGE_BYTES};
 use sikemux_gpui::core::{Ask, ChatAsk, ChatNews, Link, Update};
 use sikemux_gpui::workbench::Workbench;
 use sikemux_gpui::{icons, theme, WINDOW_SIZE};
@@ -228,7 +228,9 @@ impl Folded {
         }
         fold.flush(1);
         let head = fold.view(false).head;
-        let rows = fold.page(&events, u64::MAX, None).rows;
+        let rows = fold
+            .page_of(&events, PageOf::Before(u64::MAX), usize::MAX, None, None)
+            .rows;
         assert_eq!(rows.len(), ROWS, "the fold made {} rows", rows.len());
         let answer = Words(11).answer(TOKENS);
         let mut folded = Folded {
@@ -298,7 +300,14 @@ impl Folded {
             .cloned()
             .collect();
         let older_before = (start > 1).then_some(start);
-        serde_json::to_value(self.fold.page(&events, before, older_before)).expect("a page")
+        let page = (self.fold).page_of(
+            &events,
+            PageOf::Before(before),
+            PAGE_BYTES,
+            older_before,
+            None,
+        );
+        serde_json::to_value(page).expect("a page")
     }
 }
 
