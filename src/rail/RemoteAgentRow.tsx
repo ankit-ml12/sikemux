@@ -2,21 +2,13 @@ import { agentHandle } from "../agents/AgentLabel";
 import { AgentMark } from "../agents/AgentMark";
 import { AgentStateIndicator, showsAgentState } from "../agents/AgentStateIndicator";
 import { isAgentType } from "../agents/catalog";
-import type { TeamLink, TeamMember } from "../agents/teams";
 import type { RemoteAgent } from "../api/inbox";
 import { IconAgent } from "../ui/Icons";
+import type { TeamLink, TeamMember } from "./teams";
 
+/** A worker an agent here started on a linked host, as a row of its lead's team. */
 export interface RemoteWorker extends TeamMember {
     readonly remote: RemoteAgent;
-}
-
-/** The rows, then the workers their agents started on linked hosts, ready for `inTeams` to place under their leads. */
-export function withRemoteWorkers<T extends TeamMember>(rows: readonly T[], remote: readonly RemoteAgent[]): (T | RemoteWorker)[] {
-    const leads = new Set(rows.map((row) => row.id));
-    const workers = remote
-        .filter((agent) => agent.lead && leads.has(agent.lead))
-        .map((agent) => ({ id: agent.agentId, lead: agent.lead, remote: agent }));
-    return [...rows, ...workers];
 }
 
 export function isRemoteWorker(row: TeamMember): row is RemoteWorker {

@@ -13,7 +13,6 @@ import { activeAgentId, agentIdsOf, chatKey, hasChat } from "../state/selectors"
 import { type Agent, type AgentType, type PinnedChat } from "../state/types";
 import { AgentIcon, IconAgent, IconDownload, IconGlobe, IconInbox, IconPin, IconPlus, IconSearch, IconTerminal } from "../ui/Icons";
 import { AgentTitleInput } from "../agents/AgentTitleInput";
-import { inTeams, type TeamLink } from "../agents/teams";
 import { AgentContextMenu } from "../workspace/AgentContextMenu";
 import { Tooltip } from "../ui/Tooltip";
 import { Dropdown } from "../ui/Dropdown";
@@ -33,10 +32,10 @@ import { ScopeTabs } from "./ScopeTabs";
 import { NewRow } from "./RailNewRow";
 import { RailPages } from "./RailPages";
 import { FilesPage, TerminalsPage } from "./ProjectPages";
-import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
+import { coreTeams, foldTeams, useTeamFolds, type TeamFold, type TeamLink } from "./teams";
 import { useRecentChats } from "./useRecentChats";
 import { inCoreOrder, itemSessionId, useInbox } from "./useInbox";
-import { isRemoteWorker, RemoteAgentRow, withRemoteWorkers } from "./RemoteAgentRow";
+import { isRemoteWorker, RemoteAgentRow } from "./RemoteAgentRow";
 import { NewOnHost, remoteChatRows, useHostProject } from "./RemoteRows";
 import { hostName, openInstallPane } from "../hosts/hosts";
 import { HostTerminals } from "./HostLists";
@@ -453,7 +452,7 @@ export function TabRailBody() {
 
                 {scope === "project" && (opens.length > 0 || workers.length > 0 || remoteChats.length > 0) && (
                     <Panel variant="group" className="agent-group">
-                        {foldTeams(inTeams(withRemoteWorkers(opens, workers)), folded, toggleTeam).map(({ agent: a, link, fold }) =>
+                        {foldTeams(coreTeams(opens, inbox.agents, workers), folded, toggleTeam).map(({ agent: a, link, fold }) =>
                             isRemoteWorker(a) ? <RemoteAgentRow key={a.id} agent={a.remote} link={link} /> : openRow(a, link, fold),
                         )}
                         {remoteChats}

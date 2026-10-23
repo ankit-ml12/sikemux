@@ -4,7 +4,6 @@ import { AgentTitleInput } from "../agents/AgentTitleInput";
 import { AgentStateIndicator, BackgroundCounts, showsAgentState } from "../agents/AgentStateIndicator";
 import * as cmd from "../state/commands";
 import { useStore } from "../state/store";
-import { inTeams, type TeamLink } from "../agents/teams";
 import type { AgentShown } from "../api/generated/wire";
 import { activeAgentId, hasChat, openAgents } from "../state/selectors";
 import type { Agent } from "../state/types";
@@ -17,9 +16,9 @@ import { Tooltip } from "../ui/Tooltip";
 import { AgentRowProject } from "./AgentRowTree";
 import { AgentRowCard, useRowCard } from "./AgentRowCard";
 import { AgentReview } from "./AgentReview";
-import { isRemoteWorker, RemoteAgentRow, teamWrapClass, withRemoteWorkers } from "./RemoteAgentRow";
-import { foldTeams, useTeamFolds, type TeamFold } from "./teams";
-import { inCoreOrder, useInbox } from "./useInbox";
+import { isRemoteWorker, RemoteAgentRow, teamWrapClass } from "./RemoteAgentRow";
+import { coreTeams, foldTeams, useTeamFolds, type TeamFold, type TeamLink } from "./teams";
+import { useInbox } from "./useInbox";
 import { runningChats, usePlace } from "./HostLists";
 import { hostName } from "../hosts/hosts";
 
@@ -70,10 +69,7 @@ export function AllProjectsAgents({ showEmpty, host }: { showEmpty: boolean; hos
 
     const { folded, toggle } = useTeamFolds();
     const workers = useMemo(() => inbox.remoteAgents.filter((worker) => worker.hostId === host), [inbox.remoteAgents, host]);
-    const teams = useMemo(
-        () => foldTeams(inTeams(withRemoteWorkers(inCoreOrder(open, inbox.agents), workers)), folded, toggle),
-        [open, inbox.agents, workers, folded, toggle],
-    );
+    const teams = useMemo(() => foldTeams(coreTeams(open, inbox.agents, workers), folded, toggle), [open, inbox.agents, workers, folded, toggle]);
     const running = host ? runningChats(place, agents, host, new Set(workers.map((worker) => worker.agentId))) : [];
 
     const menuAgent = menu && agents[menu.agentId];
