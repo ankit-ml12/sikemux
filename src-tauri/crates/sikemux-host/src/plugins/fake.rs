@@ -1,7 +1,8 @@
 //! Test kits only: plugins that answer from files instead of their services, so a kit's core
 //! never reaches the person's accounts. `dev/plugins/<plugin>/<method>.json` in the config
 //! folder holds a list of cases, `{ "params"?, "value" | "failed" }`, the first whose params all
-//! match answering; a call with no file answers as signed out. Every call is written to
+//! match answering. A stream sends each line of `<method>.jsonl` a moment apart, then ends.
+//! A call with no file answers as signed out. Every call is written to
 //! `dev/plugins/calls.jsonl`, for a kit to check what a pane sent.
 
 use std::collections::BTreeMap;
@@ -17,6 +18,9 @@ fn folder() -> Option<PathBuf> {
     Some(sikemux_process::paths::config_dir()?.join("dev/plugins"))
 }
 
+/// How long a stream waits between the lines it sends.
+const TICK: std::time::Duration = std::time::Duration::from_millis(400);
+
 fn signed_out(plugin: &str) -> Failure {
     Failure::new(
         plugin,
@@ -25,17 +29,22 @@ fn signed_out(plugin: &str) -> Failure {
     )
 }
 
-fn answer(plugin: &str, method: &str, params: &Value) -> Result<Value, Failure> {
+/// The first case of `method`'s file whose params fit.
+fn case(plugin: &str, method: &str, params: &Value) -> Result<Value, Failure> {
     let folder = folder().ok_or_else(|| signed_out(plugin))?;
     note(&folder, plugin, method, params);
     let cases = std::fs::read_to_string(folder.join(plugin).join(format!("{method}.json")))
         .ok()
         .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
         .unwrap_or_default();
-    let case = cases
+    cases
         .into_iter()
         .find(|case| fits(&case["params"], params))
-        .ok_or_else(|| signed_out(plugin))?;
+        .ok_or_else(|| signed_out(plugin))
+}
+
+fn answer(plugin: &str, method: &str, params: &Value) -> Result<Value, Failure> {
+    let case = case(plugin, method, params)?;
     match case.get("failed") {
         Some(failed) => Err(Failure {
             plugin: plugin.to_owned(),
@@ -98,8 +107,30 @@ impl Plugins for Fake {
         Box::pin(async move { answer(plugin, method, &params) })
     }
 
-    fn stream<'a>(&'a self, plugin: &'a str, _: &'a str, _: Value, _: Sink) -> Answer<'a, ()> {
-        Box::pin(async move { Err(signed_out(plugin)) })
+    fn stream<'a>(
+        &'a self,
+        plugin: &'a str,
+        method: &'a str,
+        params: Value,
+        sink: Sink,
+    ) -> Answer<'a, ()> {
+        Box::pin(async move {
+            let folder = folder().ok_or_else(|| signed_out(plugin))?;
+            note(&folder, plugin, method, &params);
+            let lines =
+                std::fs::read_to_string(folder.join(plugin).join(format!("{method}.jsonl")))
+                    .map_err(|_| signed_out(plugin))?;
+            for item in lines
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            {
+                if !sink(item) {
+                    break;
+                }
+                tokio::time::sleep(TICK).await;
+            }
+            Ok(())
+        })
     }
 
     fn agent_tools<'a>(&'a self, _: &'a [String]) -> Listing<'a> {
