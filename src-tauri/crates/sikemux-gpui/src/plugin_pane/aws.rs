@@ -399,7 +399,13 @@ impl Aws {
             .map(|cluster| Item {
                 tone: Some(tone(cluster.health)),
                 sub: Some(cluster.env_label.clone().into()),
-                aside: Some(format!("{}/{}", cluster.running, cluster.services).into()),
+                aside: Some(
+                    match cluster.pending {
+                        0 => format!("{} tasks", cluster.running),
+                        pending => format!("{} tasks +{pending}", cluster.running),
+                    }
+                    .into(),
+                ),
                 ..Item::new(cluster.name.clone(), cluster.short_name.clone())
             })
             .collect();
@@ -926,7 +932,13 @@ impl Aws {
         });
         let list = self.list(
             "billing",
-            heading(vec!["Billing".into(), summary.into()], view.months.len(), None, cx),
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(heading(vec!["Billing".into(), "Costs".into()], view.months.len(), None, cx))
+                .child(ui::meta(summary, cx).truncate())
+                .into_any_element(),
             items,
             chosen.map(|month| month.period_start.as_str()),
             "No billing data for this account.",
@@ -973,6 +985,7 @@ impl Aws {
                 div()
                     .px(px(14.))
                     .py(px(10.))
+                    .overflow_hidden()
                     .border_b_1()
                     .border_color(t.border)
                     .child(heading),
@@ -1303,8 +1316,14 @@ fn heading(
                 .flex()
                 .items_center()
                 .gap(px(6.))
+                .min_w_0()
                 .when(at > 0, |part| part.child(ui::meta("›", cx)))
-                .child(ui::text(part, 13., FontWeight::SEMIBOLD).text_color(ink))
+                .child(
+                    ui::text(part, 13., FontWeight::SEMIBOLD)
+                        .text_color(ink)
+                        .min_w_0()
+                        .truncate(),
+                )
         }))
         .child(ui::meta(count.to_string(), cx))
         .into_any_element()
