@@ -18,6 +18,9 @@ path = "src/main.rs"
 # The test bundle's kit: drives the window from step files, and dials hosts at the addresses its
 # dev/host-addresses.json names. Never on in the try-out or a release.
 drive = ["sikemux-linked/host-addresses-file"]
+# Counts the transcript's drawing work, which the stress example prints beside a slow frame.
+# Never on in the try-out or a release.
+counts = ["gpui-transcript/counts"]
 
 [dependencies]
 anyhow = "1"

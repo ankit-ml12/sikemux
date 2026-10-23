@@ -8,6 +8,8 @@
 //!   (put, update, drop from, keep, prepend a page) once per frame, asks for
 //!   earlier pages as the reader nears the top, and selects and copies text.
 
+#[cfg(feature = "counts")]
+pub mod counts;
 mod draw;
 mod find;
 mod markdown;

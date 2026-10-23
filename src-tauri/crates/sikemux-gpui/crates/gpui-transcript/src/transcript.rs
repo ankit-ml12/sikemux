@@ -791,6 +791,8 @@ impl<R: Row> Render for Transcript<R> {
                 });
                 let pen = Pen::selecting(this.style.clone(), selecting);
                 let draw_row = this.draw_row.clone();
+                #[cfg(feature = "counts")]
+                crate::counts::add(&crate::counts::ROWS, 1);
                 let drawn = draw_row(&this.rows, ix, &pen, window, cx);
                 let (Some(row), tops) = (this.rows.get(ix), this.row_tops.clone()) else {
                     return drawn;

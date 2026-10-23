@@ -129,6 +129,8 @@ const TYPED: Options = Options {
 
 /// Text the core sends without a tree, such as what the person sent, as the tree it reads as.
 fn typed(text: &str) -> Value {
+    #[cfg(feature = "counts")]
+    gpui_transcript::counts::add(&gpui_transcript::counts::PARSED, 1);
     match MarkdownDoc::read(text, TYPED).into_iter().next() {
         Some(Op::List { c, .. }) => Value::Array(c),
         _ => Value::Array(Vec::new()),
@@ -1111,6 +1113,8 @@ impl Chat {
         if drops.is_empty() {
             return;
         }
+        #[cfg(feature = "counts")]
+        gpui_transcript::counts::add(&gpui_transcript::counts::TRIMS, 1);
         let held: HashSet<&str> = rows[kept].iter().map(|row| row.id()).collect();
         let streamed: Vec<String> = (self.reader.read(cx).streamed.iter())
             .filter(|row| held.contains(row.as_str()))
@@ -3466,11 +3470,15 @@ fn code_colours(reader: Entity<Reading>, plain: Hsla) -> CodeColours {
         if let Some(lines) = syntax::coloured_lines(&language, code, cx) {
             return Some(spread(&lines, code, plain));
         }
+        #[cfg(feature = "counts")]
+        gpui_transcript::counts::add(&gpui_transcript::counts::UNCOLOURED, 1);
         if asked.borrow_mut().insert((language.clone(), code.clone())) {
             let coloured = syntax::colour_lines(&language, code.clone(), cx);
             let reader = reader.downgrade();
             cx.spawn(async move |cx| {
                 if coloured.await.is_some() {
+                    #[cfg(feature = "counts")]
+                    gpui_transcript::counts::add(&gpui_transcript::counts::COLOURED, 1);
                     let _ = reader.update(cx, |_, cx| cx.notify());
                 }
             })

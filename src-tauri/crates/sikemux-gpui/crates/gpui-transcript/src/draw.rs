@@ -532,6 +532,11 @@ impl Element for Code {
             let top = bounds.top() + line_height * lines.start as f32;
             element.prepaint_at(point(bounds.left(), top), window, cx);
             drawn.push(element);
+            #[cfg(feature = "counts")]
+            {
+                crate::counts::add(&crate::counts::CODE_CHUNKS, 1);
+                crate::counts::add(&crate::counts::CODE_LINES, lines.len() as u64);
+            }
             if let Some((key, shown)) = &self.shown {
                 shown.borrow_mut().push(Shown {
                     key: key.clone(),
@@ -760,6 +765,8 @@ impl Draw<'_> {
         };
         gaps.sort_by_key(|(at, _)| *at);
         gaps.dedup_by_key(|(at, _)| *at);
+        #[cfg(feature = "counts")]
+        crate::counts::add(&crate::counts::TEXTS, 1);
         let text = StyledText::new(rich.text.clone())
             .with_highlights(looks)
             .with_font_family_overrides(

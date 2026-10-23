@@ -45,6 +45,8 @@ const PROJECT: &str = "stress";
 thread_local! {
     /// Each drawn frame's CPU from render to paint, in ms.
     static DRAWS: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+    /// The transcript's work counters as each frame began, beside `DRAWS`, with `counts` on.
+    static COUNTED: RefCell<Vec<Vec<(&'static str, u64)>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The window's content: the workbench, timed wherever the test platform draws it.
@@ -55,6 +57,8 @@ struct Probe {
 impl Render for Probe {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         DRAWS.with_borrow_mut(|draws| draws.push(0.));
+        #[cfg(feature = "counts")]
+        COUNTED.with_borrow_mut(|counted| counted.push(gpui_transcript::counts::now()));
         gpui::div()
             .size_full()
             .child(Timed(self.bench.clone().into_any_element()))
@@ -124,6 +128,32 @@ impl Element for Timed {
         self.0.paint(window, cx);
         add_to_draw(began);
     }
+}
+
+/// What the transcript counted while frame `frame` drew, as ` · ROWS 4, TEXTS 2`; nothing
+/// without `counts`.
+fn counted_in(frame: usize) -> String {
+    COUNTED.with_borrow(|counted| {
+        let Some(start) = counted.get(frame) else {
+            return String::new();
+        };
+        let end = counted.get(frame + 1).cloned();
+        #[cfg(feature = "counts")]
+        let end = end.or_else(|| Some(gpui_transcript::counts::now()));
+        let Some(end) = end else {
+            return String::new();
+        };
+        let done: Vec<String> = start
+            .iter()
+            .zip(&end)
+            .filter(|((_, from), (_, to))| to > from)
+            .map(|((name, from), (_, to))| format!("{name} {}", to - from))
+            .collect();
+        match done.is_empty() {
+            true => String::new(),
+            false => format!(" · {}", done.join(", ")),
+        }
+    })
 }
 
 fn add_to_draw(began: Instant) {
@@ -376,6 +406,7 @@ impl Run {
         mut each: impl FnMut(&mut Run, usize),
     ) -> Measured {
         DRAWS.with_borrow_mut(Vec::clear);
+        COUNTED.with_borrow_mut(Vec::clear);
         let (began, cpu) = (Instant::now(), thread_cpu_ms());
         let mut index = 0;
         while more(began, index) {
@@ -980,9 +1011,10 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
             doing.push("scroll only (no rows came or went)");
         }
         println!(
-            "windowed slow frame: #{frame} at {:.0} ms into the scroll took {ms:.1} ms, during {}",
+            "windowed slow frame: #{frame} at {:.0} ms into the scroll took {ms:.1} ms, during {}{}",
             before.1,
-            doing.join(" and ")
+            doing.join(" and "),
+            counted_in(frame)
         );
     }
     let began = Instant::now();
