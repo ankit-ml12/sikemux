@@ -175,6 +175,12 @@ impl AiStreamDecoder {
 }
 
 fn command_candidates(name: &str) -> Vec<String> {
+    if sikemux_process::user_environment::search_path_only() {
+        return sikemux_process::user_environment::find_executable(name)
+            .map(|path| path.to_string_lossy().into_owned())
+            .into_iter()
+            .collect();
+    }
     let home = std::env::var("HOME").unwrap_or_default();
     let mut candidates = vec![
         name.to_string(),

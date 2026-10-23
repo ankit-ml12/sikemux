@@ -24,3 +24,6 @@ pub const WINDOW_ID: &str = "SIKEMUX_WINDOW_ID";
 pub const PANE_ID: &str = "SIKEMUX_PANE_ID";
 pub const BIN_PATH: &str = "SIKEMUX_BIN_PATH";
 pub const SHELL_INTEGRATION: &str = "SIKEMUX_SHELL_INTEGRATION";
+/// `path` in a sandbox's own environment: agent CLIs are looked up only on the PATH it was
+/// started with, never in the person's login shell or the folders installers use.
+pub const AGENT_SEARCH: &str = "SIKEMUX_AGENT_SEARCH";
