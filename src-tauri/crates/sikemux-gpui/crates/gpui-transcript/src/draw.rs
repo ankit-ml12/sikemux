@@ -25,6 +25,9 @@ pub struct Fence {
 }
 
 pub type OnLink = Rc<dyn Fn(&str, &mut Window, &mut App)>;
+/// Ticks or clears a task: its place among the text's task boxes, its words, and whether it
+/// is now done.
+pub type OnTask = Rc<dyn Fn(usize, &str, bool, &mut Window, &mut App)>;
 pub type DrawFence = Rc<dyn Fn(Fence, &mut Window, &mut App) -> AnyElement>;
 /// Styled runs over a code block's text, in bytes from its start.
 pub type CodeRuns = Rc<[(Range<usize>, HighlightStyle)]>;
@@ -90,6 +93,8 @@ pub struct Style {
     pub table_head: Hsla,
     pub radius: Pixels,
     pub on_link: Option<OnLink>,
+    /// Makes task boxes clickable.
+    pub on_task: Option<OnTask>,
     /// Draws the names that are files the host holds as files, and opens them.
     pub file_of: Option<FileOf>,
     pub on_file: Option<OnFile>,
@@ -143,6 +148,7 @@ impl Default for Style {
             table_head: rgba(0xe7e5ef0a).into(),
             radius: px(5.),
             on_link: None,
+            on_task: None,
             file_of: None,
             on_file: None,
             file_icon: None,
@@ -278,6 +284,10 @@ struct Blocks {
 
 impl Blocks {
     fn draw(&self, ix: usize, window: &mut Window, cx: &mut App) -> AnyElement {
+        let tasks = match self.style.on_task {
+            Some(_) => self.blocks[..ix].iter().map(|block| tasks_in(block)).sum(),
+            None => 0,
+        };
         let mut draw = Draw {
             on: self,
             block: ix,
@@ -285,6 +295,7 @@ impl Blocks {
             texts: 0,
             folds: 0,
             depth: 0,
+            tasks,
         };
         draw.block(&self.blocks[ix], ix, window, cx)
     }
@@ -420,6 +431,8 @@ struct Draw<'a> {
     texts: u32,
     folds: u32,
     depth: usize,
+    /// Task boxes drawn before the next, in the whole text.
+    tasks: usize,
 }
 
 impl Draw<'_> {
@@ -714,12 +727,29 @@ impl Draw<'_> {
             .enumerate()
             .map(|(ix, item)| {
                 let marker = match (&item.kind, &node.kind) {
-                    (Kind::Item(Some(checked)), _) => task_box(*checked, style),
+                    (Kind::Item(Some(checked)), _) => {
+                        let place = self.tasks;
+                        self.tasks += 1;
+                        let tick = task_box(*checked, style);
+                        match style.on_task.clone() {
+                            Some(on_task) => {
+                                let (done, words) = (!*checked, task_words(item));
+                                tick.id(("task", place))
+                                    .cursor_pointer()
+                                    .on_click(move |_, window, cx| {
+                                        on_task(place, &words, done, window, cx)
+                                    })
+                                    .into_any_element()
+                            }
+                            None => tick.into_any_element(),
+                        }
+                    }
                     (_, Kind::Numbers(start)) => div()
                         .text_right()
                         .pr(px(6.))
-                        .child(format!("{}.", start + ix as u64)),
-                    _ => div().pl(px(6.)).child(bullet),
+                        .child(format!("{}.", start + ix as u64))
+                        .into_any_element(),
+                    _ => div().pl(px(6.)).child(bullet).into_any_element(),
                 };
                 div()
                     .flex()
@@ -1035,6 +1065,29 @@ fn spaced(row: Div) -> Div {
 #[cfg(not(feature = "fork"))]
 fn spaced(row: Div) -> Div {
     row
+}
+
+fn tasks_in(node: &Node) -> usize {
+    let own = usize::from(matches!(node.kind, Kind::Item(Some(_))));
+    own + node.children.iter().map(tasks_in).sum::<usize>()
+}
+
+/// A task's words, without those of any list under it.
+fn task_words(item: &Node) -> String {
+    fn gather(node: &Node, into: &mut String) {
+        if matches!(node.kind, Kind::Bullets | Kind::Numbers(_)) {
+            return;
+        }
+        into.push_str(&node.text);
+        for child in &node.children {
+            gather(child, into);
+        }
+    }
+    let mut words = String::new();
+    for child in &item.children {
+        gather(child, &mut words);
+    }
+    words.trim().to_owned()
 }
 
 fn task_box(checked: bool, style: &Style) -> Div {

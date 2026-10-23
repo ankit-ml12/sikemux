@@ -16,7 +16,7 @@ mod transcript;
 
 pub use draw::{
     CodeColours, CodeRuns, DrawFence, DrawImage, Fence, FileIcon, FileKind, FileOf, FilePress,
-    OnFile, OnLink, Pen, Style,
+    OnFile, OnLink, OnTask, Pen, Style,
 };
 pub use find::{FoundChanged, Query};
 pub use markdown::{Kind, Markdown, Marks, Node, Piece, Rich, Table};
