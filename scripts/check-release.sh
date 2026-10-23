@@ -92,6 +92,12 @@ for (const profile of ["sikemux-developer-id", "sikemux-core-developer-id"]) {
   if (!fs.existsSync(`src-tauri/macos/${profile}.provisionprofile`)) fail(`src-tauri/macos/${profile}.provisionprofile is missing`);
 }
 if (!sidecarBuild.includes("smokeBrowserSidecar")) fail("sidecar build does not run the browser smoke test");
+for (const [name, text] of [["scripts/build-mac.sh", macBuild], ["scripts/build-cli-sidecar.mjs", sidecarBuild], [".github/workflows/release.yml", releaseWorkflow]]) {
+    if (/--all-features|--features[ =][^\n]*\b(drive|fake-plugins)\b/.test(text)) fail(`${name} turns on a test kit's feature`);
+}
+if (!macBuild.includes("this test kit has no answer for that") || !macBuild.includes("window driver could not listen")) {
+    fail("macOS build no longer refuses a binary built with a test kit's feature");
+}
 const endpoints = config.plugins?.updater?.endpoints;
 if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
   fail("updater endpoint is not the expected HTTPS latest.json URL");

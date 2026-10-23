@@ -208,6 +208,14 @@ if grep -Eq '^[[:space:]]+(/opt/homebrew|/usr/local|/opt/local)/' <<<"$SIM_DYNAM
   fail "simulator helper links to a package-manager library"
 fi
 
+# Test kits build the app with `drive` and the core with `fake-plugins`, which answer to
+# a socket or to files instead of the person; each leaves this text in what it builds.
+for code in "$EXECUTABLE" "$CLI_EXECUTABLE"; do
+  if /usr/bin/grep -aqF -e "window driver could not listen" -e "this test kit has no answer for that" "$code"; then
+    fail "$code was built with a test kit's feature (drive or fake-plugins)"
+  fi
+done
+
 # Only starting the bundled core proves it survives the hardened runtime: the
 # copy built beside it is signed without it and starts whether or not the
 # bundle would. An empty agent id is the earliest thing its tools MCP server
