@@ -25,6 +25,7 @@ use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Variant};
 
 mod console;
+mod form;
 
 pub const REGISTRATION: super::Registration = super::Registration {
     plugin: "sikemux.database",
@@ -55,6 +56,14 @@ pub struct Database {
     consoles: HashMap<String, console::Console>,
     /// Runs started, so each is named apart from the others.
     runs: u64,
+    /// The connection form, while it shows.
+    form: Option<form::Form>,
+    /// The form is on its way from the plugin.
+    form_loading: bool,
+    /// The form the plugin sent, made into fields at the next draw.
+    form_arrived: Option<Rc<sikemux_wire::database::ProfileForm>>,
+    /// The connection the person is asked to remove.
+    removing: Option<(String, String)>,
     _typing: Vec<Subscription>,
 }
 
@@ -134,8 +143,18 @@ impl Panel for Database {
         let Some(explorer) = self.shown.clone() else {
             return super::loading(cx);
         };
+        if let Some(arrived) = self.form_arrived.take() {
+            self.form = Some(form::Form::new(arrived, window, cx));
+        }
+        if self.form.is_some() || self.form_loading {
+            return div()
+                .size_full()
+                .child(form::page(self, cx))
+                .children(self.asking(cx))
+                .into_any_element();
+        }
         if explorer.connections.is_empty() {
-            return super::empty("No database is saved yet.", cx);
+            return welcome(cx);
         }
         let main = div()
             .flex_1()
@@ -429,6 +448,13 @@ impl Database {
                     .on_click(listen::<Database, _>(cx, |database, _, _, _, cx| {
                         database.open.clear();
                         cx.notify();
+                    })),
+            )
+            .child(
+                IconButton::new("db-new-connection", Icon::Plus, "New connection")
+                    .small()
+                    .on_click(listen::<Database, _>(cx, |database, host, _, _, cx| {
+                        form::open(database, host, None, cx)
                     })),
             );
         div()
@@ -968,6 +994,9 @@ impl Database {
     }
 
     fn asking(&self, cx: &mut Context<PluginPane>) -> Option<AnyElement> {
+        if let Some((id, name)) = self.removing.clone() {
+            return Some(self.removal(id, name, cx));
+        }
         let (id, name) = self.clearing.clone()?;
         let (yes, no) = (cx.weak_entity(), cx.weak_entity());
         Some(
@@ -998,6 +1027,88 @@ impl Database {
             .into_any_element(),
         )
     }
+}
+
+impl Database {
+    fn removal(&self, id: String, name: String, cx: &mut Context<PluginPane>) -> AnyElement {
+        let (yes, no) = (cx.weak_entity(), cx.weak_entity());
+        ui::Confirm::new(
+            format!("Remove {name}?"),
+            "Sikemux forgets this connection and its saved password. The database itself is not touched.",
+            "Remove",
+        )
+        .marked()
+        .destructive(true)
+        .on_yes(move |_, cx| {
+            let id = id.clone();
+            let _ = yes.update(cx, |pane, cx| {
+                if let Some((database, host)) = pane.parts::<Database>() {
+                    database.removing = None;
+                    let call = host.call("remove", json!({ "id": id }));
+                    after::<Database, _>(
+                        call,
+                        move |database, host, done, cx| match done {
+                            Ok(_) => {
+                                database.form = None;
+                                let closed: Vec<Tab> = database
+                                    .tabs
+                                    .iter()
+                                    .filter(|tab| tab.connection() == id)
+                                    .cloned()
+                                    .collect();
+                                for tab in &closed {
+                                    database.close(tab);
+                                }
+                            }
+                            Err(failure) => host.said(&failure, cx),
+                        },
+                        cx,
+                    );
+                }
+                cx.notify();
+            });
+        })
+        .on_no(move |_, cx| {
+            let _ = no.update(cx, |pane, cx| {
+                if let Some((database, _)) = pane.parts::<Database>() {
+                    database.removing = None;
+                }
+                cx.notify();
+            });
+        })
+        .into_any_element()
+    }
+}
+
+/// What the pane says while no database is saved, with the way to save one.
+fn welcome(cx: &mut Context<PluginPane>) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(10.))
+        .child(ui::icon(Icon::Database, 28.).text_color(t.text_tertiary))
+        .child(ui::text("Connect a database", 15., FontWeight::SEMIBOLD).text_color(t.text_primary))
+        .child(
+            div()
+                .max_w(px(420.))
+                .text_center()
+                .text_size(theme::ui_text(12.5))
+                .text_color(t.text_secondary)
+                .child("Save a PostgreSQL or MySQL server, or a SQLite file, to browse its tables and run SQL beside your code. Your agents can use it too."),
+        )
+        .child(
+            Button::new("db-welcome-add", "Add a connection", Variant::Primary).on_click(
+                listen::<Database, _>(cx, |database, host, _, _, cx| {
+                    form::open(database, host, None, cx)
+                }),
+            ),
+        )
+        .child(ui::meta("Passwords stay in the Keychain.", cx))
+        .into_any_element()
 }
 
 /// A table's columns, indexes and foreign keys; a foreign key opens the table it points at.
@@ -1271,7 +1382,7 @@ fn connection_menu(
                     }))
             }
         };
-        let (history, properties, fresh) = (id.clone(), id.clone(), id.clone());
+        let (history, properties, fresh, editing) = (id.clone(), id.clone(), id.clone(), id.clone());
         popup
             .item(toggle)
             .item(
@@ -1297,6 +1408,13 @@ fn connection_menu(
                     .on_click(on(&pane, |_, host, _, _| host.read_again(None))),
             )
             .separator()
+            .item(
+                PopupMenuItem::new("Edit connection…")
+                    .icon(Icon::Pencil)
+                    .on_click(on(&pane, move |database, host, _, cx| {
+                        form::open(database, host, Some(editing.clone()), cx)
+                    })),
+            )
             .item(
                 PopupMenuItem::new("Properties")
                     .icon(Icon::Settings)
