@@ -157,6 +157,39 @@ mod tests {
         PluginContext::new(dir)
     }
 
+    /// The form's draft for `id`, or its blank one, with `fields` typed in, as a pane sends it.
+    async fn filled(
+        database: &Arc<dyn Plugin>,
+        ctx: &PluginContext,
+        id: Option<&Value>,
+        fields: Value,
+    ) -> Value {
+        let form = database
+            .call(ctx, "form", json!({ "id": id }))
+            .await
+            .unwrap();
+        let mut draft = form["draft"].clone();
+        for (key, value) in fields.as_object().unwrap() {
+            draft[key] = value.clone();
+        }
+        json!({ "profile": draft })
+    }
+
+    async fn explorer(database: &Arc<dyn Plugin>, ctx: &PluginContext, open: Value) -> Value {
+        database
+            .call(ctx, "explorerView", json!({ "open": open }))
+            .await
+            .unwrap()
+    }
+
+    async fn history(database: &Arc<dyn Plugin>, ctx: &PluginContext, ask: Value) -> Value {
+        database
+            .call(ctx, "historyView", ask)
+            .await
+            .unwrap()["entries"]
+            .clone()
+    }
+
     #[tokio::test]
     async fn a_profile_is_saved_listed_and_removed_through_its_methods() {
         let ctx = scratch("methods");
@@ -165,16 +198,17 @@ mod tests {
             database.offers_agent_tools(&ctx, &[]).await.ok(),
             Some(false)
         );
-        let saved = database
-            .call(
-                &ctx,
-                "save",
-                json!({ "profile": { "name": "Local", "engine": "sqlite", "path": "/tmp/x.db" } }),
-            )
-            .await
-            .unwrap();
-        let listed = database.call(&ctx, "profiles", Value::Null).await.unwrap();
-        assert_eq!(listed, json!([saved.clone()]));
+        let draft = filled(
+            &database,
+            &ctx,
+            None,
+            json!({ "name": "Local", "engine": "sqlite", "path": "/tmp/x.db" }),
+        )
+        .await;
+        let saved = database.call(&ctx, "save", draft).await.unwrap();
+        let listed = explorer(&database, &ctx, json!([])).await;
+        assert_eq!(listed["connections"][0]["id"], saved["id"]);
+        assert_eq!(listed["connections"][0]["name"], "Local");
         assert_eq!(
             database.offers_agent_tools(&ctx, &[]).await.ok(),
             Some(true)
@@ -183,8 +217,8 @@ mod tests {
             .call(&ctx, "remove", json!({ "id": saved["id"] }))
             .await
             .unwrap();
-        let listed = database.call(&ctx, "profiles", Value::Null).await.unwrap();
-        assert_eq!(listed, json!([]));
+        let listed = explorer(&database, &ctx, json!([])).await;
+        assert_eq!(listed["connections"], json!([]));
         assert!(database.call(&ctx, "nope", Value::Null).await.is_err());
     }
 
@@ -193,22 +227,23 @@ mod tests {
         let ctx = scratch("test");
         let database = plugin().unwrap();
         let path = engines::sqlite::tests::fixture("plugin-test");
-        let tested = database
-            .call(
-                &ctx,
-                "test",
-                json!({ "profile": { "name": "Local", "engine": "sqlite", "path": path } }),
-            )
-            .await
-            .unwrap();
+        let draft = filled(
+            &database,
+            &ctx,
+            None,
+            json!({ "name": "Local", "engine": "sqlite", "path": path }),
+        )
+        .await;
+        let tested = database.call(&ctx, "test", draft).await.unwrap();
         assert!(tested["version"].as_str().unwrap().starts_with("SQLite"));
-        let missing = database
-            .call(
-                &ctx,
-                "test",
-                json!({ "profile": { "name": "Gone", "engine": "sqlite", "path": "/nope/x.db" } }),
-            )
-            .await;
+        let draft = filled(
+            &database,
+            &ctx,
+            None,
+            json!({ "name": "Gone", "engine": "sqlite", "path": "/nope/x.db" }),
+        )
+        .await;
+        let missing = database.call(&ctx, "test", draft).await;
         assert_eq!(
             missing.err().map(|error| error.category),
             Some("connect".to_string())
@@ -217,42 +252,51 @@ mod tests {
 
     async fn saved_fixture(database: &Arc<dyn Plugin>, ctx: &PluginContext, name: &str) -> Value {
         let path = engines::sqlite::tests::fixture(name);
-        let saved = database
-            .call(
-                ctx,
-                "save",
-                json!({ "profile": { "name": name, "engine": "sqlite", "path": path } }),
-            )
-            .await
-            .unwrap();
+        let draft = filled(
+            database,
+            ctx,
+            None,
+            json!({ "name": name, "engine": "sqlite", "path": path }),
+        )
+        .await;
+        let saved = database.call(ctx, "save", draft).await.unwrap();
         saved["id"].clone()
     }
 
     #[tokio::test]
-    async fn the_schema_is_browsed_through_its_methods_connecting_on_first_use() {
+    async fn the_schema_is_browsed_through_its_views_once_connected() {
         let ctx = scratch("browse");
         let database = plugin().unwrap();
         let id = saved_fixture(&database, &ctx, "plugin-browse").await;
-        let schemas = database
-            .call(&ctx, "schemas", json!({ "id": id }))
+        let open = json!([{ "id": id, "schemas": ["main"], "tables": [{ "schema": "main", "name": "orders" }] }]);
+        let unconnected = explorer(&database, &ctx, open.clone()).await;
+        assert_eq!(unconnected["connections"][0]["connected"], Value::Null);
+        assert_eq!(unconnected["connections"][0]["schemas"], Value::Null);
+        database
+            .call(&ctx, "connect", json!({ "id": id }))
             .await
             .unwrap();
-        assert_eq!(schemas, json!(["main"]));
-        let tables = database
-            .call(&ctx, "tables", json!({ "id": id }))
-            .await
-            .unwrap();
-        assert_eq!(tables[1], json!({ "name": "customers", "kind": "table" }));
+        let browsed = explorer(&database, &ctx, open).await;
+        let connection = &browsed["connections"][0];
+        assert!(connection["connected"].is_string());
+        let schema = &connection["schemas"][0];
+        assert_eq!(schema["name"], "main");
+        assert_eq!(schema["groups"][0]["name"], "tables");
+        assert_eq!(schema["groups"][0]["tables"][0]["name"], "customers");
+        assert_eq!(schema["groups"][0]["tables"][0]["columns"], Value::Null);
+        assert_eq!(
+            schema["groups"][0]["tables"][1]["columns"][1]["name"],
+            "customer_id"
+        );
+        assert_eq!(schema["groups"][1]["tables"][0]["name"], "big_orders");
         let described = database
-            .call(&ctx, "describe", json!({ "id": id, "table": "orders" }))
+            .call(&ctx, "tableView", json!({ "id": id, "table": "orders" }))
             .await
             .unwrap();
         assert_eq!(described["schema"], "main");
-        assert_eq!(described["foreignKeys"][0]["referencesTable"], "customers");
-        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
-        assert_eq!(connected[0]["id"], id);
+        assert_eq!(described["foreignKeys"][0]["table"], "customers");
         let missing = database
-            .call(&ctx, "describe", json!({ "id": id, "table": "nope" }))
+            .call(&ctx, "tableView", json!({ "id": id, "table": "nope" }))
             .await;
         assert_eq!(
             missing.err().map(|error| error.category),
@@ -299,32 +343,23 @@ mod tests {
                 .call(&ctx, "query", json!({ "id": id, "sql": sql }))
                 .await;
         }
-        let history = database
-            .call(&ctx, "history", json!({ "id": id }))
-            .await
-            .unwrap();
-        assert_eq!(history[0]["sql"], "select * from nowhere");
-        assert_eq!(history[0]["ok"], false);
-        assert!(history[0]["error"]
+        let entries = history(&database, &ctx, json!({ "id": id })).await;
+        assert_eq!(entries[0]["sql"], "select * from nowhere");
+        assert_eq!(entries[0]["ok"], false);
+        assert!(entries[0]["error"]
             .as_str()
             .unwrap()
             .contains("no such table"));
-        assert_eq!(history[1]["rows"], 2);
-        assert_eq!(history[1]["source"], "person");
-        let found = database
-            .call(&ctx, "history", json!({ "id": id, "search": "NOWHERE" }))
-            .await
-            .unwrap();
+        assert_eq!(entries[1]["rows"], 2);
+        assert_eq!(entries[1]["byAgent"], false);
+        let found = history(&database, &ctx, json!({ "id": id, "search": "NOWHERE" })).await;
         assert_eq!(found.as_array().map(Vec::len), Some(1));
         database
             .call(&ctx, "remove", json!({ "id": id }))
             .await
             .unwrap();
-        let history = database
-            .call(&ctx, "history", json!({ "id": id }))
-            .await
-            .unwrap();
-        assert_eq!(history, json!([]));
+        let entries = history(&database, &ctx, json!({ "id": id })).await;
+        assert_eq!(entries, json!([]));
     }
 
     #[tokio::test]
@@ -374,12 +409,9 @@ mod tests {
             write.err().map(|error| error.category),
             Some("query".to_string())
         );
-        let history = database
-            .call(&ctx, "history", json!({ "id": id }))
-            .await
-            .unwrap();
-        assert_eq!(history[0]["source"], "agent");
-        assert_eq!(history[0]["ok"], false);
+        let entries = history(&database, &ctx, json!({ "id": id })).await;
+        assert_eq!(entries[0]["byAgent"], true);
+        assert_eq!(entries[0]["ok"], false);
         let unknown = database
             .call(&ctx, "agentTables", json!({ "database": "Nope" }))
             .await;
@@ -396,15 +428,15 @@ mod tests {
         };
         let ctx = scratch("agent-guard");
         let database = plugin().unwrap();
-        database
-            .call(
-                &ctx,
-                "save",
-                json!({ "profile": { "name": "Live", "engine": "postgres", "host": host, "port": port,
-                                      "database": database_name, "user": user } }),
-            )
-            .await
-            .unwrap();
+        let draft = filled(
+            &database,
+            &ctx,
+            None,
+            json!({ "name": "Live", "engine": "postgres", "host": host, "port": port.to_string(),
+                    "database": database_name, "user": user }),
+        )
+        .await;
+        database.call(&ctx, "save", draft).await.unwrap();
         let escape = database
             .call(
                 &ctx,
@@ -429,27 +461,17 @@ mod tests {
     async fn editing_a_connected_profile_closes_its_connection() {
         let ctx = scratch("edit-closes");
         let database = plugin().unwrap();
-        let path = engines::sqlite::tests::fixture("plugin-edit");
-        let profile = json!({ "name": "Local", "engine": "sqlite", "path": path });
-        let saved = database
-            .call(&ctx, "save", json!({ "profile": profile }))
-            .await
-            .unwrap();
-        let id = saved["id"].clone();
+        let id = saved_fixture(&database, &ctx, "plugin-edit").await;
         database
             .call(&ctx, "connect", json!({ "id": id }))
             .await
             .unwrap();
-        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
-        assert_eq!(connected[0]["id"], id);
-        let mut edited = profile.clone();
-        edited["id"] = id.clone();
-        edited["name"] = json!("Renamed");
-        database
-            .call(&ctx, "save", json!({ "profile": edited }))
-            .await
-            .unwrap();
-        let connected = database.call(&ctx, "connected", Value::Null).await.unwrap();
-        assert_eq!(connected, json!([]));
+        let listed = explorer(&database, &ctx, json!([])).await;
+        assert!(listed["connections"][0]["connected"].is_string());
+        let edited = filled(&database, &ctx, Some(&id), json!({ "name": "Renamed" })).await;
+        database.call(&ctx, "save", edited).await.unwrap();
+        let listed = explorer(&database, &ctx, json!([])).await;
+        assert_eq!(listed["connections"][0]["name"], "Renamed");
+        assert_eq!(listed["connections"][0]["connected"], Value::Null);
     }
 }
