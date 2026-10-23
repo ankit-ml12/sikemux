@@ -40,17 +40,51 @@ pub trait Panel: Any {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement;
+
+    /// Shows the place `at` names, as a row picked in one of the plugin's palettes says it.
+    fn open_at(&mut self, _at: &str, _host: &mut Host, _cx: &mut Context<PluginPane>) {}
 }
 
+/// The surface of a plugin's item in the window's top bar.
+pub const TOP_BAR: &str = "topbar";
+
 /// The panel of `plugin`, for the plugins that draw a pane.
-fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
-    match plugin {
-        "sikemux.database" => Some(Box::<database::Database>::default()),
-        "sikemux.jira" => Some(Box::<jira::Jira>::default()),
-        "sikemux.linear" => Some(Box::<linear::Linear>::default()),
-        "sikemux.rundeck" => Some(Box::<rundeck::Rundeck>::default()),
-        "sikemux.signoz" => Some(Box::<signoz::Signoz>::default()),
+/// What `plugin` draws on `surface`: its pane, or its item in the top bar.
+fn panel(plugin: &str, surface: &str) -> Option<Box<dyn Panel>> {
+    match (plugin, surface) {
+        ("sikemux.rundeck", TOP_BAR) => Some(Box::<rundeck::DeployChip>::default()),
+        (_, TOP_BAR) => None,
+        ("sikemux.database", _) => Some(Box::<database::Database>::default()),
+        ("sikemux.jira", _) => Some(Box::<jira::Jira>::default()),
+        ("sikemux.linear", _) => Some(Box::<linear::Linear>::default()),
+        ("sikemux.rundeck", _) => Some(Box::<rundeck::Rundeck>::default()),
+        ("sikemux.signoz", _) => Some(Box::<signoz::Signoz>::default()),
         _ => None,
+    }
+}
+
+/// Whether `plugin` draws an item in the window's top bar.
+pub fn has_top_bar(plugin: &str) -> bool {
+    panel(plugin, TOP_BAR).is_some()
+}
+
+/// A list a plugin offers in the command palette, read from one of its views; picking a row
+/// opens the plugin's pane at the place the row's key names.
+pub struct PluginPalette {
+    pub plugin: &'static str,
+    pub id: &'static str,
+    /// The command that opens it.
+    pub title: &'static str,
+    pub placeholder: &'static str,
+    pub view: &'static str,
+    pub rows: fn(&Value) -> Vec<crate::palette::Row>,
+}
+
+/// The palettes `plugin` offers.
+pub fn palettes(plugin: &str) -> &'static [PluginPalette] {
+    match plugin {
+        "sikemux.rundeck" => rundeck::PALETTES,
+        _ => &[],
     }
 }
 
@@ -406,6 +440,28 @@ impl Host {
         );
     }
 
+    /// The project in front, by its path.
+    pub fn project(&self, cx: &App) -> Option<String> {
+        let bench = self.bench.upgrade()?;
+        let project = bench.read(cx).project()?;
+        Some(project.path.to_string_lossy().into_owned())
+    }
+
+    /// Whether the pointer is over the window's top bar.
+    pub fn hovered(&self, cx: &App) -> bool {
+        self.bench
+            .upgrade()
+            .is_some_and(|bench| bench.read(cx).top_bar_hovered)
+    }
+
+    /// Opens the plugin's pane, or brings it its next arrival, at the place `at` names.
+    pub fn open_pane_at(&self, at: String, cx: &mut App) {
+        let plugin = self.plugin.clone();
+        if let Some(bench) = self.bench.upgrade() {
+            bench.update(cx, |bench, cx| bench.open_plugin_at(&plugin, at, cx));
+        }
+    }
+
     /// The host whose core the pane asks.
     pub fn place(&self) -> &crate::hosts::Place {
         self.target.place()
@@ -492,7 +548,7 @@ impl PluginPane {
     pub fn new(target: &str, slot: String, core: Target, bench: WeakEntity<Workbench>) -> Self {
         let (plugin, surface) = parts(target);
         Self {
-            panel: panel(plugin),
+            panel: panel(plugin, surface),
             host: Host {
                 plugin: plugin.to_owned(),
                 surface: surface.to_owned(),
@@ -511,6 +567,14 @@ impl PluginPane {
     pub fn parts<P: Panel>(&mut self) -> Option<(&mut P, &mut Host)> {
         let panel: &mut dyn Any = self.panel.as_deref_mut()?;
         Some((panel.downcast_mut::<P>()?, &mut self.host))
+    }
+
+    /// Shows the place `at` names, as a palette row picked for this plugin says it.
+    pub fn open_at(&mut self, at: &str, cx: &mut Context<Self>) {
+        if let Some(panel) = &mut self.panel {
+            panel.open_at(at, &mut self.host, cx);
+        }
+        cx.notify();
     }
 
     /// The core says some of the plugin's views changed.
@@ -534,7 +598,10 @@ impl Render for PluginPane {
             |pane| &pane.host.faces,
             cx,
         );
-        div().size_full().flex().flex_col().child(drawn)
+        match self.host.surface.as_str() {
+            TOP_BAR => div().flex().items_center().child(drawn),
+            _ => div().size_full().flex().flex_col().child(drawn),
+        }
     }
 }
 

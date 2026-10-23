@@ -29,6 +29,7 @@ const START_PREVIEW: &str = "project.preview.start:";
 const OPEN_PREVIEW: &str = "project.preview.open:";
 const CONFIG_INVALID: &str = "project.config.invalid";
 const ACTION: &str = "project.action:";
+const PLUGIN_PALETTE: &str = "plugin.palette:";
 
 /// A command no shortcut does: its id, name, what it does and its category.
 type Standalone = (&'static str, &'static str, &'static str, &'static str);
@@ -248,6 +249,7 @@ impl Workbench {
                 }),
         );
         rows.extend(self.task_rows());
+        rows.extend(self.plugin_palette_rows());
         if let Some(Strip::Project(_)) = self.strip() {
             let custom = self
                 .preferences()
@@ -299,6 +301,12 @@ impl Workbench {
                     .or_else(|| row.key.strip_prefix(RESTART_TASK))
                 {
                     bench.start_task(task, cx);
+                } else if let Some(palette) = row
+                    .key
+                    .strip_prefix(PLUGIN_PALETTE)
+                    .and_then(plugin_palette)
+                {
+                    bench.open_plugin_palette(palette, window, cx);
                 } else if let Some(execution) = row.key.strip_prefix(STOP_TASK) {
                     bench.stop_run(execution);
                 } else if let Some(project) = row.key.strip_prefix(START_PREVIEW) {
@@ -611,4 +619,37 @@ impl Workbench {
         })
         .detach();
     }
+}
+
+impl Workbench {
+    /// A command for each palette an enabled plugin offers.
+    fn plugin_palette_rows(&self) -> Vec<Row> {
+        self.read("plugins")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|plugin| plugin["enabled"].as_bool() == Some(true))
+            .filter_map(|plugin| {
+                let name = plugin["name"].as_str()?.to_owned();
+                let palettes = crate::plugin_pane::palettes(plugin["id"].as_str()?);
+                Some(palettes.iter().map(move |palette| {
+                    Row::new(
+                        format!("{PLUGIN_PALETTE}{}/{}", palette.plugin, palette.id),
+                        palette.title,
+                    )
+                    .meta(name.clone())
+                    .also(&name)
+                }))
+            })
+            .flatten()
+            .collect()
+    }
+}
+
+/// The plugin palette a command's key names, as `<plugin>/<palette>`.
+fn plugin_palette(key: &str) -> Option<&'static crate::plugin_pane::PluginPalette> {
+    let (plugin, id) = key.split_once('/')?;
+    crate::plugin_pane::palettes(plugin)
+        .iter()
+        .find(|palette| palette.id == id)
 }

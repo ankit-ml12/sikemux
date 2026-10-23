@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, App, AppContext, ClickEvent, Context, Div, Entity,
@@ -15,9 +17,9 @@ use gpui_kit::{
 };
 use serde_json::{json, Value};
 use sikemux_wire::rundeck::{
-    ActivityPage, DeployForm, ExecutionPage, GroupNode, JobOption, JobPage, JobRow, Jobs, LiveRun,
-    OptionChoice, OptionKind, OutputLine, OutputTick, Plan, Run, RunCheck, RunNotice, RunStep,
-    Section, StatusKind, StepState, TermColor, Tone, Tree,
+    ActivityPage, DeployForm, DeployTarget, EnvTone, ExecutionPage, GroupNode, JobCatalog,
+    JobOption, JobPage, JobRow, Jobs, LiveRun, OptionChoice, OptionKind, OutputLine, OutputTick,
+    Plan, Run, RunCheck, RunNotice, RunStep, Section, StatusKind, StepState, TermColor, Tone, Tree,
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
@@ -211,6 +213,268 @@ impl Panel for Rundeck {
             )
             .into_any_element()
     }
+
+    fn open_at(&mut self, at: &str, _: &mut Host, _: &mut Context<PluginPane>) {
+        let Some((job, deploy)) = place_of(at) else {
+            return;
+        };
+        self.project = job.project.clone();
+        self.group = job.group.clone();
+        self.form = None;
+        self.stack = vec![match deploy {
+            Some(branch) => Level::Deploy {
+                job,
+                branch,
+                given: BTreeMap::new(),
+            },
+            None => Level::Job(job),
+        }];
+    }
+}
+
+/// Where a palette row or the top bar opens the pane: a job, or its run form with a branch.
+fn place_key(job: &JobRef, deploy: Option<Option<&str>>) -> String {
+    json!({
+        "project": job.project,
+        "jobId": job.job_id,
+        "name": job.name,
+        "group": job.group,
+        "deploy": deploy.map(|branch| json!({ "branch": branch })),
+    })
+    .to_string()
+}
+
+#[allow(clippy::type_complexity)]
+fn place_of(key: &str) -> Option<(JobRef, Option<Option<String>>)> {
+    let place: Value = serde_json::from_str(key).ok()?;
+    let job = JobRef {
+        project: place["project"].as_str()?.to_owned(),
+        job_id: place["jobId"].as_str()?.to_owned(),
+        name: place["name"].as_str()?.to_owned(),
+        group: place["group"].as_str().map(str::to_owned),
+    };
+    let deploy = place["deploy"].as_object().map(|deploy| {
+        deploy
+            .get("branch")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    Some((job, deploy))
+}
+
+/// The palettes Rundeck offers: every job in every project, to open one.
+pub const PALETTES: &[super::PluginPalette] = &[super::PluginPalette {
+    plugin: "sikemux.rundeck",
+    id: "rundeck.jobs",
+    title: "Find a Rundeck job",
+    placeholder: "search Rundeck jobs…",
+    view: "catalogView",
+    rows: job_rows,
+}];
+
+fn job_rows(catalog: &Value) -> Vec<crate::palette::Row> {
+    let Ok(catalog) = serde_json::from_value::<JobCatalog>(catalog.clone()) else {
+        return Vec::new();
+    };
+    catalog
+        .jobs
+        .into_iter()
+        .map(|place| {
+            let job = JobRef {
+                project: place.project.clone(),
+                job_id: place.job_id.clone(),
+                name: place.name.clone(),
+                group: place.group.clone(),
+            };
+            let folder = place.group.clone().unwrap_or_default();
+            crate::palette::Row::new(place_key(&job, None), place.name.clone())
+                .meta(match folder.is_empty() {
+                    true => place.project.clone(),
+                    false => format!("{} · {folder}", place.project),
+                })
+                .also(&place.place)
+        })
+        .collect()
+}
+
+/// The top bar's word on where the project in front deploys, and a menu to pick the place,
+/// deploy there or check out what runs there.
+#[derive(Default)]
+pub struct DeployChip {
+    /// The pointer has been over the top bar, so asking the deploy server is worth it.
+    looked: bool,
+    /// The job picked from the menu, for each project.
+    picked: HashMap<String, (String, String)>,
+}
+
+impl Panel for DeployChip {
+    fn render(
+        &mut self,
+        host: &mut Host,
+        _: &mut Window,
+        cx: &mut Context<PluginPane>,
+    ) -> AnyElement {
+        let nothing = || div().into_any_element();
+        if host.signed_in(cx) != Some(true) {
+            return nothing();
+        }
+        let Some(project) = host.project(cx) else {
+            return nothing();
+        };
+        self.looked |= host.hovered(cx);
+        if !self.looked {
+            return nothing();
+        }
+        let folder = project
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let picked = self
+            .picked
+            .get(&project)
+            .map(|(project, job_id)| json!({ "project": project, "jobId": job_id }));
+        let target = host
+            .view(
+                "deployTargetView",
+                json!({ "folder": folder, "picked": picked }),
+                cx,
+            )
+            .read::<DeployTarget>();
+        let Ok(Some(target)) = target else {
+            return nothing();
+        };
+        let Some(active) = target.active.clone() else {
+            return nothing();
+        };
+        let t = Tokens::get(cx).clone();
+        let dot = |tone: EnvTone| match tone {
+            EnvTone::Prod => t.danger,
+            EnvTone::Staging => t.warn,
+            EnvTone::Preprod => t.cmd,
+            EnvTone::Dev => t.live,
+            EnvTone::Other => t.text_tertiary,
+        };
+        let pane = cx.weak_entity();
+        let menu_target = target.clone();
+        let repo = project.clone();
+        let checkout = repo_branch(host, cx);
+        KitButton::new("rundeck-deploy-chip")
+            .ghost()
+            .compact()
+            .h(px(24.))
+            .px(px(6.))
+            .gap(px(6.))
+            .rounded(theme::RADIUS_1)
+            .tooltip(target.summary.clone())
+            .child(ui::icon(Icon::Rundeck, 12.).text_color(t.text_tertiary))
+            .child(div().size(px(6.)).rounded_full().bg(dot(active.tone)))
+            .child(
+                ui::text(active.place.clone(), 11.5, FontWeight::NORMAL)
+                    .text_color(t.text_primary)
+                    .max_w(px(260.))
+                    .truncate(),
+            )
+            .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |popup, _, _| {
+                let target = &menu_target;
+                let mut popup = popup.min_w(px(280.));
+                if target.jobs.len() > 1 {
+                    popup = popup.label("Deploy to");
+                    for job in &target.jobs {
+                        let (pane, project, picked) = (
+                            pane.clone(),
+                            repo.clone(),
+                            (job.project.clone(), job.job_id.clone()),
+                        );
+                        popup = popup.item(
+                            PopupMenuItem::new(job.place.clone())
+                                .checked(
+                                    Some(&job.job_id)
+                                        == target.active.as_ref().map(|active| &active.job_id),
+                                )
+                                .on_click(move |_, _, cx| {
+                                    let _ = pane.update(cx, |pane, cx| {
+                                        if let Some((chip, _)) = pane.parts::<DeployChip>() {
+                                            chip.picked.insert(project.clone(), picked.clone());
+                                        }
+                                        cx.notify();
+                                    });
+                                }),
+                        );
+                    }
+                    popup = popup.separator();
+                }
+                let Some(active) = &target.active else {
+                    return popup;
+                };
+                let job = JobRef {
+                    project: active.project.clone(),
+                    job_id: active.job_id.clone(),
+                    name: active.name.clone(),
+                    group: active.group.clone(),
+                };
+                let deploy_label = match (target.runs_branch, &checkout) {
+                    (false, _) => format!("Run on {}", active.place),
+                    (true, Some(branch)) => format!("Deploy {branch}"),
+                    (true, None) => "Deploy".to_owned(),
+                };
+                let at = place_key(
+                    &job,
+                    Some(checkout.as_deref().filter(|_| target.runs_branch)),
+                );
+                let opener = pane.clone();
+                popup = popup.item(
+                    PopupMenuItem::new(deploy_label)
+                        .icon(Icon::Rundeck)
+                        .on_click(move |_, _, cx| {
+                            let _ = opener
+                                .update(cx, |pane, cx| pane.host.open_pane_at(at.clone(), cx));
+                        }),
+                );
+                if let Some(deployed) = target.deployed_branch.clone() {
+                    let (pane, repo) = (pane.clone(), repo.clone());
+                    let here = checkout.as_deref() == Some(deployed.as_str());
+                    popup = popup.item(
+                        PopupMenuItem::new(format!("Check out {deployed}"))
+                            .icon(Icon::Checkout)
+                            .disabled(here)
+                            .on_click(move |_, _, cx| {
+                                let _ = pane.update(cx, |pane, cx| {
+                                    let checked = pane.host.core(
+                                        "git.checkoutSmart",
+                                        json!({ "repo": repo, "branch": deployed }),
+                                    );
+                                    super::after::<DeployChip, _>(
+                                        checked,
+                                        |_, host, done, cx| {
+                                            if let Err(failure) = done {
+                                                host.said(&failure.titled("Check out"), cx);
+                                            }
+                                        },
+                                        cx,
+                                    );
+                                });
+                            }),
+                    );
+                }
+                if let Some(last) = &target.last_run {
+                    popup = popup.separator().label(last.text.clone());
+                }
+                popup
+            })
+            .into_any_element()
+    }
+}
+
+/// The branch checked out in the project in front, as the git pane last read it.
+fn repo_branch(host: &Host, cx: &App) -> Option<String> {
+    let bench = host.bench().upgrade()?;
+    let overview = bench.read(cx).read("git-overview")?;
+    overview["status"]["branch"]
+        .as_str()
+        .filter(|branch| !branch.is_empty())
+        .map(str::to_owned)
 }
 
 // ---- the projects' tree ------------------------------------------------------

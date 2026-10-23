@@ -64,6 +64,15 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
         .border_b_1()
         .border_color(t.border)
         .window_control_area(WindowControlArea::Drag)
+        .on_hover(cx.listener(|bench, hovered: &bool, _, cx| {
+            if bench.top_bar_hovered == *hovered {
+                return;
+            }
+            bench.top_bar_hovered = *hovered;
+            for bar in bench.plugin_bars.values() {
+                bar.update(cx, |_, cx| cx.notify());
+            }
+        }))
         .child(div().w(px(80.)).flex_none())
         .child(div().flex_1())
         .child(crate::top_place::view(bench, cx))
@@ -74,6 +83,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .items_center()
                 .gap(px(8.))
                 .pr(px(16.))
+                .children(bench.plugin_bars.values().cloned())
                 .children(
                     git_chip(bench, cx)
                         .map(|chip| [Some(chip), ci_glyph(bench, cx), Some(separator(cx))])
