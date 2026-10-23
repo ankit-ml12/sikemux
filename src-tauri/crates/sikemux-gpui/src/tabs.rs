@@ -966,13 +966,15 @@ fn strip_tab(
                 && bench
                     .editors
                     .is_dirty(&crate::editor::FileKey::new(bench.place(), target));
-            base.mark(
-                ui::icon(kind_icon(kind), 13.).text_color(if kind == PaneKind::Terminal {
+            base.mark(ui::picture(
+                view_icon(kind, target),
+                13.,
+                if kind == PaneKind::Terminal {
                     t.live
                 } else {
                     t.text_tertiary
-                }),
-            )
+                },
+            ))
             .tail(unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)))
         }
         None => base,
@@ -1211,6 +1213,18 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
                     .or_else(|| session.title.clone())
             })
             .map_or_else(|| "Terminal".into(), SharedString::from),
+        Some((PaneKind::Plugin, target)) => {
+            let id = crate::plugin_pane::parts(target).0;
+            bench
+                .read("plugins")
+                .and_then(Value::as_array)
+                .and_then(|plugins| plugins.iter().find(|plugin| plugin["id"] == id))
+                .and_then(|plugin| plugin["name"].as_str())
+                .map_or_else(
+                    || "Plugin".into(),
+                    |name| SharedString::from(name.to_owned()),
+                )
+        }
         Some((kind, _)) => kind_label(kind).into(),
         None => "".into(),
     }
@@ -1220,6 +1234,16 @@ pub fn first_view(pane: &Pane) -> Option<(PaneKind, &String)> {
     match pane {
         Pane::View { kind, target, .. } => Some((*kind, target)),
         Pane::Split { panes, .. } => panes.iter().find_map(first_view),
+    }
+}
+
+/// A view's icon: its plugin's mark for a plugin's pane, else its kind's.
+pub fn view_icon(kind: PaneKind, target: &str) -> Icon {
+    match kind {
+        PaneKind::Plugin => {
+            crate::rail::plugin_mark(crate::plugin_pane::parts(target).0).unwrap_or(Icon::Window)
+        }
+        kind => kind_icon(kind),
     }
 }
 

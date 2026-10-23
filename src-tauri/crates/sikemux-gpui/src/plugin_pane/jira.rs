@@ -224,20 +224,22 @@ impl Panel for Jira {
         div()
             .size_full()
             .flex()
+            .overflow_hidden()
             .child(
                 div()
-                    .w(px(224.))
+                    .w(px(212.))
                     .flex_none()
                     .h_full()
                     .border_r_1()
                     .border_color(t.border)
                     .child(sidebar),
             )
-            .child(div().flex_1().min_w(px(260.)).h_full().child(middle))
+            .child(div().flex_1().min_w_0().h_full().child(middle))
             .children(detail.map(|detail| {
                 div()
-                    .w(px(460.))
-                    .flex_none()
+                    .flex_1()
+                    .min_w_0()
+                    .max_w(px(560.))
                     .h_full()
                     .border_l_1()
                     .border_color(t.border)
@@ -631,7 +633,7 @@ impl Jira {
                     .border_t_1()
                     .border_color(t.border)
                     .child(
-                        ui::Row::new("jira-sign-out", format!("Sign out of {site}"))
+                        ui::Row::new("jira-sign-out", "Sign out")
                             .quiet()
                             .mark(22., ui::icon(Icon::LogOut, 14.).text_color(t.text_tertiary))
                             .on_click(listen::<Jira, _>(cx, move |jira, host, _, _, cx| {
@@ -1382,6 +1384,7 @@ impl Jira {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .gap(px(6.))
                     .child(type_mark(issue.issue_type.as_deref(), cx))

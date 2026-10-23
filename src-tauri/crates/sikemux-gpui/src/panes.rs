@@ -296,11 +296,15 @@ fn stack(
         .unwrap_or(0);
     let pills = panes.iter().enumerate().filter_map(|(at, child)| {
         let lead = first_view(child)?.to_owned();
-        let (kind, _) = crate::tabs::first_view(child)?;
-        let mark = ui::icon(crate::tabs::kind_icon(kind), 13.).text_color(match kind {
-            PaneKind::Terminal => t.live,
-            _ => t.text_tertiary,
-        });
+        let (kind, target) = crate::tabs::first_view(child)?;
+        let mark = ui::picture(
+            crate::tabs::view_icon(kind, target),
+            13.,
+            match kind {
+                PaneKind::Terminal => t.live,
+                _ => t.text_tertiary,
+            },
+        );
         Some(
             ui::Tab::new(
                 SharedString::from(format!("stack-{lead}")),
