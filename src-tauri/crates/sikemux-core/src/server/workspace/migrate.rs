@@ -229,6 +229,7 @@ fn from_app(saved: &mut Saved, app: &Value, earlier: &Earlier) {
                 fallbacks: stopped
                     .map(|stopped| stopped.fallbacks.clone())
                     .unwrap_or_default(),
+                program: None,
             });
         }
     }

@@ -223,6 +223,8 @@ pub(crate) struct Launch {
     pub resume_id: Option<String>,
     pub account: Option<ChatAccount>,
     pub fallbacks: Vec<ChatAccount>,
+    /// The program to run in place of the launcher's own, for a chat a client started with one.
+    pub program: Option<PathBuf>,
 }
 
 /// Starts the chat `chosen` describes, with `by` hearing it from its first
@@ -233,7 +235,10 @@ pub(crate) async fn start(
     chosen: Launch,
 ) -> CoreResult<Arc<chat::Chat>> {
     let launcher = core.workspaces.launcher(&chosen.launcher)?;
-    let program = launcher.agent.program().await?;
+    let program = match chosen.program {
+        Some(program) => program,
+        None => launcher.agent.program().await?,
+    };
     let launcher_id = launcher.id.clone();
     let owner = core.clone();
     let (cwd, model_provider, model) = (chosen.cwd, chosen.model_provider, chosen.model);
@@ -282,6 +287,7 @@ pub(crate) async fn start_agent(
         resume_id: agent.resume_id,
         account: kept.account,
         fallbacks: kept.fallbacks,
+        program: kept.program,
     };
     start(core, by, chosen).await
 }
@@ -352,6 +358,7 @@ async fn start_new(
         resume_id: choice.resume_id,
         account: None,
         fallbacks: Vec::new(),
+        program: None,
     };
     let kind = chosen
         .launcher

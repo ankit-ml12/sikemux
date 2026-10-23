@@ -400,7 +400,7 @@ async fn stopping_a_chat_ends_it() {
         .is_err());
     client.acp_stop("agent-f".into()).await.expect("stop");
     assert!(client.acp_list().await.expect("list").is_empty());
-    let refused = client
+    client
         .acp_prompt(
             "agent-f".into(),
             None,
@@ -409,8 +409,8 @@ async fn stopping_a_chat_ends_it() {
             Vec::new(),
         )
         .await
-        .expect_err("prompt after stop");
-    assert!(refused.to_string().contains("not running"), "{refused}");
+        .expect("a send starts the stopped chat again, on the program it ran");
+    assert_eq!(client.acp_list().await.expect("list").len(), 1);
 
     client
         .acp_start(chat_launch("agent-g", "workspace-write"))

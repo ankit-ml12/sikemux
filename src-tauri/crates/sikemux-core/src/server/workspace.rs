@@ -97,6 +97,10 @@ pub(crate) struct Kept {
     pub account: Option<ChatAccount>,
     #[serde(default)]
     pub fallbacks: Vec<ChatAccount>,
+    /// The program a client started the chat with itself, rather than one of the launchers,
+    /// which it wakes with again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<PathBuf>,
 }
 
 /// What survives a restart of the core.
@@ -761,6 +765,7 @@ impl Workspaces {
                     agent: agent.clone(),
                     account: None,
                     fallbacks: Vec::new(),
+                    program: None,
                 }),
             }
             Ok(agent)
@@ -928,7 +933,7 @@ impl Workspaces {
             if known.asleep {
                 self.set_asleep(&known.id, false);
             }
-            return;
+            return self.note_program(chat);
         }
         let lead = chat
             .origin
@@ -986,6 +991,23 @@ impl Workspaces {
         if let Err(error) = self.put_agent(draft) {
             eprintln!("sikemux core: a chat that started was not kept: {error}");
         }
+        self.note_program(chat);
+    }
+
+    /// Keeps the program a chat runs when a client chose it rather than a launcher, so a wake
+    /// starts that same program and never one found on its own.
+    fn note_program(&self, chat: &chat::Chat) {
+        let program = chat
+            .origin
+            .launcher
+            .is_none()
+            .then(|| chat.launch.program.clone());
+        let _ = self.change(|saved| {
+            if let Some(kept) = saved.kept_mut(chat.agent_id()) {
+                kept.program = program;
+            }
+            Ok(())
+        });
     }
 
     /// Keeps how the agent's chat runs as it stops, so it can be woken on its
