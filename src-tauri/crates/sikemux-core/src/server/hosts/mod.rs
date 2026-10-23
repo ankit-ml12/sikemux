@@ -21,6 +21,7 @@ pub(crate) mod probe;
 pub(crate) mod route;
 pub(crate) mod spawn;
 pub(crate) mod team;
+pub(crate) mod transfer;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;

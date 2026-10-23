@@ -1300,12 +1300,14 @@ impl Chats {
     /// Stops the chat only when nothing in it is running: no turn, question,
     /// subagent or background task. Answers whether it stopped.
     pub(crate) fn stop_if_idle(&self, agent_id: &str) -> bool {
-        let Some(chat) = self.get(agent_id) else {
-            return true;
-        };
-        let busy =
-            matches!(chat.state_now(), "working" | "blocked") || chat.feed.running_tasks() > 0;
-        !busy && self.stop(agent_id)
+        self.get(agent_id).is_none() || (!self.at_work(agent_id) && self.stop(agent_id))
+    }
+
+    /// Whether the agent's chat is in a turn or has tasks running.
+    pub(crate) fn at_work(&self, agent_id: &str) -> bool {
+        self.get(agent_id).is_some_and(|chat| {
+            matches!(chat.state_now(), "working" | "blocked") || chat.feed.running_tasks() > 0
+        })
     }
 
     pub(crate) fn stop_all(&self) {

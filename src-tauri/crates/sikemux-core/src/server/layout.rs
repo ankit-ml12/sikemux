@@ -830,6 +830,97 @@ pub(crate) async fn duplicate_tab(core: &Arc<Core>, params: TabParams) -> CoreRe
     })
 }
 
+/// Lays out at the end of `project`'s strip the tabs another host's project at `from` had,
+/// carried to this one: its agents swapped for the ones made here from theirs, paths moved
+/// under this project's folder, terminals opened afresh, and what holds nothing here left out.
+/// The tabs the new agents got of their own give way to these. Answers how many it laid out,
+/// and how many still held something here to lay out.
+pub(crate) async fn lay_out_carried(
+    core: &Arc<Core>,
+    project: &str,
+    from: &str,
+    tabs: Vec<Tab>,
+    agents: &HashMap<String, String>,
+) -> CoreResult<(usize, usize)> {
+    let to = core
+        .workspaces
+        .project_info(project)
+        .ok_or_else(|| CoreError::from("that project is not on this host"))?
+        .path
+        .to_string_lossy()
+        .into_owned();
+    let made: HashSet<&str> = agents.values().map(String::as_str).collect();
+    let shown = |kind: PaneKind, target: &str| match kind {
+        PaneKind::Agent => made.contains(target),
+        PaneKind::Desk | PaneKind::Browser | PaneKind::InstallSikemux | PaneKind::Unknown => false,
+        _ => true,
+    };
+    let mut carried = Vec::new();
+    for mut tab in tabs {
+        moved_into(&mut tab.pane, agents, from, &to);
+        if keep_shown(&mut tab.pane, &shown) {
+            carried.push(tab);
+        }
+    }
+    let mut shells = Vec::new();
+    for _ in 0..carried
+        .iter()
+        .map(|tab| terminals_in(&tab.pane))
+        .sum::<usize>()
+    {
+        shells.push(super::spare::project_shell(core, project).await?);
+    }
+    let mut shells = shells.into_iter();
+    let wanted = carried.len();
+    let carried: Vec<Tab> = carried
+        .into_iter()
+        .map(|tab| Tab {
+            id: format!("tab-{}", uuid::Uuid::new_v4().simple()),
+            title: tab.title,
+            preview: false,
+            pane: copied(&tab.pane, &mut shells),
+        })
+        .collect();
+    edit(core, |layout| {
+        let strip = strip(layout, project)?;
+        strip.tabs.retain(|tab| {
+            !matches!(&tab.pane, Pane::View { kind: PaneKind::Agent, target, .. } if made.contains(target.as_str()))
+        });
+        let room = MAX_TABS.saturating_sub(strip.tabs.len());
+        let laid = wanted.min(room);
+        strip.tabs.extend(carried.into_iter().take(room));
+        Ok((laid, wanted))
+    })
+}
+
+/// `pane` pointing at what it showed as this host knows it: an agent by the one made here,
+/// a path under `from` by the same path under `to`.
+fn moved_into(pane: &mut Pane, agents: &HashMap<String, String>, from: &str, to: &str) {
+    match pane {
+        Pane::View { kind, target, .. } => match kind {
+            PaneKind::Agent => {
+                if let Some(made) = agents.get(target.as_str()) {
+                    target.clone_from(made);
+                }
+            }
+            PaneKind::Terminal => {}
+            _ => {
+                if let Some(rest) = target
+                    .strip_prefix(from)
+                    .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+                {
+                    *target = format!("{to}{rest}");
+                }
+            }
+        },
+        Pane::Split { panes, .. } => {
+            for pane in panes {
+                moved_into(pane, agents, from, to);
+            }
+        }
+    }
+}
+
 fn terminals_in(pane: &Pane) -> usize {
     match pane {
         Pane::View { kind, .. } => usize::from(*kind == PaneKind::Terminal),
