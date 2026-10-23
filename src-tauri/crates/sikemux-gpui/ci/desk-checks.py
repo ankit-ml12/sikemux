@@ -52,6 +52,7 @@ class Run:
     # The world the app runs in.
 
     def set_up(self):
+        agent_guard()
         if self.root.exists():
             shutil.rmtree(self.root)
         for folder in ("home", "data", "project", "site", "bin"):
@@ -104,6 +105,8 @@ class Run:
         core = subprocess.Popen([self.core_exe, "--socket", self.socket, "--data-dir", self.root / "data"],
                                 env=self.env, stdout=open(self.root / "core.log", "w"), stderr=subprocess.STDOUT)
         self.processes.append(core)
+        if os.environ.get("SANDBOX_WATCH"):
+            self.processes.append(subprocess.Popen(["python3", "-I", os.environ["SANDBOX_WATCH"], str(core.pid), os.environ["SANDBOX_AGENTS"]]))
         until(lambda: self.socket.exists(), 15) or sys.exit("the core did not start; see run/core.log")
         self.agents = []
         for said in ("hello", "again"):
@@ -255,6 +258,19 @@ class Run:
     def say(self, name, word, detail):
         self.results.append((name, word, detail))
         print(f"{word} {name}: {detail}", flush=True)
+
+
+def agent_guard():
+    """Away from CI, whose runners have no agent CLIs, a run must start under the agent guard
+    (sandbox_run in /tmp/gpui-proto/sandbox-env.sh): agent wrappers first on PATH, the core
+    searching only that PATH, and a watcher for the core this run starts."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return
+    watch = os.environ.get("SANDBOX_WATCH", "")
+    wrappers = str(Path(watch).parent / "wrap") if watch else None
+    if not watch or os.environ.get("PATH", "").split(":")[0] != wrappers or os.environ.get("SIKEMUX_AGENT_SEARCH") != "path":
+        sys.exit("refusing to start a core and app outside the agent guard; run it locally as "
+                 "`. /tmp/gpui-proto/sandbox-env.sh && sandbox_run --unwatched python3 -I ci/<this script> ...`")
 
 
 def until(check, seconds=8):
