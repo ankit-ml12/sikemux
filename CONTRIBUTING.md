@@ -98,7 +98,7 @@ Some gates are floors that only move one way. Raise them when you beat them; nev
 
 - **`!important` in CSS:** the budget in `scripts/check-css-important.mjs`, checked by `pnpm lint`. Remove one and lower the budget to match.
 
-One CI job stays out of the hook: **macOS launched desktop E2E**. Run it with `pnpm test:e2e:desktop` if you touched the launch path — it builds the whole app, so the hook leaves it to CI.
+One CI job stays out of every push: **GPUI in a real window**. It runs daily and when CI is started by hand with `window` checked; start it that way if you touched how the app draws or launches.
 
 `cargo audit` reads a database that changes daily, so a push that was clean can go red later with no code change. That is the advisory database moving, not your commit.
 
