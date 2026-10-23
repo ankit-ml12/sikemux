@@ -58,23 +58,22 @@ fn folders(groups: &[Option<&str>]) -> (Vec<GroupNode>, u32) {
         }
         let mut node = &mut root;
         for segment in segments {
-            let at = match node.children.iter().position(|child| child.name == segment) {
-                Some(at) => at,
-                None => {
-                    let path = match node.path.is_empty() {
-                        true => segment.to_owned(),
-                        false => format!("{}/{segment}", node.path),
-                    };
-                    node.children.push(GroupNode {
-                        name: segment.to_owned(),
-                        path,
-                        count: 0,
-                        children: Vec::new(),
-                    });
-                    node.children.len() - 1
-                }
+            if !node.children.iter().any(|child| child.name == segment) {
+                let path = match node.path.is_empty() {
+                    true => segment.to_owned(),
+                    false => format!("{}/{segment}", node.path),
+                };
+                node.children.push(GroupNode {
+                    name: segment.to_owned(),
+                    path,
+                    count: 0,
+                    children: Vec::new(),
+                });
+            }
+            let Some(child) = node.children.iter_mut().find(|child| child.name == segment) else {
+                break;
             };
-            node = &mut node.children[at];
+            node = child;
             node.count += 1;
         }
     }
@@ -130,9 +129,14 @@ fn jobs_of(
             .as_ref()
             .is_some_and(|run| crate::shape::is_live(run.status.as_deref()))
     }) {
-        let segments = group_segments(cell.group.as_deref());
-        for depth in 0..=segments.len() {
-            live_paths.insert(segments[..depth].join("/"));
+        let mut path = String::new();
+        live_paths.insert(path.clone());
+        for segment in group_segments(cell.group.as_deref()) {
+            if !path.is_empty() {
+                path.push('/');
+            }
+            path.push_str(segment);
+            live_paths.insert(path.clone());
         }
     }
     let mut cells: Vec<MatrixCell> = cells
@@ -144,8 +148,9 @@ fn jobs_of(
     let rows: Vec<JobRow> = cells.iter().map(row).collect();
 
     let below = |cell: &MatrixCell| -> Vec<String> {
-        group_segments(cell.group.as_deref())[here.len()..]
-            .iter()
+        group_segments(cell.group.as_deref())
+            .into_iter()
+            .skip(here.len())
             .map(|segment| (*segment).to_owned())
             .collect()
     };

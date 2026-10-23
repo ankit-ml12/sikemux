@@ -368,19 +368,22 @@ fn fill_option_refs(url: &str, values: &BTreeMap<String, String>) -> String {
     const CLOSE: &str = ".value}";
     let mut out = String::with_capacity(url.len());
     let mut rest = url;
-    while let Some(at) = rest.find(OPEN) {
-        let after = &rest[at + OPEN.len()..];
-        let name_end = after.find(['.', '}']).unwrap_or(after.len());
-        let name = &after[..name_end];
-        if name.is_empty() || !after[name_end..].starts_with(CLOSE) {
-            out.push_str(&rest[..at + OPEN.len()]);
-            rest = after;
-            continue;
+    while let Some((before, after)) = rest.split_once(OPEN) {
+        out.push_str(before);
+        let reference = after
+            .split_once(CLOSE)
+            .filter(|(name, _)| !name.is_empty() && !name.contains(['.', '}']));
+        match reference {
+            Some((name, next)) => {
+                let value = values.get(name).map_or("", String::as_str);
+                out.extend(utf8_percent_encode(value, URI_COMPONENT));
+                rest = next;
+            }
+            None => {
+                out.push_str(OPEN);
+                rest = after;
+            }
         }
-        out.push_str(&rest[..at]);
-        let value = values.get(name).map_or("", String::as_str);
-        out.extend(utf8_percent_encode(value, URI_COMPONENT));
-        rest = &after[name_end + CLOSE.len()..];
     }
     out.push_str(rest);
     out
