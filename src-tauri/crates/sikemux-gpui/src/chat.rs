@@ -271,6 +271,29 @@ impl Row for ChatRow {
                 .nth(doc)
                 .is_some_and(|part| matches!(part, ChatPart::Text { .. }))
     }
+
+    fn doc_name(&self, doc: usize) -> Option<&str> {
+        self.doc_parts().nth(doc)
+    }
+
+    fn doc_named(&self, name: &str) -> Option<usize> {
+        self.doc_parts().position(|part| part == name)
+    }
+}
+
+impl ChatRow {
+    /// The parts with a doc, in the order `docs` gives them; a message from another agent's
+    /// letters are not parts, so it has none.
+    fn doc_parts(&self) -> impl Iterator<Item = &str> {
+        let parts = match self.message.letters.is_empty() {
+            true => self.message.parts.as_slice(),
+            false => &[],
+        };
+        parts
+            .iter()
+            .map(ChatPart::id)
+            .filter(|part| self.doc(part).is_some())
+    }
 }
 
 fn letter_doc(ix: usize) -> String {
@@ -981,12 +1004,12 @@ impl Chat {
         })
     }
 
-    /// A later page, a `ChatPage` as JSON with `newerAfter`, which is null once the page
-    /// reached the live rows; the chat then attaches again from its mark, which it answers.
+    /// A later page, a `ChatPage` as JSON, whose `newer_after` is none once it reached the live
+    /// rows; the chat then attaches again from its mark, which it answers.
     pub fn later_page(&mut self, agent: &str, page: Value, cx: &mut App) -> Option<ChatAsk> {
         self.asked_later = false;
-        let newer_after = page["newerAfter"].as_u64();
         let page = serde_json::from_value::<ChatPage>(page).ok()?;
+        let newer_after = page.newer_after;
         self.newer_after = newer_after;
         let rows = page.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| {
@@ -996,6 +1019,21 @@ impl Chat {
             agent: agent.to_owned(),
             since: self.mark.clone(),
         })
+    }
+
+    /// The rows around a place found, which take the place of those held; the chat follows only
+    /// its head until the reader pages back down to its live rows.
+    pub fn around_page(&mut self, page: Value, cx: &mut App) {
+        let Ok(page) = serde_json::from_value::<ChatPage>(page) else {
+            return;
+        };
+        self.older_before = page.older_before;
+        self.newer_after = page.newer_after;
+        (self.detached, self.asked_earlier, self.asked_later) = (true, false, false);
+        let rows = page.rows.into_iter().map(ChatRow::new).collect();
+        self.transcript.update(cx, |transcript, cx| {
+            transcript.push(Change::Reset(rows), cx)
+        });
     }
 
     /// Drops the rows far from what the reader sees, so a chat holds about the same however long
@@ -1659,11 +1697,15 @@ pub fn pane(
                 .cached(StyleRefinement::default().size_full()),
         )
         .children(scrollbar)
-        .children(
-            chat.finding
+        .children(chat.finding.as_ref().map(|finding| {
+            let transcript = chat.transcript.read(cx);
+            let (found, local) = (transcript.found(), transcript.found_at());
+            let local = local.map(|(row, part, nth)| (row.to_owned(), part.to_owned(), nth));
+            let local = local
                 .as_ref()
-                .map(|finding| find::bar(&agent.id, finding, chat.transcript.read(cx).found(), cx)),
-        )
+                .map(|(row, part, nth)| (row.as_str(), part.as_str(), *nth));
+            find::bar(&agent.id, finding, found, local, cx)
+        }))
         .children(chat.transcript.read(cx).away().then(|| {
             let latest = cx.listener({
                 let agent = agent.id.clone();

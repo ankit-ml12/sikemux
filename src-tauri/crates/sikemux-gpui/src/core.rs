@@ -88,6 +88,13 @@ pub enum ChatNews {
     Page(Value),
     /// Later rows, a `ChatPage` as JSON with `newerAfter`.
     Later(Value),
+    /// The rows around a place found, a `ChatPage` as JSON.
+    Around(Value),
+    /// What `chatFind` answered the ask numbered `asked`.
+    Found {
+        asked: u64,
+        found: Value,
+    },
     /// A `ToolDetail` as JSON.
     Detail {
         tool: String,
@@ -320,6 +327,19 @@ pub enum ChatAsk {
         feed: String,
         after: u64,
     },
+    /// The rows around event `around`, from the core's `chatPage`, to show a place found.
+    Around {
+        agent: String,
+        feed: String,
+        around: u64,
+    },
+    /// Looks through the whole chat with the core's `chatFind`, whose `params` the find bar
+    /// makes; `asked` is the bar's count of what it asked, so a late answer is known.
+    Find {
+        agent: String,
+        params: Value,
+        asked: u64,
+    },
     /// Words for the agent. The core starts a stopped chat on its own session to take them,
     /// and `attach` then attaches the window that was not attached yet.
     Prompt {
@@ -385,6 +405,8 @@ impl ChatAsk {
             | ChatAsk::Detach { agent }
             | ChatAsk::History { agent, .. }
             | ChatAsk::Later { agent, .. }
+            | ChatAsk::Around { agent, .. }
+            | ChatAsk::Find { agent, .. }
             | ChatAsk::Prompt { agent, .. }
             | ChatAsk::Keep { agent, .. }
             | ChatAsk::Cancel { agent }
@@ -1347,10 +1369,10 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             feed,
             before,
             turns,
-        } => {
-            let page = client.acp_history(agent.clone(), feed, before, turns).await;
-            (agent, ChatNews::Page(page.unwrap_or_default()))
-        }
+        } => match client.acp_history(agent.clone(), feed, before, turns).await {
+            Ok(page) => (agent, ChatNews::Page(page)),
+            Err(error) => return eprintln!("sikemux: the core gave no earlier page: {error}"),
+        },
         ChatAsk::Later { agent, feed, after } => {
             let asked = json!({ "agentId": agent, "feed": feed, "after": after });
             match client.call("chatPage", asked).await {
@@ -1358,6 +1380,25 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
                 Err(error) => return eprintln!("sikemux: the core gave no later page: {error}"),
             }
         }
+        ChatAsk::Around {
+            agent,
+            feed,
+            around,
+        } => {
+            let asked = json!({ "agentId": agent, "feed": feed, "around": around });
+            match client.call("chatPage", asked).await {
+                Ok(page) => (agent, ChatNews::Around(page)),
+                Err(error) => return eprintln!("sikemux: the core gave no page there: {error}"),
+            }
+        }
+        ChatAsk::Find {
+            agent,
+            params,
+            asked,
+        } => match client.call("chatFind", params).await {
+            Ok(found) => (agent, ChatNews::Found { asked, found }),
+            Err(error) => return eprintln!("sikemux: the core's find failed: {error}"),
+        },
         ChatAsk::Detach { agent } => return report("detach", client.acp_detach(agent).await),
         ChatAsk::Prompt {
             agent,

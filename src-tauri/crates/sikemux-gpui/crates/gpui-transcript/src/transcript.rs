@@ -43,6 +43,15 @@ pub trait Row: 'static {
     fn findable(&self, _doc: usize) -> bool {
         true
     }
+
+    /// The host's name for the doc `docs` gives at `doc`, and the doc a name is.
+    fn doc_name(&self, _doc: usize) -> Option<&str> {
+        None
+    }
+
+    fn doc_named(&self, _name: &str) -> Option<usize> {
+        None
+    }
 }
 
 /// One change to a transcript's rows, as a host maps its own feed onto them.
@@ -104,6 +113,9 @@ pub struct Transcript<R: Row> {
     stale: Stale,
     /// The place found the reader stepped to, while it is brought into view.
     chasing: Option<Chase>,
+    /// A place found to go to once the rows hold it: the row, its doc by name, and which of the
+    /// places found in that doc.
+    pending: Option<(SharedString, SharedString, usize)>,
     /// Where each row was last placed in the window, as its texts were.
     row_tops: Rc<RefCell<HashMap<SharedString, Pixels>>>,
     /// How a row that just arrived rises into place, when rows do.
@@ -188,6 +200,7 @@ impl<R: Row> Transcript<R> {
             current: 0,
             stale: Stale::None,
             chasing: None,
+            pending: None,
             row_tops: Rc::default(),
             rise: None,
             arrived: Vec::new(),
@@ -236,6 +249,59 @@ impl<R: Row> Transcript<R> {
     /// Which place found the reader is on, counting from 0, and how many there are.
     pub fn found(&self) -> (usize, usize) {
         (self.current, self.hits.len())
+    }
+
+    /// Where the place the reader is on is: its row, its doc by name, and which of the places
+    /// found in that doc.
+    pub fn found_at(&self) -> Option<(&str, &str, usize)> {
+        let hit = self.hits.get(self.current)?;
+        let (row, doc) = (hit.at.0, hit.at.1);
+        let nth = self.hits[..self.current]
+            .iter()
+            .filter(|before| before.at.0 == row && before.at.1 == doc)
+            .count();
+        let row = self.rows.get(row)?;
+        Some((row.id(), row.doc_name(doc)?, nth))
+    }
+
+    /// Whether the rows hold `row` now.
+    pub fn holds(&self, row: &str) -> bool {
+        self.position(row).is_some()
+    }
+
+    /// Goes to the `nth` place found in doc `doc` of row `row`, or its last, once the rows hold
+    /// that row, and brings it into view.
+    pub fn go_to(
+        &mut self,
+        row: SharedString,
+        doc: SharedString,
+        nth: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending = Some((row, doc, nth));
+        cx.notify();
+    }
+
+    fn resolve_pending(&mut self, cx: &mut Context<Self>) {
+        let Some((row, doc, nth)) = self.pending.as_ref() else {
+            return;
+        };
+        let Some(ix) = self.position(row) else {
+            return;
+        };
+        let (doc, nth) = (self.rows[ix].doc_named(doc), *nth);
+        self.pending = None;
+        let Some(doc) = doc else {
+            return;
+        };
+        let in_doc: Vec<usize> = (0..self.hits.len())
+            .filter(|&hit| self.hits[hit].at.0 == ix && self.hits[hit].at.1 == doc)
+            .collect();
+        if let Some(&hit) = in_doc.get(nth).or(in_doc.last()) {
+            self.current = hit;
+            self.reveal();
+            cx.emit(FoundChanged);
+        }
     }
 
     /// Brings the place the reader is on into view as the transcript next draws.
@@ -547,7 +613,7 @@ impl<R: Row> Transcript<R> {
                 ask(window, cx);
             }
         }
-        if near_bottom && away && !self.asked_later {
+        if near_bottom && !self.asked_later {
             self.asked_later = true;
             if let Some(ask) = self.on_reach_bottom.clone() {
                 ask(window, cx);
@@ -660,6 +726,7 @@ impl<R: Row> Render for Transcript<R> {
         self.apply(cx);
         if self.query.is_some() {
             self.find_again(cx);
+            self.resolve_pending(cx);
         } else {
             self.stale = Stale::None;
         }
