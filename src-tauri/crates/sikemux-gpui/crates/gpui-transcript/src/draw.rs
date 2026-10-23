@@ -426,11 +426,15 @@ impl Element for Tall {
 type Looks = Vec<(Range<usize>, HighlightStyle)>;
 
 /// How many lines of a code block are laid out together.
-const CODE_CHUNK: usize = 16;
+const CODE_CHUNK: usize = 8;
+/// How many parts of a code block not laid out before are laid out in one frame; the rest
+/// stay blank at their height until the next, so a page of new blocks spreads over frames.
+const NEW_CHUNKS_PER_FRAME: usize = 1;
 
 /// A code block's text, which does not wrap, so each line's place is known before it is laid
 /// out: only the lines in view are, a few at a time, as a long block shows only some in its box.
 struct Code {
+    id: ElementId,
     text: SharedString,
     looks: Looks,
     shown: Option<(Key, Rc<RefCell<Vec<Shown>>>)>,
@@ -458,7 +462,7 @@ impl Element for Code {
     type PrepaintState = Vec<AnyElement>;
 
     fn id(&self) -> Option<ElementId> {
-        None
+        Some(self.id.clone())
     }
 
     fn source_location(&self) -> Option<&'static Location<'static>> {
@@ -494,7 +498,7 @@ impl Element for Code {
 
     fn prepaint(
         &mut self,
-        _: Option<&GlobalElementId>,
+        id: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         line_height: &mut Pixels,
@@ -511,7 +515,28 @@ impl Element for Code {
         if view.bottom() < bounds.top() || view.top() > bounds.bottom() {
             return drawn;
         }
-        for chunk in first..=last {
+        let (chunks, waiting) = match id {
+            Some(id) => window.with_element_state::<HashSet<usize>, _>(id, |laid, _| {
+                let mut laid = laid.unwrap_or_default();
+                let mut new = 0;
+                let now: Vec<usize> = (first..=last)
+                    .filter(|chunk| {
+                        if laid.contains(chunk) {
+                            return true;
+                        }
+                        new += 1;
+                        new <= NEW_CHUNKS_PER_FRAME && laid.insert(*chunk)
+                    })
+                    .collect();
+                ((now, new > NEW_CHUNKS_PER_FRAME), laid)
+            }),
+            None => ((first..=last).collect(), false),
+        };
+        // The view is drawn again however the next frame comes, so the rest are laid out then.
+        if waiting {
+            cx.notify(window.current_view());
+        }
+        for chunk in chunks {
             let lines = chunk * CODE_CHUNK..((chunk + 1) * CODE_CHUNK).min(starts.len());
             let Some(&start) = starts.get(lines.start) else {
                 break;
@@ -713,6 +738,7 @@ impl Draw<'_> {
             (key, selecting.shown.clone())
         });
         Code {
+            id: self.id("lines"),
             text: rich.text.clone(),
             looks,
             shown,
