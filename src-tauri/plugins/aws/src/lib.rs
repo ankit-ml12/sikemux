@@ -134,6 +134,7 @@ impl Plugin for Aws {
         Box::pin(async move {
             match method {
                 "profiles" => reply(auth::profiles().await),
+                "accountView" => reply(views::account(ctx).await),
                 "agentProfileView" => {
                     let AgentProfilePicksParams { project } = params(input)?;
                     reply(views::agent_profiles(ctx, project.as_deref()))

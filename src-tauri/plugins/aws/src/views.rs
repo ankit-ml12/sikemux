@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use sikemux_plugin_api::aws::{
-    AgentProfiles, Billing, BillingChange, BillingCharge, BillingMonth, Ec2, Ec2Instance,
-    EcsClusterRow, EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow, EcsTasks, Health,
-    Lambda, LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
+    Account, AccountProfile, AgentProfiles, Billing, BillingChange, BillingCharge, BillingMonth,
+    Ec2, Ec2Instance, EcsClusterRow, EcsClusters, EcsEnv, EcsServiceRow, EcsServices, EcsTaskRow,
+    EcsTasks, Health, Lambda, LambdaFunction, RuntimeFamily, S3Bucket, Sqs, SqsQueue, S3,
 };
 use sikemux_plugin_api::PluginContext;
 
@@ -498,6 +498,51 @@ fn capitalised(text: &str) -> String {
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()
     })
+}
+
+pub(crate) async fn account(ctx: &PluginContext) -> Account {
+    Account {
+        profile: agent_profile::pane_profile(ctx),
+        profiles: auth::profiles()
+            .await
+            .into_iter()
+            .map(|profile| {
+                let (title, named) = split_account(&profile.name);
+                AccountProfile {
+                    account: profile
+                        .sso_account_id
+                        .as_deref()
+                        .or(named)
+                        .map(spaced_account),
+                    title: title.to_owned(),
+                    region: profile.region,
+                    name: profile.name,
+                }
+            })
+            .collect(),
+    }
+}
+
+/// `admin-123456789012` as `admin` and its account id.
+fn split_account(name: &str) -> (&str, Option<&str>) {
+    name.rsplit_once(['-', '_'])
+        .filter(|(title, id)| {
+            !title.is_empty() && id.len() == 12 && id.chars().all(|c| c.is_ascii_digit())
+        })
+        .map_or((name, None), |(title, id)| (title, Some(id)))
+}
+
+/// `123456789012` as `1234-5678-9012`.
+fn spaced_account(id: &str) -> String {
+    let digits: Vec<char> = id.chars().collect();
+    match digits.len() == 12 && digits.iter().all(char::is_ascii_digit) {
+        true => digits
+            .chunks(4)
+            .map(|four| four.iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("-"),
+        false => id.to_owned(),
+    }
 }
 
 pub(crate) fn agent_profiles(ctx: &PluginContext, project: Option<&Path>) -> AgentProfiles {

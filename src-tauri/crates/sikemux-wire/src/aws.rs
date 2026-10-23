@@ -339,3 +339,23 @@ pub enum LogLevel {
     Error,
     Warn,
 }
+
+/// The profile the pane shows, and the profiles there are to switch to.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    pub profile: Option<String>,
+    pub profiles: Vec<AccountProfile>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountProfile {
+    pub name: String,
+    /// Its name without the account id SSO profiles often end in, such as `admin` for
+    /// `admin-123456789012`.
+    pub title: String,
+    /// `1234-5678-9012`.
+    pub account: Option<String>,
+    pub region: Option<String>,
+}

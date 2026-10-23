@@ -35,13 +35,13 @@ pub enum AwsKind {
 
 #[derive(Serialize, Clone)]
 pub struct AwsProfile {
-    name: String,
-    region: Option<String>,
-    sso_start_url: Option<String>,
-    sso_region: Option<String>,
-    sso_account_id: Option<String>,
-    sso_role_name: Option<String>,
-    kind: AwsKind,
+    pub(crate) name: String,
+    pub(crate) region: Option<String>,
+    pub(crate) sso_start_url: Option<String>,
+    pub(crate) sso_region: Option<String>,
+    pub(crate) sso_account_id: Option<String>,
+    pub(crate) sso_role_name: Option<String>,
+    pub(crate) kind: AwsKind,
 }
 
 /// Where the AWS CLI looks, so the profiles listed are the ones it can use.

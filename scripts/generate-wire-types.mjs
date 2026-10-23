@@ -144,6 +144,8 @@ const AWS_TYPES = [
   "AgentProfiles",
   "LogLine",
   "LogLevel",
+  "Account",
+  "AccountProfile",
 ];
 
 /** SigNoz's types are known as SigNoz's, as Jira's are known as Jira's. */
@@ -405,6 +407,7 @@ const LINEAR_ROOTS = ["LinearIssueList", "LinearIssueView"];
 
 /** What the AWS plugin's views hand its pane. */
 const AWS_ROOTS = [
+  "AwsAccount",
   "AwsAgentProfiles",
   "AwsBilling",
   "AwsEcsClusters",
