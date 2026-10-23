@@ -79,9 +79,10 @@ struct PaletteState {
     styles: Vec<HighlightStyle>,
     /// Texts coloured for drawing once, by language and content, in this theme.
     coloured: HashMap<(SharedString, SharedString), Arc<[LineRuns]>>,
-    /// Their texts' length, kept under `COLOURED_MAX_BYTES` by dropping the oldest.
+    /// What they hold, their texts and their colours, kept under `COLOURED_MAX_BYTES` by
+    /// dropping the oldest.
     coloured_bytes: usize,
-    coloured_order: VecDeque<(SharedString, SharedString)>,
+    coloured_order: VecDeque<((SharedString, SharedString), usize)>,
 }
 
 impl PaletteState {
@@ -98,14 +99,20 @@ impl PaletteState {
     }
 
     fn keep(&mut self, key: (SharedString, SharedString), lines: Arc<[LineRuns]>) {
-        self.coloured_bytes += key.1.len();
-        self.coloured_order.push_back(key.clone());
+        let run = std::mem::size_of::<(Range<usize>, HighlightStyle)>();
+        let bytes = key.1.len()
+            + lines
+                .iter()
+                .map(|line| std::mem::size_of::<LineRuns>() + line.capacity() * run)
+                .sum::<usize>();
+        self.coloured_bytes += bytes;
+        self.coloured_order.push_back((key.clone(), bytes));
         self.coloured.insert(key, lines);
         while self.coloured_bytes > COLOURED_MAX_BYTES {
-            let Some(oldest) = self.coloured_order.pop_front() else {
+            let Some((oldest, bytes)) = self.coloured_order.pop_front() else {
                 break;
             };
-            self.coloured_bytes -= oldest.1.len();
+            self.coloured_bytes -= bytes;
             self.coloured.remove(&oldest);
         }
     }
