@@ -42,7 +42,7 @@ import { receiveForAgent } from "../agents/agentInbox";
 import type { ChatCommandInfo, ChatRows, ContextUsage } from "./types";
 import type { OutgoingMessage } from "./queuedMessages";
 import { registerComposer } from "./draftHandoff";
-import type { PromptContext } from "../api/acp";
+import { acpApi, type PromptContext } from "../api/acp";
 import type { TrackedItem, TrackedKind } from "../codehost/tracked";
 import type { TrackedMatches } from "./TrackedSource";
 import { ContextMark } from "./ContextChip";
@@ -284,6 +284,10 @@ export function ChatComposer({
     const [attachments, setAttachments] = useState<string[]>([]);
     const attachmentsNow = useRef(attachments);
     attachmentsNow.current = attachments;
+    const begun = draft.length > 0 || attachments.length > 0;
+    useEffect(() => {
+        if (begun) void acpApi.composing(agent.id);
+    }, [begun, agent.id]);
     const [contexts, setContexts] = useState<ComposerContext[]>([]);
     const [fileTags, setFileTags] = useState<FileTag[]>([]);
     const [reading, setReading] = useState(false);

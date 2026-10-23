@@ -1,16 +1,18 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpAttachment, AcpEvent } from "../api/acp";
 import type { ChatChange, ChatMessage, ChatPart, ChatView } from "./types";
 import { moveChat } from "../agents/accounts";
 import { resetResourcesForTests } from "../state/resources";
 import type { Agent, ProviderProfile } from "../state/types";
+import { typeDraft } from "../test/draft";
 import { AgentChatPane } from "./AgentChatPane";
 
 const mocks = vi.hoisted(() => ({
     listener: null as ((event: AcpEvent) => void) | null,
     attach: vi.fn(),
     startChat: vi.fn(async () => {}),
+    prompt: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     switchAccount: vi.fn(async () => {}),
 }));
@@ -31,6 +33,7 @@ vi.mock("../api/git", () => ({
 }));
 vi.mock("../api/acp", () => ({
     acpApi: {
+        composing: vi.fn(async () => {}),
         subscribe: vi.fn(async (listener: (event: AcpEvent) => void) => {
             mocks.listener = listener;
             return () => {};
@@ -41,7 +44,7 @@ vi.mock("../api/acp", () => ({
         switchAccount: mocks.switchAccount,
         setPermissionMode: vi.fn(async () => {}),
         setConfig: vi.fn(),
-        prompt: vi.fn(async () => {}),
+        prompt: mocks.prompt,
         steer: vi.fn(),
         cancel: vi.fn(async () => {}),
         stopTask: vi.fn(),
@@ -178,11 +181,17 @@ describe("AgentChatPane with a chat the core kept", () => {
         await showsText("Still working on it and done");
     });
 
-    it("has the core start the chat when it has none, then takes it up", async () => {
+    it("leaves a chat whose agent is not running as it is, and takes it up once a message woke it", async () => {
         mocks.attach.mockResolvedValueOnce({ status: "missing" }).mockResolvedValue(live);
         renderPane();
-        await waitFor(() => expect(mocks.startChat).toHaveBeenCalledWith(agent.id));
+        const editor = screen.getByRole("textbox", { name: "Message agent" });
+        await waitFor(() => expect(editor.getAttribute("aria-placeholder")).toContain("Ask about this project"));
+        expect(mocks.startChat).not.toHaveBeenCalled();
+        typeDraft(editor, "Carry on");
+        fireEvent.keyDown(editor, { key: "Enter" });
+        await waitFor(() => expect(mocks.prompt).toHaveBeenCalledWith(agent.id, "Carry on", [], [], expect.any(String)));
         await waitFor(() => expect(mocks.attach).toHaveBeenCalledTimes(2));
+        expect(mocks.startChat).not.toHaveBeenCalled();
         expect(mocks.stop).not.toHaveBeenCalled();
     });
 

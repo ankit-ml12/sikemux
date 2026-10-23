@@ -65,6 +65,9 @@ export const acpApi = {
     /** Starts the agent's chat as the core keeps it, unless it runs already; answers once its session is ready. */
     startChat: (agentId: string): Promise<void> =>
         hostOf(agentId) ? Promise.reject(new Error("This chat has ended on its host.")) : coreCall<void>("startChat", { agentId }),
+    /** The person began writing in the chat, so a new chat's agent starts while they write. A host
+        whose core predates this does not know the call, which nobody needs to hear. */
+    composing: (agentId: string): Promise<void> => call<void>("composing", { agentId }).catch(() => undefined),
     attach: (agentId: string): Promise<AcpAttachment> => invoke<AcpAttachment>("acp_attach", onHost({ agentId }, hostOf(agentId))),
     history: (agentId: string, feed: string, before: number, turns: number): Promise<{ page: ChatPage }> =>
         ask<{ page: ChatPage }>({ op: "acpHistory", agentId, feed, before, turns }),

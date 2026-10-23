@@ -62,10 +62,14 @@ vi.mock("../api/acp", () => ({
                 mocks.eventListener = null;
             };
         }),
-        attach: vi.fn(async (): Promise<AcpAttachment> => {
-            const started = mocks.started;
+        composing: vi.fn(async () => {}),
+        attach: vi.fn(async (agentId: string): Promise<AcpAttachment> => {
+            let started = mocks.started;
+            if (!started) {
+                const seq = mocks.seq;
+                started = { head: await mocks.start(agentId), seq };
+            }
             mocks.started = null;
-            if (!started) return { status: "missing" };
             mocks.attached += 1;
             return { status: "live", view: chatView(started.head), feed: "feed-1", seq: started.seq };
         }),

@@ -68,6 +68,7 @@ export const AgentChatPane = memo(function AgentChatPane({
         agentRef,
         recovery,
         retry,
+        woke,
         changingPermissions,
         permissionMode,
         appliedMode,
@@ -131,6 +132,7 @@ export const AgentChatPane = memo(function AgentChatPane({
         show,
         unshow,
         onError: setComposerError,
+        onSent: woke,
     });
     const started = state.messages.length > 0 || Boolean(agent.resumeId);
     const worktree = useChatWorktree({

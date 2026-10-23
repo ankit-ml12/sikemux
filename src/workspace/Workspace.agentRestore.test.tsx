@@ -13,6 +13,7 @@ vi.mock("../api/acp", () => {
     const start = vi.fn(() => new Promise<never>(() => {}));
     return {
         acpApi: {
+            composing: vi.fn(async () => {}),
             subscribe: vi.fn(async () => () => {}),
             attach: vi.fn(async () => {
                 const begun = started;

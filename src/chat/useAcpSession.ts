@@ -83,6 +83,10 @@ export function useAcpSession({
        empty chat's agent picker, starts it again on the new launch. */
     const launchRef = useRef<string | null>(null);
     const reattachingRef = useRef(false);
+    /* A chat whose agent is not running stays that way when shown: only the person's message,
+       or their asking it to reconnect, starts it. */
+    const dormantRef = useRef(false);
+    const startWantedRef = useRef(false);
     const permissionMode = permissionModeOf(agent);
 
     useEffect(() => {
@@ -100,6 +104,7 @@ export function useAcpSession({
     }, [held.failure]);
 
     const retry = useCallback(() => {
+        startWantedRef.current = true;
         setRecovery(agentRef.current.resumeId ? { phase: "resuming" } : null);
         setRestartKey((value) => value + 1);
     }, []);
@@ -167,6 +172,13 @@ export function useAcpSession({
                 let attached = await acpApi.attach(current.id);
                 if (!mounted) return;
                 if (attached.status !== "live") {
+                    if (!startWantedRef.current) {
+                        dormantRef.current = true;
+                        mark = 0;
+                        setHeld((chat) => ({ ...chat, connection: "ready", permissionMode: permissionModeOf(current) }));
+                        return;
+                    }
+                    startWantedRef.current = false;
                     await workspaceSent();
                     await acpApi.startChat(current.id);
                     if (!mounted) return;
@@ -275,11 +287,20 @@ export function useAcpSession({
 
     const dismissError = useCallback(() => setDismissed(held.error ?? null), [held.error]);
 
+    /** A message reached a chat whose agent was not running, so the core started it: take it up. */
+    const woke = useCallback(() => {
+        if (!dormantRef.current) return;
+        dormantRef.current = false;
+        reattachingRef.current = true;
+        setRestartKey((value) => value + 1);
+    }, []);
+
     return {
         chat,
         agentRef,
         recovery,
         retry,
+        woke,
         changingPermissions,
         permissionMode,
         appliedMode,

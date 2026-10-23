@@ -23,6 +23,7 @@ export function usePromptQueue({
     show,
     unshow,
     onError,
+    onSent,
 }: {
     agentRef: RefObject<Agent>;
     agentId: string;
@@ -36,6 +37,7 @@ export function usePromptQueue({
     show: (text: string, paths: string[], context: OutgoingMessage["context"]) => string;
     unshow: (messageId: string) => void;
     onError: (message: string | null) => void;
+    onSent: () => void;
 }) {
     /* Only the first shows before the agent can take it. */
     const [early, setEarly] = useState<{ message: OutgoingMessage; messageId?: string }[]>([]);
@@ -48,12 +50,13 @@ export function usePromptQueue({
         async ({ text, paths, context }: OutgoingMessage, messageId?: string) => {
             try {
                 await acpApi.prompt(agentRef.current.id, text, paths, context, messageId);
+                onSent();
             } catch (error) {
                 if (messageId) unshow(messageId);
                 onError(errorText(error));
             }
         },
-        [agentRef, unshow, onError],
+        [agentRef, unshow, onError, onSent],
     );
 
     useEffect(() => {

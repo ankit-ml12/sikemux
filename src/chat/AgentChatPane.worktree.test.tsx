@@ -41,10 +41,11 @@ vi.mock("../api/core", async (importOriginal) => {
 vi.mock("../api/acp", () => ({
     acpApi: {
         subscribe: vi.fn(async () => () => {}),
-        attach: vi.fn(async (): Promise<AcpAttachment> => {
-            const started = mocks.started;
+        composing: vi.fn(async () => {}),
+        attach: vi.fn(async (agentId: string): Promise<AcpAttachment> => {
+            if (!mocks.started) await mocks.start(agentId);
             mocks.started = false;
-            return started ? { status: "live", view: readyChat, feed: "feed-1", seq: 0 } : { status: "missing" };
+            return { status: "live", view: readyChat, feed: "feed-1", seq: 0 };
         }),
         startChat: vi.fn(async (agentId: string) => {
             await mocks.start(agentId);
