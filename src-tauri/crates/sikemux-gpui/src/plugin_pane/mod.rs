@@ -23,6 +23,7 @@ use crate::theme::Tokens;
 use crate::ui;
 use crate::workbench::Workbench;
 
+mod database;
 mod jira;
 mod linear;
 
@@ -42,6 +43,7 @@ pub trait Panel: Any {
 /// The panel of `plugin`, for the plugins that draw a pane.
 fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
     match plugin {
+        "sikemux.database" => Some(Box::<database::Database>::default()),
         "sikemux.jira" => Some(Box::<jira::Jira>::default()),
         "sikemux.linear" => Some(Box::<linear::Linear>::default()),
         _ => None,
@@ -51,6 +53,7 @@ fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
 /// The surface a plugin's pane opens on, for the plugins that draw one.
 pub fn surface(plugin: &str) -> Option<&'static str> {
     match plugin {
+        "sikemux.database" => Some("browser"),
         "sikemux.jira" => Some("issues"),
         "sikemux.linear" => Some("issues"),
         _ => None,
