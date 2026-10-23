@@ -12,7 +12,9 @@
 //! changing), `long` (a chat of thousands of rows scrolled, searched and streamed
 //! into), `flood` (a terminal flooding beside a streaming chat), `repo <folder>` (a
 //! large repository's Git tab, files, search and finder), `newchat` (⌘N beside three
-//! open chats), and `soak` (`agents` for `minutes`, ten by default, watching memory).
+//! open chats), `soak` (`agents` for `minutes`, ten by default, watching memory), and
+//! `windowed` (a chat filled to `STRESS_WINDOWED_ROWS` rows, its memory once settled, and the
+//! core's find asked for its first message).
 //! Each ends by typing in the front chat's composer while its load runs. `make-repo <folder> [files]` writes a
 //! generated repository to stress `repo` with.
 
@@ -29,11 +31,12 @@ use gpui::{
     IntoElement, Keystroke, LayoutId, ParentElement, Pixels, PlatformInput, Render, ScrollDelta,
     ScrollWheelEvent, Styled, Window, WindowBounds, WindowOptions,
 };
+use gpui_transcript::Row as _;
 use serde_json::{json, Value};
 use sikemux_client::client::CoreClient;
 use sikemux_gpui::workbench::Workbench;
 use sikemux_gpui::{core, icons, theme, WINDOW_SIZE};
-use sikemux_wire::protocol::{LaunchIdentity, Pane, SpawnTarget, TerminalSpawn};
+use sikemux_wire::protocol::{ChatAttachment, LaunchIdentity, Pane, SpawnTarget, TerminalSpawn};
 
 const FRAME: Duration = Duration::from_micros(8_333);
 const PROJECT: &str = "stress";
@@ -543,6 +546,20 @@ impl Run {
         })
     }
 
+    fn row_ids(&mut self, chat: &str) -> Vec<String> {
+        let chat = chat.to_owned();
+        self.bench.read_with(&self.cx, |bench, cx| {
+            bench.chats.get(&chat).map_or_else(Vec::new, |chat| {
+                let transcript = chat.transcript.read(cx);
+                transcript
+                    .rows()
+                    .iter()
+                    .map(|row| row.id().to_owned())
+                    .collect()
+            })
+        })
+    }
+
     fn pane_of(&mut self, target: &str) -> Option<(String, String)> {
         let target = target.to_owned();
         self.bench.read_with(&self.cx, |bench, _| {
@@ -708,6 +725,87 @@ fn soak(run: &mut Run, minutes: f64) {
         "soak {minutes} min: {} · app memory over the last half {low:.0}–{high:.0} MB [headless, in-app]",
         spread(frames)
     );
+}
+
+const FIRST_PHRASE: &str = "where the windowed chat began";
+
+/// Fills a chat to `rows` rows with the window showing it, then prints the memory both hold once
+/// it settles, and what the core's find answers for a phrase only the first message holds.
+fn windowed(run: &mut Run, driver: &Arc<Driver>) {
+    let rows: usize = std::env::var("STRESS_WINDOWED_ROWS")
+        .ok()
+        .and_then(|rows| rows.parse().ok())
+        .unwrap_or(10_000);
+    let chat = driver.chat();
+    run.until(30, |run| run.front_chat().is_some());
+    let filled = Instant::now();
+    for index in 0..rows / 2 {
+        let text = match index {
+            0 => format!("message 0: {FIRST_PHRASE}"),
+            _ => format!(
+                "message {index}: the core folds each event into rows and sends only what changed"
+            ),
+        };
+        driver.prompt(&chat, text);
+        std::thread::sleep(Duration::from_millis(25));
+        if index % 50 == 0 {
+            run.frames(2);
+        }
+    }
+    // The app may hold only the chat's end, so the fill is done once its last row stops changing.
+    let (mut last, mut since) = (None, Instant::now());
+    run.until(120, |run| {
+        let now = run.row_ids(&chat).pop();
+        if now != last {
+            (last, since) = (now, Instant::now());
+        }
+        since.elapsed() > Duration::from_secs(3)
+    });
+    run.frames(240);
+    let (app, core) = run.memory();
+    let held = run.row_ids(&chat);
+    println!(
+        "windowed {rows} rows: app {app:.0} MB, core {core:.0} MB, the app holds {} rows, filled in {:.0}s",
+        held.len(),
+        filled.elapsed().as_secs_f64()
+    );
+    let feed = match driver
+        .runtime
+        .block_on(driver.client.acp_attach(chat.clone()))
+    {
+        Ok(ChatAttachment::Live { mark, .. }) => mark.feed,
+        Ok(_) => {
+            println!("windowed find: the attach answered without a mark");
+            return;
+        }
+        Err(error) => {
+            println!("windowed find: the attach failed: {error}");
+            return;
+        }
+    };
+    let asked = json!({ "agentId": chat, "feed": feed, "query": FIRST_PHRASE, "limit": 5 });
+    match driver
+        .runtime
+        .block_on(driver.client.call("chatFind", asked))
+    {
+        Ok(answer) => {
+            let hits: Vec<&str> = answer["hits"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|hit| hit["row"].as_str())
+                .collect();
+            let loaded = hits
+                .iter()
+                .filter(|row| held.iter().any(|id| id == *row))
+                .count();
+            println!(
+                "windowed find: {} hits for the first message, {loaded} in rows the app holds",
+                hits.len()
+            );
+        }
+        Err(error) => println!("windowed find: chatFind failed: {error}"),
+    }
 }
 
 fn long(run: &mut Run, driver: &Arc<Driver>) {
@@ -1017,6 +1115,7 @@ fn main() -> anyhow::Result<()> {
         "soak" => agents(&mut run, &driver, Some(minutes.unwrap_or(10.))),
         "long" => long(&mut run, &driver),
         "newchat" => new_chats(&mut run, &driver),
+        "windowed" => windowed(&mut run, &driver),
         "flood" => {
             let log = base.join("flood.log");
             if !log.exists() {
