@@ -127,34 +127,45 @@ impl RenderOnce for PaneHeader {
             .child(
                 pill(cx)
                     .min_w_0()
+                    .overflow_hidden()
                     .pl(px(8.))
                     .pr(px(4.))
                     .gap(px(8.))
-                    .children(self.mark.map(|mark| mark_box(18., mark)))
-                    .child(self.title_view.unwrap_or_else(|| {
+                    .children(self.mark.map(|mark| mark_box(18., mark).flex_none()))
+                    .children(self.title_view.or_else(|| {
                         let double_click = self.on_title_double_click;
-                        text(self.title, 13., FontWeight::MEDIUM)
-                            .id("pane-title")
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .text_color(primary)
-                            .when_some(double_click, |title, handler| {
-                                title.on_click(move |event, window, cx| {
-                                    if event.click_count() == 2 {
-                                        handler(event, window, cx)
-                                    }
+                        (!self.title.is_empty()).then(|| {
+                            text(self.title, 13., FontWeight::MEDIUM)
+                                .id("pane-title")
+                                .min_w_0()
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .text_color(primary)
+                                .when_some(double_click, |title, handler| {
+                                    title.on_click(move |event, window, cx| {
+                                        if event.click_count() == 2 {
+                                            handler(event, window, cx)
+                                        }
+                                    })
                                 })
-                            })
-                            .into_any_element()
+                                .into_any_element()
+                        })
+                    }))
+                    .children(self.name.map(|name| {
+                        meta(name, cx)
+                            .text_size(crate::theme::ui_text(12.))
+                            .min_w_0()
+                            .truncate()
                     }))
                     .children(
-                        self.name
-                            .map(|name| meta(name, cx).text_size(crate::theme::ui_text(12.))),
-                    )
-                    .children(self.actions),
+                        self.actions
+                            .into_iter()
+                            .map(|action| div().flex_none().child(action)),
+                    ),
             )
             .child(
                 div()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap(px(6.))
