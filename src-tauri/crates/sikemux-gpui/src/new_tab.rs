@@ -115,6 +115,7 @@ impl Workbench {
                 keymap::dispatch(&row.key, window, cx);
             },
         )
+        .numbered()
         .width(440.);
         self.toggle_palette(spec, window, cx);
     }

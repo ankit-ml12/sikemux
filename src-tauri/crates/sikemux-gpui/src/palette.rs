@@ -9,8 +9,9 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, list, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, FontWeight,
-    Hsla, InteractiveElement, IntoElement, KeyBinding, ListAlignment, ListState, MouseButton,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
+    Hsla, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, ListAlignment, ListState,
+    MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window,
 };
 
 use crate::icons::Icon;
@@ -173,6 +174,8 @@ pub struct Spec {
     on_stage: bool,
     /// Its groups are parted by hairlines rather than headed by their names.
     ruled: bool,
+    /// Its rows are numbered while nothing is typed, and a number's key picks its row.
+    numbered: bool,
 }
 
 /// A button beside the palette's field: its icon, what it says it does, and what it does.
@@ -218,6 +221,7 @@ impl Spec {
             choice: None,
             aside: None,
             deck: false,
+            numbered: false,
             on_stage: false,
             ruled: false,
         }
@@ -230,6 +234,11 @@ impl Spec {
 
     pub fn ruled(mut self) -> Self {
         self.ruled = true;
+        self
+    }
+
+    pub fn numbered(mut self) -> Self {
+        self.numbered = true;
         self
     }
 
@@ -329,6 +338,22 @@ pub struct Palette {
 impl Palette {
     pub fn id(&self) -> &'static str {
         self.spec.id
+    }
+
+    /// The number `line` goes by in a numbered palette while nothing is typed.
+    fn number_of(&self, line: usize, cx: &App) -> Option<usize> {
+        let numbering = self.spec.numbered && self.input.read(cx).value().is_empty();
+        let rows = self.lines[..=line.min(self.lines.len().saturating_sub(1))]
+            .iter()
+            .filter(|line| matches!(line, Line::Row(_)))
+            .count();
+        let numbered = numbering && matches!(self.lines.get(line), Some(Line::Row(_)));
+        numbered.then_some(rows).filter(|number| *number <= 9)
+    }
+
+    /// The line a number's key picks in a numbered palette while nothing is typed.
+    fn line_numbered(&self, number: usize, cx: &App) -> Option<usize> {
+        (0..self.lines.len()).find(|&line| self.number_of(line, cx) == Some(number))
     }
 
     fn filter(&mut self, query: &str) {
@@ -558,6 +583,23 @@ impl Workbench {
         self.parts.redraw(&self.parts.finder, cx);
     }
 
+    /// Picks the row a number's key names in a numbered palette while nothing is typed.
+    fn pick_numbered(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let keystroke = &event.keystroke;
+        let plain = !keystroke.modifiers.modified();
+        let Some(number) = keystroke.key.parse::<usize>().ok().filter(|_| plain) else {
+            return;
+        };
+        let line = self
+            .palette
+            .as_ref()
+            .and_then(|palette| palette.line_numbered(number, cx));
+        if let Some(line) = line {
+            cx.stop_propagation();
+            self.pick(Some(line), window, cx);
+        }
+    }
+
     fn pick(&mut self, line: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self
             .palette
@@ -638,6 +680,11 @@ pub fn overlay(
                     .flex_col()
                     .overflow_hidden()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .when(palette.spec.numbered, |float| {
+                        float.capture_key_down(cx.listener(|bench, event, window, cx| {
+                            bench.pick_numbered(event, window, cx)
+                        }))
+                    })
                     .on_action(
                         cx.listener(|bench, _: &Next, window, cx| {
                             bench.step_palette(1, window, cx)
@@ -804,6 +851,9 @@ fn line_of(bench: &Workbench, line: usize, cx: &mut Context<Workbench>) -> AnyEl
                 .on_click(
                     cx.listener(move |bench, _, window, cx| bench.pick(Some(line), window, cx)),
                 )
+        })
+        .when_some(palette.number_of(line, cx), |element, number| {
+            element.child(ui::kbd(number.to_string(), cx).flex_none())
         })
         .when_some(row.mark.clone(), |element, mark| {
             element.child(
