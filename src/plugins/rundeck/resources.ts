@@ -5,6 +5,7 @@ import { RUNDECK_PLUGIN } from "./kinds";
 import type {
     RundeckActivityPage,
     RundeckDeployForm,
+    RundeckExecutionPage,
     RundeckJobPage,
     RundeckJobs,
     RundeckOptionChoice,
@@ -18,8 +19,6 @@ export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
 export const rndProjectsR = rundeck.resource("projects", () => rundeckApi.projects(), 5 * 60_000);
 
 export const rndJobIndexR = rundeck.resource("jobIndex", () => rundeckApi.jobIndex(), 5 * 60_000);
-
-export const rndJobDetailR = rundeck.resource("jobDetail", (jobId: string) => rundeckApi.jobDetail(jobId), 60_000);
 
 /** The values an option may take, read from its values URL and kept by the core. */
 export const rndOptionValuesV = rundeck.view<[url: string], RundeckOptionChoice[]>("optionValues", (url) => ({ url }));
@@ -44,10 +43,10 @@ export const rndActivityV = rundeck.view<[project: string, max: number], Rundeck
 
 export const rndJobCellsR = rundeck.resource("jobCells", (jobs: RundeckJob[]) => rundeckApi.jobCells(jobs), 30_000);
 
-export const rndExecutionsR = rundeck.resource(
-    "executions",
-    (jobId: string, project: string, max: number) => rundeckApi.executions(jobId, project, max),
-    15_000,
+/** One run of a job, step by step, read every few seconds while it runs. */
+export const rndExecutionV = rundeck.view<[executionId: number, jobId: string, project: string], RundeckExecutionPage>(
+    "executionView",
+    (executionId, jobId, project) => ({ executionId, jobId, project }),
 );
 
 /** The form that starts a job, with the options an earlier run was given. */

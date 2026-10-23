@@ -200,6 +200,14 @@ impl Plugin for Rundeck {
                     ))
                     .await
                 }
+                "executionView" => {
+                    answer(views::execution_view(
+                        session,
+                        &saved.settings,
+                        params(input)?,
+                    ))
+                    .await
+                }
                 "deployView" => {
                     answer(form::deploy_view(session, &saved.settings, params(input)?)).await
                 }

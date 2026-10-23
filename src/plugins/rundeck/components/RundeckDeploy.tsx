@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { confirmDialog, currentBranch, git, notify } from "../../../plugin-api/host";
-import { invalidate, useResourceEnabled } from "../../../plugin-api/resources";
+import { useResourceEnabled } from "../../../plugin-api/resources";
 import { EmptyState, IconRun, IconWarning, SkeletonRows } from "../../../plugin-api/ui";
 import { errorText, formatDuration } from "../../../plugin-api/format";
 import { rundeckApi } from "../api";
 import * as cmd from "../state";
 import type { JobRef } from "../state";
-import { rndDeployV, rndExecutionsR, rndPlanV } from "../resources";
+import { rndDeployV, rndPlanV } from "../resources";
 import { localDateTimeToIso } from "../shape";
 import { watchRun } from "../runWatch";
 import { useDebounced } from "../../../plugin-api/hooks";
@@ -169,7 +169,6 @@ function RunForm({ paneId, level, active, form, onRetry }: FormProps) {
                     throw pushed ? new Error(`${branch} was pushed, but Rundeck rejected the run: ${errorText(e)}`) : e;
                 });
             if (result.recovered) notify("info", "The run request timed out, but the run was found in Rundeck.");
-            invalidate((kind, args) => kind === rndExecutionsR.kind && args[0] === level.jobId);
             watchRun(cmd.jobRefOf(level), result.id);
             cmd.rundeckReplace(paneId, { kind: "execution", ...cmd.jobRefOf(level), executionId: result.id });
         } catch (e) {

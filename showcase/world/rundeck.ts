@@ -398,6 +398,7 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
     ],
     detail: null,
   }),
+  executionView: () => executionView(),
   checkRun: ({ values }) => ({
     errors: (values as Params).BRANCH
       ? {}
@@ -618,6 +619,44 @@ function deployView(
       0,
       6,
     ),
+  };
+}
+
+function executionView() {
+  const done = workflow.steps.filter(
+    (step) => step.executionState === "SUCCEEDED",
+  ).length;
+  return {
+    executionId: execution.id,
+    status: execution.status,
+    statusKind: "running",
+    live: true,
+    user: execution.user,
+    startedAt: execution["date-started"].date,
+    endedAt: null,
+    permalink: null,
+    branch: execution.job.options.BRANCH,
+    runWord: "Deploy",
+    steps: workflow.steps.map((step, index) => ({
+      key: step.stepctx,
+      name: steps[index],
+      state:
+        step.executionState === "SUCCEEDED"
+          ? "ok"
+          : step.executionState === "RUNNING"
+            ? "running"
+            : "pending",
+      stateName: step.executionState.toLowerCase(),
+      startedAt: step.startTime,
+      endedAt: step.endTime,
+    })),
+    completed: done,
+    total: steps.length,
+    percent: Math.round((done / steps.length) * 100),
+    usualSecs: jobView(execution.job.id).usualSecs,
+    canRunAgain: true,
+    repeatOptions: execution.job.options,
+    readAgainSecs: 2,
   };
 }
 

@@ -284,3 +284,42 @@ export interface RundeckPlanCheck {
 }
 
 export type RundeckTone = "ok" | "info" | "warn" | "danger";
+
+/** One run of a job, step by step. */
+export interface RundeckExecutionPage {
+    executionId: number;
+    status: string;
+    statusKind: RundeckStatusKind;
+    live: boolean;
+    user: string | null;
+    startedAt: string | null;
+    endedAt: string | null;
+    permalink: string | null;
+    branch: string | null;
+    runWord: string;
+    steps: RundeckRunStep[];
+    completed: number;
+    total: number;
+    /** How far through its steps it is, once it has any. */
+    percent: number | null;
+    /** How long the job's runs that succeeded usually take. */
+    usualSecs: number | null;
+    /** Rundeck says which job it ran, so it can be started again from here. */
+    canRunAgain: boolean;
+    /** Its options, but the secure ones, to start it again with. */
+    repeatOptions: Record<string, string>;
+    /** While it runs, how soon the core reads it again. */
+    readAgainSecs: number | null;
+}
+
+/** A step of a run, as its page lists it. */
+export interface RundeckRunStep {
+    /** What its log lines name it by. */
+    key: string;
+    name: string;
+    state: RundeckStepState;
+    /** Rundeck's word for its state, such as `not started`. */
+    stateName: string;
+    startedAt: string | null;
+    endedAt: string | null;
+}

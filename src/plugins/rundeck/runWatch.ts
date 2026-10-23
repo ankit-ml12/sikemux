@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import { notify, notifyDesktop, swallow } from "../../plugin-api/host";
-import { invalidate } from "../../plugin-api/resources";
 import { rundeckApi, type RundeckExecution, type WatchUpdate } from "./api";
-import { branchOptionsNow, rndExecutionsR, rundeck } from "./resources";
+import { branchOptionsNow, rundeck } from "./resources";
 import { lostRunNotice, runNotice, type RunNotice } from "./runNotice";
 import { openRundeckExecution, rundeckSettings, type JobRef } from "./state";
 
@@ -29,7 +28,6 @@ export function watchRun(job: JobRef, executionId: number, hasFocus: () => boole
     const finish = (update: WatchUpdate) => {
         stream.stop();
         setWatching(executionId, false);
-        invalidate((kind, args) => kind === rndExecutionsR.kind && args[0] === job.jobId);
         void rundeck.readAgain().catch(swallow("read the runs again"));
         if (!rundeckSettings.get().notifyWhenDone) return;
         const notice = endedNotice(job, executionId, update);

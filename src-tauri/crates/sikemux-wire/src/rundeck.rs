@@ -348,3 +348,46 @@ pub struct Plan {
     pub checks: Vec<PlanCheck>,
     pub detail: Option<String>,
 }
+
+/// A step of a run, as its page lists it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunStep {
+    /// What its log lines name it by.
+    pub key: String,
+    pub name: String,
+    pub state: StepState,
+    /// Rundeck's word for its state, such as `not started`.
+    pub state_name: String,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+}
+
+/// One run of a job, step by step.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionPage {
+    pub execution_id: u64,
+    pub status: String,
+    pub status_kind: StatusKind,
+    pub live: bool,
+    pub user: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub permalink: Option<String>,
+    pub branch: Option<String>,
+    pub run_word: String,
+    pub steps: Vec<RunStep>,
+    pub completed: u32,
+    pub total: u32,
+    /// How far through its steps it is, once it has any.
+    pub percent: Option<u32>,
+    /// How long the job's runs that succeeded usually take.
+    pub usual_secs: Option<u64>,
+    /// Rundeck says which job it ran, so it can be started again from here.
+    pub can_run_again: bool,
+    /// Its options, but the secure ones, to start it again with.
+    pub repeat_options: BTreeMap<String, String>,
+    /// While it runs, how soon the core reads it again.
+    pub read_again_secs: Option<u64>,
+}

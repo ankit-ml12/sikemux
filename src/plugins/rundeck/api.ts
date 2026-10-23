@@ -8,14 +8,12 @@ const FORBIDDEN_ACTION: Record<string, string> = {
     projects: "list projects",
     jobs: "list this project's jobs",
     jobIndex: "list jobs",
-    jobDetail: "read this job",
     jobCells: "read these jobs' executions",
-    executions: "read this job's executions",
     execution: "read this execution",
     executionState: "read this execution",
     run: "run this job",
     abort: "abort this execution",
-    plan: "read this job's executions",
+    checkRun: "read this job's executions",
 };
 
 async function rndInvoke<T>(method: string, params?: unknown): Promise<T> {
@@ -84,38 +82,6 @@ export interface JobIndexEntry {
     project: string;
     jobs: RundeckJob[];
     error: string | null;
-}
-
-export interface JobOption {
-    name: string;
-    label: string | null;
-    description: string | null;
-    required: boolean;
-    secure: boolean;
-    value_exposed: boolean;
-    default: string | null;
-    values: string[] | null;
-    values_url: string | null;
-    enforced: boolean;
-    multivalued: boolean;
-    delimiter: string | null;
-    is_date: boolean;
-    date_format: string | null;
-    kind: "text" | "file";
-}
-
-export interface JobDetail {
-    id: string;
-    name: string;
-    group: string | null;
-    project: string;
-    description: string | null;
-    execution_enabled: boolean;
-    schedule_enabled: boolean;
-    scheduled: boolean;
-    node_filter: string | null;
-    options: JobOption[];
-    steps: string[];
 }
 
 export interface ExecSummary {
@@ -249,13 +215,10 @@ export const rundeckApi = {
     projects: () => rndInvoke<RundeckProject[]>("projects"),
     jobs: (project: string) => rndInvoke<RundeckJob[]>("jobs", { project }),
     jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
-    jobDetail: (jobId: string) => rndInvoke<JobDetail>("jobDetail", { jobId }),
     jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
     lists: () => backend.call<RundeckLists>("lists"),
     setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),
 
-    executions: (jobId: string, project: string, max = 25, onlySucceeded = false) =>
-        rndInvoke<RundeckExecution[]>("executions", { jobId, project, max, onlySucceeded }),
     execution: (executionId: number) => rndInvoke<RundeckExecution>("execution", { executionId }),
     executionState: (executionId: number) => rndInvoke<RundeckWorkflowState>("executionState", { executionId }),
     run: (req: RunRequest) => rndInvoke<RunResult>("run", req),

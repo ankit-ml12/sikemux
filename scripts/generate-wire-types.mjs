@@ -116,6 +116,8 @@ const RUNDECK_TYPES = [
   "Tone",
   "PlanCheck",
   "Plan",
+  "RunStep",
+  "ExecutionPage",
 ];
 
 /** Slack's types are known as Slack's. */
@@ -282,6 +284,7 @@ const RUNDECK_ROOTS = [
   "RundeckRunCheck",
   "RundeckOptionChoice",
   "RundeckPlan",
+  "RundeckExecutionPage",
 ];
 
 /** What the Slack plugin's views hand its pane. */

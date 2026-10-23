@@ -1,23 +1,4 @@
-import type { RundeckExecution } from "../api";
 import type { RundeckRun } from "../types.generated";
-
-export const startedAt = (ex: RundeckExecution): string | null => ex["date-started"]?.date ?? null;
-export const endedAt = (ex: RundeckExecution): string | null => ex["date-ended"]?.date ?? null;
-
-export function runSeconds(ex: RundeckExecution, now: number): number {
-    const start = Date.parse(startedAt(ex) ?? "");
-    const end = endedAt(ex) ? Date.parse(endedAt(ex)!) : now;
-    return Number.isNaN(start) || Number.isNaN(end) ? 0 : Math.max(0, (end - start) / 1000);
-}
-
-/** The median time of the runs that succeeded, so one stuck or instant run doesn't skew it. */
-export function usualSeconds(executions: RundeckExecution[], now: number): number | null {
-    const times = executions
-        .filter((ex) => ex.status === "succeeded")
-        .map((ex) => runSeconds(ex, now))
-        .sort((a, b) => a - b);
-    return times.length ? times[Math.floor(times.length / 2)] : null;
-}
 
 /** How long a run took, or has taken so far while it goes on. */
 export function runSecs(run: RundeckRun, now: number): number {

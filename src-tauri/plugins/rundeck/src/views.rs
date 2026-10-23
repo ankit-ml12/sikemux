@@ -7,14 +7,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use futures::future::try_join;
 use serde::Deserialize;
 use sikemux_plugin_api::rundeck::{
-    ActivityPage, GroupNode, JobPage, JobRow, Jobs, LiveRun, LiveStep, Run, Section, StatusKind,
-    StepState, Tree, TreeProject,
+    ActivityPage, ExecutionPage, GroupNode, JobPage, JobRow, Jobs, LiveRun, LiveStep, Run, RunStep,
+    Section, StatusKind, StepState, Tree, TreeProject,
 };
 
 use crate::client::Session;
 use crate::config::Settings;
 use crate::error::RundeckResult;
-use crate::executions::{self, deployed_branch, Execution};
+use crate::executions::{self, deployed_branch, Execution, WorkflowState};
 use crate::jobs;
 use crate::projects::{self, MatrixCell};
 use crate::shape::{
@@ -275,6 +275,7 @@ const JOB_RUNS: u32 = 30;
 /// How soon a page with a run going on is read again.
 const LIVE_JOB_SECS: u64 = 3;
 const LIVE_ACTIVITY_SECS: u64 = 5;
+const LIVE_EXECUTION_SECS: u64 = 2;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -325,20 +326,14 @@ pub async fn job_view(
             run.status_kind == StatusKind::Succeeded && (!runs_branch || run.branch.is_some())
         })
         .cloned();
-    let secure: BTreeSet<&str> = detail
-        .options
-        .iter()
-        .filter(|option| option.secure)
-        .map(|option| option.name.as_str())
-        .collect();
-    let repeat_options = last_good
-        .as_ref()
-        .and_then(|good| executions.iter().find(|ex| ex.id == good.execution_id))
-        .and_then(|ex| ex.job.as_ref()?.options.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|(name, _)| !secure.contains(name.as_str()))
-        .collect();
+    let repeat_options = reusable_options(
+        last_good
+            .as_ref()
+            .and_then(|good| executions.iter().find(|ex| ex.id == good.execution_id))
+            .and_then(|ex| ex.job.as_ref()?.options.clone())
+            .unwrap_or_default(),
+        &detail.options,
+    );
     let live = executions
         .iter()
         .zip(&runs)
@@ -482,28 +477,17 @@ fn live_run(execution: &Execution, run: &Run, step_names: &[String]) -> LiveRun 
         .iter()
         .enumerate()
         .map(|(at, step)| LiveStep {
-            name: step_names
-                .get(at)
-                .filter(|name| !name.is_empty())
-                .cloned()
-                .unwrap_or_else(|| format!("step {}", at + 1)),
+            name: step_name(step_names, at),
             state: step_state(step.execution_state.as_deref()),
         })
         .collect();
-    let total = state
-        .and_then(|state| state.step_count)
-        .unwrap_or(0)
-        .max(steps.len() as u32);
-    let completed = steps
-        .iter()
-        .filter(|step| !matches!(step.state, StepState::Pending | StepState::Running))
-        .count() as u32;
+    let (completed, total) = progress(state);
     LiveRun {
         execution_id: run.execution_id,
         user: run.user.clone(),
         started_at: run.started_at.clone(),
         branch: run.branch.clone(),
-        completed: completed.min(total),
+        completed,
         total,
         steps,
     }
@@ -519,10 +503,213 @@ fn step_state(state: Option<&str>) -> StepState {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionRequest {
+    execution_id: u64,
+    job_id: String,
+    project: String,
+}
+
+pub async fn execution_view(
+    session: &Session,
+    settings: &Settings,
+    request: ExecutionRequest,
+) -> RundeckResult<ExecutionPage> {
+    let (execution, state, detail, history) = futures::join!(
+        executions::execution(session, request.execution_id),
+        executions::execution_state(session, request.execution_id),
+        jobs::job_detail(session, request.job_id.clone()),
+        executions::executions(
+            session,
+            request.job_id,
+            request.project,
+            Some(JOB_RUNS),
+            None,
+        )
+    );
+    let execution = execution?;
+    let state = state.ok();
+    let detail = detail.ok();
+    let raw = execution.status.clone().or_else(|| {
+        state
+            .as_ref()
+            .and_then(|state| state.execution_state.clone())
+    });
+    let live = is_live(raw.as_deref());
+    let step_names = detail.as_ref().map_or(&[][..], |detail| &detail.steps[..]);
+    let steps: Vec<RunStep> = state
+        .as_ref()
+        .map_or(&[][..], |state| &state.steps[..])
+        .iter()
+        .enumerate()
+        .map(|(at, step)| {
+            let state_name = step.execution_state.as_deref().unwrap_or("NOT_STARTED");
+            RunStep {
+                key: step.stepctx.clone().unwrap_or_else(|| (at + 1).to_string()),
+                name: step_name(step_names, at),
+                state: step_state(Some(state_name)),
+                state_name: state_name.to_lowercase().replace('_', " "),
+                started_at: step.start_time.clone(),
+                ended_at: step.end_time.clone(),
+            }
+        })
+        .collect();
+    let (completed, total) = progress(state.as_ref());
+    let options = execution
+        .job
+        .as_ref()
+        .and_then(|job| job.options.clone())
+        .unwrap_or_default();
+    let branch =
+        deployed_branch(&execution, &settings.branch_options).filter(|branch| !branch.is_empty());
+    let usual = usual_secs(&runs_of(
+        &history.unwrap_or_default(),
+        &settings.branch_options,
+    ));
+    Ok(ExecutionPage {
+        execution_id: execution.id,
+        status: display_status(raw.as_deref(), execution.custom_status.as_deref()),
+        status_kind: status_kind(raw.as_deref()),
+        live,
+        user: execution.user.clone(),
+        started_at: execution
+            .date_started
+            .as_ref()
+            .and_then(|date| date.date.clone()),
+        ended_at: execution
+            .date_ended
+            .as_ref()
+            .and_then(|date| date.date.clone()),
+        permalink: execution.permalink.clone(),
+        run_word: if branch.is_some() { "Deploy" } else { "Run" }.to_owned(),
+        branch,
+        steps,
+        completed,
+        total,
+        percent: (total > 0).then(|| (completed * 100 + total / 2) / total),
+        usual_secs: usual,
+        can_run_again: execution.job.is_some(),
+        repeat_options: reusable_options(
+            options,
+            detail
+                .as_ref()
+                .map_or(&[][..], |detail| &detail.options[..]),
+        ),
+        read_again_secs: live.then_some(LIVE_EXECUTION_SECS),
+    })
+}
+
+/// How many of a run's steps are done, of how many; Rundeck may count steps
+/// whose state has not arrived yet.
+fn progress(state: Option<&WorkflowState>) -> (u32, u32) {
+    let steps = state.map_or(&[][..], |state| &state.steps[..]);
+    let total = state
+        .and_then(|state| state.step_count)
+        .unwrap_or(0)
+        .max(steps.len() as u32);
+    let done = steps
+        .iter()
+        .filter(|step| {
+            !matches!(
+                step_state(step.execution_state.as_deref()),
+                StepState::Pending | StepState::Running
+            )
+        })
+        .count() as u32;
+    (done.min(total), total)
+}
+
+/// A past run's options that may be shown and reused: never the secure ones.
+fn reusable_options(
+    options: BTreeMap<String, String>,
+    defined: &[jobs::JobOption],
+) -> BTreeMap<String, String> {
+    let secure: BTreeSet<&str> = defined
+        .iter()
+        .filter(|option| option.secure)
+        .map(|option| option.name.as_str())
+        .collect();
+    options
+        .into_iter()
+        .filter(|(name, _)| !secure.contains(name.as_str()))
+        .collect()
+}
+
+fn step_name(names: &[String], at: usize) -> String {
+    names
+        .get(at)
+        .filter(|name| !name.is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("step {}", at + 1))
+}
+
 /// Where Rundeck shows the job.
 pub(crate) fn job_permalink(session: &Session, project: &str, job_id: &str) -> String {
     format!(
         "{}/project/{project}/job/show/{job_id}",
         session.url.trim_end_matches('/')
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::executions::Step;
+
+    fn step(state: &str) -> Step {
+        Step {
+            execution_state: Some(state.to_owned()),
+            ..Step::default()
+        }
+    }
+
+    fn state(steps: Vec<Step>, step_count: u32) -> WorkflowState {
+        WorkflowState {
+            execution_state: Some("RUNNING".to_owned()),
+            steps,
+            step_count: Some(step_count),
+            completed: Some(false),
+        }
+    }
+
+    #[test]
+    fn counts_finished_workflow_steps() {
+        let steps = ["SUCCEEDED", "RUNNING", "NOT_STARTED", "NOT_ELIGIBLE"].map(step);
+        assert_eq!(progress(Some(&state(steps.to_vec(), 4))), (2, 4));
+    }
+
+    #[test]
+    fn uses_the_reported_step_count_when_steps_have_not_all_arrived() {
+        assert_eq!(progress(Some(&state(vec![step("SUCCEEDED")], 5))), (1, 5));
+    }
+
+    #[test]
+    fn drops_secure_options_from_a_past_run() {
+        let option = |name: &str, secure: bool| jobs::JobOption {
+            name: name.to_owned(),
+            label: None,
+            description: None,
+            required: false,
+            secure,
+            value_exposed: false,
+            default: None,
+            values: None,
+            values_url: None,
+            enforced: false,
+            multivalued: false,
+            delimiter: None,
+            is_date: false,
+            date_format: None,
+            kind: "text",
+        };
+        let past = BTreeMap::from([
+            ("A".to_owned(), "1".to_owned()),
+            ("SECRET".to_owned(), "s".to_owned()),
+        ]);
+        assert_eq!(
+            reusable_options(past, &[option("A", false), option("SECRET", true)]),
+            BTreeMap::from([("A".to_owned(), "1".to_owned())])
+        );
+    }
 }
