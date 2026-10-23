@@ -17,18 +17,44 @@ fn helper(script: &str) -> (TempDir, Arc<SimulatorManager>) {
     (dir, SimulatorManager::with_helper(path))
 }
 
-/// The helper built beside the tests, as `SIKEMUX_SIM_EXECUTABLE` names it.
-fn real_helper() -> Arc<SimulatorManager> {
-    SimulatorManager::with_helper(
-        crate::local_helper().expect("SIKEMUX_SIM_EXECUTABLE names the sikemux-sim helper"),
-    )
+/// The helper built beside the tests, as `SIKEMUX_SIM_EXECUTABLE` names it. The manager throws
+/// away what it writes to stderr, so it goes to a file the test prints if it fails.
+fn real_helper() -> (HelperErrors, Arc<SimulatorManager>) {
+    let real = crate::local_helper().expect("SIKEMUX_SIM_EXECUTABLE names the sikemux-sim helper");
+    let quoted =
+        |path: &std::path::Path| format!("'{}'", path.display().to_string().replace('\'', r"'\''"));
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("sikemux-sim");
+    let script = format!(
+        "#!/bin/sh\nexec {} \"$@\" 2>>{}\n",
+        quoted(&real),
+        quoted(&dir.path().join(HELPER_ERRORS))
+    );
+    std::fs::write(&path, script).expect("write helper");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    (HelperErrors(dir), SimulatorManager::with_helper(path))
+}
+
+const HELPER_ERRORS: &str = "helper-stderr.log";
+
+/// Prints what the real helper wrote to stderr when the test holding it fails.
+struct HelperErrors(TempDir);
+
+impl Drop for HelperErrors {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            let errors = std::fs::read_to_string(self.0.path().join(HELPER_ERRORS))
+                .unwrap_or_else(|error| format!("(none: {error})"));
+            println!("the simulator helper's stderr:\n{errors}");
+        }
+    }
 }
 
 #[test]
 #[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
 fn lists_the_real_simulators() {
     let _turn = REAL_DEVICE.locked();
-    let manager = real_helper();
+    let (_errors, manager) = real_helper();
     let devices =
         sikemux_core::runtime::block_on(manager.request("devices", serde_json::json!({})))
             .expect("devices");
@@ -744,7 +770,7 @@ done
         let _turn = REAL_DEVICE.locked();
         let fixture = std::env::var("SIKEMUX_SIM_FIXTURE")
             .expect("SIKEMUX_SIM_FIXTURE names the built SimFixture.app");
-        let manager = real_helper();
+        let (_errors, manager) = real_helper();
         let call = |method: &str, params: serde_json::Value| {
             run_now(&manager, "agent-fixture", "/", method, &params)
                 .unwrap_or_else(|error| panic!("{method}: {error}"))
@@ -844,7 +870,7 @@ done
     #[ignore = "needs the sikemux-sim helper and Xcode's simulators"]
     fn an_agent_drives_a_real_simulator() {
         let _turn = REAL_DEVICE.locked();
-        let manager = real_helper();
+        let (_errors, manager) = real_helper();
         let call = |method: &str, params: serde_json::Value| {
             run_now(&manager, "agent-real", "/tmp", method, &params)
                 .unwrap_or_else(|error| panic!("{method}: {error}"))
