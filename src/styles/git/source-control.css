@@ -1,0 +1,214 @@
+/* ---- Source control: every repository's changes, a section each ---- */
+
+.git-source-control {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.git-sc-scope {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+}
+.git-sc-scope button {
+    height: 20px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-1);
+    background: none;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+.git-sc-scope button.on {
+    background: var(--surface-active);
+    color: var(--text-primary);
+}
+.git-sc-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-1) var(--space-1) var(--space-3);
+}
+.git-sc-project + .git-sc-project {
+    margin-top: var(--space-2);
+}
+.git-sc-project-name {
+    padding: var(--space-2) var(--space-2) var(--space-1);
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.git-sc-empty,
+.git-sc-clean,
+.git-sc-busy,
+.git-sc-error {
+    margin: 0;
+    padding: var(--space-1) var(--space-3);
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+.git-sc-error {
+    color: var(--danger);
+    white-space: pre-wrap;
+}
+.git-sc-head,
+.git-sc-group-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1h);
+    height: 28px;
+    padding: 0 6px;
+    border-radius: var(--radius-2);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+    outline: none;
+}
+.git-sc-head:hover,
+.git-sc-group-head:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+.git-sc-head:focus-visible,
+.git-sc-group-head:focus-visible {
+    box-shadow: var(--focus-ring);
+}
+.git-sc-chev {
+    flex: none;
+    color: var(--text-tertiary);
+    transition: transform var(--dur-1);
+}
+.git-sc-head[aria-expanded="true"] .git-sc-chev,
+.git-sc-group-head[aria-expanded="true"] .git-sc-chev {
+    transform: rotate(90deg);
+}
+.git-sc-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    font-weight: var(--weight-medium);
+}
+.git-sc-branch {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-tertiary);
+    font-family: var(--mono);
+    font-size: var(--text-2xs);
+}
+.git-sc-acts {
+    display: none;
+    gap: 2px;
+    flex: none;
+}
+.git-sc-head:hover > .git-sc-acts,
+.git-sc-head:focus-within > .git-sc-acts,
+.git-sc-group-head:hover > .git-sc-acts {
+    display: flex;
+}
+.git-sc-acts .git-row-act:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.git-sc-default {
+    color: var(--warn);
+}
+.git-sc-count {
+    flex: none;
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--surface-active);
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+    text-align: center;
+}
+.git-sc-body {
+    padding: var(--space-1) 0 var(--space-2) var(--space-4);
+}
+.git-sc-message {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    margin: 0 var(--space-1) var(--space-1) 0;
+    padding: 3px 3px 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    background: var(--surface-sunken, transparent);
+}
+.git-sc-message:focus-within {
+    border-color: var(--acc);
+}
+.git-sc-message textarea {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 22px;
+    max-height: 160px;
+    padding: 2px 0;
+    border: 0;
+    outline: 0;
+    resize: vertical;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--ui);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    field-sizing: content;
+}
+.git-sc-message textarea::placeholder {
+    color: var(--text-disabled);
+}
+.git-sc-commit {
+    display: flex;
+    gap: 1px;
+    margin: 0 var(--space-1) var(--space-1) 0;
+}
+.git-sc-primary {
+    flex: 1 1 auto;
+    height: 26px;
+    border: 0;
+    border-radius: var(--radius-2);
+    background: var(--acc);
+    color: var(--on-accent);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+}
+.git-sc-primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+}
+.git-sc-primary:disabled {
+    opacity: 0.45;
+}
+.git-sc-commit .git-sc-primary:first-child:not(:last-child) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.git-sc-more {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+.git-sc-more svg {
+    transform: rotate(90deg);
+}
+.git-sc-group {
+    margin-top: var(--space-1);
+}
+.git-sc-group-head {
+    height: 24px;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+.git-sc-file {
+    padding-left: 20px;
+}

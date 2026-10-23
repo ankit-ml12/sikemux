@@ -46,7 +46,6 @@ import {
     IconFetch,
     IconFile,
     IconGit,
-    IconStar,
     IconKeyboard,
     IconLink,
     IconLogLines,
@@ -69,6 +68,7 @@ import { SwipePages } from "../ui/SwipePages";
 import { withShortcut } from "../commands/useShortcutLabel";
 import { GitCmdLogBar } from "./GitCmdLogBar";
 import { GitComposer } from "./GitComposer";
+import { SourceControl } from "./SourceControl";
 import { AuthorAvatar } from "./AuthorAvatar";
 import { GitGraph } from "./GitGraph";
 import { GitModalRenderer } from "./GitModalRenderer";
@@ -147,7 +147,7 @@ function GitWorkbench({
     repo: string;
     active: boolean;
     fetching: boolean;
-    onLeaveRepo: (() => void) | null;
+    onLeaveRepo: () => void;
 }) {
     const paneRootRef = useRef<HTMLDivElement>(null);
     const storedView = useStore((s) => s.gitViews[paneId]);
@@ -1689,14 +1689,12 @@ function GitWorkbench({
     const sideHead = (
         <div className="git-side-head">
             <div className="git-side-title">
-                {onLeaveRepo && (
-                    <Tooltip label="Back to the repositories in this folder">
-                        <button type="button" className="git-foot-btn git-back" onClick={onLeaveRepo}>
-                            <IconChevron size={11} className="git-back-icon" />
-                            {basenameOf(repo)}
-                        </button>
-                    </Tooltip>
-                )}
+                <Tooltip label="Every repository's changes">
+                    <button type="button" className="git-foot-btn git-back" onClick={onLeaveRepo}>
+                        <IconChevron size={11} className="git-back-icon" />
+                        {basenameOf(repo)}
+                    </button>
+                </Tooltip>
                 <Tooltip label="Switch branch">
                     <button type="button" className="git-foot-btn git-switch" onClick={(event) => openBranchPicker(event.currentTarget)}>
                         <IconGit size={13} />
@@ -1887,73 +1885,6 @@ function MoreButton({
     );
 }
 
-function GitRepoPicker({ paneId, root, active }: { paneId: string; root: string; active: boolean }) {
-    const discovered = useCachedResourceEnabled(active && !!root, gitDiscoveredReposR, root || "");
-    const repos = discovered.data ?? [];
-    const chosen = useStore((s) => s.defaultGitRepos[root]);
-
-    if (discovered.status === "loading" && !discovered.data) {
-        return (
-            <div className="git-pane git-repo-picker">
-                <SkeletonRows rows={4} />
-            </div>
-        );
-    }
-
-    if (repos.length === 0) {
-        return (
-            <div className="git-pane git-repo-picker">
-                <EmptyState
-                    tone="error"
-                    icon={<IconWarning size={14} />}
-                    title="Not a repository"
-                    message={
-                        discovered.status === "error"
-                            ? (discovered.error ?? "could not read this folder")
-                            : `No repository at ${root}, and none in the folders directly inside it.`
-                    }
-                />
-            </div>
-        );
-    }
-
-    return (
-        <div className="git-pane git-repo-picker">
-            <div className="git-toolbar">
-                <span className="git-tb-status">
-                    <IconGit size={13} className="git-tb-icon" />
-                    <span className="git-tb-branch">{basenameOf(root)}</span>
-                    <span className="git-tb-changed">{repos.length === 1 ? "1 repository inside" : `${repos.length} repositories inside`}</span>
-                </span>
-            </div>
-            <ul className="git-repo-list">
-                {repos.map((entry) => (
-                    <li key={entry.path} className="git-repo-item">
-                        <button type="button" className="git-repo-row" onClick={() => cmd.setGitView(paneId, { repo: entry.path, listing: false })}>
-                            <IconGit size={13} className={`git-repo-icon${entry.changes > 0 ? " dirty" : ""}`} />
-                            <span className="git-repo-name">{entry.name}</span>
-                            <span className="git-repo-branch">{entry.branch || "no commits"}</span>
-                            {entry.ahead > 0 && <span className="git-repo-sync">{entry.ahead}↑</span>}
-                            {entry.behind > 0 && <span className="git-repo-sync">{entry.behind}↓</span>}
-                            <span className={`git-repo-changes${entry.changes > 0 ? " dirty" : ""}`}>{entry.changes > 0 ? entry.changes : "—"}</span>
-                        </button>
-                        <Tooltip label={chosen === entry.path ? "Opened by default; click to stop" : "Open this one by default in this project"}>
-                            <button
-                                type="button"
-                                className={`git-repo-default${chosen === entry.path ? " on" : ""}`}
-                                aria-pressed={chosen === entry.path}
-                                aria-label="Open by default"
-                                onClick={() => cmd.setDefaultGitRepo(root, chosen === entry.path ? null : entry.path)}>
-                                <IconStar size={12} />
-                            </button>
-                        </Tooltip>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
-
 /**
  * Whether the pane has come to rest on screen. A switch slides the screen in,
  * and fetching, re-rendering and repainting during that slide is what drops
@@ -1981,6 +1912,7 @@ export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd:
     const fetching = useSettled(visible);
     const selectedRepo = useStore((s) => s.gitViews[paneId]?.repo ?? null);
     const listing = useStore((s) => s.gitViews[paneId]?.listing ?? false);
+    const sourceControl = useStore((s) => s.gitViews[paneId]?.sourceControl ?? false);
     const chosen = useStore((s) => s.defaultGitRepos[cwd]);
     const rootOverview = useCachedResourceEnabled(fetching && !!cwd && !selectedRepo, gitOverviewR, cwd || "");
     const settledRoot = useRef<{ cwd: string; missing: boolean } | null>(null);
@@ -1991,7 +1923,8 @@ export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd:
     const discovered = useCachedResourceEnabled(fetching && rootMissing && !selectedRepo, gitDiscoveredReposR, cwd || "");
     const fallback = rootMissing && discovered.data ? defaultRepoAmong(chosen, discovered.data) : null;
 
-    if (!selectedRepo && rootMissing && (listing || !fallback)) return <GitRepoPicker paneId={paneId} root={cwd} active={fetching} />;
+    if (sourceControl || (!selectedRepo && rootMissing && (listing || !fallback)))
+        return <SourceControl paneId={paneId} cwd={cwd} active={fetching} />;
     const repo = selectedRepo ?? fallback ?? cwd;
     return (
         <GitWorkbench
@@ -1999,7 +1932,7 @@ export function GitPane({ paneId, cwd, active, visible }: { paneId: string; cwd:
             repo={repo}
             active={active}
             fetching={fetching}
-            onLeaveRepo={repo !== cwd ? () => cmd.setGitView(paneId, { repo: null, listing: true }) : null}
+            onLeaveRepo={() => cmd.setGitView(paneId, { repo: null, listing: true, sourceControl: true })}
         />
     );
 }
