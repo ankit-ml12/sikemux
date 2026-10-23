@@ -2733,6 +2733,7 @@ impl Signoz {
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
         let mut asked = self.trace_search(settings);
+        let show_service = !asked.contains_key("service");
         asked.insert("limit".into(), json!(TRACE_PAGE));
         let key = Value::Object(asked.clone()).to_string();
         let columns = div()
@@ -2744,7 +2745,9 @@ impl Signoz {
             .border_color(t.border)
             .child(div().w(px(96.)).child(ui::caps("Time", cx)))
             .child(div().w(px(52.)).child(ui::caps("Status", cx)))
-            .child(div().w(px(130.)).child(ui::caps("Service", cx)))
+            .when(show_service, |head| {
+                head.child(div().w(px(130.)).child(ui::caps("Service", cx)))
+            })
             .child(div().flex_1().child(ui::caps("Operation", cx)))
             .child(div().w(px(180.)).child(ui::caps("Duration", cx)));
         let page = match host
@@ -2819,12 +2822,14 @@ impl Signoz {
                             t.text_tertiary
                         })),
                 )
-                .child(
-                    div()
-                        .w(px(130.))
-                        .flex_none()
-                        .child(ui::meta(trace.service.clone(), cx).truncate()),
-                )
+                .when(show_service, |row| {
+                    row.child(
+                        div()
+                            .w(px(130.))
+                            .flex_none()
+                            .child(ui::meta(trace.service.clone(), cx).truncate()),
+                    )
+                })
                 .child(
                     ui::mono(trace.name.clone(), 11.5, cx)
                         .text_color(t.text_primary)
@@ -2954,8 +2959,9 @@ impl Signoz {
             .border_b_1()
             .border_color(t.border)
             .child(
-                Button::new("signoz-trace-back", "Back", Variant::Outline)
-                    .icon(Icon::Chevron)
+                IconButton::new("signoz-trace-back", Icon::Chevron, "Back to the traces")
+                    .turned(std::f32::consts::PI)
+                    .small()
                     .on_click(listen::<Signoz, _>(cx, |signoz, _, _, _, cx| {
                         signoz.trace = None;
                         cx.notify();
