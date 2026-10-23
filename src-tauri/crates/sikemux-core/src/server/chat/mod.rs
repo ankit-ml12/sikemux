@@ -1729,6 +1729,9 @@ fn start(
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
+    if waits_for_person {
+        chat.feed.wait_for_person();
+    }
     chat.unstarted.store(waits_for_person, Ordering::Release);
     launch(
         core,

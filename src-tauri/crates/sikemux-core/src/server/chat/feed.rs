@@ -1313,6 +1313,8 @@ struct Inner {
     /// The folder the chat's agent works in, and where its edits sit in their files,
     /// for each fold made for it.
     work: Option<(PathBuf, Place)>,
+    /// A new chat whose agent waits for the person: clients take it up before it starts.
+    waits_for_person: bool,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1420,6 +1422,7 @@ impl Feed {
                 holding: false,
                 queued: Vec::new(),
                 work: None,
+                waits_for_person: false,
             }),
         })
     }
@@ -1488,6 +1491,7 @@ impl Feed {
                 holding: false,
                 queued: Vec::new(),
                 work: None,
+                waits_for_person: false,
             }),
         })
     }
@@ -1882,7 +1886,7 @@ impl Feed {
         since: Option<ChatMark>,
     ) {
         let mut inner = self.inner.locked();
-        if inner.closed || inner.start.is_none() {
+        if inner.closed || (inner.start.is_none() && !inner.waits_for_person) {
             client.respond(
                 request_id,
                 Ok(Response::ChatAttached {
@@ -1997,6 +2001,11 @@ impl Feed {
         if let Some(fold) = inner.fold.as_mut() {
             fold.offer_effort();
         }
+    }
+
+    /// Lets clients take up a new chat whose agent has not started, as it waits for the person.
+    pub(crate) fn wait_for_person(&self) {
+        self.inner.locked().waits_for_person = true;
     }
 
     pub(crate) fn set_start(&self, start: ChatStart) {
