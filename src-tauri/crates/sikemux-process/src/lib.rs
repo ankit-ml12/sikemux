@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 pub mod clock;
 pub mod files;
+pub mod jobs;
+pub mod memory_pressure;
 pub mod paths;
 pub mod sync;
 pub mod user_environment;

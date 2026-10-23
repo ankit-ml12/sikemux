@@ -140,14 +140,18 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
             .filter_map(|fd| Some((fd, handover::file_type(fd)?)))
             .collect();
         std::thread::spawn(sikemux_pty::user_shell::warm_login_shell_environment);
-        return exit_code(run_runtime(handover::resume(recovery, build)));
+        sikemux_process::jobs::own();
+        let exit = exit_code(run_runtime(handover::resume(recovery, build)));
+        sikemux_process::jobs::leave();
+        return exit;
     }
     let Some(socket) = args.socket.or_else(crate::default_socket_path) else {
         eprintln!("sikemux core: HOME is not set, so pass --socket");
         return 2;
     };
     std::thread::spawn(sikemux_pty::user_shell::warm_login_shell_environment);
-    exit_code(super::run(ServerConfig {
+    sikemux_process::jobs::own();
+    let exit = exit_code(super::run(ServerConfig {
         socket,
         idle_exit: args.idle_exit.unwrap_or(DEFAULT_IDLE_EXIT),
         cli_endpoint: args
@@ -162,7 +166,9 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         remote_direct_only: false,
         accounts_api: Some(crate::accounts::api_base()),
         secret_store: true,
-    }))
+    }));
+    sikemux_process::jobs::leave();
+    exit
 }
 
 /// `path` with the system folders added when it lacks them. A core keeps

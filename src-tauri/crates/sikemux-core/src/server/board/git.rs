@@ -5,7 +5,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use crate::git::Git;
-use crate::server::{edits, sandbox, Core};
+use crate::server::{edits, sandbox, warm, Core};
 
 const QUICK: Duration = Duration::from_secs(60);
 /// Pushing and fetching wait on the network.
@@ -155,13 +155,30 @@ pub(crate) fn inside(project: &Path, repo: &Path) -> PathBuf {
         .unwrap_or_default()
 }
 
-/// The folder beside the repository that Auto's checkouts go in.
+/// The folder beside the main checkout that every worktree of `repo` goes in,
+/// even when `repo` is itself one of those worktrees.
 pub(crate) fn worktrees_folder(repo: &Path) -> PathBuf {
-    let name = repo
+    let main = git(
+        repo,
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+            "--show-toplevel",
+        ],
+    )
+    .ok()
+    .and_then(|out| {
+        let (common, top) = out.split_once('\n')?;
+        let main = Path::new(common).parent()?;
+        (main != Path::new(top.trim())).then(|| main.to_path_buf())
+    })
+    .unwrap_or_else(|| repo.to_path_buf());
+    let name = main
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "project".to_owned());
-    repo.with_file_name(format!("{name}.worktrees"))
+    main.with_file_name(format!("{name}.worktrees"))
 }
 
 /// Cuts a worktree for a card beside the project's checkout, on a branch of
@@ -189,6 +206,7 @@ pub(super) fn add_worktree(project: &Path, slug: &str) -> Result<Tree, String> {
     let start_sha = git(&repo, &["rev-parse", &start])?;
     let (branch, path) = sandbox::cut(&repo, slug, &start_sha)?;
     sandbox::copy_included(&repo, &path);
+    warm::seed_in_background(&repo, &path);
     Ok(Tree {
         cwd: path.join(&inside),
         repo,

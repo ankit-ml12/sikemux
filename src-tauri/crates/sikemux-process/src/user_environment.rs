@@ -70,6 +70,7 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
         None => Command::new(program),
     };
     command.envs(&environment().variables);
+    command.envs(crate::jobs::variable());
     command
 }
 

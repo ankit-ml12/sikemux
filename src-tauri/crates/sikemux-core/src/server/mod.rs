@@ -85,6 +85,7 @@ mod updates;
 mod upgrade;
 mod wake;
 mod wallpaper;
+mod warm;
 mod who_wrote;
 mod window;
 mod workspace;

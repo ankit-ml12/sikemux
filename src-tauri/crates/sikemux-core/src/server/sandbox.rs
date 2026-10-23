@@ -77,10 +77,29 @@ pub(crate) fn remove(repo: &Path, path: &Path, branch: &str) {
     let _ = git(repo, &["branch", "-D", branch]);
 }
 
-/// Copies what a fresh checkout lacks but needs to run, such as `.env`, from
-/// `main` into the worktree at `tree`: what `.worktreeinclude` lists, the
-/// file Claude Code and Codex read, or else [`DEFAULT_INCLUDE`].
+/// Copies the files of [`included`] from `main` into the worktree at `tree`.
 pub(crate) fn copy_included(main: &Path, tree: &Path) {
+    for relative in included(main) {
+        let (from, to) = (main.join(&relative), tree.join(&relative));
+        if !from.is_file() || to.symlink_metadata().is_ok() {
+            continue;
+        }
+        if let Some(parent) = to.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(error) = std::fs::copy(&from, &to) {
+            eprintln!(
+                "sikemux core: {} was not copied into the worktree: {error}",
+                relative.display()
+            );
+        }
+    }
+}
+
+/// What a fresh checkout of `main` lacks but needs to run, such as `.env`:
+/// what `.worktreeinclude` lists, the file Claude Code and Codex read, or else
+/// [`DEFAULT_INCLUDE`].
+pub(crate) fn included(main: &Path) -> Vec<PathBuf> {
     let listed = std::fs::read_to_string(main.join(".worktreeinclude")).ok();
     let patterns: Vec<&str> = match &listed {
         Some(listed) => listed
@@ -96,21 +115,8 @@ pub(crate) fn copy_included(main: &Path, tree: &Path) {
         .collect();
     found.sort();
     found.dedup();
-    for relative in found.into_iter().take(MAX_INCLUDED) {
-        let (from, to) = (main.join(&relative), tree.join(&relative));
-        if !from.is_file() || to.symlink_metadata().is_ok() {
-            continue;
-        }
-        if let Some(parent) = to.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Err(error) = std::fs::copy(&from, &to) {
-            eprintln!(
-                "sikemux core: {} was not copied into the worktree: {error}",
-                relative.display()
-            );
-        }
-    }
+    found.truncate(MAX_INCLUDED);
+    found
 }
 
 /// The paths below `root` that `pattern` names, where `*` matches within one
@@ -223,7 +229,7 @@ pub(crate) fn cut_for(
     let base = git(&repo, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
     let (branch, path) = cut(&repo, name, &start_sha)?;
     copy_included(&main, &path);
-    link_installed(&main, &path);
+    super::warm::seed_in_background(&main, &path);
     let inside = if cwd.starts_with(&repo) {
         inside(cwd, &repo)
     } else {
@@ -354,7 +360,7 @@ pub(crate) async fn integration(
                 SLOW,
             )?;
             copy_included(&top, &path);
-            link_installed(&top, &path);
+            super::warm::seed(&top, &path);
         } else {
             git_in(
                 &path,
@@ -377,58 +383,6 @@ pub(crate) async fn integration(
 
 /// The integration checkout's folder in the repository's worktrees folder.
 const INTEGRATION: &str = ".integration";
-
-/// Links each `node_modules` beside a `package.json` at the top of `main`, or
-/// one folder down, into `tree`, so what runs there finds what is installed.
-/// A folder whose lockfile differs from `main`'s gets no link: a checkout of a
-/// branch with other packages would otherwise run against `main`'s.
-fn link_installed(main: &Path, tree: &Path) {
-    let mut folders = vec![PathBuf::new()];
-    if let Ok(entries) = std::fs::read_dir(main) {
-        folders.extend(
-            entries
-                .flatten()
-                .filter(|entry| entry.path().join("package.json").is_file())
-                .map(|entry| PathBuf::from(entry.file_name())),
-        );
-    }
-    for folder in folders {
-        let installed = main.join(&folder).join("node_modules");
-        let link = tree.join(&folder).join("node_modules");
-        if installed.is_dir()
-            && link.symlink_metadata().is_err()
-            && link.parent().is_some_and(Path::is_dir)
-            && same_lockfile(main, tree, &folder)
-        {
-            let _ = std::os::unix::fs::symlink(&installed, &link);
-        }
-    }
-}
-
-const LOCKFILES: [&str; 5] = [
-    "pnpm-lock.yaml",
-    "package-lock.json",
-    "yarn.lock",
-    "bun.lock",
-    "bun.lockb",
-];
-
-/// Whether `folder` resolves its packages from the same lockfile in `main` and
-/// `tree`: its own, or the top folder's for a workspace member without one.
-fn same_lockfile(main: &Path, tree: &Path, folder: &Path) -> bool {
-    let lockfile = [folder, Path::new("")].into_iter().find_map(|dir| {
-        LOCKFILES
-            .iter()
-            .map(|name| dir.join(name))
-            .find(|path| main.join(path).is_file())
-    });
-    lockfile.is_none_or(|path| {
-        matches!(
-            (std::fs::read(main.join(&path)), std::fs::read(tree.join(&path))),
-            (Ok(ours), Ok(theirs)) if ours == theirs
-        )
-    })
-}
 
 /// Runs `project`'s `worktree.onCreate` commands in the new checkout at `cwd`
 /// once the person trusts its `sikemux.json`, asked on behalf of `agent_id`
@@ -520,27 +474,5 @@ mod tests {
             parent.path().join("app.worktrees/fix-the-flaky-pty-test-2")
         );
         assert!(path.join(".git").exists());
-    }
-
-    #[test]
-    fn a_checkout_whose_lockfile_differs_from_main_gets_no_linked_packages() {
-        let main = tempfile::tempdir().unwrap();
-        let same = tempfile::tempdir().unwrap();
-        let moved = tempfile::tempdir().unwrap();
-        for dir in [main.path(), same.path(), moved.path()] {
-            std::fs::write(dir.join("package.json"), "{}").unwrap();
-        }
-        std::fs::create_dir(main.path().join("node_modules")).unwrap();
-        std::fs::write(main.path().join("pnpm-lock.yaml"), "a: 1\n").unwrap();
-        std::fs::write(same.path().join("pnpm-lock.yaml"), "a: 1\n").unwrap();
-        std::fs::write(moved.path().join("pnpm-lock.yaml"), "a: 2\n").unwrap();
-        link_installed(main.path(), same.path());
-        link_installed(main.path(), moved.path());
-        assert!(same.path().join("node_modules").is_dir());
-        assert!(moved
-            .path()
-            .join("node_modules")
-            .symlink_metadata()
-            .is_err());
     }
 }

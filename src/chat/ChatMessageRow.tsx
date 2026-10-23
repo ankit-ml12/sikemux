@@ -17,6 +17,7 @@ import {
 } from "../ui/Icons";
 import { Tooltip } from "../ui/Tooltip";
 import { AgentMark } from "../agents/AgentMark";
+import sikemuxMark from "../../brand/mark/mark-purple.svg";
 import * as cmd from "../state/commands";
 import { AnsweredQuestion } from "./AgentQuestions";
 import { rateLabel, sentLabel, sentTitle } from "./messageMeta";
@@ -284,7 +285,11 @@ function TeammateLetter({ id, letter }: { id: string; letter: AgentLetter }) {
             <div className="chat-letter-top">
                 <span className="chat-letter-head">
                     <span className="chat-work-mark" aria-hidden="true">
-                        <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
+                        {letter.cli === "sikemux" ? (
+                            <img src={sikemuxMark} width={17} height={17} alt="" />
+                        ) : (
+                            <AgentMark agentId={letter.agentId} cli={letter.cli} size={17} />
+                        )}
                     </span>
                     <span>
                         Message from{" "}

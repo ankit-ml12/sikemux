@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use super::super::board::git::{git, git_in, git_with, inside, slug, SLOW};
 use super::super::connection::blocking;
 use super::super::sandbox;
+use super::super::warm;
 use super::super::Core;
 use super::link::Received;
 use super::name_of;
@@ -481,6 +482,7 @@ pub(crate) fn checkout(
             return Err(error);
         }
     }
+    warm::seed_in_background(&repo, &path);
     Ok(Checked::Ready(
         Tree {
             agent_id: agent_id.to_owned(),
