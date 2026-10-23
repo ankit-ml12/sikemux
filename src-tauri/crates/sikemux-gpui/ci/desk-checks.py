@@ -470,7 +470,8 @@ def pills(run):
 
 def in_view(run, name):
     """Scrolls the desk's tab strip with the wheel, as a person would, until the pill `name` shows
-    whole, and returns where it is then. A pill scrolled out of view has no spot."""
+    whole, and returns where it is then. A pill scrolled out of view has no spot, and one partly
+    hidden at an edge reports only what shows, so its hidden edge is lined up with that one."""
     strip = spot(run, f"desk-tabs-{run.agent}")
     pill = spot(run, name)
     if not strip:
@@ -479,12 +480,16 @@ def in_view(run, name):
     left, right = strip[0] + 0.5, strip[0] + strip[2] - 0.5
     earlier = True
     for _ in range(16):
-        if pill and pill[0] >= left and pill[0] + pill[2] <= right:
-            return pill
         if pill:
-            earlier = pill[0] < left
+            cut_left, cut_right = pill[0] < left, pill[0] + pill[2] > right
+            if cut_left == cut_right:
+                return pill
+            earlier = cut_left
+            shift = strip[0] + strip[2] - pill[0] - pill[2] if cut_left else strip[0] - pill[0]
+        else:
+            shift = strip[2] if earlier else -strip[2]
         before = pills(run)
-        run.drive(f"scroll {x:.0f} {y:.0f} 0 {60 if earlier else -60} 5", "wait 0.3")
+        run.drive(f"scroll {x:.0f} {y:.0f} 0 {shift:.1f} 1", "wait 0.3")
         after = pills(run)
         if after == before:
             if pill:
