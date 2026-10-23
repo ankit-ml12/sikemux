@@ -1112,6 +1112,10 @@ fn target_of(pane: &Pane, view: &str) -> Option<(PaneKind, String)> {
     }
 }
 
+/// The narrowest a desk's page or file pill gets: its mark, a little of its name and its ×.
+/// Past that the strip of pills scrolls.
+const PILL_MIN: f32 = 72.;
+
 /// The desk of `agent`, as the view `view` of `tab`.
 pub fn pane(
     bench: &Workbench,
@@ -1144,6 +1148,15 @@ pub fn pane(
         .border_b_1()
         .border_color(t.border)
         .child(kinds(agent, kind, cx));
+    let mut pills = div()
+        .id("desk-pills")
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .overflow_x_scroll();
     for page in strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default() {
         let label = if !page.title.is_empty() {
             page.title.clone()
@@ -1154,10 +1167,10 @@ pub fn pane(
         };
         let (switch_agent, switch_tab) = (agent.to_owned(), page.id.clone());
         let (close_agent, close_tab) = (agent.to_owned(), page.id.clone());
-        head = head.child(
+        pills = pills.child(
             div()
                 .id(SharedString::from(format!("desk-tab-{}", page.id)))
-                .min_w_0()
+                .min_w(px(PILL_MIN))
                 .max_w(px(200.))
                 .h(px(26.))
                 .pl(px(8.))
@@ -1230,10 +1243,10 @@ pub fn pane(
         let (pick_agent, pick_item) = (agent.to_owned(), item.clone());
         let (close_agent, close_item) = (agent.to_owned(), item.clone());
         let id = format!("{agent}-{index}");
-        head = head.child(
+        pills = pills.child(
             div()
                 .id(SharedString::from(format!("desk-item-{id}")))
-                .min_w_0()
+                .min_w(px(PILL_MIN))
                 .max_w(px(200.))
                 .h(px(26.))
                 .pl(px(8.))
@@ -1285,11 +1298,14 @@ pub fn pane(
     let new_agent = agent.to_owned();
     head = head
         .child(
-            IconButton::new("desk-new-page", Icon::Plus, "New page")
-                .glyph(12.)
-                .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
+            pills.child(
+                div().flex_none().child(
+                    IconButton::new("desk-new-page", Icon::Plus, "New page")
+                        .glyph(12.)
+                        .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
+                ),
+            ),
         )
-        .child(div().flex_1())
         .child(close_desk(tab, view, cx));
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
