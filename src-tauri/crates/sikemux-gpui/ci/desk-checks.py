@@ -463,6 +463,29 @@ def spot(run, name):
     return ((run.state() or {}).get("spots") or {}).get(name)
 
 
+def in_view(run, name):
+    """Scrolls the desk's tab strip, as a person would, until the pill `name` lies clear of the
+    desk's edges and its + and close, and returns where it is then."""
+    pinned = 64
+    sign = 1
+    pill = spot(run, name)
+    for _ in range(12):
+        desk = spot(run, f"pane-Desk-{run.agent}")
+        if not (desk and pill):
+            return pill
+        left, right = desk[0], desk[0] + desk[2] - pinned
+        if pill[0] >= left and pill[0] + pill[2] <= right:
+            return pill
+        off = left - pill[0] if pill[0] < left else pill[0] + pill[2] - right
+        towards = 1 if pill[0] < left else -1
+        run.drive(f"scroll {desk[0] + desk[2] / 2:.0f} {pill[1] + pill[3] / 2:.0f} {towards * sign * 60} 0 5", "wait 0.3")
+        moved = spot(run, name) or pill
+        if (left - moved[0] if moved[0] < left else moved[0] + moved[2] - right) > off:
+            sign = -sign
+        pill = moved
+    return pill
+
+
 def middle(frame):
     left, top, width, height = frame
     return left + width / 2, top + height / 2
@@ -505,14 +528,15 @@ def df2(run):
     page, item = spot(run, f"desk-page-{run.agent}-{title}"), spot(run, f"desk-item-{run.agent}-a.txt")
     if not (page and item):
         return run.report("DF2", False, f"no spot for the page pill {title!r} ({page}) or the file pill ({item})")
+    page = in_view(run, f"desk-page-{run.agent}-{title}") or page
     x, y = middle(page)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_page = run.desk().get("front") is None
-    item = spot(run, f"desk-item-{run.agent}-a.txt") or item
+    item = in_view(run, f"desk-item-{run.agent}-a.txt") or item
     x, y = middle(item)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_file = (run.desk().get("front") or {}).get("file") == path
-    left, top, width, height = spot(run, f"desk-item-{run.agent}-a.txt") or item
+    left, top, width, height = in_view(run, f"desk-item-{run.agent}-a.txt") or item
     run.drive(f"click {left + width - 10:.0f} {top + height / 2:.0f}", "wait 1")
     desk = run.desk()
     back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
