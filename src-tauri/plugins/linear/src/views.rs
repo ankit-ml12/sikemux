@@ -50,7 +50,14 @@ pub async fn list_view(data_dir: &Path, ask: ListAsk) -> LinearResult<IssueList>
 pub async fn issue_view(data_dir: &Path, ask: IssueRef) -> LinearResult<IssueView> {
     let issue = issues::issue(data_dir, ask).await?;
     let mut states: Vec<(f64, State)> = list(&issue, "/team/states")
-        .map(|each| (each["position"].as_f64().unwrap_or_default(), state(each)))
+        .map(|each| {
+            (
+                each.pointer("/position")
+                    .and_then(Value::as_f64)
+                    .unwrap_or_default(),
+                state(each),
+            )
+        })
         .collect();
     states.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut view = IssueView {
@@ -59,27 +66,32 @@ pub async fn issue_view(data_dir: &Path, ask: IssueRef) -> LinearResult<IssueVie
         title: text(&issue, "/title"),
         url: text(&issue, "/url"),
         branch_name: text(&issue, "/branchName"),
-        state: state(&issue["state"]),
+        state: state(field(&issue, "/state")),
         states: states.into_iter().map(|(_, state)| state).collect(),
-        assignee: person(&issue["assignee"]),
-        priority: (issue["priority"].as_u64().unwrap_or_default() > 0)
-            .then(|| text(&issue, "/priorityLabel"))
-            .filter(|label| !label.is_empty()),
+        assignee: person(field(&issue, "/assignee")),
+        priority: (issue
+            .pointer("/priority")
+            .and_then(Value::as_u64)
+            .unwrap_or_default()
+            > 0)
+        .then(|| text(&issue, "/priorityLabel"))
+        .filter(|label| !label.is_empty()),
         labels: list(&issue, "/labels")
             .map(|label| Label {
                 name: text(label, "/name"),
                 color: text(label, "/color"),
             })
             .collect(),
-        description: issue["description"]
-            .as_str()
+        description: issue
+            .pointer("/description")
+            .and_then(Value::as_str)
             .map(str::trim)
             .filter(|text| !text.is_empty())
             .map(str::to_owned),
         comments: list(&issue, "/comments")
             .map(|comment| Comment {
                 id: text(comment, "/id"),
-                author: person(&comment["user"]).unwrap_or_else(|| "Someone".into()),
+                author: person(field(comment, "/user")).unwrap_or_else(|| "Someone".into()),
                 created_at: text(comment, "/createdAt"),
                 body: text(comment, "/body"),
             })
@@ -95,7 +107,7 @@ fn row(issue: &Value) -> IssueRow {
         id: text(issue, "/id"),
         identifier: text(issue, "/identifier"),
         title: text(issue, "/title"),
-        state: state(&issue["state"]),
+        state: state(field(issue, "/state")),
     }
 }
 
@@ -114,6 +126,11 @@ fn person(person: &Value) -> Option<String> {
         .iter()
         .map(|pointer| text(person, pointer))
         .find(|name| !name.is_empty())
+}
+
+/// The value at `pointer`, or null where there is none.
+fn field<'a>(value: &'a Value, pointer: &str) -> &'a Value {
+    value.pointer(pointer).unwrap_or(&Value::Null)
 }
 
 fn text(value: &Value, pointer: &str) -> String {
