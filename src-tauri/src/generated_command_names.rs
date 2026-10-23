@@ -22,7 +22,6 @@ pub const IPC_COMMANDS: &[&str] = &[
     "host_sign_in",
     "host_update",
     "host_start",
-    "host_probe",
     "share_access",
     "share_viewer_hello",
     "core_call",

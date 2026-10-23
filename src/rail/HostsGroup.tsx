@@ -178,9 +178,8 @@ function AccountHostRow({ host, onMenu }: { host: HostEntry; onMenu: OpenMenu })
         if (confirmed) await accountApi.removeDevice(host.id).catch(reportError(`Remove ${host.name}`));
     };
     const hasProject = useStore((s) => !!projectOnHost(s, host.id, undefined));
-    const probe = useStore((s) => (host.ssh ? s.sshProbes[host.ssh] : undefined));
-    const off = sshFoundLabel(probe);
-    const work = host.ssh && probe ? setUpFor(probe) : null;
+    const off = sshFoundLabel(host);
+    const work = host.ssh ? setUpFor(host) : null;
     const busy = useStore((s) => (host.ssh ? s.sshWork[host.ssh] : undefined));
     return (
         <HostRow
@@ -224,9 +223,8 @@ const SSH_LABEL = { connected: "Connected", connecting: "Connecting", failed: "F
 function SshHostRow({ row, onMenu }: { row: CoreHostRow; onMenu: OpenMenu }) {
     const alias = row.name;
     const choice = useMemo<HostChoice>(() => ({ kind: "ssh", alias }), [alias]);
-    const probe = useStore((s) => s.sshProbes[alias]);
-    const off = sshFoundLabel(probe);
-    const work = setUpFor(probe);
+    const off = sshFoundLabel(row);
+    const work = setUpFor(row);
     const busy = useStore((s) => s.sshWork[alias]);
     const setUp = work ? [setUpItem(alias, work, !!busy, work === "installing" ? "Install Sikemux here" : undefined)] : [];
     return (

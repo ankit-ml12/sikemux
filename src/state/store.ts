@@ -185,8 +185,6 @@ export interface ViewState {
     openSshHosts: readonly import("../hosts/hosts").HostRow[];
     /** What each of those hosts last showed this app, by its id. */
     hostViews: Readonly<Record<string, import("../api/generated/wire").DeviceView>>;
-    /** What asking each SSH host found, by its alias, for those that run Sikemux. */
-    sshProbes: Readonly<Record<string, import("../hosts/hosts").SshProbe>>;
     /** The SSH hosts being set up now, by alias. */
     sshWork: Readonly<Record<string, import("../hosts/hosts").SshWork>>;
     /** The host chosen under Hosts, beside the chosen project: where the tab rail looks and new work starts. */
@@ -305,7 +303,6 @@ export const useStore = create<StoreState>(() => {
         hostViews: {},
         chosenHost: { kind: "core" },
         lastOnHost: {},
-        sshProbes: {},
         sshWork: {},
         pendingUpdate: null,
         updateBlockers: [],

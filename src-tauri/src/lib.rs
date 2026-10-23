@@ -261,7 +261,6 @@ pub fn run() {
             hosts::install::host_sign_in,
             hosts::install::host_update,
             hosts::install::host_start,
-            hosts::probe::host_probe,
             share::share_access,
             share::share_viewer_hello,
             core_call::core_call,

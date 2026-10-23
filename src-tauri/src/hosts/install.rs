@@ -1,9 +1,7 @@
-//! "Install Sikemux here", "Update" and "Sign in" on an SSH host. The core runs the installer,
+//! "Install Sikemux here", "Update", "Sign in" and "Start" on an SSH host. The core runs the installer,
 //! or `sikemux login`, over the person's own SSH in a terminal the app shows, approves the
 //! sign-in code that terminal shows and notes where the host was installed (ADR 0018); the app
 //! only shows that terminal and says when it is done.
-
-use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::json;
@@ -13,8 +11,6 @@ use tauri::{AppHandle, Emitter, State};
 use crate::error::{AppError, AppResult};
 use crate::pty::{core_error, PtyManager};
 
-/// Long enough to connect and start a core.
-const START_TIMEOUT: Duration = Duration::from_secs(90);
 const DONE_EVENT: &str = "host_installed";
 
 /// An alias from ~/.ssh/config, never something ssh would read as an option.
@@ -39,12 +35,6 @@ struct Installed {
     alias: String,
     /// Why it did not finish, when it did not.
     problem: Option<String>,
-}
-
-/// `sikemux` with `args`, run on an SSH host through its login shell's PATH
-/// and where the installer puts it when that PATH does not reach it.
-pub(super) fn sikemux_over_ssh(args: &str) -> String {
-    format!(r#"exec "$SHELL" -lc 'PATH="$PATH:$HOME/.local/bin" sikemux {args}'"#)
 }
 
 /// Opens a terminal on this host that runs the installer on the SSH host `alias` and signs it
@@ -110,36 +100,13 @@ async fn set_up(
     Ok(id)
 }
 
-/// Starts the stopped core on the SSH host `alias`, over the person's own SSH
-/// and never prompting, as the probe asks.
+/// Opens a terminal on this host that starts the stopped core on the SSH host `alias`, and
+/// answers with its session for the page to show. `host_installed` says when it is up.
 #[tauri::command]
-pub async fn host_start(alias: String) -> AppResult<()> {
-    let alias = checked_alias(&alias)?.to_owned();
-    let mut ssh = tokio::process::Command::from(sikemux_process::user_environment::command("ssh"));
-    ssh.args([
-        "-T",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ControlMaster=no",
-        "-o",
-        "ConnectTimeout=10",
-        "--",
-        &alias,
-    ])
-    .arg(sikemux_over_ssh("start"))
-    .stdin(std::process::Stdio::null())
-    .kill_on_drop(true);
-    let output = tokio::time::timeout(START_TIMEOUT, ssh.output())
-        .await
-        .map_err(|_| AppError::Other(format!("{alias} did not start its core in time")))??;
-    if output.status.success() {
-        return Ok(());
-    }
-    let said = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    Err(AppError::Other(if said.is_empty() {
-        format!("{alias} could not start its core")
-    } else {
-        said
-    }))
+pub async fn host_start(
+    app: AppHandle,
+    manager: State<'_, PtyManager>,
+    alias: String,
+) -> AppResult<SessionId> {
+    set_up(app, manager, alias, "start").await
 }

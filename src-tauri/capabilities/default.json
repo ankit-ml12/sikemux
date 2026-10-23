@@ -39,7 +39,6 @@
     "allow-host-sign-in",
     "allow-host-update",
     "allow-host-start",
-    "allow-host-probe",
     "allow-share-access",
     "allow-share-viewer-hello",
     "allow-core-call",
