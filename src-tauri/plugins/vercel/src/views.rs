@@ -121,8 +121,10 @@ fn for_agent(log: &Log) -> String {
     }
     parts.push(facts.join("\n"));
     let tail = log.lines.len().saturating_sub(LOG_LINES_FOR_AGENT);
-    let lines: Vec<&str> = log.lines[tail..]
+    let lines: Vec<&str> = log
+        .lines
         .iter()
+        .skip(tail)
         .map(|line| line.text.as_str())
         .collect();
     if !lines.is_empty() {
