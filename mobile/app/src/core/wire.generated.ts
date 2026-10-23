@@ -1026,6 +1026,11 @@ export interface ChatMessage {
   meta?: RowMeta;
   /** The finished turn it belongs to, when that turn folds its work away. */
   fold?: WorkFold;
+  /**
+   * The index of the chat event that opened it, where a client pages from: `chatPage`'s
+   * `before`, `after` and `around` take it. Clients read it here, never out of the id.
+   */
+  fromEvent?: number;
 }
 
 export type ChatRole = 'user' | 'assistant';

@@ -23,11 +23,13 @@ const ANSWER: Options = Options {
     file_paths: true,
 };
 
-/// A client opening a chat is sent about a screen or two of its end, so it
-/// draws at once over a slow network, and pages back through the rest. A turn
-/// longer than that, such as one full of screenshots, is cut between its rows.
-pub const TAIL_TURNS: usize = 8;
-const TAIL_BYTES: usize = 256 * 1024;
+/// A client opening a chat is sent its last 40 turns or 1 MB of their JSON, whichever is
+/// less, and pages back through the rest. A turn longer than that, such as one full of
+/// screenshots, is cut between its rows; the last row always goes whole.
+pub const TAIL_TURNS: usize = 40;
+const TAIL_BYTES: usize = 1024 * 1024;
+/// The most of a subagent's rows a client opening the chat is sent: its latest.
+const SUBAGENT_TAIL_ROWS: usize = 40;
 /// The most of a long chat the fold holds; older rows page back from the
 /// chat's events.
 const FOLD_BYTES: usize = 8 * 1024 * 1024;
@@ -382,6 +384,26 @@ impl Fold {
         self.main.rows.first().map(|row| row.index)
     }
 
+    /// How many bytes `row` is as a client opening the chat is sent it.
+    fn sent_bytes(&self, row: &Row) -> usize {
+        let mut sizes = self.sent_bytes.borrow_mut();
+        if let Some(&(_, bytes)) = sizes.get(&row.msg.id).filter(|(v, _)| *v == row.v) {
+            return bytes;
+        }
+        let bytes = serde_json::to_vec(&whole_row(row)).map_or(0, |json| json.len());
+        if sizes.len() > 2 * self.main.rows.len() + 64 {
+            let held: std::collections::HashSet<&str> = self
+                .main
+                .rows
+                .iter()
+                .map(|row| row.msg.id.as_str())
+                .collect();
+            sizes.retain(|id, _| held.contains(id.as_str()));
+        }
+        sizes.insert(row.msg.id.clone(), (row.v, bytes));
+        bytes
+    }
+
     fn window_start(&self) -> usize {
         let rows = &self.main.rows;
         let mut turns = 0;
@@ -389,7 +411,7 @@ impl Fold {
         let mut start = None;
         let mut piece = None;
         for (position, row) in rows.iter().enumerate().rev() {
-            bytes += row_bytes(row);
+            bytes += self.sent_bytes(row);
             if bytes > TAIL_BYTES && (start.is_some() || piece.is_some()) {
                 break;
             }
@@ -431,10 +453,11 @@ impl Fold {
             let Some(sub) = self.subs.get(&session) else {
                 continue;
             };
-            for row in &sub.rows {
+            let latest = &sub.rows[sub.rows.len().saturating_sub(SUBAGENT_TAIL_ROWS)..];
+            for row in latest {
                 note(&row.msg.parts, &mut sessions);
             }
-            found.insert(session, sub.rows.iter().map(whole_row).collect());
+            found.insert(session, latest.iter().map(whole_row).collect());
         }
         found
     }
@@ -552,7 +575,8 @@ impl Fold {
         let mut subagents = fold.subagent_rows(&refs);
         for (session, rows) in subagents.iter_mut() {
             if let Some(sub) = self.subs.get(session) {
-                *rows = sub.rows.iter().map(whole_row).collect();
+                let latest = &sub.rows[sub.rows.len().saturating_sub(SUBAGENT_TAIL_ROWS)..];
+                *rows = latest.iter().map(whole_row).collect();
             }
         }
         ChatPage {

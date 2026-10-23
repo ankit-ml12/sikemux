@@ -14,6 +14,7 @@ mod tool_rows;
 mod tools;
 mod turns;
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -109,6 +110,7 @@ impl Row {
                 opens_turn: None,
                 meta: None,
                 fold: None,
+                from_event: Some(index),
             },
             index,
             v: 0,
@@ -280,6 +282,9 @@ pub struct Fold {
     folder: Option<PathBuf>,
     /// Where a finished edit's lines sit in its file, so they carry the file's numbers.
     place: Option<Place>,
+    /// How many bytes each row's JSON is as a client opening the chat is sent it, by row id,
+    /// with the change it was measured at.
+    sent_bytes: RefCell<HashMap<String, (u64, usize)>>,
 }
 
 const TEXT_PART: &str = "text";
@@ -548,6 +553,7 @@ impl Fold {
             offers_effort: false,
             folder: None,
             place: None,
+            sent_bytes: RefCell::default(),
         }
     }
 

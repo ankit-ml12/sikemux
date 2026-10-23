@@ -371,6 +371,10 @@ pub struct ChatMessage {
     /// The finished turn it belongs to, when that turn folds its work away.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fold: Option<WorkFold>,
+    /// The index of the chat event that opened it, where a client pages from: `chatPage`'s
+    /// `before`, `after` and `around` take it. Clients read it here, never out of the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_event: Option<u64>,
 }
 
 /// The line under a prompt, or under the last message of an answer.

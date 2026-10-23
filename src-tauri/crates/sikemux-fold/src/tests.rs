@@ -1384,6 +1384,7 @@ mod reducer {
                 opens_turn: None,
                 meta: None,
                 fold: None,
+                from_event: Some(0),
             }
         );
         let mut plain = Chat::new();
@@ -2718,4 +2719,136 @@ fn a_row_opens_the_file_the_call_reported_or_the_one_its_title_names() {
     assert_eq!(titled("cat src/app.tsx").path, None);
     assert_eq!(titled("https://example.com/x").path, None);
     assert_eq!(titled("Read").path, None);
+}
+
+mod window {
+    use super::*;
+
+    /// A turn: the person's prompt, then the agent's answer of `answer`.
+    fn turn(chat: &mut Chat, n: usize, answer: &str) -> (u64, u64) {
+        let asked = chat.index;
+        chat.prompt(json!({ "text": format!("ask {n}"), "paths": [] }));
+        chat.turn_started();
+        let answered = chat.index;
+        chat.update(chunk(answer, &format!("a{n}")));
+        chat.turn_completed(Some("end_turn"));
+        (asked, answered)
+    }
+
+    fn said(row: &ChatMessage) -> String {
+        row.parts
+            .iter()
+            .filter_map(|part| match part {
+                ChatPart::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sent_bytes(rows: &[ChatMessage]) -> usize {
+        rows.iter()
+            .map(|row| serde_json::to_vec(row).unwrap().len())
+            .sum()
+    }
+
+    #[test]
+    fn every_row_a_client_is_sent_names_the_event_that_opened_it() {
+        let mut chat = Chat::new();
+        let (asked, answered) = turn(&mut chat, 0, "Hello");
+        let changes = chat.flush();
+        let streamed: Vec<&ChatMessage> = changes
+            .iter()
+            .filter_map(|change| match change {
+                ChatChange::Row { row, .. } => Some(row),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            streamed
+                .iter()
+                .map(|row| row.from_event)
+                .collect::<Vec<_>>(),
+            vec![Some(asked), Some(answered)]
+        );
+        let view = chat.view();
+        assert_eq!(
+            view.rows
+                .iter()
+                .map(|row| row.from_event)
+                .collect::<Vec<_>>(),
+            vec![Some(asked), Some(answered)]
+        );
+        let event = |kind, payload| ChatEvent { kind, payload };
+        let events = [
+            (
+                asked,
+                event(
+                    ChatEventKind::Prompt,
+                    json!({ "text": "ask 0", "paths": [] }),
+                ),
+            ),
+            (
+                answered,
+                event(
+                    ChatEventKind::SessionUpdate,
+                    json!({ "sessionId": ROOT, "update": chunk("Hello", "a0") }),
+                ),
+            ),
+        ];
+        let page = chat.fold.page(&events, u64::MAX, None);
+        assert_eq!(
+            page.rows
+                .iter()
+                .map(|row| row.from_event)
+                .collect::<Vec<_>>(),
+            vec![Some(asked), Some(answered)]
+        );
+    }
+
+    #[test]
+    fn a_client_opening_a_long_chat_is_sent_its_last_forty_turns() {
+        let mut chat = Chat::new();
+        for n in 0..50 {
+            turn(&mut chat, n, "ok");
+        }
+        let view = chat.view();
+        let asked = view
+            .rows
+            .iter()
+            .filter(|row| row.role == ChatRole::User)
+            .count();
+        assert_eq!(asked, TAIL_TURNS);
+        assert_eq!(view.older_before, view.rows[0].from_event);
+        assert_eq!(view.rows[0].role, ChatRole::User);
+    }
+
+    #[test]
+    fn the_window_stops_at_a_megabyte_of_the_json_it_sends_and_never_splits_a_row() {
+        let mut chat = Chat::new();
+        let long = "x".repeat(300 * 1024);
+        for n in 0..10 {
+            turn(&mut chat, n, &long);
+        }
+        let view = chat.view();
+        let bytes = sent_bytes(&view.rows);
+        assert!(bytes <= 1024 * 1024, "sent {bytes} bytes");
+        let an_answer = serde_json::to_vec(view.rows.last().unwrap()).unwrap().len();
+        assert!(
+            bytes + an_answer > 1024 * 1024,
+            "the window stopped early at {bytes} bytes"
+        );
+        assert_eq!(view.older_before, view.rows[0].from_event);
+        assert_eq!(said(view.rows.last().unwrap()), long);
+    }
+
+    #[test]
+    fn the_last_row_goes_whole_even_past_a_megabyte() {
+        let mut chat = Chat::new();
+        turn(&mut chat, 0, "short");
+        let huge = "y".repeat(2 * 1024 * 1024);
+        turn(&mut chat, 1, &huge);
+        let view = chat.view();
+        assert_eq!(view.rows.len(), 1);
+        assert_eq!(said(&view.rows[0]), huge);
+    }
 }
