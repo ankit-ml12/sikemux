@@ -19,10 +19,10 @@ counters! {
     TEXTS: "Texts laid out whole.",
     CODE_CHUNKS: "Parts of code blocks laid out.",
     CODE_LINES: "Lines of code blocks laid out.",
+    CODE_US: "Microseconds spent laying out parts of code blocks.",
     UNCOLOURED: "Code blocks drawn before their colours were ready.",
     COLOURED: "Code blocks whose colours arrived.",
     TRIMS: "Times a chat dropped rows it held.",
-    BLANK_CODE: "Code blocks drawn with parts left blank for a later frame.",
 }
 
 pub fn add(counter: &AtomicU64, by: u64) {

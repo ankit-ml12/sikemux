@@ -428,8 +428,8 @@ type Looks = Vec<(Range<usize>, HighlightStyle)>;
 
 /// How many lines of a code block are laid out together.
 const CODE_CHUNK: usize = 8;
-/// How long a frame may spend laying out parts of code blocks not laid out before; parts past it
-/// stay blank at their height until a later frame, so only a heavy landing spreads over frames.
+/// How long a frame may spend laying out parts of code blocks just past the view, ahead of their
+/// scrolling in; parts in view are always laid out.
 const CODE_LAYOUT_BUDGET: Duration = Duration::from_millis(4);
 
 /// What a transcript's frame has spent so far laying out new parts of its code blocks.
@@ -466,52 +466,49 @@ struct Code {
 }
 
 impl Code {
-    /// Lays out the parts `chunks` that the budget allows, saying whether any were left for later.
+    /// Part `chunk` as text to lay out, with the lines it holds and where it starts in the block.
+    fn part(&self, chunk: usize) -> Option<(StyledText, std::ops::Range<usize>, usize, usize)> {
+        let lines = chunk * CODE_CHUNK..((chunk + 1) * CODE_CHUNK).min(self.starts.len());
+        let start = *self.starts.get(lines.start)?;
+        let end = self
+            .starts
+            .get(lines.end)
+            .map_or(self.text.len(), |next| next - 1);
+        let looks = self.looks.iter().filter_map(|(range, look)| {
+            let (from, to) = (range.start.max(start), range.end.min(end));
+            (from < to).then(|| (from - start..to - start, *look))
+        });
+        let text = StyledText::new(SharedString::from(self.text[start..end].to_owned()))
+            .with_highlights(looks);
+        Some((text, lines, start, end))
+    }
+
+    /// Lays out and places the parts in view, then, while the frame's budget allows, lays out
+    /// those just past the view in either direction, nearest first, so they are ready when they
+    /// scroll in.
     fn lay_out(
         &self,
-        chunks: std::ops::RangeInclusive<usize>,
+        visible: std::ops::RangeInclusive<usize>,
         bounds: Bounds<Pixels>,
         line_height: Pixels,
         laid: &mut HashSet<usize>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (Vec<AnyElement>, bool) {
-        let (mut drawn, mut waiting) = (Vec::new(), false);
-        for chunk in chunks {
-            let new = !laid.contains(&chunk);
-            if new
-                && self
-                    .budget
-                    .as_ref()
-                    .is_some_and(|budget| !budget.has_room())
-            {
-                waiting = true;
-                continue;
-            }
+    ) -> Vec<AnyElement> {
+        let space = size(AvailableSpace::MaxContent, AvailableSpace::MinContent);
+        let mut drawn = Vec::new();
+        for chunk in visible.clone() {
             let began = Instant::now();
-            let lines = chunk * CODE_CHUNK..((chunk + 1) * CODE_CHUNK).min(self.starts.len());
-            let Some(&start) = self.starts.get(lines.start) else {
+            let Some((text, lines, start, end)) = self.part(chunk) else {
                 break;
             };
-            let end = self
-                .starts
-                .get(lines.end)
-                .map_or(self.text.len(), |next| next - 1);
-            let looks = self.looks.iter().filter_map(|(range, look)| {
-                let (from, to) = (range.start.max(start), range.end.min(end));
-                (from < to).then(|| (from - start..to - start, *look))
-            });
-            let text = StyledText::new(SharedString::from(self.text[start..end].to_owned()))
-                .with_highlights(looks);
             let layout = text.layout().clone();
             let mut element = text.into_any_element();
-            let space = size(AvailableSpace::MaxContent, AvailableSpace::MinContent);
             element.layout_as_root(space, window, cx);
             let top = bounds.top() + line_height * lines.start as f32;
             element.prepaint_at(point(bounds.left(), top), window, cx);
             drawn.push(element);
-            if new {
-                laid.insert(chunk);
+            if laid.insert(chunk) {
                 if let Some(budget) = &self.budget {
                     budget.spend(began.elapsed());
                 }
@@ -520,6 +517,7 @@ impl Code {
             {
                 crate::counts::add(&crate::counts::CODE_CHUNKS, 1);
                 crate::counts::add(&crate::counts::CODE_LINES, lines.len() as u64);
+                crate::counts::add(&crate::counts::CODE_US, began.elapsed().as_micros() as u64);
             }
             if let Some((key, shown)) = &self.shown {
                 shown.borrow_mut().push(Shown {
@@ -530,7 +528,32 @@ impl Code {
                 });
             }
         }
-        (drawn, waiting)
+        let Some(budget) = &self.budget else {
+            return drawn;
+        };
+        let (first, last) = (*visible.start(), *visible.end());
+        let reach = last - first + 1;
+        let parts = self.starts.len().div_ceil(CODE_CHUNK);
+        laid.retain(|chunk| *chunk + reach >= first && *chunk <= last + reach);
+        let near = (1..=reach).flat_map(|away| [last.checked_add(away), first.checked_sub(away)]);
+        for chunk in near.flatten().filter(|chunk| *chunk < parts) {
+            let warm = laid.contains(&chunk);
+            if !warm && !budget.has_room() {
+                continue;
+            }
+            let began = Instant::now();
+            let Some((text, ..)) = self.part(chunk) else {
+                continue;
+            };
+            text.into_any_element().layout_as_root(space, window, cx);
+            if !warm {
+                laid.insert(chunk);
+                budget.spend(began.elapsed());
+            }
+            #[cfg(feature = "counts")]
+            crate::counts::add(&crate::counts::CODE_US, began.elapsed().as_micros() as u64);
+        }
+        drawn
     }
 }
 
@@ -599,24 +622,21 @@ impl Element for Code {
         if view.bottom() < bounds.top() || view.top() > bounds.bottom() {
             return Vec::new();
         }
-        let (drawn, waiting) = match id {
+        match id {
             Some(id) => window.with_element_state::<HashSet<usize>, _>(id, |laid, window| {
                 let mut laid = laid.unwrap_or_default();
-                let done = self.lay_out(first..=last, bounds, line_height, &mut laid, window, cx);
-                (done, laid)
+                let drawn = self.lay_out(first..=last, bounds, line_height, &mut laid, window, cx);
+                (drawn, laid)
             }),
-            None => {
-                let mut laid = HashSet::new();
-                self.lay_out(first..=last, bounds, line_height, &mut laid, window, cx)
-            }
-        };
-        // The view is drawn again however the next frame comes, so the rest are laid out then.
-        if waiting {
-            #[cfg(feature = "counts")]
-            crate::counts::add(&crate::counts::BLANK_CODE, 1);
-            cx.notify(window.current_view());
+            None => self.lay_out(
+                first..=last,
+                bounds,
+                line_height,
+                &mut HashSet::new(),
+                window,
+                cx,
+            ),
         }
-        drawn
     }
 
     fn paint(
