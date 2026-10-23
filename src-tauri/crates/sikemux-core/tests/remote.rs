@@ -773,7 +773,8 @@ async fn a_device_starts_a_chat_agent_the_app_published_and_talks_to_it() {
         .start_chat("opencode:fake".into(), "sess-tmp".into(), None)
         .await
         .expect("the phone starts a chat");
-    assert!(!start.session_id.is_empty());
+    // Its agent starts with the first message, so the chat has no session yet.
+    assert!(start.session_id.is_empty());
     let begun = loop {
         let event = tokio::time::timeout(WAIT, app_events.recv())
             .await
