@@ -332,9 +332,10 @@ function billing() {
   };
 }
 
-export function awsLogLines(): string[] {
-  return LOG_LINES.map(
-    (line, index) =>
-      `${new Date(Date.now() - (LOG_LINES.length - index) * 4_000).toISOString()} ${line}`,
-  );
+export function awsLogLines() {
+  return LOG_LINES.map((text, index) => {
+    const at = new Date(Date.now() - (LOG_LINES.length - index) * 4_000).toISOString();
+    const level = text.startsWith("ERROR") ? "error" : text.startsWith("WARN") ? "warn" : null;
+    return { day: at.slice(0, 10), clock: at.slice(11, 19), text, level };
+  });
 }

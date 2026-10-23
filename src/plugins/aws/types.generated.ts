@@ -280,3 +280,18 @@ export interface AwsS3Bucket {
     arn: string;
     consoleUrl: string;
 }
+
+/** A line of a log group's live tail. */
+export interface AwsLogLine {
+    /** When CloudWatch took it, in UTC: `2026-10-23` and `09:30:12`. */
+    day: string | null;
+    clock: string | null;
+    text: string;
+    level: AwsLogLevel | null;
+}
+
+/**
+ * How a log line reads: an error, such as an `ERROR` or `FATAL` in it or the CLI's own
+ * complaint, or a warning.
+ */
+export type AwsLogLevel = "error" | "warn";

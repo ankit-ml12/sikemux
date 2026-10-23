@@ -1,6 +1,7 @@
 import { browserSignIn, createPluginBackend } from "../../plugin-api/backend";
 import { openSignInUrl, swallow } from "../../plugin-api/host";
 import { AWS_PLUGIN } from "./kinds";
+import type { AwsLogLine } from "./types.generated";
 
 const backend = createPluginBackend(AWS_PLUGIN.id, {
     signedOutCategories: ["aws-token-expired", "aws-no-credentials", "aws-cli-missing"],
@@ -81,9 +82,9 @@ export const awsApi = {
 
     tailLogs: (
         params: { profile: string; logGroup: string; logStream: string | null; since: string },
-        handlers: { onLine: (line: string) => void; onEnd: () => void; onError: (message: string) => void },
+        handlers: { onLine: (line: AwsLogLine) => void; onEnd: () => void; onError: (message: string) => void },
     ) =>
-        backend.stream<string>("tailLogs", params, {
+        backend.stream<AwsLogLine>("tailLogs", params, {
             onItem: handlers.onLine,
             onEnd: handlers.onEnd,
             onError: (error) => handlers.onError(error.message),

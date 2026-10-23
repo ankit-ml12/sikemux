@@ -319,3 +319,23 @@ pub struct AgentProfiles {
     pub default_unset: String,
     pub profiles: Vec<String>,
 }
+
+/// A line of a log group's live tail.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLine {
+    /// When CloudWatch took it, in UTC: `2026-10-23` and `09:30:12`.
+    pub day: Option<String>,
+    pub clock: Option<String>,
+    pub text: String,
+    pub level: Option<LogLevel>,
+}
+
+/// How a log line reads: an error, such as an `ERROR` or `FATAL` in it or the CLI's own
+/// complaint, or a warning.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LogLevel {
+    Error,
+    Warn,
+}

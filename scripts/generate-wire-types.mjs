@@ -137,6 +137,8 @@ const AWS_TYPES = [
   "EcsTasks",
   "EcsTaskRow",
   "AgentProfiles",
+  "LogLine",
+  "LogLevel",
 ];
 
 /** Rundeck's types are known as Rundeck's, as Jira's are known as Jira's. */
@@ -373,6 +375,7 @@ const AWS_ROOTS = [
   "AwsLambda",
   "AwsSqs",
   "AwsS3",
+  "AwsLogLine",
 ];
 
 /** What the Rundeck plugin's views hand its pane. */
