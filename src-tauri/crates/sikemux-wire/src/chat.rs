@@ -476,12 +476,18 @@ pub enum ChatPart {
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         md: Option<PartTree>,
+        /// How many bytes of the text were left off the end, for a row too big to send whole.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cut_bytes: Option<u64>,
     },
     Thought {
         id: String,
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         md: Option<PartTree>,
+        /// How many bytes of the text were left off the end, for a row too big to send whole.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cut_bytes: Option<u64>,
     },
     /// A picture or a file the agent put in its reply, as its protocol gave it.
     Content {

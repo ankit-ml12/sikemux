@@ -1955,9 +1955,6 @@ pub(crate) fn page(
     params: super::calls::ChatPageParams,
 ) -> CoreResult<sikemux_wire::chat::ChatPage> {
     use feed::Anchor;
-    if params.session.is_some() {
-        return Err("paging a subagent's rows is not ready yet".into());
-    }
     let anchor = match (params.before, params.after, params.around) {
         (Some(before), None, None) => Anchor::Before(before),
         (None, Some(after), None) => Anchor::After(after),
@@ -1967,11 +1964,12 @@ pub(crate) fn page(
     let turns = params
         .turns
         .map_or(sikemux_fold::TAIL_TURNS, |turns| turns as usize);
-    Ok(core
-        .chats
-        .running(&params.agent_id)?
-        .feed
-        .page(&params.feed, anchor, turns)?)
+    Ok(core.chats.running(&params.agent_id)?.feed.page(
+        &params.feed,
+        anchor,
+        turns,
+        params.session.as_deref(),
+    )?)
 }
 
 /// One step of `client`'s find through a chat: what it found, and where to go on from.

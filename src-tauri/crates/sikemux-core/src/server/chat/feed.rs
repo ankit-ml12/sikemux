@@ -100,7 +100,7 @@ impl super::find::Rows for FindRows<'_> {
             let last = all && !matches!(wanted, PageOf::Before(_));
             return Ok((rows, last));
         }
-        let page = self.feed.page_of(wanted, MAX_PAGE_TURNS, budget)?;
+        let page = self.feed.page_of(wanted, MAX_PAGE_TURNS, budget, None)?;
         let last = match wanted {
             PageOf::Before(_) => page.older_before.is_none(),
             PageOf::After(_) | PageOf::From(_) => page.newer_after.is_none(),
@@ -135,6 +135,17 @@ struct Planned {
     held: Vec<(u64, ChatEvent)>,
     /// The chat holds more on the side the page reads away from.
     beyond: bool,
+}
+
+impl Planned {
+    /// Where a client goes on from past these events, when the chat goes on past them.
+    fn edge(&self, side: PageOf) -> Option<u64> {
+        let edge = match side {
+            PageOf::Before(_) => self.lo,
+            PageOf::After(_) | PageOf::From(_) => self.hi.saturating_sub(1),
+        };
+        self.beyond.then_some(edge)
+    }
 }
 
 /// The ordered events a late client replays. Text streamed into one message
@@ -2077,29 +2088,33 @@ impl Feed {
         if feed != self.id {
             return Err("the chat started again; open it again to see its history".into());
         }
-        self.page(feed, Anchor::Before(before), turns)
+        self.page(feed, Anchor::Before(before), turns, None)
     }
 
     /// The rows `anchor` asks for in this run of the chat, `turns` of them at most: those
     /// before or after an event, or around the row holding one.
+    /// With `session`, the rows are that subagent's rather than the chat's own.
     pub(crate) fn page(
         &self,
         feed: &str,
         anchor: Anchor,
         turns: usize,
+        session: Option<&str>,
     ) -> Result<ChatPage, String> {
         if feed != self.id {
             return Err("the chat started again; open it again to see its history".into());
         }
         let turns = turns.clamp(1, MAX_PAGE_TURNS);
         match anchor {
-            Anchor::Before(before) => self.page_of(PageOf::Before(before), turns, ROW_BYTES),
-            Anchor::After(after) => self.page_of(PageOf::After(after), turns, ROW_BYTES),
+            Anchor::Before(before) => {
+                self.page_of(PageOf::Before(before), turns, ROW_BYTES, session)
+            }
+            Anchor::After(after) => self.page_of(PageOf::After(after), turns, ROW_BYTES, session),
             Anchor::Around(event) => {
                 let half = (turns / 2).max(1);
                 let before = PageOf::Before(event.saturating_add(1));
-                let mut page = self.page_of(before, half, ROW_BYTES / 2)?;
-                let newer = self.page_of(PageOf::After(event), half, ROW_BYTES / 2)?;
+                let mut page = self.page_of(before, half, ROW_BYTES / 2, session)?;
+                let newer = self.page_of(PageOf::After(event), half, ROW_BYTES / 2, session)?;
                 let held: HashSet<String> = page.rows.iter().map(|row| row.id.clone()).collect();
                 page.rows
                     .extend(newer.rows.into_iter().filter(|row| !held.contains(&row.id)));
@@ -2138,7 +2153,13 @@ impl Feed {
         answer
     }
 
-    fn page_of(&self, side: PageOf, turns: usize, budget: usize) -> Result<ChatPage, String> {
+    fn page_of(
+        &self,
+        side: PageOf,
+        turns: usize,
+        budget: usize,
+        session: Option<&str>,
+    ) -> Result<ChatPage, String> {
         for _ in 0..2 {
             let planned = self.inner.locked().replay.plan(side, turns)?;
             let mut events = match &planned.reader {
@@ -2154,6 +2175,7 @@ impl Feed {
             {
                 continue;
             }
+            let edge = planned.edge(side);
             events.extend(planned.held);
             let mut inner = self.inner.locked();
             let page = inner.replay.with_spawns(Page {
@@ -2163,7 +2185,7 @@ impl Feed {
             });
             return Ok(self
                 .fold(&mut inner)
-                .page_of(&page.events, side, budget, planned.beyond));
+                .page_of(&page.events, side, budget, edge, session));
         }
         Err("that part of the chat changed; ask again".into())
     }

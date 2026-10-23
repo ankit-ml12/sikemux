@@ -873,6 +873,7 @@ impl Fold {
                 id: String::new(),
                 text: text.to_owned(),
                 md: None,
+                cut_bytes: None,
             });
         }
         read_sent(&mut row);
@@ -1258,6 +1259,7 @@ impl Fold {
                     id: String::new(),
                     text: text.to_owned(),
                     md: None,
+                    cut_bytes: None,
                 }),
                 (None, _) => row.raw.push(ChatPart::Content {
                     id: String::new(),
@@ -1302,11 +1304,13 @@ impl Fold {
                     id,
                     text: text.to_owned(),
                     md: None,
+                    cut_bytes: None,
                 },
                 Some(text) => ChatPart::Text {
                     id,
                     text: text.to_owned(),
                     md: None,
+                    cut_bytes: None,
                 },
                 None => ChatPart::Content {
                     id,
@@ -2022,6 +2026,7 @@ fn read_sent(row: &mut Row) {
                         id: String::new(),
                         text: rest,
                         md: None,
+                        cut_bytes: None,
                     });
                 }
             }

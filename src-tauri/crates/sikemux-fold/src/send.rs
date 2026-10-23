@@ -184,7 +184,50 @@ fn open_part(transcript: &Transcript, position: usize) -> Option<usize> {
 
 /// The row with every tree read, for a client that holds none of it.
 fn whole_row(row: &Row) -> ChatMessage {
-    with_trees(row.msg.clone())
+    fit_frame(with_trees(row.msg.clone()))
+}
+
+/// The most of a row that goes in one frame, leaving room for what travels with it.
+const ROW_FRAME_BYTES: usize = sikemux_wire::protocol::MAX_FRAME_BYTES * 3 / 4;
+/// What a text keeps of itself in a row too big for a frame.
+const CUT_TEXT_BYTES: usize = 4 * 1024 * 1024;
+
+/// `msg` as it fits in a frame: a row too big for one keeps the first 4 MB of each long text,
+/// saying how much it left off, rather than not going at all.
+fn fit_frame(mut msg: ChatMessage) -> ChatMessage {
+    if serde_json::to_vec(&msg).map_or(0, |json| json.len()) <= ROW_FRAME_BYTES {
+        return msg;
+    }
+    let tree = msg.role == ChatRole::Assistant;
+    for part in &mut msg.parts {
+        if let ChatPart::Text {
+            text,
+            md,
+            cut_bytes,
+            ..
+        }
+        | ChatPart::Thought {
+            text,
+            md,
+            cut_bytes,
+            ..
+        } = part
+        {
+            if text.len() <= CUT_TEXT_BYTES {
+                continue;
+            }
+            let mut keep = CUT_TEXT_BYTES;
+            while !text.is_char_boundary(keep) {
+                keep -= 1;
+            }
+            *cut_bytes = Some((text.len() - keep) as u64);
+            text.truncate(keep);
+            if tree {
+                *md = Some(read(text));
+            }
+        }
+    }
+    msg
 }
 
 /// `msg` with the tree of each text the agent wrote read, as clients are sent it.
@@ -248,7 +291,7 @@ fn row_changes(
             side.sent = text_len(part).unwrap_or(0);
         }
         out.push(ChatChange::Row {
-            row: msg,
+            row: fit_frame(msg),
             within: within.clone(),
         });
         row.fresh = false;
@@ -609,13 +652,16 @@ impl Fold {
     /// The rows `events` hold that `wanted` asks for, folded from the whole turns they ran
     /// in, so a call finished after them arrives finished and no row is cut. They stay under
     /// `budget` bytes of JSON, counted from the end nearest the event asked from; at least one
-    /// row goes. `beyond` says whether the chat holds more past the events, on the far side.
+    /// row goes. `beyond` is where the chat goes on past the events, on the far side, when it
+    /// does; a page that keeps no rows points there. With `session`, the rows are that
+    /// subagent's rather than the chat's own.
     pub fn page_of(
         &self,
         events: &[(u64, ChatEvent)],
         wanted: PageOf,
         budget: usize,
-        beyond: bool,
+        beyond: Option<u64>,
+        session: Option<&str>,
     ) -> ChatPage {
         let mut fold = Fold::new(&self.head.permission_mode);
         fold.head.session_id = self.head.session_id.clone();
@@ -628,10 +674,13 @@ impl Fold {
             fold.apply(*index, event.kind, &event.payload, at);
         }
         let cards: HashMap<&str, &SubagentCard> = self.cards_by_session();
-        let mut rows: Vec<Row> = fold
-            .main
-            .rows
-            .drain(..)
+        let folded = match session {
+            Some(session) => fold.subs.remove(session).map(|sub| sub.rows),
+            None => Some(std::mem::take(&mut fold.main.rows)),
+        };
+        let mut rows: Vec<Row> = folded
+            .unwrap_or_default()
+            .into_iter()
             .filter(|row| wanted.keeps(row.index))
             .collect();
         for row in &mut rows {
@@ -651,7 +700,9 @@ impl Fold {
                 }
             }
         }
-        super::turns::settle_all(&mut rows);
+        if session.is_none() {
+            super::turns::settle_all(&mut rows);
+        }
         let mut sent: Vec<ChatMessage> = rows.iter().map(whole_row).collect();
         let cut = within(&mut sent, budget, matches!(wanted, PageOf::Before(_)));
         let kept: Vec<&Row> = rows
@@ -665,15 +716,21 @@ impl Fold {
                 *rows = latest.iter().map(whole_row).collect();
             }
         }
-        let more = cut || beyond;
+        let more = cut || beyond.is_some();
         let (older_before, newer_after) = match wanted {
             PageOf::Before(_) => (
-                sent.first().and_then(|row| row.from_event).filter(|_| more),
+                sent.first()
+                    .and_then(|row| row.from_event)
+                    .or(beyond)
+                    .filter(|_| more),
                 None,
             ),
             PageOf::After(_) | PageOf::From(_) => (
                 None,
-                sent.last().and_then(|row| row.from_event).filter(|_| more),
+                sent.last()
+                    .and_then(|row| row.from_event)
+                    .or(beyond)
+                    .filter(|_| more),
             ),
         };
         ChatPage {

@@ -1041,12 +1041,16 @@ export type ChatPart =
       id: string;
       text: string;
       md?: PartTree;
+      /** How many bytes of the text were left off the end, for a row too big to send whole. */
+      cutBytes?: number;
     }
   | {
       kind: 'thought';
       id: string;
       text: string;
       md?: PartTree;
+      /** How many bytes of the text were left off the end, for a row too big to send whole. */
+      cutBytes?: number;
     }
   /** A picture or a file the agent put in its reply, as its protocol gave it. */
   | {

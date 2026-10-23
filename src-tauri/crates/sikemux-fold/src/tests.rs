@@ -131,6 +131,7 @@ fn text(id: &str, text: &str) -> ChatPart {
         id: id.into(),
         text: text.into(),
         md: None,
+        cut_bytes: None,
     }
 }
 
@@ -897,7 +898,8 @@ mod reducer {
                 ChatPart::Thought {
                     id: "m0.0".into(),
                     text: "Thinking harder".into(),
-                    md: None
+                    md: None,
+                    cut_bytes: None,
                 },
                 text("m0.1", "Answer"),
                 ChatPart::Content {
@@ -2797,7 +2799,7 @@ mod window {
         ];
         let page = chat
             .fold
-            .page_of(&events, PageOf::Before(u64::MAX), PAGE_BYTES, false);
+            .page_of(&events, PageOf::Before(u64::MAX), PAGE_BYTES, None, None);
         assert_eq!(
             page.rows
                 .iter()
