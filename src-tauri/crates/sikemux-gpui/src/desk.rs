@@ -79,6 +79,8 @@ pub struct Desks {
     runs_read: bool,
     /// The agent whose address ⌘L asked for, focused once its desk has drawn it.
     address_wanted: Option<String>,
+    /// Each desk's tab strip, and the tab it last scrolled into view.
+    tab_scrolls: std::cell::RefCell<HashMap<String, (gpui_kit::ScrollHandle, Option<usize>)>>,
     _hearing: Option<gpui_kit::Task<()>>,
     _activation: Subscription,
     _theming: Subscription,
@@ -187,6 +189,7 @@ impl Desks {
             placed_runs: HashSet::new(),
             runs_read: false,
             address_wanted: None,
+            tab_scrolls: Default::default(),
             _hearing: task,
             _activation: activation,
             _theming: theming,
@@ -1113,10 +1116,8 @@ fn target_of(pane: &Pane, view: &str) -> Option<(PaneKind, String)> {
 }
 
 /// The narrowest a desk's page or file pill gets: its mark, a little of its name and its ×.
+/// Past that the strip of tabs scrolls sideways.
 const PILL_MIN: f32 = 72.;
-/// The narrowest the pills and the desk's close get beside its switch: one pill and the close.
-/// A narrower desk puts them on a line of their own, and pills that don't fit wrap.
-const PILLS_MIN: f32 = PILL_MIN + 32.;
 
 /// The desk of `agent`, as the view `view` of `tab`.
 pub fn pane(
@@ -1143,24 +1144,35 @@ pub fn pane(
     let mut head = div()
         .w_full()
         .min_w_0()
-        .min_h(px(36.))
+        .h(px(36.))
         .flex_none()
         .flex()
-        .flex_wrap()
         .items_center()
         .gap(px(4.))
         .px(px(6.))
-        .py(px(5.))
         .border_b_1()
         .border_color(t.border)
         .child(kinds(agent, kind, cx));
+    let scroll = bench
+        .desks
+        .tab_scrolls
+        .borrow_mut()
+        .entry(agent.to_owned())
+        .or_default()
+        .0
+        .clone();
     let mut pills = div()
+        .id("desk-tabs")
         .flex_1()
         .min_w_0()
+        .h_full()
         .flex()
-        .flex_wrap()
         .items_center()
-        .gap(px(4.));
+        .gap(px(4.))
+        .overflow_x_scroll()
+        .track_scroll(&scroll);
+    let mut front_pill = None;
+    let mut pill_count = 0;
     for page in strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default() {
         let label = if !page.title.is_empty() {
             page.title.clone()
@@ -1171,6 +1183,10 @@ pub fn pane(
         };
         let (switch_agent, switch_tab) = (agent.to_owned(), page.id.clone());
         let (close_agent, close_tab) = (agent.to_owned(), page.id.clone());
+        if page.active && front_item.is_none() {
+            front_pill = Some(pill_count);
+        }
+        pill_count += 1;
         pills = pills.child(
             div()
                 .id(SharedString::from(format!("desk-tab-{}", page.id)))
@@ -1247,6 +1263,10 @@ pub fn pane(
         let (pick_agent, pick_item) = (agent.to_owned(), item.clone());
         let (close_agent, close_item) = (agent.to_owned(), item.clone());
         let id = format!("{agent}-{index}");
+        if shown {
+            front_pill = Some(pill_count);
+        }
+        pill_count += 1;
         pills = pills.child(
             div()
                 .id(SharedString::from(format!("desk-item-{id}")))
@@ -1300,26 +1320,24 @@ pub fn pane(
         );
     }
     let new_agent = agent.to_owned();
-    head = head.child(
-        div()
-            .flex_1()
-            .min_w(px(PILLS_MIN))
-            .flex()
-            .items_start()
-            .gap(px(4.))
-            .child(
-                pills.child(
-                    div().flex_none().child(
-                        IconButton::new("desk-new-page", Icon::Plus, "New page")
-                            .glyph(12.)
-                            .on_click(
-                                cx.listener(move |bench, _, _, _| bench.new_page(&new_agent)),
-                            ),
-                    ),
-                ),
-            )
-            .child(div().flex_none().child(close_desk(tab, view, cx))),
-    );
+    if let Some((_, shown)) = bench.desks.tab_scrolls.borrow_mut().get_mut(agent) {
+        if *shown != front_pill {
+            *shown = front_pill;
+            if let Some(front) = front_pill {
+                scroll.scroll_to_item(front);
+            }
+        }
+    }
+    head = head
+        .child(pills)
+        .child(
+            div().flex_none().child(
+                IconButton::new("desk-new-page", Icon::Plus, "New page")
+                    .glyph(12.)
+                    .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
+            ),
+        )
+        .child(div().flex_none().child(close_desk(tab, view, cx)));
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
     let bar = div()
