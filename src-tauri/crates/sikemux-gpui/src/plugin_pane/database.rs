@@ -1,5 +1,5 @@
-//! The Database pane: every saved database as a tree beside tabs of tables, histories and
-//! properties, all drawn from the plugin's views.
+//! The Database pane: every saved database as a tree beside tabs of consoles, tables,
+//! histories and properties, all drawn from the plugin's views.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::f32::consts::FRAC_PI_2;
@@ -23,6 +23,8 @@ use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Variant};
+
+mod console;
 
 pub const REGISTRATION: super::Registration = super::Registration {
     plugin: "sikemux.database",
@@ -49,6 +51,10 @@ pub struct Database {
     busy: bool,
     /// The connection whose history the person is asked to clear.
     clearing: Option<(String, String)>,
+    /// Each console's SQL and results, by `<connection>/<number>`.
+    consoles: HashMap<String, console::Console>,
+    /// Runs started, so each is named apart from the others.
+    runs: u64,
     _typing: Vec<Subscription>,
 }
 
@@ -62,6 +68,10 @@ enum Node {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Tab {
+    Console {
+        id: String,
+        number: usize,
+    },
     Table {
         id: String,
         schema: String,
@@ -78,12 +88,17 @@ enum Tab {
 impl Tab {
     fn connection(&self) -> &str {
         match self {
-            Tab::Table { id, .. } | Tab::History { id } | Tab::Properties { id } => id,
+            Tab::Console { id, .. }
+            | Tab::Table { id, .. }
+            | Tab::History { id }
+            | Tab::Properties { id } => id,
         }
     }
 
     fn label(&self) -> String {
         match self {
+            Tab::Console { number: 1, .. } => "console".into(),
+            Tab::Console { number, .. } => format!("console {number}"),
             Tab::Table { name, .. } => name.clone(),
             Tab::History { .. } => "history".into(),
             Tab::Properties { .. } => "properties".into(),
@@ -92,6 +107,7 @@ impl Tab {
 
     fn icon(&self) -> Icon {
         match self {
+            Tab::Console { .. } => Icon::Code,
             Tab::Table { .. } => Icon::File,
             Tab::History { .. } => Icon::Clock,
             Tab::Properties { .. } => Icon::Settings,
@@ -235,6 +251,9 @@ impl Database {
             return;
         };
         self.tabs.remove(at);
+        if let Tab::Console { id, number } = tab {
+            self.consoles.remove(&format!("{id}/{number}"));
+        }
         if self.front.as_ref() == Some(tab) {
             self.front = self
                 .tabs
@@ -258,6 +277,12 @@ impl Database {
                 database.connecting.remove(&id);
                 match done {
                     Ok(_) => {
+                        if database.tabs.is_empty() {
+                            database.show(Tab::Console {
+                                id: id.clone(),
+                                number: 1,
+                            });
+                        }
                         database.open.insert(Node::Connection(id.clone()));
                         if !usual.is_empty() {
                             database
@@ -276,6 +301,76 @@ impl Database {
             cx,
         );
         cx.notify();
+    }
+
+    /// A console for the connection: the one in front if it is one, else its first, else a
+    /// new one.
+    fn console_for(&self, id: &str) -> Tab {
+        let consoles: Vec<&Tab> = self
+            .tabs
+            .iter()
+            .filter(|tab| matches!(tab, Tab::Console { id: of, .. } if of == id))
+            .collect();
+        consoles
+            .iter()
+            .find(|tab| self.front.as_ref() == Some(**tab))
+            .or(consoles.first())
+            .map_or_else(
+                || Tab::Console {
+                    id: id.to_owned(),
+                    number: 1,
+                },
+                |tab| (*tab).clone(),
+            )
+    }
+
+    fn new_console(&self, id: &str) -> Tab {
+        let last = self
+            .tabs
+            .iter()
+            .filter_map(|tab| match tab {
+                Tab::Console { id: of, number } if of == id => Some(*number),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        Tab::Console {
+            id: id.to_owned(),
+            number: last + 1,
+        }
+    }
+
+    /// The console's state, made the first time it shows.
+    fn console(&mut self, key: &str, window: &mut Window, cx: &mut Context<PluginPane>) {
+        if !self.consoles.contains_key(key) {
+            let console = console::Console::new(key.to_owned(), window, cx);
+            self.consoles.insert(key.to_owned(), console);
+        }
+    }
+
+    /// Puts SQL in a console of the connection, running it when asked.
+    fn query(
+        &mut self,
+        host: &mut Host,
+        id: &str,
+        sql: &str,
+        run: bool,
+        window: &mut Window,
+        cx: &mut Context<PluginPane>,
+    ) {
+        let tab = self.console_for(id);
+        let Tab::Console { number, .. } = &tab else {
+            return;
+        };
+        let key = format!("{id}/{number}");
+        self.show(tab.clone());
+        self.console(&key, window, cx);
+        if let Some(console) = self.consoles.get(&key) {
+            console.load(sql, window, cx);
+        }
+        if run {
+            console::run(self, host, &key, cx);
+        }
     }
 
     /// Calls the plugin's `method`, saying over the window when it fails; the core reads the
@@ -559,6 +654,7 @@ impl Database {
         let pane = cx.weak_entity();
         let (name, qualified) = (table.name.clone(), format!("{schema}.{}", table.name));
         let toggled = key.clone();
+        let (connection_id, preview) = (id.to_owned(), table.preview.clone());
         rows.push(
             node(
                 format!("db-table/{id}/{schema}/{}", table.name),
@@ -576,12 +672,28 @@ impl Database {
             }))
             .context_menu(move |popup: PopupMenu, _, _| {
                 let (show, columns) = (tab.clone(), toggled.clone());
+                let (preview_id, preview_sql) = (connection_id.clone(), preview.clone());
+                let (query_id, query_sql) = (connection_id.clone(), preview.clone());
                 popup
                     .item(
                         PopupMenuItem::new("Open")
                             .icon(Icon::File)
                             .on_click(on(&pane, move |database, _, _, _| {
                                 database.show(show.clone())
+                            })),
+                    )
+                    .item(
+                        PopupMenuItem::new("Preview rows")
+                            .icon(Icon::Eye)
+                            .on_click(on(&pane, move |database, host, window, cx| {
+                                database.query(host, &preview_id, &preview_sql, true, window, cx)
+                            })),
+                    )
+                    .item(
+                        PopupMenuItem::new("Query this table")
+                            .icon(Icon::Code)
+                            .on_click(on(&pane, move |database, host, window, cx| {
+                                database.query(host, &query_id, &query_sql, false, window, cx)
                             })),
                     )
                     .item(
@@ -704,8 +816,15 @@ impl Database {
         };
         match &tab {
             Tab::History { id } => self.history(id, connection, host, cx),
-            Tab::Table { .. } | Tab::Properties { .. } if connection.connected.is_none() => {
+            Tab::Console { .. } | Tab::Table { .. } | Tab::Properties { .. }
+                if connection.connected.is_none() =>
+            {
                 self.properties(connection, cx)
+            }
+            Tab::Console { id, number } => {
+                let key = format!("{id}/{number}");
+                self.console(&key, window, cx);
+                console::page(self, &key, connection, host, cx)
             }
             Tab::Properties { .. } => self.properties(connection, cx),
             Tab::Table { id, schema, name } => table_page(id, schema, name, host, window, cx),
@@ -1152,9 +1271,17 @@ fn connection_menu(
                     }))
             }
         };
-        let (history, properties) = (id.clone(), id.clone());
+        let (history, properties, fresh) = (id.clone(), id.clone(), id.clone());
         popup
             .item(toggle)
+            .item(
+                PopupMenuItem::new("New console")
+                    .icon(Icon::Plus)
+                    .disabled(connection.connected.is_none())
+                    .on_click(on(&pane, move |database, _, _, _| {
+                        database.show(database.new_console(&fresh))
+                    })),
+            )
             .item(PopupMenuItem::new("History").icon(Icon::Clock).on_click(on(
                 &pane,
                 move |database, _, _, _| {
