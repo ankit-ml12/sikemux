@@ -399,6 +399,51 @@ export const RUNDECK: Record<string, (params: Params) => unknown> = {
     detail: null,
   }),
   executionView: () => executionView(),
+  deployTargetView: ({ folder }) => {
+    const matches = jobs.filter((job) => job.name === folder);
+    const place = (job: (typeof jobs)[number]) => ({
+      project: job.project,
+      jobId: job.id,
+      name: job.name,
+      group: job.group,
+      place: [job.project, ...job.group.split("/"), job.name].join(" / "),
+      tone: job.group.includes("production") ? "prod" : "staging",
+    });
+    const active =
+      matches.find((job) => !job.group.includes("production")) ?? matches[0];
+    if (!active)
+      return {
+        jobs: [],
+        active: null,
+        deployedBranch: null,
+        runsBranch: false,
+        lastRun: null,
+        summary: "",
+        readAgainSecs: null,
+      };
+    const cell = cells.find((candidate) => candidate.job_id === active.id)!;
+    const lastRun = `Last run ${cell.latest.status} · ${cell.latest.branch}`;
+    return {
+      jobs: matches.map(place),
+      active: place(active),
+      deployedBranch: cell.deployed.branch,
+      runsBranch: true,
+      lastRun: { statusKind: cell.latest.status, text: lastRun },
+      summary: `${place(active).place} runs ${cell.deployed.branch} · ${lastRun}`,
+      readAgainSecs: null,
+    };
+  },
+  catalogView: () => ({
+    jobs: jobs.map((job) => ({
+      project: job.project,
+      jobId: job.id,
+      name: job.name,
+      group: job.group,
+      place: [job.project, ...job.group.split("/"), job.name].join(" / "),
+      tone: job.group.includes("production") ? "prod" : "staging",
+    })),
+    failedProjects: 0,
+  }),
   checkRun: ({ values }) => ({
     errors: (values as Params).BRANCH
       ? {}

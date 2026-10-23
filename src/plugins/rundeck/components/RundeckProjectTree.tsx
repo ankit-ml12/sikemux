@@ -14,6 +14,7 @@ function ancestorPaths(path: string | null): string[] {
 
 export function RundeckProjectTree({ paneId, active }: { paneId: string; active: boolean }) {
     const tree = useResourceEnabled(active, rndTreeV, `${paneId}/tree`);
+    if (tree.data) cmd.markRundeckLooked();
     const settingsProject = cmd.rundeckSettings.useSelect((s) => s.activeProject);
     const settingsGroup = cmd.rundeckSettings.useSelect((s) => s.activeGroup);
     const { stack } = cmd.useRundeckView(paneId);

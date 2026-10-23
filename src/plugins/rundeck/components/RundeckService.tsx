@@ -59,7 +59,7 @@ export function RundeckService({ paneId, active, level }: Props) {
                 paneId={paneId}
                 crumbs={levelCrumbs(paneId, level, job.project, job.group)}
                 title={job.name}
-                aside={<FolderChip project={job.project} group={job.group} />}
+                aside={<FolderChip project={job.project} group={job.group} prod={isProd} />}
                 tools={
                     <>
                         {data?.permalink && (

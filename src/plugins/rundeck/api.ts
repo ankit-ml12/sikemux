@@ -1,16 +1,10 @@
 import { createPluginBackend, isPluginFailure, type PluginStreamHandlers } from "../../plugin-api/backend";
 import { RUNDECK_PLUGIN } from "./kinds";
-import type { RundeckJobOption, RundeckRunCheck } from "./types.generated";
+import type { RundeckJobOption, RundeckRunCheck, RundeckRunNotice, RundeckStyledText } from "./types.generated";
 
 const backend = createPluginBackend(RUNDECK_PLUGIN.id);
 
 const FORBIDDEN_ACTION: Record<string, string> = {
-    projects: "list projects",
-    jobs: "list this project's jobs",
-    jobIndex: "list jobs",
-    jobCells: "read these jobs' executions",
-    execution: "read this execution",
-    executionState: "read this execution",
     run: "run this job",
     abort: "abort this execution",
     checkRun: "read this job's executions",
@@ -58,54 +52,6 @@ export interface RundeckLoginResult {
     user: string;
     token_set: boolean;
     rundeck_version: string | null;
-}
-
-export interface RundeckProject {
-    name: string;
-    description: string | null;
-}
-
-export interface RundeckJob {
-    id: string;
-    name: string;
-    group: string | null;
-    project: string;
-    description: string | null;
-    href: string | null;
-    permalink: string | null;
-    enabled: boolean | null;
-    scheduled: boolean | null;
-    scheduleEnabled: boolean | null;
-}
-
-export interface JobIndexEntry {
-    project: string;
-    jobs: RundeckJob[];
-    error: string | null;
-}
-
-export interface ExecSummary {
-    execution_id: number;
-    status: string;
-    custom_status: string | null;
-    user: string;
-    started_at: string | null;
-    ended_at: string | null;
-    permalink: string | null;
-    branch: string | null;
-    options: Record<string, string>;
-}
-
-export interface MatrixCell {
-    service: string;
-    name: string;
-    job_id: string;
-    group: string | null;
-    enabled: boolean | null;
-    scheduled: boolean | null;
-    latest: ExecSummary | null;
-    deployed: ExecSummary | null;
-    error: string | null;
 }
 
 export interface RundeckExecution {
@@ -172,6 +118,16 @@ export interface WatchUpdate {
     state: RundeckWorkflowState | null;
     error: string | null;
     terminal: boolean;
+    /** What to tell the person, once the run has ended. */
+    notice?: RundeckRunNotice;
+}
+
+/** The job a watched run belongs to, so the plugin can name it when Rundeck stops saying. */
+export interface WatchedJob {
+    jobId: string;
+    name: string;
+    group: string | null;
+    project: string;
 }
 
 export interface LogEntry {
@@ -181,6 +137,8 @@ export interface LogEntry {
     user: string | null;
     stepctx: string | null;
     node: string | null;
+    /** The line in its styles, when its terminal codes set any. */
+    runs?: RundeckStyledText[];
 }
 
 export interface LogTick {
@@ -212,19 +170,14 @@ export const rundeckApi = {
     loginWithToken: (req: RundeckTokenLoginRequest) => rndInvoke<RundeckLoginResult>("loginWithToken", req),
     logout: () => backend.call<null>("logout"),
 
-    projects: () => rndInvoke<RundeckProject[]>("projects"),
-    jobs: (project: string) => rndInvoke<RundeckJob[]>("jobs", { project }),
-    jobIndex: () => rndInvoke<JobIndexEntry[]>("jobIndex"),
-    jobCells: (jobs: RundeckJob[]) => rndInvoke<MatrixCell[]>("jobCells", { jobs }),
     lists: () => backend.call<RundeckLists>("lists"),
     setLists: (lists: Partial<RundeckLists>) => backend.call<null>("setLists", lists),
 
-    execution: (executionId: number) => rndInvoke<RundeckExecution>("execution", { executionId }),
-    executionState: (executionId: number) => rndInvoke<RundeckWorkflowState>("executionState", { executionId }),
     run: (req: RunRequest) => rndInvoke<RunResult>("run", req),
     abort: (executionId: number) => rndInvoke<AbortResult>("abort", { executionId }),
 
-    watch: (executionId: number, handlers: PluginStreamHandlers<WatchUpdate>) => backend.stream("watch", { executionId }, handlers),
+    watch: (executionId: number, job: WatchedJob | null, handlers: PluginStreamHandlers<WatchUpdate>) =>
+        backend.stream("watch", { executionId, job }, handlers),
     logs: (executionId: number, offset: string | null, handlers: PluginStreamHandlers<LogTick>) =>
         backend.stream("logs", { executionId, offset, backlog: null }, handlers),
 

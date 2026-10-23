@@ -295,6 +295,8 @@ export interface RundeckExecutionPage {
     startedAt: string | null;
     endedAt: string | null;
     permalink: string | null;
+    /** The job's folder or project names production. */
+    prod: boolean;
     branch: string | null;
     runWord: string;
     steps: RundeckRunStep[];
@@ -323,3 +325,80 @@ export interface RundeckRunStep {
     startedAt: string | null;
     endedAt: string | null;
 }
+
+/** What to tell the person when a run they started ends. */
+export interface RundeckRunNotice {
+    ok: boolean;
+    title: string;
+    body: string;
+}
+
+/**
+ * Where a project on this host deploys: the jobs named like its folder, and
+ * how the one chosen last ran.
+ */
+export interface RundeckDeployTarget {
+    /** By place. */
+    jobs: RundeckJobPlace[];
+    /** The one picked, else the first outside production, else the first. */
+    active: RundeckJobPlace | null;
+    deployedBranch: string | null;
+    runsBranch: boolean;
+    lastRun: RundeckLastRun | null;
+    /** Where it deploys and what runs there, in a line. */
+    summary: string;
+    /** While a run goes on, how soon the core reads it again. */
+    readAgainSecs: number | null;
+}
+
+/** A job somewhere in Rundeck, as a list of places to pick from shows it. */
+export interface RundeckJobPlace {
+    project: string;
+    jobId: string;
+    name: string;
+    group: string | null;
+    /** The project, folders and name, slash-separated with spaces. */
+    place: string;
+    tone: RundeckEnvTone;
+}
+
+/** How a place a job deploys to is coloured. */
+export type RundeckEnvTone = "prod" | "staging" | "preprod" | "dev" | "other";
+
+export interface RundeckLastRun {
+    statusKind: RundeckStatusKind;
+    /** Such as `Last run succeeded · main`. */
+    text: string;
+}
+
+/** Every job in every project, to search. */
+export interface RundeckJobCatalog {
+    /** By project, folder and name. */
+    jobs: RundeckJobPlace[];
+    /** Projects whose jobs could not be listed. */
+    failedProjects: number;
+}
+
+/** A stretch of output in one style. */
+export interface RundeckStyledText {
+    text: string;
+    fg: RundeckTermColor | null;
+    bg: RundeckTermColor | null;
+    bold: boolean;
+    dim: boolean;
+    italic: boolean;
+    underline: boolean;
+}
+
+/** A colour output asks for: one of the terminal's 256, the first sixteen its named ones, or exact. */
+export type RundeckTermColor =
+    | {
+          kind: "palette";
+          index: number;
+      }
+    | {
+          kind: "rgb";
+          r: number;
+          g: number;
+          b: number;
+      };

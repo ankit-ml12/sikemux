@@ -375,6 +375,8 @@ pub struct ExecutionPage {
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub permalink: Option<String>,
+    /// The job's folder or project names production.
+    pub prod: bool,
     pub branch: Option<String>,
     pub run_word: String,
     pub steps: Vec<RunStep>,
@@ -390,4 +392,122 @@ pub struct ExecutionPage {
     pub repeat_options: BTreeMap<String, String>,
     /// While it runs, how soon the core reads it again.
     pub read_again_secs: Option<u64>,
+}
+
+/// What to tell the person when a run they started ends.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunNotice {
+    pub ok: bool,
+    pub title: String,
+    pub body: String,
+}
+
+/// How a place a job deploys to is coloured.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum EnvTone {
+    Prod,
+    Staging,
+    Preprod,
+    Dev,
+    Other,
+}
+
+/// A job somewhere in Rundeck, as a list of places to pick from shows it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobPlace {
+    pub project: String,
+    pub job_id: String,
+    pub name: String,
+    pub group: Option<String>,
+    /// The project, folders and name, slash-separated with spaces.
+    pub place: String,
+    pub tone: EnvTone,
+}
+
+/// Where a project on this host deploys: the jobs named like its folder, and
+/// how the one chosen last ran.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployTarget {
+    /// By place.
+    pub jobs: Vec<JobPlace>,
+    /// The one picked, else the first outside production, else the first.
+    pub active: Option<JobPlace>,
+    pub deployed_branch: Option<String>,
+    pub runs_branch: bool,
+    pub last_run: Option<LastRun>,
+    /// Where it deploys and what runs there, in a line.
+    pub summary: String,
+    /// While a run goes on, how soon the core reads it again.
+    pub read_again_secs: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRun {
+    pub status_kind: StatusKind,
+    /// Such as `Last run succeeded · main`.
+    pub text: String,
+}
+
+/// Every job in every project, to search.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobCatalog {
+    /// By project, folder and name.
+    pub jobs: Vec<JobPlace>,
+    /// Projects whose jobs could not be listed.
+    pub failed_projects: u32,
+}
+
+/// A colour output asks for: one of the terminal's 256, the first sixteen its named ones, or exact.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TermColor {
+    Palette { index: u8 },
+    Rgb { r: u8, g: u8, b: u8 },
+}
+
+/// A stretch of output in one style.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StyledText {
+    pub text: String,
+    pub fg: Option<TermColor>,
+    pub bg: Option<TermColor>,
+    pub bold: bool,
+    pub dim: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+
+/// A line of a run's output, as Rundeck sends it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct OutputLine {
+    pub time: Option<String>,
+    pub level: Option<String>,
+    pub log: Option<String>,
+    pub user: Option<String>,
+    /// The step it came from, as `2` or `2/1@node`.
+    #[serde(rename = "stepctx")]
+    pub step_ctx: Option<String>,
+    pub node: Option<String>,
+    /// The line in its styles, when its terminal codes set any; `log` keeps the codes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<StyledText>,
+}
+
+/// The run's output since the last tick.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct OutputTick {
+    pub entries: Vec<OutputLine>,
+    /// Where the next tick reads from.
+    pub offset: String,
+    pub completed: bool,
+    /// The stream gave up after too many errors.
+    pub failed: bool,
+    pub error: Option<String>,
 }

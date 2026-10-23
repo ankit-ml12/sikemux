@@ -523,12 +523,14 @@ pub async fn execution_view(
         executions::executions(
             session,
             request.job_id,
-            request.project,
+            request.project.clone(),
             Some(JOB_RUNS),
             None,
         )
     );
     let execution = execution?;
+    let request_project = request.project;
+    let job = execution.job.as_ref();
     let state = state.ok();
     let detail = detail.ok();
     let raw = execution.status.clone().or_else(|| {
@@ -582,6 +584,12 @@ pub async fn execution_view(
             .as_ref()
             .and_then(|date| date.date.clone()),
         permalink: execution.permalink.clone(),
+        prod: is_production(
+            job.and_then(|job| job.project.as_deref())
+                .unwrap_or(&request_project),
+            job.and_then(|job| job.group.as_deref()),
+            &settings.prod_envs,
+        ),
         run_word: if branch.is_some() { "Deploy" } else { "Run" }.to_owned(),
         branch,
         steps,

@@ -6109,6 +6109,7 @@ dependencies = [
  "sikemux-process",
  "tokio",
  "url",
+ "vte",
  "workspace-hack",
 ]
 

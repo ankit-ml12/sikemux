@@ -119,6 +119,14 @@ const RUNDECK_TYPES = [
   "Plan",
   "RunStep",
   "ExecutionPage",
+  "RunNotice",
+  "EnvTone",
+  "JobPlace",
+  "DeployTarget",
+  "LastRun",
+  "JobCatalog",
+  "TermColor",
+  "StyledText",
 ];
 
 /** Vercel's types are known as Vercel's. */
@@ -306,6 +314,10 @@ const RUNDECK_ROOTS = [
   "RundeckOptionChoice",
   "RundeckPlan",
   "RundeckExecutionPage",
+  "RundeckRunNotice",
+  "RundeckDeployTarget",
+  "RundeckJobCatalog",
+  "RundeckStyledText",
 ];
 
 /** What the Slack plugin's views hand its pane. */

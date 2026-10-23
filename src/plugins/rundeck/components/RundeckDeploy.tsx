@@ -37,7 +37,7 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     if (form.data) return <RunForm paneId={paneId} level={level} active={active} form={form.data} onRetry={() => void form.refresh()} />;
     return (
         <div className="rnd-main">
-            <FormHead paneId={paneId} level={level} runWord="run" />
+            <FormHead paneId={paneId} level={level} runWord="run" prod={false} />
             <div className="rnd-pad">
                 {form.error ? (
                     <EmptyState
@@ -55,13 +55,13 @@ export function RundeckDeploy({ paneId, level, active }: Props) {
     );
 }
 
-function FormHead({ paneId, level, runWord }: { paneId: string; level: Props["level"]; runWord: string }) {
+function FormHead({ paneId, level, runWord, prod }: { paneId: string; level: Props["level"]; runWord: string; prod: boolean }) {
     return (
         <Header
             paneId={paneId}
             crumbs={levelCrumbs(paneId, level, level.project, level.group, runWord)}
             title={`${runWord === "deploy" ? "Deploy" : "Run"} ${level.name}`}
-            aside={<FolderChip project={level.project} group={level.group} />}
+            aside={<FolderChip project={level.project} group={level.group} prod={prod} />}
         />
     );
 }
@@ -190,7 +190,7 @@ function RunForm({ paneId, level, active, form, onRetry }: FormProps) {
                 e.preventDefault();
                 void submit();
             }}>
-            <FormHead paneId={paneId} level={level} runWord={runWord} />
+            <FormHead paneId={paneId} level={level} runWord={runWord} prod={isProd} />
             <div className={`rnd-form${runsBranch ? "" : " single"}`}>
                 {form.optionsError && (
                     <div className="rnd-banner muted rnd-span">

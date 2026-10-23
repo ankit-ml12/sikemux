@@ -81,7 +81,7 @@ export function RundeckExecution({ paneId, level, active }: Props) {
                 title={`#${level.executionId}`}
                 aside={
                     <span className="rnd-head-meta">
-                        <FolderChip project={level.project} group={level.group} />
+                        <FolderChip project={level.project} group={level.group} prod={run?.prod ?? false} />
                         <Status
                             status={run?.status ?? null}
                             label={

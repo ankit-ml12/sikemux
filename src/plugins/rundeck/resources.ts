@@ -1,10 +1,12 @@
-import { peekResource, useResource } from "../../plugin-api/resources";
+import { useResource } from "../../plugin-api/resources";
 import { defineService } from "../../plugin-api/service";
-import { rundeckApi, type RundeckJob } from "./api";
+import { rundeckApi } from "./api";
 import { RUNDECK_PLUGIN } from "./kinds";
 import type {
     RundeckActivityPage,
     RundeckDeployForm,
+    RundeckDeployTarget,
+    RundeckJobCatalog,
     RundeckExecutionPage,
     RundeckJobPage,
     RundeckJobs,
@@ -15,10 +17,6 @@ import type {
 import { DEFAULT_BRANCH_OPTIONS, DEFAULT_PROD_ENVS } from "./shape";
 
 export const rundeck = defineService(RUNDECK_PLUGIN, rundeckApi.status);
-
-export const rndProjectsR = rundeck.resource("projects", () => rundeckApi.projects(), 5 * 60_000);
-
-export const rndJobIndexR = rundeck.resource("jobIndex", () => rundeckApi.jobIndex(), 5 * 60_000);
 
 /** The values an option may take, read from its values URL and kept by the core. */
 export const rndOptionValuesV = rundeck.view<[url: string], RundeckOptionChoice[]>("optionValues", (url) => ({ url }));
@@ -41,13 +39,20 @@ export const rndActivityV = rundeck.view<[project: string, max: number], Rundeck
     max,
 }));
 
-export const rndJobCellsR = rundeck.resource("jobCells", (jobs: RundeckJob[]) => rundeckApi.jobCells(jobs), 30_000);
-
 /** One run of a job, step by step, read every few seconds while it runs. */
 export const rndExecutionV = rundeck.view<[executionId: number, jobId: string, project: string], RundeckExecutionPage>(
     "executionView",
     (executionId, jobId, project) => ({ executionId, jobId, project }),
 );
+
+/** The jobs named after a project's folder, the one picked to deploy with, and how it last ran. */
+export const rndDeployTargetV = rundeck.view<[folder: string, picked: { project: string; jobId: string } | null], RundeckDeployTarget>(
+    "deployTargetView",
+    (folder, picked) => ({ folder, picked }),
+);
+
+/** Every job in every project, to search. */
+export const rndCatalogV = rundeck.view<[], RundeckJobCatalog>("catalogView", () => ({}));
 
 /** The form that starts a job, with the options an earlier run was given. */
 export const rndDeployV = rundeck.view<
@@ -79,5 +84,3 @@ export function useBranchOptions(): string[] {
 export function useProdEnvs(): string[] {
     return useResource(rndListsR).data?.prodEnvs ?? DEFAULT_PROD_ENVS;
 }
-
-export const branchOptionsNow = (): string[] => peekResource(rndListsR)?.branchOptions ?? DEFAULT_BRANCH_OPTIONS;
