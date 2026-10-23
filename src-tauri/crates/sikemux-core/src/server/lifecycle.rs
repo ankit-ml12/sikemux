@@ -103,25 +103,6 @@ pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResu
     .await
 }
 
-/// Wakes the sleeping agents among those a client just brought on screen.
-pub(crate) fn wake_shown(core: &Arc<Core>, shown: Vec<String>) {
-    for agent_id in shown {
-        let asleep = core
-            .workspaces
-            .agent(&agent_id)
-            .is_some_and(|agent| agent.asleep);
-        if !asleep {
-            continue;
-        }
-        let core = core.clone();
-        tokio::spawn(async move {
-            if let Err(error) = ensure_running(&core, &agent_id).await {
-                eprintln!("sikemux core: {agent_id} did not wake: {error}");
-            }
-        });
-    }
-}
-
 /// Puts the agent's chat to sleep unless something in it is still running,
 /// keeping how it ran so it wakes on its saved conversation. Answers whether
 /// it is asleep now.

@@ -1163,6 +1163,8 @@ struct Inner {
     queued: Vec<Queued>,
     /// The answers being written, as their clients' trees of them stand.
     answers: Answers,
+    /// A new chat whose agent waits for the person: clients take it up before it starts.
+    waits_for_person: bool,
 }
 
 /// A feed as plain data, for a core that takes the chat over. Clients that
@@ -1217,6 +1219,7 @@ impl Feed {
                 closed: false,
                 holding: None,
                 queued: Vec::new(),
+                waits_for_person: false,
                 answers: Answers::default(),
             }),
         })
@@ -1287,6 +1290,7 @@ impl Feed {
                 closed: false,
                 holding: None,
                 queued: Vec::new(),
+                waits_for_person: false,
                 answers,
             }),
         })
@@ -1606,7 +1610,15 @@ impl Feed {
         let trimmed = inner.replay.is_trimmed();
         let lost = trimmed && !inner.replay.keeps_history();
         let paged = lost || (inner.replay.keeps_history() && (!peer.is_local() || trimmed));
-        match (inner.start.clone(), missed) {
+        // A new chat waiting for the person has no session yet; its start follows as a ready event.
+        let start = inner.start.clone().or_else(|| {
+            inner.waits_for_person.then(|| ChatStart {
+                session_id: String::new(),
+                capabilities: Value::Null,
+                setup: Value::Null,
+            })
+        });
+        match (start, missed) {
             _ if inner.closed => ChatAttachment::Missing,
             (Some(_), Some(events)) => ChatAttachment::Resumed {
                 events,
@@ -1702,6 +1714,11 @@ impl Feed {
             }));
         }
         self.flush_locked(&mut inner);
+    }
+
+    /// Lets clients take up a new chat whose agent has not started, as it waits for the person.
+    pub(crate) fn wait_for_person(&self) {
+        self.inner.locked().waits_for_person = true;
     }
 
     pub(crate) fn set_start(&self, start: ChatStart) {

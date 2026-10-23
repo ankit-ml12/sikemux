@@ -110,6 +110,11 @@ calls! { core, client, params;
         let pty = super::launching::start_terminal(&core, &params.agent_id, size, None).await?;
         answer(json!({ "ptyId": pty }))
     },
+    "composing": Person => {
+        let params: AgentParams = parse(params)?;
+        super::chat::composing(&core, &params.agent_id);
+        answer(())
+    },
     "startChat": Local => {
         let params: AgentParams = parse(params)?;
         answer(super::launching::start_saved(&core, &params.agent_id).await?)

@@ -237,6 +237,9 @@ pub(crate) struct Chat {
     restarts: Mutex<std::collections::VecDeque<std::time::Instant>>,
     /// What every app was last told the chat is doing.
     published: Mutex<&'static str>,
+    /// A new chat starts its agent only once the person writes in it or something is sent to it.
+    unstarted: AtomicBool,
+    wanted: tokio::sync::Notify,
 }
 
 impl Chat {
@@ -849,7 +852,31 @@ impl Chat {
     }
 
     fn send(&self, command: ChatCommand) -> CoreResult<()> {
+        if self.unstarted.load(Ordering::Acquire) {
+            match command {
+                ChatCommand::Cancel | ChatCommand::StopTask { .. } | ChatCommand::DiscardFailed => {
+                    return Ok(())
+                }
+                ChatCommand::HandOver { reply } => {
+                    let _ = reply.send(Err("it had not started".into()));
+                    return Ok(());
+                }
+                _ => self.start_agent(),
+            }
+        }
         self.commands.send(command).map_err(|_| STOPPED.into())
+    }
+
+    /// Starts the agent of a chat that waited for the person, once; later calls do nothing.
+    pub(crate) fn start_agent(&self) {
+        if self.unstarted.swap(false, Ordering::AcqRel) {
+            self.wanted.notify_one();
+        }
+    }
+
+    /// The chat waits for the person before its agent starts.
+    pub(crate) fn unstarted(&self) -> bool {
+        self.unstarted.load(Ordering::Acquire)
     }
 
     /// Sends the prompt a failed turn stopped again, as the person asked.
@@ -1387,6 +1414,8 @@ impl Chats {
             agent: Mutex::new(None),
             restarts: Mutex::new(Default::default()),
             published: Mutex::new("unknown"),
+            unstarted: AtomicBool::new(false),
+            wanted: tokio::sync::Notify::new(),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1468,6 +1497,10 @@ fn launch(
     let ending = chat.clone();
     let owner = core.clone();
     let task = tokio::spawn(async move {
+        if ending.unstarted() {
+            ending.wanted.notified().await;
+            super::activity_log::chat_launched(&owner, &ending.launch);
+        }
         // The agent can be started again under the chat, on another account
         // or after a sign-in, and the chat carries on through it.
         let mut begin = begin;
@@ -1524,18 +1557,20 @@ fn launch(
 
 /// Starts a chat agent, with `subscriber` hearing it from its first event.
 /// The chat is known to the core when this returns, so a stop asked for
-/// next finds it.
+/// next finds it. With `waits_for_person`, its agent starts only once the
+/// person writes in the chat or something is sent to it.
 pub(crate) fn begin(
     core: &Arc<Core>,
     launch_spec: ChatLaunch,
     subscriber: Option<&Arc<ClientConn>>,
     launcher: Option<String>,
+    waits_for_person: bool,
 ) -> CoreResult<Arc<Chat>> {
     let origin = Origin {
         started_by: subscriber.and_then(|client| client.peer.device_id()),
         launcher,
     };
-    start(core, launch_spec, origin, subscriber)
+    start(core, launch_spec, origin, subscriber, waits_for_person)
 }
 
 /// Starts a chat agent another agent asked for, with `lead` as who started it.
@@ -1549,7 +1584,7 @@ pub(crate) fn begin_worker(
         started_by: Some(lead.to_owned()),
         launcher,
     };
-    start(core, launch_spec, origin, None)
+    start(core, launch_spec, origin, None, false)
 }
 
 fn start(
@@ -1557,6 +1592,7 @@ fn start(
     mut launch_spec: ChatLaunch,
     origin: Origin,
     subscriber: Option<&Arc<ClientConn>>,
+    waits_for_person: bool,
 ) -> CoreResult<Arc<Chat>> {
     super::launching::own_tools(core, &mut launch_spec);
     rebind::name_accounts(core, &mut launch_spec);
@@ -1582,11 +1618,17 @@ fn start(
     if !waking {
         core.seen.active(chat.agent_id());
     }
-    super::activity_log::chat_launched(core, &chat.launch);
+    if !waits_for_person {
+        super::activity_log::chat_launched(core, &chat.launch);
+    }
     chat.keep(kept::Progress::STARTING);
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
+    if waits_for_person {
+        chat.feed.wait_for_person();
+    }
+    chat.unstarted.store(waits_for_person, Ordering::Release);
     launch(
         core,
         &chat,
@@ -1837,9 +1879,20 @@ pub(crate) fn adopt(
     Ok(())
 }
 
-/// Answers once the running chat is ready, or says why it never got there.
+/// The person began writing in a new chat, so its agent starts while they write.
+pub(crate) fn composing(core: &Core, agent_id: &str) {
+    if let Some(chat) = core.chats.get(agent_id) {
+        chat.start_agent();
+    }
+}
+
+/// Answers once the running chat is ready, or says why it never got there. A new chat
+/// still waiting for the person answers at once.
 pub(crate) async fn until_ready(core: &Core, agent_id: &str) -> CoreResult<()> {
     let chat = core.chats.running(agent_id)?;
+    if chat.unstarted() {
+        return Ok(());
+    }
     chat.until_ready().await.map(drop).map_err(CoreError::from)
 }
 
@@ -1863,11 +1916,14 @@ pub(crate) async fn attach(
         return;
     };
     // A chat still starting, such as one resumed after an update, is taken up
-    // once it is ready. One that never gets there is gone.
-    let ready = tokio::time::timeout(START_TIMEOUT, chat.until_ready()).await;
-    if !matches!(ready, Ok(Ok(_))) {
-        missing();
-        return;
+    // once it is ready. One that never gets there is gone. A new chat waiting
+    // for the person is taken up at once, and its start follows as changes.
+    if !chat.unstarted() {
+        let ready = tokio::time::timeout(START_TIMEOUT, chat.until_ready()).await;
+        if !matches!(ready, Ok(Ok(_))) {
+            missing();
+            return;
+        }
     }
     chat.feed.attach(
         client,
