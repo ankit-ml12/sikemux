@@ -122,6 +122,12 @@ export interface GitPaneView {
     repo: string | null;
     /** The person went back to the list of repositories, so the project's default does not open on its own. */
     listing: boolean;
+    /** Every repository's changes in one list, rather than one repository's full view. */
+    sourceControl: boolean;
+    /** Whether that list holds this project's repositories or every open project's. */
+    scope: "project" | "all";
+    /** Repositories the person folded open or shut in that list; the rest are open while they have changes. */
+    repoFolds: Record<string, boolean>;
 }
 
 export const DEFAULT_GIT_VIEW: GitPaneView = {
@@ -134,6 +140,9 @@ export const DEFAULT_GIT_VIEW: GitPaneView = {
     historyHeight: null,
     repo: null,
     listing: false,
+    sourceControl: false,
+    scope: "project",
+    repoFolds: {},
 };
 
 export interface GlobalSearchView {

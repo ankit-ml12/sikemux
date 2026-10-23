@@ -10,6 +10,7 @@ import {
     type GitRemote,
     type GitRemoteBranch,
     type GitStash,
+    type GitStatus,
     type GitWorktree,
 } from "../api/git";
 import { settingsApi, type ProjectEntry } from "../api/settings";
@@ -34,6 +35,12 @@ export const gitCommitOwnersR = resource({
     kind: "git.commitOwners",
     fetch: (repo: string, commits: string): Promise<Record<string, CommitOwner[]>> => git.commitOwners(repo, commits.split(",")),
     staleAfterMs: 30_000,
+});
+
+export const gitStatusR = resource({
+    kind: "git.status",
+    fetch: (repo: string): Promise<GitStatus> => git.status(repo),
+    staleAfterMs: 5_000,
 });
 
 export const gitDiscoveredReposR = resource({
