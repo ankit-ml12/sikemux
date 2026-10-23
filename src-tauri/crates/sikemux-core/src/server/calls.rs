@@ -124,6 +124,11 @@ calls! { core, client, params;
                 .await?,
         )
     },
+    "chatPage": Watch, any_program => {
+        let params: ChatPageParams = parse(params)?;
+        let reading = core.clone();
+        answer(super::connection::blocking(move || super::chat::page(&reading, params)).await?)
+    },
     "chatToolDetail": Watch, any_program => {
         let params: ToolDetailParams = parse(params)?;
         answer(super::chat::tool_detail(&core, &params.agent_id, &params.tool_call_id)?)
@@ -845,6 +850,20 @@ async fn page(core: &Core, params: PageParams) -> CoreResult<PageHtml> {
     })
     .await?;
     Ok(PageHtml { html })
+}
+
+/// A page of a chat's rows: those before or after an event, or around the row holding one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatPageParams {
+    pub agent_id: String,
+    pub feed: String,
+    pub before: Option<u64>,
+    pub after: Option<u64>,
+    pub around: Option<u64>,
+    /// A subagent's rows rather than the chat's own.
+    pub session: Option<String>,
+    pub turns: Option<u32>,
 }
 
 #[derive(Deserialize)]

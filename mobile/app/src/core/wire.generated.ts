@@ -1187,11 +1187,17 @@ export interface WorkFold {
   thought: boolean;
 }
 
-/** Rows from before what a client holds, oldest first. */
+/** Rows from before or after what a client holds, oldest first. */
 export interface ChatPage {
   rows: ChatMessage[];
   subagents?: Record<string, ChatMessage[]>;
+  /** What to page back from for the rows before these; none at the chat's start. */
   olderBefore?: number;
+  /**
+   * What to page on from for the rows after these; none once they reach the chat's end,
+   * which the client then follows live.
+   */
+  newerAfter?: number;
 }
 
 /**

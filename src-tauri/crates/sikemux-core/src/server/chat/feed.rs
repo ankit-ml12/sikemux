@@ -23,8 +23,8 @@ use super::super::connection::{ClientConn, ClientId};
 use super::history::{History, HistoryState, Page, Reader, Recovered, MAX_HISTORY_BYTES};
 use super::queue::{batch_len, Queued, MAX_QUEUED};
 use super::states::{Subagent, Task};
-use sikemux_fold::Fold;
 use sikemux_fold::{ChatEvent, ChatEventKind, Place};
+use sikemux_fold::{Fold, PageOf, PAGE_BYTES as ROW_BYTES};
 
 /// One frame's worth of streamed updates travels as a single event. Each
 /// notification on its own costs a script eval in the webview, and an adapter
@@ -72,12 +72,24 @@ struct Entry {
     on_disk: bool,
 }
 
-/// Where a page's events come from.
-enum PageSource {
-    /// The history on disk, read outside the chat's lock.
-    Disk(Reader),
-    /// The replay in memory, already read.
-    Held(Page),
+/// Which rows of a chat a client asks for, by event index.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Anchor {
+    Before(u64),
+    After(u64),
+    /// The row holding the event, and about half a page either side of it.
+    Around(u64),
+}
+
+/// The events a page folds, chosen under the chat's lock. The part on disk is read once the
+/// lock is let go; the newest, not yet on disk, are copied with the choice.
+struct Planned {
+    reader: Option<Reader>,
+    lo: u64,
+    hi: u64,
+    held: Vec<(u64, ChatEvent)>,
+    /// The chat holds more on the side the page reads away from.
+    beyond: bool,
 }
 
 /// The ordered events a late client replays. Text streamed into one message
@@ -1005,31 +1017,125 @@ impl Replay {
     /// from the replay when the chat keeps none.
     #[cfg(test)]
     pub(crate) fn page(&self, before: u64, turns: usize) -> Result<Page, String> {
-        let turns = turns.clamp(1, MAX_PAGE_TURNS);
-        let page = match self.page_source(before, turns)? {
-            PageSource::Held(page) => page,
-            PageSource::Disk(reader) => reader
-                .page(before, turns, PAGE_BYTES)
+        let planned = self.plan(PageOf::Before(before), turns.clamp(1, MAX_PAGE_TURNS))?;
+        let mut events = match &planned.reader {
+            Some(reader) => reader
+                .range(planned.lo, planned.hi)
                 .map_err(|error| error.to_string())?,
+            None => Vec::new(),
         };
-        Ok(self.with_spawns(page))
+        events.extend(planned.held);
+        Ok(self.with_spawns(Page {
+            events,
+            older_before: planned.beyond.then_some(planned.lo),
+            first: planned.lo,
+        }))
     }
 
-    /// Where the turns before `before` are read from: the history on disk, by a reader taken
-    /// now and read once the chat's lock is let go, or the replay held in memory.
-    fn page_source(&self, before: u64, turns: usize) -> Result<PageSource, String> {
-        let history = self
+    /// The events of the turns `side` asks for, as many as `turns` while their events stay
+    /// under the page's size: whole turns, or from the nearest point inside a turn too big for
+    /// a page of its own.
+    fn plan(&self, side: PageOf, turns: usize) -> Result<Planned, String> {
+        let reader = self
             .history
             .as_ref()
-            .filter(|history| history.first().is_some());
-        let reader = history
+            .filter(|history| history.first().is_some())
             .map(History::reader)
             .transpose()
             .map_err(|error| error.to_string())?
             .flatten();
-        Ok(match reader {
-            Some(reader) => PageSource::Disk(reader),
-            None => PageSource::Held(self.page_held(before, turns)),
+        let (first, on_disk) = reader.as_ref().map_or_else(
+            || {
+                let first = self
+                    .entries
+                    .front()
+                    .map_or(self.next_index, |entry| entry.index);
+                (first, first)
+            },
+            Reader::span,
+        );
+        let mut points: Vec<(u64, u64, bool)> = reader.iter().flat_map(Reader::points).collect();
+        let mut end = reader.as_ref().map_or(0, Reader::bytes);
+        for entry in self.entries.iter().filter(|entry| entry.index >= on_disk) {
+            if entry.point || entry.starts_turn {
+                points.push((entry.index, end, entry.starts_turn));
+            }
+            end += entry.bytes as u64;
+        }
+        let next = self.next_index;
+        let budget = PAGE_BYTES;
+        let (lo, hi, beyond) = match side {
+            PageOf::Before(before) => {
+                let before = before.min(next);
+                let after = |turn: bool| {
+                    points
+                        .iter()
+                        .find(|(index, _, starts)| *index >= before && (*starts || !turn))
+                        .map(|&(index, at, _)| (index, at))
+                };
+                let (hi, to) = match (after(true), after(false)) {
+                    (Some(turn), Some(point)) if turn.1 - point.1 <= budget => turn,
+                    (_, Some(point)) => point,
+                    _ => (next, end),
+                };
+                let earlier: Vec<&(u64, u64, bool)> = points
+                    .iter()
+                    .rev()
+                    .filter(|(index, _, _)| *index < before)
+                    .collect();
+                let (mut turn, mut piece, mut counted) = (None, None, 0);
+                for &&(index, at, starts) in &earlier {
+                    if to - at > budget {
+                        break;
+                    }
+                    piece = Some(index);
+                    if starts {
+                        turn = Some(index);
+                        counted += 1;
+                        if counted >= turns {
+                            break;
+                        }
+                    }
+                }
+                let lo = turn
+                    .or(piece)
+                    .or_else(|| earlier.first().map(|point| point.0))
+                    .unwrap_or(first);
+                (lo, hi, lo > first)
+            }
+            PageOf::After(after) => {
+                let from = after.saturating_add(1);
+                let start = points
+                    .iter()
+                    .rev()
+                    .find(|(index, _, starts)| *index <= from && *starts)
+                    .or_else(|| points.iter().rev().find(|(index, _, _)| *index <= from))
+                    .map_or((first, 0), |&(index, at, _)| (index, at));
+                let mut hi = next;
+                let mut counted = 1;
+                for &(index, at, starts) in points.iter().filter(|(index, _, _)| *index > start.0) {
+                    if at - start.1 > budget || (starts && counted >= turns) {
+                        hi = index;
+                        break;
+                    }
+                    counted += usize::from(starts);
+                }
+                (start.0, hi, hi < next)
+            }
+        };
+        let held = self
+            .entries
+            .iter()
+            .filter(|entry| entry.index >= on_disk && (lo..hi).contains(&entry.index))
+            .filter(|entry| entry.event.kind != ChatEventKind::PermissionRequest)
+            .map(|entry| (entry.index, entry.event.clone()))
+            .collect();
+        Ok(Planned {
+            reader,
+            lo,
+            hi,
+            held,
+            beyond,
         })
     }
 
@@ -1042,35 +1148,6 @@ impl Replay {
             .collect();
         page.events.splice(0..0, spawns);
         page
-    }
-
-    fn page_held(&self, before: u64, turns: usize) -> Page {
-        let end = self.entries.partition_point(|entry| entry.index < before);
-        let mut start = end;
-        let mut counted = 0;
-        let mut bytes = 0;
-        while start > 0 && counted < turns {
-            start -= 1;
-            bytes += self.entries[start].bytes;
-            if self.entries[start].starts_turn {
-                counted += 1;
-            }
-            if bytes as u64 > PAGE_BYTES && self.entries[start].point {
-                break;
-            }
-        }
-        let events = self
-            .entries
-            .range(start..end)
-            .filter(|entry| entry.event.kind != ChatEventKind::PermissionRequest)
-            .map(|entry| (entry.index, entry.event.clone()))
-            .collect();
-        let first = self.entries.get(start).map_or(before, |entry| entry.index);
-        Page {
-            events,
-            older_before: (start > 0).then_some(first),
-            first,
-        }
     }
 
     /// An answered request is not asked again when the chat is replayed.
@@ -1950,26 +2027,65 @@ impl Feed {
         if feed != self.id {
             return Err("the chat started again; open it again to see its history".into());
         }
+        self.page(feed, Anchor::Before(before), turns)
+    }
+
+    /// The rows `anchor` asks for in this run of the chat, `turns` of them at most: those
+    /// before or after an event, or around the row holding one.
+    pub(crate) fn page(
+        &self,
+        feed: &str,
+        anchor: Anchor,
+        turns: usize,
+    ) -> Result<ChatPage, String> {
+        if feed != self.id {
+            return Err("the chat started again; open it again to see its history".into());
+        }
         let turns = turns.clamp(1, MAX_PAGE_TURNS);
+        match anchor {
+            Anchor::Before(before) => self.page_of(PageOf::Before(before), turns, ROW_BYTES),
+            Anchor::After(after) => self.page_of(PageOf::After(after), turns, ROW_BYTES),
+            Anchor::Around(event) => {
+                let half = (turns / 2).max(1);
+                let before = PageOf::Before(event.saturating_add(1));
+                let mut page = self.page_of(before, half, ROW_BYTES / 2)?;
+                let newer = self.page_of(PageOf::After(event), half, ROW_BYTES / 2)?;
+                let held: HashSet<String> = page.rows.iter().map(|row| row.id.clone()).collect();
+                page.rows
+                    .extend(newer.rows.into_iter().filter(|row| !held.contains(&row.id)));
+                page.subagents.extend(newer.subagents);
+                page.newer_after = newer.newer_after;
+                Ok(page)
+            }
+        }
+    }
+
+    fn page_of(&self, side: PageOf, turns: usize, budget: usize) -> Result<ChatPage, String> {
         for _ in 0..2 {
-            let source = self.inner.locked().replay.page_source(before, turns)?;
-            let page = match source {
-                PageSource::Held(page) => page,
-                PageSource::Disk(reader) => {
-                    let page = reader
-                        .page(before, turns, PAGE_BYTES)
-                        .map_err(|error| error.to_string())?;
-                    if !reader.still_current() {
-                        continue;
-                    }
-                    page
-                }
+            let planned = self.inner.locked().replay.plan(side, turns)?;
+            let mut events = match &planned.reader {
+                Some(reader) => reader
+                    .range(planned.lo, planned.hi)
+                    .map_err(|error| error.to_string())?,
+                None => Vec::new(),
             };
+            if planned
+                .reader
+                .as_ref()
+                .is_some_and(|reader| !reader.still_current())
+            {
+                continue;
+            }
+            events.extend(planned.held);
             let mut inner = self.inner.locked();
-            let page = inner.replay.with_spawns(page);
+            let page = inner.replay.with_spawns(Page {
+                events,
+                older_before: None,
+                first: planned.lo,
+            });
             return Ok(self
                 .fold(&mut inner)
-                .page(&page.events, before, page.older_before));
+                .page_of(&page.events, side, budget, planned.beyond));
         }
         Err("that part of the chat changed; ask again".into())
     }

@@ -1947,6 +1947,32 @@ pub(crate) fn history(
     })
 }
 
+/// The rows of a chat a client pages to: before or after an event, or around the row holding
+/// one, whole and with their meta, under the window's size.
+pub(crate) fn page(
+    core: &Core,
+    params: super::calls::ChatPageParams,
+) -> CoreResult<sikemux_wire::chat::ChatPage> {
+    use feed::Anchor;
+    if params.session.is_some() {
+        return Err("paging a subagent's rows is not ready yet".into());
+    }
+    let anchor = match (params.before, params.after, params.around) {
+        (Some(before), None, None) => Anchor::Before(before),
+        (None, Some(after), None) => Anchor::After(after),
+        (None, None, Some(around)) => Anchor::Around(around),
+        _ => return Err("name one of before, after or around".into()),
+    };
+    let turns = params
+        .turns
+        .map_or(sikemux_fold::TAIL_TURNS, |turns| turns as usize);
+    Ok(core
+        .chats
+        .running(&params.agent_id)?
+        .feed
+        .page(&params.feed, anchor, turns)?)
+}
+
 /// The change a chat's tool call made and what it printed, for a client that
 /// opened the call's row.
 pub(crate) fn tool_detail(

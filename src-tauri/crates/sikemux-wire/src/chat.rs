@@ -23,15 +23,20 @@ pub struct ChatView {
     pub older_before: Option<u64>,
 }
 
-/// Rows from before what a client holds, oldest first.
+/// Rows from before or after what a client holds, oldest first.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatPage {
     pub rows: Vec<ChatMessage>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub subagents: BTreeMap<String, Vec<ChatMessage>>,
+    /// What to page back from for the rows before these; none at the chat's start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub older_before: Option<u64>,
+    /// What to page on from for the rows after these; none once they reach the chat's end,
+    /// which the client then follows live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub newer_after: Option<u64>,
 }
 
 /// One change to a chat a client holds. `in` names the subagent session whose

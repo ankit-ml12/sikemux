@@ -408,16 +408,6 @@ impl History {
         None
     }
 
-    /// Whole turns from before the event at `before`, as many as `turns` while they stay under
-    /// `max_bytes`, read here and now.
-    #[cfg(test)]
-    pub(crate) fn page(&self, before: u64, turns: usize, max_bytes: u64) -> io::Result<Page> {
-        match self.reader()? {
-            Some(reader) => reader.page(before, turns, max_bytes),
-            None => Ok(Page::default()),
-        }
-    }
-
     /// What a page read needs of the file, to read outside the chat's lock; none while no file
     /// is kept.
     pub(crate) fn reader(&self) -> io::Result<Option<Reader>> {
@@ -443,58 +433,50 @@ impl Reader {
         self.rewrites.load(Ordering::SeqCst) == self.taken_at
     }
 
-    /// Whole turns from before the event at `before`, as many as `turns`
-    /// while they stay under `max_bytes`. A turn too big for a page on its
-    /// own comes in pieces. Permission requests are left out: they were
-    /// answered long ago.
-    pub(crate) fn page(&self, before: u64, turns: usize, max_bytes: u64) -> io::Result<Page> {
-        if before <= self.first {
-            return Ok(Page::default());
+    /// The index of the first event the file still holds, and one past its last.
+    pub(crate) fn span(&self) -> (u64, u64) {
+        (self.first, self.next)
+    }
+
+    /// How many bytes the file holds.
+    pub(crate) fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    /// Each event a page can start from, oldest first: its index, where it sits in the file,
+    /// and whether it starts a turn.
+    pub(crate) fn points(&self) -> impl Iterator<Item = (u64, u64, bool)> + '_ {
+        self.points
+            .iter()
+            .map(|point| (point.index, point.offset, point.starts_turn))
+    }
+
+    /// The events from `lo` up to `hi`, each with its index, read from the page point at or
+    /// before `lo`. Permission requests are left out: they were answered long ago.
+    pub(crate) fn range(&self, lo: u64, hi: u64) -> io::Result<Vec<(u64, ChatEvent)>> {
+        let lo = lo.max(self.first);
+        let hi = hi.min(self.next);
+        if lo >= hi {
+            return Ok(Vec::new());
         }
-        let end = match self
+        let from = self.points[..self.points.partition_point(|point| point.index <= lo)]
+            .last()
+            .map_or(0, |point| point.offset);
+        let to = self
             .points
-            .binary_search_by_key(&before, |point| point.index)
-        {
-            Ok(found) => self.points[found].offset,
-            Err(_) if before >= self.next => self.bytes,
-            Err(_) => return Err(io::Error::other("that point of the chat is not kept")),
-        };
-        let candidates = &self.points[..self.points.partition_point(|point| point.index < before)];
-        let mut chosen = None;
-        let mut fits = None;
-        let mut counted = 0;
-        for (position, point) in candidates.iter().enumerate().rev() {
-            if end - point.offset > max_bytes {
-                chosen = chosen.or(fits).or(Some(position));
-                break;
-            }
-            fits = Some(position);
-            if point.starts_turn {
-                chosen = Some(position);
-                counted += 1;
-                if counted >= turns {
-                    break;
-                }
-            }
-        }
-        let Some(chosen) = chosen.or(fits) else {
-            return Ok(Page::default());
-        };
-        let start = candidates[chosen];
-        let mut text = vec![0; (end - start.offset) as usize];
-        self.file.read_exact_at(&mut text, start.offset)?;
-        let events = text
+            .iter()
+            .find(|point| point.index >= hi)
+            .map_or(self.bytes, |point| point.offset);
+        let mut text = vec![0; to.saturating_sub(from) as usize];
+        self.file.read_exact_at(&mut text, from)?;
+        Ok(text
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
             .filter_map(|line| serde_json::from_slice::<Line<ChatEvent>>(line).ok())
+            .filter(|line| (lo..hi).contains(&line.index))
             .filter(|line| line.event.kind != ChatEventKind::PermissionRequest)
             .map(|line| (line.index, line.event))
-            .collect();
-        Ok(Page {
-            events,
-            older_before: (chosen > 0).then_some(start.index),
-            first: start.index,
-        })
+            .collect())
     }
 }
 
@@ -519,8 +501,13 @@ mod tests {
         }
     }
 
-    fn numbers(page: &Page) -> Vec<u64> {
-        page.events
+    /// The events from `lo` up to `hi`, by the number each carries.
+    fn read(history: &History, lo: u64, hi: u64) -> Vec<u64> {
+        history
+            .reader()
+            .unwrap()
+            .map(|reader| reader.range(lo, hi).unwrap())
+            .unwrap_or_default()
             .iter()
             .map(|(_, event)| event.payload["n"].as_u64().unwrap_or(u64::MAX))
             .collect()
@@ -547,24 +534,14 @@ mod tests {
     }
 
     #[test]
-    fn pages_are_whole_turns_back_to_the_start() {
+    fn reads_any_stretch_of_the_chat_by_index() {
         let dir = tempfile::tempdir().unwrap();
         let mut history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
         turns(&mut history, 5);
-
-        let page = history.page(9, 2, u64::MAX).unwrap();
-        assert_eq!(numbers(&page), [3, 4, 5, 6, 7, 8]);
-        assert_eq!(page.older_before, Some(3));
-
-        let page = history.page(3, 2, u64::MAX).unwrap();
-        assert_eq!(numbers(&page), [0, 1, 2]);
-        assert_eq!(page.older_before, None);
-
-        assert_eq!(history.page(0, 2, u64::MAX).unwrap(), Page::default());
-        assert_eq!(
-            numbers(&history.page(15, 1, u64::MAX).unwrap()),
-            [12, 13, 14]
-        );
+        assert_eq!(read(&history, 3, 9), [3, 4, 5, 6, 7, 8]);
+        assert_eq!(read(&history, 4, 7), [4, 5, 6]);
+        assert_eq!(read(&history, 12, 100), [12, 13, 14]);
+        assert!(read(&history, 9, 9).is_empty());
     }
 
     #[test]
@@ -573,16 +550,9 @@ mod tests {
         let mut history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
         turns(&mut history, 4);
         history.truncate(6);
-        assert_eq!(
-            numbers(&history.page(6, 10, u64::MAX).unwrap()),
-            [0, 1, 2, 3, 4, 5]
-        );
+        assert_eq!(read(&history, 0, 100), [0, 1, 2, 3, 4, 5]);
         history.append(20, &event(ChatEventKind::TurnStarted, 20), true, true);
-        assert_eq!(numbers(&history.page(21, 1, u64::MAX).unwrap()), [20]);
-        assert_eq!(
-            numbers(&history.page(20, 10, u64::MAX).unwrap()),
-            [0, 1, 2, 3, 4, 5]
-        );
+        assert_eq!(read(&history, 0, 100), [0, 1, 2, 3, 4, 5, 20]);
     }
 
     #[test]
@@ -591,20 +561,7 @@ mod tests {
         let mut history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
         turns(&mut history, 3);
         history.truncate(4);
-        assert_eq!(history.page(9, 10, u64::MAX).unwrap(), Page::default());
-    }
-
-    #[test]
-    fn a_page_stops_at_its_size_but_holds_at_least_one_turn() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut history = History::open(dir.path(), "chat", MAX_HISTORY_BYTES);
-        turns(&mut history, 4);
-        let last_turn = history.bytes - history.points[3].offset;
-        let page = history.page(12, 10, last_turn).unwrap();
-        assert_eq!(numbers(&page), [9, 10, 11]);
-        assert_eq!(page.older_before, Some(9));
-        let page = history.page(12, 10, 1).unwrap();
-        assert_eq!(numbers(&page), [9, 10, 11]);
+        assert!(read(&history, 0, 100).is_empty());
     }
 
     #[test]
@@ -614,7 +571,7 @@ mod tests {
         history.append(0, &event(ChatEventKind::TurnStarted, 0), true, true);
         history.append(1, &event(ChatEventKind::PermissionRequest, 1), false, false);
         history.append(2, &event(ChatEventKind::TurnCompleted, 2), false, false);
-        assert_eq!(numbers(&history.page(3, 1, u64::MAX).unwrap()), [0, 2]);
+        assert_eq!(read(&history, 0, 3), [0, 2]);
     }
 
     #[test]
@@ -628,10 +585,7 @@ mod tests {
         assert!(history.bytes < size);
         let first = history.first().unwrap();
         assert!(first > 0 && first.is_multiple_of(3));
-        let page = history.page(30, 100, u64::MAX).unwrap();
-        assert_eq!(numbers(&page), (first..30).collect::<Vec<_>>());
-        assert_eq!(page.older_before, None);
-        assert_eq!(history.page(first, 1, u64::MAX).unwrap(), Page::default());
+        assert_eq!(read(&history, 0, 30), (first..30).collect::<Vec<_>>());
     }
 
     #[test]

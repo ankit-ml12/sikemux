@@ -36,6 +36,55 @@ const FOLD_BYTES: usize = 8 * 1024 * 1024;
 /// What a part costs beyond its text, roughly.
 const PART_BYTES: usize = 160;
 
+/// Which rows of a chat a page holds, by the event that opened each.
+#[derive(Clone, Copy, Debug)]
+pub enum PageOf {
+    /// Those opened before the event.
+    Before(u64),
+    /// Those opened after the event.
+    After(u64),
+}
+
+impl PageOf {
+    fn keeps(self, index: u64) -> bool {
+        match self {
+            PageOf::Before(before) => index < before,
+            PageOf::After(after) => index > after,
+        }
+    }
+}
+
+/// The most of a page's JSON a client is sent at once, as of the window it opened with.
+pub const PAGE_BYTES: usize = TAIL_BYTES;
+
+/// Keeps as many of `rows` as stay under `budget` bytes of JSON, whole, counted from the
+/// newest when `newest` and from the oldest otherwise; at least one stays. Says whether any went.
+fn within(rows: &mut Vec<ChatMessage>, budget: usize, newest: bool) -> bool {
+    let sizes: Vec<usize> = rows
+        .iter()
+        .map(|row| serde_json::to_vec(row).map_or(0, |json| json.len()))
+        .collect();
+    let mut total = 0;
+    let mut kept = 0;
+    let order: Box<dyn Iterator<Item = &usize>> = match newest {
+        true => Box::new(sizes.iter().rev()),
+        false => Box::new(sizes.iter()),
+    };
+    for size in order {
+        if kept > 0 && total + size > budget {
+            break;
+        }
+        total += size;
+        kept += 1;
+    }
+    let gone = rows.len() - kept;
+    match newest {
+        true => drop(rows.drain(..gone)),
+        false => rows.truncate(kept),
+    }
+    gone > 0
+}
+
 /// The head's fields a client drops when they are absent, so a catch-up
 /// names each one.
 const OPTIONAL_HEAD: [&str; 11] = [
@@ -527,14 +576,16 @@ impl Fold {
         Some(out)
     }
 
-    /// Rows before event `before`, folded on their own from the chat's events
-    /// `events`, each with its index. A subagent or a call that ended after
-    /// the page shows how it ended, as this fold knows it.
-    pub fn page(
+    /// The rows `events` hold that `wanted` asks for, folded from the whole turns they ran
+    /// in, so a call finished after them arrives finished and no row is cut. They stay under
+    /// `budget` bytes of JSON, counted from the end nearest the event asked from; at least one
+    /// row goes. `beyond` says whether the chat holds more past the events, on the far side.
+    pub fn page_of(
         &self,
         events: &[(u64, ChatEvent)],
-        before: u64,
-        older_before: Option<u64>,
+        wanted: PageOf,
+        budget: usize,
+        beyond: bool,
     ) -> ChatPage {
         let mut fold = Fold::new(&self.head.permission_mode);
         fold.head.session_id = self.head.session_id.clone();
@@ -551,7 +602,7 @@ impl Fold {
             .main
             .rows
             .drain(..)
-            .filter(|row| row.index < before)
+            .filter(|row| wanted.keeps(row.index))
             .collect();
         for row in &mut rows {
             for part in &mut row.msg.parts {
@@ -571,18 +622,35 @@ impl Fold {
             }
         }
         super::turns::settle_all(&mut rows);
-        let refs: Vec<&Row> = rows.iter().collect();
-        let mut subagents = fold.subagent_rows(&refs);
+        let mut sent: Vec<ChatMessage> = rows.iter().map(whole_row).collect();
+        let cut = within(&mut sent, budget, matches!(wanted, PageOf::Before(_)));
+        let kept: Vec<&Row> = rows
+            .iter()
+            .filter(|row| sent.iter().any(|sent| sent.id == row.msg.id))
+            .collect();
+        let mut subagents = fold.subagent_rows(&kept);
         for (session, rows) in subagents.iter_mut() {
             if let Some(sub) = self.subs.get(session) {
                 let latest = &sub.rows[sub.rows.len().saturating_sub(SUBAGENT_TAIL_ROWS)..];
                 *rows = latest.iter().map(whole_row).collect();
             }
         }
+        let more = cut || beyond;
+        let (older_before, newer_after) = match wanted {
+            PageOf::Before(_) => (
+                sent.first().and_then(|row| row.from_event).filter(|_| more),
+                None,
+            ),
+            PageOf::After(_) => (
+                None,
+                sent.last().and_then(|row| row.from_event).filter(|_| more),
+            ),
+        };
         ChatPage {
-            rows: rows.iter().map(whole_row).collect(),
+            rows: sent,
             subagents,
             older_before,
+            newer_after,
         }
     }
 

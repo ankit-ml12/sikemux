@@ -31,7 +31,7 @@ use sikemux_wire::chat::{
 use tools::WithRow;
 
 pub use event::{ChatEvent, ChatEventKind};
-pub use send::TAIL_TURNS;
+pub use send::{PageOf, PAGE_BYTES, TAIL_TURNS};
 
 /// The change a call made and what it printed, from everything said of it.
 pub fn detail_of(raw: &Map<String, Value>, work: Option<(&Path, &Place)>) -> ToolDetail {
