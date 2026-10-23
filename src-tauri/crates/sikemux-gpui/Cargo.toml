@@ -75,8 +75,12 @@ sikemux-fold = { path = "../sikemux-fold" }
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["test-support", "bench-support"] }
 
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.release]
 opt-level = "s"
