@@ -200,6 +200,8 @@ pub(super) struct State {
     /// Whether each file is fragile, and why, once looked at.
     fragile: HashMap<PathBuf, Option<&'static str>>,
     checks: checks::Checks,
+    /// The commit each project's branch was at when last looked at.
+    heads: HashMap<String, String>,
     /// The inbox changed, so devices are sent the view again.
     publish: bool,
     bytes: usize,
@@ -837,18 +839,36 @@ impl Collisions {
         self.state.locked().checks.failing().cloned().collect()
     }
 
-    /// `project`'s branch moved, by whatever commit, an agent's own `git
-    /// commit` or the person's among them: agents waiting on its events hear
-    /// it, and its newest commit waits for the project's check, with the
+    /// `project`'s git state may have moved. When its branch is at another
+    /// commit than when last looked at, by whatever commit, an agent's own
+    /// `git commit` or the person's among them, agents waiting on its events
+    /// hear it; its newest commit waits for the project's check, with the
     /// agents its footer names.
     pub(crate) fn head_moved(&self, core: &Arc<Core>, project: &str) {
-        core.harness.note_repository(project, "git.moved");
-        if crate::server::board::check_command(core, project).is_none() {
-            return;
-        }
         let (core, project) = (core.clone(), project.to_owned());
         tokio::task::spawn_blocking(move || {
             let dir = PathBuf::from(&project);
+            let Ok(repo) = git2::Repository::discover(&dir) else {
+                return;
+            };
+            let at = repo
+                .head()
+                .ok()
+                .and_then(|head| head.target())
+                .map(|id| id.to_string())
+                .unwrap_or_default();
+            let before = core
+                .collisions
+                .state
+                .locked()
+                .heads
+                .insert(project.clone(), at.clone());
+            if before.is_some_and(|before| before != at) {
+                core.harness.note_repository(&project, "git.moved");
+            }
+            if crate::server::board::check_command(&core, &project).is_none() {
+                return;
+            }
             let Ok(head) = edits::git(&dir, &["log", "-1", "--format=%H%x00%s"]) else {
                 return;
             };
