@@ -1,4 +1,3 @@
-import { useQuery } from "../queryState";
 import type { DatabaseTab } from "../tabs";
 import type { DatabaseConnection } from "../types.generated";
 import { HistoryPanel } from "./HistoryPanel";
@@ -44,18 +43,13 @@ export function TabBody({
 }
 
 function Console({ id, profile }: { id: string; profile: DatabaseConnection }) {
-    const ran = useQuery(id).ran;
     return (
         <div className="db-console">
             <div className="db-console-head">
                 <span className="db-row-name">{profile.name}</span>
                 <span className="db-meta">{profile.connected}</span>
             </div>
-            <QueryWorkspace
-                consoleId={id}
-                profile={profile}
-                resultActions={(result) => <SendResults profile={profile} sql={ran ?? ""} result={result} />}
-            />
+            <QueryWorkspace consoleId={id} profile={profile} resultActions={(result) => <SendResults result={result} />} />
         </div>
     );
 }

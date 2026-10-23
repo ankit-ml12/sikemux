@@ -277,7 +277,7 @@ fn engine(target: &Target) -> Engine {
     }
 }
 
-fn engine_name(target: &Target) -> &'static str {
+pub(crate) fn engine_name(target: &Target) -> &'static str {
     match target {
         Target::Postgres(_) => "PostgreSQL",
         Target::Mysql(_) => "MySQL",

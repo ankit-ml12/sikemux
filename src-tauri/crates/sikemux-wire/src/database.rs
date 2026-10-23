@@ -159,3 +159,48 @@ pub struct HistoryEntry {
     pub error: Option<String>,
     pub by_agent: bool,
 }
+
+/// What one run of SQL gave: a result for each statement, in the order they ran.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryOutcome {
+    pub results: Vec<ResultSet>,
+    /// The result shown first: the last that returned rows, or else the last.
+    pub main: usize,
+    pub millis: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultSet {
+    pub columns: Vec<ResultColumn>,
+    /// Each row's cells as text; none is NULL.
+    pub rows: Vec<Vec<Option<String>>>,
+    /// More rows came back than the limit, and only the first ones are kept.
+    pub truncated: bool,
+    /// Rows a change touched; none for statements that return rows.
+    pub affected: Option<u64>,
+    /// One line about it: how many rows it returned or changed, and whether some were left out.
+    pub summary: String,
+    /// It as an agent is handed it: which database, the SQL that ran and a table of its first rows.
+    pub for_agent: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultColumn {
+    pub name: String,
+    /// The engine's own name for the type; empty when it does not say.
+    #[serde(rename = "type")]
+    pub type_name: String,
+    /// Numbers sit to the right in a grid.
+    pub numeric: bool,
+}
+
+/// How a result is copied: tab-separated, as spreadsheets paste it, or comma-separated.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CopyFormat {
+    Tsv,
+    Csv,
+}

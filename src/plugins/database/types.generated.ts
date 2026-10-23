@@ -118,3 +118,36 @@ export interface DatabaseHistoryEntry {
     error: string | null;
     byAgent: boolean;
 }
+
+/** What one run of SQL gave: a result for each statement, in the order they ran. */
+export interface DatabaseQueryOutcome {
+    results: DatabaseResultSet[];
+    /** The result shown first: the last that returned rows, or else the last. */
+    main: number;
+    millis: number;
+}
+
+export interface DatabaseResultSet {
+    columns: DatabaseResultColumn[];
+    /** Each row's cells as text; none is NULL. */
+    rows: (string | null)[][];
+    /** More rows came back than the limit, and only the first ones are kept. */
+    truncated: boolean;
+    /** Rows a change touched; none for statements that return rows. */
+    affected: number | null;
+    /** One line about it: how many rows it returned or changed, and whether some were left out. */
+    summary: string;
+    /** It as an agent is handed it: which database, the SQL that ran and a table of its first rows. */
+    forAgent: string;
+}
+
+export interface DatabaseResultColumn {
+    name: string;
+    /** The engine's own name for the type; empty when it does not say. */
+    type: string;
+    /** Numbers sit to the right in a grid. */
+    numeric: boolean;
+}
+
+/** How a result is copied: tab-separated, as spreadsheets paste it, or comma-separated. */
+export type DatabaseCopyFormat = "tsv" | "csv";

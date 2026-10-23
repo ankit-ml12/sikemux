@@ -102,6 +102,10 @@ const DATABASE_TYPES = [
   "ForeignKeyRow",
   "History",
   "HistoryEntry",
+  "QueryOutcome",
+  "ResultSet",
+  "ResultColumn",
+  "CopyFormat",
 ];
 
 /** Linear's types are known as Linear's, as Jira's are known as Jira's. */
@@ -392,6 +396,8 @@ const DATABASE_ROOTS = [
   "DatabaseExplorer",
   "DatabaseTableView",
   "DatabaseHistory",
+  "DatabaseQueryOutcome",
+  "DatabaseCopyFormat",
 ];
 
 /** What the Linear plugin's views hand its pane. */

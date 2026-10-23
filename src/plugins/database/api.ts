@@ -1,5 +1,6 @@
 import { createPluginBackend } from "../../plugin-api/backend";
 import { DATABASE_PLUGIN } from "./kinds";
+import type { DatabaseCopyFormat, DatabaseQueryOutcome, DatabaseResultSet } from "./types.generated";
 
 const backend = createPluginBackend(DATABASE_PLUGIN.id);
 
@@ -49,29 +50,6 @@ export interface Tested {
     millis: number;
 }
 
-export interface ResultColumn {
-    name: string;
-    /** The engine's own name for the type; empty when it does not say. */
-    type: string;
-    numeric: boolean;
-}
-
-/** A cell: null, a boolean, a number, or text. Huge integers and decimals arrive as text so no digit is lost. */
-export type Cell = string | number | boolean | null;
-
-export interface ResultSet {
-    columns: ResultColumn[];
-    rows: Cell[][];
-    truncated: boolean;
-    /** Rows a change touched; null for statements that return rows. */
-    affected: number | null;
-}
-
-export interface QueryOutcome {
-    results: ResultSet[];
-    millis: number;
-}
-
 export const databaseApi = {
     profiles: () => backend.call<DatabaseProfile[]>("profiles"),
     /** A password left out keeps the saved one; an empty one forgets it. */
@@ -81,7 +59,10 @@ export const databaseApi = {
     connect: (id: string) => backend.call<void>("connect", { id }),
     disconnect: (id: string) => backend.call<void>("disconnect", { id }),
     /** `run` names this run, so stopping it never stops another console's query on the same connection. */
-    query: (id: string, sql: string, limit?: number, run?: string) => backend.call<QueryOutcome>("query", { id, sql, limit, run }),
+    query: (id: string, sql: string, limit?: number, run?: string) => backend.call<DatabaseQueryOutcome>("query", { id, sql, limit, run }),
+    /** The result as text to paste elsewhere, with a header row. */
+    copyResult: (result: DatabaseResultSet, format: DatabaseCopyFormat) =>
+        backend.call<string>("copyResult", { result: { columns: result.columns, rows: result.rows }, format }),
     cancel: (id: string, run: string) => backend.call<void>("cancel", { id, run }),
     clearHistory: (id: string) => backend.call<void>("clearHistory", { id }),
 };

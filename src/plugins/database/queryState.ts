@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { errorText } from "../../plugin-api/format";
-import { databaseApi, type QueryOutcome } from "./api";
+import { databaseApi } from "./api";
+import type { DatabaseQueryOutcome } from "./types.generated";
 
 export const ROW_LIMITS = [100, 500, 1000, 5000] as const;
 export const DEFAULT_ROW_LIMIT = 500;
@@ -10,7 +11,7 @@ export interface QueryState {
     sql: string;
     limit: number;
     running: boolean;
-    outcome: QueryOutcome | null;
+    outcome: DatabaseQueryOutcome | null;
     error: string | null;
     /** The SQL of the last run, shown beside its outcome. */
     ran: string | null;

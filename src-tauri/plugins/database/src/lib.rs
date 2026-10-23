@@ -8,6 +8,7 @@
 //   history     — the SQL run against each saved database, to find and run again
 //   queries     — running SQL against a saved database, and stopping it
 //   values      — query results, the same for every engine
+//   results     — what the person's queries show, and their copies
 //   views       — what the pane shows: the explorer, a table's structure and the history
 
 mod agent;
@@ -17,6 +18,7 @@ mod error;
 mod history;
 mod profiles;
 mod queries;
+mod results;
 mod schema;
 mod values;
 mod views;
@@ -82,15 +84,20 @@ impl Plugin for Database {
                     reply(())
                 }
                 "query" => {
-                    let request = params(input)?;
-                    answer(queries::run(
-                        &self.pool,
-                        &data_dir,
-                        request,
-                        history::Source::Person,
-                    ))
-                    .await
+                    let request: queries::QueryRequest = params(input)?;
+                    let (id, sql) = (request.id.clone(), request.sql.trim().to_owned());
+                    let outcome =
+                        queries::run(&self.pool, &data_dir, request, history::Source::Person)
+                            .await?;
+                    let saved = profiles::load(&data_dir)?.get(&id)?.clone();
+                    let ran = results::Ran {
+                        database: &saved.name,
+                        engine: views::engine_name(&saved.target),
+                        sql: &sql,
+                    };
+                    reply(results::shown(outcome, &ran))
                 }
+                "copyResult" => reply(results::copied(params(input)?)),
                 "explorerView" => {
                     answer(views::explorer_view(&self.pool, data_dir, params(input)?)).await
                 }
