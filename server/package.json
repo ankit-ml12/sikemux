@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "protocol:generate": "pnpm --filter @sikemux/protocol generate",
     "protocol:check": "pnpm --filter @sikemux/protocol check",
+    "schema:generate": "pnpm --filter @sikemux/api schema:generate",
     "test": "pnpm -r test",
     "check": "pnpm protocol:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "pack:release": "node deploy/pack.mjs"

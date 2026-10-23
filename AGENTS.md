@@ -109,6 +109,9 @@
 - Migrations in `server/api/migrations` are never edited once merged. A change that
   removes something comes in two steps: stop using it in one release, drop it in a later
   one, so a rollback always finds the schema it expects.
+- `server/api/schema.dbml` draws the schema the migrations build, for dbdiagram.io. After
+  adding a migration run `pnpm schema:generate` in `server/` and commit it alongside; the
+  API tests fail while it is stale.
 - Merging to `main` deploys anything under `server/` to production. You may push it,
   run `server/deploy` scripts against citadel, and set up its config without asking,
   after `agentctl guard` passes. Never print secrets, and ask first before anything
