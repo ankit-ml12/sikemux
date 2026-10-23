@@ -3,8 +3,11 @@
 //! hands it to the plugin's own panel to draw. Panels hold only what the person picked; what
 //! they show comes from the views, and what they change goes back through the plugin's calls.
 
+use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
+use std::rc::Rc;
 
 use gpui_kit::{
     div, px, AnyElement, App, Context, FontWeight, IntoElement, ParentElement, Render,
@@ -27,7 +30,7 @@ mod linear;
 const KEPT_AT_MOST: usize = 32;
 
 /// What a plugin draws in its pane, from the views its host keeps.
-pub trait Panel {
+pub trait Panel: Any {
     fn render(
         &mut self,
         host: &mut Host,
@@ -39,8 +42,8 @@ pub trait Panel {
 /// The panel of `plugin`, for the plugins that draw a pane.
 fn panel(plugin: &str) -> Option<Box<dyn Panel>> {
     match plugin {
-        "sikemux.jira" => Some(Box::new(jira::Jira)),
-        "sikemux.linear" => Some(Box::new(linear::Linear::default())),
+        "sikemux.jira" => Some(Box::<jira::Jira>::default()),
+        "sikemux.linear" => Some(Box::<linear::Linear>::default()),
         _ => None,
     }
 }
@@ -91,6 +94,14 @@ impl Failure {
         }
     }
 
+    /// The same failure, said as what was being done when it happened.
+    pub fn titled(&self, doing: &str) -> Self {
+        Self {
+            message: format!("{doing}: {}", self.message).into(),
+            ..self.clone()
+        }
+    }
+
     /// The plugin is not signed in, or its sign-in no longer works.
     pub fn signed_out(&self) -> bool {
         matches!(self.category.as_ref(), "auth" | "unconfigured")
@@ -101,18 +112,32 @@ impl Failure {
 /// A view as the pane has it now.
 pub enum View<'a> {
     Loading,
-    Ready(&'a Value),
+    Ready(&'a Value, &'a Read),
     Failed(&'a Failure),
 }
 
+/// A view as a panel last read it, so it is read once each time it arrives.
+pub type Read = RefCell<Option<Rc<dyn Any>>>;
+
 impl View<'_> {
     /// The view read as `T`; a view that does not read as one counts as failed.
-    pub fn read<T: DeserializeOwned>(&self) -> Result<Option<T>, Failure> {
+    pub fn read<T: DeserializeOwned + 'static>(&self) -> Result<Option<Rc<T>>, Failure> {
         match self {
             View::Loading => Ok(None),
-            View::Ready(value) => serde_json::from_value((*value).clone())
-                .map(Some)
-                .map_err(|error| Failure::core(format!("unreadable view: {error}"))),
+            View::Ready(value, read) => {
+                if let Some(known) = read
+                    .borrow()
+                    .clone()
+                    .and_then(|known| known.downcast().ok())
+                {
+                    return Ok(Some(known));
+                }
+                let fresh: Rc<T> = serde_json::from_value::<T>((*value).clone())
+                    .map(Rc::new)
+                    .map_err(|error| Failure::core(format!("unreadable view: {error}")))?;
+                *read.borrow_mut() = Some(fresh.clone());
+                Ok(Some(fresh))
+            }
             View::Failed(failure) => Err((*failure).clone()),
         }
     }
@@ -120,7 +145,7 @@ impl View<'_> {
 
 enum Answer {
     Waiting,
-    Got(Value),
+    Got(Value, Read),
     Failed(Failure),
 }
 
@@ -140,6 +165,8 @@ pub struct Host {
     bench: WeakEntity<Workbench>,
     kept: HashMap<(String, String), Kept>,
     asks: u64,
+    status: Option<(Option<bool>, Kept)>,
+    pub faces: crate::avatars::Avatars,
 }
 
 impl Host {
@@ -164,7 +191,7 @@ impl Host {
         kept.asked = self.asks;
         match &kept.answer {
             Answer::Waiting => View::Loading,
-            Answer::Got(value) => View::Ready(value),
+            Answer::Got(value, read) => View::Ready(value, read),
             Answer::Failed(failure) => View::Failed(failure),
         }
     }
@@ -198,7 +225,7 @@ impl Host {
             let answer = match asked.await {
                 Ok(answer) => match answer.get("failed") {
                     Some(failed) => Answer::Failed(Failure::of(failed)),
-                    None => Answer::Got(answer["value"].clone()),
+                    None => Answer::Got(answer["value"].clone(), Read::default()),
                 },
                 Err(error) => Answer::Failed(Failure::core(error)),
             };
@@ -253,6 +280,57 @@ impl Host {
                 None => Ok(answer["value"].clone()),
             }
         }
+    }
+
+    /// What the plugin's `status` call says of its sign-in, such as its accounts or sites,
+    /// asked again whenever the core lists the plugin as signed in or out.
+    pub fn status(&mut self, cx: &mut Context<PluginPane>) -> View<'_> {
+        let signed_in = self.signed_in(cx);
+        if self
+            .status
+            .as_ref()
+            .is_none_or(|(asked, _)| *asked != signed_in)
+        {
+            let call = self.call("status", Value::Null);
+            let reading = cx.spawn(async move |pane, cx| {
+                let answer = match call.await {
+                    Ok(value) => Answer::Got(value, Read::default()),
+                    Err(failure) => Answer::Failed(failure),
+                };
+                let _ = pane.update(cx, |pane, cx| {
+                    if let Some((_, kept)) = &mut pane.host.status {
+                        kept.answer = answer;
+                        cx.notify();
+                    }
+                });
+            });
+            let kept = Kept {
+                answer: Answer::Waiting,
+                asked: 0,
+                _reading: reading,
+            };
+            self.status = Some((signed_in, kept));
+        }
+        match self.status.as_ref().map(|(_, kept)| &kept.answer) {
+            Some(Answer::Got(value, read)) => View::Ready(value, read),
+            Some(Answer::Failed(failure)) => View::Failed(failure),
+            _ => View::Loading,
+        }
+    }
+
+    /// Someone's picture, fetched through the plugin's `image` call, or their initials.
+    pub fn face(&self, name: &str, url: Option<&str>, size: f32, cx: &App) -> AnyElement {
+        self.faces.face(name, url, size, cx)
+    }
+
+    /// Copies `text` and says what was copied.
+    pub fn copy(&self, text: String, what: &str, cx: &mut App) {
+        copy(&self.bench, text, what, cx);
+    }
+
+    /// The workbench the pane is in.
+    pub fn bench(&self) -> &WeakEntity<Workbench> {
+        &self.bench
     }
 
     /// Has the core read the plugin's views again now, each of `method`'s or all of them.
@@ -358,8 +436,16 @@ impl PluginPane {
                 bench,
                 kept: HashMap::new(),
                 asks: 0,
+                status: None,
+                faces: Default::default(),
             },
         }
+    }
+
+    /// The pane's panel as the `P` it is, with the host beside it.
+    pub fn parts<P: Panel>(&mut self) -> Option<(&mut P, &mut Host)> {
+        let panel: &mut dyn Any = self.panel.as_deref_mut()?;
+        Some((panel.downcast_mut::<P>()?, &mut self.host))
     }
 
     /// The core says some of the plugin's views changed.
@@ -374,8 +460,59 @@ impl Render for PluginPane {
             Some(panel) => panel.render(&mut self.host, window, cx),
             None => empty("This plugin draws no pane here yet.", cx),
         };
+        let host = &self.host;
+        host.faces.fetch(
+            |url| {
+                let fetched = host.call("image", json!({ "url": url }));
+                async move { fetched.await.ok()?.as_str().map(str::to_owned) }
+            },
+            |pane| &pane.host.faces,
+            cx,
+        );
         div().size_full().flex().flex_col().child(drawn)
     }
+}
+
+/// Copies `text` and says over the window what was copied.
+pub fn copy(bench: &WeakEntity<Workbench>, text: String, what: &str, cx: &mut App) {
+    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+    let note = gpui_kit::component::notification::Notification::success(format!("Copied {what}"));
+    if let Some(bench) = bench.upgrade() {
+        bench.update(cx, |bench, cx| bench.notify(note, cx));
+    }
+}
+
+/// A handler on panel `P` and its host, for an element of the panel's.
+pub fn listen<P: Panel, E: ?Sized>(
+    cx: &Context<PluginPane>,
+    act: impl Fn(&mut P, &mut Host, &E, &mut Window, &mut Context<PluginPane>) + 'static,
+) -> impl Fn(&E, &mut Window, &mut App) + 'static {
+    let pane = cx.weak_entity();
+    move |event, window, cx| {
+        let _ = pane.update(cx, |pane, cx| {
+            if let Some((panel, host)) = pane.parts::<P>() {
+                act(panel, host, event, window, cx);
+            }
+        });
+    }
+}
+
+/// Runs `work`, then hands what it gave to panel `P`.
+pub fn after<P: Panel, T: 'static>(
+    work: impl Future<Output = T> + 'static,
+    then: impl FnOnce(&mut P, &mut Host, T, &mut Context<PluginPane>) + 'static,
+    cx: &mut Context<PluginPane>,
+) {
+    cx.spawn(async move |pane, cx| {
+        let done = work.await;
+        let _ = pane.update(cx, |pane, cx| {
+            if let Some((panel, host)) = pane.parts::<P>() {
+                then(panel, host, done, cx);
+                cx.notify();
+            }
+        });
+    })
+    .detach();
 }
 
 /// Said while a view is still on its way.

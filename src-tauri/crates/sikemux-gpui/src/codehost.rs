@@ -159,7 +159,7 @@ pub struct HostArea {
     /// The host's accounts, read as the menu opens.
     accounts: Vec<shell::Listed>,
     budget: Option<shell::Budget>,
-    pictures: pictures::Pictures,
+    pictures: crate::avatars::Avatars,
 }
 
 impl HostArea {
@@ -194,7 +194,7 @@ impl HostArea {
             menu: false,
             accounts: Vec::new(),
             budget: None,
-            pictures: pictures::Pictures::default(),
+            pictures: Default::default(),
         }
     }
 

@@ -9,6 +9,7 @@ mod agent_palette;
 pub mod agent_review;
 mod agent_setup;
 mod agents;
+mod avatars;
 mod battery;
 mod board;
 mod board_panels;

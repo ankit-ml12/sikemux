@@ -130,7 +130,7 @@ impl Linear {
 
     fn list(
         &self,
-        list: Result<Option<IssueList>, Failure>,
+        list: Result<Option<Rc<IssueList>>, Failure>,
         picked: &Entity<Picked>,
         open: Option<&str>,
         cx: &mut Context<PluginPane>,
@@ -139,7 +139,7 @@ impl Linear {
         let body = match list {
             Ok(None) => super::loading(cx),
             Err(failure) => super::failure(&failure, cx),
-            Ok(Some(list)) if list.issues.is_empty() => super::empty(list.empty, cx),
+            Ok(Some(list)) if list.issues.is_empty() => super::empty(list.empty.clone(), cx),
             Ok(Some(list)) => div()
                 .id("linear-issues")
                 .flex_1()
@@ -155,7 +155,7 @@ impl Linear {
                         .px(px(8.))
                         .pt(px(10.))
                         .pb(px(4.))
-                        .child(ui::meta(list.heading, cx)),
+                        .child(ui::meta(list.heading.clone(), cx)),
                 )
                 .children(list.issues.iter().enumerate().map(|(index, issue)| {
                     row(index, issue, open == Some(&issue.identifier), picked, cx)
@@ -195,8 +195,8 @@ impl Linear {
             Err(failure) => return super::failure(&failure, cx),
             Ok(Some(issue)) => issue,
         };
-        if self.words.as_ref().is_none_or(|words| words.of != issue) {
-            self.words = Some(Words::of(issue));
+        if self.words.as_ref().is_none_or(|words| words.of != *issue) {
+            self.words = Some(Words::of((*issue).clone()));
         }
         let draft = self.draft(id, window, cx);
         let words = self.words.as_ref().expect("read just now");
