@@ -11,7 +11,7 @@ use gpui::{
     ParentElement, Pixels, Point, Render, SharedString, Styled, Window,
 };
 
-use crate::draw::{Pen, Style};
+use crate::draw::{LayoutBudget, Pen, Style};
 use crate::find::{ranges_in, FoundChanged, Hit, Query};
 use crate::markdown::Markdown;
 use crate::select::{spot_at, Place, RowHit, Selecting, Shown, Span, Spot};
@@ -96,6 +96,7 @@ pub struct Transcript<R: Row> {
     queue: Vec<Change<R>>,
     style: Rc<Style>,
     draw_row: DrawRow<R>,
+    layout_budget: Rc<LayoutBudget>,
     on_reach_top: Option<Ask>,
     asked_earlier: bool,
     on_reach_bottom: Option<Ask>,
@@ -203,6 +204,7 @@ impl<R: Row> Transcript<R> {
             current: 0,
             stale: Stale::None,
             chasing: None,
+            layout_budget: Rc::default(),
             pending: None,
             row_tops: Rc::default(),
             rise: None,
@@ -751,6 +753,7 @@ impl<R: Row> EventEmitter<AwayChanged> for Transcript<R> {}
 
 impl<R: Row> Render for Transcript<R> {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.layout_budget.reset();
         self.apply(cx);
         if self.query.is_some() {
             self.find_again(cx);
@@ -788,6 +791,7 @@ impl<R: Row> Render for Transcript<R> {
                             }
                         })
                         .collect(),
+                    budget: this.layout_budget.clone(),
                 });
                 let pen = Pen::selecting(this.style.clone(), selecting);
                 let draw_row = this.draw_row.clone();

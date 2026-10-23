@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use gpui::{Pixels, Point, SharedString, TextLayout};
 
+use crate::draw::LayoutBudget;
 use crate::Markdown;
 
 /// A text a transcript draws: its row, which markdown in the row, which block, which text in the block.
@@ -102,6 +103,8 @@ pub(crate) struct Selecting {
     pub shown: Rc<RefCell<Vec<Shown>>>,
     /// The places found in the row's texts.
     pub hits: Vec<RowHit>,
+    /// What the frame may still spend laying out new parts of code blocks.
+    pub budget: Rc<LayoutBudget>,
 }
 
 /// A place found in a row: the text it is in, by doc, block and text, its bytes there, and

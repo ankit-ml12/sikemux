@@ -22,6 +22,7 @@ counters! {
     UNCOLOURED: "Code blocks drawn before their colours were ready.",
     COLOURED: "Code blocks whose colours arrived.",
     TRIMS: "Times a chat dropped rows it held.",
+    BLANK_CODE: "Code blocks drawn with parts left blank for a later frame.",
 }
 
 pub fn add(counter: &AtomicU64, by: u64) {

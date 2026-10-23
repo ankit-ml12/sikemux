@@ -130,6 +130,21 @@ impl Element for Timed {
     }
 }
 
+/// How many frames counted any `name`.
+#[cfg(feature = "counts")]
+fn frames_that_did(name: &str) -> usize {
+    COUNTED.with_borrow(|counted| {
+        let value = |at: &Vec<(&'static str, u64)>| {
+            at.iter()
+                .find(|(counter, _)| *counter == name)
+                .map_or(0, |(_, value)| *value)
+        };
+        let mut ends: Vec<u64> = counted.iter().map(value).collect();
+        ends.push(value(&gpui_transcript::counts::now()));
+        ends.windows(2).filter(|pair| pair[1] > pair[0]).count()
+    })
+}
+
 /// What the transcript counted while frame `frame` drew, as ` · ROWS 4, TEXTS 2`; nothing
 /// without `counts`.
 fn counted_in(frame: usize) -> String {
@@ -1017,6 +1032,12 @@ fn find_jump(run: &mut Run, chat: &str, row: &str, latest: Option<String>) {
             counted_in(frame)
         );
     }
+    #[cfg(feature = "counts")]
+    println!(
+        "windowed blank: {} of {} frames left parts of code blocks for a later frame",
+        frames_that_did("BLANK_CODE"),
+        scrolled.frames.len()
+    );
     let began = Instant::now();
     let to = chat.to_owned();
     run.bench
