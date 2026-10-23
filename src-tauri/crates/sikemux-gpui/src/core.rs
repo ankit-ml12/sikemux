@@ -90,6 +90,8 @@ pub enum ChatNews {
     Later(Value),
     /// The rows around a place found, a `ChatPage` as JSON.
     Around(Value),
+    /// The chat's latest rows, a `ChatPage` as JSON.
+    Latest(Value),
     /// What `chatFind` answered the ask numbered `asked`.
     Found {
         asked: u64,
@@ -327,6 +329,12 @@ pub enum ChatAsk {
         feed: String,
         after: u64,
     },
+    /// The chat's latest rows, from the core's `chatPage`, for a chat that can't be attached to,
+    /// such as one asleep.
+    Latest {
+        agent: String,
+        feed: String,
+    },
     /// The rows around event `around`, from the core's `chatPage`, to show a place found.
     Around {
         agent: String,
@@ -405,6 +413,7 @@ impl ChatAsk {
             | ChatAsk::Detach { agent }
             | ChatAsk::History { agent, .. }
             | ChatAsk::Later { agent, .. }
+            | ChatAsk::Latest { agent, .. }
             | ChatAsk::Around { agent, .. }
             | ChatAsk::Find { agent, .. }
             | ChatAsk::Prompt { agent, .. }
@@ -1378,6 +1387,13 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             match client.call("chatPage", asked).await {
                 Ok(page) => (agent, ChatNews::Later(page)),
                 Err(error) => return eprintln!("sikemux: the core gave no later page: {error}"),
+            }
+        }
+        ChatAsk::Latest { agent, feed } => {
+            let asked = json!({ "agentId": agent, "feed": feed, "before": u64::MAX });
+            match client.call("chatPage", asked).await {
+                Ok(page) => (agent, ChatNews::Latest(page)),
+                Err(error) => return eprintln!("sikemux: the core gave no latest page: {error}"),
             }
         }
         ChatAsk::Around {

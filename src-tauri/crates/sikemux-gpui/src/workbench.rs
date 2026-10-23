@@ -757,7 +757,11 @@ impl Workbench {
                     return;
                 };
                 match news {
-                    ChatNews::Attached(attachment) => chat.attached(attachment, cx),
+                    ChatNews::Attached(attachment) => {
+                        if let Some(ask) = chat.attached(&agent, attachment, cx) {
+                            self.ask_chat(ask);
+                        }
+                    }
                     ChatNews::Changes { seq, changes } => {
                         let gap = chat.changed(seq, changes, cx);
                         let (since, wanted) = (chat.mark.clone(), chat.wanted());
@@ -781,6 +785,7 @@ impl Workbench {
                         }
                     }
                     ChatNews::Around(page) => chat.around_page(page, cx),
+                    ChatNews::Latest(page) => chat.latest_page(page, cx),
                     ChatNews::Found { asked, found } => self.found(&agent, asked, found, cx),
                     ChatNews::Detail { tool, detail } => chat.detail(tool, detail, cx),
                     ChatNews::Replied { request, error } => chat.replied(&request, error),

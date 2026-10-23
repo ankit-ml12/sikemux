@@ -735,8 +735,21 @@ impl Chat {
         }
     }
 
-    /// What the core answered an attach with.
-    pub fn attached(&mut self, attachment: ChatAttachment, cx: &mut App) {
+    /// What the core answered an attach with. A chat that can't be attached to while it holds
+    /// rows from its middle, such as one asleep, asks for its latest rows instead.
+    pub fn attached(
+        &mut self,
+        agent: &str,
+        attachment: ChatAttachment,
+        cx: &mut App,
+    ) -> Option<ChatAsk> {
+        if let ChatAttachment::Missing = attachment {
+            let feed = self.mark.as_ref().filter(|_| self.detached)?.feed.clone();
+            return Some(ChatAsk::Latest {
+                agent: agent.to_owned(),
+                feed,
+            });
+        }
         (self.detached, self.newer_after, self.asked_later) = (false, None, false);
         match attachment {
             ChatAttachment::Live { view, mark } => {
@@ -752,6 +765,7 @@ impl Chat {
             }
             ChatAttachment::Missing => {}
         }
+        None
     }
 
     /// Takes the core's changes numbered `seq`, and says whether some before them went missing.
@@ -1032,7 +1046,22 @@ impl Chat {
         (self.detached, self.asked_earlier, self.asked_later) = (true, false, false);
         let rows = page.rows.into_iter().map(ChatRow::new).collect();
         self.transcript.update(cx, |transcript, cx| {
-            transcript.push(Change::Reset(rows), cx)
+            transcript.push(Change::Place(rows), cx)
+        });
+    }
+
+    /// The chat's latest rows, which take the place of those held.
+    pub fn latest_page(&mut self, page: Value, cx: &mut App) {
+        let Ok(page) = serde_json::from_value::<ChatPage>(page) else {
+            return;
+        };
+        self.older_before = page.older_before;
+        (self.detached, self.newer_after) = (false, None);
+        (self.asked_earlier, self.asked_later) = (false, false);
+        let rows = page.rows.into_iter().map(ChatRow::new).collect();
+        self.transcript.update(cx, |transcript, cx| {
+            transcript.push(Change::Reset(rows), cx);
+            transcript.to_latest(cx);
         });
     }
 
