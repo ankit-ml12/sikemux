@@ -530,6 +530,11 @@ pub(crate) async fn run<B: Backend>(
                 stopping: None,
                 switching: None,
             };
+            let replay = replay.or_else(|| reset::take_due(&chat));
+            // Running before it reads as ready, so no client sees a turn about to go on as over.
+            if replay.is_some() {
+                chat.running.store(true, Ordering::Release);
+            }
             chat.note_agent(backend.pid());
             let start = state.start();
             crate::server::chat::offered::remember(&provider, &start.setup);
@@ -538,7 +543,7 @@ pub(crate) async fn run<B: Backend>(
             for update in carried.into_iter().chain(notice) {
                 sink.update(&state.session_id, update);
             }
-            (backend, state, replay.or_else(|| reset::take_due(&chat)))
+            (backend, state, replay)
         }
         Begin::Adopt(adopted) => {
             let Adopted {
@@ -583,7 +588,6 @@ pub(crate) async fn run<B: Backend>(
                 &replay.context,
             );
         }
-        chat.running.store(true, Ordering::Release);
         state.turn += 1;
         begin(&chat, &mut backend, state.turn, Prompt::from(&replay)).await;
         state.last_prompt = Some(Replay {
