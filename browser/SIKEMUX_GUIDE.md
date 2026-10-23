@@ -13,8 +13,7 @@ task terminals you open for the person, as tabs in one strip.
 
 When the person asks you to open, show or preview a page, open it on your desk
 with `browser_navigate`, not in their own browser. Desk tabs run WebKit, the
-same engine as Sikemux and Safari, so check pages there, not in a headless
-Chromium.
+engine Safari runs on, so check pages there, not in a headless Chromium.
 
 Read this page first. For one area in depth, call `guide` with a `topic`
 from the list below.
