@@ -40,7 +40,6 @@ use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
-pub(crate) use native::shows_saved;
 use native::Begin;
 pub(crate) use sikemux_fold::ChatEventKind;
 use sikemux_process::clock::epoch_ms;

@@ -79,7 +79,7 @@ fn driver(provider: &str) -> Option<&'static ChatDriver> {
 
 /// Whether a resumed chat of `provider` can show its saved history before its agent starts:
 /// only Claude's is a file the core reads itself.
-pub(crate) fn shows_saved(provider: &str) -> bool {
+fn shows_saved(provider: &str) -> bool {
     matches!(driver(provider), Some(ChatDriver::Claude))
 }
 

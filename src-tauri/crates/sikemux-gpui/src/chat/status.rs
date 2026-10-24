@@ -382,6 +382,9 @@ pub(super) fn connection_note(
         ChatConnection::Starting => (Icon::Hourglass, "Starting agent…"),
         ChatConnection::Error => (Icon::Plug, "Structured session unavailable."),
         ChatConnection::Stopped => (Icon::Plug, "Agent session stopped."),
+        // Before any status a chat taken up again waits for the person, and its agent tells
+        // the history once it starts.
+        ChatConnection::Connecting => (Icon::Clock, "History appears when you write"),
         _ => (Icon::Hourglass, "Connecting to agent session…"),
     };
     let this = cx.weak_entity();

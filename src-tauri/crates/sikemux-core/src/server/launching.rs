@@ -360,8 +360,6 @@ async fn start_new(
         .next()
         .unwrap_or_default()
         .to_owned();
-    // A chat taken up again waits for the person too when its saved history shows without its agent.
-    let waits_for_person = choice.resume_id.is_none() || super::chat::shows_saved(&kind);
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
@@ -374,7 +372,7 @@ async fn start_new(
         account: None,
         fallbacks: Vec::new(),
         program: None,
-        waits_for_person,
+        waits_for_person: true,
     };
     let started = start(core, client, chosen).await?;
     remember_kind(core, &kind);
