@@ -44,6 +44,9 @@ use crate::theme::{self, Tokens};
 use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
 
+/// How long a tab asked to close stays closing in the window if the core never says it
+/// went, such as when its closing failed.
+const CLOSE_SETTLES: Duration = Duration::from_secs(2);
 /// How long a peeking rail stays after the pointer leaves it.
 const PEEK_CLOSE: Duration = Duration::from_millis(180);
 /// How close to the window's edge the pointer brings out a closed rail.
@@ -129,6 +132,9 @@ pub struct Workbench {
         std::cell::RefCell<crate::motion::ListMemory<sikemux_wire::protocol::Tab>>,
     /// Where the strip's tabs were drawn, for the chosen surface to glide between them.
     pub(crate) strip_glide: std::cell::RefCell<crate::motion::GlideTrack>,
+    /// Tabs asked to close that the layout still lists, and when, so a second click or ⌘W
+    /// before the core's answer does not ask for a tab it has already closed.
+    closing_tabs: std::cell::RefCell<HashMap<String, std::time::Instant>>,
     /// Where the rail's agent rows were drawn, for the chosen surface to glide between them.
     pub(crate) rail_glide: std::cell::RefCell<crate::motion::GlideTrack>,
     /// The card beside the agent row the pointer rests on.
@@ -610,6 +616,7 @@ impl Workbench {
             folded_teams: HashSet::new(),
             rail_seen: Default::default(),
             strip_seen: Default::default(),
+            closing_tabs: Default::default(),
             strip_glide: Default::default(),
             rail_glide: Default::default(),
             agent_card: crate::agent_card::Card::default(),
@@ -744,6 +751,7 @@ impl Workbench {
             Update::HostView(host, view) => {
                 let in_front = self.place() == crate::hosts::Place::Account(host.clone());
                 self.host_views.insert(host, *view);
+                self.settle_closing();
                 if in_front {
                     self.watch_project();
                     self.watch_worktree();
@@ -782,6 +790,7 @@ impl Workbench {
             Update::View(view) => {
                 crate::ui::moving_face::set_on(view.face_style.motion, cx);
                 self.view = Some(*view);
+                self.settle_closing();
                 // The core finds its agents a moment after it starts, so the plan limits are
                 // read once it lists them.
                 if self.usage_wanted && !self.launchers().is_empty() {
@@ -3718,39 +3727,82 @@ impl Workbench {
             .or(tabs.first())
     }
 
+    /// Whether `tab` was asked to close a moment ago and the layout has not caught up yet.
+    fn closing(&self, tab: &str) -> bool {
+        self.closing_tabs
+            .borrow()
+            .get(tab)
+            .is_some_and(|asked| asked.elapsed() < CLOSE_SETTLES)
+    }
+
+    /// Forgets the tabs asked to close that the layout no longer lists, or that it has had
+    /// time to answer for.
+    fn settle_closing(&self) {
+        let Some(layout) = self.shown().map(|view| &view.layout) else {
+            return;
+        };
+        let listed = |id: &str| {
+            std::iter::once(&layout.terminals)
+                .chain(layout.projects.values())
+                .chain(layout.hosts.values())
+                .any(|strip| strip.tabs.iter().any(|tab| tab.id == id))
+        };
+        self.closing_tabs
+            .borrow_mut()
+            .retain(|id, asked| asked.elapsed() < CLOSE_SETTLES && listed(id));
+    }
+
     pub fn activate_tab(&self, strip: &Strip, tab: &str) {
-        self.call_in_front("activateTab", strip.with(json!({ "tab": tab })));
+        if !self.closing(tab) {
+            self.call_in_front("activateTab", strip.with(json!({ "tab": tab })));
+        }
     }
 
     pub fn close_tab(&self, strip: &Strip, tab: &str) {
-        self.call_in_front("closeTab", strip.with(json!({ "tab": tab })));
+        self.close_tabs(strip, &[tab.to_owned()]);
     }
 
     /// Moves a tab to `to` in its strip, counted as the strip is now.
     pub fn move_tab(&self, strip: &Strip, tab: &str, to: usize) {
-        self.call_in_front("moveTab", strip.with(json!({ "tab": tab, "to": to })));
+        if !self.closing(tab) {
+            self.call_in_front("moveTab", strip.with(json!({ "tab": tab, "to": to })));
+        }
     }
 
     /// Keeps a tab opened to look at, so the next one opens beside it.
     pub fn keep_tab(&self, strip: &Strip, tab: &str) {
-        self.call_in_front("keepTab", strip.with(json!({ "tab": tab })));
+        if !self.closing(tab) {
+            self.call_in_front("keepTab", strip.with(json!({ "tab": tab })));
+        }
     }
 
     pub fn close_tabs(&self, strip: &Strip, tabs: &[String]) {
+        let tabs: Vec<&String> = tabs.iter().filter(|tab| !self.closing(tab)).collect();
+        if tabs.is_empty() {
+            return;
+        }
+        let asked = std::time::Instant::now();
+        self.closing_tabs
+            .borrow_mut()
+            .extend(tabs.iter().map(|tab| ((*tab).clone(), asked)));
         self.call_in_front("closeTabs", strip.with(json!({ "tabs": tabs })));
     }
 
     /// Names a tab; an empty name gives back the one its view gives it.
     pub fn rename_tab(&self, strip: &Strip, tab: &str, title: &str) {
-        self.call_in_front(
-            "renameTab",
-            strip.with(json!({ "tab": tab, "title": title })),
-        );
+        if !self.closing(tab) {
+            self.call_in_front(
+                "renameTab",
+                strip.with(json!({ "tab": tab, "title": title })),
+            );
+        }
     }
 
     /// Opens a copy of a tab beside it, with new shells for its terminals.
     pub fn duplicate_tab(&self, strip: &Strip, tab: &str) {
-        self.call_in_front("duplicateTab", strip.with(json!({ "tab": tab })));
+        if !self.closing(tab) {
+            self.call_in_front("duplicateTab", strip.with(json!({ "tab": tab })));
+        }
     }
 
     /// Opens a terminal to an SSH host, in that host's strip.

@@ -903,7 +903,7 @@ fn strip_tabs(
         .iter()
         .map(|tab| {
             let active = front.as_deref() == Some(tab.id.as_str());
-            let drawn = strip_tab(bench, strip, tab, active, glided && active, cx);
+            let drawn = strip_tab(bench, strip, tab, active, glided && active, true, cx);
             match arriving.contains(&tab.id) {
                 true => {
                     let key = SharedString::from(format!("tab-arrive:{}", tab.id));
@@ -914,7 +914,7 @@ fn strip_tabs(
         })
         .collect();
     for gone in left {
-        let tab = strip_tab(bench, strip, &gone.item, false, false, cx);
+        let tab = strip_tab(bench, strip, &gone.item, false, false, false, cx);
         let key = SharedString::from(format!("tab-depart:{}", gone.id));
         let tab = motion::departing(key, gone.since, motion::TAB_DEPARTURE, tab);
         drawn.insert(gone.at.min(drawn.len()), tab.into_any_element());
@@ -922,35 +922,39 @@ fn strip_tabs(
     (copy, drawn)
 }
 
+/// A tab of the strip; one that is `live` takes clicks, one drawn only while it closes does not.
 fn strip_tab(
     bench: &Workbench,
     strip: &Strip,
     tab: &LayoutTab,
     active: bool,
     glided: bool,
+    live: bool,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let tab_id = tab.id.clone();
-    let menu = tab_menu(bench, strip, tab, cx);
-    let base = Tab::new(
+    let mut base = Tab::new(
         SharedString::from(format!("tab-{}", tab.id)),
         label(bench, tab),
     )
     .active(active)
     .glided(glided)
-    .italic(tab.preview)
-    .on_click(cx.listener({
-        let (strip, tab) = (strip.clone(), tab_id.clone());
-        move |bench, event: &ClickEvent, _, _| match event.click_count() {
-            2 => bench.keep_tab(&strip, &tab),
-            _ => bench.activate_tab(&strip, &tab),
-        }
-    }))
-    .on_close(cx.listener({
-        let strip = strip.clone();
-        move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
-    }));
+    .italic(tab.preview);
+    if live {
+        base = base
+            .on_click(cx.listener({
+                let (strip, tab) = (strip.clone(), tab_id.clone());
+                move |bench, event: &ClickEvent, _, _| match event.click_count() {
+                    2 => bench.keep_tab(&strip, &tab),
+                    _ => bench.activate_tab(&strip, &tab),
+                }
+            }))
+            .on_close(cx.listener({
+                let strip = strip.clone();
+                move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
+            }));
+    }
     let view = first_view(&tab.pane);
     let shown = match view {
         Some((PaneKind::Agent, target)) => match match strip {
@@ -989,6 +993,10 @@ fn strip_tab(
         }
         None => base,
     };
+    if !live {
+        return div().flex().min_w_0().child(shown).into_any_element();
+    }
+    let menu = tab_menu(bench, strip, tab, cx);
     let drawn = div()
         .id(SharedString::from(format!("tab-menu-{}", tab.id)))
         .flex()

@@ -715,12 +715,16 @@ pub(crate) fn close_tabs(core: &Core, params: TabsParams) -> CoreResult<()> {
     close(core, &params.at, &params.tabs)
 }
 
+/// A tab already gone, such as one closed twice before the window heard of the first, is
+/// closed already, so closing it does nothing.
 fn close(core: &Core, at: &At, tabs: &[String]) -> CoreResult<()> {
     let agents = edit(core, |layout| {
-        let strip = strip_at(layout, at)?;
+        let Ok(strip) = strip_at(layout, at) else {
+            return Ok(Vec::new());
+        };
         let closing = |tab: &Tab| tabs.contains(&tab.id);
         if !strip.tabs.iter().any(closing) {
-            return Err("that tab is not open".into());
+            return Ok(Vec::new());
         }
         let active = strip
             .active
@@ -1232,20 +1236,25 @@ pub(crate) struct PaneParams {
 }
 
 /// Closes one view of a tab; a tab left with nothing closes as `closeTab` does.
-/// An agent shown in it closes with it.
+/// An agent shown in it closes with it. A view already gone is closed already.
 pub(crate) fn close_pane(core: &Core, params: PaneParams) -> CoreResult<()> {
     let closed = edit(core, |layout| {
-        let strip = strip_at(layout, &params.at)?;
-        let tab = tab_in(strip, &params.tab)?;
-        let view = find_view(&tab.pane, &params.pane)
-            .cloned()
-            .ok_or("that view is not in the tab")?;
+        let Some(tab) = strip_at(layout, &params.at)
+            .ok()
+            .and_then(|strip| tab_in(strip, &params.tab).ok())
+        else {
+            return Ok(None);
+        };
+        let Some(view) = find_view(&tab.pane, &params.pane).cloned() else {
+            return Ok(None);
+        };
         let keep = |pane: &Pane| !matches!(pane, Pane::View { id, .. } if id == &params.pane);
         let left = keep(&tab.pane) && prune(&mut tab.pane, &keep);
-        Ok((view, left))
+        Ok(Some((view, left)))
     })?;
     match closed {
-        (_, false) => close_tab(
+        None => Ok(()),
+        Some((_, false)) => close_tab(
             core,
             TabParams {
                 at: params.at,
@@ -1254,7 +1263,7 @@ pub(crate) fn close_pane(core: &Core, params: PaneParams) -> CoreResult<()> {
                 title: None,
             },
         ),
-        (view, true) => {
+        Some((view, true)) => {
             let mut agents = Vec::new();
             agents_in(&view, &mut agents);
             if !agents.is_empty() {

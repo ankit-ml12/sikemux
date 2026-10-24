@@ -8,6 +8,7 @@
 //!     [--motion on|off]           animates or holds still whatever macOS's Reduce Motion says
 //!     [--then step…]              then does each step in turn: "click x,y", "dclick x,y", "rclick x,y" or "move x,y" in points,
 //!                                 "type text", "key cmd-enter", "wait seconds", "shot out.png", "scroll x,y pixels",
+//!                                 "keys cmd-w cmd-w" to press several in one go, faster than the core answers,
 //!                                 "swipe x,y pixels" or "swipe x,y pixels hold" for a sideways trackpad swipe,
 //!                                 "drag x,y path…" or "drop x,y path…" to hold files over
 //!                                 a place or drop them there, "copy-image file.png", or "share" to open the
@@ -333,6 +334,11 @@ fn main() -> anyhow::Result<()> {
                 }
                 "key" => {
                     window.dispatch_keystroke(Keystroke::parse(rest)?, cx);
+                }
+                "keys" => {
+                    for key in rest.split_whitespace() {
+                        window.dispatch_keystroke(Keystroke::parse(key)?, cx);
+                    }
                 }
                 "scroll" => {
                     let (at, pixels) = rest

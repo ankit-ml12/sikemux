@@ -856,6 +856,37 @@ async fn a_sleeping_chat_shows_its_history_and_wakes_when_the_person_writes() {
     assert!(ready_after_writing(&app, &claude).await, "writing wakes it");
 }
 
+/// A window can ask to close a tab again before it hears the first close, as with a
+/// second click on its ×; the tab is closed already, so that is no failure.
+#[tokio::test(flavor = "multi_thread")]
+async fn closing_a_tab_already_closed_does_nothing() {
+    let core_key = SecretKey::generate();
+    let core = start_core(&core_key, &[]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    app.register_window()
+        .await
+        .expect("the app opens its window");
+    publish_fake_agent(&app).await;
+    let file = std::env::temp_dir().join("closing-twice.txt");
+    std::fs::write(&file, "hi").expect("the file");
+    let tab = app
+        .call(
+            "openTab",
+            json!({ "project": "sess-tmp", "kind": "files", "target": file }),
+        )
+        .await
+        .expect("the tab opens");
+    let tab = tab.as_str().expect("its id").to_owned();
+    for _ in 0..2 {
+        app.call("closeTab", json!({ "project": "sess-tmp", "tab": tab }))
+            .await
+            .expect("closing it, once or again");
+    }
+    app.call("closeTabs", json!({ "project": "sess-tmp", "tabs": [tab] }))
+        .await
+        .expect("closing it among others");
+}
+
 fn fake_launch(agent_id: &str) -> ChatLaunch {
     ChatLaunch {
         agent_id: agent_id.into(),
