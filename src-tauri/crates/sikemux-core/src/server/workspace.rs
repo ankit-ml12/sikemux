@@ -187,6 +187,22 @@ pub(crate) fn launcher_of(agent: &WorkspaceAgent) -> String {
     }
 }
 
+/// The launcher, of those offered as (id, agent kind), that starts agents of `kind`: the one on the
+/// account the person chose for them, else the first of that kind.
+pub(crate) fn launcher_for<'a>(
+    offered: impl Iterator<Item = (&'a str, &'a str)> + Clone,
+    accounts: Option<&Book>,
+    kind: &str,
+) -> Option<String> {
+    let chosen = accounts
+        .and_then(|book| book.selected.get(kind))
+        .map(|account| format!("{kind}:{account}"));
+    let mut of_kind = offered.filter(|(_, provider)| *provider == kind);
+    chosen
+        .filter(|id| of_kind.clone().any(|(offered, _)| offered == id))
+        .or_else(|| of_kind.next().map(|(id, _)| id.to_owned()))
+}
+
 /// The agent's title when it has one beyond its CLI's name.
 fn named(agent: &WorkspaceAgent) -> Option<String> {
     Some(agent.title.clone()).filter(|title| !title.trim().is_empty() && title != &agent.provider)
@@ -1600,10 +1616,12 @@ impl Workspaces {
                 .map(|kept| launcher_of(&kept.agent))
                 .filter(offered)
                 .or_else(|| {
-                    published
+                    let kind = &published.launchers.first()?.agent.provider;
+                    let ids = published
                         .launchers
-                        .first()
-                        .map(|launcher| launcher.id.clone())
+                        .iter()
+                        .map(|launcher| (launcher.id.as_str(), launcher.agent.provider.as_str()));
+                    launcher_for(ids, saved.accounts.as_ref(), kind)
                 })
         };
         Workspace {

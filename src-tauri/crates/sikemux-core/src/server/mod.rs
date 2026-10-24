@@ -899,11 +899,14 @@ impl Core {
         self.faces.fill(&mut workspace.agents);
         let chips = self.git_chips.locked();
         let hosts = self.code_hosts.locked();
+        let accounts = self.workspaces.accounts();
         let preferred = preferences.last_agent_type.as_deref().and_then(|kind| {
-            let launchers = &workspace.launchers;
-            launchers.iter().find(|launcher| launcher.provider == kind)
+            let ids = workspace
+                .launchers
+                .iter()
+                .map(|launcher| (launcher.id.as_str(), launcher.provider.as_str()));
+            workspace::launcher_for(ids, accounts.as_ref(), kind)
         });
-        let preferred = preferred.map(|launcher| launcher.id.clone());
         for project in &mut workspace.projects {
             let folder = project.path.to_string_lossy();
             project.worktree_default =
