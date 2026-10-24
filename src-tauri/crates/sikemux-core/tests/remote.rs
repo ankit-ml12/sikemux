@@ -757,6 +757,47 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     assert!(refusal(refused).contains("no longer on this host"));
 }
 
+/// A chat shown in the app stays asleep, so the person's message or first keystroke must wake it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_asleep_chat_wakes_when_the_person_writes_or_sends_to_it() {
+    let core_key = SecretKey::generate();
+    let core = start_core(&core_key, &[]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    app.register_window()
+        .await
+        .expect("the app opens its window");
+    publish_fake_agent(&app).await;
+    keep_agent(&app, "agent-sent", "Sent to", true).await;
+    keep_agent(&app, "agent-written", "Written in", true).await;
+
+    app.acp_prompt(
+        "agent-sent".into(),
+        None,
+        "hello".into(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await
+    .expect("a message wakes the chat and reaches it");
+    app.call("composing", json!({ "agentId": "agent-written" }))
+        .await
+        .expect("the person begins writing");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let chats = app.acp_list().await.expect("list chats");
+        let ready = |id: &str| {
+            chats
+                .iter()
+                .any(|chat| chat.agent_id == id && !chat.asleep && chat.state == ChatState::Ready)
+        };
+        if ready("agent-sent") && ready("agent-written") {
+            break;
+        }
+        assert!(Instant::now() < deadline, "both chats woke: {chats:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 fn fake_launch(agent_id: &str) -> ChatLaunch {
     ChatLaunch {
         agent_id: agent_id.into(),

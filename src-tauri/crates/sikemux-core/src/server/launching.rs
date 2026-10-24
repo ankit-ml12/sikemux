@@ -313,6 +313,20 @@ pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<
     Ok(Response::Done)
 }
 
+/// Whether the agent is asleep in the workspace, with no chat running, so the person's
+/// writing or sending to it has to wake it first.
+pub(crate) fn asleep(core: &Core, agent_id: &str) -> bool {
+    core.chats.get(agent_id).is_none() && core.workspaces.published(agent_id) == Some(true)
+}
+
+/// Wakes the agent when it is asleep, as the person's writing or sending to it does.
+pub(crate) async fn wake_if_asleep(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+    if asleep(core, agent_id) {
+        wake_chat(core, agent_id.to_owned()).await?;
+    }
+    Ok(())
+}
+
 /// Starts a new chat in one of the projects and answers `client` once its
 /// session is ready.
 pub(crate) fn start_chat(

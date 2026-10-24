@@ -1879,10 +1879,18 @@ pub(crate) fn adopt(
     Ok(())
 }
 
-/// The person began writing in a new chat, so its agent starts while they write.
-pub(crate) fn composing(core: &Core, agent_id: &str) {
+/// The person began writing in a new chat, or one whose agent is asleep, so its agent starts
+/// while they write.
+pub(crate) fn composing(core: &Arc<Core>, agent_id: &str) {
     if let Some(chat) = core.chats.get(agent_id) {
         chat.start_agent();
+    } else if super::launching::asleep(core, agent_id) {
+        let (core, agent_id) = (core.clone(), agent_id.to_owned());
+        tokio::spawn(async move {
+            if let Err(error) = super::launching::wake_chat(&core, agent_id).await {
+                eprintln!("sikemux core: a chat the person began writing in did not wake: {error}");
+            }
+        });
     }
 }
 

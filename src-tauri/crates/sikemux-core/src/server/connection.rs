@@ -787,6 +787,24 @@ async fn run_requests(
                 text,
                 paths,
                 context,
+            } if super::launching::asleep(&core, &agent_id) => {
+                tokio::spawn(async move {
+                    let result = super::launching::wake_if_asleep(&core, &agent_id)
+                        .await
+                        .and_then(|()| {
+                            chat::prompt(
+                                &core, client.id, &agent_id, message_id, text, paths, context,
+                            )
+                        });
+                    client.respond(request_id, result.map(|()| Response::Done));
+                });
+            }
+            Request::AcpPrompt {
+                agent_id,
+                message_id,
+                text,
+                paths,
+                context,
             } => {
                 let result = chat::prompt(
                     &core, client.id, &agent_id, message_id, text, paths, context,
@@ -801,10 +819,15 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result = chat::edit(
-                        &core, client.id, &agent_id, message_id, text, paths, context,
-                    )
-                    .await;
+                    let result = match super::launching::wake_if_asleep(&core, &agent_id).await {
+                        Ok(()) => {
+                            chat::edit(
+                                &core, client.id, &agent_id, message_id, text, paths, context,
+                            )
+                            .await
+                        }
+                        Err(error) => Err(error),
+                    };
                     client.respond(request_id, result.map(|()| Response::Done));
                 });
             }
@@ -815,8 +838,12 @@ async fn run_requests(
                 context,
             } => {
                 tokio::spawn(async move {
-                    let result =
-                        chat::steer(&core, client.id, &agent_id, text, paths, context).await;
+                    let result = match super::launching::wake_if_asleep(&core, &agent_id).await {
+                        Ok(()) => {
+                            chat::steer(&core, client.id, &agent_id, text, paths, context).await
+                        }
+                        Err(error) => Err(error),
+                    };
                     client.respond(
                         request_id,
                         result.map(|outcome| Response::Steered { outcome }),
