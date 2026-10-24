@@ -132,15 +132,12 @@ pub async fn usage(
     lookup
 }
 
-/// How long the account's last reading is kept before the next lookup asks
-/// its CLI again; none when nothing is kept.
-pub(crate) fn kept_for(provider: &str, config_path: Option<&str>) -> Duration {
+/// The account's last reading, however old, without asking its CLI.
+pub(crate) fn last(provider: &str, config_path: Option<&str>) -> Option<Result<Usage, String>> {
     usage_cache()
         .locked()
         .get(&key(provider, config_path))
-        .map_or(Duration::ZERO, |(stored, ttl, _)| {
-            ttl.saturating_sub(stored.elapsed())
-        })
+        .map(|(_, _, lookup)| lookup.clone())
 }
 
 /// Drops the usage remembered for one account, whose sign-in just changed.
@@ -180,6 +177,7 @@ fn claude_subscription_override_present() -> bool {
 
 const CLAUDE_STREAM_ARGS: &[&str] = &[
     "--print",
+    "--no-session-persistence",
     "--output-format",
     "stream-json",
     "--verbose",

@@ -347,15 +347,9 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         }
         cx.notify();
     }));
-    let this = cx.entity();
     Popover::new("agent-picker")
         .anchor(Anchor::TopLeft)
         .offset(px(4.))
-        .on_open_change(move |open, _, cx| {
-            if *open {
-                this.update(cx, |bench, _| bench.read_usage());
-            }
-        })
         .trigger(
             BaseButton::new("agent-picker-button")
                 .accessibility_label("Agent provider")
@@ -924,11 +918,21 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
     let launcher = bench.launcher()?;
     let compact = bench.rail_compact();
     let account = bench
-        .read("usage")?
-        .as_array()?
-        .iter()
-        .find(|account| account["launcher"] == launcher.id.as_str())?;
-    let name = account["label"].as_str().unwrap_or_default().to_owned();
+        .read("usage")
+        .and_then(|read| read.as_array())
+        .and_then(|accounts| {
+            accounts
+                .iter()
+                .find(|account| account["launcher"] == launcher.id.as_str())
+        });
+    let name = account
+        .and_then(|account| account["label"].as_str())
+        .unwrap_or(&launcher.label)
+        .to_owned();
+    let unread = account.is_none_or(|account| {
+        account["signedIn"] != false && account["usage"].is_null() && account["problem"].is_null()
+    });
+    let account = account.unwrap_or(&Value::Null);
     let refresh = format!("Refresh {} plan limits", launcher.label);
     let windows = account["usage"]["windows"]
         .as_array()
@@ -944,7 +948,9 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
         .accounts
         .current(&provider)
         .map(|profile| profile.id.clone());
-    let body = if account["signedIn"] == false {
+    let body = if unread {
+        quiet("Refresh to read plan limits.".into()).into_any_element()
+    } else if account["signedIn"] == false {
         let (provider, current) = (provider.clone(), current.clone());
         div()
             .flex()

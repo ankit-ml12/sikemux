@@ -659,12 +659,17 @@ impl Workbench {
     }
 
     /// Reads every account's plan limits again, as they are whenever usage changes.
+    /// Reads the plan limits again, as only the person asks: each lookup reaches the agent's
+    /// service on their sign-in.
     pub fn read_usage(&mut self) {
-        self.usage_asked = true;
-        let _ = self.asks.send(Ask::Watch(
-            "usage",
-            Watch::new("agentUsages", json!({}), &["usage"]),
-        ));
+        if !self.usage_asked {
+            self.usage_asked = true;
+            let _ = self.asks.send(Ask::Watch(
+                "usage",
+                Watch::new("agentUsages", json!({}), &["usage"]),
+            ));
+        }
+        self.call("readAgentUsages", json!({}));
     }
 
     fn apply(&mut self, update: Update, cx: &mut Context<Self>) {
@@ -1452,9 +1457,6 @@ impl Workbench {
             },
             cx,
         );
-        if !self.usage_asked {
-            self.read_usage();
-        }
         draft.update(cx, |draft, cx| draft.set_value("", window, cx));
         self.keep_draft(agent, cx);
         cx.notify();

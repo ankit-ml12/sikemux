@@ -58,9 +58,6 @@ impl Core {
             Activity::Working => self.seen.working(&agent_id),
             Activity::Finished { cancelled } => {
                 super::questions::turn_ended(self, &agent_id);
-                if let Some(core) = self.arc() {
-                    super::agent_accounts::read_usage_later(&core);
-                }
                 if cancelled {
                     self.seen.active(&agent_id);
                     self.inbox.stopped(&agent_id);
