@@ -1222,7 +1222,10 @@ fn account_switch(
         )
         .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |mut menu, _, cx| {
             let t = Tokens::get(cx).clone();
-            menu = menu.min_w(px(240.)).label("Profiles");
+            menu = menu
+                .min_w(px(240.))
+                .check_side(gpui_kit::component::Side::Right)
+                .label("Profiles");
             for each in &profiles {
                 let on = each.name == chosen;
                 let meta = [each.account.clone(), each.region.clone()]
