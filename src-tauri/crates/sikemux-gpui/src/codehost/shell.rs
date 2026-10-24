@@ -634,7 +634,7 @@ impl HostArea {
     }
 
     /// Opens the palette of the person's repositories on the host, to show another here.
-    fn pick_repo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn pick_repo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = false;
         cx.notify();
         let mine = self.plugin("myRepos", json!({ "limit": 50 }));

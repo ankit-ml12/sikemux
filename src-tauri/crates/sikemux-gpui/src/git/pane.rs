@@ -1861,10 +1861,12 @@ impl GitPane {
     }
 
     fn branch_from_commit(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.chosen_commit() else {
-            return;
-        };
-        let hash = commit.hash.clone();
+        if let Some(commit) = self.chosen_commit() {
+            self.branch_from(commit.hash, cx);
+        }
+    }
+
+    pub(super) fn branch_from(&mut self, hash: String, cx: &mut Context<Self>) {
         self.prompt(
             format!("Branch from {hash}"),
             "branch name",
@@ -1887,11 +1889,14 @@ impl GitPane {
     }
 
     fn reset_menu(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.chosen_commit() else {
-            return;
-        };
+        if let Some(commit) = self.chosen_commit() {
+            self.reset_to(commit.hash, cx);
+        }
+    }
+
+    pub(super) fn reset_to(&mut self, hash: String, cx: &mut Context<Self>) {
         let reset = |mode: &'static str, body: &'static str| {
-            let hash = commit.hash.clone();
+            let hash = hash.clone();
             move |pane: &mut GitPane, cx: &mut Context<GitPane>| {
                 let hash = hash.clone();
                 pane.confirm(
@@ -1914,7 +1919,7 @@ impl GitPane {
             }
         };
         self.menu(
-            format!("Reset to {}", commit.hash),
+            format!("Reset to {hash}"),
             vec![
                 Pick::new('s', "soft reset", reset("soft", "Moves HEAD to this commit and keeps all later changes staged.")).hint("keep changes staged"),
                 Pick::new('m', "mixed reset", reset("mixed", "Moves HEAD to this commit and keeps all later changes in the working tree.")).hint("keep changes unstaged"),
@@ -1927,10 +1932,12 @@ impl GitPane {
     }
 
     fn revert_commit(&mut self, cx: &mut Context<Self>) {
-        let Some(commit) = self.chosen_commit() else {
-            return;
-        };
-        let hash = commit.hash.clone();
+        if let Some(commit) = self.chosen_commit() {
+            self.revert(commit.hash, cx);
+        }
+    }
+
+    pub(super) fn revert(&mut self, hash: String, cx: &mut Context<Self>) {
         self.confirm(
             format!("Revert {hash}?"),
             "Creates a new commit that reverses this commit. Existing history is preserved.",
@@ -2850,6 +2857,11 @@ fn more_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
     let changed = !pane.files().is_empty();
     let unstaged = pane.files().iter().any(has_unstaged);
     let stashes = pane.stashes.len();
+    let commands_open = pane.commands_open;
+    let host = pane
+        .bench
+        .upgrade()
+        .and_then(|bench| bench.read(cx).host.clone());
     Popover::new("git-more")
         .anchor(Anchor::TopRight)
         .offset(px(4.))
@@ -2859,78 +2871,123 @@ fn more_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         )
         .content(move |_, _, cx| {
             let popover = cx.entity();
-            Menu::new()
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "more-fetch",
-                        "Fetch all remotes",
-                        Icon::Fetch,
-                        GitPane::fetch,
+            let mut menu = Menu::new();
+            if let Some(host) = host.clone() {
+                let picking = popover.clone();
+                menu = menu
+                    .child(
+                        MenuItem::new("more-repo", "Choose another repository…")
+                            .icon(Icon::Git)
+                            .on_click(move |_, window, cx| {
+                                picking.update(cx, |popover, cx| popover.dismiss(window, cx));
+                                host.update(cx, |area, cx| area.pick_repo(window, cx));
+                            }),
                     )
-                    .hint("F"),
-                )
-                .child(menu_line(
+                    .separator(cx);
+            }
+            menu.child(
+                menu_line(
                     &view,
                     &popover,
-                    "more-remote",
-                    "Add remote…",
-                    Icon::Plus,
-                    GitPane::add_remote,
-                ))
-                .separator(cx)
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "more-stash",
-                        "Stash changes…",
-                        Icon::Stack,
-                        GitPane::stash_menu,
-                    )
-                    .hint("s")
-                    .disabled(!changed),
+                    "more-fetch",
+                    "Fetch all remotes",
+                    Icon::Fetch,
+                    GitPane::fetch,
                 )
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "more-discard",
-                        "Discard unstaged changes…",
-                        Icon::Discard,
-                        GitPane::discard_all,
-                    )
-                    .danger(true)
-                    .disabled(!unstaged),
+                .hint("F"),
+            )
+            .child(menu_line(
+                &view,
+                &popover,
+                "more-remote",
+                "Add remote…",
+                Icon::Plus,
+                GitPane::add_remote,
+            ))
+            .separator(cx)
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-stash",
+                    "Stash changes…",
+                    Icon::Stack,
+                    GitPane::stash_menu,
                 )
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "more-stashes",
-                        if stashes > 0 {
-                            format!("Stashes ({stashes})…")
-                        } else {
-                            "No stashes".to_owned()
-                        },
-                        Icon::Stack,
-                        GitPane::stashes_menu,
-                    )
-                    .disabled(stashes == 0),
+                .hint("s")
+                .disabled(!changed),
+            )
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-discard",
+                    "Discard unstaged changes…",
+                    Icon::Discard,
+                    GitPane::discard_all,
                 )
-                .separator(cx)
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "more-refresh",
-                        "Refresh",
-                        Icon::Refresh,
-                        GitPane::refresh,
-                    )
-                    .hint("r"),
+                .danger(true)
+                .disabled(!unstaged),
+            )
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-stashes",
+                    if stashes > 0 {
+                        format!("Stashes ({stashes})…")
+                    } else {
+                        "No stashes".to_owned()
+                    },
+                    Icon::Stack,
+                    GitPane::stashes_menu,
                 )
+                .disabled(stashes == 0),
+            )
+            .separator(cx)
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-refresh",
+                    "Refresh",
+                    Icon::Refresh,
+                    GitPane::refresh,
+                )
+                .hint("r"),
+            )
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-log",
+                    if commands_open {
+                        "Hide command log"
+                    } else {
+                        "Show command log"
+                    },
+                    Icon::LogLines,
+                    |pane, cx| {
+                        pane.commands_open = !pane.commands_open;
+                        cx.notify();
+                    },
+                )
+                .hint("@"),
+            )
+            .child(
+                menu_line(
+                    &view,
+                    &popover,
+                    "more-keys",
+                    "Keyboard shortcuts",
+                    Icon::Keyboard,
+                    |pane, cx| {
+                        pane.asking = Some(Asking::Keys);
+                        cx.notify();
+                    },
+                )
+                .hint("?"),
+            )
         })
 }
 

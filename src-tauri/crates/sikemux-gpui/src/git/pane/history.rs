@@ -1,15 +1,18 @@
 //! A branch's history: its commits newest first, each on a lane of the graph that shows
 //! where it branched and merged, and the card that heads a commit's review.
 
+use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
+use gpui_kit::base::Popover;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, hsla, point, px, relative, AnyElement, App, Bounds, ClipboardItem, Corners, Div,
-    Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
+    canvas, div, hsla, point, px, radians, relative, Anchor, AnyElement, App, Bounds,
+    ClipboardItem, Context, Corners, Div, Entity, FontWeight, Hsla, InteractiveElement,
+    IntoElement, ParentElement, PathBuilder, Pixels, SharedString, StatefulInteractiveElement,
+    Styled, Transformation, WeakEntity, Window,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -17,6 +20,7 @@ use sikemux_core::git::log::GitCommit;
 
 use super::GitPane;
 use crate::core::Target;
+use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
@@ -453,7 +457,12 @@ pub fn commit_row(
 
 /// The card heading a commit's review: what it says, who wrote it and when, and its hash
 /// with the refs it carries, running edge to edge across the top of the review.
-pub fn commit_card(pane: &GitPane, commit: &GitCommit, pushed: bool, cx: &App) -> Div {
+pub fn commit_card(
+    pane: &GitPane,
+    commit: &GitCommit,
+    pushed: bool,
+    cx: &mut Context<GitPane>,
+) -> Div {
     let t = Tokens::get(cx).clone();
     let fact = |label: &'static str, value: AnyElement| {
         div()
@@ -524,14 +533,10 @@ pub fn commit_card(pane: &GitPane, commit: &GitCommit, pushed: bool, cx: &App) -
             .unwrap_or(name);
         hash = hash.child(chip(shown.to_owned(), t.text_secondary, t.border));
     }
-    div()
-        .flex_none()
+    let body = div()
         .px(px(16.))
         .pt(px(14.))
         .pb(px(12.))
-        .border_b_1()
-        .border_color(t.border)
-        .font_family(theme::UI)
         .child(
             div()
                 .text_size(crate::theme::ui_text(16.))
@@ -563,6 +568,89 @@ pub fn commit_card(pane: &GitPane, commit: &GitCommit, pushed: bool, cx: &App) -
                     div().child(commit.date.clone()).into_any_element(),
                 ))
                 .child(fact("Commit", hash.into_any_element())),
+        );
+    div()
+        .flex_none()
+        .border_b_1()
+        .border_color(t.border)
+        .font_family(theme::UI)
+        .child(body)
+        .child(commit_foot(commit, cx))
+}
+
+/// The foot of a commit's card: a branch from it, and the menu that undoes it.
+fn commit_foot(commit: &GitCommit, cx: &mut Context<GitPane>) -> Div {
+    let t = Tokens::get(cx).clone();
+    let view = cx.entity();
+    let foot_button = |id: &'static str, icon: Icon, label: &'static str| {
+        gpui_kit::base::Button::new(id)
+            .accessibility_label(label)
+            .h(px(26.))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(RADIUS_2)
+            .text_size(crate::theme::ui_text(12.))
+            .text_color(t.text_secondary)
+            .hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
+            .child(ui::icon(icon, 12.).text_color(t.text_tertiary))
+            .child(label)
+    };
+    let branched = commit.hash.clone();
+    let (reset, reverted) = (commit.hash.clone(), commit.hash.clone());
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .px(px(8.))
+        .py(px(6.))
+        .border_t_1()
+        .border_color(t.border)
+        .child(
+            foot_button("commit-branch", Icon::Git, "Branch from here").on_click(
+                cx.listener(move |pane, _, _, cx| pane.branch_from(branched.clone(), cx)),
+            ),
+        )
+        .child(
+            Popover::new("commit-undo")
+                .anchor(Anchor::BottomLeft)
+                .offset(px(4.))
+                .trigger(
+                    foot_button("commit-undo-button", Icon::Discard, "Undo this commit").child(
+                        ui::icon(Icon::Chevron, 9.)
+                            .text_color(t.text_tertiary)
+                            .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
+                    ),
+                )
+                .content(move |_, _, cx| {
+                    let popover = cx.entity();
+                    let (resetting, reverting) = (view.clone(), view.clone());
+                    let (closing, closed) = (popover.clone(), popover);
+                    let (reset, reverted) = (reset.clone(), reverted.clone());
+                    ui::Menu::new()
+                        .child(
+                            ui::MenuItem::new("commit-reset", "Reset to here…")
+                                .icon(Icon::Discard)
+                                .hint("r")
+                                .on_click(move |_, window, cx| {
+                                    closing.update(cx, |popover, cx| popover.dismiss(window, cx));
+                                    resetting
+                                        .update(cx, |pane, cx| pane.reset_to(reset.clone(), cx));
+                                }),
+                        )
+                        .child(
+                            ui::MenuItem::new("commit-revert", "Revert…")
+                                .icon(Icon::Discard)
+                                .hint("v")
+                                .danger(true)
+                                .on_click(move |_, window, cx| {
+                                    closed.update(cx, |popover, cx| popover.dismiss(window, cx));
+                                    reverting
+                                        .update(cx, |pane, cx| pane.revert(reverted.clone(), cx));
+                                }),
+                        )
+                }),
         )
 }
 
