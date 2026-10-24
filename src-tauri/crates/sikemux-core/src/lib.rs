@@ -14,6 +14,7 @@ pub mod cli;
 pub mod client;
 #[cfg(unix)]
 pub mod files;
+mod flights;
 pub mod frozen;
 #[cfg(unix)]
 pub mod git;

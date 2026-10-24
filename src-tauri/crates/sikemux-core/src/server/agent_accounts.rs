@@ -1,8 +1,8 @@
 //! The core's calls about the person's agent accounts, which the app's
 //! settings and rail make.
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,8 @@ use super::connection::blocking;
 use super::workspace::refresh_launchers;
 use super::{Core, CoreResult};
 use crate::agent_accounts::{chat_account, folders, status, usage, Book, Profile};
+use crate::flights::{shared, Flights};
+use crate::launch::discovery;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,22 +180,74 @@ pub(super) struct Availability {
     status: status::AgentStatus,
 }
 
+/// Asks an account again, once however many ask together, and tells every
+/// client when the answer changed.
+async fn recheck(
+    core: Arc<Core>,
+    provider: String,
+    config_path: Option<String>,
+    program: PathBuf,
+) -> status::Checked {
+    static CHECKING: LazyLock<Flights<String, status::Checked>> = LazyLock::new(Flights::default);
+    let generation = status::generation();
+    let flight = format!(
+        "{generation}\0{provider}\0{}",
+        config_path.as_deref().unwrap_or("")
+    );
+    shared(&CHECKING, flight, async {
+        let keys = {
+            let (core, provider) = (core.clone(), provider.clone());
+            blocking(move || Ok(core.workspaces.provider_keys(&provider)))
+                .await
+                .unwrap_or_default()
+        };
+        let config_path = config_path.as_deref();
+        let checked = status::ask(&provider, &program, config_path, keys).await;
+        if status::keep(&provider, config_path, &checked, generation) {
+            core.workspaces
+                .note_status(&provider, config_path, &checked.status);
+            core.view_changed();
+            core.changes.changed(Topic::AgentStatus, None, None);
+        }
+        checked
+    })
+    .await
+}
+
+/// What is known of an account, at once whenever anything is: an answer that
+/// no longer holds is given while the account is asked again behind it.
+async fn checked(
+    core: &Arc<Core>,
+    provider: &str,
+    config_path: Option<&str>,
+    program: &Path,
+) -> status::Checked {
+    let ask = || {
+        recheck(
+            core.clone(),
+            provider.to_owned(),
+            config_path.map(str::to_owned),
+            program.to_owned(),
+        )
+    };
+    match status::known(provider, config_path) {
+        Some((checked, true)) => checked,
+        Some((checked, false)) => {
+            tokio::spawn(ask());
+            checked
+        }
+        None => ask().await,
+    }
+}
+
 pub(super) async fn availability(core: &Arc<Core>, account: Account) -> CoreResult<Availability> {
     let (provider, config_path) = (&account.provider, account.config_path.as_deref());
     let spec = core.workspaces.account_spec(provider, config_path);
     let (program, failures) = status::locate(&spec).await;
     let status = match &program {
-        Some(program) => {
-            let keys = {
-                let (core, provider) = (core.clone(), provider.clone());
-                blocking(move || Ok(core.workspaces.provider_keys(&provider))).await?
-            };
-            status::signed_in(provider, program, config_path, keys).await
-        }
+        Some(program) => checked(core, provider, config_path, program).await.status,
         None => status::unfound(&failures),
     };
-    core.workspaces.note_status(provider, config_path, &status);
-    core.view_changed();
     Ok(Availability {
         program,
         failures,
@@ -209,9 +263,18 @@ pub(super) async fn account_status(
     core: &Arc<Core>,
     account: Account,
 ) -> CoreResult<status::AccountStatus> {
+    if !matches!(account.provider.as_str(), "claude" | "codex") {
+        return Err("Only Claude and Codex keep separate accounts".into());
+    }
     let program = program(core, &account).await?;
-    let config_path = account.config_path.as_deref();
-    Ok(status::account(&account.provider, &program, config_path).await?)
+    let (provider, config_path) = (&account.provider, account.config_path.as_deref());
+    let mut known = checked(core, provider, config_path, &program).await;
+    if known.account.is_none() {
+        known = recheck(core.clone(), provider.clone(), account.config_path, program).await;
+    }
+    Ok(known
+        .account
+        .ok_or("Claude or Codex did not say who is signed in")??)
 }
 
 pub(super) async fn usage(core: &Arc<Core>, account: Account) -> CoreResult<usage::Usage> {
@@ -226,6 +289,7 @@ pub(super) fn forget(core: &Arc<Core>, forget: Forget) {
     if let Some(provider) = provider {
         usage::forget(provider, config_path);
     }
+    discovery::forget_failures();
     tokio::spawn(refresh_launchers(core.clone()));
 }
 

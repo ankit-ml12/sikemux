@@ -3,16 +3,18 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{LazyLock, Mutex, OnceLock};
+use std::time::{Duration, SystemTime};
 
 use sikemux_process::paths::expand_home;
 use sikemux_process::sync::Locked;
 use sikemux_process::user_environment;
 use sikemux_pty::user_shell::login_shell_environment;
 use tokio::process::Command;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::agent_catalog::{AgentEntry, AGENTS};
+use crate::flights::{shared, Flights};
 
 /* Two seconds is what a person waits for an agent binary to name its version
 before the probe gives up. A test spawns the same real process while hundreds
@@ -25,6 +27,12 @@ const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const AGENT_UPDATE_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
 const AGENT_UPDATE_SETTLE_DELAY: Duration = Duration::from_millis(350);
+/// How many agent programs are started at once to answer a question, so
+/// listing every agent never starts them all together.
+const PROBE_CONCURRENCY: usize = 4;
+const MAX_PROBED: usize = 128;
+const TIMED_OUT: &str = "version check timed out";
+const AFTER_RETRY: &str = "after update retry";
 
 fn healthy_agent_executables() -> &'static Mutex<HashMap<String, PathBuf>> {
     static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
@@ -82,7 +90,7 @@ async fn probe_agent_executable_with_timeout(
         .stderr(std::process::Stdio::piped());
     let output = tokio::time::timeout(timeout, command.output())
         .await
-        .map_err(|_| "version check timed out".to_string())?
+        .map_err(|_| TIMED_OUT.to_string())?
         .map_err(|error| format!("could not start: {error}"))?;
     if !output.status.success() {
         let detail = error_detail(&output.stderr)
@@ -98,47 +106,80 @@ async fn probe_agent_executable_with_timeout(
         .to_string())
 }
 
-#[derive(Clone)]
-struct AgentProbe {
-    checked_at: std::time::Instant,
-    modified: std::time::SystemTime,
-    size: u64,
-    version: String,
+/// A turn to start an agent's program to ask it something; held until it answers.
+pub(crate) async fn probe_turn() -> Option<SemaphorePermit<'static>> {
+    static TURNS: Semaphore = Semaphore::const_new(PROBE_CONCURRENCY);
+    TURNS.acquire().await.ok()
 }
 
+/// A program file as it is now: when it last changed, and its size.
+type FileStamp = (SystemTime, u64);
+
+/// What a program answered, kept until its file changes.
+struct Probed {
+    stamp: FileStamp,
+    answer: Result<String, String>,
+}
+
+fn probed() -> &'static Mutex<HashMap<PathBuf, Probed>> {
+    static PROBED: OnceLock<Mutex<HashMap<PathBuf, Probed>>> = OnceLock::new();
+    PROBED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn stamp(executable: &Path) -> Option<FileStamp> {
+    let metadata = fs::metadata(executable).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
+/// Forgets the programs that would not start, so each is asked again: what
+/// they need may have been installed since.
+pub fn forget_failures() {
+    probed().locked().retain(|_, probed| probed.answer.is_ok());
+}
+
+/// Asks once, and when that times out asks again for longer, since an
+/// updater may be swapping the program.
+async fn probe_settled(def: &AgentEntry, executable: &Path) -> Result<String, String> {
+    match probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await {
+        Err(error) if error == TIMED_OUT => {
+            tokio::time::sleep(AGENT_UPDATE_SETTLE_DELAY).await;
+            probe_agent_executable_with_timeout(def, executable, AGENT_UPDATE_RETRY_TIMEOUT)
+                .await
+                .map_err(|error| format!("{error} {AFTER_RETRY}"))
+        }
+        answer => answer,
+    }
+}
+
+/// What the program at `executable` answers, asked again only once its file changes.
 async fn probe_agent_executable(def: &AgentEntry, executable: &Path) -> Result<String, String> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, AgentProbe>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let metadata = fs::metadata(executable).ok();
-    let modified = metadata
-        .as_ref()
-        .and_then(|metadata| metadata.modified().ok());
-    let size = metadata.as_ref().map_or(0, |metadata| metadata.len());
-    if let Some(cached) = cache.locked().get(executable).cloned() {
-        if cached.checked_at.elapsed() < Duration::from_secs(60)
-            && Some(cached.modified) == modified
-            && cached.size == size
-        {
-            return Ok(cached.version);
+    static ASKING: LazyLock<Flights<(PathBuf, Option<FileStamp>), Result<String, String>>> =
+        LazyLock::new(Flights::default);
+    let stamp = stamp(executable);
+    if let Some(probed) = probed().locked().get(executable) {
+        if Some(probed.stamp) == stamp {
+            return probed.answer.clone();
         }
     }
-    let version = probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await?;
-    if let Some(modified) = modified {
-        let mut cache = cache.locked();
-        if cache.len() >= 128 {
-            cache.retain(|_, probe| probe.checked_at.elapsed() < Duration::from_secs(60));
+    shared(&ASKING, (executable.to_path_buf(), stamp), async {
+        let _turn = probe_turn().await;
+        let answer = probe_settled(def, executable).await;
+        if let Some(stamp) = stamp {
+            let mut probed = probed().locked();
+            if probed.len() >= MAX_PROBED {
+                probed.clear();
+            }
+            probed.insert(
+                executable.to_path_buf(),
+                Probed {
+                    stamp,
+                    answer: answer.clone(),
+                },
+            );
         }
-        cache.insert(
-            executable.to_path_buf(),
-            AgentProbe {
-                checked_at: std::time::Instant::now(),
-                modified,
-                size,
-                version: version.clone(),
-            },
-        );
-    }
-    Ok(version)
+        answer
+    })
+    .await
 }
 
 pub async fn first_healthy(
@@ -156,33 +197,12 @@ pub async fn first_healthy(
                     .insert(def.kind.to_string(), candidate.clone());
                 return (Some(candidate), failures);
             }
-            Err(error) if error == "version check timed out" => {
-                tokio::time::sleep(AGENT_UPDATE_SETTLE_DELAY).await;
-                match probe_agent_executable_with_timeout(
-                    def,
-                    &candidate,
-                    AGENT_UPDATE_RETRY_TIMEOUT,
-                )
-                .await
-                {
-                    Ok(_) => {
-                        healthy_agent_executables()
-                            .locked()
-                            .insert(def.kind.to_string(), candidate.clone());
-                        return (Some(candidate), failures);
-                    }
-                    Err(retry_error) => {
-                        failures.push(format!(
-                            "{}: {retry_error} after update retry",
-                            candidate.display()
-                        ));
-                        if cached.as_ref() == Some(&candidate) {
-                            temporarily_unverified = Some(candidate);
-                        }
-                    }
+            Err(error) => {
+                if error.ends_with(AFTER_RETRY) && cached.as_ref() == Some(&candidate) {
+                    temporarily_unverified = Some(candidate.clone());
                 }
+                failures.push(format!("{}: {error}", candidate.display()));
             }
-            Err(error) => failures.push(format!("{}: {error}", candidate.display())),
         }
     }
     (temporarily_unverified, failures)

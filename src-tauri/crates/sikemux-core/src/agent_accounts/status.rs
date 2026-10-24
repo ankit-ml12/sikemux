@@ -6,8 +6,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -60,7 +61,7 @@ impl AgentStatus {
     }
 }
 
-#[derive(Serialize, Debug, Default, PartialEq)]
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountStatus {
     signed_in: bool,
@@ -74,59 +75,134 @@ pub struct AccountStatus {
     sessions: Option<String>,
 }
 
-/// How long an answer about sign-in is trusted. Checking starts the agent's CLI, so a list
-/// redrawn every few seconds should not start them all again.
-const STATUS_TTL: Duration = Duration::from_secs(60);
 /// Long enough for a CLI that starts slowly; a check that takes longer answers `Unknown`.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(12);
+const MAX_KEPT: usize = 64;
 
-fn status_cache() -> &'static Mutex<HashMap<String, (Instant, AgentStatus)>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, AgentStatus)>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+/// What one look at an account found: whether it is signed in and, for
+/// Claude and Codex, who as.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Checked {
+    pub status: AgentStatus,
+    pub account: Option<Result<AccountStatus, String>>,
 }
 
-/// The last minute's answer for one account, if there is one.
+/// An account's last answer, and whether it still holds or is only shown
+/// while the account is asked again.
+struct Kept {
+    checked: Checked,
+    holds: bool,
+}
+
+fn kept() -> &'static Mutex<HashMap<String, Kept>> {
+    static KEPT: OnceLock<Mutex<HashMap<String, Kept>>> = OnceLock::new();
+    KEPT.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Moves on each time answers are forgotten, so an answer asked for before
+/// is not kept after.
+static FORGOTTEN: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn generation() -> u64 {
+    FORGOTTEN.load(Ordering::SeqCst)
+}
+
+/// The last answer for one account, and whether it still holds.
+pub(crate) fn known(provider: &str, config_path: Option<&str>) -> Option<(Checked, bool)> {
+    let kept = kept().locked();
+    let kept = kept.get(&key(provider, config_path))?;
+    Some((kept.checked.clone(), kept.holds))
+}
+
+/// The last sign-in heard for one account.
 pub(crate) fn cached(provider: &str, config_path: Option<&str>) -> Option<AgentStatus> {
-    let key = key(provider, config_path);
-    let mut cache = status_cache().locked();
-    let (stored, status) = cache.get(&key)?;
-    if stored.elapsed() < STATUS_TTL {
-        return Some(status.clone());
+    known(provider, config_path).map(|(checked, _)| checked.status)
+}
+
+/// Keeps what an account answered unless its answers were forgotten since
+/// `generation`, and says whether it differs from the last answer.
+pub(crate) fn keep(
+    provider: &str,
+    config_path: Option<&str>,
+    checked: &Checked,
+    generation: u64,
+) -> bool {
+    let mut kept = kept().locked();
+    if self::generation() != generation {
+        return false;
     }
-    cache.remove(&key);
-    None
+    if kept.len() >= MAX_KEPT {
+        kept.clear();
+    }
+    let previous = kept.insert(
+        key(provider, config_path),
+        Kept {
+            checked: checked.clone(),
+            holds: true,
+        },
+    );
+    previous.is_none_or(|previous| previous.checked != *checked)
 }
 
+/// Holds one account at `status`, whatever its CLI last said.
 pub(crate) fn remember(provider: &str, config_path: Option<&str>, status: AgentStatus) {
-    let mut cache = status_cache().locked();
-    cache.retain(|_, (stored, _)| stored.elapsed() < STATUS_TTL);
-    cache.insert(key(provider, config_path), (Instant::now(), status));
+    let mut kept = kept().locked();
+    let kept = kept
+        .entry(key(provider, config_path))
+        .or_insert_with(|| Kept {
+            checked: Checked {
+                status: status.clone(),
+                account: None,
+            },
+            holds: true,
+        });
+    kept.checked.status = status;
+    kept.holds = true;
 }
 
-/// Forgets one account's answer, or every answer when `provider` is absent.
+/// Forgets one account's answer, so the next look waits for a new one. With
+/// no provider, every answer is still shown but only until it is asked again.
 pub(crate) fn forget(provider: Option<&str>, config_path: Option<&str>) {
-    let mut cache = status_cache().locked();
+    let mut kept = kept().locked();
+    FORGOTTEN.fetch_add(1, Ordering::SeqCst);
     match provider {
         Some(provider) => {
-            cache.remove(&key(provider, config_path));
+            kept.remove(&key(provider, config_path));
         }
-        None => cache.clear(),
+        None => kept.values_mut().for_each(|kept| kept.holds = false),
     }
 }
 
-/// The status of an agent whose binary was found: from the last minute's answer, or asked now.
-pub async fn signed_in(
+/// Asks the account's own CLI whether it is signed in, and for Claude and
+/// Codex who as, waiting for a turn among the other programs being asked.
+pub async fn ask(
     provider: &str,
     program: &Path,
     config_path: Option<&str>,
     providers: BTreeMap<String, String>,
-) -> AgentStatus {
-    if let Some(status) = cached(provider, config_path) {
-        return status;
+) -> Checked {
+    let _turn = discovery::probe_turn().await;
+    if matches!(provider, "claude" | "codex") {
+        let account = account(provider, program, config_path).await;
+        return Checked {
+            status: sign_in_of(&account),
+            account: Some(account),
+        };
     }
-    let status = check_sign_in(provider, program, config_path, providers).await;
-    remember(provider, config_path, status.clone());
-    status
+    Checked {
+        status: check_sign_in(provider, program, config_path, providers).await,
+        account: None,
+    }
+}
+
+fn sign_in_of(account: &Result<AccountStatus, String>) -> AgentStatus {
+    match account {
+        Ok(account) if account.signed_in => AgentStatus::Ready {
+            account: account.method.clone(),
+        },
+        Ok(_) => AgentStatus::SignedOut,
+        Err(_) => AgentStatus::Unknown,
+    }
 }
 
 /// Where `spec`'s program is, and why each program tried before it failed.
@@ -268,14 +344,9 @@ async fn check_sign_in(
         return AgentStatus::Unknown;
     };
     match kind {
-        AgentKind::Claude | AgentKind::Codex => match account(provider, program, config_path).await
-        {
-            Ok(account) if account.signed_in => AgentStatus::Ready {
-                account: account.method,
-            },
-            Ok(_) => AgentStatus::SignedOut,
-            Err(_) => AgentStatus::Unknown,
-        },
+        AgentKind::Claude | AgentKind::Codex => {
+            sign_in_of(&account(provider, program, config_path).await)
+        }
         AgentKind::Pi => {
             match exit_code_and_output(provider, program, config_path, &["auth", "check", "--json"])
                 .await
@@ -384,7 +455,7 @@ fn parse_codex_status(result: &Value) -> AccountStatus {
 }
 
 /// Who an account is signed in as, asked of the agent's own CLI.
-pub async fn account(
+async fn account(
     provider: &str,
     program: &Path,
     config_path: Option<&str>,

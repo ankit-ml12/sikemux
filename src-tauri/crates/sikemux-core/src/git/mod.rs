@@ -20,8 +20,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use git2::Repository;
-use sikemux_process::sync::Locked;
 use tokio::task::spawn_blocking;
+
+use crate::flights::shared;
 
 /// Runs a synchronous closure off the async workers, so a libgit2 walk of a
 /// big repo never stalls the core's other requests.
@@ -56,27 +57,7 @@ async fn git_walk_permit() -> Result<tokio::sync::SemaphorePermit<'static>, Stri
 }
 
 /// Walks being worked out, by what they answer.
-type Flights<T> = std::sync::Mutex<
-    std::collections::HashMap<String, Arc<tokio::sync::OnceCell<Result<T, String>>>>,
->;
-
-/// What `key` names, worked out once however many ask while it is under way.
-async fn shared<T: Clone>(
-    flights: &Flights<T>,
-    key: String,
-    work: impl std::future::Future<Output = Result<T, String>>,
-) -> Result<T, String> {
-    let flight = flights.locked().entry(key.clone()).or_default().clone();
-    let result = flight.get_or_init(|| work).await.clone();
-    let mut flights = flights.locked();
-    if flights
-        .get(&key)
-        .is_some_and(|current| Arc::ptr_eq(current, &flight))
-    {
-        flights.remove(&key);
-    }
-    result
-}
+type Flights<T> = crate::flights::Flights<String, Result<T, String>>;
 
 /// A watched repo's walks are shared only with requests made at the same
 /// generation, so none gets an answer from before a change it was told of.
