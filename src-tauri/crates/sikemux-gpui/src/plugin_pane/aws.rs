@@ -207,11 +207,15 @@ impl Panel for Aws {
         _: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let account = match host.view("accountView", Value::Null, cx).read::<Account>() {
+        let view = match host
+            .view("accountView", Value::Null, cx)
+            .read::<AccountView>()
+        {
             Ok(None) => return super::loading(cx),
             Err(failure) => return super::failure(&failure, cx),
-            Ok(Some(account)) => account,
+            Ok(Some(view)) => view,
         };
+        let account = view.account();
         let Some(profile) = account.profile.clone() else {
             return choose_profile(&account, cx);
         };
@@ -225,7 +229,7 @@ impl Panel for Aws {
         div()
             .size_full()
             .flex()
-            .child(self.rail(host, &account, &profile, cx))
+            .child(self.rail(host, &account, &view.kinds(), &profile, cx))
             .child(div().flex_1().min_w_0().h_full().flex().child(main))
             .into_any_element()
     }
@@ -236,11 +240,12 @@ impl Aws {
         &self,
         host: &mut Host,
         account: &Account,
+        kinds: &HashMap<String, String>,
         profile: &str,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let signed_in = host.signed_in(cx);
-        let switch = account_switch(account, profile, signed_in, cx);
+        let switch = account_switch(account, kinds, profile, signed_in, cx);
         let t = Tokens::get(cx).clone();
         let services = SERVICES.iter().enumerate().map(|(index, service)| {
             let (chosen, service) = (*service == self.service, *service);
@@ -1155,10 +1160,42 @@ fn tone(health: Health) -> Tone {
     }
 }
 
+/// The account view as the plugin sends it: the profiles, each with how it signs in.
+#[derive(serde::Deserialize)]
+struct AccountView {
+    profile: Option<String>,
+    profiles: Vec<ProfileView>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProfileView {
+    #[serde(flatten)]
+    profile: sikemux_wire::aws::AccountProfile,
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+impl AccountView {
+    fn account(&self) -> Account {
+        Account {
+            profile: self.profile.clone(),
+            profiles: self.profiles.iter().map(|each| each.profile.clone()).collect(),
+        }
+    }
+
+    fn kinds(&self) -> HashMap<String, String> {
+        self.profiles
+            .iter()
+            .filter_map(|each| Some((each.profile.name.clone(), each.kind.clone()?)))
+            .collect()
+    }
+}
+
 /// The profile in use, as the Mac's AWS rail ends: its name and account, its region and
 /// whether it is signed in, and a menu of the profiles to switch to.
 fn account_switch(
     account: &Account,
+    kinds: &HashMap<String, String>,
     profile: &str,
     signed_in: Option<bool>,
     cx: &mut Context<PluginPane>,
@@ -1178,6 +1215,7 @@ fn account_switch(
         None => (Tone::Pending, "Checking"),
     };
     let (profiles, chosen, pane) = (account.profiles.clone(), profile.to_owned(), cx.entity());
+    let kinds = kinds.clone();
     KitButton::new("aws-account")
         .ghost()
         .w_full()
@@ -1228,7 +1266,11 @@ fn account_switch(
                 .label("Profiles");
             for each in &profiles {
                 let on = each.name == chosen;
-                let meta = [each.account.clone(), each.region.clone()]
+                let kind = kinds.get(&each.name).map(|kind| match kind.as_str() {
+                    "sso" => "SSO".to_owned(),
+                    other => other.to_owned(),
+                });
+                let meta = [each.account.clone(), kind, each.region.clone()]
                     .into_iter()
                     .flatten()
                     .collect::<Vec<_>>()
