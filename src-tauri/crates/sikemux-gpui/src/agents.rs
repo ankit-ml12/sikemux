@@ -5,9 +5,9 @@ use gpui_kit::base::{Button as BaseButton, Popover};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, Context, Entity,
-    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Transformation, Window,
+    canvas, div, fill, point, px, radians, size, Anchor, AnyElement, App, Bounds, ClickEvent,
+    Context, Entity, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, Transformation, Window,
 };
 use serde_json::Value;
 use sikemux_core::agent_accounts::Profile;
@@ -422,18 +422,91 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
         move |bench, _, _, _| bench.resume_chat(&recent)
     }));
     let pin = pin_chat(&cx.entity(), recent);
+    let deletable = bench
+        .read("catalog")
+        .and_then(Value::as_array)
+        .and_then(|kinds| {
+            kinds
+                .iter()
+                .find(|kind| kind["type"] == recent.provider.as_str())
+        })
+        .is_some_and(|kind| kind["deletableChats"] == true);
+    let (this, chat) = (cx.weak_entity(), recent.clone());
     div()
         .id(SharedString::from(format!("recent-menu-{}", recent.id)))
         .child(row)
-        .context_menu(move |popup, _, _| {
+        .context_menu(move |popup, _, cx| {
             let (label, pin) = pin.clone();
-            popup.item(
-                PopupMenuItem::new(label)
-                    .icon(Icon::Pin)
-                    .on_click(move |_, window, cx| pin(window, cx)),
+            let pin = PopupMenuItem::new(label)
+                .icon(Icon::Pin)
+                .on_click(move |_, window, cx| pin(window, cx));
+            if chat.pinned {
+                return popup.item(pin);
+            }
+            let on = |work: fn(&mut Workbench, &RecentInfo, &mut Context<Workbench>)| {
+                let (this, chat) = (this.clone(), chat.clone());
+                move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                    let _ = this.update(cx, |bench, cx| work(bench, &chat, cx));
+                }
+            };
+            let popup = popup
+                .item(
+                    PopupMenuItem::new("Open")
+                        .icon(Icon::Message)
+                        .on_click(on(|bench, chat, _| bench.resume_chat(chat))),
+                )
+                .item(
+                    PopupMenuItem::new("Rename…")
+                        .icon(Icon::Pencil)
+                        .on_click(on(rename_recent)),
+                )
+                .item(pin);
+            if !deletable {
+                return popup;
+            }
+            popup.separator().item(
+                ui::danger_popup_item("Delete…", Some(Icon::Trash), cx).on_click(on(delete_recent)),
             )
         })
         .into_any_element()
+}
+
+/// Asks for a recent chat's new title, and renames it in its CLI's own history.
+fn rename_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Workbench>) {
+    let recent = chat.id.clone();
+    bench.prompt(
+        "Rename chat",
+        chat.title.clone(),
+        move |bench, title, _, _| {
+            if !title.trim().is_empty() {
+                bench.call(
+                    "renameRecent",
+                    serde_json::json!({ "recent": recent, "title": title.trim() }),
+                );
+            }
+        },
+        cx,
+    );
+}
+
+/// Deletes a recent chat from its CLI's own history, once the person says so.
+fn delete_recent(bench: &mut Workbench, chat: &RecentInfo, cx: &mut Context<Workbench>) {
+    let recent = chat.id.clone();
+    bench.confirm(
+        "Delete this chat?",
+        format!(
+            "“{}” will be removed from disk for good and can no longer be resumed.",
+            chat.title
+        ),
+        "Delete",
+        true,
+        move |bench, yes, _, _| {
+            if yes {
+                bench.call("deleteRecent", serde_json::json!({ "recent": recent }));
+            }
+        },
+        cx,
+    );
 }
 
 /// Something a click on the rail does.
