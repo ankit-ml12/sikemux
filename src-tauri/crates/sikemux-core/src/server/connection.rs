@@ -1253,12 +1253,7 @@ fn give_agent_environment(core: &Core, folder: &str, env: &mut HashMap<String, S
 
 async fn shutdown(core: Arc<Core>, client: Arc<ClientConn>, request_id: RequestId, stop_all: bool) {
     if stop_all {
-        let draining = core.clone();
-        let _ = blocking(move || {
-            draining.drain();
-            Ok(())
-        })
-        .await;
+        core.stop_everything().await;
     } else {
         let running = core.running_sessions() + core.chats.count();
         if running > 0 {

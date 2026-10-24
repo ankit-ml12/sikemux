@@ -130,6 +130,8 @@ const SESSION_POLL: Duration = Duration::from_millis(250);
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_TRIM: Duration = Duration::from_secs(10 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+/// How long one step of stopping may take before the core gives up on it and stops anyway.
+const STOP_STEP_LIMIT: Duration = Duration::from_secs(5);
 /// How often what a paired device shows of this host is looked at again
 /// while something in it moves by itself, such as an agent mid-turn.
 const DEVICE_VIEW_INTERVAL: Duration = Duration::from_millis(400);
@@ -1115,7 +1117,10 @@ impl Core {
         }
     }
 
-    fn drain(&self) {
+    /// Stops every chat and session. Only reaping a killed process can hang, so each session is
+    /// reaped on a thread of its own within `STOP_STEP_LIMIT`, and one still unreaped then is
+    /// reported gone without its status, so every exit is still recorded.
+    fn drain(self: &Arc<Self>) {
         self.chats.stop_all();
         let sessions: Vec<Arc<Session>> = self
             .sessions
@@ -1130,14 +1135,62 @@ impl Core {
             session::signal_for_drain(session);
         }
         std::thread::sleep(DRAIN_GRACE);
+        let (reaped, reaping) = std::sync::mpsc::channel();
         for session in &sessions {
-            session::finish_drain(self, session);
+            let (core, session, reaped) = (self.clone(), session.clone(), reaped.clone());
+            std::thread::spawn(move || {
+                session::finish_drain(&core, &session);
+                let _ = reaped.send(());
+            });
+        }
+        drop(reaped);
+        let deadline = Instant::now() + STOP_STEP_LIMIT;
+        let finished = (0..sessions.len())
+            .take_while(|_| {
+                reaping
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .is_ok()
+            })
+            .count();
+        if finished < sessions.len() {
+            eprintln!(
+                "sikemux core: {} sessions were not reaped within {}s; stopping without them",
+                sessions.len() - finished,
+                STOP_STEP_LIMIT.as_secs()
+            );
+        }
+        for session in &sessions {
+            session::report_exit(self, session, None);
             session::detach_all(session);
         }
     }
 
     fn begin_shutdown(&self) {
         self.shutdown.send_replace(true);
+    }
+
+    /// Stops every chat and session, off the async threads.
+    async fn stop_everything(self: &Arc<Self>) {
+        let draining = self.clone();
+        let _ = connection::blocking(move || {
+            draining.drain();
+            Ok(())
+        })
+        .await;
+    }
+}
+
+/// Waits for `step` of stopping the core, or gives up on it after `STOP_STEP_LIMIT`, saying
+/// which step it was, so one that hangs cannot keep the core from exiting.
+async fn within_stop_limit<T>(step: &str, stopping: impl std::future::Future<Output = T>) {
+    if tokio::time::timeout(STOP_STEP_LIMIT, stopping)
+        .await
+        .is_err()
+    {
+        eprintln!(
+            "sikemux core: stopping {step} took over {}s; stopping without it",
+            STOP_STEP_LIMIT.as_secs()
+        );
     }
 }
 
@@ -1436,7 +1489,7 @@ pub(crate) async fn run_core(
         task.abort();
     }
     remote::stop_network(&core);
-    remote::stop(&core).await;
+    within_stop_limit("remote access", remote::stop(&core)).await;
     remote::stop_live(&core);
     let tools = core.tools.locked().take();
     if let Some(tools) = tools {

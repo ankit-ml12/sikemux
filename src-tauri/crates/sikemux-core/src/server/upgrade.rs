@@ -80,12 +80,7 @@ pub(crate) async fn answer(
         }
         Ok(FrozenRequest::StopEverything) => {
             reply(writer, &FrozenReply::Accepted).await;
-            let draining = core.clone();
-            let _ = blocking(move || {
-                draining.drain();
-                Ok(())
-            })
-            .await;
+            core.stop_everything().await;
             core.begin_shutdown();
         }
         Err(error) => reply(writer, &refused(format!("unknown request: {error}"))).await,
