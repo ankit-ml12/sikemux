@@ -67,18 +67,20 @@ pub(super) fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<Agent
     // across rayon's pool instead of scanning sessions one at a time.
     let mut out: Vec<AgentSession> = paths
         .par_iter()
-        .filter_map(|(path, stamp)| {
-            let id = path.file_stem().and_then(|s| s.to_str())?;
-            let title = cached_title(path, *stamp, || claude_title(path))?;
-            Some(AgentSession {
-                id: id.to_string(),
-                title,
-                mtime: stamp.unix_secs(),
-            })
-        })
+        .filter_map(|(path, stamp)| claude_session(path, *stamp))
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+pub(super) fn claude_session(path: &Path, stamp: TitleCacheStamp) -> Option<AgentSession> {
+    let id = path.file_stem().and_then(|s| s.to_str())?;
+    let title = cached_title(path, stamp, || claude_title(path))?;
+    Some(AgentSession {
+        id: id.to_string(),
+        title,
+        mtime: stamp.unix_secs(),
+    })
 }
 
 /// Each project has its own transcript folder, so only the projects asked for are read.

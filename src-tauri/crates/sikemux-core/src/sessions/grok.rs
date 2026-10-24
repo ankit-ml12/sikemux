@@ -152,15 +152,19 @@ fn grok_first_user(session_dir: &Path) -> Option<String> {
     None
 }
 
+/// The files Grok keeps in each session's folder.
+pub(super) const GROK_SESSION_FILES: [&str; 3] =
+    ["summary.json", "updates.jsonl", "chat_history.jsonl"];
+
 fn grok_session_mtime(session_dir: &Path) -> u64 {
-    ["summary.json", "updates.jsonl", "chat_history.jsonl"]
+    GROK_SESSION_FILES
         .iter()
         .map(|name| mtime_of(&session_dir.join(name)))
         .max()
         .unwrap_or(0)
 }
 
-fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
+pub(super) fn grok_session(session_dir: &Path, cwd: &str) -> Option<AgentSession> {
     grok_found(session_dir)
         .filter(|found| Path::new(&found.project) == Path::new(cwd))
         .map(|found| found.session)

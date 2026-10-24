@@ -89,8 +89,9 @@ struct CodexRollout {
 type CodexHeaderCache = HashMap<PathBuf, (TitleCacheStamp, Option<Arc<CodexRollout>>, u64)>;
 const MAX_CODEX_HEADER_ENTRIES: usize = 8_192;
 
-/// Which conversation each rollout holds, so a listing only opens the rollouts
-/// that have been written since the last one.
+/// Which conversation each rollout holds, so a listing only opens rollouts it
+/// has not read. A rollout's first line is never rewritten, so one that only
+/// grew is not opened again.
 fn codex_header_cache() -> &'static Mutex<CodexHeaderCache> {
     static CACHE: OnceLock<Mutex<CodexHeaderCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -113,7 +114,7 @@ fn read_codex_rollout(path: &Path) -> Option<CodexRollout> {
 
 fn cached_codex_rollout(path: &Path, stamp: TitleCacheStamp) -> Option<Arc<CodexRollout>> {
     if let Some((cached, rollout, access)) = codex_header_cache().locked().get_mut(path) {
-        if *cached == stamp {
+        if *cached == stamp || (rollout.is_some() && cached.len <= stamp.len) {
             *access = next_title_cache_access();
             return rollout.clone();
         }
@@ -149,13 +150,23 @@ pub(super) fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentS
     let mut out: Vec<AgentSession> = files
         .par_iter()
         .filter_map(|(path, stamp)| {
-            codex_session(path, *stamp, &indexed_titles)
-                .filter(|found| found.project == cwd)
-                .map(|found| found.session)
+            codex_session(path, *stamp, &indexed_titles, Some(cwd)).map(|found| found.session)
         })
         .collect();
     out.sort_by_key(|item| std::cmp::Reverse(item.mtime));
     out
+}
+
+/// The session in one rollout, when it ran in `cwd`.
+pub(super) fn codex_session_at(
+    path: &Path,
+    cwd: &str,
+    config_path: Option<&str>,
+) -> Option<AgentSession> {
+    let root = agent_config_root("codex", config_path)?;
+    let indexed_titles = codex_indexed_titles(&root);
+    codex_session(path, title_cache_stamp(path), &indexed_titles, Some(cwd))
+        .map(|found| found.session)
 }
 
 /// Rollouts for every project share one folder, so the page lists them all
@@ -179,16 +190,21 @@ pub(super) fn codex_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Ve
         })
         .collect();
     scan.collect(listed, |(path, stamp)| {
-        codex_session(path, *stamp, &indexed_titles)
+        codex_session(path, *stamp, &indexed_titles, None)
     })
 }
 
+/// The session in one rollout, when it ran in `project` or no project is asked for.
 fn codex_session(
     path: &Path,
     stamp: TitleCacheStamp,
     indexed_titles: &CodexTitles,
+    project: Option<&str>,
 ) -> Option<Found> {
     let rollout = cached_codex_rollout(path, stamp)?;
+    if project.is_some_and(|project| project != rollout.cwd) {
+        return None;
+    }
     let id = rollout.id.as_str();
     let title = indexed_titles
         .get(id)
