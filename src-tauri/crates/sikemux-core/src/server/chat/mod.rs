@@ -2345,7 +2345,15 @@ pub(crate) async fn letter(core: &Core, agent_id: &str, text: String) -> CoreRes
 pub(crate) fn switch_account(core: &Core, agent_id: &str, account: ChatAccount) -> CoreResult<()> {
     validate_account(&account)?;
     if let Some(chat) = core.chats.get(agent_id) {
-        return chat.send(ChatCommand::SwitchAccount { account });
+        if chat.read_only().is_some() || !chat.unstarted() {
+            return chat.send(ChatCommand::SwitchAccount { account });
+        }
+        // A chat waiting for the person starts on the account chosen, as on a model chosen.
+        chat.set_current(rebind::on_account(
+            chat.provider(),
+            &chat.current_launch(),
+            &account,
+        ));
     }
     let patch = serde_json::Map::from_iter([("profileId".to_owned(), Value::from(account.id))]);
     core.workspaces.update_agent(agent_id, patch)?;

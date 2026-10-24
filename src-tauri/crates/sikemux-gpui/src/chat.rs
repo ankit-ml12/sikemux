@@ -3084,8 +3084,12 @@ fn strip(
             on: &on,
             started: !fresh,
         };
-        let running = matches!(agent.status, AgentStatus::Working | AgentStatus::Starting);
-        let ready = head.is_some_and(|head| head.connection == ChatConnection::Ready);
+        let running = head.is_some_and(|head| head.running);
+        // A chat whose agent has not started yet, such as one waiting for the person, starts
+        // on the account picked.
+        let unstarted = agent.status == AgentStatus::Starting
+            && head.is_none_or(|head| head.connection == ChatConnection::Connecting);
+        let ready = unstarted || head.is_some_and(|head| head.connection == ChatConnection::Ready);
         let this = cx.entity();
         crate::account_picker::picker(bench, chat, running, !ready, &this, cx)
     });

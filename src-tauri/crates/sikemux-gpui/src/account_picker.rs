@@ -105,7 +105,7 @@ pub fn picker(
         )
         .child(ui::icon(Icon::Chevron, 10.).text_color(t.text_tertiary));
     if disabled {
-        return Some(trigger.into_any_element());
+        return Some(trigger.opacity(0.45).into_any_element());
     }
     let rows: Vec<(Profile, String, Option<String>, Option<f64>)> = movable
         .iter()

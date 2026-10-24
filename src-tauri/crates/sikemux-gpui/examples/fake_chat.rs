@@ -18,6 +18,9 @@
 //! `FAKE_NAME=<name>` names the agent as the person would, and `FAKE_CLOSE=1` closes
 //! its tab once the prompts are sent, so it is listed among the closed agents.
 //! `FAKE_PAUSE_MS=<ms>` waits that long between prompts rather than two seconds.
+//! `FAKE_SLEEP=1` puts the chat to sleep once its prompts are answered, its tab still open.
+//! `FAKE_PROFILES=<JSON list>` gives the agent those accounts instead, one of them `fake`,
+//! the one the chat starts on, such as two with their own `configPath`.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -43,8 +46,12 @@ async fn run() -> anyhow::Result<()> {
     client.register_window().await?;
     let provider = std::env::var("FAKE_PROVIDER").unwrap_or("opencode".into());
     let profile = json!({ "id": "fake", "name": "Fake", "provider": provider, "accent": "#a277ff", "executablePath": agent });
+    let profiles = match std::env::var("FAKE_PROFILES") {
+        Ok(listed) => serde_json::from_str::<Vec<serde_json::Value>>(&listed)?,
+        Err(_) => vec![profile],
+    };
     client
-        .call("setAgentAccounts", json!({ "profiles": [profile] }))
+        .call("setAgentAccounts", json!({ "profiles": profiles }))
         .await?;
     let folder = std::env::var_os("FAKE_PROJECT").map_or_else(std::env::temp_dir, PathBuf::from);
     let name = folder
@@ -88,6 +95,11 @@ async fn run() -> anyhow::Result<()> {
             .acp_prompt(chat.clone(), None, prompt, Vec::new(), mentions.clone())
             .await?;
         std::thread::sleep(pause);
+    }
+    if std::env::var_os("FAKE_SLEEP").is_some() {
+        client
+            .call("sleepAgent", json!({ "agentId": chat }))
+            .await?;
     }
     if std::env::var_os("FAKE_CLOSE").is_some() {
         client
