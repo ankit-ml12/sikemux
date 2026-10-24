@@ -3,10 +3,11 @@ use std::rc::Rc;
 use gpui_kit::base::{AlertDialog, Button as BaseButton};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     div, px, AnimationExt, AnyElement, App, Div, Entity, FocusHandle, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Pixels, RenderOnce, Role,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
 use super::{icon, text};
@@ -634,6 +635,7 @@ impl RenderOnce for Choices {
             };
             let pick = held.back(choice.pick.clone());
             BaseButton::new(("choice", index))
+                .role(Role::MenuItem)
                 .accessibility_label(choice.label.clone())
                 .disabled(choice.disabled)
                 .w_full()
@@ -686,6 +688,9 @@ impl RenderOnce for Choices {
         sheet(
             self.title,
             div()
+                .id("choices")
+                .test_support()
+                .role(Role::Menu)
                 .py(px(8.))
                 .flex()
                 .flex_col()
