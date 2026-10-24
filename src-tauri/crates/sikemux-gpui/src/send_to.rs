@@ -5,10 +5,11 @@ use std::future::Future;
 
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::{AppContext, Context, SharedString, Task, WeakEntity, Window};
+use sikemux_wire::protocol::{LauncherInfo, PaneKind};
 use tokio::sync::oneshot;
 
 use crate::icons::Icon;
-use crate::workbench::Workbench;
+use crate::workbench::{shows, Strip, Workbench};
 
 /// An agent text can go to.
 #[derive(Clone)]
@@ -24,27 +25,46 @@ pub enum Recipient {
     NewChat { launcher: String, project: String },
 }
 
-/// The project's agents, then a new chat with each agent there is.
+/// The project's agents, the one in front first and the rest in tab order, then a new chat with
+/// each agent whose CLI is installed.
 pub fn choices(bench: &Workbench) -> Vec<Choice> {
     let Some(project) = bench.project() else {
         return Vec::new();
     };
-    let open = bench
-        .agents_of(&project.id)
-        .into_iter()
-        .map(|agent| Choice {
+    let strip = Strip::Project(project.id.clone());
+    let front = bench
+        .front_tab(&strip)
+        .and_then(|tab| shows(tab, PaneKind::Agent));
+    let tabbed = bench
+        .tabs(&strip)
+        .iter()
+        .filter_map(|tab| shows(tab, PaneKind::Agent))
+        .filter(|id| Some(*id) != front);
+    let mut agents = bench.agents_of(&project.id);
+    let open = front.into_iter().chain(tabbed).filter_map(|id| {
+        let at = agents.iter().position(|agent| agent.id == *id)?;
+        let agent = agents.swap_remove(at);
+        Some(Choice {
             label: agent.title.into(),
             provider: agent.provider,
             to: Recipient::Agent(agent.id),
-        });
-    let fresh = bench.launchers().iter().map(|launcher| Choice {
-        label: format!("New {} chat", launcher.label).into(),
-        provider: launcher.provider.clone(),
-        to: Recipient::NewChat {
-            launcher: launcher.id.clone(),
-            project: project.id.clone(),
-        },
+        })
     });
+    let installed = |launcher: &&LauncherInfo| {
+        !matches!(launcher.status.as_deref(), Some("missing" | "broken"))
+    };
+    let fresh = bench
+        .launchers()
+        .iter()
+        .filter(installed)
+        .map(|launcher| Choice {
+            label: format!("New {} chat", launcher.label).into(),
+            provider: launcher.provider.clone(),
+            to: Recipient::NewChat {
+                launcher: launcher.id.clone(),
+                project: project.id.clone(),
+            },
+        });
     open.chain(fresh).collect()
 }
 

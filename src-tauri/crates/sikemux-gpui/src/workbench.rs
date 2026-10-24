@@ -3648,7 +3648,12 @@ impl Workbench {
 
     /// The tab in front in the strip in front.
     pub fn tab(&self) -> Option<&Tab> {
-        let layout = self.layout_of(&self.strip()?)?;
+        self.front_tab(&self.strip()?)
+    }
+
+    /// The tab in front in `strip`.
+    pub fn front_tab(&self, strip: &Strip) -> Option<&Tab> {
+        let layout = self.layout_of(strip)?;
         let tabs = layout.tabs.as_slice();
         layout
             .active
