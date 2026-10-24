@@ -673,8 +673,10 @@ impl Chat {
 
     pub(crate) fn mark_ready(&self, start: ChatStart) {
         if let Some(core) = self.core.upgrade() {
-            core.workspaces
-                .note_config_options(self.provider(), &start.setup);
+            if let Some(launcher) = &self.origin.launcher {
+                core.workspaces
+                    .note_config_options(launcher, &start.setup["configOptions"]);
+            }
             core.names.note_session(self.agent_id(), &start.session_id);
         }
         self.feed.set_start(start.clone());
@@ -1789,6 +1791,7 @@ fn start(
     );
     if waits_for_person {
         native::show_saved(&chat);
+        offer_options(core, &chat);
     }
     Ok(chat)
 }
@@ -2351,8 +2354,12 @@ pub(crate) async fn set_config(
 ) -> CoreResult<Value> {
     bounded_text("config id", &config_id, 256)?;
     bounded_text("config value", &value, 4096)?;
+    let chat = core.chats.running(agent_id)?;
+    if chat.unstarted() {
+        return choose_before_start(core, &chat, &config_id, value);
+    }
     let (reply, answer) = oneshot::channel();
-    core.chats.running(agent_id)?.send(ChatCommand::SetConfig {
+    chat.send(ChatCommand::SetConfig {
         config_id,
         value,
         reply,
@@ -2363,6 +2370,95 @@ pub(crate) async fn set_config(
         .map_err(CoreError::from)?;
     keep_model_choice(core, agent_id, &answer["configOptions"]);
     Ok(answer)
+}
+
+/// The options a chat that waits for the person offers: those its launcher's last session
+/// offered, on the model and effort it will start with.
+fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
+    let mut options = core
+        .workspaces
+        .launcher_options(chat.origin.launcher.as_deref()?)?;
+    let launch = chat.current_launch();
+    for row in options.as_array_mut().into_iter().flatten() {
+        let chosen = if row["id"] == "model" {
+            launch.model.clone()
+        } else if row["category"] == "thought_level" {
+            launch.effort.clone()
+        } else {
+            None
+        };
+        if let Some(chosen) = chosen {
+            row["currentValue"] = Value::String(chosen);
+        }
+    }
+    Some(options)
+}
+
+/// Tells a chat that waits for the person what it offers to pick, asking its agent's CLI
+/// first, with no session, when its launcher has not offered anything yet.
+fn offer_options(core: &Arc<Core>, chat: &Arc<Chat>) {
+    if chat.read_only().is_some() {
+        return;
+    }
+    if let Some(options) = waiting_options(core, chat) {
+        return tell_options(chat, options);
+    }
+    let Some(launcher) = chat.origin.launcher.clone() else {
+        return;
+    };
+    let (core, chat) = (core.clone(), chat.clone());
+    tokio::spawn(async move {
+        match native::read_options(&chat.current_launch()).await {
+            Ok(options) => core.workspaces.note_config_options(&launcher, &options),
+            Err(error) => {
+                return eprintln!("sikemux core: {launcher} offered nothing to pick: {error}")
+            }
+        }
+        if let Some(options) = waiting_options(&core, &chat).filter(|_| chat.unstarted()) {
+            tell_options(&chat, options);
+        }
+    });
+}
+
+fn tell_options(chat: &Chat, options: Value) {
+    let session = chat
+        .launch
+        .resume_id
+        .clone()
+        .unwrap_or_else(|| chat.agent_id().to_owned());
+    chat.emit(
+        ChatEventKind::SessionUpdate,
+        serde_json::json!({
+            "sessionId": session,
+            "update": { "sessionUpdate": "config_option_update", "configOptions": options },
+        }),
+    );
+}
+
+/// Keeps a model or effort chosen before the chat's agent starts, which starts on it.
+fn choose_before_start(
+    core: &Core,
+    chat: &Chat,
+    config_id: &str,
+    value: String,
+) -> CoreResult<Value> {
+    let options = waiting_options(core, chat).unwrap_or(Value::Null);
+    let row = options
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|row| row["id"] == config_id);
+    let mut launch = chat.current_launch();
+    match row {
+        Some(row) if row["id"] == "model" => launch.model = Some(value),
+        Some(row) if row["category"] == "thought_level" => launch.effort = Some(value),
+        _ => return Err(format!("{config_id} is chosen once the chat starts").into()),
+    }
+    chat.set_current(launch);
+    let options = waiting_options(core, chat).unwrap_or(Value::Null);
+    keep_model_choice(core, chat.agent_id(), &options);
+    tell_options(chat, options.clone());
+    Ok(serde_json::json!({ "configOptions": options }))
 }
 
 /// Keeps the model and effort a chat now runs on with its agent, so its next

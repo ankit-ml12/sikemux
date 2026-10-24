@@ -121,6 +121,10 @@ struct Saved {
     accounts: Option<Book>,
     /// The mode the person starts agents in, absent until they first choose.
     permission_mode: Option<String>,
+    /// The `configOptions` each launcher's last session offered, by launcher, so a chat that
+    /// has not started yet offers the same models and efforts.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    launcher_options: BTreeMap<String, Value>,
 }
 
 impl Saved {
@@ -155,8 +159,6 @@ struct Published {
     saved: Saved,
     launchers: Vec<Launcher>,
     recent: Vec<Recent>,
-    /// Each provider's `configOptions` from its last session, by provider.
-    config_options: BTreeMap<String, Value>,
     texture: bool,
     image: Option<BackdropImage>,
 }
@@ -1490,18 +1492,32 @@ impl Workspaces {
         self.agent(agent_id).as_ref().and_then(named)
     }
 
-    /// Keeps the models and effort levels a provider's session offered, so a
-    /// device choosing them before it starts one sees the same.
-    pub(crate) fn note_config_options(&self, provider: &str, setup: &Value) {
-        if let Some(options) = setup
-            .get("configOptions")
-            .filter(|options| options.is_array())
-        {
-            self.published
-                .locked()
-                .config_options
-                .insert(provider.to_owned(), options.clone());
+    /// Keeps the models and effort levels a launcher's session offered, so a chat of it that
+    /// has not started, or a device choosing before one starts, offers the same.
+    pub(crate) fn note_config_options(&self, launcher: &str, options: &Value) {
+        if !options.is_array() {
+            return;
         }
+        let kept = self.published.locked().saved.launcher_options.get(launcher) == Some(options);
+        if kept {
+            return;
+        }
+        let _ = self.change(|saved| {
+            saved
+                .launcher_options
+                .insert(launcher.to_owned(), options.clone());
+            Ok(())
+        });
+    }
+
+    /// The `configOptions` the launcher's last session offered, once one has.
+    pub(crate) fn launcher_options(&self, launcher: &str) -> Option<Value> {
+        self.published
+            .locked()
+            .saved
+            .launcher_options
+            .get(launcher)
+            .cloned()
     }
 
     /// The running chats under the workspace's titles, which include the
@@ -1611,9 +1627,9 @@ impl Workspaces {
                 .launchers
                 .iter()
                 .map(|launcher| {
-                    let config_options = published
-                        .config_options
-                        .get(&launcher.agent.provider)
+                    let config_options = saved
+                        .launcher_options
+                        .get(&launcher.id)
                         .cloned()
                         .unwrap_or(Value::Null);
                     let (model, effort) = pickers::pickers(&config_options);

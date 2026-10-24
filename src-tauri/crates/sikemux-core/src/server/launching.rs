@@ -287,11 +287,12 @@ pub(crate) async fn start_agent(
         model: agent.model,
         model_provider: agent.model_provider,
         effort: agent.effort,
-        resume_id: agent.resume_id,
         account: kept.account,
         fallbacks: kept.fallbacks,
         program: kept.program,
-        waits_for_person: false,
+        // An agent that never ran waits for the person, as a new chat does.
+        waits_for_person: agent.resume_id.is_none(),
+        resume_id: agent.resume_id,
     };
     start(core, by, chosen).await
 }

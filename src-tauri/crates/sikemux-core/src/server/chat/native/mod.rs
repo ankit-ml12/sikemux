@@ -83,6 +83,30 @@ fn shows_saved(provider: &str) -> bool {
     matches!(driver(provider), Some(ChatDriver::Claude))
 }
 
+/// The models and efforts `launch`'s agent offers, asked of its CLI without a session.
+/// Only Claude and Codex tell them outside one; an ACP agent offers them in `session/new`.
+pub(crate) async fn read_options(launch: &ChatLaunch) -> Result<Value, String> {
+    let mut command =
+        tokio::process::Command::from(sikemux_process::user_environment::command(&launch.program));
+    command
+        .envs(&launch.env)
+        .envs(
+            launch
+                .account
+                .iter()
+                .flat_map(|account| account.env.clone()),
+        )
+        .kill_on_drop(true);
+    match driver(&launch.provider) {
+        Some(ChatDriver::Claude) => claude::read_options(command).await,
+        Some(ChatDriver::Codex) => codex::read_options(command).await,
+        _ => Err(format!(
+            "{} offers its options only in a session",
+            launch.provider
+        )),
+    }
+}
+
 /// Shows the saved history of the session a waiting chat resumes, when the core can read it.
 pub(crate) fn show_saved(chat: &Arc<Chat>) {
     let Some(session) = chat.launch.resume_id.clone() else {

@@ -12,6 +12,7 @@ use serde_json::Value;
 use sikemux_process::sync::Locked;
 use sikemux_pty::user_shell::login_shell_environment;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
 
 use super::{cli, key};
 use crate::agent_catalog::AgentKind;
@@ -175,7 +176,7 @@ fn claude_subscription_override_present() -> bool {
     })
 }
 
-const CLAUDE_STREAM_ARGS: &[&str] = &[
+pub(crate) const CLAUDE_STREAM_ARGS: &[&str] = &[
     "--print",
     "--no-session-persistence",
     "--output-format",
@@ -227,6 +228,16 @@ async fn run(
     for key in removed_env {
         command.env_remove(key);
     }
+    ask(provider, command, args, input).await
+}
+
+/// Runs `command` once with `args`, writing `input` and answering what it printed.
+pub(crate) async fn ask(
+    provider: &str,
+    mut command: Command,
+    args: &[&str],
+    input: &str,
+) -> Result<String, String> {
     command
         .args(args)
         .stdin(std::process::Stdio::piped())
@@ -292,7 +303,17 @@ pub(super) async fn codex_app_server(
     method: &str,
     topic: &str,
 ) -> Result<Value, String> {
-    let mut command = cli("codex", executable, config_path, BTreeMap::new());
+    let command = cli("codex", executable, config_path, BTreeMap::new());
+    codex_ask(command, method, Value::Null, topic).await
+}
+
+/// Asks `command`, a `codex` program, one question as a short-lived app server.
+pub(crate) async fn codex_ask(
+    mut command: Command,
+    method: &str,
+    params: Value,
+    topic: &str,
+) -> Result<Value, String> {
     command
         .args(["app-server", "--stdio"])
         .stdin(std::process::Stdio::piped())
@@ -353,7 +374,7 @@ pub(super) async fn codex_app_server(
                 }
                 let requests = format!(
                     "{{\"method\":\"initialized\"}}\n{}\n",
-                    serde_json::json!({ "id": CODEX_USAGE_REQUEST_ID, "method": method, "params": null })
+                    serde_json::json!({ "id": CODEX_USAGE_REQUEST_ID, "method": method, "params": params })
                 );
                 stdin
                     .write_all(requests.as_bytes())
@@ -417,8 +438,9 @@ fn push_claude_usage_window(
     });
 }
 
-fn parse_claude_usage(text: &str, request_id: &str) -> Option<Usage> {
-    let payload = text.lines().find_map(|line| {
+/// What Claude answered the control request `request_id`, among the lines it printed.
+pub(crate) fn control_answer(text: &str, request_id: &str) -> Option<Value> {
+    text.lines().find_map(|line| {
         let value: Value = serde_json::from_str(line).ok()?;
         let response = value.get("response")?;
         if value.get("type").and_then(Value::as_str) != Some("control_response")
@@ -428,7 +450,11 @@ fn parse_claude_usage(text: &str, request_id: &str) -> Option<Usage> {
             return None;
         }
         response.get("response").cloned()
-    })?;
+    })
+}
+
+fn parse_claude_usage(text: &str, request_id: &str) -> Option<Usage> {
+    let payload = control_answer(text, request_id)?;
 
     if !payload.get("rate_limits").is_some_and(Value::is_object)
         && payload
