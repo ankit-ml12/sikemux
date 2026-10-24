@@ -1485,6 +1485,7 @@ pub(crate) async fn run_core(
             }
         }
     }
+    say_stopping(&core).await;
     for task in background {
         task.abort();
     }
@@ -1500,6 +1501,25 @@ pub(crate) async fn run_core(
     drop(lock);
     crate::waiting::wake(&config.socket);
     Ok(())
+}
+
+/// How long the app and the notch get to hear that the core is stopping.
+const STOPPING_FLUSH: Duration = Duration::from_millis(200);
+
+/// Tells the app and the notch the core is stopping on purpose, before its socket closes, so
+/// neither starts it again. A core that dies without a word is started again.
+async fn say_stopping(core: &Core) {
+    core.broadcast_local(&Event::Changed {
+        topic: "stopping".into(),
+        project: None,
+        paths: None,
+    });
+    let deadline = Instant::now() + STOPPING_FLUSH;
+    for client in core.clients() {
+        client
+            .wait_flushed(deadline.saturating_duration_since(Instant::now()))
+            .await;
+    }
 }
 
 pub fn run(config: ServerConfig) -> Result<(), ServerError> {
