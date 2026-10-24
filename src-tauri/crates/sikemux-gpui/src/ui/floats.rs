@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use gpui_kit::base::Button as BaseButton;
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
@@ -228,6 +229,24 @@ impl RenderOnce for MenuItem {
 
 /// The hover group a menu item puts its icon in, so the icon follows its text.
 const GROUP: &str = "menu-item";
+
+/// A right-click menu's choice in the danger colour, for one that deletes or discards, as
+/// `MenuItem::danger` draws a float's. GPUI Kit's own items have no such colour, so its label
+/// is drawn here and keeps the danger colour while the item is hovered.
+pub fn danger_popup_item(
+    label: impl Into<SharedString>,
+    icon: Option<Icon>,
+    cx: &App,
+) -> PopupMenuItem {
+    let t = Tokens::get(cx);
+    let ink = crate::theme::mix(t.danger, t.text_secondary, 0.85);
+    let label = label.into();
+    let item = PopupMenuItem::element(move |_, _| div().text_color(ink).child(label.clone()));
+    match icon {
+        Some(glyph) => item.icon(gpui_kit::component::Icon::from(glyph).text_color(ink)),
+        None => item,
+    }
+}
 
 /// A short label that appears after a pointer rests on its anchor.
 pub struct TooltipView {

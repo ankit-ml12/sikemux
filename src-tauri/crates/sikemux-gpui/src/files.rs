@@ -471,9 +471,9 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                             .and_then(|bench| bench.read(cx).files.menu_row.clone());
                         match row {
                             Some((path, dir)) => {
-                                row_menu(popup, &this, &path, dir, Some(&root), here)
+                                row_menu(popup, &this, &path, dir, Some(&root), here, cx)
                             }
-                            None => row_menu(popup, &this, &root, true, Some(&root), here),
+                            None => row_menu(popup, &this, &root, true, Some(&root), here, cx),
                         }
                     })
                     .child(rows)
@@ -967,6 +967,7 @@ fn row_menu(
     dir: bool,
     root: Option<&Path>,
     here: bool,
+    cx: &gpui_kit::App,
 ) -> PopupMenu {
     let whole = root == Some(path);
     let on = |work: fn(&mut Workbench, &Path, bool, &mut Window, &mut Context<Workbench>)| {
@@ -1010,9 +1011,11 @@ fn row_menu(
                         bench.rename_entry(path, dir, window, cx)
                     })),
             )
-            .item(PopupMenuItem::new("Delete").icon(Icon::Trash).on_click(on(
-                |bench, path, _, _, cx| bench.delete_entry(path.to_owned(), cx),
-            )));
+            .item(
+                ui::danger_popup_item("Delete", Some(Icon::Trash), cx).on_click(on(
+                    |bench, path, _, _, cx| bench.delete_entry(path.to_owned(), cx),
+                )),
+            );
     }
     popup = popup.separator();
     if here {

@@ -20,7 +20,7 @@ pub use controls::{Button, Field, IconButton, OnClick, Segmented, Toggle, Varian
 pub use dialog::{Cheatsheet, Choice, Choices, Confirm, Prompt, Section};
 pub use dock::{DockMenu, DockRow, DockScope};
 pub use find_bar::FindBar;
-pub use floats::{float, tooltip, Menu, MenuItem};
+pub use floats::{danger_popup_item, float, tooltip, Menu, MenuItem};
 pub use lists::{Group, Row, Tab, ROW};
 pub use pane::{pane, PaneHeader, AGENT_INSET};
 pub use select::{select, Pick};
