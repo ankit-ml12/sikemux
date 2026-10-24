@@ -5,7 +5,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     div, px, uniform_list, AnyElement, App, ClickEvent, Context, Div, FontWeight,
     InteractiveElement, IntoElement, ParentElement, ScrollStrategy, SharedString,
@@ -236,6 +239,8 @@ impl Aws {
         profile: &str,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
+        let signed_in = host.signed_in(cx);
+        let switch = account_switch(account, profile, signed_in, cx);
         let t = Tokens::get(cx).clone();
         let services = SERVICES.iter().enumerate().map(|(index, service)| {
             let (chosen, service) = (*service == self.service, *service);
@@ -260,30 +265,6 @@ impl Aws {
                     ui::text(service.label(), 12.5, FontWeight::MEDIUM).text_color(t.text_primary),
                 )
         });
-        let profiles = account
-            .profiles
-            .iter()
-            .map(|each| {
-                let label = match &each.account {
-                    Some(id) => format!("{} · {id}", each.title),
-                    None => each.title.clone(),
-                };
-                Pick::new(each.name.clone(), label)
-            })
-            .collect();
-        let pane = cx.entity();
-        let switch = ui::select(
-            "aws-profile",
-            profile.to_owned(),
-            profiles,
-            Some(profile.to_owned().into()),
-            false,
-            move |key, _, cx| {
-                let params = json!({ "profile": key.as_ref() });
-                pane.update(cx, |pane, cx| write(pane, "setDefaultAccount", params, cx));
-            },
-            cx,
-        );
         div()
             .w(px(200.))
             .flex_none()
@@ -298,8 +279,7 @@ impl Aws {
             .children(services)
             .child(div().flex_1())
             .child(self.agents(host, cx))
-            .child(div().px(px(8.)).pt(px(8.)).child(ui::caps("Account", cx)))
-            .child(div().px(px(2.)).child(switch))
+            .child(div().pt(px(6.)).child(switch))
             .into_any_element()
     }
 
@@ -1173,6 +1153,116 @@ fn tone(health: Health) -> Tone {
         Health::Fail => Tone::Failed,
         Health::Off => Tone::Idle,
     }
+}
+
+/// The profile in use, as the Mac's AWS rail ends: its name and account, its region and
+/// whether it is signed in, and a menu of the profiles to switch to.
+fn account_switch(
+    account: &Account,
+    profile: &str,
+    signed_in: Option<bool>,
+    cx: &mut Context<PluginPane>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let current = account.profiles.iter().find(|each| each.name == profile);
+    let title = current.map_or_else(|| profile.to_owned(), |each| each.title.clone());
+    let id = current
+        .and_then(|each| each.account.clone())
+        .unwrap_or_else(|| "—".to_owned());
+    let region = current
+        .and_then(|each| each.region.clone())
+        .unwrap_or_else(|| "no region".to_owned());
+    let (tone, said) = match signed_in {
+        Some(true) => (Tone::Ok, "Signed in"),
+        Some(false) => (Tone::Idle, "Signed out"),
+        None => (Tone::Pending, "Checking"),
+    };
+    let (profiles, chosen, pane) = (account.profiles.clone(), profile.to_owned(), cx.entity());
+    KitButton::new("aws-account")
+        .ghost()
+        .w_full()
+        .h_auto()
+        .py(px(6.))
+        .px(px(8.))
+        .rounded(theme::RADIUS_2)
+        .tooltip(format!("{profile} · switch profile"))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .child(
+                            ui::text(title, 12.5, FontWeight::MEDIUM)
+                                .text_color(t.text_primary)
+                                .min_w_0()
+                                .truncate(),
+                        )
+                        .child(ui::mono(id, 11., cx).text_color(t.text_tertiary))
+                        .child(div().flex_1())
+                        .child(ui::icon(Icon::Chevron, 11.).text_color(t.text_tertiary)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(theme::ui_text(11.))
+                        .text_color(t.text_tertiary)
+                        .child(region)
+                        .child(div().flex_1())
+                        .child(ui::dot(tone, cx))
+                        .child(said),
+                ),
+        )
+        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |mut menu, _, cx| {
+            let t = Tokens::get(cx).clone();
+            menu = menu.min_w(px(240.)).label("Profiles");
+            for each in &profiles {
+                let on = each.name == chosen;
+                let meta = [each.account.clone(), each.region.clone()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                let (title, name, pane) = (each.title.clone(), each.name.clone(), pane.clone());
+                let picked = name.clone();
+                menu = menu.item(
+                    PopupMenuItem::element(move |_, _| {
+                        div()
+                            .id(SharedString::from(format!("aws-profile-{name}")))
+                            .aria_label(title.clone())
+                            .test_support()
+                            .flex()
+                            .flex_col()
+                            .child(title.clone())
+                            .when(!meta.is_empty(), |item| {
+                                item.child(
+                                    div()
+                                        .text_size(theme::ui_text(11.))
+                                        .text_color(t.text_tertiary)
+                                        .child(meta.clone()),
+                                )
+                            })
+                    })
+                    .icon(Icon::User)
+                    .checked(on)
+                    .on_click(move |_, _, cx| {
+                        if !on {
+                            let params = json!({ "profile": picked });
+                            pane.update(cx, |pane, cx| write(pane, "setDefaultAccount", params, cx));
+                        }
+                    }),
+                );
+            }
+            menu
+        })
+        .into_any_element()
 }
 
 fn choose_profile(account: &Account, cx: &mut Context<PluginPane>) -> AnyElement {
