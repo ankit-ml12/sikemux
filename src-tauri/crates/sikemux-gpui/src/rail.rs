@@ -608,9 +608,7 @@ fn project_tree(
     let agents = bench.agents_of(&project.id);
     let id = project.id.clone();
     let menu = project_menu(bench, project, cx);
-    div()
-        .flex()
-        .flex_col()
+    let row = div()
         .id(SharedString::from(format!("project-menu-{}", project.id)))
         .context_menu(menu)
         .child(crate::drag::project(
@@ -632,18 +630,18 @@ fn project_tree(
             },
             &cx.entity(),
             cx,
+        ));
+    div().flex().flex_col().child(row).when(active, |tree| {
+        tree.pb(px(4.)).child(surfaces(
+            project,
+            bench
+                .tab()
+                .and_then(|tab| tabs::first_view(&tab.pane))
+                .map(|(kind, _)| kind),
+            bench.area,
+            cx,
         ))
-        .when(active, |tree| {
-            tree.pb(px(4.)).child(surfaces(
-                project,
-                bench
-                    .tab()
-                    .and_then(|tab| tabs::first_view(&tab.pane))
-                    .map(|(kind, _)| kind),
-                bench.area,
-                cx,
-            ))
-        })
+    })
 }
 
 /// What right-clicking a project offers: its settings, and the space the rail lists it under.
@@ -697,9 +695,6 @@ fn project_menu(
                 .icon(Icon::Settings)
                 .on_click(settings),
         );
-        if !others.is_empty() {
-            popup = popup.separator();
-        }
         for (host, label, reached, after) in &others {
             let (bench, path, host, label, after) = (
                 bench_entity.clone(),
@@ -719,9 +714,7 @@ fn project_menu(
                     }),
             );
         }
-        if !spaces.is_empty() {
-            popup = popup.separator();
-        }
+        popup = popup.separator();
         for (space, name, glyph) in &spaces {
             let mut item = PopupMenuItem::new(name.clone())
                 .checked(current.as_ref() == Some(space))
