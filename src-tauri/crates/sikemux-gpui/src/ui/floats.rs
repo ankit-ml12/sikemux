@@ -87,6 +87,7 @@ pub struct MenuItem {
     hint: Option<SharedString>,
     checked: bool,
     disabled: bool,
+    danger: bool,
     on_click: Option<OnClick>,
 }
 
@@ -100,6 +101,7 @@ impl MenuItem {
             hint: None,
             checked: false,
             disabled: false,
+            danger: false,
             on_click: None,
         }
     }
@@ -130,6 +132,12 @@ impl MenuItem {
         self
     }
 
+    /// Drawn in the danger colour, for a choice that deletes or discards.
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
+        self
+    }
+
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -142,7 +150,15 @@ impl MenuItem {
 impl RenderOnce for MenuItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
-        let (rest, hover, wash) = (t.text_secondary, t.text_primary, t.surface_hover);
+        let (rest, hover, wash) = if self.danger {
+            (
+                crate::theme::mix(t.danger, t.text_secondary, 0.85),
+                t.danger,
+                t.danger.opacity(0.12),
+            )
+        } else {
+            (t.text_secondary, t.text_primary, t.surface_hover)
+        };
         let on_click = self.on_click.filter(|_| !self.disabled);
         let (over, keep_over) = motion::hovered(&self.id, window, cx);
         let lit = over && !self.disabled;
@@ -159,7 +175,8 @@ impl RenderOnce for MenuItem {
             window,
             cx,
         );
-        let glyph_ink = fade("glyph", hover, t.text_tertiary, window, cx);
+        let glyph_rest = if self.danger { rest } else { t.text_tertiary };
+        let glyph_ink = fade("glyph", hover, glyph_rest, window, cx);
         BaseButton::new(self.id.clone())
             .group(GROUP)
             .disabled(self.disabled)

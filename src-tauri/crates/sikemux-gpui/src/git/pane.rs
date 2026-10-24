@@ -2901,6 +2901,7 @@ fn more_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
                         Icon::Discard,
                         GitPane::discard_all,
                     )
+                    .danger(true)
                     .disabled(!unstaged),
                 )
                 .child(
