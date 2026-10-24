@@ -174,22 +174,28 @@ pub(crate) fn read(dir: &Path) -> Vec<KeptChat> {
 /// Moves a chat that cannot be read into a folder beside it that no core
 /// reads chats from, so what it held is still there to look at.
 fn set_aside(path: &Path, why: &str) {
-    let folder = path.with_file_name(UNREADABLE);
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let aside = folder.join(format!("{}-{name}", epoch_ms()));
-    let moved = std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&folder)
-        .and_then(|()| std::fs::rename(path, &aside));
+    let moved =
+        unreadable_place(path).and_then(|aside| std::fs::rename(path, &aside).map(|()| aside));
     eprintln!(
         "sikemux core: a chat written down at {} could not be read ({why}); {}",
         path.display(),
         match moved {
-            Ok(()) => format!("it was kept as {}", aside.display()),
+            Ok(aside) => format!("it was kept as {}", aside.display()),
             Err(error) => format!("it could not be moved aside: {error}"),
         }
     );
+}
+
+/// Where what `path` held is kept once it cannot be read: a folder beside it
+/// that nothing reads from.
+pub(super) fn unreadable_place(path: &Path) -> std::io::Result<PathBuf> {
+    let folder = path.with_file_name(UNREADABLE);
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&folder)?;
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    Ok(folder.join(format!("{}-{name}", epoch_ms())))
 }
 
 /// Writes a chat down again under `feed`, as a core taking it up names it.
