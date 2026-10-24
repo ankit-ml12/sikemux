@@ -26,6 +26,7 @@ pub(crate) enum Topic {
     Activity,
     AgentAccounts,
     AgentSignIn,
+    AgentStatus,
     Boards,
     Ci,
     Git,

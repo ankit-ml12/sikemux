@@ -87,10 +87,10 @@ interface PtyExited {
 
 type Phase = { kind: "running" } | { kind: "checking" } | { kind: "done"; agent: AgentInfo | undefined } | { kind: "failed"; code: number | null };
 
-/** Forgets what was known about every agent and reads the list again, so a new install is found at once. */
-export async function checkAgentsAgain(type: AgentType): Promise<AgentInfo | undefined> {
-    await agentApi.refreshStatuses();
-    invalidate((kind) => kind === "agents.catalog" || kind === "agents.setup" || kind === "agents.account");
+/** Forgets what was known of the agent's account and reads the list again, so a new install or sign-in shows at once. */
+export async function checkAgentsAgain(type: AgentType, configPath?: string): Promise<AgentInfo | undefined> {
+    await agentApi.forgetAccount(type, configPath);
+    invalidate((kind) => kind === "agents.catalog" || kind === "agents.account");
     const { providerProfiles, selectedProviderProfileIds } = getState();
     const agents = await fetchResource(agentCatalogR, selectedAgentRuntimeProfiles(providerProfiles, selectedProviderProfileIds));
     return agents.find((agent) => agent.type === type && agent.available !== false);
@@ -130,7 +130,7 @@ function AgentSheet({ job }: { job: Job }) {
         }
         setPhase({ kind: "checking" });
         if (job.kind === "signIn" && job.retry) void agentApi.retryFailed(job.retry).catch(swallow("send the prompt again"));
-        void checkAgentsAgain(type)
+        void checkAgentsAgain(type, job.kind === "signIn" ? (job.configPath ?? undefined) : undefined)
             .then((agent) => setPhase({ kind: "done", agent }))
             .catch(() => setPhase({ kind: "done", agent: undefined }));
     }, [exit, ptyId, phase.kind, type, job]);

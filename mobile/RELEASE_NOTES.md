@@ -1,9 +1,7 @@
-# 0.1.0-nightly.26
+# 0.1.0-nightly.27
 
-• Lock Sikemux asks for Face ID, Touch ID or the passcode.
-• Answers draw from your host's markdown, so tables fit.
-• Chats open faster, and stopping one closes it on the host too.
-• Every device hears when a device or host joins, with Remove.
-• Add a host with a code you type, after seeing where it asked from.
-• Named agents wear their buddies everywhere.
-• Your sign-in is never restored from a backup.
+• A new chat picks its model and effort first, and its first message shows at once.
+• Chat actions show at once, and undo if your host refuses them.
+• Messages from other agents read as markdown.
+• Turning buddies off shows every agent's logo again.
+• Keeps the app in step with the latest Sikemux on your host.

@@ -2,12 +2,34 @@
 //! whole each time it changes, so it outlives a crash and a restart.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sikemux_process::sync::Locked;
+
+/// How long [`Kept::save_soon`] waits for more changes before writing.
+const SETTLE: Duration = Duration::from_millis(250);
 
 pub(crate) struct Kept {
     path: Option<PathBuf>,
+    queue: Arc<Queue>,
+}
+
+#[derive(Default)]
+struct Queue {
+    state: Mutex<Pending>,
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct Pending {
+    /// What was last handed to be saved.
+    last: Vec<u8>,
+    next: Option<Vec<u8>>,
+    writing: bool,
+    hurry: bool,
 }
 
 impl Kept {
@@ -15,6 +37,7 @@ impl Kept {
     pub(crate) fn new(data_dir: Option<&Path>, file: &str) -> Self {
         Self {
             path: data_dir.map(|dir| dir.join(file)),
+            queue: Arc::default(),
         }
     }
 
@@ -61,11 +84,98 @@ impl Kept {
         let Some(path) = &self.path else {
             return;
         };
-        let written = serde_json::to_vec(value)
-            .map_err(std::io::Error::from)
-            .and_then(|bytes| sikemux_process::files::write_atomic(path, &bytes, true));
-        if let Err(error) = written {
-            eprintln!("sikemux core: {} was not saved: {error}", path.display());
+        match serde_json::to_vec(value) {
+            Ok(bytes) => {
+                write(path, &bytes);
+            }
+            Err(error) => eprintln!("sikemux core: {} was not saved: {error}", path.display()),
         }
     }
+
+    /// Saves on a thread of its own, so whoever changed the value never waits
+    /// on the disk. Changes made while one is being written are saved together
+    /// after it, only the latest of them. Answers false when `value` is what
+    /// was last saved, which is then not written again.
+    pub(crate) fn save_soon<T: Serialize>(&self, value: &T) -> bool {
+        let Some(path) = &self.path else {
+            return true;
+        };
+        let bytes = match serde_json::to_vec(value) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("sikemux core: {} was not saved: {error}", path.display());
+                return true;
+            }
+        };
+        let mut pending = self.queue.state.locked();
+        if pending.last == bytes {
+            return false;
+        }
+        pending.last.clone_from(&bytes);
+        pending.next = Some(bytes);
+        if pending.writing {
+            return true;
+        }
+        pending.writing = true;
+        drop(pending);
+        let (target, queue) = (path.clone(), self.queue.clone());
+        let spawned = std::thread::Builder::new()
+            .name("sikemux-save".into())
+            .spawn(move || queue.write_all(&target));
+        if spawned.is_err() {
+            self.queue.write_all(path);
+        }
+        true
+    }
+
+    /// Waits until every [`Kept::save_soon`] so far is on disk.
+    pub(crate) fn flush(&self) {
+        let mut pending = self.queue.state.locked();
+        if !pending.writing {
+            return;
+        }
+        pending.hurry = true;
+        self.queue.changed.notify_all();
+        drop(
+            self.queue
+                .changed
+                .wait_while(pending, |pending| pending.writing)
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+    }
+}
+
+impl Queue {
+    fn write_all(&self, path: &Path) {
+        let mut pending = self.state.locked();
+        loop {
+            if !pending.hurry {
+                pending = self
+                    .changed
+                    .wait_timeout_while(pending, SETTLE, |pending| !pending.hurry)
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .0;
+            }
+            let Some(bytes) = pending.next.take() else {
+                break;
+            };
+            drop(pending);
+            let written = write(path, &bytes);
+            pending = self.state.locked();
+            if !written {
+                pending.last.clear();
+            }
+        }
+        pending.writing = false;
+        pending.hurry = false;
+        self.changed.notify_all();
+    }
+}
+
+fn write(path: &Path, bytes: &[u8]) -> bool {
+    let written = sikemux_process::files::write_atomic(path, bytes, true);
+    if let Err(error) = &written {
+        eprintln!("sikemux core: {} was not saved: {error}", path.display());
+    }
+    written.is_ok()
 }

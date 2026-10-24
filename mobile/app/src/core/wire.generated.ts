@@ -1307,6 +1307,7 @@ export type CoreChangeTopic =
   | 'activity'
   | 'agentAccounts'
   | 'agentSignIn'
+  | 'agentStatus'
   | 'boards'
   | 'ci'
   | 'git'

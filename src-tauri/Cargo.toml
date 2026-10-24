@@ -11,7 +11,7 @@ members = ["crates/*", "plugins/*"]
 exclude = ["crates/sikemux-gpui"]
 
 [workspace.package]
-version = "0.5.4-nightly.6"
+version = "0.5.4-nightly.8"
 
 # Only crates that set `lints.workspace = true` get these, which is every
 # plugin crate and not the app. A plugin that panics takes the app down.
@@ -90,9 +90,8 @@ gtk = { version = "0.18", features = ["v3_24"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 workspace-hack = { version = "0.1", path = "crates/workspace-hack" }
 objc2 = "0.6"
-mac-notification-sys = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAlert", "NSApplication", "NSBitmapImageRep", "NSControl", "NSEvent", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSResponder", "NSScreen", "NSTextField", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-graphics"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSProcessInfo", "NSString", "NSThread", "NSURL", "NSURLResponse", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSBundle", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSProcessInfo", "NSString", "NSThread", "NSURL", "NSURLResponse", "NSUserNotification", "NSValue"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["WKContentWorld", "WKFrameInfo", "WKNavigation", "WKNavigationAction", "WKNavigationDelegate", "WKNavigationResponse", "WKOpenPanelParameters", "WKPDFConfiguration", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKWebView", "WKWebViewConfiguration", "WKWindowFeatures", "block2", "objc2-app-kit"] }
 block2 = "0.6"
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVAssetWriter", "AVAssetWriterInput", "AVMediaFormat", "AVVideoSettings", "block2", "objc2-core-media", "objc2-core-video"] }
@@ -253,8 +252,6 @@ opt-level = "s"
 [profile.release.package.serde_with]
 opt-level = "s"
 [profile.release.package.minisign-verify]
-opt-level = "s"
-[profile.release.package.mac-notification-sys]
 opt-level = "s"
 [profile.release.package.rfd]
 opt-level = "s"

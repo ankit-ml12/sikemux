@@ -266,7 +266,10 @@ export function applyCoreWorkspace(workspace: Workspace): void {
             d.windows[window.id] = window;
             d.windowsBySession[project.id] = [window.id];
         }
-        Object.assign(d, sharedFromCore(workspace));
+        const shared = sharedFromCore(workspace);
+        for (const key of Object.keys(shared) as (keyof typeof shared)[]) {
+            if (!same(state[key], shared[key])) Object.assign(d, { [key]: shared[key] });
+        }
         if (!same([...d.disabledPlugins].sort(), workspace.disabledPlugins)) d.disabledPlugins = workspace.disabledPlugins.filter(isPluginId);
         for (const record of workspace.agents) {
             const saved = agentFromCore(record);

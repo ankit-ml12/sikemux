@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
     exited: null as null | ((event: { payload: { id: number; code: number | null } }) => void),
-    refreshStatuses: vi.fn(async () => {}),
+    forgetAccount: vi.fn(async (_type: string, _configPath?: string) => {}),
     retryFailed: vi.fn(async () => {}),
     fetchResource: vi.fn(),
     invalidate: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock("../api/transport", () => ({
         },
     }),
 }));
-vi.mock("../api/agents", () => ({ agentApi: { refreshStatuses: mocks.refreshStatuses, retryFailed: mocks.retryFailed } }));
+vi.mock("../api/agents", () => ({ agentApi: { forgetAccount: mocks.forgetAccount, retryFailed: mocks.retryFailed } }));
 vi.mock("../state/resources", () => ({ fetchResource: mocks.fetchResource, invalidate: mocks.invalidate }));
 vi.mock("../state/resources.defs", () => ({ agentCatalogR: { kind: "agents.catalog" } }));
 
@@ -53,11 +53,11 @@ describe("installing an agent", () => {
         expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
 
         exit(8, 0);
-        expect(mocks.refreshStatuses).not.toHaveBeenCalled();
+        expect(mocks.forgetAccount).not.toHaveBeenCalled();
         exit(7, 0);
 
         expect(await screen.findByRole("status")).toHaveTextContent("Hermes is installed: Ready.");
-        expect(mocks.refreshStatuses).toHaveBeenCalledOnce();
+        expect(mocks.forgetAccount).toHaveBeenCalledExactlyOnceWith("hermes", undefined);
         expect(mocks.invalidate).toHaveBeenCalled();
         fireEvent.click(screen.getByRole("button", { name: "Close" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -70,7 +70,7 @@ describe("installing an agent", () => {
 
         exit(7, 1);
         expect(screen.getByRole("status")).toHaveTextContent("The installer stopped with exit code 1.");
-        expect(mocks.refreshStatuses).not.toHaveBeenCalled();
+        expect(mocks.forgetAccount).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole("button", { name: "Try again" }));
         await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Running Grok's own installer…"));
@@ -110,7 +110,7 @@ describe("installing an agent", () => {
         expect(screen.getByRole("dialog", { name: "Sign in to Claude" })).toBeInTheDocument();
         exit(7, 0);
         expect(await screen.findByRole("status")).toHaveTextContent("Claude is signed in: Ready · subscription.");
-        expect(mocks.refreshStatuses).toHaveBeenCalledOnce();
+        expect(mocks.forgetAccount).toHaveBeenCalledOnce();
         fireEvent.click(screen.getByRole("button", { name: "Close" }));
     });
 

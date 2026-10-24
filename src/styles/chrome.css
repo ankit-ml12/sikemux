@@ -693,11 +693,10 @@
    the screen but leaves its animations ticking, and every tick still resolves
    style and recomputes what the compositor needs — for a pane nobody can see.
    With a live agent per layer that was most of the window's idle cost. A pane
-   hidden behind a zoomed one and a rail page off to the side are the same. */
+   hidden behind a zoomed one is the same. */
 .window-layer:not(.painted),
 .window-layer:not(.painted) *,
-.pane-cell.unshown *,
-.swipe-pager:not([data-moving]) .swipe-page:not(.is-current) * {
+.pane-cell.unshown * {
     /* `!important` earns its place here: every component writes its animation
        with the `animation` shorthand, and the shorthand resets play-state back
        to running. Any sheet loaded after this one would restart what this rule

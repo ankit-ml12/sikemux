@@ -4,7 +4,7 @@
 //! saves, and writes a name the person gave back into the CLI's own session.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -12,7 +12,9 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{Map, Value};
 use sikemux_process::sync::Locked;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
+use crate::agent_accounts::Book;
 use crate::agent_catalog::AgentKind;
 use crate::protocol::WorkspaceAgent;
 use crate::sessions::roots::{agent_config_root, muse_data_root, omp_session_dirs};
@@ -21,10 +23,10 @@ use crate::sessions::{self, claude_project_dir, opencode_data_dirs, pi_session_d
 use super::connection::blocking;
 use super::Core;
 
+/// How long writes to sessions are let settle before the sessions are read.
 const SETTLE: Duration = Duration::from_millis(200);
-/// While a turn runs its transcript is written to constantly, and rereading
-/// every session at each write buys nothing.
-const SETTLE_STREAMING: Duration = Duration::from_secs(2);
+/// A session written to without pause is read at most this often.
+const SETTLE_LONGEST: Duration = Duration::from_secs(2);
 /// A title no longer than this that the session id starts with is the CLI's
 /// placeholder, not a name.
 const PLACEHOLDER_TITLE_CHARS: usize = 13;
@@ -37,13 +39,40 @@ struct Group {
     config_path: Option<String>,
 }
 
-struct Watched {
-    _watchers: Vec<RecommendedWatcher>,
+/// Where one group's sessions are written, as file events name them.
+struct Places {
+    group: Group,
+    /// Folders whose files each hold one session. Without its subfolders, only
+    /// the files right in it count: Claude keeps a session's subagents beside it.
+    sessions: Vec<(PathBuf, RecursiveMode)>,
+    /// Files, or folders of files, that list the group's sessions together,
+    /// so a change in one means listing them all again.
+    listings: Vec<PathBuf>,
+}
+
+enum Touch {
+    Session(PathBuf),
+    Listing,
+    /// A session folder itself came or went.
+    Folder,
+}
+
+#[derive(Default)]
+struct Touched {
+    listing: bool,
+    sessions: HashSet<PathBuf>,
+}
+
+#[derive(Default)]
+struct Watching {
+    places: Vec<Places>,
+    folders: HashMap<PathBuf, RecursiveMode>,
+    watcher: Option<RecommendedWatcher>,
 }
 
 #[derive(Default)]
 pub(crate) struct SessionWatch {
-    groups: Mutex<HashMap<Group, Watched>>,
+    watching: Mutex<Watching>,
     /// The sessions there were when a terminal agent started fresh, so it never
     /// takes one it did not start.
     baselines: Mutex<HashMap<String, HashSet<String>>>,
@@ -51,9 +80,8 @@ pub(crate) struct SessionWatch {
     named: Mutex<HashSet<(String, String)>>,
 }
 
-fn group_of(core: &Core, agent: &WorkspaceAgent) -> Option<Group> {
+fn group_of(book: &Book, agent: &WorkspaceAgent) -> Option<Group> {
     let kind = AgentKind::from_name(&agent.provider)?;
-    let book = core.workspaces.accounts().unwrap_or_default();
     let config_path = agent
         .profile_id
         .as_deref()
@@ -78,70 +106,185 @@ fn agents(core: &Core) -> Vec<WorkspaceAgent> {
 /// Watches the session folders of every group an agent of the workspace is
 /// in, and only those. Runs whenever the workspace changes.
 pub(crate) fn follow(core: &Arc<Core>) {
+    let book = core.workspaces.accounts().unwrap_or_default();
     let wanted: HashSet<Group> = agents(core)
         .iter()
-        .filter_map(|agent| group_of(core, agent))
+        .filter_map(|agent| group_of(&book, agent))
         .collect();
-    let mut groups = core.session_watch.groups.locked();
-    groups.retain(|group, _| wanted.contains(group));
-    for group in wanted {
-        if groups.contains_key(&group) {
-            continue;
-        }
-        groups.insert(group.clone(), watch(core, group));
+    let mut watching = core.session_watch.watching.locked();
+    let fresh: Vec<Group> = wanted
+        .iter()
+        .filter(|group| !watching.places.iter().any(|places| places.group == **group))
+        .cloned()
+        .collect();
+    if fresh.is_empty() && watching.places.len() == wanted.len() {
+        return;
+    }
+    place(core, &mut watching, wanted);
+    drop(watching);
+    for group in fresh {
+        let owner = Arc::downgrade(core);
+        tokio::spawn(async move { scan(&owner, &group).await });
     }
 }
 
-fn watch(core: &Arc<Core>, group: Group) -> Watched {
-    let (changed, mut heard) = mpsc::unbounded_channel::<()>();
-    let owner = Arc::downgrade(core);
-    let settling = (owner.clone(), group.clone());
-    tokio::spawn(async move {
-        let _ = scan(&settling.0, &settling.1).await;
-        while heard.recv().await.is_some() {
-            loop {
-                let wait = match settling.0.upgrade() {
-                    Some(core) if streaming(&core, &settling.1).is_empty() => SETTLE,
-                    Some(_) => SETTLE_STREAMING,
-                    None => return,
+/// Watches the folders `groups` write their sessions to, every group through
+/// one watcher.
+fn place(core: &Arc<Core>, watching: &mut Watching, groups: impl IntoIterator<Item = Group>) {
+    let places: Vec<Places> = groups.into_iter().map(Places::of).collect();
+    let mut folders: HashMap<PathBuf, RecursiveMode> = HashMap::new();
+    for (dir, mode) in places.iter().flat_map(Places::folders) {
+        let known = folders.entry(dir).or_insert(mode);
+        if mode == RecursiveMode::Recursive {
+            *known = mode;
+        }
+    }
+    if watching.watcher.is_none() {
+        watching.watcher = start(core);
+    }
+    let Watching {
+        places: kept,
+        folders: watched,
+        watcher,
+    } = watching;
+    *kept = places;
+    let Some(watcher) = watcher else {
+        return;
+    };
+    if *watched == folders {
+        return;
+    }
+    let mut paths = watcher.paths_mut();
+    for (dir, mode) in watched.iter() {
+        if folders.get(dir) != Some(mode) {
+            let _ = paths.remove(dir);
+        }
+    }
+    folders.retain(|dir, mode| watched.get(dir) == Some(mode) || paths.add(dir, *mode).is_ok());
+    let _ = paths.commit();
+    *watched = folders;
+}
+
+fn start(core: &Arc<Core>) -> Option<RecommendedWatcher> {
+    let (changed, heard) = mpsc::unbounded_channel::<Vec<PathBuf>>();
+    let watcher = notify::recommended_watcher(move |event: notify::Result<Event>| {
+        let Ok(event) = event else {
+            return;
+        };
+        if matches!(
+            event.kind,
+            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+        ) {
+            let _ = changed.send(event.paths);
+        }
+    })
+    .ok()?;
+    tokio::spawn(listen(Arc::downgrade(core), heard));
+    Some(watcher)
+}
+
+/// Reads the sessions written to once their writes settle.
+async fn listen(owner: Weak<Core>, mut heard: mpsc::UnboundedReceiver<Vec<PathBuf>>) {
+    let mut pending: HashMap<Group, Touched> = HashMap::new();
+    let mut due: Option<(Instant, Instant)> = None;
+    loop {
+        let wake = due.map(|(quiet, latest)| quiet.min(latest));
+        let settled = async move {
+            match wake {
+                Some(at) => tokio::time::sleep_until(at).await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            paths = heard.recv() => {
+                let Some(paths) = paths else {
+                    return;
                 };
-                match tokio::time::timeout(wait, heard.recv()).await {
-                    Ok(Some(())) => continue,
-                    Ok(None) => return,
-                    Err(_) => break,
+                let Some(core) = owner.upgrade() else {
+                    return;
+                };
+                if route(&core, &paths, &mut pending) {
+                    let now = Instant::now();
+                    let latest = due.map_or(now + SETTLE_LONGEST, |(_, latest)| latest);
+                    due = Some((now + SETTLE, latest));
                 }
             }
-            if scan(&settling.0, &settling.1).await.is_none() {
-                return;
-            }
-        }
-    });
-    let mut watchers = Vec::new();
-    for (dir, mode) in folders(&group) {
-        let (changed, owner, group) = (changed.clone(), owner.clone(), group.clone());
-        let watcher = notify::recommended_watcher(move |event: notify::Result<Event>| {
-            let Ok(event) = event else {
-                return;
-            };
-            let interesting = matches!(
-                event.kind,
-                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-            );
-            let Some(core) = owner.upgrade() else {
-                return;
-            };
-            if interesting && !streamed_only(&core, &group, &event.paths) {
-                let _ = changed.send(());
-            }
-        });
-        if let Ok(mut watcher) = watcher {
-            if watcher.watch(&dir, mode).is_ok() {
-                watchers.push(watcher);
+            () = settled => {
+                due = None;
+                let Some(core) = owner.upgrade() else {
+                    return;
+                };
+                for (group, touched) in std::mem::take(&mut pending) {
+                    refresh(&core, group, touched).await;
+                }
             }
         }
     }
-    Watched {
-        _watchers: watchers,
+}
+
+/// Notes the sessions of each group `paths` touched. Whether there were any.
+fn route(core: &Arc<Core>, paths: &[PathBuf], pending: &mut HashMap<Group, Touched>) -> bool {
+    let mut touches: Vec<(Group, Touch)> = Vec::new();
+    let mut moved = false;
+    {
+        let mut watching = core.session_watch.watching.locked();
+        for places in &watching.places {
+            for path in paths {
+                if let Some(touch) = places.touched(path) {
+                    moved |= matches!(touch, Touch::Folder);
+                    touches.push((places.group.clone(), touch));
+                }
+            }
+        }
+        if moved {
+            let groups: Vec<Group> = watching
+                .places
+                .iter()
+                .map(|places| places.group.clone())
+                .collect();
+            place(core, &mut watching, groups);
+        }
+    }
+    let mut working: HashMap<Group, Vec<String>> = HashMap::new();
+    let mut any = false;
+    for (group, touch) in touches {
+        match touch {
+            Touch::Session(place) => {
+                let streaming = working
+                    .entry(group.clone())
+                    .or_insert_with_key(|group| streaming(core, group));
+                if streamed(&place, streaming) {
+                    continue;
+                }
+                pending.entry(group).or_default().sessions.insert(place);
+            }
+            Touch::Listing | Touch::Folder => pending.entry(group).or_default().listing = true,
+        }
+        any = true;
+    }
+    any
+}
+
+/// Reads again the sessions a group's files say changed.
+async fn refresh(core: &Arc<Core>, group: Group, touched: Touched) {
+    let rows = if touched.listing {
+        listed(group.clone()).await
+    } else {
+        let read = group.clone();
+        blocking(move || {
+            Ok(touched
+                .sessions
+                .iter()
+                .filter_map(|place| {
+                    sessions::session_at(read.kind, place, &read.cwd, read.config_path.as_deref())
+                })
+                .collect())
+        })
+        .await
+        .unwrap_or_default()
+    };
+    if !rows.is_empty() {
+        settle(core, &group, rows).await;
     }
 }
 
@@ -160,93 +303,117 @@ fn streaming(core: &Core, group: &Group) -> Vec<String> {
         .collect()
 }
 
-/// Whether every changed file is the transcript of a chat at work, which the
-/// core already has every word of. Each CLI names the file after its session.
-fn streamed_only(core: &Core, group: &Group, paths: &[PathBuf]) -> bool {
-    if paths.is_empty() {
-        return false;
-    }
-    let sessions = streaming(core, group);
-    !sessions.is_empty()
-        && paths.iter().all(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| sessions.iter().any(|id| name.contains(id.as_str())))
-        })
+/// Whether `place` is the transcript of a chat at work, which the core already
+/// has every word of. Each CLI names the file after its session, or by it.
+fn streamed(place: &Path, sessions: &[String]) -> bool {
+    let name = place
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    sessions
+        .iter()
+        .any(|id| Path::new(id) == place || name.contains(id.as_str()))
 }
 
-fn folders(group: &Group) -> Vec<(PathBuf, RecursiveMode)> {
-    let mut out: Vec<(PathBuf, RecursiveMode)> = Vec::new();
-    let mut add = |path: PathBuf, mode: RecursiveMode| {
-        let (dir, mode) = if path.is_dir() {
-            (path, mode)
-        } else if let Some(parent) = path.parent().filter(|parent| parent.is_dir()) {
-            (parent.to_path_buf(), RecursiveMode::NonRecursive)
-        } else {
-            return;
-        };
-        match out.iter_mut().find(|(known, _)| *known == dir) {
-            Some(known) if mode == RecursiveMode::Recursive => known.1 = mode,
-            Some(_) => {}
-            None => out.push((dir, mode)),
-        }
-    };
-    let config_path = group.config_path.as_deref();
-    match group.kind {
-        AgentKind::Claude => {
-            if let Some(root) = agent_config_root("claude", config_path) {
-                let project = claude_project_dir(&root, &group.cwd);
-                if project.is_dir() {
-                    add(project, RecursiveMode::Recursive);
-                } else {
-                    add(root.join("projects"), RecursiveMode::NonRecursive);
+impl Places {
+    fn of(group: Group) -> Self {
+        let config_path = group.config_path.as_deref();
+        let mut sessions = Vec::new();
+        let mut listings = Vec::new();
+        match group.kind {
+            AgentKind::Claude => {
+                if let Some(root) = agent_config_root("claude", config_path) {
+                    let project = claude_project_dir(&root, &group.cwd);
+                    sessions.push((project, RecursiveMode::NonRecursive));
                 }
             }
-        }
-        AgentKind::Codex => {
-            if let Some(root) = agent_config_root("codex", config_path) {
-                add(root.join("sessions"), RecursiveMode::Recursive);
-                add(root, RecursiveMode::NonRecursive);
+            AgentKind::Codex => {
+                if let Some(root) = agent_config_root("codex", config_path) {
+                    sessions.push((root.join("sessions"), RecursiveMode::Recursive));
+                    listings.push(root.join("session_index.jsonl"));
+                }
             }
-        }
-        AgentKind::Hermes => {
-            if let Some(root) = AgentKind::Hermes.home_root() {
-                add(root, RecursiveMode::NonRecursive);
+            AgentKind::Pi => {
+                sessions.extend(pi_session_dir().map(|dir| (dir, RecursiveMode::Recursive)));
             }
-        }
-        AgentKind::Pi => {
-            if let Some(root) = pi_session_dir() {
-                add(root, RecursiveMode::Recursive);
+            AgentKind::Omp => {
+                let dirs = omp_session_dirs().into_iter();
+                sessions.extend(dirs.map(|dir| (dir, RecursiveMode::Recursive)));
             }
-        }
-        AgentKind::Opencode => {
-            for dir in opencode_data_dirs() {
-                add(dir, RecursiveMode::NonRecursive);
+            AgentKind::Grok => {
+                let root = AgentKind::Grok.home_root();
+                sessions.extend(root.map(|root| (root.join("sessions"), RecursiveMode::Recursive)));
             }
+            AgentKind::Hermes => listings.extend(AgentKind::Hermes.home_root()),
+            AgentKind::Opencode => listings.extend(opencode_data_dirs()),
+            AgentKind::Muse => listings.extend(muse_data_root()),
         }
-        AgentKind::Omp => {
-            for dir in omp_session_dirs() {
-                add(dir, RecursiveMode::Recursive);
-            }
-        }
-        AgentKind::Grok => {
-            if let Some(root) = AgentKind::Grok.home_root() {
-                add(root.join("sessions"), RecursiveMode::Recursive);
-            }
-        }
-        AgentKind::Muse => {
-            if let Some(root) = muse_data_root() {
-                add(root, RecursiveMode::NonRecursive);
-            }
+        Places {
+            group,
+            sessions: sessions
+                .into_iter()
+                .map(|(dir, mode)| (real(&dir), mode))
+                .collect(),
+            listings: listings.iter().map(|place| real(place)).collect(),
         }
     }
-    out
+
+    /// The folders to watch: each session folder, or the one it will appear
+    /// in, and the folder of each listing.
+    fn folders(&self) -> Vec<(PathBuf, RecursiveMode)> {
+        let sessions = self.sessions.iter().map(|(dir, mode)| (dir, *mode));
+        let listings = self
+            .listings
+            .iter()
+            .map(|place| (place, RecursiveMode::NonRecursive));
+        sessions
+            .chain(listings)
+            .filter_map(|(path, mode)| {
+                if path.is_dir() {
+                    return Some((path.clone(), mode));
+                }
+                let parent = path.parent().filter(|parent| parent.is_dir())?;
+                Some((parent.to_path_buf(), RecursiveMode::NonRecursive))
+            })
+            .collect()
+    }
+
+    fn touched(&self, path: &Path) -> Option<Touch> {
+        if self.sessions.iter().any(|(dir, _)| dir == path) {
+            return Some(Touch::Folder);
+        }
+        if self
+            .listings
+            .iter()
+            .any(|place| place == path || path.parent() == Some(place.as_path()))
+        {
+            return Some(Touch::Listing);
+        }
+        let place = sessions::session_place(self.group.kind, path)?;
+        let within = self.sessions.iter().any(|(dir, mode)| match mode {
+            RecursiveMode::Recursive => place.starts_with(dir),
+            RecursiveMode::NonRecursive => place.parent() == Some(dir.as_path()),
+        });
+        within.then_some(Touch::Session(place))
+    }
+}
+
+/// `path` as file events name it, through any link, even before it exists.
+fn real(path: &Path) -> PathBuf {
+    if let Ok(real) = path.canonicalize() {
+        return real;
+    }
+    match (path.parent().map(Path::canonicalize), path.file_name()) {
+        (Some(Ok(parent)), Some(name)) => parent.join(name),
+        _ => path.to_path_buf(),
+    }
 }
 
 /// Notes the sessions there are as a terminal agent starts without one, so
 /// the one it binds to is the one it starts.
 pub(crate) async fn note_launch(core: &Arc<Core>, agent: &WorkspaceAgent) {
-    let Some(group) = group_of(core, agent) else {
+    let book = core.workspaces.accounts().unwrap_or_default();
+    let Some(group) = group_of(&book, agent) else {
         return;
     };
     let listed = listed(group).await;
@@ -269,15 +436,15 @@ async fn listed(group: Group) -> Vec<AgentSession> {
     .unwrap_or_default()
 }
 
-/// Reads the group's sessions again and settles its agents on them. None once
-/// the core is gone.
-async fn scan(core: &Weak<Core>, group: &Group) -> Option<()> {
+/// Reads the group's sessions again and settles its agents on them.
+async fn scan(core: &Weak<Core>, group: &Group) {
     let rows = listed(group.clone()).await;
-    let core = core.upgrade()?;
+    let Some(core) = core.upgrade() else {
+        return;
+    };
     if !rows.is_empty() {
         settle(&core, group, rows).await;
     }
-    Some(())
 }
 
 fn usable_title(row: &AgentSession) -> Option<String> {
@@ -286,10 +453,17 @@ fn usable_title(row: &AgentSession) -> Option<String> {
     (!title.is_empty() && !placeholder).then(|| title.to_owned())
 }
 
+/// Takes the CLI's title for an agent the person has not named, when it is new.
+fn take_title(core: &Core, agent: &WorkspaceAgent, row: &AgentSession) {
+    let title = usable_title(row).filter(|title| *title != agent.title);
+    super::workspace::retitle(core, &agent.id, title, false);
+}
+
 async fn settle(core: &Arc<Core>, group: &Group, rows: Vec<AgentSession>) {
+    let book = core.workspaces.accounts().unwrap_or_default();
     let members: Vec<WorkspaceAgent> = agents(core)
         .into_iter()
-        .filter(|agent| group_of(core, agent).as_ref() == Some(group))
+        .filter(|agent| group_of(&book, agent).as_ref() == Some(group))
         .collect();
     let by_id: HashMap<&str, &AgentSession> =
         rows.iter().map(|row| (row.id.as_str(), row)).collect();
@@ -308,7 +482,7 @@ async fn settle(core: &Arc<Core>, group: &Group, rows: Vec<AgentSession>) {
                 names.push((resume_id.clone(), agent.title.clone()));
             }
         } else {
-            super::workspace::retitle(core, &agent.id, usable_title(row), false);
+            take_title(core, agent, row);
         }
     }
     let mut fresh: Vec<&WorkspaceAgent> = members
@@ -345,7 +519,7 @@ async fn settle(core: &Arc<Core>, group: &Group, rows: Vec<AgentSession>) {
         if agent.renamed {
             names.push((row.id.clone(), agent.title.clone()));
         } else {
-            super::workspace::retitle(core, &agent.id, usable_title(row), false);
+            take_title(core, agent, row);
         }
         core.view_changed();
     }

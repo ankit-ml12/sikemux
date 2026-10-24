@@ -15,6 +15,7 @@ pub mod client;
 pub mod download;
 #[cfg(unix)]
 pub mod files;
+mod flights;
 pub mod frozen;
 #[cfg(unix)]
 pub mod git;

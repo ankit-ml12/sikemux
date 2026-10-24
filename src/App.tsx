@@ -17,7 +17,7 @@ import { watchFaceStyle } from "./buddies/faceStyle";
 import { customCommandsOf, showPreferences, usePreference, watchPreferences, preferencesOf } from "./state/preferences";
 import { watchDrafts } from "./state/gitWorkbench";
 import { watchLspClaims } from "./api/lsp";
-import { watchFocusForAgentStatus } from "./agents/statusRefresh";
+import { watchAgentStatus } from "./agents/statusRefresh";
 import { syncAgentAccounts } from "./agents/accountBook";
 import { agentApi, type AgentAccountBook } from "./api/agents";
 import { AgentPalettePortal as AgentPalette } from "./agents/AgentPalettePortal";
@@ -782,7 +782,7 @@ export default function App() {
     useEffect(() => watchPreferences(), []);
     useEffect(() => watchDrafts(), []);
     useEffect(() => watchLspClaims(), []);
-    useEffect(() => watchFocusForAgentStatus(), []);
+    useEffect(() => watchAgentStatus(), []);
     /* Fetched ahead so the first chat opened draws at once; a failure here leaves opening one to fetch it again. */
     useEffect(() => whenIdle(() => void import("./chat/AgentSurface").catch(swallow("preload the chat surface"))), []);
 

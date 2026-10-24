@@ -5696,7 +5696,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux"
-version = "0.5.4-nightly.6"
+version = "0.5.4-nightly.8"
 dependencies = [
  "base64 0.23.1",
  "block2",
@@ -5704,7 +5704,6 @@ dependencies = [
  "gtk",
  "hex",
  "libc",
- "mac-notification-sys",
  "notify",
  "notify-rust",
  "objc2",
@@ -5874,7 +5873,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-host"
-version = "0.5.4-nightly.6"
+version = "0.5.4-nightly.8"
 dependencies = [
  "hex",
  "libc",
@@ -6252,7 +6251,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-voice"
-version = "0.5.4-nightly.6"
+version = "0.5.4-nightly.8"
 dependencies = [
  "hex",
  "objc2-foundation",

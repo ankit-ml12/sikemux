@@ -64,7 +64,7 @@ pub(super) fn pi_recent(scan: &PageScan<'_>) -> Vec<Hit> {
 }
 
 /// The session in one transcript and the project its header names.
-fn pi_session(path: &Path) -> Option<Found> {
+pub(super) fn pi_session(path: &Path) -> Option<Found> {
     let file = fs::File::open(path).ok()?;
     let mut first = String::new();
     BufReader::new(file).read_line(&mut first).ok()?;

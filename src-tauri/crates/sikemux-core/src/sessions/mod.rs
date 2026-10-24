@@ -86,6 +86,44 @@ pub fn agent_sessions(agent: AgentKind, cwd: &str, config_path: Option<&str>) ->
     }
 }
 
+/// What holds the session a file written under `agent`'s session folders belongs
+/// to: Grok's folder for each session, else the transcript itself. None for agents
+/// that keep their sessions in a database.
+pub fn session_place(agent: AgentKind, path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    match agent {
+        AgentKind::Claude | AgentKind::Codex | AgentKind::Pi | AgentKind::Omp => {
+            name.ends_with(".jsonl").then(|| path.to_path_buf())
+        }
+        AgentKind::Grok => path
+            .parent()
+            .filter(|_| grok::GROK_SESSION_FILES.contains(&name))
+            .map(Path::to_path_buf),
+        AgentKind::Hermes | AgentKind::Opencode | AgentKind::Muse => None,
+    }
+}
+
+/// The session `place` holds, when it ran in `cwd`. Claude files each project's
+/// transcripts in a folder of their own, so it trusts the caller on the folder.
+pub fn session_at(
+    agent: AgentKind,
+    place: &Path,
+    cwd: &str,
+    config_path: Option<&str>,
+) -> Option<AgentSession> {
+    let found = match agent {
+        AgentKind::Claude => return claude::claude_session(place, title_cache_stamp(place)),
+        AgentKind::Codex => return codex::codex_session_at(place, cwd, config_path),
+        AgentKind::Grok => return grok::grok_session(place, cwd),
+        AgentKind::Pi => pi::pi_session(place),
+        AgentKind::Omp => omp::omp_session(place),
+        AgentKind::Hermes | AgentKind::Opencode | AgentKind::Muse => None,
+    };
+    found
+        .filter(|found| found.project == cwd)
+        .map(|found| found.session)
+}
+
 /// Points a CLI started on one of the person's accounts at that account's folder.
 pub fn apply_process_config(command: &mut Command, agent: &str, config_path: Option<&str>) {
     let (Some(variable), Some(path)) = (crate::launch::account_variable(agent), config_path) else {

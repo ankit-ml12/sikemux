@@ -61,7 +61,7 @@ pub(super) fn omp_recent(scan: &PageScan<'_>) -> Vec<Hit> {
 }
 
 /// The session in one transcript and the project its header names.
-fn omp_session(path: &Path) -> Option<Found> {
+pub(super) fn omp_session(path: &Path) -> Option<Found> {
     let file = fs::File::open(path).ok()?;
     let header = BufReader::new(file)
         .lines()
