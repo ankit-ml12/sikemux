@@ -50,6 +50,7 @@ const PICTURE_BAND: f32 = 0.6;
 const PICTURE_LONGEST: u32 = 2560;
 
 /// What panes show behind them, as the person's preferences say, and whether a sky is up.
+/// Until the preferences are read, panes show nothing.
 #[derive(Clone)]
 pub struct Grain {
     shown: bool,
@@ -68,6 +69,18 @@ enum Picture {
 }
 
 impl Global for Grain {}
+
+impl Default for Grain {
+    fn default() -> Self {
+        Self {
+            shown: false,
+            strength: 0.,
+            picture_path: None,
+            picture: Picture::None,
+            skies: 0,
+        }
+    }
+}
 
 impl Grain {
     /// Only the grain moves: a picture holds still, and one still loading or a grain at no
@@ -236,12 +249,10 @@ pub fn sky(fade_from: f32, opacity: f32, cx: &App) -> impl IntoElement + Styled 
     )
 }
 
-/// Keeps the sky moving while a screen that shows one is up, even with panes' grain off.
+/// Keeps the sky moving while a screen that shows one is up, even with panes' grain off, and
+/// even when the screen opens before the person's preferences are read.
 pub fn sky_shown(shown: bool, cx: &mut App) {
-    let Some(grain) = cx.try_global::<Grain>() else {
-        return;
-    };
-    let mut grain = grain.clone();
+    let mut grain = cx.try_global::<Grain>().cloned().unwrap_or_default();
     grain.skies = match shown {
         true => grain.skies + 1,
         false => grain.skies.saturating_sub(1),
@@ -293,7 +304,11 @@ fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
                     .try_global::<Grain>()
                     .is_some_and(|grain| grain.skies > 0)
                 {
-                    true => window.present_shaders(),
+                    true => {
+                        window.present_shaders();
+                        #[cfg(feature = "drive")]
+                        SKY_PRESENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
                     false => window.present_ground(),
                 }
                 let on_battery = bench.battery.is_some_and(|battery| !battery.charging);
@@ -307,6 +322,19 @@ fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
             };
             cx.background_executor().timer(wait).await;
         })
+    })
+}
+
+/// How many frames the tick has shown a sky moving on, for the test bundle's driver.
+#[cfg(feature = "drive")]
+static SKY_PRESENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How many skies are up and how many frames have moved them on, for the test bundle's driver.
+#[cfg(feature = "drive")]
+pub fn drive_state(cx: &App) -> serde_json::Value {
+    serde_json::json!({
+        "skies": cx.try_global::<Grain>().map(|grain| grain.skies),
+        "presents": SKY_PRESENTS.load(std::sync::atomic::Ordering::Relaxed),
     })
 }
 

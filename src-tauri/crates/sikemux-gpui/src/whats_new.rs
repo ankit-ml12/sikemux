@@ -368,12 +368,14 @@ fn side(
         .border_r_1()
         .border_color(t.border)
         .child(
-            crate::ui::grain::sky(0.15, 1., cx)
+            div()
                 .absolute()
                 .top_0()
                 .left_0()
                 .right_0()
-                .h(px(240.)),
+                .h(px(240.))
+                .child(crate::ui::grain::sky(0.15, 1., cx).size_full())
+                .children(ui::spot(|| "whats-new-sky".into())),
         )
         .child(
             div()

@@ -1011,6 +1011,7 @@ impl Workbench {
             "railBounds": self.rail_frame.get(),
             "tree": self.files.drive_state(),
             "git": self.git.as_ref().map(|git| git.read(cx).drive_state()),
+            "sky": crate::ui::grain::drive_state(cx),
         })
     }
 }
