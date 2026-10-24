@@ -34,9 +34,10 @@ const LEAVES_OPEN: [&str; 10] = [
     "async_task_state_update",
 ];
 
-/// The most tree one batch of replayed events carries. Past it the rest of the
-/// answers go without one, and their clients draw them as plain text.
-const MAX_TREE_BYTES: usize = 4 * 1024 * 1024;
+/// The most answer text, counted from the newest, that one batch of replayed
+/// events carries trees for. Older answers go without one, and their clients
+/// read them themselves.
+const MAX_TREE_TEXT: usize = 2 * 1024 * 1024;
 
 static LETTER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -240,24 +241,42 @@ fn notifications(event: &mut ChatEvent) -> Vec<&mut Value> {
         .unwrap_or_default()
 }
 
-/// Gives every answer in `events`, a slice of the chat sent at once, its whole
-/// tree, within a bound on how much tree that adds.
+/// Where the newest answers in `events` begin whose text fits [`MAX_TREE_TEXT`].
+fn newest_answers(events: &[ChatEvent]) -> usize {
+    let mut text = 0;
+    for (at, event) in events.iter().enumerate().rev() {
+        if event.kind != ChatEventKind::SessionUpdate {
+            continue;
+        }
+        let updates = event
+            .payload
+            .get("updates")
+            .and_then(Value::as_array)
+            .map_or(std::slice::from_ref(&event.payload), Vec::as_slice);
+        text += updates
+            .iter()
+            .filter_map(piece)
+            .map(|(_, _, piece)| piece.len())
+            .sum::<usize>();
+        if text > MAX_TREE_TEXT {
+            return at + 1;
+        }
+    }
+    0
+}
+
+/// Gives the newest answers in `events`, a slice of the chat sent at once,
+/// their whole trees, within a bound on how much text that reads.
 pub(crate) fn annotate_replay(events: &mut [ChatEvent]) {
+    let from = newest_answers(events);
     let mut answers = Answers::default();
-    let mut bytes = 0;
-    for event in events.iter_mut() {
+    for event in events.iter_mut().skip(from) {
         if event.kind != ChatEventKind::SessionUpdate {
             answers.close_all();
             continue;
         }
         for notification in notifications(event) {
-            if bytes > MAX_TREE_BYTES {
-                return;
-            }
             answers.annotate(std::slice::from_mut(notification));
-            bytes += notification
-                .pointer("/update/_meta/sikemux")
-                .map_or(0, |trees| trees.to_string().len());
         }
     }
 }
