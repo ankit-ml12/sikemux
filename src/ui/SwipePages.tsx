@@ -53,7 +53,11 @@ export function SwipePages({
         const view = viewRef.current;
         m.finish?.();
         m.target = target;
-        if (view) view.dataset.moving = "";
+        if (view) {
+            view.dataset.moving = "";
+            // The side pages are laid out only while the track moves; laying them out before the spring starts its clock keeps its first step from jumping.
+            void view.offsetWidth;
+        }
         m.finish = springHome(
             m.at - target,
             velocity,

@@ -290,8 +290,8 @@
 }
 
 /* Pages side by side in one track that a swipe or the icons at their foot
-   slide along. Pages off to the side are not painted until something moves
-   the track. */
+   slide along. Pages off to the side are neither laid out nor painted until
+   something moves the track, and their animations stand still. */
 .swipe-pages {
     display: flex;
     flex-direction: column;
@@ -326,6 +326,7 @@
 }
 .swipe-pager:not([data-moving]) .swipe-page:not(.is-current) {
     visibility: hidden;
+    content-visibility: hidden;
 }
 .swipe-switch {
     display: flex;
