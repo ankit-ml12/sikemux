@@ -500,11 +500,17 @@ fn capitalised(text: &str) -> String {
     })
 }
 
-pub(crate) async fn account(ctx: &PluginContext) -> Account {
-    Account {
+/// The profile the pane shows and every profile to switch to, each with how it signs in
+/// (`sso`, `role`, `credential_process` or `credentials`) under `kind`.
+pub(crate) async fn account(ctx: &PluginContext) -> serde_json::Value {
+    let profiles = auth::profiles().await;
+    let kinds: Vec<_> = profiles
+        .iter()
+        .map(|profile| serde_json::to_value(profile.kind).unwrap_or_default())
+        .collect();
+    let account = Account {
         profile: agent_profile::pane_profile(ctx),
-        profiles: auth::profiles()
-            .await
+        profiles: profiles
             .into_iter()
             .map(|profile| {
                 let (title, named) = split_account(&profile.name);
@@ -520,7 +526,14 @@ pub(crate) async fn account(ctx: &PluginContext) -> Account {
                 }
             })
             .collect(),
+    };
+    let mut json = serde_json::to_value(account).unwrap_or_default();
+    if let Some(listed) = json["profiles"].as_array_mut() {
+        for (profile, kind) in listed.iter_mut().zip(kinds) {
+            profile["kind"] = kind;
+        }
     }
+    json
 }
 
 /// `admin-123456789012` as `admin` and its account id.
