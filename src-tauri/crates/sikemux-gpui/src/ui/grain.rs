@@ -345,11 +345,25 @@ pub fn drive_state(window: &Window, cx: &App) -> serde_json::Value {
 /// Takes macOS's ask for less motion again. It is changed in System Settings, so reading it
 /// each time the window comes back to the front follows it.
 fn follow_reduced_motion(cx: &mut App) {
-    let reduce = system_reduces_motion();
+    let reduce = test_motion().unwrap_or_else(system_reduces_motion);
     if cx.reduce_motion() != reduce {
         cx.set_reduce_motion(reduce);
         cx.refresh_windows();
     }
+}
+
+/// The test bundle's own say on motion over macOS's, from `SIKEMUX_GPUI_DRIVE_MOTION` "on" or
+/// "off", so a check can watch the sky move on a machine that asks for less, and hold still.
+#[cfg(feature = "drive")]
+fn test_motion() -> Option<bool> {
+    std::env::var("SIKEMUX_GPUI_DRIVE_MOTION")
+        .ok()
+        .map(|motion| motion == "off")
+}
+
+#[cfg(not(feature = "drive"))]
+fn test_motion() -> Option<bool> {
+    None
 }
 
 #[cfg(target_os = "macos")]

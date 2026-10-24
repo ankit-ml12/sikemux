@@ -4,9 +4,10 @@ python3 -I ci/sky-check.py --app APP --core CORE --agent FAKE_AGENT --seed FAKE_
 
 The arguments are desk-checks.py's. Each case starts the app on a throwaway core with a release
 the person has not read, so What's New opens before the person's preferences are read, with
-the panes' grain on and off. It counts the frames that move the sky on over a few seconds and
-compares two captures of the sky half a second apart: a sky that moves changes many of its
-dots between them. Exits 1 when any case fails.
+the panes' grain on and off, and once more asking for less motion. It counts the frames that
+move the sky on over a few seconds and compares two captures of the sky half a second apart: a
+sky that moves changes many of its dots between them, and one held still changes none. Exits 1
+when any case fails.
 """
 
 import importlib.util
@@ -29,9 +30,12 @@ def load(name, file):
 desk = load("desk_checks", "desk-checks.py")
 ground = load("ground_check", "ground-check.py")
 
+# Each case's pane preferences, and whether the sky should move: the test bundle is told to move or
+# hold still whatever the machine asks, since CI's runners ask for less motion.
 CASES = [
-    ("grain-on", {"paneShader": True, "paneStrength": 1.0}),
-    ("grain-off", {"paneShader": False}),
+    ("grain-on", {"paneShader": True, "paneStrength": 1.0}, True),
+    ("grain-off", {"paneShader": False}, True),
+    ("reduced", {"paneShader": False}, False),
 ]
 SECONDS = 3
 # The tick moves the sky at 30 frames a second on power, 20 on battery.
@@ -61,7 +65,8 @@ def main():
     out = Path(options.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     results = []
-    for name, preferences in CASES:
+    for name, preferences, moves in CASES:
+        desk.os.environ["SIKEMUX_GPUI_DRIVE_MOTION"] = "on" if moves else "off"
         options.out = str(out / name)
         options.only = ""
         options.window = None
@@ -88,10 +93,11 @@ def main():
                 results.append((name, False, f"no capture of the window; {rate:.0f} sky frames a second, skies {last.get('skies')}"))
                 continue
             share = changed(*shots, frame, state.get("window", [1340, 881]))
-            ok = rate >= FEWEST_PRESENTS and share >= FEWEST_CHANGED
+            ok = rate >= FEWEST_PRESENTS and share >= FEWEST_CHANGED if moves else rate == 0 and share == 0
             results.append((name, ok, f"skies {last.get('skies')}, window active {last.get('active')}, visible {last.get('visible')}, "
-                                      f"reduce motion {last.get('reduceMotion')}; {rate:.0f} sky frames a second (at least {FEWEST_PRESENTS}); "
-                                      f"{share:.1%} of the sky's pixels changed in half a second (at least {FEWEST_CHANGED:.0%})"))
+                                      f"reduce motion {last.get('reduceMotion')}; {rate:.0f} sky frames a second and {share:.1%} of the sky's "
+                                      f"pixels changed in half a second, "
+                                      + (f"at least {FEWEST_PRESENTS} and {FEWEST_CHANGED:.0%} wanted" if moves else "none wanted")))
         finally:
             run.tear_down()
     for name, ok, detail in results:
