@@ -5,9 +5,10 @@ use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
     console::install();
-    // Until this app replaces the Mac app, it keeps a core and files of its own, so it never
-    // starts or upgrades the core the Mac app uses.
-    if std::env::var_os(sikemux_process::vars::CONFIG_DIR).is_none() {
+    // Until this app replaces the Mac app, a release keeps a core and files of its own, so it
+    // never starts or upgrades the core the Mac app uses. A dev build is Sikemux Dev and shares
+    // the Mac dev build's.
+    if !cfg!(debug_assertions) && std::env::var_os(sikemux_process::vars::CONFIG_DIR).is_none() {
         if let Some(home) = sikemux_process::paths::home() {
             std::env::set_var(
                 sikemux_process::vars::CONFIG_DIR,

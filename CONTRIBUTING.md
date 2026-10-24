@@ -38,7 +38,7 @@ Read [the architecture overview](docs/architecture/overview.md) before a large c
 
 ### The background core in development
 
-Terminals, agents and tasks run in a separate process, the core (`sikemux core`), which keeps running after the app quits. `make dev` builds the sidecar it runs from. After changing core code, rebuild the sidecar (`pnpm sidecar:dev`) and reload the window: the dev app updates its core in place and your terminals stay open. The dev core listens on `~/.config/sikemux/core.dev.sock` and logs to `core.log` in the dev app's log directory. Quit and Stop Everything (`⌥⌘Q`) stops it. If you touch the launch, quit or update paths, run `pnpm test:e2e:desktop`.
+Terminals, agents and tasks run in a separate process, the core (`sikemux core`), which keeps running after the app quits. `make dev` builds the core, its helpers and the app into `src-tauri/target/debug/Sikemux Dev.app` and opens it. After changing core code, quit the app and run `make dev` again: it updates its core in place and your terminals stay open. It refuses to start while another checkout's Sikemux Dev core is running; quit that one and run `make dev-stop` there first. The dev core listens on `~/.config/sikemux/core.dev.sock` and logs to `core.log` in the dev app's log directory. Quit and Stop Everything (`⌥⌘Q`) stops it. If you touch the launch, quit or update paths, run `pnpm test:e2e:desktop`.
 
 ### The mobile app
 

@@ -434,9 +434,10 @@ pub struct Link {
     pub asks: mpsc::UnboundedSender<Ask>,
 }
 
-/// The app's own identifier, so its folders and its core's login item are never the Mac app's.
+/// The app's own identifier. A dev build is Sikemux Dev, sharing its folders and core with the
+/// Mac app's dev build; a release keeps its own, apart from the Mac app's.
 pub const IDENTIFIER: &str = if cfg!(debug_assertions) {
-    "com.nodelike.sikemux.gpui.dev"
+    login_item::IDENTIFIER
 } else {
     "com.nodelike.sikemux.gpui"
 };
@@ -560,12 +561,20 @@ pub fn request_on(
     }
 }
 
-/// Where this app's key on the network is kept, apart from the Mac app's, so each is a
-/// device of its own on the account.
-const DEVICE_KEY: &str = "sikemux-gpui-device";
+/// Where this app's key on the network is kept. A dev build takes the Mac app's dev key, so it is
+/// the same device on the account; a release keeps one apart from the Mac app's.
+const DEVICE_KEY: &str = if cfg!(debug_assertions) {
+    "sikemux-device"
+} else {
+    "sikemux-gpui-device"
+};
 
 /// What the account calls this app, before " on <host>".
-const DEVICE_NAME: &str = "Sikemux GPUI try-out";
+const DEVICE_NAME: &str = if cfg!(debug_assertions) {
+    "Sikemux Dev"
+} else {
+    "Sikemux GPUI try-out"
+};
 
 /// This app's key on the network, made the first time it is needed and kept where
 /// `sikemux_keychain` keeps secrets; a build that keeps none cannot have one.

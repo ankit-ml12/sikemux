@@ -105,7 +105,7 @@ You need [Rust](https://www.rust-lang.org/tools/install), Node.js 22+, and [pnpm
 git clone git@github.com:nodelike/sikemux.git
 cd sikemux
 pnpm install
-make dev     # hot reload, runs beside the installed app
+make dev     # builds and opens Sikemux Dev, beside the installed app
 make build   # Apple Silicon app and DMG
 make check   # every quality gate
 ```
