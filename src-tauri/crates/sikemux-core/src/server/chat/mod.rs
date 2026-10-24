@@ -555,6 +555,7 @@ impl Chat {
                 .filter(|_| self.offline_failed.load(Ordering::Acquire))
                 .cloned(),
             reloadable: progress.reloadable,
+            unstarted: self.unstarted(),
         });
     }
 
@@ -1637,6 +1638,7 @@ fn start(
     if !waits_for_person {
         super::activity_log::chat_launched(core, &chat.launch);
     }
+    chat.unstarted.store(waits_for_person, Ordering::Release);
     if !shown {
         chat.keep(kept::Progress::STARTING);
     }
@@ -1646,7 +1648,6 @@ fn start(
     if waits_for_person {
         chat.feed.wait_for_person();
     }
-    chat.unstarted.store(waits_for_person, Ordering::Release);
     if shown {
         native::show_saved(&chat);
     }
@@ -1779,6 +1780,10 @@ fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResul
         kept.origin.clone(),
         Some((feed, flags)),
     )?;
+    if kept.unstarted {
+        chat.feed.wait_for_person();
+        chat.unstarted.store(true, Ordering::Release);
+    }
     let core = core.clone();
     tokio::spawn(async move {
         let reading = (core.clone(), chat.clone());
@@ -1793,6 +1798,18 @@ fn take_up(core: &Arc<Core>, dir: &std::path::Path, kept: KeptChat) -> CoreResul
         .map_err(|error| error.to_string())
         .and_then(|read| read);
         match read {
+            Ok((launch_spec, _)) if chat.unstarted() => {
+                chat.set_current(launch_spec);
+                launch(
+                    &core,
+                    &chat,
+                    queue,
+                    Begin::Start {
+                        rebind: None,
+                        notice: None,
+                    },
+                );
+            }
             Ok((launch_spec, kept)) => carry_on(&core, &chat, queue, launch_spec, &kept),
             Err(error) => {
                 chat.end(Some(error.clone()));
