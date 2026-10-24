@@ -73,15 +73,46 @@ fn file_link(name: Option<&str>, uri: &str) -> String {
     }
 }
 
+fn driver(provider: &str) -> Option<&'static ChatDriver> {
+    crate::agent_catalog::agent(provider).and_then(|agent| agent.chat.as_ref())
+}
+
+/// Whether a resumed chat of `provider` can show its saved history before its agent starts:
+/// only Claude's is a file the core reads itself.
+pub(crate) fn shows_saved(provider: &str) -> bool {
+    matches!(driver(provider), Some(ChatDriver::Claude))
+}
+
+/// Shows the saved history of the session a waiting chat resumes, when the core can read it.
+pub(crate) fn show_saved(chat: &Arc<Chat>) {
+    let Some(session) = chat.launch.resume_id.clone() else {
+        return;
+    };
+    if !shows_saved(chat.provider()) {
+        return;
+    }
+    chat.saved_shown
+        .store(true, std::sync::atomic::Ordering::Release);
+    let chat = chat.clone();
+    tokio::task::spawn_blocking(move || {
+        let sink = session::Sink::showing(chat.clone());
+        if let Err(error) = claude::replay_saved(&chat.launch, &session, &sink) {
+            eprintln!(
+                "sikemux core: could not show {}'s saved chat: {error}",
+                chat.agent_id()
+            );
+        }
+    });
+}
+
 pub(super) async fn run(
     chat: Arc<Chat>,
     launch: ChatLaunch,
     commands: &mut mpsc::UnboundedReceiver<ChatCommand>,
     begin: Begin,
 ) -> Result<Outcome, String> {
-    let driver = crate::agent_catalog::agent(chat.provider())
-        .and_then(|agent| agent.chat.as_ref())
-        .ok_or_else(|| format!("{} has no chat", chat.provider()))?;
+    let driver =
+        driver(chat.provider()).ok_or_else(|| format!("{} has no chat", chat.provider()))?;
     match driver {
         ChatDriver::Claude => session::run::<claude::Claude>(chat, launch, commands, begin).await,
         ChatDriver::Codex => session::run::<codex::Codex>(chat, launch, commands, begin).await,

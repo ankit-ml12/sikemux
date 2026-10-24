@@ -40,6 +40,7 @@ use super::spawn::Ending;
 use super::{Core, CoreError, CoreResult};
 use feed::{Feed, FeedState, Standing};
 use kept::{Keeper, KeptAgent, KeptChat};
+pub(crate) use native::shows_saved;
 use native::Begin;
 pub(crate) use sikemux_fold::ChatEventKind;
 use sikemux_process::clock::epoch_ms;
@@ -236,6 +237,12 @@ pub(crate) struct Chat {
     /// A new chat starts its agent only once the person writes in it or something is sent to it.
     unstarted: AtomicBool,
     wanted: tokio::sync::Notify,
+    /// Why the chat can be read here but never continued, such as a try-out's chat from the
+    /// person's own Sikemux. Its agent never starts.
+    read_only: std::sync::OnceLock<String>,
+    /// The saved history of the session it resumes is shown already, so the agent's own
+    /// replay of it as it starts stays quiet.
+    pub(crate) saved_shown: AtomicBool,
 }
 
 impl Chat {
@@ -857,17 +864,25 @@ impl Chat {
                     let _ = reply.send(Err("it had not started".into()));
                     return Ok(());
                 }
-                _ => self.start_agent(),
+                _ => match self.read_only() {
+                    Some(why) => return Err(why.to_owned().into()),
+                    None => self.start_agent(),
+                },
             }
         }
         self.commands.send(command).map_err(|_| STOPPED.into())
     }
 
     /// Starts the agent of a chat that waited for the person, once; later calls do nothing.
+    /// A chat that is only read never starts one.
     pub(crate) fn start_agent(&self) {
-        if self.unstarted.swap(false, Ordering::AcqRel) {
+        if self.read_only().is_none() && self.unstarted.swap(false, Ordering::AcqRel) {
             self.wanted.notify_one();
         }
+    }
+
+    pub(crate) fn read_only(&self) -> Option<&str> {
+        self.read_only.get().map(String::as_str)
     }
 
     /// The chat waits for the person before its agent starts.
@@ -916,6 +931,7 @@ impl Chat {
             model: self.launch.model.clone(),
             model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
             effort: self.launch.effort.clone(),
+            read_only: self.read_only().map(str::to_owned),
             asleep: false,
             unread: false,
             active_at: None,
@@ -1483,6 +1499,8 @@ impl Chats {
             published: Mutex::new("unknown"),
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
+            read_only: std::sync::OnceLock::new(),
+            saved_shown: AtomicBool::new(false),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1546,7 +1564,6 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
         if !crate::sessions::is_session_id(agent, resume_id) {
             return Err(format!("{resume_id:?} is not a {} session id", launch.provider).into());
         }
-        reopened_in_tryout(launch, agent, resume_id)?;
     }
     if launch.program.as_os_str().is_empty() {
         return Err("ACP agent program is missing".into());
@@ -1557,36 +1574,52 @@ fn validate(launch: &ChatLaunch) -> CoreResult<()> {
     Ok(())
 }
 
-/// A try-out core shares the agents' saved sessions with the person's own core, so it
-/// reopens only the sessions it began after it was set up, and never one the other could
-/// be driving.
-fn reopened_in_tryout(
-    launch: &ChatLaunch,
-    agent: Option<crate::agent_catalog::AgentKind>,
-    resume_id: &str,
-) -> CoreResult<()> {
-    let Some(seeded) = std::env::var(sikemux_process::vars::TRYOUT_SEEDED_AT)
-        .ok()
-        .and_then(|seconds| seconds.trim().parse::<u64>().ok())
-    else {
-        return Ok(());
+/// What a try-out core says of a chat it opens only to be read.
+const TRYOUT_READ_ONLY: &str = "This try-out continues only the chats it started, so it never writes into a session your Sikemux could be using. Continue this one in Sikemux.";
+
+/// The sessions a try-out core began itself, one `provider<TAB>session` a line, in its data folder.
+const TRYOUT_SESSIONS: &str = "tryout-sessions";
+
+fn in_tryout() -> bool {
+    sikemux_process::paths::TRYOUT
+        || std::env::var_os(sikemux_process::vars::TRYOUT_SEEDED_AT).is_some()
+}
+
+fn tryout_record(core: &Core) -> Option<PathBuf> {
+    Some(core.harness.data_dir.as_ref()?.join(TRYOUT_SESSIONS))
+}
+
+fn tryout_owns(core: &Core, provider: &str, session: &str) -> bool {
+    let entry = format!("{provider}\t{session}");
+    tryout_record(core)
+        .and_then(|record| std::fs::read_to_string(record).ok())
+        .is_some_and(|record| record.lines().any(|line| line == entry))
+}
+
+/// A try-out core shares the agents' saved sessions with the person's own core, so it takes
+/// up again only a session its own record says it began, and opens any other to be read.
+fn tryout_refusal(core: &Core, launch: &ChatLaunch) -> Option<String> {
+    let session = launch.resume_id.as_deref()?;
+    (in_tryout() && !tryout_owns(core, &launch.provider, session))
+        .then(|| TRYOUT_READ_ONLY.to_owned())
+}
+
+/// Notes in a try-out core's record that it began `session`, so it may take it up again.
+pub(crate) fn tryout_began(core: &Core, provider: &str, session: &str) {
+    use std::io::Write;
+    if !in_tryout() || session.is_empty() || tryout_owns(core, provider, session) {
+        return;
+    }
+    let Some(record) = tryout_record(core) else {
+        return;
     };
-    let mut env = launch.env.clone();
-    env.extend(
-        launch
-            .account
-            .iter()
-            .flat_map(|account| account.env.clone()),
-    );
-    let made = agent
-        .and_then(|agent| {
-            let root = crate::sessions::roots::account_root(agent, None, &env)?;
-            crate::sessions::transcript::find(agent, &root, launch.cwd.to_str(), resume_id)
-        })
-        .and_then(|path| std::fs::metadata(path).ok()?.created().ok());
-    match made {
-        Some(made) if made > std::time::UNIX_EPOCH + Duration::from_secs(seeded) => Ok(()),
-        _ => Err("this try-out reopens only the chats it started".into()),
+    let noted = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&record)
+        .and_then(|mut file| writeln!(file, "{provider}\t{session}"));
+    if let Err(error) = noted {
+        eprintln!("sikemux core: could not note the try-out's session {session}: {error}");
     }
 }
 
@@ -1704,9 +1737,20 @@ fn start(
         launch_spec.env.entry(key).or_insert(value);
     }
     validate(&launch_spec)?;
+    let read_only = tryout_refusal(core, &launch_spec);
+    let waits_for_person = waits_for_person || read_only.is_some();
     let resume_id = launch_spec.resume_id.clone();
     let waking = core.workspaces.agent(&launch_spec.agent_id).is_some();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
+    if let Some(why) = read_only {
+        eprintln!(
+            "sikemux core: {} opens {} session {} to be read only: {why}",
+            chat.agent_id(),
+            chat.provider(),
+            resume_id.as_deref().unwrap_or_default()
+        );
+        let _ = chat.read_only.set(why);
+    }
     core.workspaces.note_begun(&chat);
     super::model_providers::chat_begun(core, &chat.launch);
     let naming = (
@@ -1725,7 +1769,9 @@ fn start(
     if !waits_for_person {
         super::activity_log::chat_launched(core, &chat.launch);
     }
-    chat.keep(kept::Progress::STARTING);
+    if chat.read_only().is_none() {
+        chat.keep(kept::Progress::STARTING);
+    }
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -1742,6 +1788,9 @@ fn start(
             notice: None,
         },
     );
+    if waits_for_person {
+        native::show_saved(&chat);
+    }
     Ok(chat)
 }
 

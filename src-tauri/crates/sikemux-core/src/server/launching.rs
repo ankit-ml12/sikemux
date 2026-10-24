@@ -354,7 +354,14 @@ async fn start_new(
     choice: ChatChoice,
 ) -> CoreResult<(String, ChatStart)> {
     let agent_id = format!("agent-{}", uuid::Uuid::new_v4().simple());
-    let waits_for_person = choice.resume_id.is_none();
+    let kind = choice
+        .launcher
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    // A chat taken up again waits for the person too when its saved history shows without its agent.
+    let waits_for_person = choice.resume_id.is_none() || super::chat::shows_saved(&kind);
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
@@ -369,12 +376,6 @@ async fn start_new(
         program: None,
         waits_for_person,
     };
-    let kind = chosen
-        .launcher
-        .split(':')
-        .next()
-        .unwrap_or_default()
-        .to_owned();
     let started = start(core, client, chosen).await?;
     remember_kind(core, &kind);
     if started.unstarted() {

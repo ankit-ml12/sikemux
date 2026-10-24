@@ -90,6 +90,29 @@ fn transcript(launch: &ChatLaunch, session_id: &str) -> Option<PathBuf> {
     sessions::transcript::find(AgentKind::Claude, &root, Some(&cwd), session_id)
 }
 
+/// Replays the saved chat of `session_id` through `sink`, answering the ids of the person's
+/// messages in it and the model it last ran on.
+pub(crate) fn replay_saved(
+    launch: &ChatLaunch,
+    session_id: &str,
+    sink: &Sink,
+) -> Result<(Vec<String>, Option<String>), String> {
+    let loaded = || sink.update(session_id, json!({ "sessionUpdate": "history_loaded" }));
+    let Some(path) = transcript(launch, session_id) else {
+        loaded();
+        return Ok((Vec::new(), None));
+    };
+    let records = replay::with_subagents(&path, replay::read_history(&path)?);
+    for (session, update) in replay::replay(&records, session_id, &launch.cwd) {
+        sink.update(&session, update);
+    }
+    loaded();
+    Ok((
+        replay::user_message_ids(&records).collect(),
+        replay::resumed_model(&records),
+    ))
+}
+
 /// The chat's tool servers as Claude Code's `--mcp-config` file.
 fn mcp_config(tools: &[McpServer]) -> Option<String> {
     let tools: serde_json::Map<String, Value> = tools
@@ -334,31 +357,18 @@ impl Backend for Claude {
         // Claude takes a moment to start, so the saved chat is read and
         // replayed while it does.
         let replaying = launch.resume_id.is_some().then(|| {
-            let (path, id, cwd, sink, shared) = (
-                transcript(launch, &session_id),
+            let (launch, id, sink, shared) = (
+                launch.clone(),
                 session_id.clone(),
-                launch.cwd.clone(),
                 sink.clone(),
                 shared.clone(),
             );
             tokio::task::spawn_blocking(move || -> Result<Option<String>, String> {
-                let loaded = || sink.update(&id, json!({ "sessionUpdate": "history_loaded" }));
-                let Some(path) = path else {
-                    loaded();
-                    return Ok(None);
-                };
-                let records = replay::with_subagents(&path, replay::read_history(&path)?);
+                let (sent, model) = replay_saved(&launch, &id, &sink)?;
                 // Claude Code drops a message under an id its transcript already
                 // has, so a prompt sent again after a restart needs a new one.
-                shared
-                    .locked()
-                    .sent
-                    .extend(replay::user_message_ids(&records));
-                for (session, update) in replay::replay(&records, &id, &cwd) {
-                    sink.update(&session, update);
-                }
-                loaded();
-                Ok(replay::resumed_model(&records))
+                shared.locked().sent.extend(sent);
+                Ok(model)
             })
         });
         let start = match launch.resume_id.as_deref() {

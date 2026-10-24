@@ -133,6 +133,19 @@ pub(crate) struct Sink {
 }
 
 impl Sink {
+    /// Tells only `chat` what it is given, for a resumed chat's saved history shown before
+    /// its agent starts.
+    pub(crate) fn showing(chat: Arc<Chat>) -> Self {
+        Self {
+            chat,
+            failed: mpsc::unbounded_channel().0,
+            broken: mpsc::unbounded_channel().0,
+            settled: mpsc::unbounded_channel().0,
+            account: None,
+            quiet: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
     pub fn update(&self, session_id: &str, mut update: Value) {
         if self.quiet.load(Ordering::Acquire) {
             return;
@@ -509,7 +522,7 @@ pub(crate) async fn run<B: Backend>(
                 notice: carried,
                 quiet_load,
             } = Carried::from(rebind);
-            let sink = sink(quiet_load);
+            let sink = sink(quiet_load || chat.saved_shown.swap(false, Ordering::AcqRel));
             chat.emit(ChatEventKind::Status, json!({ "state": "initializing" }));
             chat.feed.hold();
             let started = B::start(&launch, sink.clone()).await;
@@ -536,6 +549,9 @@ pub(crate) async fn run<B: Backend>(
                 chat.running.store(true, Ordering::Release);
             }
             chat.note_agent(backend.pid());
+            if let Some(core) = chat.core.upgrade() {
+                super::super::tryout_began(&core, &provider, &state.session_id);
+            }
             let start = state.start();
             crate::server::chat::offered::remember(&provider, &start.setup);
             chat.mark_ready(start.clone());
