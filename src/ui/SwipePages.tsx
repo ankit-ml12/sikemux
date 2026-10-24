@@ -48,23 +48,27 @@ export function SwipePages({
         if (trackRef.current) trackRef.current.style.transform = pageTransform(at);
     };
 
+    /** Lays out the pages the track spans between two positions, leaving the rest off to the side unlaid. */
+    const span = (from: number, to: number) => {
+        const first = Math.floor(Math.min(from, to));
+        const last = Math.ceil(Math.max(from, to));
+        trackRef.current?.childNodes.forEach((page, at) => (page as Element).toggleAttribute("data-shown", at >= first && at <= last));
+    };
+
     const glide = (target: number, velocity: number) => {
         const m = motion.current;
-        const view = viewRef.current;
         m.finish?.();
         m.target = target;
-        if (view) {
-            view.dataset.moving = "";
-            // The side pages are laid out only while the track moves; laying them out before the spring starts its clock keeps its first step from jumping.
-            void view.offsetWidth;
-        }
+        span(m.at, target);
+        // Laid out before the spring starts its clock, so that work does not make its first step jump.
+        void trackRef.current?.offsetWidth;
         m.finish = springHome(
             m.at - target,
             velocity,
             (at) => place(target + at),
             () => {
                 m.finish = null;
-                if (view) delete view.dataset.moving;
+                span(target, target);
             },
         );
     };
@@ -90,13 +94,13 @@ export function SwipePages({
             let raw = 0;
             let offset = 0;
             let frame: number | null = null;
-            view.dataset.moving = "";
             return {
                 move(pixels) {
                     raw += pixels / width;
                     offset = dragOffset(raw, ends);
                     frame ??= requestAnimationFrame(() => {
                         frame = null;
+                        span(base, base + offset);
                         if (trackRef.current) trackRef.current.style.transform = pageTransform(base + offset);
                         m.at = base + offset;
                     });

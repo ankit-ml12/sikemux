@@ -291,7 +291,7 @@
 
 /* Pages side by side in one track that a swipe or the icons at their foot
    slide along. Pages off to the side are neither laid out nor painted until
-   something moves the track, and their animations stand still. */
+   the track moves across them, and their animations stand still. */
 .swipe-pages {
     display: flex;
     flex-direction: column;
@@ -324,7 +324,7 @@
         -1px 0 0 var(--border),
         1px 0 0 var(--border);
 }
-.swipe-pager:not([data-moving]) .swipe-page:not(.is-current) {
+.swipe-page:not(.is-current, [data-shown]) {
     visibility: hidden;
     content-visibility: hidden;
 }
