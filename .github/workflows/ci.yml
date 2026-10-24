@@ -346,6 +346,72 @@ jobs:
             ${{ runner.temp }}/w
           if-no-files-found: warn
 
+  # The GPUI app on Linux in a real X window: Xvfb with a window manager, the app and a throwaway core with
+  # fake agents only, each check captured. With --browser it also opens a desk tab on a local page and drives
+  # an agent browser tool there.
+  gpui-linux-window:
+    name: GPUI on Linux in a real window
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      # The runner holds no agent CLIs; the core looks only on PATH regardless.
+      SIKEMUX_AGENT_SEARCH: path
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Rust
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
+
+      - name: Install GPUI's Linux packages, an X server and a window manager
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev \
+            libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev clang pkg-config \
+            libwebkit2gtk-4.1-dev xvfb openbox x11-utils xdotool imagemagick mesa-vulkan-drivers fonts-dejavu-core
+
+      - name: Build dependencies with light optimisation
+        run: mkdir -p "${CARGO_HOME:-$HOME/.cargo}" && printf '[profile.dev.package."*"]\nopt-level = %s\n' "$DEPS_OPT_LEVEL" >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            src-tauri/crates/sikemux-gpui
+            src-tauri
+          key: deps-opt-level-${{ env.DEPS_OPT_LEVEL }}
+          cache-on-failure: true
+
+      - name: Build the core and the fake agent
+        run: cargo build --locked -p sikemux-core --bin sikemux-core --bin sikemux-fake-acp-agent
+        working-directory: src-tauri
+
+      - name: Build the app with its in-app driver
+        run: cargo build --locked --features drive --bin sikemux --example fake_chat
+        working-directory: src-tauri/crates/sikemux-gpui
+
+      - name: Open the app in a real window and check it
+        working-directory: src-tauri/crates/sikemux-gpui
+        run: |
+          Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp &
+          export DISPLAY=:99
+          for _ in $(seq 1 40); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.25; done
+          openbox &
+          sleep 1
+          python3 -I ci/linux-window.py --app target/debug/sikemux \
+            --core ../../target/debug/sikemux-core --agent ../../target/debug/sikemux-fake-acp-agent \
+            --seed target/debug/examples/fake_chat --out "$RUNNER_TEMP/w/linux"
+
+      - name: Upload the captures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gpui-linux-window
+          path: ${{ runner.temp }}/w
+          if-no-files-found: warn
+
   # Every release also ships Linux packages, so main must keep compiling there,
   # and the core must keep working as a Linux host.
   linux:

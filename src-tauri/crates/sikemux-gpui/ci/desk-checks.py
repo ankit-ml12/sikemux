@@ -72,15 +72,19 @@ class Run:
         self.port = serve(site)
         self.site = f"http://127.0.0.1:{self.port}"
 
-        # An unsigned core inside an app bundle trusts that bundle as its app, as a release's does,
-        # and a dev core trusts examples/remote beside it, which seeds the chats.
-        bundle = self.root / "Sikemux GPUI Test.app"
-        (bundle / "Contents/MacOS").mkdir(parents=True)
-        (bundle / "Contents/Info.plist").write_text(plist())
-        self.app_exe = bundle / "Contents/MacOS/sikemux"
-        shutil.copy(self.options.app, self.app_exe)
-        helpers = bundle / "Contents/Helpers/Sikemux Core.app/Contents/MacOS"
+        # An unsigned core inside an app bundle trusts that bundle as its app, as a release's does; on
+        # Linux it trusts the `sikemux` beside it. A dev core trusts examples/remote beside it, which seeds the chats.
+        if sys.platform == "darwin":
+            bundle = self.root / "Sikemux GPUI Test.app"
+            (bundle / "Contents/MacOS").mkdir(parents=True)
+            (bundle / "Contents/Info.plist").write_text(plist())
+            self.app_exe = bundle / "Contents/MacOS/sikemux"
+            helpers = bundle / "Contents/Helpers/Sikemux Core.app/Contents/MacOS"
+        else:
+            helpers = self.root / "app"
+            self.app_exe = helpers / "sikemux"
         (helpers / "examples").mkdir(parents=True)
+        shutil.copy(self.options.app, self.app_exe)
         self.core_exe = helpers / "sikemux-host"
         shutil.copy(self.options.core, self.core_exe)
         self.seed_exe = helpers / "examples/remote"
@@ -241,6 +245,10 @@ class Run:
 
     def capture(self, name):
         if self.options.behind:
+            return
+        if sys.platform != "darwin":
+            window = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(self.app.pid)], capture_output=True, text=True).stdout.split()
+            subprocess.run(["import", "-window", window[-1] if window else "root", self.out / f"{name}.png"])
             return
         number = subprocess.run(["swift", HERE / "window-number.swift", str(self.app.pid)], capture_output=True, text=True).stdout.strip()
         if number:
