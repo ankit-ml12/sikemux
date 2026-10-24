@@ -100,7 +100,7 @@ export function warmTranscript(messages: readonly ChatMessage[]): Promise<void> 
         warmed.add(message);
         const letters = messageLetters(message);
         if (letters) {
-            texts.push(...letters.map((letter) => ({ text: letter.text, typed: false })));
+            for (const letter of letters) if (letter.kind === "message" && !letter.tree) texts.push({ text: letter.text, typed: false });
             continue;
         }
         for (const part of sentParts(message).parts) {

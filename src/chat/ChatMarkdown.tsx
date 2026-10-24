@@ -5,8 +5,8 @@ import { useStore } from "../state/store";
 import { CopyButton } from "../ui/CopyButton";
 import { FileIcon } from "../ui/FileIcon";
 import { hasPrimaryModifier } from "../lib/platform";
-import { Markdown, MarkdownBlocks, type MarkdownComponents } from "../markdown/Markdown";
-import { warmMarkdown } from "../markdown/useMarkdownBlocks";
+import { MarkdownBlocks, type MarkdownComponents } from "../markdown/Markdown";
+import { useMarkdownBlocks, warmMarkdown } from "../markdown/useMarkdownBlocks";
 import { tableSource } from "../markdown/tableSource";
 import type { MarkdownOptions, MdElement } from "../markdown/types";
 import { fencedDiff } from "./diff";
@@ -152,26 +152,8 @@ export function warmChatMarkdown(texts: readonly { text: string; typed: boolean 
     );
 }
 
-function LiveMarkdown({ text, live, typed = false }: { text: string; live: boolean; typed?: boolean }) {
-    return <Markdown text={text} options={typed ? TYPED_MARKDOWN : AGENT_MARKDOWN} live={live} components={markdownComponents} />;
-}
-
-/** The core's tree of an answer, folded as its text would be. */
-function TreeMarkdown({ id, tree, live }: { id: string; tree: MdElement[]; live: boolean }) {
-    const { folds, expand } = useLongTextFold(id, "", live);
-    const cut = useMemo(() => (folds ? cutLongBlocks(tree) : null), [folds, tree]);
-    return (
-        <>
-            <MarkdownBlocks blocks={cut?.blocks ?? tree} components={markdownComponents} />
-            {cut && (
-                <button type="button" className="chat-show-rest" onClick={expand}>
-                    {showRestLabel(cut.hidden)}
-                </button>
-            )}
-        </>
-    );
-}
-
+/* One drawing whether the core sent the answer's tree or it is read here, so
+   an answer gaining or losing its tree keeps every element it has. */
 export function FoldedMarkdown({
     id,
     text,
@@ -186,15 +168,18 @@ export function FoldedMarkdown({
     /** The core's tree of the text, which nothing here needs to read again. */
     tree?: MdElement[];
 }) {
-    const { cut, expand } = useLongTextFold(id, tree ? "" : text, live);
-    if (tree) return <TreeMarkdown id={id} tree={tree} live={live} />;
-    if (!cut) return <LiveMarkdown text={text} live={live} typed={typed} />;
+    const { cut, expand, folds } = useLongTextFold(id, tree ? "" : text, live);
+    const blocks = useMarkdownBlocks(cut?.head ?? text, typed ? TYPED_MARKDOWN : AGENT_MARKDOWN, live && !cut, tree);
+    const treeCut = useMemo(() => (tree && folds ? cutLongBlocks(tree) : null), [folds, tree]);
+    const hidden = treeCut?.hidden ?? cut?.hidden;
     return (
         <>
-            <LiveMarkdown text={cut.head} live={false} typed={typed} />
-            <button type="button" className="chat-show-rest" onClick={expand}>
-                {showRestLabel(cut.hidden)}
-            </button>
+            {blocks && <MarkdownBlocks blocks={treeCut?.blocks ?? blocks} components={markdownComponents} />}
+            {hidden !== undefined && (
+                <button type="button" className="chat-show-rest" onClick={expand}>
+                    {showRestLabel(hidden)}
+                </button>
+            )}
         </>
     );
 }
