@@ -2377,7 +2377,8 @@ pub(crate) async fn set_config(
 fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
     let mut options = core
         .workspaces
-        .launcher_options(chat.origin.launcher.as_deref()?)?;
+        .launcher_options(chat.origin.launcher.as_deref()?)
+        .filter(|options| options.as_array().is_some_and(|rows| !rows.is_empty()))?;
     let launch = chat.current_launch();
     for row in options.as_array_mut().into_iter().flatten() {
         let chosen = if row["id"] == "model" {
@@ -2394,18 +2395,27 @@ fn waiting_options(core: &Core, chat: &Chat) -> Option<Value> {
     Some(options)
 }
 
-/// Tells a chat that waits for the person what it offers to pick, asking its agent's CLI
-/// first, with no session, when its launcher has not offered anything yet.
+/// Tells a chat that waits for the person what it offers to pick. A launcher that has never
+/// offered anything has its agent's CLI asked once, with no session; after that only its own
+/// sessions change what it offers.
 fn offer_options(core: &Arc<Core>, chat: &Arc<Chat>) {
-    if chat.read_only().is_some() {
-        return;
-    }
-    if let Some(options) = waiting_options(core, chat) {
-        return tell_options(chat, options);
-    }
-    let Some(launcher) = chat.origin.launcher.clone() else {
+    let Some(launcher) = chat
+        .origin
+        .launcher
+        .clone()
+        .filter(|_| chat.read_only().is_none())
+    else {
         return;
     };
+    if core.workspaces.launcher_options(&launcher).is_some() {
+        if let Some(options) = waiting_options(core, chat) {
+            tell_options(chat, options);
+        }
+        return;
+    }
+    // Noted as offering nothing until the CLI answers, so no other chat asks it again.
+    core.workspaces
+        .note_config_options(&launcher, &Value::Array(Vec::new()));
     let (core, chat) = (core.clone(), chat.clone());
     tokio::spawn(async move {
         match native::read_options(&chat.current_launch()).await {
