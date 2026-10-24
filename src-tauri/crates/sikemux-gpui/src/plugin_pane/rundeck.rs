@@ -318,6 +318,8 @@ pub struct DeployChip {
     looked: bool,
     /// The job picked from the menu, for each project.
     picked: HashMap<String, (String, String)>,
+    /// A checkout of the deployed branch is under way.
+    checking_out: bool,
 }
 
 impl Panel for DeployChip {
@@ -374,6 +376,7 @@ impl Panel for DeployChip {
         let repo = project.clone();
         let read = repo_read(host, cx);
         let checkout = read.clone().flatten();
+        let checking_out = self.checking_out;
         KitButton::new("rundeck-deploy-chip")
             .ghost()
             .compact()
@@ -452,19 +455,27 @@ impl Panel for DeployChip {
                 if let Some(deployed) = target.deployed_branch.clone() {
                     let (pane, repo) = (pane.clone(), repo.clone());
                     let here = checkout.as_deref() == Some(deployed.as_str());
+                    let label = match checking_out {
+                        true => format!("Checking out… {deployed}"),
+                        false => format!("Check out {deployed}"),
+                    };
                     popup = popup.item(
-                        PopupMenuItem::new(format!("Check out {deployed}"))
+                        PopupMenuItem::new(label)
                             .icon(Icon::Checkout)
-                            .disabled(here)
+                            .disabled(here || checking_out)
                             .on_click(move |_, _, cx| {
                                 let _ = pane.update(cx, |pane, cx| {
+                                    if let Some((chip, _)) = pane.parts::<DeployChip>() {
+                                        chip.checking_out = true;
+                                    }
                                     let checked = pane.host.core(
                                         "git.checkoutSmart",
                                         json!({ "repo": repo, "branch": deployed }),
                                     );
                                     super::after::<DeployChip, _>(
                                         checked,
-                                        |_, host, done, cx| {
+                                        |chip, host, done, cx| {
+                                            chip.checking_out = false;
                                             if let Err(failure) = done {
                                                 host.said(&failure.titled("Check out"), cx);
                                             }
