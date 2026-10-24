@@ -141,7 +141,11 @@ fn capture_login_shell() -> LoginShellCapture {
     if sikemux_process::user_environment::search_path_only() {
         return LoginShellCapture {
             path: std::env::var("PATH").ok(),
-            environment: std::env::vars().collect(),
+            environment: std::env::vars()
+                .filter(|(key, _)| {
+                    !sikemux_process::vars::LAUNCHING_SESSION.contains(&key.as_str())
+                })
+                .collect(),
         };
     }
     let shell = configured_shell();
@@ -160,7 +164,10 @@ fn capture_login_shell() -> LoginShellCapture {
             // An rc file that reads stdin sees EOF instead of blocking.
             .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
-        for key in crate::launch::OPTIONAL_PTY_ENV {
+        for key in crate::launch::OPTIONAL_PTY_ENV
+            .iter()
+            .chain(&sikemux_process::vars::LAUNCHING_SESSION)
+        {
             command.env_remove(key);
         }
         let output = command.output();

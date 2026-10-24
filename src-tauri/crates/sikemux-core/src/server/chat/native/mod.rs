@@ -86,8 +86,9 @@ fn shows_saved(provider: &str) -> bool {
 /// The models and efforts `launch`'s agent offers, asked of its CLI without a session.
 /// Only Claude and Codex tell them outside one; an ACP agent offers them in `session/new`.
 pub(crate) async fn read_options(launch: &ChatLaunch) -> Result<Value, String> {
-    let mut command =
-        tokio::process::Command::from(sikemux_process::user_environment::command(&launch.program));
+    let mut command = tokio::process::Command::from(
+        sikemux_process::user_environment::agent_command(&launch.program),
+    );
     command
         .envs(&launch.env)
         .envs(

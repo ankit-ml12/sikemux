@@ -441,7 +441,7 @@ async fn run_config_command(
 ) -> Result<(), String> {
     let output = tokio::time::timeout(
         CONFIG_TIMEOUT,
-        tokio::process::Command::from(sikemux_process::user_environment::command(program))
+        tokio::process::Command::from(sikemux_process::user_environment::agent_command(program))
             .args(args)
             .env(home.0, home.1)
             .kill_on_drop(true)

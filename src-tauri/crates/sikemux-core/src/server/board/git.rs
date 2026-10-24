@@ -282,7 +282,7 @@ pub(super) fn rebase(tree: &Path, base: &str) -> Result<bool, String> {
 /// Runs the project's check command in the worktree. Whether it passed, and
 /// the end of what it wrote.
 pub(super) fn check(cwd: &Path, command: &str) -> Result<(bool, String), String> {
-    let mut shell = sikemux_process::user_environment::command("/bin/sh");
+    let mut shell = sikemux_process::user_environment::agent_command("/bin/sh");
     shell.args(["-c", command]).current_dir(cwd);
     let output = sikemux_process::run(&mut shell, None, CHECK, OUTPUT_LIMIT, None)
         .map_err(|error| format!("the check did not run: {error}"))?;

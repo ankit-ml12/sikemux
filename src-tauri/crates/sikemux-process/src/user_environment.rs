@@ -74,6 +74,16 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
     command
 }
 
+/// [`command`] for an agent, an agent's CLI or a task: it inherits nothing of the agent session
+/// that started this process, so the caller sets the program's own Sikemux and account variables.
+pub fn agent_command(program: impl AsRef<OsStr>) -> Command {
+    let mut command = command(program);
+    for name in crate::vars::LAUNCHING_SESSION {
+        command.env_remove(name);
+    }
+    command
+}
+
 /// The git a bare `git` runs on the user's `PATH`, found once per `PATH`.
 pub fn git_program() -> Option<PathBuf> {
     static FOUND: Mutex<Option<(OsString, PathBuf)>> = Mutex::new(None);

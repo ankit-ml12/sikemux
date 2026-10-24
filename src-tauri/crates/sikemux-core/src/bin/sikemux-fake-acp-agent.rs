@@ -27,7 +27,9 @@
 //! file, the process reads who is signed in from it once, as it starts, and
 //! refuses every prompt while nobody was. With `FAKE_ACP_STRICT_LOAD` set, loading a session that never
 //! saved a turn fails the way Claude's adapter does. While the file
-//! `FAKE_ACP_START_GATE` names exists, the agent does not finish starting.
+//! `FAKE_ACP_START_GATE` names exists, the agent does not finish starting. With
+//! `FAKE_ACP_ENV_DIR` set, it writes the environment it was started with to
+//! `<pid>.env` there, one `NAME=value` a line.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -543,6 +545,15 @@ fn resets_at() -> Option<u64> {
 }
 
 fn main() {
+    if let Some(dir) = std::env::var_os("FAKE_ACP_ENV_DIR") {
+        let lines: String = std::env::vars()
+            .map(|(name, value)| format!("{name}={value}\n"))
+            .collect();
+        let _ = std::fs::write(
+            PathBuf::from(dir).join(format!("{}.env", std::process::id())),
+            lines,
+        );
+    }
     let signed_in = match std::env::var_os("FAKE_ACP_SIGN_IN") {
         Some(path) => std::fs::read_to_string(path).is_ok_and(|who| !who.trim().is_empty()),
         None => true,

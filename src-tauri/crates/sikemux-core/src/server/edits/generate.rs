@@ -64,7 +64,7 @@ fn bring_up_to_date(
     signers: &[Agent],
     key: Option<&iroh::SecretKey>,
 ) -> Result<Option<String>, String> {
-    let mut shell = sikemux_process::user_environment::command("/bin/sh");
+    let mut shell = sikemux_process::user_environment::agent_command("/bin/sh");
     shell.args(["-c", &generate.command]).current_dir(checkout);
     let ran = sikemux_process::run(&mut shell, None, GENERATE_WAIT, GENERATE_OUTPUT_LIMIT, None)
         .map_err(|error| format!("generate did not run: {error}"))?;

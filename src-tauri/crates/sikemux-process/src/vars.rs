@@ -29,3 +29,32 @@ pub const SHELL_INTEGRATION: &str = "SIKEMUX_SHELL_INTEGRATION";
 /// `path` in a sandbox's own environment: agent CLIs are looked up only on the PATH it was
 /// started with, never in the person's login shell or the folders installers use.
 pub const AGENT_SEARCH: &str = "SIKEMUX_AGENT_SEARCH";
+
+/// The Claude home of the agent session that started this process. No agent, terminal or task
+/// Sikemux starts inherits it; an account's profile sets its own again.
+pub const CLAUDE_HOME: &str = "CLAUDE_CONFIG_DIR";
+
+/// What the agent session that started this process set for its own programs, which no agent,
+/// terminal or task Sikemux starts may inherit: Claude Code's session markers, which turn a new
+/// agent's transcript saving off and hand it the session's messaging socket, its Claude home, and
+/// Sikemux's names for that session's agent, which Sikemux sets afresh for each program. Claude
+/// Code's own settings, such as `CLAUDE_CODE_USE_BEDROCK`, are the person's and go through.
+pub const LAUNCHING_SESSION: [&str; 17] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+    CLAUDE_HOME,
+    AGENT_ID,
+    AGENT_TYPE,
+    "SIKEMUX_AGENT_HOOKS",
+    TOOLS_AGENT_ID,
+    CLI_ENDPOINT,
+    "SIKEMUX_SKILLS_DIR",
+    REAL_GIT,
+];
