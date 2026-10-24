@@ -1287,6 +1287,7 @@ pub fn pane(
         .map(|row| (crate::theme::brand(&row.provider), row));
     ui::forget_spots(|| format!("desk-page-{agent}-"));
     ui::forget_spots(|| format!("desk-item-{agent}-"));
+    ui::forget_spots(|| format!("desk-close-{agent}-"));
     let mut front_pill = None;
     let mut pill_count = 0;
     let pages = match kind {
@@ -1330,6 +1331,7 @@ pub fn pane(
                 label,
                 shown,
                 at_work,
+                ui::spot(|| format!("desk-close-{agent}-{}", page.title)),
                 cx.listener(move |bench, _, _, cx| {
                     cx.stop_propagation();
                     bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
@@ -1392,6 +1394,7 @@ pub fn pane(
                 label.clone(),
                 shown,
                 None,
+                ui::spot(|| format!("desk-close-{agent}-{label}")),
                 cx.listener(move |bench, _, _, cx| {
                     cx.stop_propagation();
                     bench.take_off_desk(&close_agent, &close_item);
@@ -1432,7 +1435,15 @@ pub fn pane(
                 .pl(px(6.))
                 .child(pills)
                 .child(crate::track::sideways_scroller())
-                .children(ui::spot(|| format!("desk-tabs-{agent}"))),
+                .children(ui::spot(|| format!("desk-tabs-{agent}")).map(|spot| {
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(px(6.))
+                        .right_0()
+                        .child(spot)
+                })),
         )
         .when(kind == DeskKind::Pages, |head| {
             head.child(
@@ -1662,12 +1673,14 @@ fn stepped_edge(bounds: gpui_kit::Bounds<gpui_kit::Pixels>) -> gpui_kit::PathBui
 
 /// A tab of a desk's strip, as the Mac draws one: its mark and name on a faint fill, lifted
 /// while shown, ringed in the agent's colour while it works there, its × showing on hover.
+#[allow(clippy::too_many_arguments)]
 fn pill(
     id: SharedString,
     mark: AnyElement,
     label: String,
     shown: bool,
     at_work: Option<(Hsla, AnyElement)>,
+    close_spot: Option<AnyElement>,
     close: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
@@ -1716,10 +1729,12 @@ fn pill(
         .children(at_work.map(|(_, mark)| div().flex_none().child(mark)))
         .child(
             div()
+                .relative()
                 .flex_none()
                 .opacity(0.)
                 .group_hover(DESK_PILL, |close| close.opacity(1.))
-                .child(ui::close_button(close_id, "Close tab", close, cx)),
+                .child(ui::close_button(close_id, "Close tab", close, cx))
+                .children(close_spot),
         )
 }
 

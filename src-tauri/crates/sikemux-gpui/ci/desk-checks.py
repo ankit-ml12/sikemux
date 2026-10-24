@@ -468,11 +468,10 @@ def pills(run):
     return {name: frame for name, frame in spots.items() if name.startswith((f"desk-page-{run.agent}-", f"desk-item-{run.agent}-"))}
 
 
-def in_view(run, name, end=False):
+def in_view(run, name):
     """Scrolls the desk's tab strip with the wheel, as a person would, until the pill `name` shows
     whole, and returns where it is then. A pill scrolled out of view has no spot, and one partly
-    hidden at an edge reports only what shows, so its hidden edge is lined up with that one. With
-    `end`, a pill wider than the strip is scrolled on until its far end, where its × is, shows."""
+    hidden at an edge reports only what shows, so its hidden edge is lined up with that one."""
     strip = spot(run, f"desk-tabs-{run.agent}")
     pill = spot(run, name)
     if not strip:
@@ -483,14 +482,10 @@ def in_view(run, name, end=False):
     for _ in range(16):
         if pill:
             cut_left, cut_right = pill[0] < left, pill[0] + pill[2] > right
-            if not cut_right and (end or not cut_left):
+            if cut_left == cut_right:
                 return pill
-            if cut_left and cut_right and not end:
-                return pill
-            earlier = cut_left and not cut_right
-            shift = strip[0] + strip[2] - pill[0] - pill[2] if earlier else strip[0] - pill[0]
-            if cut_left and cut_right:
-                shift = -strip[2] / 2
+            earlier = cut_left
+            shift = strip[0] + strip[2] - pill[0] - pill[2] if cut_left else strip[0] - pill[0]
         else:
             shift = strip[2] if earlier else -strip[2]
         before = pills(run)
@@ -502,6 +497,25 @@ def in_view(run, name, end=False):
             earlier = not earlier
         pill = after.get(name)
     return pill
+
+
+def close_in_view(run, name):
+    """Scrolls the desk's tab strip later until the × of the pill `name` shows whole, as on a desk
+    narrower than its pill, and returns where the × is then."""
+    strip = spot(run, f"desk-tabs-{run.agent}")
+    close = spot(run, name)
+    if not strip:
+        return close
+    x, y = middle(strip)
+    for _ in range(8):
+        if close and close[0] + close[2] < strip[0] + strip[2] - 0.5:
+            return close
+        before = (run.state() or {}).get("spots")
+        run.drive(f"scroll {x:.0f} {y:.0f} 0 {-strip[2] / 2:.1f} 1", "wait 0.3")
+        close = until(lambda: spot(run, name), 1)
+        if not close and (run.state() or {}).get("spots") == before:
+            break
+    return close
 
 
 def middle(frame):
@@ -571,13 +585,15 @@ def df2(run):
     x, y = middle(item)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_file = (run.desk().get("front") or {}).get("file") == path
-    left, top, width, height = in_view(run, f"desk-item-{run.agent}-a.txt", end=True) or item
-    run.drive(f"move {left + width - 12:.0f} {top + height / 2:.0f}", "wait 0.3",
-              f"click {left + width - 12:.0f} {top + height / 2:.0f}", "wait 1")
+    close = close_in_view(run, f"desk-close-{run.agent}-a.txt")
+    if not close:
+        return run.report("DF2", False, f"the file pill's × never came into view (file pill {item}, desk {spot(run, f'pane-Desk-{run.agent}')})")
+    x, y = middle(close)
+    run.drive(f"move {x:.0f} {y:.0f}", "wait 0.3", f"click {x:.0f} {y:.0f}", "wait 1")
     desk = run.desk()
     back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
     run.report("DF2", on_page and on_file and back, f"page pill showed the page {on_page}; file pill showed the file {on_file}; its × brought the page back {back} "
-               f"(front {desk.get('front')}, items {desk.get('items')}; page pill {page}, file pill {item}, desk {spot(run, f'pane-Desk-{run.agent}')})")
+               f"(front {desk.get('front')}, items {desk.get('items')}; page pill {page}, file pill {item}, its × {close}, desk {spot(run, f'pane-Desk-{run.agent}')})")
 
 
 def dk7_keep(run):
