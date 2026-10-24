@@ -195,10 +195,7 @@ export function OpenAgentRow({
             ) : (
                 <button
                     className={`agent-row${project ? " two-line" : ""}${active ? " active" : ""}`}
-                    onClick={() => {
-                        fold?.toggle();
-                        onOpen();
-                    }}
+                    onClick={onOpen}
                     onDoubleClick={onDoubleClick}
                     onContextMenu={onContextMenu}>
                     {glyph}
