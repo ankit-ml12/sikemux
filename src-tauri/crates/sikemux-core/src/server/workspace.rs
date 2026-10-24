@@ -24,8 +24,8 @@ use crate::cli::protocol::is_tool_agent_id;
 use crate::launch::providers::{Helper, Providers, Wiring, ROUTED_ENV};
 use crate::launch::{skills, AgentSpec, PermissionMode};
 use crate::protocol::{
-    Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, LauncherInfo,
-    PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
+    Backdrop, BackdropImage, ChatAccount, ChatInfo, ChatLaunch, ChatState, ConfigPicker,
+    LauncherInfo, PinnedChat, ProjectInfo, RecentInfo, SpaceInfo, Workspace, WorkspaceAgent,
 };
 use crate::sessions::recent::{self as saved_chats, RecentProvider, RecentRef, RecentRequest};
 
@@ -154,12 +154,20 @@ struct Published {
     saved: Saved,
     launchers: Vec<Launcher>,
     recent: Vec<Recent>,
-    /// Each provider's `configOptions` from its last session, by provider.
-    config_options: BTreeMap<String, Value>,
+    /// What each provider's last session offered, by provider.
+    offered: BTreeMap<String, Offered>,
     palette: BTreeMap<String, String>,
     texture: bool,
     image: Option<BackdropImage>,
     buddies: Option<Buddies>,
+}
+
+/// A provider session's `configOptions`, with the model and effort pickers read
+/// from them once.
+struct Offered {
+    options: Value,
+    model: Option<ConfigPicker>,
+    effort: Option<ConfigPicker>,
 }
 
 /// The characters the app draws for its agents, so the notch and phones draw
@@ -1289,10 +1297,16 @@ impl Workspaces {
             .get("configOptions")
             .filter(|options| options.is_array())
         {
+            let (model, effort) = pickers::pickers(options);
+            let offered = Offered {
+                options: options.clone(),
+                model,
+                effort,
+            };
             self.published
                 .locked()
-                .config_options
-                .insert(provider.to_owned(), options.clone());
+                .offered
+                .insert(provider.to_owned(), offered);
         }
     }
 
@@ -1374,24 +1388,20 @@ impl Workspaces {
                 .launchers
                 .iter()
                 .map(|launcher| {
-                    let config_options = published
-                        .config_options
-                        .get(&launcher.agent.provider)
-                        .cloned()
-                        .unwrap_or(Value::Null);
-                    let (model, effort) = pickers::pickers(&config_options);
+                    let offered = published.offered.get(&launcher.agent.provider);
                     LauncherInfo {
                         id: launcher.id.clone(),
                         provider: launcher.agent.provider.clone(),
                         label: launcher.label.clone(),
                         permission_mode: launcher.permission_mode.clone(),
-                        config_options,
+                        config_options: offered
+                            .map_or(Value::Null, |offered| offered.options.clone()),
                         status: launcher
                             .status
                             .as_ref()
                             .map(|status| status.state().to_owned()),
-                        model,
-                        effort,
+                        model: offered.and_then(|offered| offered.model.clone()),
+                        effort: offered.and_then(|offered| offered.effort.clone()),
                     }
                 })
                 .collect(),

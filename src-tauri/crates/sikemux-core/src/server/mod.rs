@@ -812,7 +812,9 @@ impl Core {
                 client.send(frame.clone());
             }
         }
-        self.view_stale.notify_one();
+        if shown_in_device_view(event) {
+            self.view_stale.notify_one();
+        }
     }
 
     /// Ends the connections of one paired device, or of every one.
@@ -894,6 +896,30 @@ impl Core {
 
     fn begin_shutdown(&self) {
         self.shutdown.send_replace(true);
+    }
+}
+
+/// Whether the device view shows what `event` tells of. What it shows that
+/// no event tells of reaches it through [`Core::view_changed`].
+fn shown_in_device_view(event: &Event) -> bool {
+    match event {
+        Event::Exited { .. }
+        | Event::SshLink { .. }
+        | Event::AgentState(_)
+        | Event::Attention { .. }
+        | Event::AttentionCleared { .. }
+        | Event::ChatBegun { .. }
+        | Event::TerminalTitle { .. } => true,
+        Event::ShellMetadata(_)
+        | Event::TaskOutput { .. }
+        | Event::Chat { .. }
+        | Event::DeviceView { .. }
+        | Event::Remote { .. }
+        | Event::Network { .. }
+        | Event::FocusAgent { .. }
+        | Event::Notice { .. }
+        | Event::AccountDevice { .. }
+        | Event::Changed { .. } => false,
     }
 }
 

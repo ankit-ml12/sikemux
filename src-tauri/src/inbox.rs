@@ -4,9 +4,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use serde::Serialize;
 use serde_json::Value;
 use sikemux_core::client::CoreClient;
-use sikemux_core::protocol::{DeviceView, Request};
+use sikemux_core::protocol::{DeviceView, Request, Workspace};
 use sikemux_process::sync::Locked;
 use tauri::{AppHandle, Emitter};
 
@@ -35,19 +36,17 @@ pub(crate) async fn connected(client: &Arc<CoreClient>) {
 #[derive(Default)]
 pub(crate) struct LastView {
     inbox: Mutex<Value>,
-    workspace: Mutex<Value>,
+    workspace: Mutex<Option<Workspace>>,
 }
 
 impl LastView {
     pub(crate) fn changed(&self, app: &AppHandle, view: DeviceView) {
         emit_changed(app, &self.inbox, INBOX_EVENT, view.inbox);
-        if let Ok(workspace) = serde_json::to_value(view.workspace) {
-            emit_changed(app, &self.workspace, WORKSPACE_EVENT, workspace);
-        }
+        emit_changed(app, &self.workspace, WORKSPACE_EVENT, Some(view.workspace));
     }
 }
 
-fn emit_changed(app: &AppHandle, last: &Mutex<Value>, event: &str, value: Value) {
+fn emit_changed<T: PartialEq + Serialize>(app: &AppHandle, last: &Mutex<T>, event: &str, value: T) {
     let mut last = last.locked();
     if *last != value && app.emit_to("main", event, &value).is_ok() {
         *last = value;
