@@ -218,7 +218,7 @@ pub fn cli(
         config_path: config_path.map(str::to_owned),
         ..AgentSpec::new(provider)
     };
-    let mut command = Command::from(sikemux_process::user_environment::command(program));
+    let mut command = Command::from(sikemux_process::user_environment::agent_command(program));
     command
         .envs(login_shell_environment())
         .envs(spec.launch(program.to_path_buf(), providers).env)

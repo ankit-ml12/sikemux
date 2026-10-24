@@ -16,6 +16,21 @@ const signalExitCodes = {
 // A Sikemux terminal names its own app, project and agent in these variables.
 // Sikemux Dev started from one must not take them as its own.
 const KEPT_OVERRIDES = new Set(["SIKEMUX_CORE_SOCKET", "SIKEMUX_SIDECAR_PATH"]);
+// What a Claude Code session sets for the programs it runs, as LAUNCHING_SESSION in
+// sikemux-process's vars.rs names them: Sikemux Dev started from one would hand
+// them to every agent, turning transcript saving off and pointing at its Claude home.
+const CLAUDE_SESSION = [
+  "CLAUDECODE",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_EFFORT",
+  "CLAUDE_PID",
+  "CLAUDE_CONFIG_DIR",
+];
 
 export function withoutTerminalSession(env) {
   const clean = { ...env };
@@ -26,6 +41,7 @@ export function withoutTerminalSession(env) {
     )
       delete clean[key];
   }
+  for (const key of CLAUDE_SESSION) delete clean[key];
   if (clean.TERM_PROGRAM === "Sikemux") {
     delete clean.TERM_PROGRAM;
     delete clean.TERM_PROGRAM_VERSION;

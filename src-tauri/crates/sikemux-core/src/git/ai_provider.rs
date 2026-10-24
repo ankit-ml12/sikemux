@@ -361,7 +361,7 @@ fn run_codex_app_server_candidate(
         .canonicalize()
         .map_err(|error| format!("Could not resolve repository path: {error}"))?;
     let repo = repo.to_string_lossy().into_owned();
-    let mut command = sikemux_process::user_environment::command(bin);
+    let mut command = sikemux_process::user_environment::agent_command(bin);
     command
         .current_dir(&repo)
         .arg("app-server")
@@ -691,7 +691,7 @@ pub(super) fn run_ai_commit_model(
     };
     match provider.kind {
         AgentKind::Hermes => run_ai_candidate(provider, |bin| {
-            let mut command = sikemux_process::user_environment::command(bin);
+            let mut command = sikemux_process::user_environment::agent_command(bin);
             command
                 .current_dir(repo)
                 .args(["chat", "-Q", "-m", model, "-t", "safe", "-q", prompt]);
@@ -699,7 +699,7 @@ pub(super) fn run_ai_commit_model(
         }),
         AgentKind::Codex => run_codex_app_server(repo, model, prompt),
         AgentKind::Claude => run_ai_candidate(provider, |bin| {
-            let mut command = sikemux_process::user_environment::command(bin);
+            let mut command = sikemux_process::user_environment::agent_command(bin);
             command.current_dir(repo).args([
                 "--print",
                 "--model",

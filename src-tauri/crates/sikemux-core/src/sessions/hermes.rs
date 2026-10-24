@@ -90,7 +90,7 @@ pub(super) async fn rename_hermes_session(
     session_id: &str,
     name: &str,
 ) -> Result<(), String> {
-    let mut command = Command::from(sikemux_process::user_environment::command(executable));
+    let mut command = Command::from(sikemux_process::user_environment::agent_command(executable));
     apply_login_environment(&mut command);
     command
         .args(["sessions", "rename", "--", session_id, name])

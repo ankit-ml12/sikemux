@@ -75,7 +75,7 @@ async fn probe_agent_executable_with_timeout(
     executable: &Path,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut command = Command::from(user_environment::command(executable));
+    let mut command = Command::from(user_environment::agent_command(executable));
     command
         .args(def.probe)
         .envs(login_shell_environment())

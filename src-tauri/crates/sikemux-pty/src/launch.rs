@@ -177,6 +177,9 @@ pub fn configure_pty_environment(
     cli_endpoint: Option<&Path>,
     profile_env: &HashMap<String, String>,
 ) {
+    for key in vars::LAUNCHING_SESSION {
+        cmd.env_remove(key);
+    }
     for (key, value) in profile_env {
         if cmd.get_env(key).is_none() {
             cmd.env(key, value);
@@ -189,6 +192,12 @@ pub fn configure_pty_environment(
     }
 
     for key in OPTIONAL_PTY_ENV {
+        cmd.env_remove(key);
+    }
+    for key in vars::LAUNCHING_SESSION
+        .into_iter()
+        .filter(|key| *key != vars::CLAUDE_HOME)
+    {
         cmd.env_remove(key);
     }
 
@@ -364,7 +373,7 @@ mod tests {
             "CLAUDE_CODE_MESSAGING_TOKEN",
             "CLAUDE_CODE_MESSAGING_SOCKET",
         ] {
-            assert!(env(&command, marker).is_some());
+            assert_eq!(env(&command, marker), None, "{marker}");
         }
         assert_eq!(
             env(&command, "SIKEMUX_BIN_PATH"),
@@ -555,17 +564,13 @@ mod tests {
             "SIKEMUX_AGENT_ID",
             "SIKEMUX_PANE_ID",
             "SIKEMUX_SHELL_INTEGRATION",
-        ] {
-            assert_eq!(env(&command, scrubbed), None);
-        }
-        for key in [
             "CLAUDECODE",
             "CLAUDE_CODE_MESSAGING_SOCKET",
             "CLAUDE_CODE_MESSAGING_TOKEN",
-            "CODEX_THREAD_ID",
         ] {
-            assert!(env(&command, key).is_some());
+            assert_eq!(env(&command, scrubbed), None, "{scrubbed}");
         }
+        assert!(env(&command, "CODEX_THREAD_ID").is_some());
         assert_eq!(
             env(&command, "ANTHROPIC_API_KEY"),
             Some("sk-profile".into())
