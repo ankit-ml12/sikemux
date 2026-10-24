@@ -466,9 +466,7 @@ fn problem_menu(
     move |popup, window, cx| {
         let (go_to, at) = (this.clone(), at.clone());
         let message = message.clone();
-        let (sender, delivery) = (this.clone(), delivery.clone());
-        let choices = send_to::choices(this.read(cx));
-        popup
+        let popup = popup
             .item(
                 PopupMenuItem::new("Go to Problem")
                     .icon(Icon::Editor)
@@ -484,28 +482,15 @@ fn problem_menu(
                         cx.write_to_clipboard(ClipboardItem::new_string(message.to_string()))
                     }),
             )
-            .separator()
-            .submenu_with_icon(
-                Some(Icon::Message.into()),
-                "Send to Agent…",
-                window,
-                cx,
-                move |mut menu, _, _| {
-                    for choice in &choices {
-                        let (sender, delivery) = (sender.clone(), delivery.clone());
-                        let to = choice.to.clone();
-                        menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
-                            move |_, window, cx| {
-                                let (to, text) = (to.clone(), delivery.clone());
-                                sender.update(cx, |bench, cx| {
-                                    send_to::send(bench, to, async move { Some(text) }, window, cx)
-                                })
-                            },
-                        ));
-                    }
-                    menu
-                },
-            )
+            .separator();
+        send_to::submenu_with_text(
+            popup,
+            "Send to Agent…",
+            this.downgrade(),
+            delivery.clone(),
+            window,
+            cx,
+        )
     }
 }
 

@@ -98,13 +98,13 @@ pub fn send(
     .detach();
 }
 
-/// The "Send to Agent…" submenu under `label`: each of the project's choices takes `text`, or one
-/// row says there is no agent to take it.
+/// The "Send to Agent…" submenu under `label`: each of the project's choices hands who it names
+/// to `chosen`, or one row says there is no agent to take it.
 pub fn submenu(
     popup: PopupMenu,
     label: impl Into<SharedString>,
     bench: WeakEntity<Workbench>,
-    text: String,
+    chosen: impl Fn(&mut Workbench, Recipient, &mut Window, &mut Context<Workbench>) + Clone + 'static,
     window: &mut Window,
     cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
@@ -122,19 +122,38 @@ pub fn submenu(
                 return menu.item(PopupMenuItem::new("No agents available").disabled(true));
             }
             for choice in &choices {
-                let (bench, text, to) = (bench.clone(), text.clone(), choice.to.clone());
+                let (bench, chosen, to) = (bench.clone(), chosen.clone(), choice.to.clone());
                 menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
                     move |_, window, cx| {
-                        let (to, text) = (to.clone(), text.clone());
-                        let _ = bench.update(cx, |bench, cx| {
-                            send(bench, to, async move { Some(text) }, window, cx)
-                        });
+                        let _ = bench.update(cx, |bench, cx| chosen(bench, to.clone(), window, cx));
                     },
                 ));
             }
             menu
         },
     )
+}
+
+/// [`submenu`] for text known as the menu opens, which the chosen agent is sent.
+pub fn submenu_with_text(
+    popup: PopupMenu,
+    label: impl Into<SharedString>,
+    bench: WeakEntity<Workbench>,
+    text: String,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let chosen =
+        move |bench: &mut Workbench, to, window: &mut Window, cx: &mut Context<Workbench>| {
+            send(
+                bench,
+                to,
+                std::future::ready(Some(text.clone())),
+                window,
+                cx,
+            )
+        };
+    submenu(popup, label, bench, chosen, window, cx)
 }
 
 /// `text` in a fenced code block whose fence no run of backticks in it can close.

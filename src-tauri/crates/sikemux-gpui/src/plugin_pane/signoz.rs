@@ -2446,7 +2446,7 @@ impl Signoz {
             } else {
                 format!("Send {count} Lines to Agent…")
             };
-            popup = crate::send_to::submenu(popup, send, bench.clone(), delivery, window, cx);
+            popup = crate::send_to::submenu_with_text(popup, send, bench.clone(), delivery, window, cx);
             if some_picked {
                 let pane = pane.clone();
                 popup = popup.separator().item(
