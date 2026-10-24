@@ -348,45 +348,22 @@ fn line_menu(
         .map(|row| row.2.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    let choices = pull
-        .bench
-        .upgrade()
-        .map(|bench| send_to::choices(bench.read(cx)))
-        .unwrap_or_default();
-    let (bench, delivery) = (pull.bench.clone(), lines_delivery(pull, path, picked));
     let one = picked.len() == 1;
-    popup
-        .item(
-            PopupMenuItem::new(if one { "Copy Line" } else { "Copy Lines" })
-                .icon(Icon::Copy)
-                .on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-                }),
-        )
-        .submenu_with_icon(
-            Some(Icon::Message.into()),
-            if one {
-                "Send Line to Agent…"
-            } else {
-                "Send Lines to Agent…"
-            },
-            window,
-            cx,
-            move |mut menu, _, _| {
-                for choice in &choices {
-                    let (bench, text, to) = (bench.clone(), delivery.clone(), choice.to.clone());
-                    menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
-                        move |_, window, cx| {
-                            let (to, text) = (to.clone(), text.clone());
-                            let _ = bench.update(cx, |bench, cx| {
-                                send_to::send(bench, to, async move { Some(text) }, window, cx)
-                            });
-                        },
-                    ));
-                }
-                menu
-            },
-        )
+    let popup = popup.item(PopupMenuItem::new("Copy Lines").icon(Icon::Copy).on_click(
+        move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copied.clone())),
+    ));
+    send_to::submenu_with_text(
+        popup,
+        if one {
+            "Send Line to Agent…"
+        } else {
+            "Send Lines to Agent…"
+        },
+        pull.bench.clone(),
+        lines_delivery(pull, path, picked),
+        window,
+        cx,
+    )
 }
 
 /// Lines of a pull request as an agent is told them: where they are, then the lines as a diff.
