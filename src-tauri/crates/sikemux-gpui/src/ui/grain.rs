@@ -329,12 +329,16 @@ fn tick(window: &Window, cx: &mut Context<Workbench>) -> Option<Task<()>> {
 #[cfg(feature = "drive")]
 static SKY_PRESENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// How many skies are up and how many frames have moved them on, for the test bundle's driver.
+/// How many skies are up, how many frames have moved them on, and what the tick waits on, for
+/// the test bundle's driver.
 #[cfg(feature = "drive")]
-pub fn drive_state(cx: &App) -> serde_json::Value {
+pub fn drive_state(window: &Window, cx: &App) -> serde_json::Value {
     serde_json::json!({
         "skies": cx.try_global::<Grain>().map(|grain| grain.skies),
         "presents": SKY_PRESENTS.load(std::sync::atomic::Ordering::Relaxed),
+        "active": window.is_window_active(),
+        "visible": window.is_visible(),
+        "reduceMotion": cx.reduce_motion(),
     })
 }
 

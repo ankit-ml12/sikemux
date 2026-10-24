@@ -89,7 +89,8 @@ def main():
                 continue
             share = changed(*shots, frame, state.get("window", [1340, 881]))
             ok = rate >= FEWEST_PRESENTS and share >= FEWEST_CHANGED
-            results.append((name, ok, f"skies {last.get('skies')}; {rate:.0f} sky frames a second (at least {FEWEST_PRESENTS}); "
+            results.append((name, ok, f"skies {last.get('skies')}, window active {last.get('active')}, visible {last.get('visible')}, "
+                                      f"reduce motion {last.get('reduceMotion')}; {rate:.0f} sky frames a second (at least {FEWEST_PRESENTS}); "
                                       f"{share:.1%} of the sky's pixels changed in half a second (at least {FEWEST_CHANGED:.0%})"))
         finally:
             run.tear_down()
