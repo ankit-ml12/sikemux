@@ -606,8 +606,11 @@ fn project_tree(
     let agents = bench.agents_of(&project.id);
     let id = project.id.clone();
     let menu = project_menu(bench, project, cx);
+    let name = project.name.clone();
     let row = div()
         .id(SharedString::from(format!("project-menu-{}", project.id)))
+        .relative()
+        .children(ui::spot(|| format!("project-row-{name}")))
         .context_menu(menu)
         .child(crate::drag::project(
             Row::new(
