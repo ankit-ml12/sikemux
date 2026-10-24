@@ -332,6 +332,7 @@ impl RenderOnce for Composer {
                             Textarea::new(&self.draft)
                                 .appearance(false)
                                 .text_size(px(14.5 * self.text_scale))
+                                .text_color(t.text_primary)
                                 .when_some(on_paste, |draft, on_paste| {
                                     draft.on_paste(move |item, window, cx| {
                                         on_paste(item, window, cx)
