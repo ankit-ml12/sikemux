@@ -528,9 +528,12 @@ pub(crate) async fn account(ctx: &PluginContext) -> serde_json::Value {
             .collect(),
     };
     let mut json = serde_json::to_value(account).unwrap_or_default();
-    if let Some(listed) = json["profiles"].as_array_mut() {
-        for (profile, kind) in listed.iter_mut().zip(kinds) {
-            profile["kind"] = kind;
+    let listed = json
+        .get_mut("profiles")
+        .and_then(serde_json::Value::as_array_mut);
+    for (profile, kind) in listed.into_iter().flatten().zip(kinds) {
+        if let Some(profile) = profile.as_object_mut() {
+            profile.insert("kind".into(), kind);
         }
     }
     json
