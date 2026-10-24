@@ -14,7 +14,7 @@ use gpui_kit::{
 use gpui_transcript::{Markdown, Pen};
 use serde_json::{json, Value};
 use sikemux_wire::codehost::{
-    Annotation, Artifact, Job, JobSummary, OpenRun, Workflow, WorkflowFile,
+    Annotation, Artifact, Job, JobSummary, OpenRun, Run, Workflow, WorkflowFile,
 };
 
 use super::{outcome_word, Asking, HostArea, Said};
@@ -30,10 +30,28 @@ const SUMMARIES_FIRST: usize = 10;
 /// Annotations show for a job before the rest fold behind a count.
 const ANNOTATIONS_FIRST: usize = 3;
 
+/// A run whose menu is open, from its own page or from its row in the list.
+#[derive(Clone)]
+pub struct MoreRun {
+    id: String,
+    url: String,
+    number: u64,
+    finished: bool,
+}
+
+impl MoreRun {
+    pub fn of(run: &Run, finished: bool) -> Self {
+        Self {
+            id: run.id.clone(),
+            url: run.url.clone(),
+            number: run.run_number,
+            finished,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Extras {
-    /// The run's menu is open.
-    pub more: bool,
     annotations: HashMap<String, Vec<Annotation>>,
     asked_annotations: Vec<String>,
     all_annotations: bool,
@@ -375,30 +393,31 @@ impl HostArea {
     }
 }
 
-pub fn more_button(cx: &mut Context<HostArea>) -> impl IntoElement {
-    IconButton::new("run-more", Icon::More, "More")
+pub fn more_button(view: &OpenRun, cx: &mut Context<HostArea>) -> impl IntoElement {
+    more_of("run-more", MoreRun::of(&view.run, !view.unfinished), cx)
+}
+
+/// The button that opens `run`'s menu.
+pub fn more_of(
+    id: impl Into<gpui_kit::ElementId>,
+    run: MoreRun,
+    cx: &mut Context<HostArea>,
+) -> impl IntoElement {
+    IconButton::new(id, Icon::More, "More run actions")
         .small()
-        .on_click(cx.listener(|area, _, _, cx| {
-            if let Some(extras) = area.extras() {
-                extras.more = true;
-            }
+        .on_click(cx.listener(move |area, _, _, cx| {
+            cx.stop_propagation();
+            area.runs.more = Some(run.clone());
             cx.notify();
         }))
 }
 
-/// The run's menu: debugging, its link, and deleting its logs or itself.
-pub fn more_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choice> {
-    let Some(view) = area
-        .runs
-        .open
-        .as_ref()
-        .and_then(|opened| opened.view.as_ref()?.as_ref().ok())
-    else {
-        return Vec::new();
-    };
+/// A run's menu: debugging, its link, and deleting its logs or itself, the last three only
+/// for an account that may write CI.
+pub fn more_choices(area: &HostArea, run: &MoreRun, cx: &mut Context<HostArea>) -> Vec<Choice> {
     let ci = &area.host.ci;
-    let run = &view.run;
-    let finished = !view.unfinished;
+    let finished = run.finished;
+    let writable = area.can_write_ci();
     let host = super::host_label(&area.host.host);
     let this = cx.entity().downgrade();
     let act = move |then: super::Then| {
@@ -406,18 +425,16 @@ pub fn more_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choice> 
         move |_: &mut Window, cx: &mut App| {
             let then = then.clone();
             this.update(cx, |area, cx| {
-                if let Some(extras) = area.extras() {
-                    extras.more = false;
-                }
+                area.runs.more = None;
                 then(area, cx);
                 cx.notify();
             })
             .ok();
         }
     };
-    let (id, url, number) = (run.id.clone(), run.url.clone(), run.run_number);
+    let (id, url, number) = (run.id.clone(), run.url.clone(), run.number);
     let mut choices = Vec::new();
-    if ci.debug_logs && finished {
+    if writable && ci.debug_logs && finished {
         let id = id.clone();
         choices.push(Choice::new(
             None,
@@ -448,7 +465,7 @@ pub fn more_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choice> 
         format!("Open on {host}"),
         act(Rc::new(move |_, cx| cx.open_url(&url))),
     ));
-    if ci.delete_logs && finished {
+    if writable && ci.delete_logs && finished {
         let id = id.clone();
         choices.push(
             Choice::new(
@@ -479,7 +496,7 @@ pub fn more_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choice> 
             .destructive(),
         );
     }
-    if ci.delete_runs && finished {
+    if writable && ci.delete_runs && finished {
         choices.push(
             Choice::new(
                 None,
@@ -500,7 +517,9 @@ pub fn more_choices(area: &HostArea, cx: &mut Context<HostArea>) -> Vec<Choice> 
                                     "Could not delete the run".into(),
                                     cx,
                                 );
-                                area.runs.open = None;
+                                if area.runs.open.as_ref().is_some_and(|open| open.id == id) {
+                                    area.runs.open = None;
+                                }
                                 area.watch();
                             },
                         ),

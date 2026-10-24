@@ -53,6 +53,8 @@ pub struct Runs {
     pub picking: bool,
     /// A workflow being started by hand, while its sheet is open.
     pub dispatching: Option<super::run_actions::Dispatch>,
+    /// The run whose menu is open, from its page or its row.
+    pub more: Option<super::run_actions::MoreRun>,
 }
 
 pub struct Opened {
@@ -84,6 +86,7 @@ impl Runs {
             open: None,
             picking: false,
             dispatching: None,
+            more: None,
         }
     }
 }
@@ -459,6 +462,7 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                         Some(branch_chip(&numbers.join(" "), t.text_secondary, cx))
                     };
                     let id = run.id.clone();
+                    let more = super::run_actions::MoreRun::of(run, !listed.unfinished);
                     div()
                         .id(("run", index))
                         .px(px(12.))
@@ -537,6 +541,11 @@ pub fn list(area: &HostArea, cx: &mut Context<HostArea>) -> AnyElement {
                                         .child(took),
                                 ),
                         )
+                        .child(super::run_actions::more_of(
+                            ("run-row-more", index),
+                            more,
+                            cx,
+                        ))
                 }))
                 .children(pager)
                 .into_any_element()
@@ -643,7 +652,7 @@ fn side(area: &HostArea, found: &OpenRun, back: &str, cx: &mut Context<HostArea>
                 .tooltip(ui::tooltip(outcome_label(run.outcome)))
                 .child(took),
         )
-        .child(super::run_actions::more_button(cx));
+        .child(super::run_actions::more_button(found, cx));
     let busy = opened.busy;
     let actions = div()
         .px(px(10.))

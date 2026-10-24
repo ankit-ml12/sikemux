@@ -36,6 +36,8 @@ pub struct Status {
     /// The host can be signed in to through the browser.
     pub browser_sign_in: bool,
     pub can_write_workflows: Option<bool>,
+    /// GitLab's and Bitbucket's word for what GitHub calls writing workflows.
+    pub can_write_ci: Option<bool>,
     pub avatar_url: Option<String>,
 }
 
@@ -313,6 +315,15 @@ impl HostArea {
             }
         })
         .detach();
+    }
+
+    /// Whether the signed-in account may start, re-run, cancel and delete CI runs.
+    pub(crate) fn can_write_ci(&self) -> bool {
+        self.status
+            .as_ref()
+            .and_then(|status| status.as_ref().ok())
+            .and_then(|status| status.can_write_workflows.or(status.can_write_ci))
+            .unwrap_or(false)
     }
 
     fn start_sign_in(&mut self, adding: bool, window: &mut Window, cx: &mut Context<Self>) {

@@ -559,23 +559,18 @@ impl Render for HostArea {
                 .ok();
             })
         });
-        let more = self
-            .runs
-            .open
-            .as_ref()
-            .is_some_and(|opened| opened.extras.more)
-            .then(|| {
-                let no = cx.entity().downgrade();
-                ui::Choices::new("Run", run_actions::more_choices(self, cx)).on_no(move |_, cx| {
+        let more = self.runs.more.clone().map(|run| {
+            let no = cx.entity().downgrade();
+            ui::Choices::new("Run", run_actions::more_choices(self, &run, cx)).on_no(
+                move |_, cx| {
                     no.update(cx, |area, cx| {
-                        if let Some(opened) = &mut area.runs.open {
-                            opened.extras.more = false;
-                        }
+                        area.runs.more = None;
                         cx.notify();
                     })
                     .ok();
-                })
-            });
+                },
+            )
+        });
         let dispatch = run_actions::dispatch_sheet(self, cx);
         let menu = self.account_menu(cx);
         let note = shell::budget_note(self, cx);
