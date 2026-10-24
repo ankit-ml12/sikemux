@@ -3,11 +3,11 @@
 //! sees the same account and the same limits the agent does.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_process::sync::Locked;
 use sikemux_pty::user_shell::login_shell_environment;
@@ -127,23 +127,99 @@ pub async fn usage(
         Err(error) if refused(error) => REFUSED_TTL,
         Err(_) => FAILED_TTL,
     };
+    if let Ok(usage) = &lookup {
+        note_reading(&key, usage);
+    }
     usage_cache()
         .locked()
         .insert(key, (Instant::now(), ttl, lookup.clone()));
     lookup
 }
 
-/// The account's last reading, however old, without asking its CLI.
-pub(crate) fn last(provider: &str, config_path: Option<&str>) -> Option<Result<Usage, String>> {
-    usage_cache()
+/// An account's last good reading and when it was taken, in Unix milliseconds.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Reading {
+    pub read_at: u64,
+    pub usage: Value,
+}
+
+/// Each account's last good reading, kept in a file across restarts once the core names one,
+/// so the limits show at once after a restart.
+#[derive(Default)]
+struct Readings {
+    file: Option<PathBuf>,
+    by_account: BTreeMap<String, Reading>,
+}
+
+fn readings() -> &'static Mutex<Readings> {
+    static READINGS: OnceLock<Mutex<Readings>> = OnceLock::new();
+    READINGS.get_or_init(Default::default)
+}
+
+/// Keeps each account's last reading in `file`, taking up what an earlier core kept there.
+pub(crate) fn keep_readings_in(file: PathBuf) {
+    let kept = std::fs::read(&file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    *readings().locked() = Readings {
+        file: Some(file),
+        by_account: kept,
+    };
+}
+
+fn note_reading(key: &str, usage: &Usage) {
+    let Ok(usage) = serde_json::to_value(usage) else {
+        return;
+    };
+    let read_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64);
+    let mut readings = readings().locked();
+    readings
+        .by_account
+        .insert(key.to_owned(), Reading { read_at, usage });
+    save(&readings);
+}
+
+fn save(readings: &Readings) {
+    let Some(file) = &readings.file else {
+        return;
+    };
+    let written = serde_json::to_vec(&readings.by_account)
+        .map_err(std::io::Error::other)
+        .and_then(|bytes| sikemux_process::files::write_atomic(file, &bytes, true));
+    if let Err(error) = written {
+        eprintln!("sikemux core: could not keep the plan limits read: {error}");
+    }
+}
+
+/// The account's last good reading, however old, without asking its CLI.
+pub(crate) fn last_reading(provider: &str, config_path: Option<&str>) -> Option<Reading> {
+    readings()
         .locked()
+        .by_account
         .get(&key(provider, config_path))
-        .map(|(_, _, lookup)| lookup.clone())
+        .cloned()
+}
+
+/// Why the account's latest lookup failed, while that failure is remembered.
+pub(crate) fn last_problem(provider: &str, config_path: Option<&str>) -> Option<String> {
+    match usage_cache().locked().get(&key(provider, config_path)) {
+        Some((_, _, Err(problem))) => Some(problem.clone()),
+        _ => None,
+    }
 }
 
 /// Drops the usage remembered for one account, whose sign-in just changed.
 pub(crate) fn forget(provider: &str, config_path: Option<&str>) {
-    usage_cache().locked().remove(&key(provider, config_path));
+    let key = key(provider, config_path);
+    usage_cache().locked().remove(&key);
+    let mut readings = readings().locked();
+    if readings.by_account.remove(&key).is_some() {
+        save(&readings);
+    }
 }
 
 fn clean(value: &str) -> Option<String> {

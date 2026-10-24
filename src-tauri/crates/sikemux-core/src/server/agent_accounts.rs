@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::changed::Topic;
 use super::connection::blocking;
@@ -278,9 +279,11 @@ pub(crate) struct AccountUsage {
     /// The account as the agent picker names it.
     label: String,
     signed_in: bool,
-    /// Its plan and rolling windows, once its CLI reported them.
-    usage: Option<usage::Usage>,
-    /// Why there is no reading.
+    /// Its plan and rolling windows as its CLI last reported them, however long ago.
+    usage: Option<Value>,
+    /// When that reading was taken, in Unix milliseconds.
+    read_at: Option<u64>,
+    /// Why the latest lookup found no reading.
     problem: Option<String>,
 }
 
@@ -301,30 +304,28 @@ async fn usages_read(core: &Arc<Core>, ask: bool) -> Vec<AccountUsage> {
     let mut found = Vec::new();
     for account in core.workspaces.usage_accounts() {
         let config_path = account.config_path.as_deref();
-        let read = match ask {
-            false => usage::last(&account.provider, config_path),
+        let problem = match ask {
+            false => usage::last_problem(&account.provider, config_path),
             true => {
                 let asked = Account {
                     provider: account.provider.clone(),
                     config_path: account.config_path.clone(),
                 };
-                Some(match program(core, &asked).await {
+                let lookup = match program(core, &asked).await {
                     Ok(program) => usage::usage(&account.provider, &program, config_path).await,
                     Err(error) => Err(error.to_string()),
-                })
+                };
+                lookup.err()
             }
         };
-        let (usage, problem) = match read {
-            Some(Ok(usage)) => (Some(usage), None),
-            Some(Err(problem)) => (None, Some(problem)),
-            None => (None, None),
-        };
+        let reading = usage::last_reading(&account.provider, config_path);
         found.push(AccountUsage {
             launcher: account.launcher,
             provider: account.provider,
             label: account.label,
             signed_in: account.signed_in,
-            usage,
+            read_at: reading.as_ref().map(|reading| reading.read_at),
+            usage: reading.map(|reading| reading.usage),
             problem,
         });
     }

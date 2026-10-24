@@ -1381,6 +1381,7 @@ pub(crate) async fn run_core(
     core.chats.resets.arm_saved(&core);
     git::follow_projects(&core);
     if let Some(data_dir) = config.data_dir.as_deref() {
+        crate::agent_accounts::usage::keep_readings_in(data_dir.join("plan-limits.json"));
         crate::git_guard::shim::install(data_dir, config.cli_endpoint.as_deref());
         tokio::spawn(workspace::refresh_launchers(core.clone()));
         skill_library::watch_global(&core);
