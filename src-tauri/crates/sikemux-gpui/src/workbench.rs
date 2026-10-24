@@ -497,6 +497,7 @@ impl Workbench {
         let _ = asks.send(Ask::Follow("lsp"));
         let _ = asks.send(Ask::Follow("boards"));
         let _ = asks.send(Ask::Follow("agentSignIn"));
+        let _ = asks.send(Ask::Follow("agentStatus"));
         let _ = asks.send(Ask::Follow("agentAccounts"));
         cx.spawn(async move |this, cx| {
             let mut minute = chrono::Local::now().minute();
@@ -536,8 +537,9 @@ impl Workbench {
                 bench.dictated(heard, window, cx)
             }),
             cx.observe_window_activation(window, |bench, window, cx| {
-                if !window.is_window_active() {
-                    bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx));
+                match window.is_window_active() {
+                    true => crate::accounts::check_on_return(bench, cx),
+                    false => bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx)),
                 }
                 crate::terminal::keep_blinking(bench, cx);
             }),
@@ -1147,6 +1149,9 @@ impl Workbench {
                 }
                 if topic == "agentAccounts" {
                     crate::accounts::book_moved(self, cx);
+                }
+                if topic == "agentStatus" {
+                    crate::accounts::statuses_moved(self, cx);
                 }
                 if topic == "git" {
                     crate::editor::git_changed(self, paths.as_deref(), cx);

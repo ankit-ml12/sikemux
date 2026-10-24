@@ -3,6 +3,7 @@
 //! opens the browser on this host.
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::menu::PopupMenuItem;
@@ -65,7 +66,13 @@ pub struct Accounts {
     /// The chats that failed for want of an account's sign-in, by that account, to move onto
     /// it once it signs in.
     pub waiting_chats: HashMap<String, Vec<String>>,
+    /// When coming back to the app last had the core check every agent's sign-in.
+    checked_on_return: Option<Instant>,
 }
+
+/// Coming back to the app often comes in bursts, and each check starts the agents' CLIs, so it
+/// happens at most this often, as on the Mac.
+const CHECK_ON_RETURN_AT_MOST_EVERY: Duration = Duration::from_secs(30);
 
 /// An account's colour, which the person may have set as `#rrggbb`.
 pub fn accent(profile: &Profile) -> Hsla {
@@ -391,6 +398,42 @@ fn ask(
         })
         .detach();
     }
+}
+
+/// Asks every account who it is signed in as again, as the core says an agent's sign-in changed;
+/// what each said before shows until it answers.
+pub fn statuses_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    if !bench.accounts.asked_book {
+        return;
+    }
+    let accounts = bench
+        .accounts
+        .book
+        .iter()
+        .flat_map(|book| &book.profiles)
+        .map(key)
+        .collect();
+    ask(bench, accounts, cx);
+}
+
+/// Has the core check every agent's sign-in again as the person comes back to the app, since
+/// they may have signed in or out in a terminal, at most every half minute.
+pub fn check_on_return(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let now = Instant::now();
+    let recent = bench
+        .accounts
+        .checked_on_return
+        .is_some_and(|at| now.duration_since(at) < CHECK_ON_RETURN_AT_MOST_EVERY);
+    if recent || !bench.accounts.asked_book {
+        return;
+    }
+    bench.accounts.checked_on_return = Some(now);
+    let asks = bench.asks.clone();
+    cx.spawn(async move |bench, cx| {
+        let _ = core::request(&asks, "forgetAgentStatus", json!({})).await;
+        let _ = bench.update(cx, statuses_moved);
+    })
+    .detach();
 }
 
 /// Marks the account to be asked about again, since its sign-in changed.
