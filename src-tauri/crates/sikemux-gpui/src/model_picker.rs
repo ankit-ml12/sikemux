@@ -62,6 +62,8 @@ pub struct Picked {
     pub model_provider: Option<String>,
     /// The chat has started, so it keeps its agent, account and provider.
     pub locked: bool,
+    /// What the list says while the agent's models have not come yet.
+    pub pending: Option<&'static str>,
     pub set: Set,
     pub moving: Move,
     /// The core of the host the chat runs on, whose providers it can pay with.
@@ -568,10 +570,10 @@ impl Render for Menu {
                                 .py(px(8.))
                                 .text_size(crate::theme::ui_text(12.))
                                 .text_color(t.text_tertiary)
-                                .child(if none_offered {
-                                    "This agent offers no models to pick"
-                                } else {
-                                    "No matches"
+                                .child(match (none_offered, self.picked.pending) {
+                                    (true, Some(pending)) => pending,
+                                    (true, None) => "This agent offers no models to pick",
+                                    (false, _) => "No matches",
                                 }),
                         )
                     }),

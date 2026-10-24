@@ -660,6 +660,7 @@ fn auto_picker(
         model: models,
         model_provider: payer.map(str::to_owned),
         locked: false,
+        pending: None,
         set,
         moving,
         target: bench.read(cx).target(),

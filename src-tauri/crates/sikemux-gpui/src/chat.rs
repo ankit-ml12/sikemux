@@ -3007,12 +3007,22 @@ fn composer(
                 .ok();
             })
         };
+        let started = head.is_some_and(|head| head.connection == ChatConnection::Ready);
+        let read = matches!(
+            kind.and_then(|kind| kind["chat"].as_str()),
+            Some("claude" | "codex")
+        );
         let picked = crate::model_picker::Picked {
             provider: agent.provider.clone(),
             profile: saved.profile_id.clone(),
             model: model.clone(),
             model_provider: saved.model_provider.clone(),
             locked: !fresh,
+            pending: match (started, read) {
+                (true, _) => None,
+                (false, true) => Some("Reading the models…"),
+                (false, false) => Some("Models show once the agent starts"),
+            },
             set: pick.clone(),
             moving,
             target: bench.chat_target(&agent.id),
