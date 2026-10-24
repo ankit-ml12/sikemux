@@ -350,6 +350,17 @@ pub(crate) struct SessionChoice {
     pub project: PathBuf,
 }
 
+/// A recent chat's saved session, as its agent's CLI names it.
+pub(crate) struct RecentSession {
+    pub agent: AgentKind,
+    pub cwd: String,
+    pub session_id: String,
+    /// The CLI the launcher that found it runs.
+    pub program: Option<String>,
+    /// The sign-in it was saved under; the agent's default when absent.
+    pub config_path: Option<String>,
+}
+
 /// What a device asked of a recent chat it takes up again.
 pub(crate) struct ResumeChoice {
     pub recent: String,
@@ -713,6 +724,32 @@ impl Workspaces {
             pins.push(chat);
         }
         self.set_pinned(pins)
+    }
+
+    /// The saved session of the recent chat named `recent`, with the program and sign-in of
+    /// the launcher that found it.
+    pub(crate) fn recent_session(&self, recent: &str) -> CoreResult<RecentSession> {
+        let published = self.published.locked();
+        let chat = published
+            .recent
+            .iter()
+            .find(|chat| recent_id(chat) == recent)
+            .ok_or("that chat is not among the recent ones")?;
+        let agent = AgentKind::from_name(&chat.provider)
+            .ok_or_else(|| CoreError::from(format!("{} keeps no saved chats", chat.provider)))?;
+        let launcher = published
+            .launchers
+            .iter()
+            .find(|launcher| launcher.id == chat.launcher);
+        Ok(RecentSession {
+            agent,
+            cwd: chat.cwd.to_string_lossy().into_owned(),
+            session_id: chat.session_id.clone(),
+            program: launcher
+                .and_then(|launcher| launcher.program.as_ref())
+                .map(|program| program.to_string_lossy().into_owned()),
+            config_path: launcher.and_then(|launcher| launcher.agent.config_path.clone()),
+        })
     }
 
     /// Keeps the mode agents start in, and says whether it changed.

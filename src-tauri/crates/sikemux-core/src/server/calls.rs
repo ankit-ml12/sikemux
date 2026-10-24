@@ -181,6 +181,8 @@ calls! { core, client, params;
     "recentSessions": Full, any_program => answer(saved_sessions::recent(parse(params)?).await?),
     "renameSession": Person => answer(saved_sessions::rename(parse(params)?).await?),
     "deleteSession": Person => answer(saved_sessions::delete(parse(params)?).await?),
+    "renameRecent": Person => answer(saved_sessions::rename_recent(&core, parse(params)?).await?),
+    "deleteRecent": Person => answer(saved_sessions::delete_recent(&core, parse(params)?).await?),
     "relocateSession": Person => answer(saved_sessions::relocate(parse(params)?).await?),
     "skillsOverview": Full, any_program => skill_library::overview(&core).await,
     "skillsAdded": Full, any_program => skill_library::added(&core).await,
