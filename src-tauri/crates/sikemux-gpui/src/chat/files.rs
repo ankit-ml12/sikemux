@@ -422,10 +422,14 @@ fn menu(
         }
         if file {
             let (found, bench, on) = (found.clone(), bench.clone(), on.clone());
+            let (label, glyph) = match on.here {
+                true => ("Open in Editor", Icon::Editor),
+                false => ("Open", Icon::File),
+            };
             popup = popup
                 .item(
-                    PopupMenuItem::new("Open in Editor")
-                        .icon(Icon::File)
+                    PopupMenuItem::new(label)
+                        .icon(glyph)
                         .on_click(move |_, _, cx| open(&found, kind, &on, &bench, cx)),
                 )
                 .separator();
