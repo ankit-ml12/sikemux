@@ -861,7 +861,7 @@ pub fn dock(
             '+' if files.project.is_none() => {
                 Some(DockMenu::empty("Open a project to pick its files"))
             }
-            '+' if files.files.is_empty() => Some(DockMenu::loading()),
+            '+' if !files.listed() => Some(DockMenu::loading()),
             '+' => Some(DockMenu::empty("Nothing in the project matches")),
             '#' | '!' => Some(
                 menu.empty

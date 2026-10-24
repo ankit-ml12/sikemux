@@ -69,6 +69,11 @@ impl ProjectFiles {
         core.answer("projectFiles", "projectFiles", params);
     }
 
+    /// Whether the core has listed the project's files, even as none.
+    pub fn listed(&self) -> bool {
+        self.scan.is_some()
+    }
+
     /// Takes the core's answer in, telling whether the list changed.
     pub fn answered(&mut self, answer: &Value) -> bool {
         if self.asked.take() != self.project {
