@@ -372,7 +372,8 @@ impl Panel for DeployChip {
         let pane = cx.weak_entity();
         let menu_target = target.clone();
         let repo = project.clone();
-        let checkout = repo_branch(host, cx);
+        let read = repo_read(host, cx);
+        let checkout = read.clone().flatten();
         KitButton::new("rundeck-deploy-chip")
             .ghost()
             .compact()
@@ -427,11 +428,13 @@ impl Panel for DeployChip {
                     name: active.name.clone(),
                     group: active.group.clone(),
                 };
-                let deploy_label = match (target.runs_branch, &checkout) {
+                let deploy_label = match (target.runs_branch, &read) {
                     (false, _) => format!("Run on {}", active.place),
-                    (true, Some(branch)) => format!("Deploy {branch}"),
-                    (true, None) => "Deploy".to_owned(),
+                    (true, None) => "Deploy (reading the branch…)".to_owned(),
+                    (true, Some(None)) => "Deploy (detached HEAD)".to_owned(),
+                    (true, Some(Some(branch))) => format!("Deploy {branch}"),
                 };
+                let reading = target.runs_branch && read.is_none();
                 let at = place_key(
                     &job,
                     Some(checkout.as_deref().filter(|_| target.runs_branch)),
@@ -440,6 +443,7 @@ impl Panel for DeployChip {
                 popup = popup.item(
                     PopupMenuItem::new(deploy_label)
                         .icon(Icon::Rundeck)
+                        .disabled(reading)
                         .on_click(move |_, _, cx| {
                             let _ = opener
                                 .update(cx, |pane, cx| pane.host.open_pane_at(at.clone(), cx));
@@ -480,14 +484,17 @@ impl Panel for DeployChip {
     }
 }
 
-/// The branch checked out in the project in front, as the git pane last read it.
-fn repo_branch(host: &Host, cx: &App) -> Option<String> {
+/// The branch checked out in the project in front, as the git pane last read it: none until it
+/// has, and a read without a branch while HEAD is detached.
+fn repo_read(host: &Host, cx: &App) -> Option<Option<String>> {
     let bench = host.bench().upgrade()?;
     let overview = bench.read(cx).read("git-overview")?;
-    overview["status"]["branch"]
-        .as_str()
-        .filter(|branch| !branch.is_empty())
-        .map(str::to_owned)
+    Some(
+        overview["status"]["branch"]
+            .as_str()
+            .filter(|branch| !branch.is_empty())
+            .map(str::to_owned),
+    )
 }
 
 // ---- the projects' tree ------------------------------------------------------
