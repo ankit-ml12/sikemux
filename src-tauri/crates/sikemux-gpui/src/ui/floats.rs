@@ -241,7 +241,7 @@ const GROUP: &str = "menu-item";
 
 /// A right-click menu's choice in the danger colour, for one that deletes or discards, as
 /// `MenuItem::danger` draws a float's. GPUI Kit's own items have no such colour, so its label
-/// is drawn here and keeps the danger colour while the item is hovered.
+/// is drawn here, named for accessibility, and keeps the danger colour while the item is hovered.
 pub fn danger_popup_item(
     label: impl Into<SharedString>,
     icon: Option<Icon>,
@@ -250,7 +250,14 @@ pub fn danger_popup_item(
     let t = Tokens::get(cx);
     let ink = crate::theme::mix(t.danger, t.text_secondary, 0.85);
     let label = label.into();
-    let item = PopupMenuItem::element(move |_, _| div().text_color(ink).child(label.clone()));
+    let item = PopupMenuItem::element(move |_, _| {
+        div()
+            .id(ElementId::Name(label.clone()))
+            .aria_label(label.clone())
+            .text_color(ink)
+            .child(label.clone())
+            .test_support()
+    });
     match icon {
         Some(glyph) => item.icon(gpui_kit::component::Icon::from(glyph).text_color(ink)),
         None => item,
