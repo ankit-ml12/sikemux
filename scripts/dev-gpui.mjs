@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -32,16 +33,20 @@ const appBinary = join(
   "sikemux",
 );
 const bundle = join(debug, "Sikemux Dev.app");
-const macos = join(bundle, "Contents", "MacOS");
-const ownCore = join(macos, "sikemux-host");
+const contents = join(bundle, "Contents");
+const macos = join(contents, "MacOS");
+const coreApp = join(contents, "Helpers", "Sikemux Core.app");
+const ownCore = join(coreApp, "Contents", "MacOS", "sikemux-host");
+// Where a release links its core beside the app, and where an older make dev ran it from.
+const coreLink = join(macos, "sikemux-host");
+const notchApp = join(contents, "Helpers", "Sikemux Notch.app");
 const socket = join(
   process.env.HOME ?? homedir(),
   ".config",
   "sikemux",
   "core.dev.sock",
 );
-const helpers = ["sikemux-host", "sikemux-voice", "sikemux-sim"];
-const notch = "Sikemux Notch Dev.app";
+const appHelpers = ["sikemux-voice", "sikemux-sim"];
 
 function fail(message) {
   console.error(message);
@@ -93,26 +98,58 @@ function icon(resources) {
   rmSync(iconset, { recursive: true, force: true });
 }
 
-// The app finds its core, and the core its notch, voice and simulator helpers, beside its own
-// binary, and the core trusts the app beside it, so all of them sit together in Contents/MacOS.
+function built(name) {
+  const path = join(debug, name);
+  if (!existsSync(path)) fail(`${path} is missing; run pnpm sidecar:dev`);
+  return path;
+}
+
+// Laid out as a release is, with the core and the notch each in an app of its own under
+// Contents/Helpers: the core tells the window from an agent's `sikemux` command by the bundle
+// each runs from, which would be the same bundle if the core sat beside the window.
 function assemble() {
   const dev = JSON.parse(
     readFileSync(join(root, "src-tauri", "tauri.dev.conf.json"), "utf8"),
   );
-  const resources = join(bundle, "Contents", "Resources");
+  const resources = join(contents, "Resources");
   mkdirSync(macos, { recursive: true });
   mkdirSync(resources, { recursive: true });
+  mkdirSync(dirname(ownCore), { recursive: true });
   copyFileSync(appBinary, join(macos, "sikemux"), constants.COPYFILE_FICLONE);
-  for (const helper of helpers) {
-    const source = join(debug, helper);
-    if (!existsSync(source)) fail(`${source} is missing; run pnpm sidecar:dev`);
-    copyFileSync(source, join(macos, helper), constants.COPYFILE_FICLONE);
-  }
-  rmSync(join(macos, notch), { recursive: true, force: true });
-  run("cp", ["-cR", join(debug, notch), join(macos, notch)]);
+  for (const helper of appHelpers)
+    copyFileSync(
+      built(helper),
+      join(macos, helper),
+      constants.COPYFILE_FICLONE,
+    );
+  copyFileSync(built("sikemux-host"), ownCore, constants.COPYFILE_FICLONE);
+  writeFileSync(
+    join(coreApp, "Contents", "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Sikemux Core</string>
+  <key>CFBundleIdentifier</key><string>${dev.identifier}.core</string>
+  <key>CFBundleExecutable</key><string>sikemux-host</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+`,
+  );
+  rmSync(coreLink, { force: true });
+  symlinkSync(
+    "../Helpers/Sikemux Core.app/Contents/MacOS/sikemux-host",
+    coreLink,
+  );
+  rmSync(join(macos, "Sikemux Notch Dev.app"), {
+    recursive: true,
+    force: true,
+  });
+  rmSync(notchApp, { recursive: true, force: true });
+  run("cp", ["-cR", built("Sikemux Notch Dev.app"), notchApp]);
   icon(resources);
   writeFileSync(
-    join(bundle, "Contents", "Info.plist"),
+    join(contents, "Info.plist"),
     `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -139,10 +176,12 @@ function executable(pid) {
 // Another build's core on the dev socket would be asked to replace itself with this one.
 function otherCore() {
   if (!existsSync(socket)) return null;
-  const holders = spawnSync("lsof", ["-t", socket], { encoding: "utf8" });
-  for (const pid of holders.stdout.split("\n").filter(Boolean)) {
+  const holders = spawnSync("/usr/sbin/lsof", ["-t", socket], {
+    encoding: "utf8",
+  });
+  for (const pid of (holders.stdout ?? "").split("\n").filter(Boolean)) {
     const path = executable(pid);
-    if (path.endsWith("/sikemux-host") && path !== ownCore)
+    if (path.endsWith("/sikemux-host") && path !== ownCore && path !== coreLink)
       return { pid, path };
   }
   return null;
