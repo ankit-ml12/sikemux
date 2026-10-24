@@ -18,6 +18,9 @@ final class NotchStore {
     @ObservationIgnored let options: Options
     @ObservationIgnored private var link: CoreLink?
     @ObservationIgnored private var startedCore = false
+    /// The core said it was stopping on purpose, so the island waits for one to start rather
+    /// than starting it again; a core that dies without a word is started.
+    @ObservationIgnored private var coreStopped = false
     @ObservationIgnored private var waiter: CoreWaiter?
     @ObservationIgnored private var questions: [AgentQuestion] = []
     @ObservationIgnored private var heard = false
@@ -63,6 +66,7 @@ final class NotchStore {
                 }
                 link?.request(["op": "watchView"])
             }
+            self?.coreStopped = false
             self?.readSettings()
             link?.request(["op": "remoteStatus"]) { result in
                 if case .success(let response) = result { self?.receiveRemote(response["status"]) }
@@ -83,7 +87,7 @@ final class NotchStore {
             waiter = nil
             return
         }
-        if !startedCore {
+        if !startedCore, !coreStopped {
             startedCore = true
             CoreStarter.start(options) { [weak self] in self?.connect() }
         }
@@ -99,6 +103,10 @@ final class NotchStore {
     }
 
     private func receive(_ event: [String: Any]) {
+        if event["kind"] as? String == "changed", event["topic"] as? String == "stopping" {
+            coreStopped = true
+            return
+        }
         if event["kind"] as? String == "changed", event["topic"] as? String == "preferences" {
             readSettings()
             return
