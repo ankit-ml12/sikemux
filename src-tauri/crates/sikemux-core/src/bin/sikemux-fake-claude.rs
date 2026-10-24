@@ -19,6 +19,10 @@
 //!
 //! A model change is answered the way Claude Code does, with a message saying
 //! so. `FAKE_CLAUDE_SETTINGS_MODEL` names the model its settings choose.
+//!
+//! An account is its `CLAUDE_CONFIG_DIR`: `auth status --json` prints its
+//! `fake-account.json`, or a signed-out status when there is none, and a usage
+//! request answers with its `fake-usage.json`, or no limits.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -381,6 +385,8 @@ impl Claude {
             Some("get_settings") => json!({
                 "effective": { "model": std::env::var("FAKE_CLAUDE_SETTINGS_MODEL").ok() },
             }),
+            Some("get_usage") => account_file("fake-usage.json")
+                .unwrap_or_else(|| json!({ "rate_limits_available": false })),
             _ => json!({}),
         };
         self.send(json!({
@@ -390,8 +396,20 @@ impl Claude {
     }
 }
 
+/// A file of the account the process runs as, from its config folder.
+fn account_file(name: &str) -> Option<Value> {
+    let folder = PathBuf::from(std::env::var_os("CLAUDE_CONFIG_DIR")?);
+    serde_json::from_slice(&std::fs::read(folder.join(name)).ok()?).ok()
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args[1..] == ["auth", "status", "--json"] {
+        let status =
+            account_file("fake-account.json").unwrap_or_else(|| json!({ "loggedIn": false }));
+        println!("{status}");
+        return;
+    }
     let resume = flag(&args, "resume");
     let session_id = resume
         .clone()
