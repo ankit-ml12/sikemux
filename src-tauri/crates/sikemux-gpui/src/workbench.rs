@@ -345,6 +345,9 @@ impl Render for DraggedRail {
     }
 }
 
+/// How often the Limits panel reads the plan limits again while it shows, as the Mac app does.
+const LIMITS_EVERY: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RailPage {
     Agents,
@@ -512,6 +515,18 @@ impl Workbench {
             }
         })
         .detach();
+        cx.spawn_in(window, async move |this, cx| loop {
+            cx.background_executor().timer(LIMITS_EVERY).await;
+            let read = this.update_in(cx, |bench, window, _| {
+                if window.is_visible() && bench.limits_shown() {
+                    bench.read_usage();
+                }
+            });
+            if read.is_err() {
+                break;
+            }
+        })
+        .detach();
         let focus = cx.focus_handle();
         let voice = cx.new(|_| crate::voice::Dictation::default());
         let voice_heard = [
@@ -674,8 +689,18 @@ impl Workbench {
         bench
     }
 
-    /// Reads the plan limits again, as only the person asks: each lookup reaches the agent's
-    /// service on their sign-in.
+    /// Whether the Limits panel is on screen: the tab rail open on its agents page, for one
+    /// agent.
+    fn limits_shown(&self) -> bool {
+        self.tab_rail_open
+            && self.rail_page == RailPage::Agents
+            && !self.all_harnesses
+            && self.launcher().is_some()
+    }
+
+    /// Reads the plan limits again: each lookup reaches the agent's service on the person's
+    /// sign-in, so it runs as the app starts, every few minutes while the Limits panel shows,
+    /// and when the person asks.
     pub fn read_usage(&self) {
         self.call("readAgentUsages", json!({}));
     }
@@ -693,6 +718,7 @@ impl Workbench {
                 // The app opens on this host, as the Mac's does, whichever host was last in front.
                 if self.version.is_empty() {
                     self.call("chooseHost", json!({ "host": "this" }));
+                    self.read_usage();
                 }
                 self.version = version;
                 self.lost = None;

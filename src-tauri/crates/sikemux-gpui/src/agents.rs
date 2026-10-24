@@ -1088,6 +1088,11 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                             .text_color(t.text_tertiary),
                     )
                     .child(div().flex_1().h(px(1.)).bg(t.border))
+                    .children(account["readAt"].as_u64().map(|read_at| {
+                        ui::text(age(read_at), 10.5, FontWeight::NORMAL)
+                            .text_color(t.text_tertiary)
+                            .font_features(crate::theme::tabular())
+                    }))
                     .child(account_menu(bench, &provider, name, cx))
                     .child(
                         IconButton::new("refresh-limits", Icon::Refresh, refresh)
