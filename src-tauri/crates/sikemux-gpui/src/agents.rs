@@ -787,7 +787,6 @@ fn agent_row(
     let chosen = bench.agent().is_some_and(|front| front.id == agent.id);
     let id = agent.id.clone();
     let menu = AgentMenu::new(bench, &agent.id, cx);
-    let leads = fold.is_some();
     let mark = match &fold {
         Some(fold) => div()
             .relative()
@@ -799,6 +798,7 @@ fn agent_row(
             )
             .child(
                 div()
+                    .id(SharedString::from(format!("team-fold:{}", agent.id)))
                     .absolute()
                     .inset_0()
                     .flex()
@@ -806,6 +806,13 @@ fn agent_row(
                     .justify_center()
                     .opacity(0.)
                     .group_hover(ui::ROW, |chevron| chevron.opacity(1.))
+                    .on_click(cx.listener({
+                        let id = agent.id.clone();
+                        move |bench, _, _, cx| {
+                            cx.stop_propagation();
+                            bench.fold_team(&id, cx);
+                        }
+                    }))
                     .child(motion::turn(
                         format!("team-chevron:{}", agent.id),
                         motion::fold_angle(fold.open),
@@ -842,12 +849,7 @@ fn agent_row(
     }))
     .on_click(cx.listener({
         let id = id.clone();
-        move |bench, _, _, cx| {
-            if leads {
-                bench.fold_team(&id, cx);
-            }
-            bench.open_agent(&id);
-        }
+        move |bench, _, _, _| bench.open_agent(&id)
     }))
     .children(
         agent
