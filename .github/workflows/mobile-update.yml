@@ -48,6 +48,7 @@ on:
       - "src/lib/guards.ts"
       - "src/lib/imagePaths.ts"
       - "src/lib/initials.ts"
+      - "src/lib/keepUnchanged.ts"
       - "src/lib/paths.ts"
       - "src/lib/platform.ts"
       - "src/lib/urls.ts"
