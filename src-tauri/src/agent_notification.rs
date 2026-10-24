@@ -107,8 +107,22 @@ mod macos {
         ns_string!("agent")
     }
 
+    /// macOS gives an app with no bundle, such as a test run, no notification center.
+    fn center() -> Option<Retained<NSUserNotificationCenter>> {
+        // SAFETY: the class method takes nothing and returns the shared center or nil.
+        unsafe {
+            msg_send![
+                NSUserNotificationCenter::class(),
+                defaultUserNotificationCenter
+            ]
+        }
+    }
+
     pub(super) fn post(app: &AppHandle, title: &str, body: &str, agent_id: Option<&str>) {
         let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(center) = center() else {
             return;
         };
         static LISTENING: Once = Once::new();
@@ -123,9 +137,9 @@ mod macos {
             // SAFETY: the handler is never released, so it outlives the center's unretained
             // reference to it.
             unsafe {
-                NSUserNotificationCenter::defaultUserNotificationCenter().setDelegate(Some(
-                    ProtocolObject::from_ref(&*Retained::into_raw(handler)),
-                ));
+                center.setDelegate(Some(ProtocolObject::from_ref(&*Retained::into_raw(
+                    handler,
+                ))));
             }
         });
 
@@ -139,8 +153,7 @@ mod macos {
             // SAFETY: the dictionary holds only strings, which the notification can store.
             unsafe { notification.setUserInfo(Some(&info)) };
         }
-        NSUserNotificationCenter::defaultUserNotificationCenter()
-            .deliverNotification(&notification);
+        center.deliverNotification(&notification);
     }
 
     type BundleIdentifier = unsafe extern "C-unwind" fn(&NSBundle, Sel) -> *const NSString;
