@@ -369,7 +369,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
             let approval = bench.approvals.get(&Some(key.clone())).copied();
             with_menu(
                 menu_id,
-                move |popup, _, _| {
+                move |popup, _, cx| {
                     let bench = bench_entity.clone();
                     let mut popup = popup;
                     if let Some(item) = set_up_item(bench.clone(), false) {
@@ -413,8 +413,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                             }
                         }))
                         .item(
-                            PopupMenuItem::new("Remove from account")
-                                .icon(Icon::Trash)
+                            ui::danger_popup_item("Remove from account", Some(Icon::Trash), cx)
                                 .on_click({
                                     let (bench, key) = (bench.clone(), key.clone());
                                     move |_, _, cx| {
@@ -1100,9 +1099,12 @@ fn space_menu(
             bench.new_space(None, cx)
         }))
         .separator()
-        .item(item("Delete Space…", Icon::Trash, |bench, space, cx| {
-            bench.delete_space(space, cx)
-        }))
+        .item(
+            ui::danger_popup_item("Delete Space…", Some(Icon::Trash), cx).on_click({
+                let (bench, space) = (bench.clone(), space.to_owned());
+                move |_, _, cx| bench.update(cx, |bench, cx| bench.delete_space(space.clone(), cx))
+            }),
+        )
 }
 
 /// Who the host is signed in as, or the card that signs it in.
