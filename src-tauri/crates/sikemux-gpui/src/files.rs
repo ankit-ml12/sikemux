@@ -503,11 +503,15 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
     let strip = bench
         .strip()
         .filter(|strip| matches!(strip, Strip::Project(_)))?;
-    let open: Vec<(String, PathBuf)> = bench
+    let open: Vec<(String, PathBuf, _)> = bench
         .tabs(&strip)
         .iter()
         .filter_map(|tab| match crate::tabs::first_view(&tab.pane)? {
-            (PaneKind::Files, target) => Some((tab.id.clone(), PathBuf::from(target))),
+            (PaneKind::Files, target) => Some((
+                tab.id.clone(),
+                PathBuf::from(target),
+                crate::tabs::tab_menu(bench, &strip, tab, cx),
+            )),
             _ => None,
         })
         .collect();
@@ -517,7 +521,7 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
     let t = Tokens::get(cx).clone();
     let front = bench.front_file();
     let root = bench.files.root.clone();
-    let rows = open.into_iter().map(|(tab, path)| {
+    let rows = open.into_iter().map(|(tab, path, menu)| {
         let active = front.as_deref() == Some(path.as_path());
         let name = path
             .file_name()
@@ -530,7 +534,8 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
             .map(|dir| dir.display().to_string())
             .filter(|dir| !dir.is_empty());
         let strip = strip.clone();
-        BaseButton::new(SharedString::from(format!("open-file-{tab}")))
+        let menu_id = SharedString::from(format!("open-file-menu-{tab}"));
+        let row = BaseButton::new(SharedString::from(format!("open-file-{tab}")))
             .accessibility_label(SharedString::from(name.clone()))
             .w_full()
             .h(px(ROW_HEIGHT))
@@ -561,7 +566,11 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
                     .truncate()
                     .text_color(t.text_tertiary)
                     .child(folder)
-            }))
+            }));
+        div()
+            .id(menu_id)
+            .context_menu(menu)
+            .child(row)
             .into_any_element()
     });
     let rows: Vec<AnyElement> = rows.collect();

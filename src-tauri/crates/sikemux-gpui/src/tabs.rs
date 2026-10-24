@@ -1044,6 +1044,8 @@ struct TabMenu {
     label: SharedString,
     /// The other tabs Close Others closes, which leaves agents' tabs open.
     others: Vec<String>,
+    /// The strip's file tabs in order, each with whether it is saved, for a file tab's closes.
+    files: Vec<(String, bool)>,
 }
 
 impl TabMenu {
@@ -1084,6 +1086,19 @@ impl TabMenu {
                 .filter(|other| !matches!(first_view(&other.pane), Some((PaneKind::Agent, _))))
                 .map(|other| other.id.clone())
                 .collect(),
+            files: bench
+                .tabs(strip)
+                .iter()
+                .filter_map(|other| match first_view(&other.pane)? {
+                    (PaneKind::Files, path) => Some((
+                        other.id.clone(),
+                        !bench
+                            .editors
+                            .is_dirty(&crate::editor::FileKey::new(bench.place(), path)),
+                    )),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -1120,6 +1135,9 @@ impl TabMenu {
         if self.kind == Some(PaneKind::Terminal) {
             popup = popup.separator();
         }
+        if self.file.is_some() {
+            return self.file_closes(popup);
+        }
         if self.kind != Some(PaneKind::Agent) {
             let (strip, tab) = (strip.clone(), tab.clone());
             popup = popup.item(
@@ -1150,6 +1168,46 @@ impl TabMenu {
                         bench.close_tabs(&strip, &others)
                     })),
             );
+        popup
+    }
+
+    /// A file tab's closes and paths, as the Mac's file tab menu has them.
+    fn file_closes(&self, popup: PopupMenu) -> PopupMenu {
+        let strip = self.strip.clone();
+        let at = self.files.iter().position(|(id, _)| *id == self.tab);
+        let ids = |files: &[(String, bool)]| files.iter().map(|(id, _)| id.clone()).collect();
+        let left: Vec<String> = at.map_or(Vec::new(), |at| ids(&self.files[..at]));
+        let right: Vec<String> = at.map_or(Vec::new(), |at| ids(&self.files[at + 1..]));
+        let others: Vec<String> = ids(&self.files)
+            .into_iter()
+            .filter(|id: &String| *id != self.tab)
+            .collect();
+        let saved: Vec<String> = self
+            .files
+            .iter()
+            .filter(|(_, saved)| *saved)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let all: Vec<String> = ids(&self.files);
+        let close = |label: &'static str, tabs: Vec<String>, always: bool| {
+            let strip = strip.clone();
+            PopupMenuItem::new(label)
+                .icon(Icon::Close)
+                .disabled(!always && tabs.is_empty())
+                .on_click(on_bench(&self.bench, move |bench, _| {
+                    bench.close_tabs(&strip, &tabs)
+                }))
+        };
+        let mut popup = popup
+            .item(
+                close("Close", vec![self.tab.clone()], true)
+                    .action(Box::new(crate::keymap::CloseTab)),
+            )
+            .item(close("Close Others", others, false))
+            .item(close("Close to the Left", left, false))
+            .item(close("Close to the Right", right, false))
+            .item(close("Close Saved", saved, false))
+            .item(close("Close All", all, true));
         if let Some((path, relative)) = &self.file {
             let (copied, relative, revealed) = (path.clone(), relative.clone(), path.clone());
             popup = popup
