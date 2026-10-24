@@ -549,7 +549,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
 }
 
 /// A file's icon by its name, in the box rows line marks up in.
-fn file_glyph(name: &str, cx: &mut Context<Workbench>) -> AnyElement {
+pub(crate) fn file_glyph(name: &str, cx: &mut Context<Workbench>) -> AnyElement {
     let glyph = match crate::file_icons::icon(name, cx) {
         Some(icon) => gpui_kit::img(icon)
             .size(px(16.))

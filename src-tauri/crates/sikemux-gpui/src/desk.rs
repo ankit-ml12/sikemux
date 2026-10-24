@@ -28,7 +28,7 @@ use tokio::sync::mpsc;
 
 use crate::core::Ask;
 use crate::icons::Icon;
-use crate::theme::{Tokens, RADIUS_2};
+use crate::theme::{Tokens, RADIUS_2, RADIUS_3};
 use crate::ui::{self, IconButton};
 use crate::workbench::{shows, Strip, Workbench};
 
@@ -76,6 +76,8 @@ pub struct Desks {
     front: HashMap<String, DeskItem>,
     /// The file and the terminal each desk last showed, which its switch brings back.
     last_front: HashMap<(String, DeskKind), DeskItem>,
+    /// Pages' site icons, decoded once from the inline image each page sends.
+    favicons: std::cell::RefCell<HashMap<String, Arc<gpui_kit::Image>>>,
     /// The runs whose terminals have been put on a desk, so each is put there once.
     placed_runs: HashSet<String>,
     /// Whether the runs have been read once; runs going by then join their desks behind.
@@ -120,6 +122,26 @@ impl DeskItem {
 /// What a desk shows, as its switch names it: its pages, its files, its task terminals, or its
 /// simulator. Only the pages and the simulator are kept; files and terminals are shown by
 /// bringing one to the front.
+impl Desks {
+    /// A page's site icon from the `data:` image it sends, decoded the first time it is drawn.
+    fn favicon(&self, data: &str) -> Option<Arc<gpui_kit::Image>> {
+        if let Some(icon) = self.favicons.borrow().get(data) {
+            return Some(icon.clone());
+        }
+        let (mime, base64) = data.strip_prefix("data:")?.split_once(";base64,")?;
+        let icon = crate::picture::decode(mime, base64)?;
+        let mut favicons = self.favicons.borrow_mut();
+        if favicons.len() >= MAX_FAVICONS {
+            favicons.clear();
+        }
+        favicons.insert(data.to_owned(), icon.clone());
+        Some(icon)
+    }
+}
+
+/// How many site icons the desks keep decoded.
+const MAX_FAVICONS: usize = 64;
+
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum DeskKind {
     #[default]
@@ -202,6 +224,7 @@ impl Desks {
             items: HashMap::new(),
             front: HashMap::new(),
             last_front: HashMap::new(),
+            favicons: Default::default(),
             placed_runs: HashSet::new(),
             runs_read: false,
             address_wanted: None,
@@ -949,7 +972,7 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             }
         }
         let address =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter an address"));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
         let typed = agent.clone();
         let typing = cx.subscribe_in(
             &address,
@@ -1193,15 +1216,22 @@ fn target_of(pane: &Pane, view: &str) -> Option<(PaneKind, String)> {
     }
 }
 
-/// The narrowest a desk's page or file pill gets: its mark, a little of its name and its ×.
-/// Past that the strip of tabs scrolls sideways.
-const PILL_MIN: f32 = 72.;
+/// A desk's head, its strip of tabs beside the kind switch, as tall as the Mac's.
+const HEAD: f32 = 34.;
+/// The gap a pane keeps inside its cell, which the desk's edge keeps round the switch.
+const GAP: f32 = 5.;
+/// The kind switch's box: four 24pt kinds 2pt apart, 4pt inside its edge, a gap short of the head.
+const SWITCH_W: f32 = 4. * 24. + 3. * 2. + 2. * 4.;
+const SWITCH_H: f32 = HEAD - GAP;
+/// A desk tab's width, and the narrowest it gets before the strip scrolls, as the Mac's.
+const PILL_W: f32 = 180.;
+const PILL_MIN: f32 = 120.;
+/// The hover group of a desk tab, whose × shows while the pointer is on it.
+const DESK_PILL: &str = "desk-pill";
 
-/// The desk of `agent`, as the view `view` of `tab`.
+/// The desk of `agent`.
 pub fn pane(
     bench: &Workbench,
-    tab: &str,
-    view: &str,
     agent: &str,
     window: &Window,
     cx: &mut Context<Workbench>,
@@ -1209,7 +1239,7 @@ pub fn pane(
     let t = Tokens::get(cx).clone();
     let kind = bench.desk_kind(agent);
     if kind == DeskKind::Simulator {
-        return simulator_desk(bench, tab, view, agent, cx);
+        return simulator_desk(bench, agent, cx);
     }
     let strip = bench.desks.strips.get(agent);
     let front_item = bench.desks.front.get(agent);
@@ -1222,15 +1252,12 @@ pub fn pane(
     let mut head = div()
         .w_full()
         .min_w_0()
-        .h(px(36.))
+        .h(px(HEAD))
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
-        .px(px(6.))
-        .border_b_1()
-        .border_color(t.border)
-        .child(kinds(bench, agent, kind, cx));
+        .pl(px(SWITCH_W + GAP - 1.))
+        .pr(px(6.));
     let scroll = bench
         .desks
         .tab_scrolls
@@ -1241,8 +1268,9 @@ pub fn pane(
         .clone();
     let mut pills = div()
         .id("desk-tabs")
-        .size_full()
+        .flex_initial()
         .min_w_0()
+        .h_full()
         .flex()
         .items_center()
         .gap(px(4.))
@@ -1255,6 +1283,9 @@ pub fn pane(
             .find(|project| project.id == row.project)
             .map(|project| project.path.clone())
     });
+    let acting = bench
+        .agent_by_id(agent)
+        .map(|row| (crate::theme::brand(&row.provider), row));
     let mut front_pill = None;
     let mut pill_count = 0;
     let pages = match kind {
@@ -1269,72 +1300,56 @@ pub fn pane(
         } else {
             page.url.clone()
         };
+        let shown = page.active && front_item.is_none();
         let (switch_agent, switch_tab) = (agent.to_owned(), page.id.clone());
         let (close_agent, close_tab) = (agent.to_owned(), page.id.clone());
-        if page.active && front_item.is_none() {
+        if shown {
             front_pill = Some(pill_count);
         }
         pill_count += 1;
+        let mark = match page
+            .favicon
+            .as_deref()
+            .and_then(|icon| bench.desks.favicon(icon))
+        {
+            Some(icon) => gpui_kit::img(icon)
+                .size(px(13.))
+                .flex_none()
+                .into_any_element(),
+            None => ui::icon(Icon::Globe, 13.).flex_none().into_any_element(),
+        };
+        let at_work = acting
+            .as_ref()
+            .filter(|_| page.acting)
+            .map(|(tint, row)| (*tint, ui::agent_mark(row, 16., cx)));
         pills = pills.child(
-            div()
-                .id(SharedString::from(format!("desk-tab-{}", page.id)))
-                .min_w(px(PILL_MIN))
-                .max_w(px(200.))
-                .h(px(26.))
-                .pl(px(8.))
-                .pr(px(2.))
-                .flex()
-                .items_center()
-                .gap(px(4.))
-                .rounded(RADIUS_2)
-                .when(page.active && front_item.is_none(), |tab| {
-                    tab.bg(t.surface_chosen)
-                })
-                .hover(|tab| tab.bg(t.surface_hover))
-                .text_color(if page.active && front_item.is_none() {
-                    t.text_primary
-                } else {
-                    t.text_secondary
-                })
-                .children(ui::spot(|| format!("desk-page-{agent}-{}", page.title)))
-                .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench.desks.front.remove(&switch_agent);
-                    bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
-                    bench.parts.redraw(&bench.parts.stage, cx);
-                }))
-                .when(page.acting, |tab| {
-                    tab.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
-                })
-                .child(
-                    ui::text(label, 12., FontWeight::NORMAL)
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap(),
-                )
-                .child(
-                    div().flex_none().child(
-                        IconButton::new(
-                            SharedString::from(format!("desk-close-{}", page.id)),
-                            Icon::Close,
-                            "Close page",
-                        )
-                        .glyph(10.)
-                        .on_click(cx.listener(move |bench, _, _, cx| {
-                            cx.stop_propagation();
-                            bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
-                        })),
-                    ),
-                )
-                .context_menu(tab_menu(
-                    cx.weak_entity(),
-                    agent,
-                    DeskTab::Page {
-                        id: page.id.clone(),
-                        url: page.url.clone(),
-                    },
-                    None,
-                )),
+            pill(
+                SharedString::from(format!("desk-tab-{}", page.id)),
+                mark,
+                label,
+                shown,
+                at_work,
+                cx.listener(move |bench, _, _, cx| {
+                    cx.stop_propagation();
+                    bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
+                }),
+                cx,
+            )
+            .children(ui::spot(|| format!("desk-page-{agent}-{}", page.title)))
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.desks.front.remove(&switch_agent);
+                bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }))
+            .context_menu(tab_menu(
+                cx.weak_entity(),
+                agent,
+                DeskTab::Page {
+                    id: page.id.clone(),
+                    url: page.url.clone(),
+                },
+                None,
+            )),
         );
     }
     for (index, item) in bench
@@ -1347,77 +1362,53 @@ pub fn pane(
         .filter(|(_, item)| item.kind() == kind)
     {
         let shown = front_item.is_some_and(|front| front.same(item));
-        let (icon, label, close) = match item {
-            DeskItem::File(path) => (
-                Icon::File,
-                path.file_name().map_or_else(
+        let (mark, label) = match item {
+            DeskItem::File(path) => {
+                let name = path.file_name().map_or_else(
                     || path.to_string_lossy().into_owned(),
                     |name| name.to_string_lossy().into_owned(),
-                ),
-                "Close file",
+                );
+                (crate::files::file_glyph(&name, cx), name)
+            }
+            DeskItem::Terminal { title, .. } => (
+                ui::icon(Icon::Terminal, 13.)
+                    .text_color(t.live)
+                    .flex_none()
+                    .into_any_element(),
+                title.clone(),
             ),
-            DeskItem::Terminal { title, .. } => (Icon::Terminal, title.clone(), "Close terminal"),
         };
         let (pick_agent, pick_item) = (agent.to_owned(), item.clone());
         let (close_agent, close_item) = (agent.to_owned(), item.clone());
-        let id = format!("{agent}-{index}");
         if shown {
             front_pill = Some(pill_count);
         }
         pill_count += 1;
         pills = pills.child(
-            div()
-                .id(SharedString::from(format!("desk-item-{id}")))
-                .min_w(px(PILL_MIN))
-                .max_w(px(200.))
-                .h(px(26.))
-                .pl(px(8.))
-                .pr(px(2.))
-                .flex()
-                .items_center()
-                .gap(px(4.))
-                .rounded(RADIUS_2)
-                .when(shown, |tab| tab.bg(t.surface_chosen))
-                .hover(|tab| tab.bg(t.surface_hover))
-                .text_color(if shown {
-                    t.text_primary
-                } else {
-                    t.text_secondary
-                })
-                .children(ui::spot(|| format!("desk-item-{agent}-{label}")))
-                .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench.bring_front(&pick_agent, pick_item.clone());
+            pill(
+                SharedString::from(format!("desk-item-{agent}-{index}")),
+                mark,
+                label.clone(),
+                shown,
+                None,
+                cx.listener(move |bench, _, _, cx| {
+                    cx.stop_propagation();
+                    bench.take_off_desk(&close_agent, &close_item);
                     bench.parts.redraw(&bench.parts.stage, cx);
-                }))
-                .child(ui::icon(icon, 11.))
-                .child(
-                    ui::text(label, 12., FontWeight::NORMAL)
-                        .min_w_0()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap(),
-                )
-                .child(
-                    div().flex_none().child(
-                        IconButton::new(
-                            SharedString::from(format!("desk-item-close-{id}")),
-                            Icon::Close,
-                            close,
-                        )
-                        .glyph(10.)
-                        .on_click(cx.listener(move |bench, _, _, cx| {
-                            cx.stop_propagation();
-                            bench.take_off_desk(&close_agent, &close_item);
-                            bench.parts.redraw(&bench.parts.stage, cx);
-                        })),
-                    ),
-                )
-                .context_menu(tab_menu(
-                    cx.weak_entity(),
-                    agent,
-                    DeskTab::Item(item.clone()),
-                    root.clone(),
-                )),
+                }),
+                cx,
+            )
+            .children(ui::spot(|| format!("desk-item-{agent}-{label}")))
+            .on_click(cx.listener(move |bench, _, _, cx| {
+                bench.bring_front(&pick_agent, pick_item.clone());
+                bench.parts.redraw(&bench.parts.stage, cx);
+            }))
+            .context_menu(tab_menu(
+                cx.weak_entity(),
+                agent,
+                DeskTab::Item(item.clone()),
+                root.clone(),
+            )),
         );
     }
     let new_agent = agent.to_owned();
@@ -1433,23 +1424,26 @@ pub fn pane(
         .child(
             div()
                 .relative()
-                .flex_1()
+                .flex_initial()
                 .min_w_0()
                 .h_full()
+                .flex()
+                .pl(px(6.))
                 .child(pills)
                 .child(crate::track::sideways_scroller())
                 .children(ui::spot(|| format!("desk-tabs-{agent}"))),
         )
         .when(kind == DeskKind::Pages, |head| {
             head.child(
-                div().flex_none().child(
-                    IconButton::new("desk-new-page", Icon::Plus, "New page")
-                        .glyph(12.)
+                div().flex_none().pl(px(4.)).child(
+                    IconButton::new("desk-new-page", Icon::Plus, "New browser tab")
+                        .glyph(13.)
+                        .width(24.)
+                        .height(24.)
                         .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
                 ),
             )
-        })
-        .child(div().flex_none().child(close_desk(tab, view, cx)));
+        });
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
     let bar = div()
@@ -1457,8 +1451,11 @@ pub fn pane(
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(px(2.))
         .px(px(6.))
+        .pb(px(4.))
+        .border_b_1()
+        .border_color(t.border)
         .child(
             IconButton::new("desk-back", Icon::Chevron, "Back")
                 .glyph(11.)
@@ -1484,9 +1481,29 @@ pub fn pane(
                 })),
         )
         .children(page.map(|page| {
+            let focused = page.address.read(cx).focus_handle(cx).is_focused(window);
             div()
                 .flex_1()
                 .min_w_0()
+                .h(px(26.))
+                .ml(px(4.))
+                .flex()
+                .items_center()
+                .rounded(RADIUS_2)
+                .border_1()
+                .border_color(if focused {
+                    t.border_selected
+                } else {
+                    gpui_kit::transparent_black()
+                })
+                .bg(if focused {
+                    t.surface_sunken.opacity(0.8)
+                } else {
+                    t.text_primary.opacity(0.05)
+                })
+                .when(!focused, |field| {
+                    field.hover(move |field| field.bg(t.text_primary.opacity(0.08)))
+                })
                 .child(Input::new(&page.address).appearance(false))
         }));
     if let Some(item) = front_item {
@@ -1502,17 +1519,19 @@ pub fn pane(
                 cx,
             ),
         };
-        return ui::pane(cx)
-            .child(
-                div()
-                    .size_full()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(head)
-                    .child(div().flex_1().min_h_0().child(shown)),
-            )
-            .into_any_element();
+        return frame(
+            bench,
+            agent,
+            kind,
+            div()
+                .size_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .child(head)
+                .child(div().flex_1().min_h_0().child(shown)),
+            cx,
+        );
     }
     let body = div()
         .flex_1()
@@ -1539,20 +1558,168 @@ pub fn pane(
                     .child(ui::text("No pages yet", 12.5, FontWeight::NORMAL)),
             )
         });
-    ui::pane(cx)
+    frame(
+        bench,
+        agent,
+        kind,
+        div()
+            .size_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .child(head)
+            .when(strip.is_some_and(|strip| !strip.tabs.is_empty()), |pane| {
+                pane.child(bar)
+            })
+            .child(body),
+        cx,
+    )
+}
+
+/// A desk's own frame, as the Mac draws it: a solid ground with no grain, the kind switch in
+/// its top corner, and an edge that steps round the switch a pane's gap clear of it.
+fn frame(
+    bench: &Workbench,
+    agent: &str,
+    kind: DeskKind,
+    content: impl IntoElement,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let t = Tokens::get(cx).clone();
+    let edge = t.border;
+    div()
+        .relative()
+        .size_full()
+        .overflow_hidden()
+        .rounded(RADIUS_3)
+        .bg(crate::see_through::ground(t.surface, cx))
+        .child(content)
+        .child(
+            gpui_kit::canvas(
+                |_, _, _| {},
+                move |bounds, (), window, _| {
+                    if let Ok(path) = stepped_edge(bounds).build() {
+                        window.paint_path(path, edge);
+                    }
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
         .child(
             div()
-                .size_full()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(head)
-                .when(strip.is_some_and(|strip| !strip.tabs.is_empty()), |pane| {
-                    pane.child(bar)
-                })
-                .child(body),
+                .absolute()
+                .top_0()
+                .left_0()
+                .w(px(SWITCH_W))
+                .h(px(SWITCH_H))
+                .p(px(4.))
+                .rounded(RADIUS_3)
+                .border_1()
+                .border_color(t.border)
+                .child(kinds(bench, agent, kind, cx)),
         )
         .into_any_element()
+}
+
+/// The desk's edge: a rounded box whose top-left corner steps in round the kind switch, as the
+/// Mac's cutCornerOutline draws it, on the half pixel so the line is sharp.
+fn stepped_edge(bounds: gpui_kit::Bounds<gpui_kit::Pixels>) -> gpui_kit::PathBuilder {
+    let (radius, inner) = (f32::from(RADIUS_3), f32::from(RADIUS_3) + GAP);
+    let at = |x: f32, y: f32| gpui_kit::point(bounds.origin.x + px(x), bounds.origin.y + px(y));
+    let (left, top) = (0.5, 0.5);
+    let (right, bottom) = (
+        f32::from(bounds.size.width) - 0.5,
+        f32::from(bounds.size.height) - 0.5,
+    );
+    let (step_x, step_y) = (SWITCH_W + GAP + 0.5, SWITCH_H + GAP + 0.5);
+    let arc = |path: &mut gpui_kit::PathBuilder, r: f32, sweep: bool, x: f32, y: f32| {
+        path.arc_to(
+            gpui_kit::point(px(r), px(r)),
+            px(0.),
+            false,
+            sweep,
+            at(x, y),
+        );
+    };
+    let mut path = gpui_kit::PathBuilder::stroke(px(1.));
+    path.move_to(at(left, step_y + radius));
+    arc(&mut path, radius, true, left + radius, step_y);
+    path.line_to(at(step_x - inner, step_y));
+    arc(&mut path, inner, false, step_x, step_y - inner);
+    path.line_to(at(step_x, top + radius));
+    arc(&mut path, radius, true, step_x + radius, top);
+    path.line_to(at(right - radius, top));
+    arc(&mut path, radius, true, right, top + radius);
+    path.line_to(at(right, bottom - radius));
+    arc(&mut path, radius, true, right - radius, bottom);
+    path.line_to(at(left + radius, bottom));
+    arc(&mut path, radius, true, left, bottom - radius);
+    path.close();
+    path
+}
+
+/// A tab of a desk's strip, as the Mac draws one: its mark and name on a faint fill, lifted
+/// while shown, ringed in the agent's colour while it works there, its × showing on hover.
+fn pill(
+    id: SharedString,
+    mark: AnyElement,
+    label: String,
+    shown: bool,
+    at_work: Option<(Hsla, AnyElement)>,
+    close: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    let t = Tokens::get(cx).clone();
+    let close_id = SharedString::from(format!("{id}-close"));
+    let rest = t.text_primary.opacity(0.05);
+    let tinted = at_work.as_ref().map(|(tint, _)| *tint);
+    div()
+        .id(id)
+        .group(DESK_PILL)
+        .flex_initial()
+        .w(px(PILL_W))
+        .min_w(px(PILL_MIN))
+        .h(px(24.))
+        .pl(px(8.))
+        .pr(px(2.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded(RADIUS_2)
+        .bg(match (shown, tinted) {
+            (true, _) => t.surface_chosen,
+            (false, Some(tint)) => tint.opacity(0.14),
+            (false, None) => rest,
+        })
+        .when_some(tinted, |pill, tint| {
+            pill.border_1().border_color(tint.opacity(0.7))
+        })
+        .when(!shown, |pill| {
+            pill.hover(move |pill| pill.bg(t.surface_hover))
+        })
+        .text_color(if shown || tinted.is_some() {
+            t.text_primary
+        } else {
+            t.text_secondary
+        })
+        .child(mark)
+        .child(
+            ui::text(label, 12., FontWeight::NORMAL)
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .whitespace_nowrap(),
+        )
+        .children(at_work.map(|(_, mark)| div().flex_none().child(mark)))
+        .child(
+            div()
+                .flex_none()
+                .opacity(0.)
+                .group_hover(DESK_PILL, |close| close.opacity(1.))
+                .child(ui::close_button(close_id, "Close tab", close, cx)),
+        )
 }
 
 /// The desk's switch between its pages and its simulator.
@@ -1702,6 +1869,8 @@ fn kinds(
         row = row.child(
             IconButton::new(id, icon, named)
                 .glyph(13.)
+                .width(24.)
+                .height(21.)
                 .pressed(shown == kind)
                 .disabled(empty)
                 .when_some(tint.filter(|_| busy && shown != kind), |button, tint| {
@@ -1713,57 +1882,39 @@ fn kinds(
                 })),
         );
     }
-    row.pr(px(6.))
+    row
 }
 
-fn close_desk(tab: &str, view: &str, cx: &mut Context<Workbench>) -> impl IntoElement {
-    let (tab, view) = (tab.to_owned(), view.to_owned());
-    IconButton::new("desk-close", Icon::PanelRight, "Close the desk")
-        .glyph(13.)
-        .on_click(cx.listener(move |bench, _, _, _| {
-            if let Some(strip) = bench.strip() {
-                bench.close_pane(&strip, &tab, &view);
-            }
-        }))
-}
-
-fn simulator_desk(
-    bench: &Workbench,
-    tab: &str,
-    view: &str,
-    agent: &str,
-    cx: &mut Context<Workbench>,
-) -> AnyElement {
+fn simulator_desk(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> AnyElement {
     let t = Tokens::get(cx).clone();
     let head = div()
-        .h(px(36.))
+        .h(px(HEAD))
         .flex_none()
         .flex()
         .items_center()
         .gap(px(4.))
-        .px(px(6.))
-        .border_b_1()
-        .border_color(t.border)
-        .child(kinds(bench, agent, DeskKind::Simulator, cx))
+        .pl(px(SWITCH_W + GAP - 1. + 6.))
+        .pr(px(6.))
         .children(bench.sims.device_name(agent).map(|name| {
             ui::text(name.to_owned(), 12., FontWeight::MEDIUM).text_color(t.text_secondary)
         }))
         .when(bench.sims.acting(agent), |head| {
             head.child(ui::icon(Icon::Pointer, 11.).text_color(t.accent))
         })
-        .child(crate::sim_pane::tools(bench, agent, cx))
         .child(div().flex_1())
-        .child(close_desk(tab, view, cx));
-    ui::pane(cx)
-        .child(
-            div().size_full().flex().flex_col().child(head).child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .child(crate::sim_pane::body(bench, agent, cx)),
-            ),
-        )
-        .into_any_element()
+        .child(crate::sim_pane::tools(bench, agent, cx));
+    frame(
+        bench,
+        agent,
+        DeskKind::Simulator,
+        div().size_full().flex().flex_col().child(head).child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .child(crate::sim_pane::body(bench, agent, cx)),
+        ),
+        cx,
+    )
 }
 
 impl Workbench {

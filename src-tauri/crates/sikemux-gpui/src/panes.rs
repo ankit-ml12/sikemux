@@ -448,7 +448,7 @@ fn view(
             None => ui::pane(cx).into_any_element(),
         },
         PaneKind::Agent => home::agent_view(bench, tab, id, target, cx),
-        PaneKind::Desk => desk::pane(bench, tab, id, target, window, cx),
+        PaneKind::Desk => desk::pane(bench, target, window, cx),
         PaneKind::ProjectSettings => crate::project_settings::pane(bench, target, window, cx),
         PaneKind::InstallSikemux => crate::install_pane::pane(bench, target, cx),
         PaneKind::Unknown => ui::pane(cx)

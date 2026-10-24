@@ -29,6 +29,7 @@ pub struct IconButton {
     icon: Icon,
     size: f32,
     width: Option<f32>,
+    height: Option<f32>,
     glyph: f32,
     quiet: bool,
     round: bool,
@@ -47,6 +48,7 @@ impl IconButton {
             id: id.into(),
             icon,
             size: 26.,
+            height: None,
             width: None,
             glyph: 15.,
             quiet: true,
@@ -96,6 +98,11 @@ impl IconButton {
     }
 
     /// Wider than tall, as the rail's page switches.
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
+        self
+    }
+
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
@@ -165,6 +172,7 @@ impl RenderOnce for IconButton {
             .accessibility_label(self.label)
             .size(px(self.size))
             .when_some(self.width, |button, width| button.w(px(width)))
+            .when_some(self.height, |button, height| button.h(px(height)))
             .flex_none()
             .flex()
             .items_center()
