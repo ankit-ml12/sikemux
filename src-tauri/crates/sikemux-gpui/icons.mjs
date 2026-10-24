@@ -33,6 +33,7 @@ const DRAWN = {
   git: [ICONS, "IconGit"],
   board: [ICONS, "IconBoard"],
   check: [ICONS, "IconCheck"],
+  grip: [ICONS, "IconGrip"],
   share: [ICONS, "IconShare"],
   more: [ICONS, "IconMore"],
   eye: [ICONS, "IconEye"],

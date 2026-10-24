@@ -48,6 +48,7 @@ icons!(
     Building => "building",
     Camera => "camera",
     Check => "check",
+    Grip => "grip",
     Checkout => "checkout",
     Chevron => "chevron",
     Claude => "claude",

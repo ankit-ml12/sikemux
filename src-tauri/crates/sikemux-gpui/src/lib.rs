@@ -70,6 +70,7 @@ mod sim_screen;
 #[cfg(not(target_os = "macos"))]
 #[path = "sim_screen_elsewhere.rs"]
 mod sim_screen;
+mod space_editor;
 mod swipe;
 mod switcher;
 pub mod syntax;

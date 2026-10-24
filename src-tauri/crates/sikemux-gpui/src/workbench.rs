@@ -57,7 +57,7 @@ const PICTURE_BUDGET: usize = 256 * 1024 * 1024;
 
 /// The one store: what the core last said, and what only this window decides.
 /// The longest a space's name may be, as on the Mac.
-const MAX_SPACE_NAME: usize = 40;
+pub(crate) const MAX_SPACE_NAME: usize = 40;
 
 pub struct Workbench {
     pub version: String,
@@ -159,6 +159,8 @@ pub struct Workbench {
     pub palette: Option<crate::palette::Palette>,
     /// The agent the project picker moves to the project picked, while it does.
     pub moving: Option<String>,
+    /// Edit Spaces, while it is open under the space switch.
+    pub space_editor: Option<Entity<crate::space_editor::SpaceEditor>>,
     pub switcher: Option<crate::switcher::Switcher>,
     /// The command deck's keys, the last used first.
     pub recent_commands: Vec<SharedString>,
@@ -617,6 +619,7 @@ impl Workbench {
             finder: None,
             palette: None,
             moving: None,
+            space_editor: None,
             switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,
@@ -2927,7 +2930,7 @@ impl Workbench {
     }
 
     /// Sets this host's spaces to what `edit` makes of them.
-    fn edit_spaces(&self, edit: impl FnOnce(&mut Vec<SpaceInfo>)) {
+    pub(crate) fn edit_spaces(&self, edit: impl FnOnce(&mut Vec<SpaceInfo>)) {
         let mut spaces = self
             .view
             .as_ref()
@@ -2947,17 +2950,7 @@ impl Workbench {
         self.prompt(
             "Rename space",
             current,
-            move |bench, name, _, _| {
-                let name: String = name.trim().chars().take(MAX_SPACE_NAME).collect();
-                if name.is_empty() {
-                    return;
-                }
-                bench.edit_spaces(|spaces| {
-                    if let Some(space) = spaces.iter_mut().find(|space| space.id == id) {
-                        space.name = name;
-                    }
-                });
-            },
+            move |bench, name, _, _| bench.name_space(&id, &name),
             cx,
         );
         cx.notify();
@@ -2969,18 +2962,6 @@ impl Workbench {
             if let Some(space) = spaces.iter_mut().find(|space| space.id == id) {
                 space.icon = icon.to_owned();
             }
-        });
-    }
-
-    /// Moves the space `by` places along the switch.
-    pub fn move_space(&self, id: &str, by: isize) {
-        self.edit_spaces(|spaces| {
-            let Some(at) = spaces.iter().position(|space| space.id == id) else {
-                return;
-            };
-            let to = at.saturating_add_signed(by).min(spaces.len() - 1);
-            let space = spaces.remove(at);
-            spaces.insert(to, space);
         });
     }
 
