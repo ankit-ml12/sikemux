@@ -12,7 +12,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, rgb, AnyElement, App, AppContext, Context, Div, Entity, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, Window,
+    StatefulInteractiveElement, Styled, Subscription, Task, WeakEntity, Window,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -25,6 +25,7 @@ use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
+use crate::workbench::Workbench;
 
 const WINDOWS: [u32; 5] = [5, 15, 60, 360, 1440];
 const SEVERITIES: [&str; 5] = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG"];
@@ -2202,15 +2203,11 @@ impl Signoz {
                 .child(super::empty(said, cx))
                 .into_any_element();
         }
-        let agents: Vec<(SharedString, crate::send_to::Recipient)> = host
-            .agents(cx)
-            .into_iter()
-            .map(|choice| (choice.label, choice.to))
-            .collect();
+        let bench = host.bench().clone();
         let rows: Vec<AnyElement> = lines
             .iter()
             .enumerate()
-            .map(|(index, line)| self.log_row(line, index, show_service, &lines, &agents, cx))
+            .map(|(index, line)| self.log_row(line, index, show_service, &lines, Some(&bench), cx))
             .collect();
         let older_button = older.map(|reading| {
             div().p(px(10.)).flex().justify_center().child(
@@ -2351,7 +2348,7 @@ impl Signoz {
         index: usize,
         show_service: bool,
         lines: &[LogLine],
-        agents: &[(SharedString, crate::send_to::Recipient)],
+        menu: Option<&WeakEntity<Workbench>>,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
@@ -2416,11 +2413,13 @@ impl Signoz {
                     cx.notify();
                 },
             ));
+        let Some(bench) = menu.cloned() else {
+            return self.with_detail(head, line, index, expanded, cx);
+        };
         let chosen = self.chosen_lines(line, lines);
         let some_picked = !self.picked.is_empty();
         let pane = cx.weak_entity();
-        let agents = agents.to_vec();
-        let head = head.context_menu(move |popup, _, _| {
+        let head = head.context_menu(move |popup, window, cx| {
             let count = chosen.len();
             let text = chosen
                 .iter()
@@ -2431,9 +2430,9 @@ impl Signoz {
             let pane_copy = pane.clone();
             let mut popup = popup.item(
                 PopupMenuItem::new(if count == 1 {
-                    "Copy message".to_owned()
+                    "Copy Message".to_owned()
                 } else {
-                    format!("Copy {count} messages")
+                    format!("Copy {count} Messages")
                 })
                 .icon(Icon::Copy)
                 .on_click(move |_, _, cx| {
@@ -2442,30 +2441,16 @@ impl Signoz {
                     });
                 }),
             );
-            if !agents.is_empty() {
-                popup = popup.separator();
-                for (label, to) in &agents {
-                    let (pane, to, delivery) = (pane.clone(), to.clone(), delivery.clone());
-                    popup = popup.item(
-                        PopupMenuItem::new(format!("Send to {label}"))
-                            .icon(Icon::Message)
-                            .on_click(move |_, window, cx| {
-                                let _ = pane.update(cx, |pane, cx| {
-                                    pane.host.send_to_agent(
-                                        to.clone(),
-                                        delivery.clone(),
-                                        window,
-                                        cx,
-                                    )
-                                });
-                            }),
-                    );
-                }
-            }
+            let send = if count == 1 {
+                "Send to Agent…".to_owned()
+            } else {
+                format!("Send {count} Lines to Agent…")
+            };
+            popup = crate::send_to::submenu(popup, send, bench.clone(), delivery, window, cx);
             if some_picked {
                 let pane = pane.clone();
                 popup = popup.separator().item(
-                    PopupMenuItem::new("Clear selection")
+                    PopupMenuItem::new("Clear Selection")
                         .icon(Icon::Discard)
                         .on_click(move |_, _, cx| {
                             let _ = pane.update(cx, |pane, cx| {
@@ -2479,6 +2464,17 @@ impl Signoz {
             }
             popup
         });
+        self.with_detail(head, line, index, expanded, cx)
+    }
+
+    fn with_detail(
+        &self,
+        head: impl IntoElement,
+        line: &LogLine,
+        index: usize,
+        expanded: bool,
+        cx: &mut Context<PluginPane>,
+    ) -> AnyElement {
         if !expanded {
             return head.into_any_element();
         }
@@ -3082,7 +3078,7 @@ impl Signoz {
                         lines
                             .iter()
                             .enumerate()
-                            .map(|(index, line)| self.log_row(line, index, true, &lines, &[], cx)),
+                            .map(|(index, line)| self.log_row(line, index, true, &lines, None, cx)),
                     )
                     .into_any_element()
             }

@@ -3,9 +3,11 @@
 
 use std::future::Future;
 
-use gpui_kit::{AppContext, Context, SharedString, Task, Window};
+use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::{AppContext, Context, SharedString, Task, WeakEntity, Window};
 use tokio::sync::oneshot;
 
+use crate::icons::Icon;
 use crate::workbench::Workbench;
 
 /// An agent text can go to.
@@ -74,6 +76,45 @@ pub fn send(
         });
     })
     .detach();
+}
+
+/// The "Send to Agent…" submenu under `label`: each of the project's choices takes `text`, or one
+/// row says there is no agent to take it.
+pub fn submenu(
+    popup: PopupMenu,
+    label: impl Into<SharedString>,
+    bench: WeakEntity<Workbench>,
+    text: String,
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let choices = bench
+        .upgrade()
+        .map(|bench| choices(bench.read(cx)))
+        .unwrap_or_default();
+    popup.submenu_with_icon(
+        Some(Icon::Message.into()),
+        label,
+        window,
+        cx,
+        move |mut menu, _, _| {
+            if choices.is_empty() {
+                return menu.item(PopupMenuItem::new("No agents available").disabled(true));
+            }
+            for choice in &choices {
+                let (bench, text, to) = (bench.clone(), text.clone(), choice.to.clone());
+                menu = menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
+                    move |_, window, cx| {
+                        let (to, text) = (to.clone(), text.clone());
+                        let _ = bench.update(cx, |bench, cx| {
+                            send(bench, to, async move { Some(text) }, window, cx)
+                        });
+                    },
+                ));
+            }
+            menu
+        },
+    )
 }
 
 /// `text` in a fenced code block whose fence no run of backticks in it can close.
