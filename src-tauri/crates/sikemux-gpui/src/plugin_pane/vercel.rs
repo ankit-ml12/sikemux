@@ -2,15 +2,17 @@
 //! overview, deployments, environment variables and domains, and a deployment with its
 //! build log, to roll back, promote, redeploy, cancel, open or hand to an agent.
 
+use gpui_kit::base::Popover;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Hsla,
+    div, px, Anchor, AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled, Subscription, Window,
 };
 use serde::Deserialize;
+use std::rc::Rc;
 use serde_json::{json, Value};
 use sikemux_wire::vercel::{
     Deployment, Deployments, Domains, LogLine, OpenLog, Production, Project, Projects, Target,
@@ -20,7 +22,7 @@ use sikemux_wire::vercel::{
 use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui;
+use crate::ui::{self, Menu, MenuItem};
 
 pub const REGISTRATION: super::Registration = super::Registration {
     plugin: "sikemux.vercel",
@@ -205,6 +207,8 @@ impl Panel for Vercel {
             .into_any_element()
     }
 }
+
+type Act = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 fn notify(host: &Host, note: Notification, cx: &mut App) {
     if let Some(bench) = host.bench().upgrade() {
@@ -428,6 +432,106 @@ impl Vercel {
             },
             cx,
         );
+    }
+
+    /// The ⋯ menu of what can be done to a deployment, in the order Vercel's own menu offers it.
+    fn more(
+        &self,
+        id: SharedString,
+        label: SharedString,
+        team: &str,
+        deployment: &Deployment,
+        current: bool,
+        cx: &mut Context<PluginPane>,
+    ) -> AnyElement {
+        let ready = deployment.state == "READY";
+        let busy = self.busy;
+        let production = deployment.target == Target::Production;
+        let does = |act: fn(&mut Vercel, &str, &Deployment, &mut Context<PluginPane>),
+                    cx: &mut Context<PluginPane>|
+         -> Option<Act> {
+            let (team, deployment) = (team.to_owned(), deployment.clone());
+            Some(Rc::new(listen::<Vercel, ClickEvent>(
+                cx,
+                move |vercel, _, _, _, cx| act(vercel, &team, &deployment, cx),
+            )))
+        };
+        let opens = |url: Option<String>| -> Option<Act> {
+            url.map(|url| Rc::new(move |_: &ClickEvent, _: &mut Window, cx: &mut App| cx.open_url(&url)) as Act)
+        };
+        let (inspector, url) = (deployment.inspector_url.clone(), deployment.url.clone());
+        let copies = url.clone().map(|url| {
+            Rc::new(listen::<Vercel, ClickEvent>(cx, move |_, host, _, _, cx| {
+                host.copy(url.clone(), "the URL", cx)
+            })) as Act
+        });
+        let items: Vec<(&'static str, Option<Icon>, bool, Option<Act>)> = vec![
+            (
+                "Instant Rollback",
+                Some(Icon::Rotate),
+                busy || current || !ready || !production,
+                does(Vercel::rollback, cx),
+            ),
+            (
+                "Promote",
+                Some(Icon::ArrowUp),
+                busy || !ready || production,
+                does(Vercel::promote, cx),
+            ),
+            match underway(&deployment.state) {
+                true => ("Cancel Deployment", None, busy, does(Vercel::cancel, cx)),
+                false => ("Redeploy", None, busy, does(Vercel::redeploy, cx)),
+            },
+            (
+                "Inspect Deployment",
+                None,
+                inspector.is_none(),
+                opens(inspector.clone()),
+            ),
+            (
+                "View Source",
+                None,
+                inspector.is_none(),
+                opens(inspector.map(|inspector| format!("{inspector}/source"))),
+            ),
+            ("Copy URL", None, url.is_none(), copies),
+            (
+                "Visit",
+                Some(Icon::Globe),
+                url.is_none() || !ready,
+                opens(url),
+            ),
+        ];
+        Popover::new(id.clone())
+            .anchor(Anchor::TopRight)
+            .offset(px(4.))
+            .trigger(
+                ui::IconButton::new(SharedString::from(format!("{id}-more")), Icon::More, label)
+                    .glyph(13.),
+            )
+            .content(move |_, _, cx| {
+                let popover = cx.entity();
+                let mut menu = Menu::new();
+                for (index, (label, icon, disabled, act)) in items.iter().enumerate() {
+                    if index == 2 {
+                        menu = menu.separator(cx);
+                    }
+                    let mut item = MenuItem::new(("more", index), *label).disabled(*disabled);
+                    if let Some(icon) = icon {
+                        item = item.icon(*icon);
+                    }
+                    if let Some(act) = act.clone() {
+                        let popover = popover.clone();
+                        item = item.on_click(move |event, window, cx| {
+                            act(event, window, cx);
+                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                        });
+                    }
+                    menu = menu.child(item);
+                }
+                menu
+            })
+            .into_any_element()
     }
 
     fn sign_in(
@@ -865,6 +969,16 @@ impl Vercel {
                             .into_any_element(),
                     );
                 }
+                if let Some(current) = current {
+                    actions.push(self.more(
+                        "vercel-production-actions".into(),
+                        "More actions".into(),
+                        team,
+                        current,
+                        true,
+                        cx,
+                    ));
+                }
                 let opens = production.id.clone();
                 box_of(
                     "Production Deployment",
@@ -920,7 +1034,7 @@ impl Vercel {
         }
         let branch_rows: Vec<AnyElement> = branches
             .into_iter()
-            .map(|deployment| self.deployment_row(deployment, None, cx))
+            .map(|deployment| self.deployment_row(deployment, None, None, cx))
             .collect();
         div()
             .flex()
@@ -1035,7 +1149,26 @@ impl Vercel {
             );
         let rows: Vec<AnyElement> = shown
             .into_iter()
-            .map(|deployment| self.deployment_row(deployment, production.as_deref(), cx))
+            .map(|deployment| {
+                let current = Some(deployment.id.as_str()) == production.as_deref();
+                let more = self.more(
+                    format!("vercel-actions-{}", deployment.id).into(),
+                    format!(
+                        "Actions for {}",
+                        deployment
+                            .message
+                            .as_deref()
+                            .filter(|message| !message.is_empty())
+                            .unwrap_or(&deployment.id)
+                    )
+                    .into(),
+                    team,
+                    deployment,
+                    current,
+                    cx,
+                );
+                self.deployment_row(deployment, production.as_deref(), Some(more), cx)
+            })
             .collect();
         div()
             .flex()
@@ -1064,6 +1197,7 @@ impl Vercel {
         &self,
         deployment: &Deployment,
         production: Option<&str>,
+        more: Option<AnyElement>,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         let t = Tokens::get(cx).clone();
@@ -1137,6 +1271,7 @@ impl Vercel {
                 cx,
             ))
             .child(ui::meta(ago(deployment.created_at), cx))
+            .children(more)
             .into_any_element()
     }
 
@@ -1212,37 +1347,26 @@ impl Vercel {
             ),
             false => action("vercel-detail-redeploy", "Redeploy", Vercel::redeploy, cx),
         });
-        if let Some(url) = deployment.inspector_url.clone() {
+        actions.push(super::send_to_agent(
+            "vercel-send",
+            host,
+            open.for_agent.clone(),
+            cx,
+        ));
+        if let Some(url) = deployment.url.clone().filter(|_| ready) {
             actions.push(
-                ui::Button::new("vercel-inspect", "Inspect", ui::Variant::Outline)
+                ui::Button::new("vercel-detail-visit", "Visit", ui::Variant::Outline)
                     .icon(Icon::Globe)
                     .on_click(move |_, _, cx| cx.open_url(&url))
                     .into_any_element(),
             );
         }
-        if let Some(url) = deployment.url.clone() {
-            let copied = url.clone();
-            actions.push(
-                ui::IconButton::new("vercel-copy-url", Icon::Copy, "Copy the URL")
-                    .on_click(listen::<Vercel, ClickEvent>(
-                        cx,
-                        move |_, host, _, _, cx| host.copy(copied.clone(), "the URL", cx),
-                    ))
-                    .into_any_element(),
-            );
-            if ready {
-                actions.push(
-                    ui::Button::new("vercel-detail-visit", "Visit", ui::Variant::Outline)
-                        .icon(Icon::Globe)
-                        .on_click(move |_, _, cx| cx.open_url(&url))
-                        .into_any_element(),
-                );
-            }
-        }
-        actions.push(super::send_to_agent(
-            "vercel-send",
-            host,
-            open.for_agent.clone(),
+        actions.push(self.more(
+            "vercel-detail-actions".into(),
+            "More actions".into(),
+            team,
+            deployment,
+            current,
             cx,
         ));
         let facts = [
