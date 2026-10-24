@@ -44,6 +44,9 @@ pub(crate) struct KeptChat {
     pub offline: Option<Replay>,
     /// Whether a new agent process can load the chat's session.
     pub reloadable: bool,
+    /// Its agent never started: it waits for the person, as a new chat does.
+    #[serde(default)]
+    pub unstarted: bool,
 }
 
 /// The agent's process, which a core that died leaves running.

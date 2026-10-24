@@ -976,6 +976,105 @@ async fn a_core_that_crashes_mid_turn_carries_the_turn_on_when_it_starts_again()
     }
 }
 
+/// A chat shown on its saved session, still waiting for the person when its core crashes,
+/// waits again once the core is back: nothing starts its agent but the person.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_waiting_for_the_person_still_waits_after_a_crash() {
+    let mut core = CoreProcess::start("first");
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let accounts = json!({
+        "profiles": [{
+            "id": "fake",
+            "name": "Fake",
+            "provider": "opencode",
+            "accent": "#a277ff",
+            "executablePath": FAKE_AGENT,
+        }],
+    });
+    client
+        .call("setAgentAccounts", accounts)
+        .await
+        .expect("the accounts");
+    let project = json!({ "id": "held", "name": "held", "path": core.project });
+    client
+        .call("addProject", project)
+        .await
+        .expect("the project");
+    let agent_id = "agent-held".to_owned();
+    let agent = json!({
+        "id": agent_id,
+        "provider": "opencode",
+        "project": "held",
+        "cwd": core.project,
+        "title": "Saved",
+        "renamed": true,
+        "permissionMode": "bypass",
+        "profileId": "fake",
+        "resumeId": "ses-saved",
+        "asleep": true,
+    });
+    client
+        .call("createAgent", json!({ "agent": agent }))
+        .await
+        .expect("the agent");
+    assert!(
+        matches!(
+            client.acp_attach(agent_id.clone()).await,
+            Ok(ChatAttachment::Live { .. })
+        ),
+        "the asleep chat is shown\n{}",
+        core.log()
+    );
+    assert_eq!(
+        children(core.pid()),
+        Vec::<u32>::new(),
+        "showing it started nothing"
+    );
+    drop(client);
+    // A crash loses what the chat wrote down in its last second.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    core.crash_and_start_again();
+
+    let (client, _events) = CoreClient::connect(&core.socket).await.expect("connect");
+    let deadline = Instant::now() + WAIT;
+    while !client
+        .acp_list()
+        .await
+        .expect("list")
+        .iter()
+        .any(|chat| chat.agent_id == agent_id)
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the chat was not taken up again\n{}",
+            core.log()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        children(core.pid()),
+        Vec::<u32>::new(),
+        "no agent started\n{}",
+        core.log()
+    );
+
+    client
+        .call("composing", json!({ "agentId": agent_id }))
+        .await
+        .expect("the person begins writing");
+    let deadline = Instant::now() + WAIT;
+    while children(core.pid()).is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "writing started the agent\n{}",
+            core.log()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// A chat whose agent does not finish starting while `gate` exists, started
 /// in the background since starting waits for it.
 async fn start_held_chat(core: &CoreProcess, client: &Arc<CoreClient>, gate: &Path) {
