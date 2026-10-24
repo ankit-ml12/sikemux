@@ -924,9 +924,9 @@ impl Workbench {
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
         self.confirm(
-            format!("Delete {name}?"),
-            "It moves to the Trash.",
-            "Delete",
+            format!("Move \"{name}\" to the Trash?"),
+            path.to_string_lossy().into_owned(),
+            "Move to Trash",
             true,
             move |bench, yes, _, cx| {
                 if !yes {
