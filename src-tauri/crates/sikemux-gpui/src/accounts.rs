@@ -353,9 +353,26 @@ fn ask_statuses(bench: &mut Workbench, cx: &mut Context<Workbench>) {
         .iter()
         .flat_map(|book| &book.profiles)
         .map(key)
-        .filter(|key| {
-            !bench.accounts.status.contains_key(key) && !bench.accounts.asking.contains(key)
-        })
+        .filter(|key| !bench.accounts.status.contains_key(key))
+        .collect();
+    ask(bench, unasked, cx);
+}
+
+/// Asks each of the agent's accounts who it is signed in as again, as refreshing its plan limits
+/// does; what each said before shows until it answers.
+pub fn ask_again(bench: &mut Workbench, provider: &str, cx: &mut Context<Workbench>) {
+    let accounts = bench.accounts.of(provider).into_iter().map(key).collect();
+    ask(bench, accounts, cx);
+}
+
+fn ask(
+    bench: &mut Workbench,
+    accounts: Vec<(String, Option<String>)>,
+    cx: &mut Context<Workbench>,
+) {
+    let unasked: Vec<_> = accounts
+        .into_iter()
+        .filter(|key| !bench.accounts.asking.contains(key))
         .collect();
     for asked in unasked {
         bench.accounts.asking.insert(asked.clone());

@@ -1092,7 +1092,10 @@ fn limits(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<impl IntoEle
                     .child(
                         IconButton::new("refresh-limits", Icon::Refresh, refresh)
                             .small()
-                            .on_click(cx.listener(|bench, _, _, _| bench.read_usage())),
+                            .on_click(cx.listener(move |bench, _, _, cx| {
+                                bench.read_usage();
+                                crate::accounts::ask_again(bench, &provider, cx);
+                            })),
                     ),
             )
             .child(body),
