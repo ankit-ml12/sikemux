@@ -1,8 +1,8 @@
 //! Secrets kept by service and account, where no agent can reach them: in
 //! the data protection keychain for a build Sikemux's team signed on macOS,
 //! and in the guarded store for a core Sikemux's installer set up on Linux. A
-//! development build keeps them in files only the person can read. Any other
-//! build keeps none, rather than keep them where agents could read them.
+//! development build keeps them in files only the person can read. Any other build keeps none, rather
+//! than keep them where agents could read them.
 
 use std::fmt;
 

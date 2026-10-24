@@ -10,3 +10,12 @@ A worker on another host runs there on that host's own sign-in for its CLI, in a
 ## Sign-ins
 
 An agent uses the sign-ins of the host it runs on, whichever host started or messaged it: that host's plugin tools such as Jira, GitHub, AWS or Slack, its database logins and its browser tabs. A worker on another host gets that host's sign-ins, never this one's. Sign-ins never leave the host they were made on.
+
+## Sending a project to another host
+
+**Settings › General › Session transfer** sends the project in front to another host you've linked, with its chats and tabs. Pick the host, then:
+
+- **Copy** leaves the project here as it is.
+- **Move** closes its chats here and removes their saved conversations, but only once the other host has every chat and tab. If anything doesn't arrive whole, nothing here changes.
+
+Tick **Bring uncommitted changes** to take the checkout's uncommitted work along. Chats come along when their agent keeps them in files, as Claude Code and Codex do; the others stay here. A chat that came along runs on the other host's sign-in the next time you send to it. Sikemux then says what went and what stayed, and opens the project on the other host.

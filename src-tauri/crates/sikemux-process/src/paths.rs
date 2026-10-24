@@ -27,9 +27,27 @@ pub fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-/// `~/.config/sikemux`, where Sikemux keeps its own files.
+/// The path the environment variable `name` holds.
+pub fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+/// `~/.config/sikemux`, where Sikemux keeps its own files, or the folder `SIKEMUX_CONFIG_DIR`
+/// names for a Sikemux kept apart from the person's own.
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(dir) = env_path(crate::vars::CONFIG_DIR) {
+        return Some(dir);
+    }
     Some(home()?.join(".config").join("sikemux"))
+}
+
+/// The endpoint file of the core that started this program, when one handed it over.
+pub fn handed_cli_endpoint() -> Option<PathBuf> {
+    std::env::var_os(crate::vars::CLI_ENDPOINT)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 /// A file in `~/.config/sikemux`, named `<stem>.dev.<extension>` in debug builds so a

@@ -24,6 +24,7 @@ const SERVICE_START: Duration = Duration::from_secs(5);
 const SERVICE_START: Duration = Duration::from_secs(60);
 
 /// How the app starts the core, which the login item repeats.
+#[derive(Clone)]
 pub struct CoreLaunch {
     pub binary: PathBuf,
     pub socket: PathBuf,
@@ -49,7 +50,7 @@ pub fn label(identifier: &str) -> String {
     format!("{identifier}.core")
 }
 
-/// The app's identifier in `tauri.conf.json`, or in `tauri.dev.conf.json` for dev builds.
+/// The app's identifier, with `.dev` for dev builds.
 pub const IDENTIFIER: &str = if cfg!(debug_assertions) {
     "com.nodelike.sikemux.dev"
 } else {
