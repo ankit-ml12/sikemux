@@ -43,6 +43,9 @@ pub enum Update {
     Failed(String),
     Terminal(SessionId, Screenful),
     Lost(String),
+    /// The core said it stopped on purpose, as `sikemux stop` stops it, so the window starts it
+    /// again only when the person asks with `Ask::StartCore`, or picks up one started elsewhere.
+    Stopped,
     /// The core stopped everything it ran, as the person asked, so the app can quit.
     ShutDown,
     /// Where remote access stands, whenever it changes.
@@ -267,6 +270,8 @@ pub enum Ask {
     },
     /// Stops every agent and terminal the core runs.
     Shutdown,
+    /// Starts the core again after it stopped on purpose.
+    StartCore,
     Remote(RemoteAsk),
     /// Carries a chat on to another of the person's accounts; a turn at work goes on there.
     MoveChat {
@@ -945,6 +950,7 @@ async fn run(
         match CoreClient::connect(&home.socket).await {
             Ok((client, mut events)) => {
                 let connected = Instant::now();
+                let mut stopping = false;
                 let client = Arc::new(client);
                 let _ = updates.send(Update::Connected(client.hello().build.version.clone()));
                 if let Err(error) = client.configure(home.manifest_dir.clone()).await {
@@ -1034,6 +1040,7 @@ async fn run(
                                 }
                             }
                             Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
+                                stopping |= topic == "stopping";
                                 for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
                                     read(&client, key, watch, &current, &updates);
                                 }
@@ -1307,6 +1314,7 @@ async fn run(
                                 };
                                 tokio::spawn(open_chat_on(client.clone(), ask, heard));
                             }
+                            Some(Ask::StartCore) => {}
                             Some(Ask::Shutdown) => {
                                 let _ = client.shutdown(true).await;
                                 let _ = updates.send(Update::ShutDown);
@@ -1352,6 +1360,15 @@ async fn run(
                         },
                     }
                 }
+                if stopping {
+                    let _ = updates.send(Update::Stopped);
+                    if !wait_to_start(&home, &mut asks, &mut watches, &mut followed, &current).await
+                    {
+                        return;
+                    }
+                    reconnect.reset();
+                    continue;
+                }
                 let _ = updates.send(Update::Lost("the core closed the connection".into()));
                 if connected.elapsed() >= HELD {
                     reconnect.reset();
@@ -1363,6 +1380,50 @@ async fn run(
             }
         }
         tokio::time::sleep(reconnect.next()).await;
+    }
+}
+
+/// How often a window whose core stopped looks for one started elsewhere, such as by `sikemux start`.
+const STOPPED_LOOK: Duration = Duration::from_secs(2);
+
+/// Waits, after the core stopped on purpose, for the person to start it or for a core that
+/// answers. What the window watches keeps up meanwhile; anything asked of the core is dropped,
+/// which tells whoever waits for an answer that there is none. False once the window is gone.
+async fn wait_to_start(
+    home: &Home,
+    asks: &mut mpsc::UnboundedReceiver<Ask>,
+    watches: &mut HashMap<&'static str, Watch>,
+    followed: &mut Vec<&'static str>,
+    current: &Arc<Mutex<HashMap<&'static str, u64>>>,
+) -> bool {
+    let mut look = tokio::time::interval(STOPPED_LOOK);
+    look.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            ask = asks.recv() => match ask {
+                Some(Ask::StartCore) => return true,
+                Some(Ask::Watch(key, mut watch)) => {
+                    watch.generation = next_generation(current, key);
+                    watches.insert(key, watch);
+                }
+                Some(Ask::Unwatch(key)) => {
+                    next_generation(current, key);
+                    watches.remove(key);
+                }
+                Some(Ask::Follow(topic)) => {
+                    if !followed.contains(&topic) {
+                        followed.push(topic);
+                    }
+                }
+                Some(_) => {}
+                None => return false,
+            },
+            _ = look.tick() => {
+                if home.socket.exists() && CoreClient::connect(&home.socket).await.is_ok() {
+                    return true;
+                }
+            }
+        }
     }
 }
 

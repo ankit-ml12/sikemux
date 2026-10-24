@@ -145,3 +145,40 @@ pub fn reconnecting(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<An
             .into_any_element(),
     )
 }
+
+/// Covers the workspace while the core is stopped on purpose, with the one way back: starting it.
+pub fn stopped(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    if !bench.stopped || bench.view.is_none() {
+        return None;
+    }
+    let t = Tokens::get(cx).clone();
+    Some(
+        div()
+            .id("stopped")
+            .absolute()
+            .inset_0()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(18.))
+            .bg(Hsla {
+                a: 0.82,
+                ..t.surface_sunken
+            })
+            .occlude()
+            .child(mark_with(
+                Some("Sikemux is stopped".to_owned()),
+                Some("Its terminals and agents stopped with it.".to_owned()),
+                cx,
+            ))
+            .child(
+                ui::Button::new("start-core", "Start Sikemux", ui::Variant::Primary).on_click(
+                    cx.listener(|bench, _, _, _| {
+                        let _ = bench.asks.send(crate::core::Ask::StartCore);
+                    }),
+                ),
+            )
+            .into_any_element(),
+    )
+}
