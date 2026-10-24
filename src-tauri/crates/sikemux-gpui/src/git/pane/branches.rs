@@ -460,6 +460,78 @@ impl GitPane {
         );
     }
 
+    fn edit_remote_url(&mut self, remote: &GitRemote, cx: &mut Context<Self>) {
+        let (name, was) = (remote.name.clone(), remote.url.clone());
+        self.prompt(
+            format!("Edit url · {name}"),
+            "",
+            was.clone(),
+            move |pane, url, cx| {
+                if url.is_empty() || url == was {
+                    return;
+                }
+                let params = pane.repo_call(json!({ "name": name, "url": url }));
+                pane.run(
+                    format!("setting url for {name}"),
+                    "git.remoteSetUrl",
+                    params,
+                    cx,
+                    |pane, _, cx| pane.read_remotes(cx),
+                );
+            },
+            cx,
+        );
+    }
+
+    fn rename_remote(&mut self, remote: &GitRemote, cx: &mut Context<Self>) {
+        let was = remote.name.clone();
+        self.prompt(
+            format!("Rename remote · {was}"),
+            "",
+            was.clone(),
+            move |pane, name, cx| {
+                if name.is_empty() || name == was {
+                    return;
+                }
+                let params = pane.repo_call(json!({ "oldName": was, "newName": name }));
+                let (old, new) = (was.clone(), name.clone());
+                pane.run(
+                    format!("renaming {was} → {name}"),
+                    "git.remoteRename",
+                    params,
+                    cx,
+                    move |pane, _, cx| {
+                        if pane.branches.open.as_deref() == Some(old.as_str()) {
+                            pane.branches.open = Some(new.clone());
+                        }
+                        pane.read_remotes(cx)
+                    },
+                );
+            },
+            cx,
+        );
+    }
+
+    fn remove_remote(&mut self, remote: &GitRemote, cx: &mut Context<Self>) {
+        let name = remote.name.clone();
+        self.ask(
+            format!("Remove remote {name}?"),
+            "Removes the local remote configuration. Won't touch the upstream repo.",
+            "remove",
+            move |pane, cx| {
+                let params = pane.repo_call(json!({ "name": name }));
+                pane.run(
+                    format!("removing remote {name}"),
+                    "git.remoteRemove",
+                    params,
+                    cx,
+                    |pane, _, cx| pane.read_remotes(cx),
+                );
+            },
+            cx,
+        );
+    }
+
     fn fetch_remote(&mut self, remote: Option<String>, cx: &mut Context<Self>) {
         let label = match &remote {
             Some(remote) => format!("fetching {remote}…"),
@@ -523,7 +595,53 @@ impl GitPane {
 
 /// A line of a "More" menu: what it says, its icon and key, whether a hairline comes
 /// before it, and what it does.
-type MoreItem = (SharedString, Icon, Option<&'static str>, bool, super::Act);
+struct MoreItem {
+    label: SharedString,
+    icon: Icon,
+    hint: Option<&'static str>,
+    separated: bool,
+    danger: bool,
+    disabled: bool,
+    act: super::Act,
+}
+
+impl MoreItem {
+    fn new(
+        label: impl Into<SharedString>,
+        icon: Icon,
+        act: impl Fn(&mut GitPane, &mut Context<GitPane>) + 'static,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            icon,
+            hint: None,
+            separated: false,
+            danger: false,
+            disabled: false,
+            act: std::rc::Rc::new(act),
+        }
+    }
+
+    fn hint(mut self, hint: &'static str) -> Self {
+        self.hint = Some(hint);
+        self
+    }
+
+    fn separated(mut self, separated: bool) -> Self {
+        self.separated = separated;
+        self
+    }
+
+    fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+
+    fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+}
 
 /// A popover menu of what can be done with an entry, opened from its "More" button.
 fn more(id: SharedString, view: &Entity<GitPane>, items: Vec<MoreItem>) -> impl IntoElement {
@@ -538,20 +656,22 @@ fn more(id: SharedString, view: &Entity<GitPane>, items: Vec<MoreItem>) -> impl 
         .content(move |_, _, cx| {
             let popover = cx.entity();
             let mut menu = Menu::new();
-            for (index, (label, icon, hint, separated, act)) in items.iter().enumerate() {
-                if *separated {
+            for (index, line) in items.iter().enumerate() {
+                if line.separated {
                     menu = menu.separator(cx);
                 }
-                let (view, popover, act) = (view.clone(), popover.clone(), act.clone());
-                let mut item = MenuItem::new(("more", index), label.clone())
-                    .icon(*icon)
+                let (view, popover, act) = (view.clone(), popover.clone(), line.act.clone());
+                let mut item = MenuItem::new(("more", index), line.label.clone())
+                    .icon(line.icon)
+                    .danger(line.danger)
+                    .disabled(line.disabled)
                     .on_click(move |_, window, cx| {
                         let act = act.clone();
                         view.update(cx, |pane, cx| act(pane, cx));
                         popover.update(cx, |popover, cx| popover.dismiss(window, cx));
                     });
-                if let Some(hint) = hint {
-                    item = item.hint(*hint);
+                if let Some(hint) = line.hint {
+                    item = item.hint(hint);
                 }
                 menu = menu.child(item);
             }
@@ -986,59 +1106,53 @@ fn branch_more(view: &Entity<GitPane>, branch: &GitBranch, into: &str) -> impl I
     let mut items: Vec<MoreItem> = Vec::new();
     if !branch.current {
         let (checked, merged, squashed) = (name.clone(), name.clone(), name.clone());
-        items.push((
-            "Check out".into(),
-            Icon::Checkout,
-            Some("↵"),
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.checkout(checked.clone(), cx)),
-        ));
-        items.push((
-            format!("Merge into {into}").into(),
+        items.push(
+            MoreItem::new("Check out", Icon::Checkout, move |pane, cx| {
+                pane.checkout(checked.clone(), cx)
+            })
+            .hint("↵"),
+        );
+        items.push(
+            MoreItem::new(
+                format!("Merge into {into}"),
+                Icon::Merge,
+                move |pane, cx| pane.merge(merged.clone(), false, cx),
+            )
+            .hint("M"),
+        );
+        items.push(MoreItem::new(
+            format!("Squash merge into {into}"),
             Icon::Merge,
-            Some("M"),
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.merge(merged.clone(), false, cx)),
-        ));
-        items.push((
-            format!("Squash merge into {into}").into(),
-            Icon::Merge,
-            None,
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.merge(squashed.clone(), true, cx)),
+            move |pane, cx| pane.merge(squashed.clone(), true, cx),
         ));
     }
     let (started, renamed, copied, deleted) =
         (name.clone(), branch.clone(), name.clone(), branch.clone());
-    items.push((
-        "New branch from here".into(),
-        Icon::Plus,
-        Some("n"),
-        !branch.current,
-        std::rc::Rc::new(move |pane, cx| pane.new_branch(Some(started.clone()), cx)),
-    ));
-    items.push((
-        "Rename…".into(),
-        Icon::Pencil,
-        Some("R"),
-        false,
-        std::rc::Rc::new(move |pane, cx| pane.rename_branch(&renamed, cx)),
-    ));
-    items.push((
-        "Copy name".into(),
-        Icon::Copy,
-        None,
-        false,
-        std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), copied.clone(), cx)),
-    ));
+    items.push(
+        MoreItem::new("New branch from here", Icon::Plus, move |pane, cx| {
+            pane.new_branch(Some(started.clone()), cx)
+        })
+        .hint("n")
+        .separated(!branch.current),
+    );
+    items.push(
+        MoreItem::new("Rename…", Icon::Pencil, move |pane, cx| {
+            pane.rename_branch(&renamed, cx)
+        })
+        .hint("R"),
+    );
+    items.push(MoreItem::new("Copy name", Icon::Copy, move |pane, cx| {
+        pane.copy(copied.clone(), copied.clone(), cx)
+    }));
     if !branch.current {
-        items.push((
-            "Delete…".into(),
-            Icon::Trash,
-            Some("d"),
-            true,
-            std::rc::Rc::new(move |pane, cx| pane.delete_menu(&deleted, cx)),
-        ));
+        items.push(
+            MoreItem::new("Delete…", Icon::Trash, move |pane, cx| {
+                pane.delete_menu(&deleted, cx)
+            })
+            .hint("d")
+            .separated(true)
+            .danger(),
+        );
     }
     more(
         SharedString::from(format!("branch-more:{name}")),
@@ -1048,23 +1162,35 @@ fn branch_more(view: &Entity<GitPane>, branch: &GitBranch, into: &str) -> impl I
 }
 
 fn remote_more(view: &Entity<GitPane>, remote: &GitRemote) -> impl IntoElement {
-    let (fetched, copied) = (remote.name.clone(), remote.url.clone());
+    let (fetched, edited, renamed, copied, removed) = (
+        remote.name.clone(),
+        remote.clone(),
+        remote.clone(),
+        remote.url.clone(),
+        remote.clone(),
+    );
     let what = format!("{} URL", remote.name);
     let items: Vec<MoreItem> = vec![
-        (
-            "Fetch".into(),
+        MoreItem::new(
+            format!("Fetch {}", remote.name),
             Icon::Fetch,
-            Some("f"),
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.fetch_remote(Some(fetched.clone()), cx)),
-        ),
-        (
-            "Copy URL".into(),
-            Icon::Copy,
-            None,
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), what.clone(), cx)),
-        ),
+            move |pane, cx| pane.fetch_remote(Some(fetched.clone()), cx),
+        )
+        .hint("f"),
+        MoreItem::new("Edit URL…", Icon::Pencil, move |pane, cx| {
+            pane.edit_remote_url(&edited, cx)
+        }),
+        MoreItem::new("Rename…", Icon::Pencil, move |pane, cx| {
+            pane.rename_remote(&renamed, cx)
+        }),
+        MoreItem::new("Copy URL", Icon::Copy, move |pane, cx| {
+            pane.copy(copied.clone(), what.clone(), cx)
+        }),
+        MoreItem::new("Remove remote…", Icon::Trash, move |pane, cx| {
+            pane.remove_remote(&removed, cx)
+        })
+        .separated(true)
+        .danger(),
     ];
     more(
         SharedString::from(format!("remote-more:{}", remote.name)),
@@ -1080,43 +1206,45 @@ fn remote_branch_more(
     current: &str,
 ) -> impl IntoElement {
     let into = if current.is_empty() { "HEAD" } else { current };
+    let (checked_remote, checked) = (remote.to_owned(), branch.clone());
     let (merged, upstream, copied) = (
         branch.full_ref.clone(),
         branch.clone(),
         branch.full_ref.clone(),
     );
     let (deleted_remote, deleted) = (remote.to_owned(), branch.clone());
+    let check_out = match &branch.tracked_by {
+        Some(local) => format!("Check out {local}"),
+        None => "Check out as a local branch".to_owned(),
+    };
     let items: Vec<MoreItem> = vec![
-        (
-            format!("Merge into {into}").into(),
+        MoreItem::new(check_out, Icon::Checkout, move |pane, cx| {
+            pane.checkout_remote(checked_remote.clone(), checked.clone(), cx)
+        })
+        .hint("↵"),
+        MoreItem::new(
+            format!("Merge into {into}"),
             Icon::Merge,
-            Some("M"),
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.merge(merged.clone(), false, cx)),
-        ),
-        (
-            format!("Set as upstream of {into}").into(),
+            move |pane, cx| pane.merge(merged.clone(), false, cx),
+        )
+        .hint("M"),
+        MoreItem::new(
+            format!("Set as upstream of {into}"),
             Icon::Link,
-            Some("u"),
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.set_upstream(&upstream, cx)),
-        ),
-        (
-            "Copy name".into(),
-            Icon::Copy,
-            None,
-            false,
-            std::rc::Rc::new(move |pane, cx| pane.copy(copied.clone(), copied.clone(), cx)),
-        ),
-        (
-            format!("Delete on {remote}…").into(),
+            move |pane, cx| pane.set_upstream(&upstream, cx),
+        )
+        .hint("u")
+        .disabled(current.is_empty()),
+        MoreItem::new("Copy name", Icon::Copy, move |pane, cx| {
+            pane.copy(copied.clone(), copied.clone(), cx)
+        }),
+        MoreItem::new(
+            format!("Delete on {remote}…"),
             Icon::Trash,
-            None,
-            true,
-            std::rc::Rc::new(move |pane, cx| {
-                pane.delete_remote_branch(deleted_remote.clone(), &deleted, cx)
-            }),
-        ),
+            move |pane, cx| pane.delete_remote_branch(deleted_remote.clone(), &deleted, cx),
+        )
+        .separated(true)
+        .danger(),
     ];
     more(
         SharedString::from(format!("remote-branch-more:{}", branch.full_ref)),
