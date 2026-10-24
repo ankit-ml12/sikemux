@@ -1,6 +1,6 @@
 import curated from "../../src-tauri/crates/sikemux-core/src/server/themes/curated.json";
 import type { Palette, Theme, ThemeSummary } from "../../src/themes";
-import palette from "./theme.json";
+import palette from "../../src/themes/defaultPalette.json";
 
 /** The palette the core answers for its default theme, as it worked it out. */
 export const DEMO_PALETTE = palette as Palette;
