@@ -264,7 +264,7 @@ async fn codex_thread_request(
     params: Value,
     action: &str,
 ) -> Result<(), String> {
-    let mut command = Command::from(sikemux_process::user_environment::command(executable));
+    let mut command = Command::from(sikemux_process::user_environment::agent_command(executable));
     apply_login_environment(&mut command);
     command
         .args(["app-server", "--stdio"])
