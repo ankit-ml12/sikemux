@@ -3716,15 +3716,24 @@ impl Workbench {
         self.front_tab(&self.strip()?)
     }
 
-    /// The tab in front in `strip`.
+    /// The tab in front in `strip`. While the one in front is closing, it is the one the core
+    /// brings forward in its place, the next open tab after it, else the nearest before it.
     pub fn front_tab(&self, strip: &Strip) -> Option<&Tab> {
         let layout = self.layout_of(strip)?;
         let tabs = layout.tabs.as_slice();
-        layout
+        let open = |tab: &&Tab| !self.closing(&tab.id);
+        let active = layout
             .active
             .as_deref()
-            .and_then(|id| tabs.iter().find(|tab| tab.id == id))
-            .or(tabs.first())
+            .and_then(|id| tabs.iter().position(|tab| tab.id == id));
+        match active {
+            Some(at) if open(&&tabs[at]) => Some(&tabs[at]),
+            Some(at) => tabs[at..]
+                .iter()
+                .find(open)
+                .or_else(|| tabs[..at].iter().rev().find(open)),
+            None => tabs.iter().find(open),
+        }
     }
 
     /// Whether `tab` was asked to close a moment ago and the layout has not caught up yet.
