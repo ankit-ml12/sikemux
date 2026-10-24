@@ -111,8 +111,8 @@ calls! { core, client, params;
         answer(())
     },
     "startChat": Local => {
-        let params: AgentParams = parse(params)?;
-        answer(super::launching::start_saved(&core, &params.agent_id).await?)
+        let params: StartParams = parse(params)?;
+        answer(super::launching::start_saved(&core, &params.agent_id, params.waits_for_person).await?)
     },
     "resumeSession": Full => answer(super::launching::resume_session(&core, parse(params)?).await?),
     "activitySummary": Watch, any_program => answer(activity_summary(&core, parse(params)?).await?),
@@ -958,6 +958,15 @@ struct QueuedParams {
 #[serde(rename_all = "camelCase")]
 struct AgentParams {
     agent_id: String,
+}
+
+/// A saved agent to start; one moved to another agent before it ran waits for the person.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartParams {
+    agent_id: String,
+    #[serde(default)]
+    waits_for_person: bool,
 }
 
 #[derive(Deserialize)]

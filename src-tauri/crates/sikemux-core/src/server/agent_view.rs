@@ -92,6 +92,6 @@ async fn to_chat(
         }
         core.view_changed();
     }
-    launching::start_saved(core, agent_id).await?;
+    launching::start_saved(core, agent_id, false).await?;
     Ok(Value::Null)
 }

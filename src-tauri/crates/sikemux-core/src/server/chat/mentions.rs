@@ -118,7 +118,7 @@ async fn woken(
     {
         let (core, agent_id) = (core.clone(), agent.id.clone());
         tokio::spawn(async move {
-            if let Err(error) = launching::start_saved(&core, &agent_id).await {
+            if let Err(error) = launching::start_saved(&core, &agent_id, false).await {
                 eprintln!(
                     "sikemux core: an earlier chat named in a message did not start: {error}"
                 );

@@ -268,11 +268,13 @@ pub(crate) async fn start(
 }
 
 /// Starts an agent of the workspace as its record says, on its saved
-/// conversation and the account it last ran on.
+/// conversation and the account it last ran on, or with `waits_for_person`
+/// lists it to start once the person writes in it.
 pub(crate) async fn start_agent(
     core: &Arc<Core>,
     by: Option<&Arc<ClientConn>>,
     agent_id: &str,
+    waits_for_person: bool,
 ) -> CoreResult<Arc<chat::Chat>> {
     let kept = core
         .workspaces
@@ -290,17 +292,21 @@ pub(crate) async fn start_agent(
         account: kept.account,
         fallbacks: kept.fallbacks,
         program: kept.program,
-        // An agent that never ran waits for the person, as a new chat does.
-        waits_for_person: agent.resume_id.is_none(),
+        waits_for_person,
         resume_id: agent.resume_id,
     };
     start(core, by, chosen).await
 }
 
 /// Starts an agent's chat as its record says unless it runs already, and
-/// answers once its session is ready or says why it never got there.
-pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
-    lifecycle::ensure_running(core, agent_id).await?;
+/// answers once its session is ready or says why it never got there; with
+/// `waits_for_person`, once it is listed to start when the person writes.
+pub(crate) async fn start_saved(
+    core: &Arc<Core>,
+    agent_id: &str,
+    waits_for_person: bool,
+) -> CoreResult<()> {
+    lifecycle::ensure_running(core, agent_id, waits_for_person).await?;
     let started = core.chats.running(agent_id)?;
     if started.unstarted() {
         return Ok(());
@@ -312,7 +318,7 @@ pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<
 /// up next finds it there.
 pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
     let deadline = tokio::time::Instant::now() + WAKE_WAIT;
-    tokio::time::timeout_at(deadline, lifecycle::ensure_running(core, &agent_id))
+    tokio::time::timeout_at(deadline, lifecycle::ensure_running(core, &agent_id, false))
         .await
         .map_err(|_| CoreError::from("the chat did not wake in time"))??;
     tokio::time::timeout_at(deadline, chat::until_ready(core, &agent_id))

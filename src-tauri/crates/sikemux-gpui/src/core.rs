@@ -1359,7 +1359,7 @@ async fn run(
 
 async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender<Update>) {
     let (agent, news) = match ask {
-        ChatAsk::Restart { agent } => match restarted(client, agent).await {
+        ChatAsk::Restart { agent } => match restarted(client, agent, false).await {
             Some(news) => news,
             None => return,
         },
@@ -1371,7 +1371,7 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
             if let Err(error) = changed {
                 return eprintln!("sikemux: the core did not move chat {agent}: {error}");
             }
-            match restarted(client, agent).await {
+            match restarted(client, agent, true).await {
                 Some(news) => news,
                 None => return,
             }
@@ -1530,8 +1530,14 @@ async fn chat(client: &CoreClient, ask: ChatAsk, updates: &mpsc::UnboundedSender
 }
 
 /// Starts `agent`'s session again and attaches to it.
-async fn restarted(client: &CoreClient, agent: String) -> Option<(String, ChatNews)> {
-    let started = client.call("startChat", json!({ "agentId": agent })).await;
+/// Starts `agent` again and attaches to it; one `held` waits for the person before its agent starts.
+async fn restarted(client: &CoreClient, agent: String, held: bool) -> Option<(String, ChatNews)> {
+    let started = client
+        .call(
+            "startChat",
+            json!({ "agentId": agent, "waitsForPerson": held }),
+        )
+        .await;
     if let Err(error) = started {
         eprintln!("sikemux: the core did not start chat {agent} again: {error}");
         return None;

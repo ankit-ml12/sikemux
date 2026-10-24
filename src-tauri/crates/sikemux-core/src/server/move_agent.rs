@@ -121,8 +121,10 @@ pub(crate) async fn move_agent(core: &Arc<Core>, params: MoveParams) -> CoreResu
     core.view_changed();
     if chat {
         let (core, agent_id) = (core.clone(), agent.id.clone());
+        // A chat that never ran goes on waiting for the person in its new project.
+        let waits = agent.resume_id.is_none();
         tokio::spawn(async move {
-            if let Err(error) = launching::start_saved(&core, &agent_id).await {
+            if let Err(error) = launching::start_saved(&core, &agent_id, waits).await {
                 eprintln!(
                     "sikemux core: {agent_id} did not start again in its new project: {error}"
                 );

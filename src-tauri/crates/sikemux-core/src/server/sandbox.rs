@@ -325,7 +325,7 @@ pub(crate) async fn for_agent(core: &Arc<Core>, params: ForAgentParams) -> CoreR
     core.workspaces.update_agent(&params.agent_id, patch)?;
     core.view_changed();
     if core.chats.stop(&params.agent_id) {
-        launching::start_agent(core, None, &params.agent_id).await?;
+        launching::start_agent(core, None, &params.agent_id, false).await?;
     }
     Ok(ForAgent {
         worktree,

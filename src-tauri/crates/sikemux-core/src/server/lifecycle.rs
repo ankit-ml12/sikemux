@@ -94,12 +94,20 @@ where
 
 /// Starts the agent's chat as its record says unless it runs already or
 /// another client is starting it, and answers once it runs.
-pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+pub(crate) async fn ensure_running(
+    core: &Arc<Core>,
+    agent_id: &str,
+    waits_for_person: bool,
+) -> CoreResult<()> {
     start_once(
         core,
         agent_id,
         || core.chats.get(agent_id).map(drop),
-        || async { launching::start_agent(core, None, agent_id).await.map(drop) },
+        || async {
+            launching::start_agent(core, None, agent_id, waits_for_person)
+                .await
+                .map(drop)
+        },
     )
     .await
 }
