@@ -23,7 +23,10 @@
 //!                                 "host host:<key>" or "host ssh:<alias>" chooses the host in front, as a
 //!                                 click on its row does; "film N prefix" saves N frames at least 16 ms apart,
 //!                                 as prefix-00.png on, straight after the step before it, printing when each
-//!                                 was drawn
+//!                                 was drawn; "menu name" prints the menus open, Kit's and the app's, as one line of
+//!                                 JSON after "menu name: ", each a list of its items in order with their label
+//!                                 and whether they are disabled or checked (null where the menu does not say,
+//!                                 as Kit's items do not), and separators as {"separator":true}
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -36,6 +39,7 @@ use gpui::{
     HeadlessAppContext, Image, ImageFormat, Keystroke, Modifiers, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
 };
+use serde_json::{json, Value};
 use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
 use sikemux_wire::protocol::AccountInfo;
 
@@ -268,6 +272,7 @@ fn main() -> anyhow::Result<()> {
                         );
                     }
                 }
+                "menu" => println!("menu {rest}: {}", Value::Array(open_menus(window))),
                 "activate" => window.activate_window(),
                 "picker" => {
                     if let Some(bench) = bench.borrow().clone() {
@@ -461,6 +466,67 @@ fn main() -> anyhow::Result<()> {
 
 /// One line of what the window shows, for a check to match without looking: its keys stay in
 /// this order, and new ones go at the end.
+/// The menus the last frame drew, each as its items in order. An item takes its own accessible label
+/// or, for an item drawn from its own element, the first label inside it; an item with no label
+/// anywhere is a separator when it is a thin line, as both Kit's menus and the app's draw them.
+fn open_menus(window: &gpui::Window) -> Vec<Value> {
+    let mut drawn = gpui_base::test_support::snapshots(window);
+    drawn.sort_by(|a, b| {
+        let at = |e: &gpui_base::test_support::ElementSnapshot| {
+            (e.bounds().origin.y, e.bounds().origin.x)
+        };
+        at(a)
+            .partial_cmp(&at(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let inside = |outer: &[gpui::ElementId], inner: &[gpui::ElementId]| {
+        inner.len() > outer.len() && inner.starts_with(outer)
+    };
+    drawn
+        .iter()
+        .filter(|element| element.role() == Some(gpui::Role::Menu))
+        .map(|menu| {
+            let candidates: Vec<_> = drawn
+                .iter()
+                .filter(|element| {
+                    inside(menu.path(), element.path())
+                        && matches!(element.role(), Some(gpui::Role::MenuItem) | None)
+                })
+                .collect();
+            let items = candidates
+                .iter()
+                .filter(|item| {
+                    !candidates
+                        .iter()
+                        .any(|outer| inside(outer.path(), item.path()))
+                })
+                .map(|item| {
+                    let label = item.label().or_else(|| {
+                        drawn
+                            .iter()
+                            .find(|element| {
+                                inside(item.path(), element.path()) && element.label().is_some()
+                            })
+                            .and_then(|element| element.label())
+                    });
+                    match label {
+                        Some(label) => json!({
+                            "label": label,
+                            "disabled": item.disabled(),
+                            "checked": item.checked(),
+                        }),
+                        None if item.bounds().size.height < px(8.) => json!({ "separator": true }),
+                        None => {
+                            json!({ "label": null, "disabled": item.disabled() })
+                        }
+                    }
+                })
+                .collect();
+            Value::Array(items)
+        })
+        .collect()
+}
+
 fn state(bench: &workbench::Workbench, stack: &[gpui::KeyContext]) -> String {
     let names = |context: &gpui::KeyContext| -> Vec<String> {
         context

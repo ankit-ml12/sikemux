@@ -77,6 +77,9 @@ naga = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64de
 sikemux-fold = { path = "../sikemux-fold" }
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["test-support", "bench-support"] }
+# So the shot can read what the window drew, such as an open menu's items.
+gpui-base = { version = "=0.8.0", features = ["test-support"] }
+gpui-component = { version = "=0.8.0", default-features = false, features = ["test-support"] }
 
 [profile.dev]
 debug = "line-tables-only"

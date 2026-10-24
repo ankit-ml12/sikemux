@@ -3,10 +3,11 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
     div, px, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
     ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use smallvec::SmallVec;
 
@@ -44,10 +45,14 @@ impl Menu {
         }
     }
 
-    /// A hairline between groups of items.
+    /// A hairline between groups of items. Like Kit's, it is an item with no label to anything
+    /// reading the window, so menus of both kinds read the same.
     pub fn separator(mut self, cx: &App) -> Self {
+        let id = ElementId::NamedInteger("menu-separator".into(), self.items.len() as u64);
         self.items.push(
             div()
+                .id(id)
+                .test_support()
                 .h(px(1.))
                 .mx(px(2.))
                 .my(px(4.))
@@ -67,6 +72,9 @@ impl ParentElement for Menu {
 impl RenderOnce for Menu {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         float(cx)
+            .id("menu")
+            .test_support()
+            .role(Role::Menu)
             .min_w(px(196.))
             .max_w(px(340.))
             .p(px(4.))
@@ -181,6 +189,7 @@ impl RenderOnce for MenuItem {
         BaseButton::new(self.id.clone())
             .group(GROUP)
             .disabled(self.disabled)
+            .role(Role::MenuItem)
             .accessibility_label(self.label.clone())
             .w_full()
             .px(px(10.))
