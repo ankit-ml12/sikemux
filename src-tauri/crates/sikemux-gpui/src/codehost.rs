@@ -18,7 +18,6 @@ mod thread;
 use std::future::Future;
 use std::rc::Rc;
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::{
     div, px, AnyElement, App, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
@@ -31,6 +30,7 @@ use sikemux_wire::protocol::ProjectCodeHost;
 use crate::core::{Target, Watch};
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -461,8 +461,8 @@ impl HostArea {
     /// Tells the person how something went, in a toast.
     fn say(&self, said: Said, cx: &mut Context<Self>) {
         let note = match said {
-            Said::Done(text) => Notification::success(text),
-            Said::Failed(text) => Notification::error(text).autohide(false),
+            Said::Done(text) => toast::success(text),
+            Said::Failed(text) => toast::error(text).autohide(false),
         };
         self.bench
             .update(cx, |bench, cx| bench.notify(note, cx))

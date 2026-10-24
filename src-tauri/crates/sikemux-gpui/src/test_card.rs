@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 
 use gpui_kit::base::Popover;
-use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     anchored, deferred, div, px, Anchor, AnyElement, Context, FontWeight, InteractiveElement,
@@ -15,6 +14,7 @@ use serde_json::{json, Value};
 use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui::{self, IconButton, Menu, MenuItem, Variant};
 use crate::workbench::Workbench;
 
@@ -384,8 +384,7 @@ fn rerun_failed(bench: &Workbench, execution: &str, cx: &mut Context<Workbench>)
                 }
             }
             Err(error) => {
-                let note =
-                    Notification::error(format!("Could not rerun the failed tests: {error}"));
+                let note = toast::error(format!("Could not rerun the failed tests: {error}"));
                 bench.notify(note.autohide(false), cx)
             }
         });

@@ -37,6 +37,7 @@ use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::toast;
 use crate::track::{self, Scrolled, Slide};
 use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
 use crate::workbench::{AgentRow, Workbench};
@@ -1012,13 +1013,13 @@ impl GitPane {
 
     /// Says what went wrong, by the first line of it, until it is dismissed.
     fn fail(&self, error: &str, cx: &mut Context<Self>) {
-        self.say(Notification::error(first_line(error)).autohide(false), cx);
+        self.say(toast::error(first_line(error)).autohide(false), cx);
     }
 
     /// Says what an operation answered, by its first line, when it said anything.
     fn done(&self, said: &str, cx: &mut Context<Self>) {
         if !said.trim().is_empty() {
-            self.say(Notification::success(first_line(said)), cx);
+            self.say(toast::success(first_line(said)), cx);
         }
     }
 
@@ -1031,7 +1032,7 @@ impl GitPane {
     /// Copies `text`, saying it copied `what`.
     fn copy(&self, text: String, what: String, cx: &mut Context<Self>) {
         cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.say(Notification::success(format!("Copied {what}")), cx);
+        self.say(toast::success(format!("Copied {what}")), cx);
     }
 
     fn repo_call(&self, extra: Value) -> Value {

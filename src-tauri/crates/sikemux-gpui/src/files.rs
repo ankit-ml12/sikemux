@@ -7,7 +7,6 @@ use std::rc::Rc;
 use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{ThemeStyled, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -25,6 +24,7 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens};
+use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{Strip, Workbench};
 
@@ -1052,7 +1052,7 @@ impl Workbench {
                                 None => {}
                             }
                         }
-                        Err(error) => bench.notify(Notification::error(error), cx),
+                        Err(error) => bench.notify(toast::error(error), cx),
                     }
                     cx.notify();
                 })
@@ -1138,7 +1138,7 @@ impl Workbench {
                                         bench.files.reload(parent, &bench.target());
                                     }
                                 }
-                                Err(error) => bench.notify(Notification::error(error), cx),
+                                Err(error) => bench.notify(toast::error(error), cx),
                             }
                             cx.notify();
                         })
@@ -1233,7 +1233,7 @@ fn row_menu(
         popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
             move |_, window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                window.push_notification(Notification::success(said), cx);
+                window.push_notification(toast::success(said), cx);
             },
         ));
     }

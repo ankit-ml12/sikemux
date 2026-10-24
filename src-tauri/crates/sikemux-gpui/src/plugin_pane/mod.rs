@@ -20,6 +20,7 @@ use crate::core::Target;
 use crate::icons::Icon;
 use crate::send_to::{self, Choice, Recipient};
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -572,10 +573,7 @@ impl Host {
             }
             if let Some(failed) = failed {
                 let _ = bench.update(cx, |bench, cx| {
-                    let note = gpui_kit::component::notification::Notification::error(format!(
-                        "Sign-in did not finish: {}",
-                        failed.message
-                    ));
+                    let note = toast::error(format!("Sign-in did not finish: {}", failed.message));
                     bench.notify(note, cx);
                 });
             }
@@ -601,7 +599,7 @@ impl Host {
 
     /// Says what went wrong with a call, over the window.
     pub fn said(&self, failure: &Failure, cx: &mut App) {
-        let note = gpui_kit::component::notification::Notification::error(failure.message.clone());
+        let note = toast::error(failure.message.clone());
         if let Some(bench) = self.bench.upgrade() {
             bench.update(cx, |bench, cx| bench.notify(note, cx));
         }
@@ -678,7 +676,7 @@ impl Render for PluginPane {
 /// Copies `text` and says over the window what was copied.
 pub fn copy(bench: &WeakEntity<Workbench>, text: String, what: &str, cx: &mut App) {
     cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
-    let note = gpui_kit::component::notification::Notification::success(format!("Copied {what}"));
+    let note = toast::success(format!("Copied {what}"));
     if let Some(bench) = bench.upgrade() {
         bench.update(cx, |bench, cx| bench.notify(note, cx));
     }

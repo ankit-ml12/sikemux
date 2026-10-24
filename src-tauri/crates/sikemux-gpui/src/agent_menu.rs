@@ -1,7 +1,6 @@
 //! What right-clicking an agent offers, wherever it is shown: its tab, its rail row or its header.
 
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{App, ClickEvent, ClipboardItem, Context, WeakEntity, Window};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
@@ -10,6 +9,7 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{PinnedChat, WorkspaceAgent};
 
 use crate::icons::Icon;
+use crate::toast;
 use crate::workbench::Workbench;
 
 /// What a link's parts escape, as a browser's encodeURIComponent does.
@@ -310,7 +310,7 @@ impl AgentMenu {
                 .on_click(move |_, window, cx| {
                     if let Some(link) = &link {
                         cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
-                        window.push_notification(Notification::success("Copied link"), cx);
+                        window.push_notification(toast::success("Copied link"), cx);
                     }
                 }),
         )

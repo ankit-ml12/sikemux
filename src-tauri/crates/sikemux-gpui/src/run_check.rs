@@ -2,7 +2,6 @@
 //! Mac's Run chip shows it: what is missing, then Run anyway, or Install and run or Fix and run
 //! when the core can set right what is missing.
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -12,6 +11,7 @@ use serde_json::{json, Value};
 
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui::{self, Variant};
 use crate::workbench::Workbench;
 
@@ -84,20 +84,14 @@ impl Workbench {
                         }
                         None => {
                             bench.run_check = None;
-                            bench.notify(
-                                Notification::success(format!("Started task: {label}")),
-                                cx,
-                            );
+                            bench.notify(toast::success(format!("Started task: {label}")), cx);
                         }
                     },
                     Err(error) => {
                         if let Some(check) = bench.run_check.as_mut() {
                             check.fixing = false;
                         }
-                        bench.notify(
-                            Notification::error(format!("Start task {label}: {error}")),
-                            cx,
-                        );
+                        bench.notify(toast::error(format!("Start task {label}: {error}")), cx);
                     }
                 }
                 cx.notify();

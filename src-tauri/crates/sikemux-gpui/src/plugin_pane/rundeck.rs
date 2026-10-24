@@ -23,6 +23,7 @@ use sikemux_wire::rundeck::{
 };
 
 use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
+use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
@@ -3706,15 +3707,14 @@ fn abort(host: &Host, job: &JobRef, id: u64, cx: &mut Context<PluginPane>) {
 
 /// Says how a run ended over the window.
 fn tell(host: &Host, notice: &RunNotice, cx: &mut Context<PluginPane>) {
-    use gpui_kit::component::notification::Notification;
     let text = match notice.body.is_empty() {
         true => notice.title.clone(),
         false => format!("{} — {}", notice.title, notice.body),
     };
     let note = if notice.ok {
-        Notification::success(text)
+        toast::success(text)
     } else {
-        Notification::error(text)
+        toast::error(text)
     };
     if let Some(bench) = host.bench().upgrade() {
         bench.update(cx, |bench, cx| bench.notify(note, cx));

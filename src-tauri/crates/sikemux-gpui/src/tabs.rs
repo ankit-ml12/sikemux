@@ -6,7 +6,6 @@ use std::time::Duration;
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::Side;
 use gpui_kit::component::WindowExt;
 
@@ -25,6 +24,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::ports::PortRow;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui::{self, IconButton, Tab};
 use crate::workbench::{Strip, Workbench};
 
@@ -1233,7 +1233,7 @@ impl TabMenu {
                 .item(PopupMenuItem::new("Copy Path").icon(Icon::Copy).on_click(
                     move |_, window, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                        window.push_notification(Notification::success("Copied path"), cx);
+                        window.push_notification(toast::success("Copied path"), cx);
                     },
                 ))
                 .item(
@@ -1241,10 +1241,7 @@ impl TabMenu {
                         .icon(Icon::Copy)
                         .on_click(move |_, window, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(relative.clone()));
-                            window.push_notification(
-                                Notification::success("Copied relative path"),
-                                cx,
-                            );
+                            window.push_notification(toast::success("Copied relative path"), cx);
                         }),
                 )
                 .separator()

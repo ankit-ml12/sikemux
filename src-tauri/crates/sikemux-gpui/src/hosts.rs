@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{Context, SharedString};
 use serde_json::{json, Value};
 
 use crate::core;
+use crate::toast;
 use crate::workbench::{Strip, Workbench};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
@@ -148,10 +148,7 @@ impl Workbench {
         let params = json!({ "path": path, "host": host });
         // The project's own host sends it, so the call goes to the host in front.
         let opening = self.target().request("openOnHost", params);
-        self.notify(
-            Notification::info(format!("Opening {name} on {label}…")),
-            cx,
-        );
+        self.notify(toast::info(format!("Opening {name} on {label}…")), cx);
         cx.spawn(async move |bench, cx| {
             let opened = opening.await;
             let _ = bench.update(cx, |bench, cx| match opened {
@@ -167,7 +164,7 @@ impl Workbench {
                     }
                 }
                 Err(error) => bench.notify(
-                    Notification::error(format!("It did not open on {label}: {error}")),
+                    toast::error(format!("It did not open on {label}: {error}")),
                     cx,
                 ),
             });
@@ -190,7 +187,7 @@ impl Workbench {
         let verb = if sending.moving { "Moving" } else { "Copying" };
         crate::settings::session_sent(self, None);
         self.notify(
-            Notification::info(format!("{verb} {} to {}…", sending.name, sending.label)),
+            toast::info(format!("{verb} {} to {}…", sending.name, sending.label)),
             cx,
         );
         cx.spawn(async move |bench, cx| {
@@ -201,8 +198,8 @@ impl Workbench {
                     Err(error) => format!("It did not go to {}: {error}", sending.label),
                 };
                 match &answer {
-                    Ok(_) => bench.notify(Notification::success(said.clone()), cx),
-                    Err(_) => bench.notify(Notification::error(said.clone()), cx),
+                    Ok(_) => bench.notify(toast::success(said.clone()), cx),
+                    Err(_) => bench.notify(toast::error(said.clone()), cx),
                 }
                 crate::settings::session_sent(bench, Some(said.into()));
                 let Ok(sent) = answer else {
@@ -237,7 +234,7 @@ impl Workbench {
             if let Err(error) = core::request(&asks, "installHost", params).await {
                 let _ = bench.update(cx, |bench, cx| {
                     bench.notify(
-                        Notification::error(format!("{}: {error}", set_up.offer(&alias))),
+                        toast::error(format!("{}: {error}", set_up.offer(&alias))),
                         cx,
                     )
                 });
@@ -277,7 +274,7 @@ impl Workbench {
             let _ = bench.update(cx, |bench, cx| match set {
                 Ok(_) => bench.read_approval(host, cx),
                 Err(error) => bench.notify(
-                    Notification::error(format!("Require approval for new devices: {error}")),
+                    toast::error(format!("Require approval for new devices: {error}")),
                     cx,
                 ),
             });
@@ -390,7 +387,7 @@ impl Workbench {
                     crate::editor::go_in(bench, at, &Strip::Terminals, "SSH config", cx);
                 }
                 Err(error) => bench.notify(
-                    Notification::error(format!("~/.ssh/config did not open: {error}")),
+                    toast::error(format!("~/.ssh/config did not open: {error}")),
                     cx,
                 ),
             });
@@ -406,8 +403,8 @@ impl Workbench {
             name
         };
         let asks = self.asks.clone();
-        let note = Notification::info(format!("New device on your account: {name}")).action(
-            move |_, _, cx| {
+        let note =
+            toast::info(format!("New device on your account: {name}")).action(move |_, _, cx| {
                 let (note, asks, key, name) =
                     (cx.entity(), asks.clone(), key.clone(), name.clone());
                 gpui_kit::component::button::Button::new("remove-account-device")
@@ -421,7 +418,7 @@ impl Workbench {
                                 if let Err(error) = removed.await {
                                     let _ = cx.update(|window, cx| {
                                         window.push_notification(
-                                            Notification::error(format!("Remove {name}: {error}")),
+                                            toast::error(format!("Remove {name}: {error}")),
                                             cx,
                                         )
                                     });
@@ -430,8 +427,7 @@ impl Workbench {
                             .detach();
                         note.update(cx, |note, cx| note.dismiss(window, cx));
                     })
-            },
-        );
+            });
         self.notify(note, cx);
     }
 

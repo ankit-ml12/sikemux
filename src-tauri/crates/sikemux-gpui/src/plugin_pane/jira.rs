@@ -22,6 +22,7 @@ use sikemux_wire::jira::{
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
+use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
@@ -2417,7 +2418,6 @@ fn issue_menu(
 /// Puts the issue on the front project's board as a card for agents, its open subtasks
 /// under it.
 fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) {
-    use gpui_kit::component::notification::Notification;
     let Some(bench) = bench.upgrade() else {
         return;
     };
@@ -2429,7 +2429,7 @@ fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) 
     else {
         bench.update(cx, |bench, cx| {
             bench.notify(
-                Notification::error("Open a project to put this on its board"),
+                toast::error("Open a project to put this on its board"),
                 cx,
             )
         });
@@ -2459,15 +2459,15 @@ fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) 
             Ok(board) => {
                 for problem in board["problems"].as_array().into_iter().flatten() {
                     if let Some(problem) = problem.as_str() {
-                        bench.notify(Notification::error(problem.to_owned()), cx);
+                        bench.notify(toast::error(problem.to_owned()), cx);
                     }
                 }
                 let put = format!("Put {key} on {name}'s board");
-                bench.notify(Notification::success(put), cx);
+                bench.notify(toast::success(put), cx);
             }
             Err(error) => {
                 let failed = format!("Send to the board: {error}");
-                bench.notify(Notification::error(failed), cx)
+                bench.notify(toast::error(failed), cx)
             }
         });
     })

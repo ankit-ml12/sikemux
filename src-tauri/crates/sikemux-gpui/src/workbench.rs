@@ -41,6 +41,7 @@ use crate::motion;
 use crate::search::{FocusSearch, FocusSearchWindow, SearchPane};
 use crate::terminal::NewTerminal;
 use crate::theme::{self, Tokens};
+use crate::toast;
 use crate::{agents, home, rail, tabs, terminal};
 
 /// How long a peeking rail stays after the pointer leaves it.
@@ -936,7 +937,7 @@ impl Workbench {
                 crate::pairing::offer_account_phones(self, cx);
             }
             Update::Failed(error) => {
-                return self.notify(Notification::error(error).autohide(false), cx);
+                return self.notify(toast::error(error).autohide(false), cx);
             }
             Update::Refused(key, error) => {
                 eprintln!("sikemux: the core refused {key}: {error}");
@@ -2662,7 +2663,7 @@ impl Workbench {
             let _ = bench.update_in(cx, |bench, window, cx| match cost {
                 Ok(cost) => bench.confirm_removal(agent, &cost, pull_merged, window, cx),
                 Err(error) => window.push_notification(
-                    Notification::error(format!("Could not remove the worktree: {error}")),
+                    toast::error(format!("Could not remove the worktree: {error}")),
                     cx,
                 ),
             });
@@ -2753,12 +2754,12 @@ impl Workbench {
                 window.push_notification(
                     match removed {
                         Ok(answer) if answer["branchDeleted"] == true => {
-                            Notification::success(format!("Removed worktree and branch {branch}"))
+                            toast::success(format!("Removed worktree and branch {branch}"))
                         }
-                        Ok(_) => Notification::success(format!("Removed worktree {branch}")),
-                        Err(error) => Notification::error(format!(
-                            "Could not remove worktree {branch}: {error}"
-                        )),
+                        Ok(_) => toast::success(format!("Removed worktree {branch}")),
+                        Err(error) => {
+                            toast::error(format!("Could not remove worktree {branch}: {error}"))
+                        }
                     },
                     cx,
                 )

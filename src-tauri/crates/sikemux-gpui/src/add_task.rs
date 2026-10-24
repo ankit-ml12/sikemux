@@ -4,7 +4,6 @@
 use std::rc::Rc;
 
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -15,6 +14,7 @@ use serde_json::{json, Value};
 
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::toast;
 use crate::ui::{self, dialog, Segmented};
 use crate::workbench::Workbench;
 
@@ -209,10 +209,10 @@ fn save_task(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
                 } else {
                     format!("{done} {label} for you only")
                 };
-                window.push_notification(Notification::success(saved), cx);
+                window.push_notification(toast::success(saved), cx);
             }
             Err(error) => window.push_notification(
-                Notification::error(format!("Could not save the task: {error}")),
+                toast::error(format!("Could not save the task: {error}")),
                 cx,
             ),
         });

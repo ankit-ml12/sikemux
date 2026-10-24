@@ -6,7 +6,6 @@ use std::rc::Rc;
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -18,6 +17,7 @@ use sikemux_wire::protocol::PaneKind;
 
 use crate::icons::Icon;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -245,10 +245,7 @@ impl PortRow {
                     move |_, window, cx| {
                         cx.stop_propagation();
                         cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                        window.push_notification(
-                            Notification::success(format!("Copied {copied}")),
-                            cx,
-                        );
+                        window.push_notification(toast::success(format!("Copied {copied}")), cx);
                     },
                 ))
                 .children(reveal.clone().map(|reveal| {

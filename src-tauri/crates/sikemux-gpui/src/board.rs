@@ -6,7 +6,6 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight,
@@ -21,6 +20,7 @@ use crate::core::{self, Ask};
 use crate::drag::{ghost, DraggedCard};
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Segmented, Variant};
 use crate::workbench::Workbench;
 
@@ -281,7 +281,7 @@ impl BoardPane {
     }
 
     pub(crate) fn said(&self, error: &str, cx: &mut Context<Self>) {
-        let note = Notification::error(error.to_owned()).autohide(false);
+        let note = toast::error(error.to_owned()).autohide(false);
         let _ = self.bench.update(cx, |bench, cx| bench.notify(note, cx));
     }
 

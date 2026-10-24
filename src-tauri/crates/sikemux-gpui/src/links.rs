@@ -5,12 +5,12 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::{Context, Window};
 use serde_json::json;
 use url::Url;
 
 use crate::core;
+use crate::toast;
 use crate::workbench::Workbench;
 
 /// An agent's chat a link asks to take up again.
@@ -130,8 +130,7 @@ fn take_up(bench: &mut Workbench, resume: Resume, add: bool, cx: &mut Context<Wo
     cx.spawn(async move |bench, cx| {
         if add {
             if let Err(error) = core::request(&asks, "addProject", json!({ "path": path })).await {
-                let note =
-                    Notification::error(format!("The folder did not open as a project: {error}"));
+                let note = toast::error(format!("The folder did not open as a project: {error}"));
                 let _ = bench.update(cx, |bench, cx| bench.notify(note, cx));
                 return;
             }
@@ -148,10 +147,7 @@ fn take_up(bench: &mut Workbench, resume: Resume, add: bool, cx: &mut Context<Wo
                     bench.open_agent(agent);
                 }
             }
-            Err(error) => bench.notify(
-                Notification::error(format!("The chat did not open: {error}")),
-                cx,
-            ),
+            Err(error) => bench.notify(toast::error(format!("The chat did not open: {error}")), cx),
         });
     })
     .detach();

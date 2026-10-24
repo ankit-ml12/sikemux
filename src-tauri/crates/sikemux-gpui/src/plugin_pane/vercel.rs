@@ -20,6 +20,7 @@ use sikemux_wire::vercel::{
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
+use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::ui::{self, Menu, MenuItem};
@@ -352,7 +353,7 @@ impl Vercel {
             move |vercel: &mut Vercel, host, answer, cx| {
                 vercel.busy = false;
                 match answer {
-                    Ok(_) => notify(host, Notification::success(done), cx),
+                    Ok(_) => notify(host, toast::success(done), cx),
                     Err(failure) => host.said(&failure.titled(what), cx),
                 }
             },

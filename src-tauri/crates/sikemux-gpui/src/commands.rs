@@ -1,7 +1,6 @@
 //! ⌘⇧P, the command deck: every command the window can do and the person's own
 //! commands, the ones used last first.
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, Context, SharedString, Window};
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{PaneKind, SessionId};
@@ -10,6 +9,7 @@ use tokio::sync::oneshot;
 use crate::core;
 use crate::keymap;
 use crate::palette::{Row, Spec};
+use crate::toast;
 use crate::workbench::{Strip, Workbench};
 
 #[derive(Clone, Default, PartialEq, gpui::Action)]
@@ -316,7 +316,7 @@ impl Workbench {
                 } else if row.key.as_ref() == CONFIG_INVALID {
                     let errors = bench.config_errors().join(" · ");
                     bench.notify(
-                        Notification::error(format!("sikemux.json: {errors}")).autohide(false),
+                        toast::error(format!("sikemux.json: {errors}")).autohide(false),
                         cx,
                     );
                 } else if let Some(path) = row.key.strip_prefix(REMOVE_WORKTREE) {
@@ -392,11 +392,11 @@ impl Workbench {
                     let removed = removed.await;
                     let _ = this.update(cx, |bench, cx| {
                         let note = match removed {
-                            Ok(_) => Notification::success(format!("Removed worktree {branch}")),
-                            Err(error) => Notification::error(format!(
-                                "Could not remove the worktree: {error}"
-                            ))
-                            .autohide(false),
+                            Ok(_) => toast::success(format!("Removed worktree {branch}")),
+                            Err(error) => {
+                                toast::error(format!("Could not remove the worktree: {error}"))
+                                    .autohide(false)
+                            }
                         };
                         bench.notify(note, cx);
                     });
@@ -526,7 +526,7 @@ impl Workbench {
             if let Ok(Err(error)) = reload.await {
                 let _ = this.update(cx, |bench, cx| {
                     bench.notify(
-                        Notification::error(format!("Agent manifests: {error}")).autohide(false),
+                        toast::error(format!("Agent manifests: {error}")).autohide(false),
                         cx,
                     )
                 });
@@ -552,7 +552,7 @@ impl Workbench {
             if let Err(error) = started.await {
                 let _ = this.update(cx, |bench, cx| {
                     bench.notify(
-                        Notification::error(format!("The project preview did not start: {error}"))
+                        toast::error(format!("The project preview did not start: {error}"))
                             .autohide(false),
                         cx,
                     )
@@ -605,14 +605,14 @@ impl Workbench {
                     };
                     let said = format!("{title}: {said}");
                     let note = if code == 0 {
-                        Notification::success(said)
+                        toast::success(said)
                     } else {
-                        Notification::error(said).autohide(false)
+                        toast::error(said).autohide(false)
                     };
                     bench.notify(note, cx);
                 }
                 Err(error) => bench.notify(
-                    Notification::error(format!("{title}: {error}")).autohide(false),
+                    toast::error(format!("{title}: {error}")).autohide(false),
                     cx,
                 ),
             });

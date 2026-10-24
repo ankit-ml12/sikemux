@@ -1,7 +1,6 @@
 //! Which releases updates come from and when they were last checked, and whether anonymous
 //! usage is shared.
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::{
     div, px, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
 };
@@ -10,6 +9,7 @@ use sikemux_wire::protocol::UpdateChannel;
 
 use crate::icons::Icon;
 use crate::settings::rows;
+use crate::toast;
 use crate::ui;
 use crate::workbench::Workbench;
 
@@ -166,16 +166,14 @@ fn check_now(bench: &mut Workbench, cx: &mut Context<Workbench>) {
             Ok(status) => {
                 let channel = status["checked"]["channel"].as_str().unwrap_or("stable");
                 match status["available"]["version"].as_str() {
-                    None => Notification::info(format!(
-                        "Sikemux is up to date on the {channel} channel."
-                    )),
+                    None => toast::info(format!("Sikemux is up to date on the {channel} channel.")),
                     Some(version) if status["state"] == "idle" => {
-                        Notification::success(format!("Update v{version} is ready to install."))
+                        toast::success(format!("Update v{version} is ready to install."))
                     }
                     Some(_) => return,
                 }
             }
-            Err(error) => Notification::error(error),
+            Err(error) => toast::error(error),
         };
         let _ = bench.update(cx, |bench, cx| bench.notify(note, cx));
     })

@@ -6,11 +6,11 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use gpui_kit::component::notification::Notification;
 use gpui_kit::Context;
 use sikemux_wire::protocol::{AgentGroup, DeviceView, Pane, PaneKind, SessionKind};
 use tokio::sync::mpsc;
 
+use crate::toast;
 use crate::workbench::Workbench;
 
 /// As long as the Mac shows it.
@@ -232,7 +232,7 @@ pub fn kept_running(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     }
     crate::settings::set(bench, "keptRunningNoticeShown", true);
     bench.notify_for::<KeptRunning>(
-        Notification::info(
+        toast::info(
             "Your terminals and agents kept running while Sikemux was closed. Use Quit and Stop Everything (⌥⌘Q) to stop them.",
         ),
         KEPT_RUNNING_SHOWN,

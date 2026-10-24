@@ -18,6 +18,7 @@ use crate::icons::Icon;
 use crate::motion;
 use crate::settings::{self, rows};
 use crate::theme::{self, Tokens};
+use crate::toast;
 use crate::ui::{self, Button, Field, IconButton, Variant};
 use crate::workbench::Workbench;
 
@@ -124,9 +125,7 @@ impl Workbench {
             let _ = bench.update(cx, |bench, cx| match saved {
                 Ok(_) => bench.reload_config(&folder, cx),
                 Err(error) => bench.notify(
-                    gpui_kit::component::notification::Notification::error(format!(
-                        "The check command was not saved: {error}"
-                    )),
+                    toast::error(format!("The check command was not saved: {error}")),
                     cx,
                 ),
             });

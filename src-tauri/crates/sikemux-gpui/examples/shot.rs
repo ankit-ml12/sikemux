@@ -26,7 +26,8 @@
 //!                                 was drawn; "menu name" prints the menus open, Kit's and the app's, as one line of
 //!                                 JSON after "menu name: ", each a list of its items in order with their label
 //!                                 and whether they are disabled or checked (null where the menu does not say,
-//!                                 as Kit's items do not), and separators as {"separator":true}
+//!                                 as Kit's items do not), and separators as {"separator":true};
+//!                                 "toast success|info|error text" shows a toast saying the text
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -39,8 +40,9 @@ use gpui::{
     HeadlessAppContext, Image, ImageFormat, Keystroke, Modifiers, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
 };
+use gpui_kit::component::WindowExt;
 use serde_json::{json, Value};
-use sikemux_gpui::{core, icons, theme, workbench, WINDOW_SIZE};
+use sikemux_gpui::{core, icons, theme, toast, workbench, WINDOW_SIZE};
 use sikemux_wire::protocol::AccountInfo;
 
 /// How often a wait lets the app run, moving its clock on as far, so its timers fire as they would.
@@ -273,6 +275,16 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 "menu" => println!("menu {rest}: {}", Value::Array(open_menus(window))),
+                "toast" => {
+                    let (kind, said) = rest.split_once(' ').unwrap_or((rest, ""));
+                    let said = said.to_owned();
+                    let note = match kind {
+                        "error" => toast::error(said),
+                        "info" => toast::info(said),
+                        _ => toast::success(said),
+                    };
+                    window.push_notification(note, cx);
+                }
                 "activate" => window.activate_window(),
                 "picker" => {
                     if let Some(bench) = bench.borrow().clone() {

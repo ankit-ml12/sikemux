@@ -14,6 +14,7 @@ use sikemux_wire::protocol::ProjectCodeHost;
 use super::{ago, answer, call_of, host_label, notice, Area, Read};
 use crate::core::Target;
 use crate::theme::Tokens;
+use crate::toast;
 use crate::ui::{self, Button, Toggle, Variant};
 use crate::workbench::Workbench;
 
@@ -147,12 +148,8 @@ impl Inbox {
                 .update(cx, |inbox, cx| {
                     inbox.busy = false;
                     let note = match done {
-                        Ok(_) => gpui_kit::component::notification::Notification::success(
-                            "Inbox cleared",
-                        ),
-                        Err(error) => gpui_kit::component::notification::Notification::error(
-                            format!("Could not clear the inbox: {error}"),
-                        ),
+                        Ok(_) => toast::success("Inbox cleared"),
+                        Err(error) => toast::error(format!("Could not clear the inbox: {error}")),
                     };
                     inbox
                         .bench

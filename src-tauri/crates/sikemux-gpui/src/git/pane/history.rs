@@ -5,7 +5,6 @@ use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
 use gpui_kit::base::Popover;
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -22,6 +21,7 @@ use super::GitPane;
 use crate::core::Target;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::toast;
 use crate::ui;
 use crate::workbench::{AgentRow, Workbench};
 
@@ -518,7 +518,7 @@ pub fn commit_card(
                 .glyph(12.)
                 .on_click(move |_, window, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(full.clone()));
-                    window.push_notification(Notification::success(format!("Copied {short}")), cx);
+                    window.push_notification(toast::success(format!("Copied {short}")), cx);
                 }),
         );
     if commit.unpushed {
@@ -730,7 +730,7 @@ impl CommitOwner {
                 }
                 Err(error) => {
                     let _ = cx.update(|window, cx| {
-                        window.push_notification(Notification::error(error), cx)
+                        window.push_notification(toast::error(error), cx)
                     });
                 }
             })

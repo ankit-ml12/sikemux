@@ -81,6 +81,7 @@ mod test_card;
 pub mod theme;
 mod theme_palette;
 mod thread_priority;
+pub mod toast;
 mod top_place;
 mod track;
 mod ui;

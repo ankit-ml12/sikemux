@@ -29,6 +29,7 @@ use tokio::sync::mpsc;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2, RADIUS_3};
+use crate::toast;
 use crate::ui::{self, IconButton};
 use crate::workbench::{shows, Strip, Workbench};
 
@@ -742,7 +743,7 @@ impl Workbench {
             .max_by_key(|(active_at, ..)| *active_at);
         let Some((_, agent, (strip, tab, view))) = placed else {
             self.notify(
-                Notification::info("Start an agent first — the desk and its browser belong to one"),
+                toast::info("Start an agent first — the desk and its browser belong to one"),
                 cx,
             );
             return None;
@@ -1121,12 +1122,10 @@ fn downloaded(download: &BrowserDownload) -> Notification {
         |name| name.to_string_lossy().into_owned(),
     );
     match download.state {
-        DownloadState::Started => Notification::info(format!("Downloading {name}")),
-        DownloadState::Failed => {
-            Notification::error(format!("Download of {name} failed")).autohide(false)
-        }
+        DownloadState::Started => toast::info(format!("Downloading {name}")),
+        DownloadState::Failed => toast::error(format!("Download of {name} failed")).autohide(false),
         DownloadState::Finished => {
-            Notification::success(format!("Downloaded {name}")).action(move |_, _, cx| {
+            toast::success(format!("Downloaded {name}")).action(move |_, _, cx| {
                 let (note, held) = (cx.entity(), held.clone());
                 Button::new("keep-download")
                     .label("Keep in Downloads")
@@ -1135,7 +1134,7 @@ fn downloaded(download: &BrowserDownload) -> Notification {
                         match keep_download(&held) {
                             Ok(kept) => cx.reveal_path(&kept),
                             Err(error) => window.push_notification(
-                                Notification::error(format!("The download was not kept: {error}")),
+                                toast::error(format!("The download was not kept: {error}")),
                                 cx,
                             ),
                         }
@@ -1742,7 +1741,7 @@ fn tab_menu(
         let copy = |text: String, said: &'static str| {
             move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-                window.push_notification(Notification::success(said), cx);
+                window.push_notification(toast::success(said), cx);
             }
         };
         let close = {

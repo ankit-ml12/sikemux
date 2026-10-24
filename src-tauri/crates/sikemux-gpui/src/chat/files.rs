@@ -9,7 +9,6 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{App, ClipboardItem, Entity, Focusable, Pixels, Point, WeakEntity, Window};
 use gpui_transcript::{FileKind, FilePress};
@@ -23,6 +22,7 @@ use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::retry::Backoff;
+use crate::toast;
 use crate::workbench::Workbench;
 
 /// How long the names a screenful asks about are gathered before they go out as one ask.
@@ -483,7 +483,7 @@ fn menu(
             popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
                 move |_, window, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                    window.push_notification(Notification::success(said), cx);
+                    window.push_notification(toast::success(said), cx);
                 },
             ));
         }

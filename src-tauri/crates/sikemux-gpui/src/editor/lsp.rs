@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{DefinitionProvider, Rope, RopeExt};
-use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, AppContext, Context, Task, Window};
 use lsp_types::{LocationLink, Position, Range, ShowDocumentParams, Uri};
 use serde_json::{json, Value};
@@ -21,6 +20,7 @@ use super::FileKey;
 use super::{Document, Notice, OpenAt};
 use crate::core::{self, Ask};
 use crate::hosts::Place as Host;
+use crate::toast;
 use crate::workbench::Workbench;
 
 /// How long typing pauses before the server is sent the text.
@@ -229,14 +229,11 @@ fn report(
             && error.contains(&format!("`{bin}`"))
     });
     let Some((_, bin, label)) = missing else {
-        bench.notify(
-            Notification::error(format!("LSP {language} open: {error}")),
-            cx,
-        );
+        bench.notify(toast::error(format!("LSP {language} open: {error}")), cx);
         return;
     };
     let (this, language) = (cx.weak_entity(), language.to_owned());
-    let note = Notification::error(format!(
+    let note = toast::error(format!(
         "{label} needs {bin}. Install it to enable go-to-definition and references."
     ))
     .action(move |_, _, cx| {
@@ -265,13 +262,10 @@ fn install(
     cx: &mut Context<Workbench>,
 ) {
     if !bench.editors.lsp_installing.insert(language.clone()) {
-        bench.notify(
-            Notification::info(format!("{bin} install already running")),
-            cx,
-        );
+        bench.notify(toast::info(format!("{bin} install already running")), cx);
         return;
     }
-    bench.notify(Notification::info(format!("Installing {bin}…")), cx);
+    bench.notify(toast::info(format!("Installing {bin}…")), cx);
     let asked = core::request(&bench.asks, "lsp.install", json!({ "language": language }));
     cx.spawn_in(window, async move |bench, cx| {
         let installed = asked.await;
@@ -284,13 +278,12 @@ fn install(
                         .as_str()
                         .map(|at| format!(" at {at}"))
                         .unwrap_or_default();
-                    bench.notify(Notification::success(format!("Installed {bin}{at}")), cx);
+                    bench.notify(toast::success(format!("Installed {bin}{at}")), cx);
                     attach(bench, path, window, cx);
                 }
-                Err(error) => bench.notify(
-                    Notification::error(format!("{bin} install failed: {error}")),
-                    cx,
-                ),
+                Err(error) => {
+                    bench.notify(toast::error(format!("{bin} install failed: {error}")), cx)
+                }
             }
         });
     })
@@ -540,7 +533,7 @@ pub(super) fn navigate(
             .collect();
         places.dedup_by(|a, b| a.path == b.path && a.line == b.line && a.column == b.column);
         let _ = bench.update(cx, |bench, cx| match (references, places.len()) {
-            (_, 0) => bench.notify(Notification::info(format!("No {kind} found")), cx),
+            (_, 0) => bench.notify(toast::info(format!("No {kind} found")), cx),
             (false, 1) => super::go(bench, places.remove(0), cx),
             (true, _) => super::peek(bench, &key, "References", places, cx),
             (false, _) => super::peek(bench, &key, "Implementations", places, cx),

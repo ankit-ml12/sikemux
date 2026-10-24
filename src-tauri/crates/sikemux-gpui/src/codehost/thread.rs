@@ -15,6 +15,7 @@ use sikemux_wire::codehost::{PullCommit, TimelineItem};
 use super::ago;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
+use crate::toast;
 use crate::ui;
 
 /// Something someone wrote in the thread, the opening description included.
@@ -540,9 +541,10 @@ fn pushed(
                                 cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
                                     sha.clone(),
                                 ));
-                                let note = gpui_kit::component::notification::Notification::success(
-                                    format!("Copied {}", sha.chars().take(7).collect::<String>()),
-                                );
+                                let note = toast::success(format!(
+                                    "Copied {}",
+                                    sha.chars().take(7).collect::<String>()
+                                ));
                                 window.push_notification(note, cx);
                             })
                             .child(short),

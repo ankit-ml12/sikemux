@@ -28,6 +28,7 @@ use crate::editor::OpenAt;
 use crate::icons::Icon;
 use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens, RADIUS_2};
+use crate::toast;
 use crate::ui;
 
 /// Brings the project's Search tab forward with its query in hand, opening one when it
@@ -471,7 +472,7 @@ impl SearchPane {
                     }
                     Err(error) => {
                         pane.previewed = None;
-                        let note = Notification::error(format!("replace failed: {error}"));
+                        let note = toast::error(format!("replace failed: {error}"));
                         window.push_notification(note.autohide(false), cx);
                     }
                 }
@@ -559,8 +560,8 @@ fn replaced(results: &ReplaceResults) -> Notification {
         results.match_count, results.file_count
     );
     match results.errors.len() {
-        0 => Notification::success(said),
-        skipped => Notification::info(format!("{said} · {skipped} skipped")),
+        0 => toast::success(said),
+        skipped => toast::info(format!("{said} · {skipped} skipped")),
     }
 }
 
