@@ -57,6 +57,16 @@ impl SetUp {
         }
     }
 
+    /// What a host's menu calls it.
+    pub fn menu_label(self) -> &'static str {
+        match self {
+            Self::Install => "Install Sikemux",
+            Self::SignIn => "Sign in",
+            Self::Start => "Start Sikemux",
+            Self::Update => "Update Sikemux",
+        }
+    }
+
     /// What it says while it runs.
     pub fn running(self, alias: &str) -> String {
         match self {

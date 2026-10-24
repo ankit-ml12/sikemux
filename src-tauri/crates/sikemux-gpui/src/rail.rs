@@ -309,11 +309,11 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .as_deref()
                 .and_then(|alias| bench.set_up_of(alias))
                 .zip(set_up_alias);
-            let set_up_item = move |bench: WeakEntity<Workbench>| {
+            let set_up_item = move |bench: WeakEntity<Workbench>, here: bool| {
                 set_up.clone().map(|(set_up, alias)| {
                     let label = match set_up {
-                        crate::install_pane::SetUp::Install => "Install Sikemux here".to_owned(),
-                        _ => set_up.offer(&alias),
+                        crate::install_pane::SetUp::Install if here => "Install Sikemux here",
+                        _ => set_up.menu_label(),
                     };
                     PopupMenuItem::new(label)
                         .icon(set_up.icon())
@@ -334,30 +334,29 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                     move |popup, _, _| {
                         let (bench, alias) = (bench_entity.clone(), alias.clone());
                         let edited = (bench.clone(), alias.clone());
-                        let popup = popup
-                            .item(
-                                PopupMenuItem::new("New SSH terminal")
-                                    .icon(Icon::Terminal)
-                                    .on_click(move |_, _, cx| {
-                                        let _ = bench.update(cx, |bench, cx| {
-                                            bench.open_ssh_terminal(&alias, cx)
-                                        });
-                                    }),
-                            )
-                            .item(
-                                PopupMenuItem::new("Edit in ~/.ssh/config")
-                                    .icon(Icon::Pencil)
-                                    .on_click(move |_, _, cx| {
-                                        let (bench, alias) = &edited;
-                                        let _ = bench.update(cx, |bench, cx| {
-                                            bench.edit_ssh_config(Some(alias.clone()), cx)
-                                        });
-                                    }),
-                            );
-                        match set_up_item(bench_entity.clone()) {
+                        let popup = popup.item(
+                            PopupMenuItem::new("New SSH terminal")
+                                .icon(Icon::Terminal)
+                                .on_click(move |_, _, cx| {
+                                    let _ = bench.update(cx, |bench, cx| {
+                                        bench.open_ssh_terminal(&alias, cx)
+                                    });
+                                }),
+                        );
+                        let popup = match set_up_item(bench_entity.clone(), true) {
                             Some(item) => popup.item(item),
                             None => popup,
-                        }
+                        };
+                        popup.separator().item(
+                            PopupMenuItem::new("Edit in ~/.ssh/config")
+                                .icon(Icon::Pencil)
+                                .on_click(move |_, _, cx| {
+                                    let (bench, alias) = &edited;
+                                    let _ = bench.update(cx, |bench, cx| {
+                                        bench.edit_ssh_config(Some(alias.clone()), cx)
+                                    });
+                                }),
+                        )
                     },
                     row,
                     cx,
@@ -373,7 +372,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 move |popup, _, _| {
                     let bench = bench_entity.clone();
                     let mut popup = popup;
-                    if let Some(item) = set_up_item(bench.clone()) {
+                    if let Some(item) = set_up_item(bench.clone(), false) {
                         popup = popup.item(item).separator();
                     }
                     let on = |run: fn(&mut Workbench, &str, &mut Context<Workbench>)| {
