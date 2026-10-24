@@ -1,4 +1,5 @@
 import { recordOf } from "../lib/guards";
+import { keepUnchanged } from "../lib/keepUnchanged";
 import { applyPatch } from "../markdown/patch";
 import type { MdChange, MdElement } from "../markdown/types";
 import type { QueuedMessage } from "./queuedMessages";
@@ -46,6 +47,7 @@ export const initialChatState: ChatState = {
     nextId: 1,
     revision: 0,
     awaitingReplay: false,
+    replaced: null,
     earlierLost: false,
     turnOpening: null,
     retrying: null,
@@ -784,6 +786,16 @@ function withoutSubagentParts(parts: ChatPart[], placed: ReadonlySet<string>): C
     return changed ? kept : parts;
 }
 
+/* A replay sends every message again as a new object. Those that came back as
+   they were stay the objects already drawn, so their rows are not drawn again. */
+function keptMessages(shown: readonly ChatMessage[], replayed: ChatMessage[]): ChatMessage[] {
+    const byId = new Map(shown.map((message) => [message.id, message]));
+    return replayed.map((message) => {
+        const before = byId.get(message.id);
+        return before ? keepUnchanged(before, message) : message;
+    });
+}
+
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     switch (action.type) {
         case "earlier":
@@ -794,9 +806,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             /* A reconnect keeps the transcript on screen so the pane does not
                blank out while the session loads: the resumed session replays
                its own history, and the first update it sends takes over. */
-            return action.hold && state.messages.length > 0
-                ? { ...initialChatState, messages: state.messages, nextId: state.nextId, awaitingReplay: true }
+            return action.hold && (state.replaced ?? state.messages).length > 0
+                ? { ...initialChatState, messages: state.replaced ?? state.messages, nextId: state.nextId, awaitingReplay: true }
                 : initialChatState;
+        case "replayed":
+            return state.replaced ? { ...state, messages: keptMessages(state.replaced, state.messages), replaced: null } : state;
         case "status":
             return {
                 /* The host ends the subagents itself, with an update every client
@@ -849,7 +863,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             return rewind(state, action.messageId);
         case "session_update":
             return sessionUpdate(
-                state.awaitingReplay ? { ...state, messages: [], nextId: 1, plan: null, awaitingReplay: false } : state,
+                state.awaitingReplay ? { ...state, messages: [], nextId: 1, plan: null, awaitingReplay: false, replaced: state.messages } : state,
                 action.sessionId,
                 action.update,
                 action.main,

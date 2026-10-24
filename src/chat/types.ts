@@ -199,6 +199,8 @@ export interface ChatState {
     nextId: number;
     revision: number;
     awaitingReplay: boolean;
+    /* What the transcript showed before a replay began rebuilding it. */
+    replaced: ChatMessage[] | null;
     /* The host no longer keeps the turns before the first one shown. */
     earlierLost: boolean;
     /* A turn has begun and its first message has not arrived yet. */
@@ -211,6 +213,7 @@ export interface ChatState {
 
 export type ChatAction =
     | { type: "reset"; hold?: boolean }
+    | { type: "replayed" }
     | { type: "config"; options: unknown }
     | { type: "status"; state: ChatState["connection"] }
     | {

@@ -171,6 +171,7 @@ export function useAcpSession({
                        so the transcript shows now rather than when the agent answers. */
                     if (update.sessionUpdate === "history_loaded" && !reattaching) {
                         flushUpdates();
+                        dispatch({ type: "replayed" });
                         setReplaying(false);
                     }
                     continue;
@@ -224,6 +225,7 @@ export function useAcpSession({
                 if (!mounted) return;
                 sessionIdRef.current = response.sessionId;
                 flushUpdates();
+                dispatch({ type: "replayed" });
                 dispatch({
                     type: "ready",
                     capabilities: response.capabilities,
