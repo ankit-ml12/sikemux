@@ -2989,22 +2989,7 @@ fn composer(
         let moving: crate::model_picker::Move = {
             let (this, agent) = (this.clone(), agent.id.clone());
             Rc::new(move |to: crate::model_picker::Moving, _, cx| {
-                this.update(cx, |bench, _| {
-                    let account = to
-                        .profile
-                        .as_deref()
-                        .and_then(|id| bench.accounts.profile(id));
-                    let title = account.map_or(to.provider.as_str(), |account| &account.name);
-                    let patch = json!({
-                        "provider": to.provider,
-                        "profileId": to.profile,
-                        "model": to.model,
-                        "modelProvider": to.model_provider,
-                        "effort": null,
-                    });
-                    bench.start_as(&agent, patch, title);
-                })
-                .ok();
+                this.update(cx, |bench, _| bench.move_chat(&agent, to)).ok();
             })
         };
         let started = head.is_some_and(|head| head.connection == ChatConnection::Ready);
@@ -3133,6 +3118,69 @@ impl Workbench {
     pub fn tool_details(&self, cx: &App) -> Option<(usize, usize)> {
         let chat = self.chats.get(&self.agent()?.id)?;
         Some(chat.reader.read(cx).tools.counts())
+    }
+
+    /// Moves a chat that has not started to another agent, account or provider.
+    pub fn move_chat(&self, agent: &str, to: crate::model_picker::Moving) {
+        let account = to
+            .profile
+            .as_deref()
+            .and_then(|id| self.accounts.profile(id));
+        let title = account.map_or(to.provider.as_str(), |account| &account.name);
+        let patch = json!({
+            "provider": to.provider,
+            "profileId": to.profile,
+            "model": to.model,
+            "modelProvider": to.model_provider,
+            "effort": null,
+        });
+        self.start_as(agent, patch, title);
+    }
+
+    /// The model menu of the chat in front, as its composer offers it: the model chosen and
+    /// the ones it lists.
+    pub fn front_models(&self) -> Option<(String, Vec<String>)> {
+        let chat = self.chats.get(&self.agent()?.id)?;
+        let model = chat.state.as_ref()?.model.as_ref()?;
+        let offered = model.choices.iter().map(|choice| choice.value.clone());
+        Some((model.current.clone(), offered.collect()))
+    }
+
+    /// Chooses `value` in the model menu of the chat in front, as a click on its row does.
+    pub fn choose_front_model(&self, value: &str) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        let Some(config) = self
+            .chats
+            .get(&agent)
+            .and_then(|chat| Some(chat.state.as_ref()?.model.as_ref()?.id.clone()))
+        else {
+            return;
+        };
+        self.ask_chat(ChatAsk::Config {
+            agent,
+            config,
+            value: value.to_owned(),
+        });
+    }
+
+    /// Moves the chat in front to `provider` on its chosen account, as the model menu's chip for
+    /// the agent does.
+    pub fn move_front_to(&self, provider: &str) {
+        let Some(agent) = self.agent().map(|agent| agent.id) else {
+            return;
+        };
+        let to = crate::model_picker::Moving {
+            provider: provider.to_owned(),
+            profile: self
+                .accounts
+                .current(provider)
+                .map(|profile| profile.id.clone()),
+            model: None,
+            model_provider: None,
+        };
+        self.move_chat(&agent, to);
     }
 
     /// Opens the first tool call of the chat in front, as a click on its row does.

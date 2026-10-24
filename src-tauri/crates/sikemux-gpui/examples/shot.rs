@@ -17,6 +17,8 @@
 //!                                 the window shows (Settings, any modal, the front view, the focus, the tabs,
 //!                                 the chosen host, a trust question, the front chat's tool details held and
 //!                                 open); "activate" brings the window forward, as switching to the app does;
+//!                                 "picker" prints the front chat's model menu, "choose-model <value>" picks a
+//!                                 model in it and "move-to <provider>" its agent, as their rows do;
 //!                                 "open-tool" opens the front chat's first tool call; "host this",
 //!                                 "host host:<key>" or "host ssh:<alias>" chooses the host in front, as a
 //!                                 click on its row does; "film N prefix" saves N frames at least 16 ms apart,
@@ -267,6 +269,26 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 "activate" => window.activate_window(),
+                "picker" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        match bench.read(cx).front_models() {
+                            Some((current, offered)) => {
+                                println!("picker current={current} offered={}", offered.join(","))
+                            }
+                            None => println!("picker none"),
+                        }
+                    }
+                }
+                "choose-model" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.read(cx).choose_front_model(rest);
+                    }
+                }
+                "move-to" => {
+                    if let Some(bench) = bench.borrow().clone() {
+                        bench.read(cx).move_front_to(rest);
+                    }
+                }
                 "open-tool" => {
                     if let Some(bench) = bench.borrow().clone() {
                         bench.update(cx, |bench, cx| bench.open_first_tool(cx));
