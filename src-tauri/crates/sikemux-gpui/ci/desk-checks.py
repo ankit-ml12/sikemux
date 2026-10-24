@@ -678,6 +678,51 @@ def rs1(run):
     run.report("RS1", same, f"page {before.get('rail')} -> {turned.get('rail')}; frame {before['railBounds']} -> {turned.get('railBounds')}")
 
 
+def tk1(run):
+    """A clicked file tree row has the keys: Down moves them to the next row, F2 renames it."""
+    run.drive("key cmd+e", "wait 1.5")
+    rows = until(lambda: {name[len("tree-row-"):]: frame for name, frame in ((run.state() or {}).get("spots") or {}).items()
+                          if name.startswith("tree-row-")} or None, 20) or {}
+    ordered = sorted(rows.items(), key=lambda row: row[1][1])
+    if len(ordered) < 2:
+        state = run.state() or {}
+        return run.report("TK1", False, f"rail {state.get('rail')} at {state.get('railBounds')}; tree {state.get('tree')}; "
+                                        f"rows {list(rows)} of spots {sorted(state.get('spots') or {})}")
+    (first, frame), (second, _) = ordered[0], ordered[1]
+    x, y = middle(frame)
+    run.drive(f"click {x:.0f} {y:.0f}", "wait 0.8", "key down", "wait 0.5")
+    state = run.state() or {}
+    keyed = (state.get("tree") or {}).get("keyed") or ""
+    run.drive("key f2", "wait 0.8")
+    renaming = ((run.state() or {}).get("tree") or {}).get("renaming") or ""
+    run.capture("TK1")
+    run.drive("key escape", "wait 0.5")
+    run.report("TK1", keyed.endswith(f"/{second}") and renaming == keyed,
+               f"clicked {first}, keys in {state.get('contexts', [])[-2:]}; Down keyed {keyed or None} (wanted {second}); "
+               f"F2 renaming {renaming or None}")
+
+
+def gk1(run):
+    """A clicked Git change row has the keys: d opens its discard menu with its choices."""
+    changed = run.root / "project/b.txt"
+    changed.write_text("new\n")
+    try:
+        run.drive("key cmd+alt+3", "wait 2")
+        row = until(lambda: spot(run, "git-file-b.txt"), 15)
+        if not row:
+            return run.report("GK1", False, f"no row for b.txt in the Git pane; git {(run.state() or {}).get('git')}")
+        x, y = middle(row)
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 0.8", "key d", "wait 0.8")
+        state = run.state() or {}
+        git = state.get("git") or {}
+        run.capture("GK1")
+        run.drive("key escape", "wait 0.5")
+        run.report("GK1", bool(git.get("menu")) and bool(git.get("choices")),
+                   f"keys in {state.get('contexts', [])[-2:]}; menu {git.get('menu')!r} with {git.get('choices')}")
+    finally:
+        changed.unlink(missing_ok=True)
+
+
 def local(run):
     for name, why in [
         ("DP1", "page_preview needs a terminal agent, which the fake agent is not"),
@@ -705,7 +750,8 @@ def answered(said):
 
 
 CHECKS = [("DP5", dp5), ("DP3", dp3), ("D5", d5), ("DK3", dk3), ("D6", d6_dk4_dk5), ("DK6", dk6), ("D7", d7), ("DK8", dk8),
-          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("DK7 Keep", dk7_keep), ("D8", d8), ("DF1", df1), ("DF3", df3), ("DF2", df2), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1)]
+          ("DK2", dk2), ("DK9", dk9), ("ONE-DESK", one_desk), ("DK7", dk7), ("DK7 Keep", dk7_keep), ("D8", d8), ("DF1", df1), ("DF3", df3), ("DF2", df2), ("DF4", df4), ("DF5", df5), ("DK1", dk1), ("RS1", rs1),
+          ("TK1", tk1), ("GK1", gk1)]
 
 
 def main():

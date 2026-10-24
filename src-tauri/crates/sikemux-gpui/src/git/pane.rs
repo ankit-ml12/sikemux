@@ -1222,6 +1222,19 @@ impl GitPane {
         cx.notify();
     }
 
+    /// The menu the keys opened, as its title and its choices' labels, for the test bundle's
+    /// driver to check.
+    #[cfg(feature = "drive")]
+    pub fn drive_state(&self) -> Value {
+        match &self.asking {
+            Some(Asking::Menu { title, choices }) => json!({
+                "menu": title,
+                "choices": choices.iter().map(|pick| pick.label.clone()).collect::<Vec<_>>(),
+            }),
+            _ => json!({ "menu": null }),
+        }
+    }
+
     fn menu(&mut self, title: impl Into<SharedString>, choices: Vec<Pick>, cx: &mut Context<Self>) {
         self.asking = Some(Asking::Menu {
             title: title.into(),
@@ -3478,6 +3491,7 @@ fn entry_row(
                     })
                 })
                 .children(tree_lines(first, last, &t))
+                .children(ui::spot(|| format!("git-file-{}", file.path)))
                 .child(glyph)
                 .child(
                     div()

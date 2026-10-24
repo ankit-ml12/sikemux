@@ -272,6 +272,15 @@ impl FileTree {
         self.rows.take();
     }
 
+    /// The row the keys are on and what is being renamed, for the test bundle's driver to check.
+    #[cfg(feature = "drive")]
+    pub fn drive_state(&self) -> Value {
+        json!({
+            "keyed": self.keyed,
+            "renaming": self.naming.as_ref().and_then(|naming| naming.from.clone()),
+        })
+    }
+
     /// Takes in what git says of the project's files.
     pub fn mark(&mut self, overview: &Value) {
         if let Some(root) = &self.root {
@@ -746,6 +755,7 @@ fn row_view(
         .into_any_element();
     let pressed = (row.path.clone(), row.entry.dir);
     let drawn = div()
+        .children(ui::spot(|| format!("tree-row-{}", row.entry.name)))
         .when(tree.keyed.as_ref() == Some(&row.path), |drawn| {
             let at = tree.keyed_at.clone();
             drawn.relative().child(
