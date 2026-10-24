@@ -36,6 +36,9 @@ pub struct Row {
     detail: Option<SharedString>,
     status: Option<AnyElement>,
     right: f32,
+    /// The trailing room the row keeps while the pointer is over the hover group named, for
+    /// the buttons that show there then.
+    hover_right: Option<(&'static str, f32)>,
     trailing: SmallVec<[AnyElement; 2]>,
     on_click: Option<OnClick>,
 }
@@ -56,6 +59,7 @@ impl Row {
             detail: None,
             status: None,
             right: 8.,
+            hover_right: None,
             trailing: SmallVec::new(),
             on_click: None,
         }
@@ -109,6 +113,13 @@ impl Row {
     /// A pixel shorter on one line, as the rail's Compact density draws it.
     pub fn compact(mut self, compact: bool) -> Self {
         self.compact = compact;
+        self
+    }
+
+    /// Keeps `right` free at the trailing edge while the pointer is over `group`, so what
+    /// shows there on hover never covers the row's text.
+    pub fn hover_padding(mut self, group: &'static str, right: f32) -> Self {
+        self.hover_right = Some((group, right));
         self
     }
 
@@ -181,6 +192,9 @@ impl RenderOnce for Row {
             }))
             .pl(px(4. + (20. - self.slot) / 2.))
             .pr(px(right))
+            .when_some(self.hover_right, |row, (group, room)| {
+                row.group_hover(group, move |style| style.pr(px(room.max(right))))
+            })
             .flex()
             .justify_start()
             .gap(px(8.))
@@ -494,36 +508,50 @@ impl RenderOnce for Tab {
                     .items_center()
                     .justify_center()
                     .map(|slot| match closing {
-                        Some(close) => slot.child(
-                            BaseButton::new(close_id)
-                                .group(CLOSE)
-                                .accessibility_label(SharedString::from(format!("Close {label}")))
-                                .size(px(20.))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(RADIUS_2)
-                                .text_color(t.text_tertiary)
-                                .hover(move |style| {
-                                    style.text_color(t.danger).bg(gpui_kit::Hsla {
-                                        a: 0.18,
-                                        ..t.danger
-                                    })
-                                })
-                                .on_click(move |event, window, cx| close(event, window, cx))
-                                .child(
-                                    icon(Icon::Close, 11.)
-                                        .text_color(t.text_tertiary)
-                                        .group_hover(CLOSE, move |style| {
-                                            style.text_color(t.danger)
-                                        }),
-                                ),
-                        ),
+                        Some(close) => slot.child(close_button(
+                            close_id,
+                            format!("Close {label}"),
+                            move |event, window, cx| close(event, window, cx),
+                            cx,
+                        )),
                         None => slot.children(self.tail),
                     }),
             )
     }
 }
 
-/// The hover group a tab's close button puts its glyph in, so the glyph reddens with it.
+/// The hover group a close button puts its glyph in, so the glyph reddens with it.
 const CLOSE: &str = "tab-close";
+
+/// The × that closes a tab or a rail row: no box until the pointer is on it, then red on a
+/// red wash, as the Mac's tab and row closes are.
+pub fn close_button(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> impl IntoElement {
+    let t = Tokens::get(cx).clone();
+    BaseButton::new(id)
+        .group(CLOSE)
+        .accessibility_label(label.into())
+        .size(px(20.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(RADIUS_2)
+        .text_color(t.text_tertiary)
+        .hover(move |style| {
+            style.text_color(t.danger).bg(gpui_kit::Hsla {
+                a: 0.18,
+                ..t.danger
+            })
+        })
+        .on_click(on_click)
+        .child(
+            icon(Icon::Close, 11.)
+                .text_color(t.text_tertiary)
+                .group_hover(CLOSE, move |style| style.text_color(t.danger)),
+        )
+}

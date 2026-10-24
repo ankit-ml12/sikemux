@@ -823,11 +823,17 @@ fn agent_row(
             .into_any_element(),
         None => ui::agent_mark(agent, 20., cx),
     };
+    let status = ui::status_mark(&agent.id, agent.status, cx);
+    let fades = status.is_none();
+    let pin = bench
+        .chat_of(&agent.id)
+        .map(|chat| (chat.pinned, pin_chat(&cx.entity(), chat).1));
     let row = Row::new(
         SharedString::from(format!("agent-{}", agent.id)),
         agent.title.clone(),
     )
     .mark(22., mark)
+    .hover_padding(AGENT_ROW, if pin.is_some() { 48. } else { 28. })
     .chosen(chosen)
     .glided(glided && chosen)
     .compact(bench.rail_compact())
@@ -842,7 +848,7 @@ fn agent_row(
                 .child(ui::meta(project, cx)),
         )
     })
-    .status(ui::status_mark(&agent.id, agent.status, cx).map(|mark| {
+    .status(status.map(|mark| {
         div()
             .group_hover(AGENT_ROW, |mark| mark.opacity(0.))
             .child(mark)
@@ -851,12 +857,14 @@ fn agent_row(
         let id = id.clone();
         move |bench, _, _, _| bench.open_agent(&id)
     }))
-    .children(
-        agent
-            .name
-            .clone()
-            .map(|name| ui::meta(format!("@{name}"), cx).pl(px(8.)).pr(px(4.))),
-    )
+    .children(agent.name.clone().map(|name| {
+        ui::meta(format!("@{name}"), cx)
+            .pl(px(8.))
+            .pr(px(4.))
+            .when(fades, |name| {
+                name.group_hover(AGENT_ROW, |name| name.opacity(0.))
+            })
+    }))
     .children(fold.as_ref().filter(|fold| !fold.open).map(|fold| {
         div()
             .flex_none()
@@ -869,28 +877,23 @@ fn agent_row(
             .font_features(crate::theme::tabular())
             .child(format!("+{}", fold.count))
     }))
-    .children(counts(agent, cx));
+    .children(counts(agent, cx).map(|counts| {
+        div()
+            .when(fades, |counts| {
+                counts.group_hover(AGENT_ROW, |counts| counts.opacity(0.))
+            })
+            .child(counts)
+    }));
     let lines = team_lines(team, matches!(fold, Some(Fold { open: true, .. })), cx);
     let card = crate::agent_card::view(bench, agent, project.as_deref(), cx);
-    let pin = bench
-        .chat_of(&agent.id)
-        .map(|chat| (chat.pinned, pin_chat(&cx.entity(), chat).1));
     let close = agent.id.clone();
     let actions = div()
         .absolute()
         .top_0()
         .right(px(4.))
         .h(px(if bench.rail_compact() { 27. } else { 28. }))
-        .pl(px(4.))
         .flex()
         .items_center()
-        .gap(px(2.))
-        .rounded(theme::RADIUS_2)
-        .bg(if chosen {
-            t.surface_chosen
-        } else {
-            t.surface_hover
-        })
         .opacity(0.)
         .group_hover(AGENT_ROW, |actions| actions.opacity(1.))
         .children(pin.map(|(pinned, pin)| {
@@ -904,17 +907,14 @@ fn agent_row(
             .pressed(pinned)
             .on_click(move |_, window, cx| pin(window, cx))
         }))
-        .child(
-            IconButton::new(
-                SharedString::from(format!("close-{}", agent.id)),
-                Icon::Close,
-                format!("Close {}", agent.title),
-            )
-            .small()
-            .on_click(cx.listener(move |bench, _, _, _| {
+        .child(ui::close_button(
+            SharedString::from(format!("close-{}", agent.id)),
+            format!("Close {}", agent.title),
+            cx.listener(move |bench, _, _, _| {
                 bench.call("closeAgents", serde_json::json!({ "agentIds": [close] }))
-            })),
-        );
+            }),
+            cx,
+        ));
     div()
         .id(SharedString::from(format!("agent-menu-{}", agent.id)))
         .group(AGENT_ROW)
