@@ -157,6 +157,8 @@ pub struct Workbench {
     pub files: FileTree,
     pub finder: Option<Finder>,
     pub palette: Option<crate::palette::Palette>,
+    /// The agent the project picker moves to the project picked, while it does.
+    pub moving: Option<String>,
     pub switcher: Option<crate::switcher::Switcher>,
     /// The command deck's keys, the last used first.
     pub recent_commands: Vec<SharedString>,
@@ -614,6 +616,7 @@ impl Workbench {
             files: FileTree::default(),
             finder: None,
             palette: None,
+            moving: None,
             switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,

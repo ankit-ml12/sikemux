@@ -932,8 +932,8 @@ fn agent_row(
         .child(actions)
         .children(lines)
         .children(card.map(|card| div().absolute().top_0().left_0().child(card)))
-        .context_menu(move |popup, window, cx| match &menu {
-            Some(menu) => menu.build(popup, window, cx),
+        .context_menu(move |popup, _, _| match &menu {
+            Some(menu) => menu.build(popup),
             None => popup,
         })
 }

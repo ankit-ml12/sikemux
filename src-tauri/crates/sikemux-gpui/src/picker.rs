@@ -33,6 +33,8 @@ const HOST: &str = "host:";
 pub enum ThenPicked {
     Open,
     StartChat,
+    /// Moves the agent `Workbench::moving` names into the project picked.
+    MoveAgent,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -82,12 +84,34 @@ fn host_line(host: &Value) -> String {
 
 impl Workbench {
     pub fn toggle_picker(&mut self, picking: Picking, window: &mut Window, cx: &mut Context<Self>) {
+        self.moving = None;
         self.open_picker(picking, ThenPicked::Open, window, cx);
     }
 
     /// The project picker, doing `then` with the project picked.
     pub fn pick_project(&mut self, then: ThenPicked, window: &mut Window, cx: &mut Context<Self>) {
+        self.moving = None;
         self.open_picker(Picking::Projects, then, window, cx);
+    }
+
+    /// The project picker, moving `agent` into the project or folder picked, as the Mac's
+    /// Move to Project… does; its own project is left out.
+    pub fn pick_project_for(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.moving = Some(agent.to_owned());
+        self.open_picker(Picking::Projects, ThenPicked::MoveAgent, window, cx);
+    }
+
+    /// The agent the picker moves, and the folder it is in now.
+    fn moving_from(&self) -> Option<(&str, &Path)> {
+        let agent = self.moving.as_deref()?;
+        let held = self
+            .view
+            .as_ref()?
+            .workspace
+            .agents
+            .iter()
+            .find(|held| held.id == agent)?;
+        Some((agent, held.cwd.as_path()))
     }
 
     fn open_picker(
@@ -114,11 +138,27 @@ impl Workbench {
                 params: json!({}),
             });
         }
+        let moved = self.moving.as_deref().and_then(|agent| {
+            let held = self
+                .view
+                .as_ref()?
+                .workspace
+                .agents
+                .iter()
+                .find(|held| held.id == agent)?;
+            Some(match &held.name {
+                Some(name) => format!("@{name}"),
+                None => held.title.clone(),
+            })
+        });
         let placeholder = match (picking, then) {
-            (_, ThenPicked::StartChat) => "start a chat in a project…",
-            (Picking::Projects, _) => "open a project…",
-            (Picking::Hosts, _) => "connect to a host…",
-            (Picking::Both, _) => "open a project or host…",
+            (_, ThenPicked::MoveAgent) => {
+                format!("move {} to…", moved.unwrap_or_default())
+            }
+            (_, ThenPicked::StartChat) => "start a chat in a project…".to_owned(),
+            (Picking::Projects, _) => "open a project…".to_owned(),
+            (Picking::Hosts, _) => "connect to a host…".to_owned(),
+            (Picking::Both, _) => "open a project or host…".to_owned(),
         };
         let spec = Spec::new(
             picking.id(),
@@ -181,7 +221,11 @@ impl Workbench {
         let mut rows = Vec::new();
         if picking.projects() {
             let projects = self.projects();
-            for project in projects {
+            let from = self.moving_from().map(|(_, from)| from);
+            for project in projects
+                .iter()
+                .filter(|project| Some(project.path.as_path()) != from)
+            {
                 let path = tilde(&project.path);
                 rows.push(
                     Row::new(format!("{PROJECT}{}", project.id), project.name.clone())
@@ -239,6 +283,23 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if then == ThenPicked::MoveAgent {
+            let Some(agent) = self.moving.take() else {
+                return;
+            };
+            if let Some(project) = key.strip_prefix(PROJECT) {
+                self.call(
+                    "moveAgentToProject",
+                    json!({ "agentId": agent, "project": project }),
+                );
+            } else if let Some(path) = key.strip_prefix(FOLDER) {
+                self.call(
+                    "moveAgentToFolder",
+                    json!({ "agentId": agent, "path": path }),
+                );
+            }
+            return;
+        }
         if let Some(project) = key.strip_prefix(PROJECT) {
             self.activate_project(project);
             if then == ThenPicked::StartChat {

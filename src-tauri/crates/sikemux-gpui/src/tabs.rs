@@ -1028,9 +1028,9 @@ pub fn tab_menu(
     };
     let separable = bench.separable(tab);
     let (bench, strip, tab) = (cx.entity().downgrade(), strip.clone(), tab.id.clone());
-    move |popup, window, cx| {
+    move |popup, _, _| {
         let popup = match &agent_menu {
-            Some(menu) => menu.build(popup, window, cx),
+            Some(menu) => menu.build(popup),
             None => tab_menu.build(popup),
         };
         let Some((view, kind)) = separable.clone() else {

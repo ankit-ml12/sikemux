@@ -5,7 +5,6 @@ use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{App, ClickEvent, ClipboardItem, Context, WeakEntity, Window};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
-use std::rc::Rc;
 
 use serde_json::{json, Value};
 use sikemux_wire::protocol::{PinnedChat, WorkspaceAgent};
@@ -31,8 +30,8 @@ pub struct AgentMenu {
     agent: WorkspaceAgent,
     /// The other agents of its project, which Close Others closes.
     others: Vec<String>,
-    /// The projects it can move to, by id and name.
-    projects: Vec<(String, String)>,
+    /// Whether it can move to another project now, as the Mac's canMoveAgentToProject says.
+    can_move: bool,
     pinned: Vec<PinnedChat>,
     can_skip_permissions: bool,
     /// Whether it runs as a chat, which can be shared read-only.
@@ -84,12 +83,17 @@ impl AgentMenu {
                 .filter(|other| other.project == agent.project && other.id != agent.id)
                 .map(|other| other.id.clone())
                 .collect(),
-            projects: workspace
-                .projects
-                .iter()
-                .filter(|project| project.id != agent.project)
-                .map(|project| (project.id.clone(), project.name.clone()))
-                .collect(),
+            can_move: agent.worktree.is_none()
+                && (agent.resume_id.is_none()
+                    || catalog.is_some_and(|kind| kind["relocatableSessions"] == true)
+                        && (agent.asleep
+                            || bench.agent_by_id(&agent.id).is_none_or(|row| {
+                                !matches!(
+                                    row.status,
+                                    sikemux_wire::protocol::AgentStatus::Working
+                                        | sikemux_wire::protocol::AgentStatus::Blocked
+                                ) && row.tasks + row.subagents == 0
+                            }))),
             pinned: workspace.pinned.clone(),
             can_skip_permissions: catalog.is_some_and(|kind| kind["bypass"] == true),
             can_share: catalog.is_some_and(|kind| !kind["chat"].is_null()),
@@ -100,12 +104,7 @@ impl AgentMenu {
         })
     }
 
-    pub fn build(
-        &self,
-        mut popup: PopupMenu,
-        window: &mut Window,
-        cx: &mut Context<PopupMenu>,
-    ) -> PopupMenu {
+    pub fn build(&self, mut popup: PopupMenu) -> PopupMenu {
         let agent = &self.agent;
         let id = agent.id.clone();
         let (bench, renamed, name) = (
@@ -233,41 +232,19 @@ impl AgentMenu {
                     )),
                 );
         }
-        let moves: Vec<_> = self
-            .projects
-            .iter()
-            .map(|(project, name)| {
-                (
-                    name.clone(),
-                    self.call(
-                        "moveAgentToProject",
-                        json!({ "agentId": id, "project": project }),
-                    ),
-                )
-            })
-            .collect();
-        let moves = Rc::new(moves);
-        popup = if moves.is_empty() {
-            popup.item(
-                PopupMenuItem::new("Move to Project…")
-                    .icon(Icon::Folder)
-                    .disabled(true),
-            )
-        } else {
-            popup.submenu_with_icon(
-                Some(Icon::Folder.into()),
-                "Move to Project",
-                window,
-                cx,
-                move |mut submenu, _, _| {
-                    for (name, click) in moves.iter() {
-                        submenu =
-                            submenu.item(PopupMenuItem::new(name.clone()).on_click(click.clone()));
-                    }
-                    submenu
-                },
-            )
-        };
+        let (bench, moved) = (self.bench.clone(), id.clone());
+        popup = popup.item(
+            PopupMenuItem::new("Move to Project…")
+                .icon(Icon::Folder)
+                .disabled(!self.can_move)
+                .on_click(move |_, window, cx| {
+                    let (bench, moved) = (bench.clone(), moved.clone());
+                    window.defer(cx, move |window, cx| {
+                        let _ = bench
+                            .update(cx, |bench, cx| bench.pick_project_for(&moved, window, cx));
+                    });
+                }),
+        );
         if agent.worktree.is_some() {
             let (bench, removed) = (self.bench.clone(), id.clone());
             popup = popup.separator().item(
