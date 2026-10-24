@@ -168,6 +168,8 @@ pub struct Workbench {
     pub recent_commands: Vec<SharedString>,
     /// The rails' state waiting to be kept in the core's preferences, once a drag settles.
     keeping_rails: Option<Task<()>>,
+    /// When a refused file listing is asked again.
+    files_retry: crate::retry::Retry,
     /// The Git pane takes the keyboard once it shows, as when ⌘⌥3 opens it.
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
@@ -627,6 +629,7 @@ impl Workbench {
             switcher: None,
             recent_commands: Vec::new(),
             keeping_rails: None,
+            files_retry: Default::default(),
             project_files: ProjectFiles::default(),
             launcher_choice: None,
             all_harnesses: false,
@@ -899,8 +902,16 @@ impl Workbench {
                 if key.starts_with("sign-in") {
                     self.signing_in = false;
                 }
-                if key == "files.list" && self.out_of_reach().is_none() {
-                    self.files.relist_shown(&self.target());
+                if key == "files.list" {
+                    self.files_retry.refused(
+                        cx,
+                        |bench| &mut bench.files_retry,
+                        |bench, _| {
+                            if bench.out_of_reach().is_none() {
+                                bench.files.relist_shown(&bench.target());
+                            }
+                        },
+                    );
                 }
                 if key == crate::settings::ACTIVITY {
                     self.reads.insert(key, Value::Null);
@@ -909,6 +920,7 @@ impl Workbench {
                 }
             }
             Update::Read("files.list", value) => {
+                self.files_retry.answered();
                 self.files.listed(&value, &self.target());
                 return self.parts.redraw(&self.parts.tabs, cx);
             }
