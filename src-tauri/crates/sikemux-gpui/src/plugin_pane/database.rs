@@ -591,6 +591,7 @@ impl Database {
                 database.toggle(key.clone());
                 cx.notify();
             }))
+            .context_menu(schema_menu(id, &schema.name, cx.weak_entity()))
             .into_any_element(),
         );
         if !open {
@@ -768,9 +769,18 @@ impl Database {
                         .into_any_element();
                     let column_id =
                         format!("db-column/{id}/{schema}/{}/{}", table.name, column.name);
+                    let menu = (cx.weak_entity(), column.name.clone());
                     rows.push(
                         node(column_id, 4, None, false, None, column.name.clone(), cx)
                             .child(detail)
+                            .context_menu(move |popup: PopupMenu, _, _| {
+                                popup.item(copy_item(
+                                    "Copy name",
+                                    menu.1.clone(),
+                                    "the column name",
+                                    &menu.0,
+                                ))
+                            })
                             .into_any_element(),
                     );
                 }
@@ -799,7 +809,8 @@ impl Database {
             .border_color(t.border)
             .children(self.tabs.iter().enumerate().map(|(at, tab)| {
                 let (picked, closed) = (tab.clone(), tab.clone());
-                ui::Tab::new(
+                let menu = tab_menu(tab, self.tabs.len() < 2, cx.weak_entity());
+                let tab = ui::Tab::new(
                     ("db-tab", at),
                     format!("{} {}", name_of(tab.connection()), tab.label()),
                 )
@@ -815,7 +826,8 @@ impl Database {
                         database.close(&closed);
                         cx.notify();
                     },
-                ))
+                ));
+                div().id(("db-tab-menu", at)).child(tab).context_menu(menu)
             }))
             .into_any_element()
     }
@@ -1411,19 +1423,19 @@ fn connection_menu(
             )
             .separator()
             .item(
-                PopupMenuItem::new("Edit connection…")
-                    .icon(Icon::Pencil)
-                    .on_click(on(&pane, move |database, host, _, cx| {
-                        form::open(database, host, Some(editing.clone()), cx)
-                    })),
-            )
-            .item(
                 PopupMenuItem::new("Properties")
-                    .icon(Icon::Settings)
+                    .icon(Icon::InfoCircle)
                     .on_click(on(&pane, move |database, _, _, _| {
                         database.show(Tab::Properties {
                             id: properties.clone(),
                         })
+                    })),
+            )
+            .item(
+                PopupMenuItem::new("Edit connection…")
+                    .icon(Icon::Pencil)
+                    .on_click(on(&pane, move |database, host, _, cx| {
+                        form::open(database, host, Some(editing.clone()), cx)
                     })),
             )
             .item(copy_item(
@@ -1432,6 +1444,71 @@ fn connection_menu(
                 "the name",
                 &pane,
             ))
+    }
+}
+
+/// A schema's menu: a console on its database, the explorer read again, or its name copied.
+fn schema_menu(
+    id: &str,
+    schema: &str,
+    pane: WeakEntity<PluginPane>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    let (id, schema) = (id.to_owned(), schema.to_owned());
+    move |popup, _, _| {
+        let fresh = id.clone();
+        popup
+            .item(
+                PopupMenuItem::new("New console")
+                    .icon(Icon::Plus)
+                    .on_click(on(&pane, move |database, _, _, _| {
+                        database.show(database.new_console(&fresh))
+                    })),
+            )
+            .item(
+                PopupMenuItem::new("Refresh")
+                    .icon(Icon::Refresh)
+                    .on_click(on(&pane, |_, host, _, _| host.read_again(None))),
+            )
+            .item(copy_item(
+                "Copy name",
+                schema.clone(),
+                "the schema name",
+                &pane,
+            ))
+    }
+}
+
+/// A tab's menu: closing it, or every other tab.
+fn tab_menu(
+    tab: &Tab,
+    alone: bool,
+    pane: WeakEntity<PluginPane>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    let tab = tab.clone();
+    move |popup, _, _| {
+        let (closed, kept) = (tab.clone(), tab.clone());
+        popup
+            .item(
+                PopupMenuItem::new("Close")
+                    .icon(Icon::Close)
+                    .on_click(on(&pane, move |database, _, _, _| database.close(&closed))),
+            )
+            .item(
+                PopupMenuItem::new("Close others")
+                    .icon(Icon::Close)
+                    .disabled(alone)
+                    .on_click(on(&pane, move |database, _, _, _| {
+                        let others: Vec<Tab> = database
+                            .tabs
+                            .iter()
+                            .filter(|each| **each != kept)
+                            .cloned()
+                            .collect();
+                        for other in &others {
+                            database.close(other);
+                        }
+                    })),
+            )
     }
 }
 
