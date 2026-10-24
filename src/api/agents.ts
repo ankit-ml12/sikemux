@@ -146,7 +146,7 @@ export const agentApi = {
     /** Makes the account the one `provider` runs on, and moves its open chats there. */
     selectAccount: (provider: AgentType, id: string): Promise<AgentAccountBook> => accountCall("selectAgentAccount", { provider, id }),
     setAutoSwitch: (provider: AgentType, on: boolean): Promise<AgentAccountBook> => accountCall("setAccountAutoSwitch", { provider, on }),
-    /** Forgets every agent's status, so the next look asks each one again. */
+    /** Has the core ask every agent its status again; until it answers, the last answers are shown. */
     refreshStatuses: (): Promise<void> => accountCall("forgetAgentStatus"),
     /** Forgets one account's sign-in and usage, after they changed. */
     forgetAccount: (agent: AgentType, configPath?: string): Promise<void> => accountCall("forgetAgentStatus", { provider: agent, configPath }),
