@@ -6,13 +6,14 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight,
-    Hsla, InteractiveElement, IntoElement, Keystroke, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window,
+    div, px, AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable,
+    FontWeight, Hsla, InteractiveElement, IntoElement, Keystroke, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window,
 };
 use gpui_native_view::{native_view, Frame, NativeSurface, Surface};
 use serde_json::{json, Value};
@@ -1170,6 +1171,13 @@ pub fn pane(
         .gap(px(4.))
         .overflow_x_scroll()
         .track_scroll(&scroll);
+    let root = bench.agent_by_id(agent).and_then(|row| {
+        bench
+            .projects()
+            .iter()
+            .find(|project| project.id == row.project)
+            .map(|project| project.path.clone())
+    });
     let mut front_pill = None;
     let mut pill_count = 0;
     for page in strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default() {
@@ -1236,7 +1244,16 @@ pub fn pane(
                             bench.with_engine(|engine| engine.close_tab(&close_agent, &close_tab))
                         })),
                     ),
-                ),
+                )
+                .context_menu(tab_menu(
+                    cx.weak_entity(),
+                    agent,
+                    DeskTab::Page {
+                        id: page.id.clone(),
+                        url: page.url.clone(),
+                    },
+                    None,
+                )),
         );
     }
     for (index, item) in bench
@@ -1315,7 +1332,13 @@ pub fn pane(
                             bench.parts.redraw(&bench.parts.stage, cx);
                         })),
                     ),
-                ),
+                )
+                .context_menu(tab_menu(
+                    cx.weak_entity(),
+                    agent,
+                    DeskTab::Item(item.clone()),
+                    root.clone(),
+                )),
         );
     }
     let new_agent = agent.to_owned();
@@ -1452,6 +1475,89 @@ pub fn pane(
 }
 
 /// The desk's switch between its pages and its simulator.
+/// A tab of a desk's strip, as its menu needs it.
+enum DeskTab {
+    Page { id: String, url: String },
+    Item(DeskItem),
+}
+
+/// What right-clicking a desk's tab offers, as the Mac's desk tab menu does: a file's paths
+/// and Reveal in Finder, a page's link, then Close.
+fn tab_menu(
+    bench: WeakEntity<Workbench>,
+    agent: &str,
+    tab: DeskTab,
+    root: Option<PathBuf>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    let agent = agent.to_owned();
+    move |popup, _, _| {
+        let copy = |text: String, said: &'static str| {
+            move |_: &gpui_kit::ClickEvent, window: &mut Window, cx: &mut App| {
+                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                window.push_notification(Notification::success(said), cx);
+            }
+        };
+        let close = {
+            let (bench, agent) = (bench.clone(), agent.clone());
+            let tab = match &tab {
+                DeskTab::Page { id, .. } => Err(id.clone()),
+                DeskTab::Item(item) => Ok(item.clone()),
+            };
+            PopupMenuItem::new("Close")
+                .icon(Icon::Close)
+                .on_click(move |_, _, cx| {
+                    let _ = bench.update(cx, |bench, cx| {
+                        match &tab {
+                            Err(page) => bench.with_engine(|engine| engine.close_tab(&agent, page)),
+                            Ok(item) => bench.take_off_desk(&agent, item),
+                        }
+                        bench.parts.redraw(&bench.parts.stage, cx);
+                    });
+                })
+        };
+        match &tab {
+            DeskTab::Item(DeskItem::File(path)) => {
+                let relative = root
+                    .as_deref()
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .filter(|inside| !inside.as_os_str().is_empty())
+                    .or_else(|| path.file_name().map(Path::new))
+                    .map_or_else(String::new, |shown| shown.to_string_lossy().into_owned());
+                let revealed = path.clone();
+                popup
+                    .item(
+                        PopupMenuItem::new("Copy Path")
+                            .icon(Icon::Copy)
+                            .on_click(copy(path.to_string_lossy().into_owned(), "Copied path")),
+                    )
+                    .item(
+                        PopupMenuItem::new("Copy Relative Path")
+                            .icon(Icon::Copy)
+                            .on_click(copy(relative, "Copied relative path")),
+                    )
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("Reveal in Finder")
+                            .icon(Icon::Folder)
+                            .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
+                    )
+                    .separator()
+                    .item(close)
+            }
+            DeskTab::Page { url, .. } => popup
+                .item(
+                    PopupMenuItem::new("Copy Link")
+                        .icon(Icon::Copy)
+                        .disabled(url.is_empty() || url == sikemux_browser::BLANK_URL)
+                        .on_click(copy(url.clone(), "Copied link")),
+                )
+                .separator()
+                .item(close),
+            DeskTab::Item(DeskItem::Terminal { .. }) => popup.item(close),
+        }
+    }
+}
+
 fn kinds(agent: &str, shown: DeskKind, cx: &mut Context<Workbench>) -> impl IntoElement {
     let choice = |id: &'static str,
                   icon: Icon,
