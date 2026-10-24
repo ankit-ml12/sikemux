@@ -8,14 +8,15 @@ use std::ops::Range;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::{Copy, InputEvent, InputState, Paste, SelectAll};
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    actions, anchored, canvas, deferred, div, font, px, AnyElement, AnyView, App, AppContext,
-    Bounds, ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks,
-    Hsla, InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke,
-    Modifiers, MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Render, RenderOnce, Rgba, ScrollWheelEvent, SharedString, StyleRefinement,
-    Styled, Subscription, Task, UTF16Selection, WeakEntity, Window,
+    actions, canvas, div, font, px, AnyElement, AnyView, App, AppContext, Bounds, ClickEvent,
+    ClipboardItem, Context, CursorStyle, Entity, ExternalPaths, FocusHandle, FontFallbacks, Hsla,
+    InputHandler, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent, Keystroke, Modifiers,
+    MouseButton as Button, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, Rgba, ScrollWheelEvent, SharedString, StyleRefinement, Styled, Subscription,
+    Task, UTF16Selection, WeakEntity, Window,
 };
 use gpui_terminal_grid::{
     Cursor, CursorShape, Grid, Highlight, Layout, Look, Marked, Metrics, Span, Underline,
@@ -33,9 +34,9 @@ use crate::core::{Ask, Screenful, TerminalAsk};
 use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::keymap::{TextSizeDecrease, TextSizeIncrease, TextSizeReset};
-use crate::send_to::{self, Choice, Recipient};
+use crate::send_to::{self, Recipient};
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 use crate::workbench::{TakesKeys, Workbench};
 
 const PAGE: u64 = 256;
@@ -143,10 +144,6 @@ struct Terminal {
     /// What an input method is composing.
     marked: Option<String>,
     find: Option<Find>,
-    /// Where the context menu is open, in window coordinates.
-    menu: Option<Point<Pixels>>,
-    /// The menu lists who the selection can go to instead of its commands.
-    menu_agents: bool,
     /// When the cursor last came back into view: typing and focus restart its blink.
     blink_from: Instant,
     _focus_changes: [Subscription; 2],
@@ -628,12 +625,9 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         )
         .on_mouse_down(
             Button::Right,
-            window.listener_for(&this, move |bench, event: &MouseDownEvent, window, cx| {
-                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
+            window.listener_for(&this, move |bench, _: &MouseDownEvent, window, cx| {
+                if let Some(terminal) = bench.terminals.open.get(&id) {
                     window.focus(&terminal.focus, cx);
-                    terminal.menu = Some(event.position);
-                    terminal.menu_agents = false;
-                    bench.terminals.redraw(id, cx);
                 }
             }),
         )
@@ -677,16 +671,8 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         if let Some(find) = &terminal.find {
             pane = pane.child(find_bar(&this, id, find));
         }
-        if let Some(position) = terminal.menu {
-            let menu = TerminalMenu {
-                bench: this.clone(),
-                id,
-                selection: terminal.selection,
-                choices: terminal.menu_agents.then(|| send_to::choices(bench)),
-            };
-            pane = pane.child(deferred(anchored().position(position).child(menu)).with_priority(1));
-        }
     }
+    let menu = terminal_menu(this.downgrade(), id);
     pane.relative()
         .child(
             div().size_full().overflow_hidden().child(
@@ -714,6 +700,7 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
                 .size_full(),
             ),
         )
+        .context_menu(menu)
         .into_any_element()
 }
 
@@ -767,8 +754,6 @@ fn layout(
             link: None,
             marked: None,
             find: None,
-            menu: None,
-            menu_agents: false,
             blink_from: Instant::now(),
             _focus_changes: [
                 cx.on_focus_in(&focus, window, move |bench, _, cx| {
@@ -1678,16 +1663,6 @@ fn find_bar(bench: &Entity<Workbench>, id: TermKey, find: &Find) -> ui::FindBar 
         }))
 }
 
-/// The menu a right click opens over a terminal.
-#[derive(IntoElement)]
-struct TerminalMenu {
-    bench: Entity<Workbench>,
-    id: TermKey,
-    selection: Option<(GridPoint, GridPoint)>,
-    /// Who the selection can go to, when the menu lists them.
-    choices: Option<Vec<Choice>>,
-}
-
 /// Puts the selected text in an agent's composer, under a line saying which
 /// terminal it came from, and brings the agent forward.
 fn send_selection(
@@ -1735,141 +1710,88 @@ fn send_selection(
     send_to::send(bench, to, text, window, cx);
 }
 
-impl RenderOnce for TerminalMenu {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (bench, id) = (self.bench.clone(), self.id);
-        let closer = self.bench.clone();
-        let close_menu = move |_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App| {
-            closer.update(cx, |bench, cx| {
-                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                    terminal.menu = None;
-                    bench.terminals.redraw(id, cx);
-                }
-            })
+/// What right-clicking a terminal offers. Its edit and find items are the terminal's own
+/// actions, so they show and do what the terminal's keys do.
+fn terminal_menu(
+    bench: WeakEntity<Workbench>,
+    id: TermKey,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    move |popup, window, cx| {
+        let Some(this) = bench.upgrade() else {
+            return popup;
         };
-        if let Some(choices) = self.choices {
-            let rows = choices.into_iter().enumerate().map(|(at, choice)| {
-                let bench = self.bench.clone();
-                MenuItem::new(("send-to", at), choice.label)
-                    .mark(ui::mark(&choice.provider, 14.))
-                    .on_click(move |_, window, cx| {
-                        let to = choice.to.clone();
-                        bench.update(cx, |bench, cx| {
-                            if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                                terminal.menu = None;
-                            }
-                            send_selection(bench, id, to, window, cx);
-                            bench.terminals.redraw(id, cx);
-                        })
-                    })
-            });
-            let none = rows.len() == 0;
-            let menu = Menu::new().when(none, |menu| {
-                menu.child(MenuItem::new("send-to-none", "No agents available").disabled(true))
-            });
-            return div()
-                .occlude()
-                .on_mouse_down_out(close_menu)
-                .child(menu.children(rows))
-                .into_any_element();
-        }
-        let item = move |name: &'static str,
-                         label: &'static str,
-                         glyph: Icon,
-                         run: fn(
-            &mut Workbench,
-            TermKey,
-            &mut Window,
-            &mut Context<Workbench>,
-        )| {
-            let bench = bench.clone();
-            MenuItem::new(name, label)
-                .icon(glyph)
-                .on_click(move |_, window, cx| {
-                    bench.update(cx, |bench, cx| {
-                        if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                            terminal.menu = None;
-                        }
-                        run(bench, id, window, cx);
-                        bench.terminals.redraw(id, cx);
-                    })
-                })
-        };
-        div()
-            .occlude()
-            .on_mouse_down_out(close_menu)
-            .child(
-                Menu::new()
-                    .child(
-                        item("terminal-copy", "Copy", Icon::Copy, |bench, id, _, _| {
-                            copy(bench, id)
-                        })
-                        .hint("⌘C")
-                        .disabled(self.selection.is_none()),
-                    )
-                    .child(
-                        item("terminal-paste", "Paste", Icon::Text, |bench, id, _, cx| {
-                            paste(bench, id, cx)
-                        })
-                        .hint("⌘V"),
-                    )
-                    .child(
-                        item(
-                            "terminal-select-all",
-                            "Select All",
-                            Icon::Text,
-                            |bench, id, _, _| {
-                                if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                                    terminal.select_all();
-                                }
-                            },
-                        )
-                        .hint("⌘A"),
-                    )
-                    .when(self.selection.is_some(), |menu| {
-                        let bench = self.bench.clone();
-                        menu.child(
-                            MenuItem::new("terminal-send", "Send Selection to Agent…")
-                                .icon(Icon::Message)
-                                .on_click(move |_, _, cx| {
-                                    bench.update(cx, |bench, cx| {
-                                        if let Some(terminal) = bench.terminals.open.get_mut(&id) {
-                                            terminal.menu_agents = true;
-                                            bench.terminals.redraw(id, cx);
-                                        }
-                                    })
-                                }),
-                        )
-                    })
-                    .separator(cx)
-                    .child(item("terminal-find", "Find", Icon::Search, open_find).hint("⌘F"))
-                    .child(item(
-                        "terminal-copy-scrollback",
-                        "Copy Scrollback",
-                        Icon::Copy,
-                        |bench, id, _, _| {
-                            let _ = bench.asks.send(routed(
-                                &bench.terminals.places,
-                                id,
-                                TerminalAsk::Copy(None),
-                            ));
-                        },
-                    ))
-                    .separator(cx)
-                    .child(item(
-                        "terminal-clear",
-                        "Clear Terminal",
-                        Icon::Discard,
-                        |bench, id, _, _| {
-                            let _ = bench.asks.send(routed(
-                                &bench.terminals.places,
-                                id,
-                                TerminalAsk::Clear,
-                            ));
-                        },
-                    )),
+        let (focus, selected, in_project) = {
+            let bench = this.read(cx);
+            let terminal = bench.terminals.open.get(&id);
+            let in_project = bench
+                .session(&id.session.to_string())
+                .is_some_and(|session| session.project.is_some());
+            (
+                terminal.map(|terminal| terminal.focus.clone()),
+                terminal.is_some_and(|terminal| terminal.selection.is_some()),
+                in_project,
             )
-            .into_any_element()
+        };
+        let ask = |ask: fn() -> TerminalAsk| {
+            let this = this.clone();
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                this.update(cx, |bench, _| {
+                    let _ = bench.asks.send(routed(&bench.terminals.places, id, ask()));
+                })
+            }
+        };
+        let mut popup = popup
+            .when_some(focus, PopupMenu::action_context)
+            .item(
+                PopupMenuItem::new("Copy")
+                    .icon(Icon::Copy)
+                    .action(Box::new(Copy))
+                    .disabled(!selected),
+            )
+            .item(
+                PopupMenuItem::new("Paste")
+                    .icon(Icon::Text)
+                    .action(Box::new(Paste)),
+            )
+            .item(
+                PopupMenuItem::new("Select All")
+                    .icon(Icon::Text)
+                    .action(Box::new(SelectAll)),
+            );
+        if selected && in_project {
+            let chosen = move |bench: &mut Workbench,
+                               to,
+                               window: &mut Window,
+                               cx: &mut Context<Workbench>| {
+                send_selection(bench, id, to, window, cx)
+            };
+            popup = send_to::submenu(
+                popup,
+                "Send Selection to Agent…",
+                bench.clone(),
+                chosen,
+                window,
+                cx,
+            );
+        }
+        popup
+            .separator()
+            .item(
+                PopupMenuItem::new("Find")
+                    .icon(Icon::Search)
+                    .action(Box::new(OpenFind)),
+            )
+            .item(
+                PopupMenuItem::new("Copy Scrollback")
+                    .icon(Icon::Copy)
+                    .on_click(ask(|| TerminalAsk::Copy(None))),
+            )
+            .separator()
+            .item(
+                PopupMenuItem::new("Clear Terminal")
+                    .icon(Icon::Discard)
+                    .on_click(ask(|| TerminalAsk::Clear)),
+            )
     }
 }
 
