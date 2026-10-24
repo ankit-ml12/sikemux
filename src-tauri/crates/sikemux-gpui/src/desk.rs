@@ -1285,6 +1285,8 @@ pub fn pane(
     let acting = bench
         .agent_by_id(agent)
         .map(|row| (crate::theme::brand(&row.provider), row));
+    ui::forget_spots(|| format!("desk-page-{agent}-"));
+    ui::forget_spots(|| format!("desk-item-{agent}-"));
     let mut front_pill = None;
     let mut pill_count = 0;
     let pages = match kind {
@@ -1864,21 +1866,24 @@ fn kinds(
             count => format!("{label} · {count}"),
         };
         let empty = count == 0 && matches!(kind, DeskKind::Files | DeskKind::Terminals);
+        let spot = format!("desk-kind-{agent}-{id}");
         let agent = agent.to_owned();
         row = row.child(
-            IconButton::new(id, icon, named)
-                .glyph(13.)
-                .width(24.)
-                .height(21.)
-                .pressed(shown == kind)
-                .disabled(empty)
-                .when_some(tint.filter(|_| busy && shown != kind), |button, tint| {
-                    button.tint(tint)
-                })
-                .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench.pick_kind(&agent, kind);
-                    bench.parts.redraw(&bench.parts.stage, cx);
-                })),
+            div().relative().children(ui::spot(|| spot)).child(
+                IconButton::new(id, icon, named)
+                    .glyph(13.)
+                    .width(24.)
+                    .height(21.)
+                    .pressed(shown == kind)
+                    .disabled(empty)
+                    .when_some(tint.filter(|_| busy && shown != kind), |button, tint| {
+                        button.tint(tint)
+                    })
+                    .on_click(cx.listener(move |bench, _, _, cx| {
+                        bench.pick_kind(&agent, kind);
+                        bench.parts.redraw(&bench.parts.stage, cx);
+                    })),
+            ),
         );
     }
     row

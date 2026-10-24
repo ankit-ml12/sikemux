@@ -468,10 +468,11 @@ def pills(run):
     return {name: frame for name, frame in spots.items() if name.startswith((f"desk-page-{run.agent}-", f"desk-item-{run.agent}-"))}
 
 
-def in_view(run, name):
+def in_view(run, name, end=False):
     """Scrolls the desk's tab strip with the wheel, as a person would, until the pill `name` shows
     whole, and returns where it is then. A pill scrolled out of view has no spot, and one partly
-    hidden at an edge reports only what shows, so its hidden edge is lined up with that one."""
+    hidden at an edge reports only what shows, so its hidden edge is lined up with that one. With
+    `end`, a pill wider than the strip is scrolled on until its far end, where its × is, shows."""
     strip = spot(run, f"desk-tabs-{run.agent}")
     pill = spot(run, name)
     if not strip:
@@ -482,10 +483,14 @@ def in_view(run, name):
     for _ in range(16):
         if pill:
             cut_left, cut_right = pill[0] < left, pill[0] + pill[2] > right
-            if cut_left == cut_right:
+            if not cut_right and (end or not cut_left):
                 return pill
-            earlier = cut_left
-            shift = strip[0] + strip[2] - pill[0] - pill[2] if cut_left else strip[0] - pill[0]
+            if cut_left and cut_right and not end:
+                return pill
+            earlier = cut_left and not cut_right
+            shift = strip[0] + strip[2] - pill[0] - pill[2] if earlier else strip[0] - pill[0]
+            if cut_left and cut_right:
+                shift = -strip[2] / 2
         else:
             shift = strip[2] if earlier else -strip[2]
         before = pills(run)
@@ -504,11 +509,23 @@ def middle(frame):
     return left + width / 2, top + height / 2
 
 
+def show_kind(run, kind):
+    """Clicks one of the desk's kinds, pages, files, terminals or simulator, as a person would."""
+    frame = spot(run, f"desk-kind-{run.agent}-desk-{kind}")
+    if frame:
+        x, y = middle(frame)
+        run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
+    return bool(frame)
+
+
 def page_in_front(run):
-    """Puts a page in front of the desk, past any file or terminal shown over its pages."""
+    """Puts a page in front of the desk, past any file or terminal shown over its pages: the
+    desk's Browser kind lists only its pages, so it is chosen first, as a person would."""
     if not pages(run.desk()):
         run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
         until(lambda: active_page(run.desk()).get("title"), 10)
+    if run.desk().get("front"):
+        show_kind(run, "pages")
     if run.desk().get("front"):
         frame = in_view(run, f"desk-page-{run.agent}-{active_page(run.desk()).get('title', '')}")
         if frame:
@@ -531,6 +548,8 @@ def d8(run):
 
 
 def df2(run):
+    """A narrow desk can close its file: its kinds switch between the page and the file, each
+    pill shows what it names, and the file's × closes it and brings the page back."""
     path = str(run.root / "project/a.txt")
     if not pages(run.desk()):
         run.prompt(json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
@@ -538,20 +557,23 @@ def df2(run):
     run.prompt(json_tool("ui.open", {"kind": "file", "path": path}))
     until(lambda: (run.desk().get("front") or {}).get("file") == path, 10)
     title = active_page(run.desk()).get("title", "")
+    show_kind(run, "pages")
     page = in_view(run, f"desk-page-{run.agent}-{title}")
     if not page:
         return run.report("DF2", False, f"the page pill {title!r} never came into view (desk {spot(run, f'pane-Desk-{run.agent}')})")
     x, y = middle(page)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_page = run.desk().get("front") is None
+    show_kind(run, "files")
     item = in_view(run, f"desk-item-{run.agent}-a.txt")
     if not item:
         return run.report("DF2", False, f"the file pill never came into view (desk {spot(run, f'pane-Desk-{run.agent}')})")
     x, y = middle(item)
     run.drive(f"click {x:.0f} {y:.0f}", "wait 1")
     on_file = (run.desk().get("front") or {}).get("file") == path
-    left, top, width, height = in_view(run, f"desk-item-{run.agent}-a.txt") or item
-    run.drive(f"click {left + width - 10:.0f} {top + height / 2:.0f}", "wait 1")
+    left, top, width, height = in_view(run, f"desk-item-{run.agent}-a.txt", end=True) or item
+    run.drive(f"move {left + width - 12:.0f} {top + height / 2:.0f}", "wait 0.3",
+              f"click {left + width - 12:.0f} {top + height / 2:.0f}", "wait 1")
     desk = run.desk()
     back = desk.get("front") is None and all(entry.get("file") != path for entry in desk.get("items") or [])
     run.report("DF2", on_page and on_file and back, f"page pill showed the page {on_page}; file pill showed the file {on_file}; its × brought the page back {back} "

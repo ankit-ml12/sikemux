@@ -318,6 +318,16 @@ pub fn spot(name: String) -> gpui_kit::AnyElement {
     .into_any_element()
 }
 
+/// Forgets the spots whose names start with `prefix`, for a view about to draw them again, so
+/// one it no longer draws is not left where it last was.
+pub fn forget_spots(prefix: &str) {
+    SPOTS.with(|spots| {
+        spots
+            .borrow_mut()
+            .retain(|name, _| !name.starts_with(prefix))
+    });
+}
+
 /// Every spot's last frame, left, top, width and height, by name: the part of it not clipped
 /// away, as where a click can land; one scrolled wholly out of view has none.
 pub fn spots() -> serde_json::Value {

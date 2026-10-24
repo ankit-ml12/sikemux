@@ -253,6 +253,13 @@ pub fn dot(tone: Tone, cx: &App) -> Div {
     }
 }
 
+/// Forgets the driver's spots named from `prefix`, before a view draws them again; nothing in
+/// other builds.
+pub fn forget_spots(_prefix: impl FnOnce() -> String) {
+    #[cfg(feature = "drive")]
+    crate::drive::forget_spots(&_prefix());
+}
+
 /// Where the test bundle's driver can find this element to click it; nothing in other builds.
 pub fn spot(_name: impl FnOnce() -> String) -> Option<AnyElement> {
     #[cfg(feature = "drive")]
