@@ -576,3 +576,31 @@ fn ghostty_theme(
         },
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::default_palette;
+
+    /// The shared chat page and the showcase draw with this copy, having no core to ask.
+    const COPY: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../src/themes/defaultPalette.json"
+    );
+
+    #[test]
+    fn the_default_palette_copy_is_up_to_date() {
+        let palette = default_palette();
+        if std::env::var_os("SIKEMUX_WRITE_DEFAULT_PALETTE").is_some() {
+            let pretty = serde_json::to_string_pretty(&palette).expect("a palette serializes");
+            std::fs::write(COPY, pretty + "\n").expect("the copy is writable");
+        }
+        let copy: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(COPY).expect("the copy exists"))
+                .expect("the copy parses");
+        assert!(
+            copy == serde_json::to_value(&palette).expect("a palette serializes"),
+            "src/themes/defaultPalette.json is out of date: in src-tauri, run \
+             SIKEMUX_WRITE_DEFAULT_PALETTE=1 cargo test -p sikemux-core --lib default_palette_copy"
+        );
+    }
+}
