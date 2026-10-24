@@ -5689,7 +5689,6 @@ dependencies = [
  "hex",
  "ignore",
  "libc",
- "mac-notification-sys",
  "notify",
  "notify-rust",
  "objc2",
