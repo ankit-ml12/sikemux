@@ -155,6 +155,8 @@ pub struct Workbench {
     /// Which of its pages the tab rail shows.
     pub rail_page: RailPage,
     pub files: FileTree,
+    /// The file tree's, which its arrow keys and F2 move and act in.
+    pub files_focus: FocusHandle,
     pub finder: Option<Finder>,
     pub palette: Option<crate::palette::Palette>,
     /// The agent the project picker moves to the project picked, while it does.
@@ -394,6 +396,7 @@ impl Workbench {
         crate::keymap::install(cx);
         crate::chat::install(cx);
         crate::terminal::install(cx);
+        crate::files::install(cx);
         crate::command_popup::install(cx);
         crate::pairing::install(cx);
         crate::editor::install(cx);
@@ -616,6 +619,7 @@ impl Workbench {
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
             rail_page: RailPage::Agents,
             files: FileTree::default(),
+            files_focus: cx.focus_handle(),
             finder: None,
             palette: None,
             moving: None,

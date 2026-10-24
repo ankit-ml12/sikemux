@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -8,12 +8,14 @@ use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
-use gpui_kit::component::WindowExt;
+use gpui_kit::component::{ThemeStyled, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, uniform_list, AnyElement, AppContext, ClickEvent, ClipboardItem, Context, Entity,
-    FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, Subscription, WeakEntity, Window,
+    actions, canvas, div, point, px, uniform_list, AnyElement, App, AppContext, Bounds, ClickEvent,
+    ClipboardItem, Context, Entity, FontWeight, InteractiveElement, IntoElement, KeyBinding,
+    KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement, Pixels,
+    PlatformInput, ScrollStrategy, SharedString, Styled, Subscription, UniformListScrollHandle,
+    WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::protocol::PaneKind;
@@ -65,6 +67,35 @@ pub struct FileTree {
     /// The row a right click last landed on, which the tree's one menu is about; none when
     /// it landed on the tree's empty space.
     menu_row: Option<(PathBuf, bool)>,
+    /// The row the keys move from and act on while the tree has focus.
+    keyed: Option<PathBuf>,
+    /// Where the keyed row was last drawn, for its menu to open there.
+    keyed_at: Rc<Cell<Option<Bounds<Pixels>>>>,
+    scroll: UniformListScrollHandle,
+}
+
+actions!(
+    file_tree,
+    [Previous, Next, First, Last, Expand, Collapse, Activate, Rename, ShowMenu]
+);
+
+const CONTEXT: &str = "FileTree";
+
+/// Binds the tree's keys, as the Mac's tree takes them.
+pub fn install(cx: &mut App) {
+    let context = Some(CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("up", Previous, context),
+        KeyBinding::new("down", Next, context),
+        KeyBinding::new("home", First, context),
+        KeyBinding::new("end", Last, context),
+        KeyBinding::new("right", Expand, context),
+        KeyBinding::new("left", Collapse, context),
+        KeyBinding::new("enter", Activate, context),
+        KeyBinding::new("space", Activate, context),
+        KeyBinding::new("f2", Rename, context),
+        KeyBinding::new("shift-f10", ShowMenu, context),
+    ]);
 }
 
 /// A new file or folder in `parent`, or `from` renamed, while the person types its name in the tree.
@@ -435,7 +466,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             let rows = uniform_list(
                 "file-rows",
                 count,
-                cx.processor(|bench: &mut Workbench, range: Range<usize>, _window, cx| {
+                cx.processor(|bench: &mut Workbench, range: Range<usize>, window, cx| {
                     let front = bench.front_file();
                     let rows = bench.files.rows();
                     let naming = bench.files.naming_at(&rows);
@@ -449,16 +480,40 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                                 Some((at, _, false)) if index > at => rows.get(index - 1)?,
                                 _ => rows.get(index)?,
                             };
-                            Some(row_view(row, &bench.files, front.as_deref(), cx))
+                            Some(row_view(row, bench, front.as_deref(), window, cx))
                         })
                         .collect::<Vec<_>>()
                 }),
             )
+            .track_scroll(&bench.files.scroll)
             .flex_1()
             .min_h_0()
             .px(px(6.))
             .pb(px(4.));
-            let tree = div().id("file-tree").flex_1().min_h_0().flex().flex_col();
+            macro_rules! key {
+                ($action:ident) => {
+                    cx.listener(|bench, _: &$action, window, cx| {
+                        on_key(bench, Key::$action, window, cx)
+                    })
+                };
+            }
+            let tree = div()
+                .id("file-tree")
+                .key_context(CONTEXT)
+                .track_focus(&bench.files_focus)
+                .on_action(key!(Previous))
+                .on_action(key!(Next))
+                .on_action(key!(First))
+                .on_action(key!(Last))
+                .on_action(key!(Expand))
+                .on_action(key!(Collapse))
+                .on_action(key!(Activate))
+                .on_action(key!(Rename))
+                .on_action(key!(ShowMenu))
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col();
             match bench.files.root.clone() {
                 Some(root) => {
                     let (this, here) = (cx.weak_entity(), matches!(bench.files.place, Place::This));
@@ -591,10 +646,12 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
 
 fn row_view(
     row: &Row,
-    tree: &FileTree,
+    bench: &Workbench,
     front: Option<&Path>,
+    window: &Window,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    let tree = &bench.files;
     let marks = &tree.marks;
     let t = Tokens::get(cx).clone();
     let mark = marks.get(&row.path).copied();
@@ -615,6 +672,9 @@ fn row_view(
     };
     let pad = 4. + row.depth as f32 * 13.;
     let path = row.path.clone();
+    let keyed = tree.keyed.as_ref() == Some(&row.path)
+        && bench.files_focus.is_focused(window)
+        && window.last_input_was_keyboard();
     let lead = if row.entry.dir {
         div()
             .flex()
@@ -667,17 +727,11 @@ fn row_view(
         .when(!active, |row| {
             row.hover(move |style| style.bg(t.surface_hover).text_color(t.text_primary))
         })
-        .on_click(cx.listener(move |bench, event: &ClickEvent, _, cx| {
-            if bench.files.expanded.contains(&path) || bench.files.is_dir(&path) {
-                if event.click_count() == 1 {
-                    bench.files.toggle(&path, &bench.target());
-                }
-            } else if event.click_count() == 2 {
-                bench.open_file(&path, cx);
-            } else {
-                bench.preview_file(&path);
-            }
-            cx.notify();
+        .when(keyed, |row| row.focus_ring_style(window, cx))
+        .on_click(cx.listener(move |bench, event: &ClickEvent, window, cx| {
+            window.focus(&bench.files_focus, cx);
+            bench.files.keyed = Some(path.clone());
+            click_row(bench, &path, event.click_count(), cx);
         }))
         .child(lead)
         .child(
@@ -692,6 +746,14 @@ fn row_view(
         .into_any_element();
     let pressed = (row.path.clone(), row.entry.dir);
     let drawn = div()
+        .when(tree.keyed.as_ref() == Some(&row.path), |drawn| {
+            let at = tree.keyed_at.clone();
+            drawn.relative().child(
+                canvas(move |bounds, _, _| at.set(Some(bounds)), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
+        })
         .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |bench, _: &MouseDownEvent, _, _| {
@@ -704,6 +766,117 @@ fn row_view(
 }
 
 const ROW_HEIGHT: f32 = 23.;
+
+/// What clicking a row does: a folder opens or closes, a file shows in the editor, and stays
+/// there once double-clicked.
+fn click_row(bench: &mut Workbench, path: &Path, clicks: usize, cx: &mut Context<Workbench>) {
+    if bench.files.expanded.contains(path) || bench.files.is_dir(path) {
+        if clicks == 1 {
+            bench.files.toggle(path, &bench.target());
+        }
+    } else if clicks == 2 {
+        bench.open_file(path, cx);
+    } else {
+        bench.preview_file(path);
+    }
+    cx.notify();
+}
+
+#[derive(Clone, Copy)]
+enum Key {
+    Previous,
+    Next,
+    First,
+    Last,
+    Expand,
+    Collapse,
+    Activate,
+    Rename,
+    ShowMenu,
+}
+
+/// A key on the tree, acting on the row the keys are on: the one they last moved to while it is
+/// still shown, else the first.
+fn on_key(bench: &mut Workbench, key: Key, window: &mut Window, cx: &mut Context<Workbench>) {
+    let rows = bench.files.rows();
+    let keyed = bench
+        .files
+        .keyed
+        .as_ref()
+        .and_then(|keyed| rows.iter().position(|row| &row.path == keyed));
+    let Some(at) = keyed.or((!rows.is_empty()).then_some(0)) else {
+        return;
+    };
+    let (row, last) = (&rows[at], rows.len() - 1);
+    let to = match key {
+        Key::Previous => Some(at.saturating_sub(1)),
+        Key::Next => Some((at + 1).min(last)),
+        Key::First => Some(0),
+        Key::Last => Some(last),
+        Key::Expand if row.entry.dir && !row.open => {
+            bench.files.toggle(&row.path, &bench.target());
+            Some(at)
+        }
+        Key::Expand if row.open => Some((at + 1).min(last)),
+        Key::Collapse if row.open => {
+            bench.files.toggle(&row.path, &bench.target());
+            Some(at)
+        }
+        Key::Collapse => rows[..at].iter().rposition(|above| above.depth < row.depth),
+        Key::Expand => None,
+        Key::Activate => {
+            click_row(bench, &row.path.clone(), 1, cx);
+            Some(at)
+        }
+        Key::Rename => {
+            bench.rename_entry(&row.path.clone(), row.entry.dir, window, cx);
+            None
+        }
+        Key::ShowMenu => {
+            open_menu_at(bench.files.keyed_at.get(), window, cx);
+            None
+        }
+    };
+    if let Some(to) = to {
+        bench.files.keyed = Some(rows[to].path.clone());
+        bench
+            .files
+            .scroll
+            .scroll_to_item(to, ScrollStrategy::Nearest);
+    }
+    cx.notify();
+}
+
+/// Opens the tree's menu over the row drawn at `bounds`, at its bottom-left as the Mac does, by
+/// right-clicking there once the key has been handled: Kit's menus open only from a click.
+fn open_menu_at(bounds: Option<Bounds<Pixels>>, window: &mut Window, cx: &mut App) {
+    let Some(bounds) = bounds else {
+        return;
+    };
+    let position = point(bounds.left() + px(1.), bounds.bottom() - px(1.));
+    window.defer(cx, move |window, cx| {
+        let modifiers = Modifiers::default();
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Right,
+                position,
+                modifiers,
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Right,
+                position,
+                modifiers,
+                click_count: 1,
+            }),
+            cx,
+        );
+    });
+}
 
 /// The row a new file's or folder's name is typed in, where it will appear.
 fn naming_row(naming: &Naming, depth: usize, cx: &mut Context<Workbench>) -> AnyElement {
