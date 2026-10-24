@@ -66,8 +66,7 @@ objc2-core-foundation = "0.3"
 raw-window-handle = "0.6"
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSDockTile", "NSScreen", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
-mac-notification-sys = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSURL", "NSUserNotification"] }
 
 [build-dependencies]
 # The same naga as GPUI's wgpu, only to translate the shaders while building.

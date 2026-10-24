@@ -9057,7 +9057,6 @@ dependencies = [
  "jpeg-decoder",
  "libc",
  "lsp-types",
- "mac-notification-sys",
  "memchr",
  "naga",
  "objc2 0.6.5",

@@ -3,12 +3,13 @@
 //! Dock icon's bounce and badge.
 
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use gpui_kit::component::notification::Notification;
 use gpui_kit::Context;
 use sikemux_wire::protocol::{AgentGroup, DeviceView, Pane, PaneKind, SessionKind};
-use tokio::sync::oneshot;
+use tokio::sync::mpsc;
 
 use crate::workbench::Workbench;
 
@@ -21,52 +22,144 @@ const TEST: (&str, &str) = (
     "This is how an agent will tell you it needs you or has finished.",
 );
 
-/// Posts a notification and, when it is clicked, brings Sikemux forward on the agent it is about.
+/// Posts a notification; clicking it brings Sikemux forward on the agent it is about.
 pub fn post(title: String, body: String, agent: Option<String>, cx: &mut Context<Workbench>) {
-    let (clicked, click) = oneshot::channel();
-    std::thread::Builder::new()
-        .name("notification".into())
-        .spawn(move || {
-            let _ = clicked.send(post_and_wait_for_click(&title, &body));
-        })
-        .ok();
+    follow_clicks(cx);
+    #[cfg(target_os = "macos")]
+    macos::post(&title, &body, agent.as_deref());
+    #[cfg(not(target_os = "macos"))]
+    let _ = (title, body, agent);
+}
+
+/// Where a click on a notification goes, with the agent it is about.
+static CLICKS: OnceLock<mpsc::UnboundedSender<Option<String>>> = OnceLock::new();
+
+/// Brings Sikemux forward on each clicked notification's agent, heard once for every one.
+fn follow_clicks(cx: &mut Context<Workbench>) {
+    if CLICKS.get().is_some() {
+        return;
+    }
+    let (clicks, mut clicked) = mpsc::unbounded_channel();
+    if CLICKS.set(clicks).is_err() {
+        return;
+    }
     cx.spawn(async move |bench, cx| {
-        if click.await != Ok(true) {
-            return;
-        }
-        let _ = bench.update(cx, |bench, cx| {
-            cx.activate(true);
-            if let Some(agent) = agent {
-                bench.open_agent(&agent);
+        while let Some(agent) = clicked.recv().await {
+            let shown = bench.update(cx, |bench, cx| {
+                cx.activate(true);
+                if let Some(agent) = agent {
+                    bench.open_agent(&agent);
+                }
+            });
+            if shown.is_err() {
+                break;
             }
-        });
+        }
     })
     .detach();
 }
 
 #[cfg(target_os = "macos")]
-fn post_and_wait_for_click(title: &str, body: &str) -> bool {
-    use mac_notification_sys::{Notification, NotificationResponse};
-    // A build run from the terminal has no installed bundle for macOS to show the notification as.
-    let bundle = match crate::core::IDENTIFIER.ends_with(".dev") {
-        true => "com.apple.Terminal",
-        false => crate::core::IDENTIFIER,
-    };
-    let _ = mac_notification_sys::set_application(bundle);
-    matches!(
-        Notification::new()
-            .title(title)
-            .message(body)
-            .sound("Tink")
-            .wait_for_click(true)
-            .send(),
-        Ok(NotificationResponse::Click)
-    )
-}
+#[allow(deprecated)]
+mod macos {
+    use std::sync::Once;
 
-#[cfg(not(target_os = "macos"))]
-fn post_and_wait_for_click(_: &str, _: &str) -> bool {
-    false
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
+    use objc2::{define_class, msg_send, ClassType, MainThreadMarker, MainThreadOnly};
+    use objc2_foundation::{
+        ns_string, NSDictionary, NSObject, NSString, NSUserNotification, NSUserNotificationCenter,
+        NSUserNotificationCenterDelegate,
+    };
+
+    define_class!(
+        /// Hears every click on the app's notifications.
+        // SAFETY: a plain NSObject subclass that adds no dealloc and is only used on the
+        // main thread.
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        struct ClickHandler;
+
+        // SAFETY: every NSObject subclass already conforms to NSObjectProtocol.
+        unsafe impl NSObjectProtocol for ClickHandler {}
+
+        // SAFETY: both methods have the delegate protocol's exact signatures.
+        unsafe impl NSUserNotificationCenterDelegate for ClickHandler {
+            #[unsafe(method(userNotificationCenter:didActivateNotification:))]
+            fn clicked(
+                &self,
+                center: &NSUserNotificationCenter,
+                notification: &NSUserNotification,
+            ) {
+                center.removeDeliveredNotification(notification);
+                let agent = notification
+                    .userInfo()
+                    .and_then(|info| info.objectForKey(agent_key()))
+                    .and_then(|agent| agent.downcast::<NSString>().ok())
+                    .map(|agent| agent.to_string());
+                if let Some(clicks) = super::CLICKS.get() {
+                    let _ = clicks.send(agent);
+                }
+            }
+
+            #[unsafe(method(userNotificationCenter:shouldPresentNotification:))]
+            fn shown_in_front(
+                &self,
+                _center: &NSUserNotificationCenter,
+                _notification: &NSUserNotification,
+            ) -> bool {
+                true
+            }
+        }
+    );
+
+    fn agent_key() -> &'static NSString {
+        ns_string!("agent")
+    }
+
+    /// macOS gives an app with no bundle, such as a run from the build folder, no notification
+    /// center.
+    fn center() -> Option<Retained<NSUserNotificationCenter>> {
+        // SAFETY: the class method takes nothing and returns the shared center or nil.
+        unsafe {
+            msg_send![
+                NSUserNotificationCenter::class(),
+                defaultUserNotificationCenter
+            ]
+        }
+    }
+
+    pub(super) fn post(title: &str, body: &str, agent: Option<&str>) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(center) = center() else {
+            return;
+        };
+        static LISTENING: Once = Once::new();
+        LISTENING.call_once(|| {
+            // SAFETY: NSObject's `init` takes nothing and returns the object it was sent to.
+            let handler: Retained<ClickHandler> =
+                unsafe { msg_send![mtm.alloc::<ClickHandler>(), init] };
+            // SAFETY: the handler is never released, so it outlives the center's unretained
+            // reference to it.
+            unsafe {
+                center.setDelegate(Some(ProtocolObject::from_ref(&*Retained::into_raw(
+                    handler,
+                ))));
+            }
+        });
+        let notification = NSUserNotification::new();
+        notification.setTitle(Some(&NSString::from_str(title)));
+        notification.setInformativeText(Some(&NSString::from_str(body)));
+        if let Some(agent) = agent {
+            let agent = NSString::from_str(agent);
+            let info = NSDictionary::<NSString, AnyObject>::from_slices(&[agent_key()], &[&agent]);
+            // SAFETY: the dictionary holds only strings, which the notification can store.
+            unsafe { notification.setUserInfo(Some(&info)) };
+        }
+        center.deliverNotification(&notification);
+    }
 }
 
 /// Posts what the core said about an agent, while the person is away from Sikemux and
