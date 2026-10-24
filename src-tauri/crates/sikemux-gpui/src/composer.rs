@@ -3,8 +3,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::base::input::InlineTokenContext;
-use gpui_kit::base::{Button as BaseButton, Popover};
+use gpui_kit::base::Button as BaseButton;
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
 use gpui_kit::component::input::{Textarea, TextareaState};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, img, px, radians, size, Anchor, AnyElement, AnyView, App, ClipboardItem, ElementId,
@@ -19,7 +21,7 @@ use crate::icons::Icon;
 use crate::model_picker::Picked;
 use crate::motion::{Curve, Ease};
 use crate::theme::{self, Tokens};
-use crate::ui::{self, DockMenu, IconButton, Menu, MenuItem};
+use crate::ui::{self, DockMenu, IconButton};
 use crate::workbench::Workbench;
 
 type Act = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -604,10 +606,32 @@ fn picker_trigger(
     cx: &App,
 ) -> BaseButton {
     let t = Tokens::get(cx).clone();
-    let first = provider.is_some();
-    BaseButton::new(SharedString::from(format!("picker-{id}")))
+    let trigger = BaseButton::new(SharedString::from(format!("picker-{id}")))
         .accessibility_label(name)
         .disabled(!enabled)
+        .when(enabled, |trigger| {
+            trigger.hover(move |style| {
+                style.bg(Hsla {
+                    a: 0.07,
+                    ..t.text_primary
+                })
+            })
+        });
+    picker_face(trigger, label, provider, enabled, cx)
+}
+
+/// How a picker's trigger looks, on whichever button opens it: the agent's mark when it is
+/// the first, what is chosen, and a chevron.
+fn picker_face<E: Styled + ParentElement + IntoElement>(
+    trigger: E,
+    label: String,
+    provider: Option<&str>,
+    enabled: bool,
+    cx: &App,
+) -> E {
+    let t = Tokens::get(cx).clone();
+    let first = provider.is_some();
+    trigger
         .h(px(31.))
         .px(px(11.))
         .max_w(px(220.))
@@ -618,14 +642,6 @@ fn picker_trigger(
         .text_size(crate::theme::ui_text(11.))
         .text_color(if first { t.accent } else { t.text_tertiary })
         .when(!enabled, |trigger| trigger.opacity(0.45))
-        .when(enabled, |trigger| {
-            trigger.hover(move |style| {
-                style.bg(Hsla {
-                    a: 0.07,
-                    ..t.text_primary
-                })
-            })
-        })
         .children(provider.map(|provider| ui::mark(provider, 17.)))
         .child(
             div()
@@ -655,43 +671,37 @@ fn picker(
     let label = chosen(&picker, name);
     let first = provider.is_some();
     let enabled = settable && !picker.choices.is_empty();
-    let trigger = picker_trigger(&picker.id, label, name, provider, enabled, cx);
     if !enabled {
-        return trigger.into_any_element();
+        return picker_trigger(&picker.id, label, name, provider, enabled, cx).into_any_element();
     }
     let ConfigPicker {
         id,
         current,
         choices,
     } = picker;
-    Popover::new(SharedString::from(format!("picker-menu-{id}")))
-        .anchor(if first {
-            Anchor::BottomLeft
-        } else {
-            Anchor::BottomRight
-        })
-        .offset(px(12.))
-        .trigger(trigger)
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            Menu::new().children(choices.iter().map(|choice| {
-                let (pick, popover, id, value) = (
-                    pick.clone(),
-                    popover.clone(),
-                    id.clone(),
-                    choice.value.clone(),
-                );
-                MenuItem::new(
-                    SharedString::from(format!("{id}-{value}")),
-                    choice.label.clone(),
-                )
-                .checked(choice.value == current)
-                .on_click(move |_, window, cx| {
-                    pick(&id, &value, window, cx);
-                    popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                })
-            }))
-        })
+    let trigger = KitButton::new(SharedString::from(format!("picker-{id}")))
+        .ghost()
+        .compact()
+        .accessibility_label(name);
+    picker_face(trigger, label, provider, enabled, cx)
+        .dropdown_menu_with_anchor(
+            if first {
+                Anchor::BottomLeft
+            } else {
+                Anchor::BottomRight
+            },
+            move |mut popup, _, _| {
+                for choice in &choices {
+                    let (pick, id, value) = (pick.clone(), id.clone(), choice.value.clone());
+                    popup = popup.item(
+                        PopupMenuItem::new(choice.label.clone())
+                            .checked(choice.value == current)
+                            .on_click(move |_, window, cx| pick(&id, &value, window, cx)),
+                    );
+                }
+                popup
+            },
+        )
         .into_any_element()
 }
 
