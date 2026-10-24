@@ -459,13 +459,16 @@ impl Workspaces {
         self.providers.as_ref()
     }
 
-    /// Changes what is saved, keeps it, and tells the core.
+    /// Changes what is saved, keeps it, and tells the core when anything
+    /// changed.
     fn change<T>(&self, change: impl FnOnce(&mut Saved) -> CoreResult<T>) -> CoreResult<T> {
         let mut published = self.published.locked();
         let changed = change(&mut published.saved)?;
-        self.file.save_soon(&published.saved);
+        let saved = self.file.save_soon(&published.saved);
         drop(published);
-        self.wake.now();
+        if saved {
+            self.wake.now();
+        }
         Ok(changed)
     }
 

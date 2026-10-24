@@ -25,6 +25,8 @@ struct Queue {
 
 #[derive(Default)]
 struct Pending {
+    /// What was last handed to be saved.
+    last: Vec<u8>,
     next: Option<Vec<u8>>,
     writing: bool,
     hurry: bool,
@@ -90,22 +92,27 @@ impl Kept {
 
     /// Saves on a thread of its own, so whoever changed the value never waits
     /// on the disk. Changes made while one is being written are saved together
-    /// after it, only the latest of them.
-    pub(crate) fn save_soon<T: Serialize>(&self, value: &T) {
+    /// after it, only the latest of them. Answers false when `value` is what
+    /// was last saved, which is then not written again.
+    pub(crate) fn save_soon<T: Serialize>(&self, value: &T) -> bool {
         let Some(path) = &self.path else {
-            return;
+            return true;
         };
         let bytes = match serde_json::to_vec(value) {
             Ok(bytes) => bytes,
             Err(error) => {
                 eprintln!("sikemux core: {} was not saved: {error}", path.display());
-                return;
+                return true;
             }
         };
         let mut pending = self.queue.state.locked();
+        if pending.last == bytes {
+            return false;
+        }
+        pending.last.clone_from(&bytes);
         pending.next = Some(bytes);
         if pending.writing {
-            return;
+            return true;
         }
         pending.writing = true;
         drop(pending);
@@ -116,6 +123,7 @@ impl Kept {
         if spawned.is_err() {
             self.queue.write_all(path);
         }
+        true
     }
 
     /// Waits until every [`Kept::save_soon`] so far is on disk.
