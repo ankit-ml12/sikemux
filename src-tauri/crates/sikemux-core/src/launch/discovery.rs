@@ -158,6 +158,8 @@ pub fn answered_late() -> &'static Notify {
     &ANSWERED
 }
 
+type Probe = (PathBuf, Option<FileStamp>);
+
 /// Asks the program at `executable` and keeps its answer, once however many
 /// ask together. A first look that times out is tried again later.
 async fn ask(
@@ -166,7 +168,7 @@ async fn ask(
     stamp: Option<FileStamp>,
     timeout: Duration,
 ) -> Result<String, String> {
-    static ASKING: LazyLock<Flights<(PathBuf, Option<FileStamp>), Result<String, String>>> =
+    static ASKING: LazyLock<Flights<Probe, Result<String, String>>> =
         LazyLock::new(Flights::default);
     shared(&ASKING, (executable.to_path_buf(), stamp), async {
         let answer = {
