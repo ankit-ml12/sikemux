@@ -74,6 +74,8 @@ pub struct Desks {
     items: HashMap<String, Vec<DeskItem>>,
     /// The item each desk shows in front of its pages, while it shows one.
     front: HashMap<String, DeskItem>,
+    /// The file and the terminal each desk last showed, which its switch brings back.
+    last_front: HashMap<(String, DeskKind), DeskItem>,
     /// The runs whose terminals have been put on a desk, so each is put there once.
     placed_runs: HashSet<String>,
     /// Whether the runs have been read once; runs going by then join their desks behind.
@@ -96,6 +98,13 @@ pub enum DeskItem {
 }
 
 impl DeskItem {
+    fn kind(&self) -> DeskKind {
+        match self {
+            DeskItem::File(_) => DeskKind::Files,
+            DeskItem::Terminal { .. } => DeskKind::Terminals,
+        }
+    }
+
     fn same(&self, other: &DeskItem) -> bool {
         match (self, other) {
             (DeskItem::File(one), DeskItem::File(other)) => one == other,
@@ -108,10 +117,15 @@ impl DeskItem {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq)]
+/// What a desk shows, as its switch names it: its pages, its files, its task terminals, or its
+/// simulator. Only the pages and the simulator are kept; files and terminals are shown by
+/// bringing one to the front.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum DeskKind {
     #[default]
     Pages,
+    Files,
+    Terminals,
     Simulator,
 }
 
@@ -187,6 +201,7 @@ impl Desks {
             page_files,
             items: HashMap::new(),
             front: HashMap::new(),
+            last_front: HashMap::new(),
             placed_runs: HashSet::new(),
             runs_read: false,
             address_wanted: None,
@@ -465,6 +480,62 @@ impl Workbench {
         self.desks.kinds.insert(agent.to_owned(), kind);
     }
 
+    /// What the desk shows now: its simulator, else whatever is in front of its pages.
+    pub(crate) fn desk_kind(&self, agent: &str) -> DeskKind {
+        if self.desks.kinds.get(agent) == Some(&DeskKind::Simulator) {
+            return DeskKind::Simulator;
+        }
+        self.desks
+            .front
+            .get(agent)
+            .map_or(DeskKind::Pages, DeskItem::kind)
+    }
+
+    /// What the desk's switch does, as the Mac's: a kind's last tab comes to the front, the
+    /// pages open a blank one when there is none, and the simulator shows its device.
+    fn pick_kind(&mut self, agent: &str, kind: DeskKind) {
+        match kind {
+            DeskKind::Simulator => self.show_kind(agent, DeskKind::Simulator),
+            DeskKind::Pages => {
+                self.show_kind(agent, DeskKind::Pages);
+                self.desks.front.remove(agent);
+                if self
+                    .desks
+                    .strips
+                    .get(agent)
+                    .is_none_or(|strip| strip.tabs.is_empty())
+                {
+                    self.new_page(agent);
+                }
+            }
+            DeskKind::Files | DeskKind::Terminals => {
+                let held = self.desks.items.get(agent);
+                let held_now = |item: &DeskItem| {
+                    held.is_some_and(|items| items.iter().any(|it| it.same(item)))
+                };
+                let item = self
+                    .desks
+                    .last_front
+                    .get(&(agent.to_owned(), kind))
+                    .filter(|item| held_now(item))
+                    .or_else(|| held?.iter().rev().find(|item| item.kind() == kind))
+                    .cloned();
+                if let Some(item) = item {
+                    self.show_kind(agent, DeskKind::Pages);
+                    self.bring_front(agent, item);
+                }
+            }
+        }
+    }
+
+    /// Shows `item` in front of the agent's pages, remembered as its kind's last.
+    fn bring_front(&mut self, agent: &str, item: DeskItem) {
+        self.desks
+            .last_front
+            .insert((agent.to_owned(), item.kind()), item.clone());
+        self.desks.front.insert(agent.to_owned(), item);
+    }
+
     /// Opens `path` on the agent's desk in front of its pages, its cursor at `line` and `column`
     /// counted from one, bringing the desk out if it is closed.
     pub(crate) fn open_file_on_desk(
@@ -493,7 +564,7 @@ impl Workbench {
         if !front {
             return;
         }
-        self.desks.front.insert(agent.to_owned(), item);
+        self.bring_front(agent, item);
         self.show_kind(agent, DeskKind::Pages);
         if !self.desk_open_anywhere(agent) {
             self.reveal_desk(agent);
@@ -506,16 +577,19 @@ impl Workbench {
             return;
         };
         items.retain(|held| !held.same(item));
+        let next = items
+            .iter()
+            .rev()
+            .find(|held| held.kind() == item.kind())
+            .cloned();
         if self
             .desks
             .front
             .get(agent)
             .is_some_and(|front| front.same(item))
         {
-            match items.last() {
-                Some(next) => {
-                    self.desks.front.insert(agent.to_owned(), next.clone());
-                }
+            match next {
+                Some(next) => self.bring_front(agent, next),
                 None => {
                     self.desks.front.remove(agent);
                 }
@@ -718,7 +792,7 @@ impl Workbench {
                 self.show_kind(&agent, DeskKind::Pages);
                 true
             }
-            DeskKind::Pages => {
+            _ => {
                 let shown = self
                     .desks
                     .strips
@@ -978,8 +1052,8 @@ impl Workbench {
             json!({
                 "open": self.desk_open_anywhere(agent),
                 "kind": match desks.kinds.get(agent).copied().unwrap_or_default() {
-                    DeskKind::Pages => "pages",
                     DeskKind::Simulator => "simulator",
+                    _ => "pages",
                 },
                 "pages": pages,
                 "items": desks.items.get(agent).map(|items| items.iter().map(item).collect::<Vec<_>>()),
@@ -1133,7 +1207,7 @@ pub fn pane(
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let t = Tokens::get(cx).clone();
-    let kind = bench.desks.kinds.get(agent).copied().unwrap_or_default();
+    let kind = bench.desk_kind(agent);
     if kind == DeskKind::Simulator {
         return simulator_desk(bench, tab, view, agent, cx);
     }
@@ -1156,7 +1230,7 @@ pub fn pane(
         .px(px(6.))
         .border_b_1()
         .border_color(t.border)
-        .child(kinds(agent, kind, cx));
+        .child(kinds(bench, agent, kind, cx));
     let scroll = bench
         .desks
         .tab_scrolls
@@ -1183,7 +1257,11 @@ pub fn pane(
     });
     let mut front_pill = None;
     let mut pill_count = 0;
-    for page in strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default() {
+    let pages = match kind {
+        DeskKind::Pages => strip.map(|strip| strip.tabs.as_slice()).unwrap_or_default(),
+        _ => &[],
+    };
+    for page in pages {
         let label = if !page.title.is_empty() {
             page.title.clone()
         } else if page.url == sikemux_browser::BLANK_URL {
@@ -1266,6 +1344,7 @@ pub fn pane(
         .into_iter()
         .flatten()
         .enumerate()
+        .filter(|(_, item)| item.kind() == kind)
     {
         let shown = front_item.is_some_and(|front| front.same(item));
         let (icon, label, close) = match item {
@@ -1307,10 +1386,7 @@ pub fn pane(
                 })
                 .children(ui::spot(|| format!("desk-item-{agent}-{label}")))
                 .on_click(cx.listener(move |bench, _, _, cx| {
-                    bench
-                        .desks
-                        .front
-                        .insert(pick_agent.clone(), pick_item.clone());
+                    bench.bring_front(&pick_agent, pick_item.clone());
                     bench.parts.redraw(&bench.parts.stage, cx);
                 }))
                 .child(ui::icon(icon, 11.))
@@ -1364,13 +1440,15 @@ pub fn pane(
                 .child(crate::track::sideways_scroller())
                 .children(ui::spot(|| format!("desk-tabs-{agent}"))),
         )
-        .child(
-            div().flex_none().child(
-                IconButton::new("desk-new-page", Icon::Plus, "New page")
-                    .glyph(12.)
-                    .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
-            ),
-        )
+        .when(kind == DeskKind::Pages, |head| {
+            head.child(
+                div().flex_none().child(
+                    IconButton::new("desk-new-page", Icon::Plus, "New page")
+                        .glyph(12.)
+                        .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
+                ),
+            )
+        })
         .child(div().flex_none().child(close_desk(tab, view, cx)));
     let page = bench.desks.pages.get(agent);
     let (back, forward, reload) = (agent.to_owned(), agent.to_owned(), agent.to_owned());
@@ -1561,40 +1639,81 @@ fn tab_menu(
     }
 }
 
-fn kinds(agent: &str, shown: DeskKind, cx: &mut Context<Workbench>) -> impl IntoElement {
-    let choice = |id: &'static str,
-                  icon: Icon,
-                  label: &'static str,
-                  kind: DeskKind,
-                  cx: &mut Context<Workbench>| {
-        let agent = agent.to_owned();
-        IconButton::new(id, icon, label)
-            .glyph(13.)
-            .pressed(shown == kind)
-            .on_click(cx.listener(move |bench, _, _, cx| {
-                bench.show_kind(&agent, kind);
-                bench.parts.redraw(&bench.parts.stage, cx);
-            }))
-    };
-    div()
-        .flex()
-        .items_center()
-        .gap(px(2.))
-        .pr(px(6.))
-        .child(choice(
+/// The desk's switch between what it holds, as the Mac's: its pages, its files, its task
+/// terminals and its simulator. A kind with nothing in it is greyed, but for the pages and the
+/// simulator, which open one; one the agent is at work in, and not shown, takes its colour.
+fn kinds(
+    bench: &Workbench,
+    agent: &str,
+    shown: DeskKind,
+    cx: &mut Context<Workbench>,
+) -> impl IntoElement {
+    let tint = bench
+        .agent_by_id(agent)
+        .map(|row| crate::theme::brand(&row.provider));
+    let pages = bench
+        .desks
+        .strips
+        .get(agent)
+        .map_or(&[][..], |strip| strip.tabs.as_slice());
+    let items = bench.desks.items.get(agent).map_or(&[][..], Vec::as_slice);
+    let held = |kind: DeskKind| items.iter().filter(|item| item.kind() == kind).count();
+    let mut row = div().flex().items_center().gap(px(2.));
+    for (id, icon, label, kind, count, busy) in [
+        (
             "desk-pages",
             Icon::Globe,
-            "Pages",
+            "Browser",
             DeskKind::Pages,
-            cx,
-        ))
-        .child(choice(
+            pages.len(),
+            pages.iter().any(|page| page.acting),
+        ),
+        (
+            "desk-files",
+            Icon::Editor,
+            "Files",
+            DeskKind::Files,
+            held(DeskKind::Files),
+            false,
+        ),
+        (
+            "desk-terminals",
+            Icon::Terminal,
+            "Terminals",
+            DeskKind::Terminals,
+            held(DeskKind::Terminals),
+            false,
+        ),
+        (
             "desk-simulator",
             Icon::Phone,
             "iOS Simulator",
             DeskKind::Simulator,
-            cx,
-        ))
+            0,
+            false,
+        ),
+    ] {
+        let named = match count {
+            0 => label.to_owned(),
+            count => format!("{label} · {count}"),
+        };
+        let empty = count == 0 && matches!(kind, DeskKind::Files | DeskKind::Terminals);
+        let agent = agent.to_owned();
+        row = row.child(
+            IconButton::new(id, icon, named)
+                .glyph(13.)
+                .pressed(shown == kind)
+                .disabled(empty)
+                .when_some(tint.filter(|_| busy && shown != kind), |button, tint| {
+                    button.tint(tint)
+                })
+                .on_click(cx.listener(move |bench, _, _, cx| {
+                    bench.pick_kind(&agent, kind);
+                    bench.parts.redraw(&bench.parts.stage, cx);
+                })),
+        );
+    }
+    row.pr(px(6.))
 }
 
 fn close_desk(tab: &str, view: &str, cx: &mut Context<Workbench>) -> impl IntoElement {
@@ -1625,7 +1744,7 @@ fn simulator_desk(
         .px(px(6.))
         .border_b_1()
         .border_color(t.border)
-        .child(kinds(agent, DeskKind::Simulator, cx))
+        .child(kinds(bench, agent, DeskKind::Simulator, cx))
         .children(bench.sims.device_name(agent).map(|name| {
             ui::text(name.to_owned(), 12., FontWeight::MEDIUM).text_color(t.text_secondary)
         }))
