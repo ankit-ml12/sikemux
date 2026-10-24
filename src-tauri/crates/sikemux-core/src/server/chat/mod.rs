@@ -1297,6 +1297,15 @@ impl Chats {
         }
     }
 
+    /// The feed the agent's chat kept while it slept, no longer kept apart.
+    fn take_rest(&self, agent_id: &str) -> Option<Arc<Feed>> {
+        let mut resting = self.resting.locked();
+        let at = resting
+            .iter()
+            .position(|resting| resting.agent_id == agent_id)?;
+        Some(resting.remove(at).feed)
+    }
+
     /// Lets go of what a chat that will not wake again kept while it slept.
     pub(crate) fn forget_rest(&self, agent_id: &str) {
         self.resting
@@ -1443,12 +1452,21 @@ impl Chats {
             return Err("ACP session is already running".into());
         }
         let (commands, queue) = mpsc::unbounded_channel();
+        // A chat waking from sleep goes on in the feed it slept with, so a client reading
+        // that feed hears it wake, and the history its start replays is already there.
+        let rested = kept
+            .is_none()
+            .then(|| self.take_rest(&launch.agent_id))
+            .flatten();
+        let history_shown = rested.is_some();
         let (feed, flags) = kept.unwrap_or_else(|| {
-            let feed = Feed::new(
-                launch.agent_id.clone(),
-                launch.permission_mode.clone(),
-                self.history.as_deref(),
-            );
+            let feed = rested.unwrap_or_else(|| {
+                Feed::new(
+                    launch.agent_id.clone(),
+                    launch.permission_mode.clone(),
+                    self.history.as_deref(),
+                )
+            });
             let flags = Flags {
                 running: false,
                 unprompted: false,
@@ -1501,7 +1519,7 @@ impl Chats {
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
             read_only: std::sync::OnceLock::new(),
-            saved_shown: AtomicBool::new(false),
+            saved_shown: AtomicBool::new(history_shown),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -2040,10 +2058,18 @@ pub(crate) fn adopt(
     Ok(())
 }
 
-/// The person began writing in a new chat, so its agent starts while they write.
-pub(crate) fn composing(core: &Core, agent_id: &str) {
+/// The person began writing in a new chat, or a sleeping one, so its agent starts while
+/// they write.
+pub(crate) fn composing(core: &Arc<Core>, agent_id: &str) {
     if let Some(chat) = core.chats.get(agent_id) {
         chat.start_agent();
+    } else if stopped(core, agent_id) {
+        let (core, agent_id) = (core.clone(), agent_id.to_owned());
+        tokio::spawn(async move {
+            if let Err(error) = super::launching::wake_chat(&core, agent_id).await {
+                eprintln!("sikemux core: a chat the person began writing in did not wake: {error}");
+            }
+        });
     }
 }
 
@@ -2072,9 +2098,31 @@ pub(crate) async fn attach(
             }),
         )
     };
-    let Some(chat) = core.chats.get(agent_id) else {
-        missing();
-        return;
+    // A sleeping chat is read from the feed it kept, or else taken up to wait for the person,
+    // its saved history shown when the core can read it; neither starts its agent.
+    let chat = match core.chats.get(agent_id) {
+        Some(chat) => chat,
+        None => {
+            if let Ok(feed) = core.chats.readable(agent_id) {
+                let standing = Standing {
+                    running: false,
+                    turned: false,
+                };
+                feed.attach(client, request_id, standing, since);
+                return;
+            }
+            let taken_up = stopped(core, agent_id)
+                && super::launching::start_saved(core, agent_id, true)
+                    .await
+                    .is_ok();
+            match core.chats.get(agent_id).filter(|_| taken_up) {
+                Some(chat) => chat,
+                None => {
+                    missing();
+                    return;
+                }
+            }
+        }
     };
     // A chat still starting, such as one resumed after an update, is taken up
     // once it is ready. One that never gets there is gone. A new chat waiting

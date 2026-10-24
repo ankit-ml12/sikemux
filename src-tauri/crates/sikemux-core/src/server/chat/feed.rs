@@ -1933,10 +1933,11 @@ impl Feed {
     }
 
     /// Lets go of everything the chat holds in memory once it sleeps, writing out what is not
-    /// yet on disk, so clients can still page and find through its history. Answers how many
-    /// bytes of history it keeps.
+    /// yet on disk, so clients can still attach, page and find through its history, and
+    /// hear the chat when it wakes in this feed. Answers how many bytes of history it keeps.
     pub(crate) fn rest(&self) -> u64 {
         let mut inner = self.inner.locked();
+        inner.closed = false;
         inner.fold = None;
         inner.subscribers.clear();
         inner.replay.rest()

@@ -726,6 +726,136 @@ async fn a_device_lists_the_app_s_chats_and_wakes_a_sleeping_one() {
     assert!(refusal(refused).contains("no longer on this host"));
 }
 
+const FAKE_CLAUDE: &str = env!("CARGO_BIN_EXE_sikemux-fake-claude");
+
+/// The chat a window just opened sees, once it holds `text`.
+async fn shown_with(core: &TestCore, agent_id: &str, text: &str) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let (window, _events) = CoreClient::connect(&core.socket).await.expect("window");
+        if let Ok(ChatAttachment::Live { view, .. }) = window.acp_attach(agent_id.into()).await {
+            if view.to_string().contains(text) {
+                return true;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+async fn ready_after_writing(app: &CoreClient, agent_id: &str) -> bool {
+    app.call("composing", json!({ "agentId": agent_id }))
+        .await
+        .expect("the person begins writing");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        let chats = app.acp_list().await.expect("list chats");
+        if chats
+            .iter()
+            .any(|chat| chat.agent_id == agent_id && chat.state == ChatState::Ready)
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// A sleeping chat shown in a window shows its history, from the record the core kept or
+/// else from Claude's saved transcript, and the person's first keystroke wakes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sleeping_chat_shows_its_history_and_wakes_when_the_person_writes() {
+    let claude_config = tempfile::tempdir().expect("claude config");
+    let accounts = json!({ "profiles": [
+        { "id": "fake", "name": "Fake", "provider": "opencode", "accent": "#a277ff",
+          "executablePath": FAKE_AGENT },
+        { "id": "claude", "name": "Claude", "provider": "claude", "accent": "#d97757",
+          "executablePath": FAKE_CLAUDE, "configPath": claude_config.path() },
+    ] });
+    let open = |core: &TestCore| {
+        let (socket, accounts) = (core.socket.clone(), accounts.clone());
+        async move {
+            let (app, events) = CoreClient::connect(&socket).await.expect("app");
+            app.register_window().await.expect("the window");
+            app.call("setAgentAccounts", accounts)
+                .await
+                .expect("accounts");
+            let project = json!({ "id": "sess-tmp", "name": "tmp", "path": std::env::temp_dir() });
+            app.call("addProject", project).await.expect("project");
+            (app, events)
+        }
+    };
+    let core = start_core(&SecretKey::generate(), &[]);
+    let (app, _events) = open(&core).await;
+
+    let (acp, _) = app
+        .start_chat("opencode:fake".into(), "sess-tmp".into(), None)
+        .await
+        .expect("a chat");
+    app.acp_prompt(
+        acp.clone(),
+        None,
+        "hello acp".into(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await
+    .expect("a message");
+    assert!(shown_with(&core, &acp, "echo").await, "the agent answered");
+    app.call("sleepAgent", json!({ "agentId": acp }))
+        .await
+        .expect("the chat sleeps");
+    assert!(
+        shown_with(&core, &acp, "hello acp").await,
+        "the record it kept shows"
+    );
+    assert!(ready_after_writing(&app, &acp).await, "writing wakes it");
+
+    let (claude, session) = {
+        let elsewhere = start_core(&SecretKey::generate(), &[]);
+        let (other, _events) = open(&elsewhere).await;
+        let (claude, _) = other
+            .start_chat("claude:claude".into(), "sess-tmp".into(), None)
+            .await
+            .expect("a Claude chat");
+        other
+            .acp_prompt(
+                claude.clone(),
+                None,
+                "hello claude".into(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .await
+            .expect("a message");
+        assert!(
+            shown_with(&elsewhere, &claude, "echo").await,
+            "Claude answered"
+        );
+        let session = other
+            .workspace()
+            .await
+            .expect("workspace")
+            .agents
+            .into_iter()
+            .find(|agent| agent.id == claude)
+            .and_then(|agent| agent.resume_id)
+            .expect("its session");
+        (claude, session)
+    };
+    let asleep = json!({ "id": claude, "provider": "claude", "project": "sess-tmp",
+        "cwd": std::env::temp_dir(), "title": "Claude", "renamed": true, "permissionMode": "bypass",
+        "profileId": "claude", "resumeId": session, "asleep": true });
+    app.call("createAgent", json!({ "agent": asleep }))
+        .await
+        .expect("a sleeping Claude chat this core has no record of");
+    assert!(
+        shown_with(&core, &claude, "hello claude").await,
+        "its saved transcript shows"
+    );
+    assert!(ready_after_writing(&app, &claude).await, "writing wakes it");
+}
+
 fn fake_launch(agent_id: &str) -> ChatLaunch {
     ChatLaunch {
         agent_id: agent_id.into(),

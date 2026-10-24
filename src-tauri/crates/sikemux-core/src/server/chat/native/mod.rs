@@ -115,8 +115,12 @@ pub(crate) fn show_saved(chat: &Arc<Chat>) {
     if !shows_saved(chat.provider()) {
         return;
     }
-    chat.saved_shown
-        .store(true, std::sync::atomic::Ordering::Release);
+    if chat
+        .saved_shown
+        .swap(true, std::sync::atomic::Ordering::AcqRel)
+    {
+        return;
+    }
     let chat = chat.clone();
     tokio::task::spawn_blocking(move || {
         let sink = session::Sink::showing(chat.clone());
