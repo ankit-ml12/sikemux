@@ -430,9 +430,15 @@ impl Workspaces {
             recent_stale: Notify::new(),
         };
         if upgraded {
-            workspaces.save(&workspaces.published.locked().saved);
+            workspaces.file.save(&workspaces.published.locked().saved);
         }
         workspaces
+    }
+
+    /// Waits until every change so far is on disk, for a core about to stop
+    /// or hand over to another.
+    pub(crate) fn flush(&self) {
+        self.file.flush();
     }
 
     /// The core's data folder, which holds the skills library.
@@ -445,15 +451,11 @@ impl Workspaces {
         self.providers.as_ref()
     }
 
-    fn save(&self, saved: &Saved) {
-        self.file.save(saved);
-    }
-
     /// Changes what is saved, keeps it, and tells the core.
     fn change<T>(&self, change: impl FnOnce(&mut Saved) -> CoreResult<T>) -> CoreResult<T> {
         let mut published = self.published.locked();
         let changed = change(&mut published.saved)?;
-        self.save(&published.saved);
+        self.file.save_soon(&published.saved);
         drop(published);
         self.wake.now();
         Ok(changed)

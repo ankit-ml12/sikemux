@@ -1187,6 +1187,7 @@ pub(crate) async fn run_core(
     for task in background {
         task.abort();
     }
+    core.workspaces.flush();
     remote::stop_network(&core);
     remote::stop(&core).await;
     remote::stop_live(&core);
