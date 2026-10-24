@@ -5,6 +5,8 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::input::InputState;
+use gpui_kit::component::menu::PopupMenuItem;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AppContext, Context, Entity, FontWeight, Hsla, IntoElement, ParentElement, Styled,
     Window,
@@ -95,6 +97,63 @@ pub fn avatar(profile: &Profile, name: &str, size: f32) -> impl IntoElement {
                 .map(|letter| letter.to_uppercase().to_string())
                 .unwrap_or_else(|| "?".into()),
         )
+}
+
+/// An account as a row of a menu, as the Mac draws one: its letter, its name with a tick on the
+/// one in use, what it is signed in as under that, and how much of its plan it has used.
+pub fn popup_item(
+    profile: &Profile,
+    name: &str,
+    detail: Option<String>,
+    used: Option<f64>,
+    current: bool,
+) -> PopupMenuItem {
+    let (profile, name) = (profile.clone(), name.to_owned());
+    PopupMenuItem::element(move |_, cx| {
+        let t = crate::theme::Tokens::get(cx).clone();
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(avatar(&profile, &name, 16.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .child(div().min_w_0().truncate().child(name.clone()))
+                            .when(current, |line| {
+                                line.child(
+                                    crate::ui::icon(crate::icons::Icon::Check, 11.)
+                                        .text_color(t.accent),
+                                )
+                            }),
+                    )
+                    .children(detail.clone().map(|detail| {
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(theme::ui_text(10.5))
+                            .text_color(t.text_tertiary)
+                            .child(detail)
+                    })),
+            )
+            .children(used.map(|used| {
+                div()
+                    .flex_none()
+                    .font_family(theme::MONO)
+                    .text_size(theme::ui_text(10.5))
+                    .text_color(t.text_tertiary)
+                    .child(format!("{}%", used.round()))
+            }))
+    })
 }
 
 fn key(profile: &Profile) -> (String, Option<String>) {

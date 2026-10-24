@@ -2,11 +2,11 @@
 //! there, even in the middle of a turn, to those signed in that keep their chats where this
 //! one does; one that has not simply starts there, on any signed in.
 
-use gpui_kit::base::{Button as BaseButton, Popover};
-use gpui_kit::prelude::FluentBuilder;
+use gpui_kit::component::button::{Button as KitButton, ButtonVariants};
+use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::Disableable;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, Context, Entity, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled,
+    div, px, Anchor, AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
 };
 use sikemux_core::agent_accounts::{chat_account, Profile};
 
@@ -14,7 +14,7 @@ use crate::accounts;
 use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::Tokens;
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 use crate::workbench::Workbench;
 
 /// Carries the chat `agent` on to `profile`; a turn at work stops and carries on there.
@@ -82,28 +82,19 @@ pub fn picker(
         true => "Moving stops this turn and carries it on in the other account".to_owned(),
         false => label.clone(),
     };
-    let trigger = BaseButton::new(SharedString::from(format!("account-picker-{agent}")))
-        .accessibility_label("Account")
+    let trigger = KitButton::new(SharedString::from(format!("account-picker-{agent}")))
+        .ghost()
+        .compact()
         .disabled(disabled)
         .h(px(26.))
         .max_w(px(200.))
         .px(px(8.))
-        .flex()
-        .items_center()
         .gap(px(6.))
         .rounded_full()
         .text_size(crate::theme::ui_text(11.))
         .text_color(t.text_secondary)
-        .when(disabled, |trigger| trigger.opacity(0.45))
-        .when(!disabled, |trigger| {
-            trigger.hover(move |style| {
-                style.bg(Hsla {
-                    a: 0.07,
-                    ..t.text_primary
-                })
-            })
-        })
-        .tooltip(ui::tooltip(about))
+        .tooltip(about)
+        .child(ui::icon(Icon::User, 12.).text_color(t.text_tertiary))
         .child(
             div()
                 .min_w_0()
@@ -131,48 +122,29 @@ pub fn picker(
     let (this, agent) = (this.clone(), agent.to_owned());
     let on = current.id.clone();
     Some(
-        Popover::new(SharedString::from(format!("account-menu-{agent}")))
-            .anchor(Anchor::BottomRight)
-            .offset(px(4.))
-            .trigger(trigger)
-            .content(move |_, _, cx| {
-                let popover = cx.entity();
-                Menu::new().children(rows.iter().map(|(profile, name, detail, used)| {
-                    let (this, agent, popover, chosen) = (
-                        this.clone(),
-                        agent.clone(),
-                        popover.clone(),
-                        profile.clone(),
-                    );
-                    let hint: Vec<String> = detail
-                        .iter()
-                        .cloned()
-                        .chain(used.map(|used| format!("{}%", used.round())))
-                        .collect();
-                    let mut item = MenuItem::new(
-                        SharedString::from(format!("account-{}", profile.id)),
-                        name.clone(),
-                    )
-                    .mark(accounts::avatar(profile, name, 16.))
-                    .checked(profile.id == on);
-                    if !hint.is_empty() {
-                        item = item.hint(hint.join(" · "));
-                    }
+        trigger
+            .dropdown_menu_with_anchor(Anchor::BottomRight, move |mut popup, _, _| {
+                popup = popup.min_w(px(280.));
+                for (profile, name, detail, used) in &rows {
                     let here = profile.id == on;
-                    item.on_click(move |_, window, cx| {
-                        if !here {
-                            this.update(cx, |bench, _| match started {
-                                true => move_chat(bench, &agent, &chosen),
-                                false => bench.start_as(
-                                    &agent,
-                                    serde_json::json!({ "profileId": chosen.id }),
-                                    &chosen.name,
-                                ),
-                            });
-                        }
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    })
-                }))
+                    let item = accounts::popup_item(profile, name, detail.clone(), *used, here);
+                    if here {
+                        popup = popup.item(item);
+                        continue;
+                    }
+                    let (this, agent, chosen) = (this.clone(), agent.clone(), profile.clone());
+                    popup = popup.item(item.on_click(move |_, _, cx| {
+                        this.update(cx, |bench, _| match started {
+                            true => move_chat(bench, &agent, &chosen),
+                            false => bench.start_as(
+                                &agent,
+                                serde_json::json!({ "profileId": chosen.id }),
+                                &chosen.name,
+                            ),
+                        });
+                    }));
+                }
+                popup
             })
             .into_any_element(),
     )
