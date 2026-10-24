@@ -85,7 +85,9 @@ impl Kept {
             return;
         };
         match serde_json::to_vec(value) {
-            Ok(bytes) => write(path, &bytes),
+            Ok(bytes) => {
+                write(path, &bytes);
+            }
             Err(error) => eprintln!("sikemux core: {} was not saved: {error}", path.display()),
         }
     }
@@ -158,8 +160,11 @@ impl Queue {
                 break;
             };
             drop(pending);
-            write(path, &bytes);
+            let written = write(path, &bytes);
             pending = self.state.locked();
+            if !written {
+                pending.last.clear();
+            }
         }
         pending.writing = false;
         pending.hurry = false;
@@ -167,8 +172,10 @@ impl Queue {
     }
 }
 
-fn write(path: &Path, bytes: &[u8]) {
-    if let Err(error) = sikemux_process::files::write_atomic(path, bytes, true) {
+fn write(path: &Path, bytes: &[u8]) -> bool {
+    let written = sikemux_process::files::write_atomic(path, bytes, true);
+    if let Err(error) = &written {
         eprintln!("sikemux core: {} was not saved: {error}", path.display());
     }
+    written.is_ok()
 }
