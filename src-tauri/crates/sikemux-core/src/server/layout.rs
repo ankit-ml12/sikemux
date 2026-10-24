@@ -1265,6 +1265,43 @@ pub(crate) fn close_pane(core: &Core, params: PaneParams) -> CoreResult<()> {
     }
 }
 
+/// Takes one view of a split tab out into a tab of its own, beside the tab it was in, and
+/// brings that one to the front. Answers the new tab's id.
+pub(crate) fn separate_pane(core: &Core, params: PaneParams) -> CoreResult<String> {
+    edit(core, |layout| {
+        let strip = strip_at(layout, &params.at)?;
+        if strip.tabs.len() >= MAX_TABS {
+            return Err("that strip already has as many tabs as the core keeps".into());
+        }
+        let at = strip
+            .tabs
+            .iter()
+            .position(|tab| tab.id == params.tab)
+            .ok_or("that tab is not open")?;
+        let tab = &mut strip.tabs[at];
+        if matches!(tab.pane, Pane::View { .. }) {
+            return Err("that tab shows only that view".into());
+        }
+        let view = find_view(&tab.pane, &params.pane)
+            .cloned()
+            .ok_or("that view is not in the tab")?;
+        let keep = |pane: &Pane| !matches!(pane, Pane::View { id, .. } if id == &params.pane);
+        prune(&mut tab.pane, &keep);
+        let id = format!("tab-{}", uuid::Uuid::new_v4().simple());
+        strip.tabs.insert(
+            at + 1,
+            Tab {
+                id: id.clone(),
+                title: None,
+                pane: view,
+                preview: false,
+            },
+        );
+        strip.active = Some(id.clone());
+        Ok(id)
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ResizeSplit {

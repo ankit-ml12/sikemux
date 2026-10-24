@@ -238,6 +238,7 @@ calls! { core, client, params;
     "chooseHost": Full => answer(super::layout::choose_host(&core, parse(params)?).await?),
     "splitPane": Full => answer(super::layout::split_pane(&core, parse(params)?)?),
     "closePane": Full => answer(super::layout::close_pane(&core, parse(params)?)?),
+    "separatePane": Full => answer(super::layout::separate_pane(&core, parse(params)?)?),
     "resizeSplit": Full => answer(super::layout::resize_split(&core, parse(params)?)?),
     "account": Watch => answer(core.account.shown()),
     "remoteImage": Watch => answer(super::remote_image::fetch(&core.remote_images, parse(params)?).await?),
