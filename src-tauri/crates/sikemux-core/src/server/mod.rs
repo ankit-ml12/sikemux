@@ -22,6 +22,7 @@ mod codehost;
 mod collisions;
 mod connection;
 mod custom_command;
+mod data_format;
 mod display;
 mod drafts;
 mod edits;
@@ -449,6 +450,9 @@ impl Core {
     }
 
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
+        if let Some(dir) = data_dir {
+            data_format::upgrade(dir);
+        }
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;
         let names = names::Names::new(data_dir);

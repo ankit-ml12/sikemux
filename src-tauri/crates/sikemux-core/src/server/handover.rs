@@ -36,6 +36,7 @@ use crate::protocol::{BuildIdentity, SessionExit, SessionId, SessionKind};
 
 use super::agent::{self, AgentActivity, AgentRecord};
 use super::chat::{self, ChatRecord, HandOver, LiveChat};
+use super::data_format;
 use super::harness::HarnessRecord;
 use super::prepare::Owner;
 use super::session::{self, Session, SessionParts};
@@ -511,7 +512,20 @@ fn migrate(mut state: Value) -> Result<Value, String> {
                 }
                 state["format"] = Value::from(8);
             }
-            8 => return Ok(state),
+            8 => {
+                // Format 8 cores named the client a prompt to send again came
+                // from, or none once every client had been shown it.
+                let chats = state.get_mut("liveChats").and_then(Value::as_array_mut);
+                for chat in chats.into_iter().flatten() {
+                    for prompt in ["/session/lastPrompt", "/session/failedPrompt"] {
+                        if let Some(prompt) = chat.pointer_mut(prompt) {
+                            data_format::announced_as_flag(prompt);
+                        }
+                    }
+                }
+                state["format"] = Value::from(9);
+            }
+            9 => return Ok(state),
             other => return Err(format!("it is in format {other}, not {RESUME_FORMAT}")),
         }
     }
@@ -1078,14 +1092,14 @@ mod tests {
     #[test]
     fn current_state_is_left_as_it_is_and_unknown_formats_are_refused() {
         let current = json!({
-            "format": 8,
+            "format": 9,
             "chats": [{ "launch": {}, "startedBy": "phone", "launcher": "claude", "notice": null }],
             "liveChats": [],
             "harness": { "mailbox": { "waiting": {} }, "questions": { "open": [] } },
         });
         assert_eq!(migrate(current.clone()).expect("migrate"), current);
         assert!(migrate(json!({ "format": 3 })).is_err());
-        assert!(migrate(json!({ "format": 9 })).is_err());
+        assert!(migrate(json!({ "format": 10 })).is_err());
         assert!(migrate(json!({})).is_err());
     }
 
@@ -1115,6 +1129,6 @@ mod tests {
             setup,
             vec![json!(true), json!(false), json!(false), json!(false)]
         );
-        assert_eq!(migrated["format"], json!(8));
+        assert_eq!(migrated["format"], json!(9));
     }
 }
