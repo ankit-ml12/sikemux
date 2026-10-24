@@ -299,13 +299,22 @@ impl HostArea {
                 .as_ref()
                 .filter(|budget| budget.limited)
                 .and_then(|budget| budget.resets_at);
-            area.update(cx, |area, cx| {
-                area.budget = budget;
-                cx.notify();
-            })
-            .ok();
-            if let Some(resets) = resets {
-                let wait = Duration::from_secs(resets.saturating_sub(now_secs()) + 1);
+            let wait = area
+                .update(cx, |area, cx| {
+                    area.budget = budget;
+                    cx.notify();
+                    let now = now_secs();
+                    match resets {
+                        Some(resets) if resets <= now => Some(area.budget_again.next()),
+                        resets => {
+                            area.budget_again.reset();
+                            resets.map(|resets| Duration::from_secs(resets - now + 1))
+                        }
+                    }
+                })
+                .ok()
+                .flatten();
+            if let Some(wait) = wait {
                 cx.background_executor().timer(wait).await;
                 area.update(cx, |area, cx| {
                     area.read_budget(cx);

@@ -159,6 +159,8 @@ pub struct HostArea {
     /// The host's accounts, read as the menu opens.
     accounts: Vec<shell::Listed>,
     budget: Option<shell::Budget>,
+    /// How long to wait before reading a rate limit again that says it is spent but past its reset.
+    budget_again: crate::retry::Backoff,
     pictures: crate::avatars::Avatars,
 }
 
@@ -194,6 +196,10 @@ impl HostArea {
             menu: false,
             accounts: Vec::new(),
             budget: None,
+            budget_again: crate::retry::Backoff::new(
+                std::time::Duration::from_secs(1),
+                std::time::Duration::from_secs(60),
+            ),
             pictures: Default::default(),
         }
     }

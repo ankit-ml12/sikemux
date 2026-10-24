@@ -3,7 +3,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use sikemux_client::accounts::network;
@@ -24,6 +24,7 @@ use sikemux_wire::protocol::{
 use tokio::sync::{mpsc, oneshot};
 
 use crate::hosts::Place;
+use crate::retry::Backoff;
 
 pub enum Update {
     /// The core's release, which the app ships with.
@@ -912,6 +913,9 @@ pub fn start(home: Home) -> Link {
     Link { updates, asks }
 }
 
+/// A connection that held this long was a working one, so the next reconnect is quick again.
+const HELD: Duration = Duration::from_secs(10);
+
 async fn run(
     home: Home,
     updates: mpsc::UnboundedSender<Update>,
@@ -923,6 +927,7 @@ async fn run(
     let mut linked: Option<Arc<Linked>> = None;
     let mut heard: Option<mpsc::UnboundedReceiver<Happened>> = None;
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
+    let mut reconnect = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
     loop {
         if let Some(launch) = &home.launch {
             match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false)
@@ -932,13 +937,14 @@ async fn run(
                 Err(StartError::Incompatible { reason, .. }) => {
                     eprintln!("sikemux: the core cannot be used: {reason}");
                     let _ = updates.send(Update::Lost(reason));
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::time::sleep(reconnect.next().max(Duration::from_secs(5))).await;
                     continue;
                 }
             }
         }
         match CoreClient::connect(&home.socket).await {
             Ok((client, mut events)) => {
+                let connected = Instant::now();
                 let client = Arc::new(client);
                 let _ = updates.send(Update::Connected(client.hello().build.version.clone()));
                 if let Err(error) = client.configure(home.manifest_dir.clone()).await {
@@ -1347,13 +1353,16 @@ async fn run(
                     }
                 }
                 let _ = updates.send(Update::Lost("the core closed the connection".into()));
+                if connected.elapsed() >= HELD {
+                    reconnect.reset();
+                }
             }
             Err(error) => {
                 eprintln!("sikemux: no core answers: {error}");
                 let _ = updates.send(Update::Lost(error.to_string()));
             }
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(reconnect.next()).await;
     }
 }
 

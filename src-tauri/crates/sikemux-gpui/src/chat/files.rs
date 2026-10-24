@@ -22,6 +22,7 @@ use super::Reading;
 use crate::core::Target;
 use crate::hosts::Place;
 use crate::icons::Icon;
+use crate::retry::Backoff;
 use crate::workbench::Workbench;
 
 /// How long the names a screenful asks about are gathered before they go out as one ask.
@@ -32,6 +33,8 @@ const MOST_ASKED: usize = 256;
 /// trusted this long. A hit never goes stale.
 const MISS_TRUSTED: Duration = Duration::from_secs(5);
 const MOST_KNOWN: usize = 2_000;
+/// The longest a chat waits to ask again after its host failed to answer.
+const LONGEST_REST: Duration = Duration::from_secs(60);
 /// A reference longer than this is prose that happens to hold slashes.
 const LONGEST: usize = 512;
 
@@ -184,6 +187,8 @@ pub struct Files {
     waiting: Vec<String>,
     gathering: bool,
     reader: Option<WeakEntity<Reading>>,
+    /// After the host failed to answer, how long the next wait is and when this one ends.
+    failing: Option<(Backoff, Instant)>,
 }
 
 impl Files {
@@ -199,6 +204,7 @@ impl Files {
             self.target = Some(target.clone());
             self.known.clear();
             self.waiting.clear();
+            self.failing = None;
         }
         self.reader = Some(reader.downgrade());
     }
@@ -224,6 +230,13 @@ impl Files {
             Some((Some(kind), _)) => return Some(*kind),
             Some((None, at)) if at.elapsed() < MISS_TRUSTED => return None,
             _ => {}
+        }
+        if held
+            .failing
+            .as_ref()
+            .is_some_and(|(_, until)| Instant::now() < *until)
+        {
+            return None;
         }
         if !held.waiting.contains(&path) {
             held.waiting.push(path);
@@ -258,12 +271,24 @@ async fn ask(files: Rc<RefCell<Files>>, cx: &mut gpui_kit::AsyncApp) {
             files.borrow_mut().gathering = false;
             return;
         };
-        let kinds = target
+        let Ok(kinds) = target
             .request("files.kinds", json!({ "paths": asked }))
             .await
-            .unwrap_or_default();
+        else {
+            let mut held = files.borrow_mut();
+            let mut backoff = held.failing.take().map_or_else(
+                || Backoff::new(MISS_TRUSTED, LONGEST_REST),
+                |(backoff, _)| backoff,
+            );
+            let rest = backoff.next();
+            held.failing = Some((backoff, Instant::now() + rest));
+            held.waiting.clear();
+            held.gathering = false;
+            return;
+        };
         let reader = {
             let mut held = files.borrow_mut();
+            held.failing = None;
             for (ix, path) in asked.into_iter().enumerate() {
                 let kind = match kinds.get(ix).and_then(Value::as_str) {
                     Some("dir") => Some(FileKind::Folder),
