@@ -1026,9 +1026,27 @@ pub fn tab_menu(
         Some((PaneKind::Agent, agent)) => AgentMenu::new(bench, agent, cx),
         _ => None,
     };
-    move |popup, window, cx| match &agent_menu {
-        Some(menu) => menu.build(popup, window, cx),
-        None => tab_menu.build(popup),
+    let separable = bench.separable(tab);
+    let (bench, strip, tab) = (cx.entity().downgrade(), strip.clone(), tab.id.clone());
+    move |popup, window, cx| {
+        let popup = match &agent_menu {
+            Some(menu) => menu.build(popup, window, cx),
+            None => tab_menu.build(popup),
+        };
+        let Some((view, kind)) = separable.clone() else {
+            return popup;
+        };
+        let (strip, tab) = (strip.clone(), tab.clone());
+        popup.separator().item(
+            PopupMenuItem::new(if kind == PaneKind::Files {
+                "Move Focused File Back to Editor"
+            } else {
+                "Move Focused Pane Back to Tab Bar"
+            })
+            .on_click(on_bench(&bench, move |bench, _| {
+                bench.separate_pane(&strip, &tab, &view)
+            })),
+        )
     }
 }
 

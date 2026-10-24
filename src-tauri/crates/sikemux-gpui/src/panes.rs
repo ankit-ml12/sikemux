@@ -910,4 +910,39 @@ impl Workbench {
     pub fn close_pane(&self, strip: &Strip, tab: &str, pane: &str) {
         self.call("closePane", strip.with(json!({ "tab": tab, "pane": pane })));
     }
+
+    /// The view of a split `tab` its menu can move out into a tab of its own, as the Mac's
+    /// does: the view in focus, else the first, when it is a terminal, Git, a search or a
+    /// saved file.
+    pub(crate) fn separable(&self, tab: &Tab) -> Option<(String, PaneKind)> {
+        if matches!(tab.pane, Pane::View { .. }) {
+            return None;
+        }
+        let view = self
+            .panes
+            .focused
+            .clone()
+            .filter(|id| view_in(&tab.pane, id).is_some())
+            .or_else(|| first_view(&tab.pane).map(str::to_owned))?;
+        let Pane::View { kind, target, .. } = view_in(&tab.pane, &view)? else {
+            return None;
+        };
+        let saved = || {
+            !self
+                .editors
+                .is_dirty(&crate::editor::FileKey::new(self.place(), target))
+        };
+        match kind {
+            PaneKind::Terminal | PaneKind::Git | PaneKind::Search => Some((view, *kind)),
+            PaneKind::Files if saved() => Some((view, *kind)),
+            _ => None,
+        }
+    }
+
+    pub fn separate_pane(&self, strip: &Strip, tab: &str, pane: &str) {
+        self.call(
+            "separatePane",
+            strip.with(json!({ "tab": tab, "pane": pane })),
+        );
+    }
 }
