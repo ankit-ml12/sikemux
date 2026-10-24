@@ -146,9 +146,8 @@ impl Chat {
         }
         match head.connection {
             ChatConnection::Starting => Some("Starting agent…".into()),
-            ChatConnection::Connecting | ChatConnection::Initializing => {
-                Some("Connecting to agent session…".into())
-            }
+            // Before any status a chat with history is one taken up again whose agent waits for the person.
+            ChatConnection::Initializing => Some("Connecting to agent session…".into()),
             _ => None,
         }
     }

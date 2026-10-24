@@ -1847,6 +1847,7 @@ pub fn pane(
         .children(answered)
         .children(assumed)
         .children(stack)
+        .children(bench.read_only(id).map(|why| read_only_line(why, cx)))
         .children(chat.composer.as_ref().map(|composing| {
             composing
                 .view
@@ -2072,6 +2073,28 @@ fn stop_turn(
 /// Centred on the transcript's column.
 fn column() -> gpui_kit::Div {
     div().w_full().px(px(22.)).flex().justify_center()
+}
+
+/// What stands where the composer would, in a chat that can only be read here.
+fn read_only_line(why: &str, cx: &App) -> AnyElement {
+    let t = Tokens::get(cx);
+    column()
+        .pt(px(8.))
+        .pb(px(14.))
+        .child(
+            div()
+                .w_full()
+                .max_w(px(756.))
+                .px(px(14.))
+                .py(px(10.))
+                .rounded(theme::RADIUS_2)
+                .border_1()
+                .border_color(t.line)
+                .bg(t.surface_composer)
+                .text_color(t.text_secondary)
+                .child(why.to_owned()),
+        )
+        .into_any_element()
 }
 
 fn permission(

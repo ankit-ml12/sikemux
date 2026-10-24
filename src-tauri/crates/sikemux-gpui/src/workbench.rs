@@ -1137,6 +1137,12 @@ impl Workbench {
         let Some(agent) = self.agent().map(|agent| agent.id) else {
             return;
         };
+        if self.read_only(&agent).is_some() {
+            if let Some(chat) = self.chats.get_mut(&agent) {
+                chat.composer = None;
+            }
+            return;
+        }
         let Some(chat) = self
             .chats
             .get_mut(&agent)
@@ -3888,6 +3894,16 @@ impl Workbench {
             .into_iter()
             .filter(|recent| recent.pinned)
             .collect()
+    }
+
+    /// Why the agent's chat can be read here but not continued, when it can't.
+    pub fn read_only(&self, agent: &str) -> Option<&str> {
+        self.shown()?
+            .chats
+            .iter()
+            .find(|chat| chat.agent_id == agent)?
+            .read_only
+            .as_deref()
     }
 
     /// The saved chat the agent holds, once the core lists it.
