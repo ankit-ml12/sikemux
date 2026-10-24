@@ -17,7 +17,6 @@ use serde_json::{json, Value};
 use sikemux_wire::protocol::{ChatContext, ProjectInfo};
 
 use super::Composing;
-use crate::finder::ProjectFiles;
 use crate::icons::Icon;
 use crate::ui::{self, DockMenu, DockRow, DockScope};
 use crate::workbench::Workbench;
@@ -818,14 +817,16 @@ const SCOPES: [(char, &str); 4] = [
 ];
 
 /// The menu over the draft of `agent`'s chat, while it offers anything, under a heading of the
-/// kinds of thing it names; `repo` is the project's on its code host.
+/// kinds of thing it names; `repo` is the project's on its code host. It reads `bench`, which
+/// is drawing it, and never the workbench's entity, which is busy drawing.
 pub fn dock(
+    bench: &Workbench,
     agent: &str,
     menu: &Menu,
-    files: &ProjectFiles,
     repo: Option<&str>,
     cx: &mut Context<Workbench>,
 ) -> Option<DockMenu> {
+    let files = &bench.project_files;
     let trigger = menu.typed.trigger;
     let headed = |dock: DockMenu| {
         if trigger == '/' {
@@ -877,7 +878,6 @@ pub fn dock(
     let mut shown_project: Option<&str> = None;
     let mut shown_kind = None;
     let rows = menu.choices.iter().enumerate().map(|(index, choice)| {
-        let looked = this.clone();
         let (this, agent) = (this.clone(), agent.to_owned());
         let choose = Rc::new(move |window: &mut Window, cx: &mut App| {
             this.update(cx, |bench, cx| {
@@ -897,9 +897,7 @@ pub fn dock(
                     .then(|| project.clone().map(SharedString::from))
                     .flatten();
                 shown_project = project.as_deref();
-                let row = looked
-                    .upgrade()
-                    .and_then(|bench| bench.read(cx).agent_by_id(id));
+                let row = bench.agent_by_id(id);
                 DockRow::new(format!("@{name}"), choose)
                     .mark(row.as_ref().map_or_else(
                         || ui::mark(provider, 13.),
