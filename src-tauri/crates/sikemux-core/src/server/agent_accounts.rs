@@ -296,6 +296,14 @@ pub(super) async fn usages(core: &Arc<Core>) -> Vec<AccountUsage> {
 /// clients. Each lookup asks the agent's service with the person's sign-in.
 pub(super) async fn read_usages(core: &Arc<Core>) -> Vec<AccountUsage> {
     let found = usages_read(core, true).await;
+    static FIRST: std::sync::Once = std::sync::Once::new();
+    FIRST.call_once(|| {
+        let read = found.iter().filter(|account| account.problem.is_none()).count();
+        eprintln!(
+            "sikemux core: read plan limits for {} accounts, {read} answered (first read since start)",
+            found.len()
+        );
+    });
     core.changes.changed(Topic::Usage, None, None);
     found
 }

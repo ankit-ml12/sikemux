@@ -176,6 +176,8 @@ pub struct Workbench {
     pub project_files: ProjectFiles,
     /// The agent the rail was switched to, else the one the project last started.
     pub launcher_choice: Option<String>,
+    /// The plan limits are to be read once the core lists its agents, as the app starts.
+    usage_wanted: bool,
     /// The rail lists the recent chats of every agent, not one's.
     pub all_harnesses: bool,
     /// Which of the calendar's metrics it shows, an index into `home::METRICS`.
@@ -650,6 +652,7 @@ impl Workbench {
             files_retry: Default::default(),
             project_files: ProjectFiles::default(),
             launcher_choice: None,
+            usage_wanted: false,
             all_harnesses: false,
             metric: 0,
             metric_day: None,
@@ -718,7 +721,7 @@ impl Workbench {
                 // The app opens on this host, as the Mac's does, whichever host was last in front.
                 if self.version.is_empty() {
                     self.call("chooseHost", json!({ "host": "this" }));
-                    self.read_usage();
+                    self.usage_wanted = true;
                 }
                 self.version = version;
                 self.lost = None;
@@ -776,6 +779,12 @@ impl Workbench {
             Update::View(view) => {
                 crate::ui::moving_face::set_on(view.face_style.motion, cx);
                 self.view = Some(*view);
+                // The core finds its agents a moment after it starts, so the plan limits are
+                // read once it lists them.
+                if self.usage_wanted && !self.launchers().is_empty() {
+                    self.usage_wanted = false;
+                    self.read_usage();
+                }
                 let sessions = &self
                     .view
                     .as_ref()

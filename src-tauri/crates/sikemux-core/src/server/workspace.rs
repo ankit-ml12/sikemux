@@ -2230,6 +2230,8 @@ async fn refresh(core: Arc<Core>, asked: u64) {
     }
     core.workspaces.set_launchers(found);
     core.view_changed();
+    // The accounts' kept plan limits are listed by launcher, so they show once launchers are.
+    core.changes.changed(Topic::Usage, None, None);
 }
 
 #[cfg(test)]

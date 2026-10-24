@@ -190,8 +190,17 @@ fn save(readings: &Readings) {
     let written = serde_json::to_vec(&readings.by_account)
         .map_err(std::io::Error::other)
         .and_then(|bytes| sikemux_process::files::write_atomic(file, &bytes, true));
-    if let Err(error) = written {
-        eprintln!("sikemux core: could not keep the plan limits read: {error}");
+    match written {
+        Err(error) => eprintln!("sikemux core: could not keep the plan limits read: {error}"),
+        Ok(()) => {
+            static FIRST: std::sync::Once = std::sync::Once::new();
+            FIRST.call_once(|| {
+                eprintln!(
+                    "sikemux core: kept plan limits in {} (first save since start)",
+                    file.display()
+                )
+            });
+        }
     }
 }
 
