@@ -3,11 +3,13 @@
 //! resumes there; a chat starts again in its new folder at once, and a
 //! terminal agent starts again there when it is next shown.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
+use super::workspace::AddProjectParams;
 use super::{launching, session, Core, CoreError, CoreResult};
 use crate::agent_catalog::{self, AgentKind};
 use crate::protocol::WorkspaceAgent;
@@ -19,6 +21,38 @@ pub(crate) struct MoveParams {
     agent_id: String,
     /// The project, by id.
     project: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MoveToFolder {
+    agent_id: String,
+    /// The folder, which becomes a project first when it is not one.
+    path: PathBuf,
+}
+
+/// Moves an agent into the project at a folder, as `move_agent` does, making the folder a
+/// project first when it is not one.
+pub(crate) async fn move_to_folder(
+    core: &Arc<Core>,
+    params: MoveToFolder,
+) -> CoreResult<WorkspaceAgent> {
+    let agent = core
+        .workspaces
+        .agent(&params.agent_id)
+        .ok_or_else(|| CoreError::from("that agent is no longer on this host"))?;
+    if agent.worktree.is_some() {
+        return Err("an agent working in its own worktree stays in its project".into());
+    }
+    let project = super::workspace::add_project(core, AddProjectParams::at(params.path)).await?;
+    move_agent(
+        core,
+        MoveParams {
+            agent_id: params.agent_id,
+            project: project.id,
+        },
+    )
+    .await
 }
 
 pub(crate) async fn move_agent(core: &Arc<Core>, params: MoveParams) -> CoreResult<WorkspaceAgent> {

@@ -166,6 +166,7 @@ calls! { core, client, params;
     "createAgent": Person => answer(workspace::create_agent(&core, parse(params)?)?),
     "updateAgent": Person => answer(workspace::update_agent(&core, parse(params)?)?),
     "moveAgentToProject": Person => answer(super::move_agent::move_agent(&core, parse(params)?).await?),
+    "moveAgentToFolder": Person => answer(super::move_agent::move_to_folder(&core, parse(params)?).await?),
     "closeAgents": Person => answer(workspace::close_agents(&core, parse(params)?)?),
     "closeChat": Full => {
         let params: AgentParams = parse(params)?;
