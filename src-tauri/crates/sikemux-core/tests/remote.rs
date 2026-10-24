@@ -11,7 +11,7 @@ use serde_json::json;
 use sikemux_core::client::{probe, ClientError, ClientEvent, CoreClient};
 use sikemux_core::protocol::{
     Attention, AttentionKind, BackdropImage, BuildIdentity, ChatAttachment, ChatEventKind,
-    ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus,
+    ChatInfo, ChatLaunch, ChatState, DeviceAccess, DeviceView, Event, LaunchIdentity, RemoteStatus,
     SessionId, SpawnTarget, TerminalSpawn, MAX_ATTACHMENT_BYTES,
 };
 use sikemux_core::remote::{self, SecretKey};
@@ -796,6 +796,132 @@ async fn an_asleep_chat_wakes_when_the_person_writes_or_sends_to_it() {
         assert!(Instant::now() < deadline, "both chats woke: {chats:?}");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// Showing an asleep chat takes it up without starting its agent, which starts only once the
+/// person writes in it.
+#[tokio::test(flavor = "multi_thread")]
+async fn showing_an_asleep_chat_starts_nothing_until_the_person_writes() {
+    let core_key = SecretKey::generate();
+    let core = start_core(&core_key, &[]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    app.register_window()
+        .await
+        .expect("the app opens its window");
+    publish_fake_agent(&app).await;
+    keep_agent(&app, "agent-shown", "Shown", true).await;
+
+    assert!(
+        matches!(
+            app.acp_attach("agent-shown".into()).await,
+            Ok(ChatAttachment::Live { .. })
+        ),
+        "an asleep chat is shown live"
+    );
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let shown = |chats: &[ChatInfo]| {
+        chats
+            .iter()
+            .find(|chat| chat.agent_id == "agent-shown")
+            .cloned()
+            .expect("listed")
+    };
+    let chats = app.acp_list().await.expect("list chats");
+    assert!(shown(&chats).asleep, "showing it woke nothing: {chats:?}");
+    assert_ne!(shown(&chats).state, ChatState::Ready);
+
+    app.call("composing", json!({ "agentId": "agent-shown" }))
+        .await
+        .expect("the person begins writing");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let chats = app.acp_list().await.expect("list chats");
+        let chat = shown(&chats);
+        if !chat.asleep && chat.state == ChatState::Ready {
+            break;
+        }
+        assert!(Instant::now() < deadline, "writing woke it: {chats:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// An asleep Claude chat shows the saved chat it resumes before its agent starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_asleep_claude_chat_shows_its_saved_history() {
+    const SESSION: &str = "0b9cc1a6-6d0b-4c1e-9d55-0d2f6c5e7a10";
+    let core_key = SecretKey::generate();
+    let core = start_core(&core_key, &[]);
+    let (app, _app_events) = CoreClient::connect(&core.socket).await.expect("app");
+    app.register_window()
+        .await
+        .expect("the app opens its window");
+    publish_fake_agent(&app).await;
+    let claude = tempfile::tempdir().expect("claude's folder");
+    let project = claude.path().join("projects").join("-tmp");
+    std::fs::create_dir_all(&project).expect("project folder");
+    let said = json!({
+        "type": "user",
+        "uuid": "u1",
+        "parentUuid": null,
+        "message": { "role": "user", "content": "the message from before" },
+    });
+    std::fs::write(
+        project.join(format!("{SESSION}.jsonl")),
+        format!("{said}\n"),
+    )
+    .expect("the saved chat");
+    let accounts = json!({
+        "profiles": [{
+            "id": "claude-test",
+            "name": "Claude",
+            "provider": "claude",
+            "accent": "#a277ff",
+            "executablePath": FAKE_AGENT,
+            "configPath": claude.path(),
+        }],
+    });
+    app.call("setAgentAccounts", accounts)
+        .await
+        .expect("the accounts");
+    let agent = json!({
+        "id": "agent-claude",
+        "provider": "claude",
+        "project": "sess-tmp",
+        "cwd": std::env::temp_dir(),
+        "title": "Saved",
+        "renamed": true,
+        "permissionMode": "bypass",
+        "profileId": "claude-test",
+        "resumeId": SESSION,
+        "asleep": true,
+    });
+    app.call("createAgent", json!({ "agent": agent }))
+        .await
+        .expect("the agent");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let attached = app.acp_attach("agent-claude".into()).await;
+        if let Ok(ChatAttachment::Live { replay, .. }) = &attached {
+            if serde_json::to_string(replay)
+                .expect("the replay")
+                .contains("the message from before")
+            {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the saved chat is shown: {attached:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let chats = app.acp_list().await.expect("list chats");
+    let chat = chats
+        .iter()
+        .find(|chat| chat.agent_id == "agent-claude")
+        .expect("listed");
+    assert!(chat.asleep, "showing it started nothing: {chats:?}");
 }
 
 fn fake_launch(agent_id: &str) -> ChatLaunch {

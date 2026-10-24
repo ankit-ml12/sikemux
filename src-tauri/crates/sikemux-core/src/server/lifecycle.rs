@@ -98,7 +98,27 @@ pub(crate) async fn ensure_running(core: &Arc<Core>, agent_id: &str) -> CoreResu
         core,
         agent_id,
         || core.chats.get(agent_id).map(drop),
-        || async { launching::start_agent(core, None, agent_id).await.map(drop) },
+        || async {
+            launching::start_agent(core, None, agent_id, false)
+                .await
+                .map(drop)
+        },
+    )
+    .await
+}
+
+/// Takes up the agent's chat to be shown unless it is there already or another client is
+/// starting it; its agent starts only once the person writes in it or sends to it.
+pub(crate) async fn ensure_shown(core: &Arc<Core>, agent_id: &str) -> CoreResult<()> {
+    start_once(
+        core,
+        agent_id,
+        || core.chats.get(agent_id).map(drop),
+        || async {
+            launching::start_agent(core, None, agent_id, true)
+                .await
+                .map(drop)
+        },
     )
     .await
 }

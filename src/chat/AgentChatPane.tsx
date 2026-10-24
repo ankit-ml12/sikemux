@@ -316,7 +316,11 @@ export const AgentChatPane = memo(function AgentChatPane({
     const resuming = recovery?.phase === "resuming";
     const failure = recovery?.phase === "failed" ? recovery : null;
     const recoveryLabel = resuming ? "Resuming…" : failure ? "Couldn't resume this chat" : null;
-    const welcoming = displayState.messages.length === 0 && (displayState.connection === "ready" || (!agent.resumeId && !disconnected));
+    /* Only Claude's saved chat is read by the core before its agent starts; any other's
+       history comes from its agent once the person writes. */
+    const historyLater = displayState.messages.length === 0 && displayState.connection === "ready" && !!agent.resumeId && agent.type !== "claude";
+    const welcoming =
+        !historyLater && displayState.messages.length === 0 && (displayState.connection === "ready" || (!agent.resumeId && !disconnected));
     const chatAgent = useMemo(() => ({ id: agent.id, type: agent.type }), [agent.id, agent.type]);
     const composerPlaceholder =
         questions.composing && !questions.writing
@@ -375,7 +379,12 @@ export const AgentChatPane = memo(function AgentChatPane({
                                             </Suspense>
                                         )}
                                         {welcoming && <ChatWelcome cwd={cwd} agent={agent} />}
-                                        {displayState.messages.length === 0 && !welcoming && (
+                                        {historyLater && (
+                                            <div className="chat-connection-state ready" role="status">
+                                                <span>History appears when you write</span>
+                                            </div>
+                                        )}
+                                        {displayState.messages.length === 0 && !welcoming && !historyLater && (
                                             <div className={`chat-connection-state ${displayState.connection}`} role="status">
                                                 {(connecting || resuming) && <span className="chat-activity-loader" aria-hidden="true" />}
                                                 <span>

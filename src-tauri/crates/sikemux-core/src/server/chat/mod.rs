@@ -240,6 +240,9 @@ pub(crate) struct Chat {
     /// A new chat starts its agent only once the person writes in it or something is sent to it.
     unstarted: AtomicBool,
     wanted: tokio::sync::Notify,
+    /// The saved history of the session it resumes was shown while it waited for the person,
+    /// so its agent's own replay of it stays quiet.
+    pub(crate) saved_shown: AtomicBool,
 }
 
 impl Chat {
@@ -920,7 +923,12 @@ impl Chat {
             model: self.launch.model.clone(),
             model_provider: self.launch.env.get(ROUTED_ENV).cloned(),
             effort: self.launch.effort.clone(),
-            asleep: false,
+            asleep: self.unstarted()
+                && self
+                    .core
+                    .upgrade()
+                    .and_then(|core| core.workspaces.published(self.agent_id()))
+                    == Some(true),
             unread: false,
             active_at: None,
             group: Default::default(),
@@ -1416,6 +1424,7 @@ impl Chats {
             published: Mutex::new("unknown"),
             unstarted: AtomicBool::new(false),
             wanted: tokio::sync::Notify::new(),
+            saved_shown: AtomicBool::new(false),
             current: Mutex::new(launch.clone()),
             launch,
             origin,
@@ -1500,6 +1509,8 @@ fn launch(
         if ending.unstarted() {
             ending.wanted.notified().await;
             super::activity_log::chat_launched(&owner, &ending.launch);
+            owner.workspaces.note_begun(&ending);
+            ending.keep(kept::Progress::STARTING);
         }
         // The agent can be started again under the chat, on another account
         // or after a sign-in, and the chat carries on through it.
@@ -1603,7 +1614,12 @@ fn start(
     let resume_id = launch_spec.resume_id.clone();
     let waking = core.workspaces.agent(&launch_spec.agent_id).is_some();
     let (chat, queue) = core.chats.insert(core, launch_spec, origin, None)?;
-    core.workspaces.note_begun(&chat);
+    // An asleep agent's chat taken up to be shown stays asleep, and is not taken up again
+    // after a restart, until the person wakes it.
+    let shown = waking && waits_for_person;
+    if !shown {
+        core.workspaces.note_begun(&chat);
+    }
     super::model_providers::chat_begun(core, &chat.launch);
     let naming = (
         core.clone(),
@@ -1621,7 +1637,9 @@ fn start(
     if !waits_for_person {
         super::activity_log::chat_launched(core, &chat.launch);
     }
-    chat.keep(kept::Progress::STARTING);
+    if !shown {
+        chat.keep(kept::Progress::STARTING);
+    }
     if let Some(client) = subscriber {
         chat.feed.subscribe(client);
     }
@@ -1629,6 +1647,9 @@ fn start(
         chat.feed.wait_for_person();
     }
     chat.unstarted.store(waits_for_person, Ordering::Release);
+    if shown {
+        native::show_saved(&chat);
+    }
     launch(
         core,
         &chat,
@@ -1919,6 +1940,13 @@ pub(crate) async fn attach(
             }),
         )
     };
+    // An asleep agent's chat is taken up to be shown, its agent starting only once the person
+    // writes in it or sends to it.
+    if super::launching::asleep(core, agent_id) {
+        if let Err(error) = super::lifecycle::ensure_shown(core, agent_id).await {
+            eprintln!("sikemux core: chat {agent_id} could not be shown: {error}");
+        }
+    }
     let Some(chat) = core.chats.get(agent_id) else {
         missing();
         return;

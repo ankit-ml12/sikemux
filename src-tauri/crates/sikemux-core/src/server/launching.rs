@@ -267,6 +267,7 @@ pub(crate) async fn start_agent(
     core: &Arc<Core>,
     by: Option<&Arc<ClientConn>>,
     agent_id: &str,
+    waits_for_person: bool,
 ) -> CoreResult<Arc<chat::Chat>> {
     let kept = core
         .workspaces
@@ -284,7 +285,7 @@ pub(crate) async fn start_agent(
         resume_id: agent.resume_id,
         account: kept.account,
         fallbacks: kept.fallbacks,
-        waits_for_person: false,
+        waits_for_person,
     };
     start(core, by, chosen).await
 }
@@ -303,6 +304,9 @@ pub(crate) async fn start_saved(core: &Arc<Core>, agent_id: &str) -> CoreResult<
 /// Wakes an agent's chat and answers once it is ready, so a client taking it
 /// up next finds it there.
 pub(crate) async fn wake_chat(core: &Arc<Core>, agent_id: String) -> CoreResult<Response> {
+    if let Some(shown) = core.chats.get(&agent_id) {
+        shown.start_agent();
+    }
     let deadline = tokio::time::Instant::now() + WAKE_WAIT;
     tokio::time::timeout_at(deadline, lifecycle::ensure_running(core, &agent_id))
         .await
