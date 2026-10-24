@@ -238,34 +238,31 @@ pub fn set_auto_switch(bench: &Workbench, provider: &str, on: bool, cx: &mut Con
 /// name, else the name the person gave it.
 pub fn name(bench: &Workbench, profile: &Profile, status: Option<&Status>) -> String {
     let unnamed = profile.id.starts_with("builtin-")
-        && bench
-            .read("catalog")
-            .and_then(|kinds| {
-                kinds
-                    .as_array()?
-                    .iter()
-                    .find(|kind| kind["type"] == profile.provider.as_str())?["label"]
-                    .as_str()
-                    .map(str::to_owned)
-            })
-            .as_deref()
-            == Some(profile.name.as_str());
+        && bench.agent_label(&profile.provider) == Some(profile.name.as_str());
     status
         .and_then(|status| status.name.clone())
         .filter(|_| unnamed)
         .unwrap_or_else(|| profile.name.clone())
 }
 
+/// The launcher that starts agents on the account: its own, or the agent's for a built-in
+/// account the core offers as the agent itself.
+fn launcher_of(bench: &Workbench, profile: &Profile) -> String {
+    let own = format!("{}:{}", profile.provider, profile.id);
+    match bench.usage_of(&own) {
+        None if profile.id.starts_with("builtin-") => profile.provider.clone(),
+        _ => own,
+    }
+}
+
+/// The account's plan usage as the core last read it, or why it has none.
+pub fn usage<'a>(bench: &'a Workbench, profile: &Profile) -> Option<&'a Value> {
+    bench.usage_of(&launcher_of(bench, profile))
+}
+
 /// The most of any window of its plan the account has used, as the core last read it.
 pub fn used(bench: &Workbench, profile: &Profile) -> Option<f64> {
-    let launcher = format!("{}:{}", profile.provider, profile.id);
-    bench.usage_peak(&launcher).or_else(|| {
-        profile
-            .id
-            .starts_with("builtin-")
-            .then(|| bench.usage_peak(&profile.provider))
-            .flatten()
-    })
+    bench.usage_peak(&launcher_of(bench, profile))
 }
 
 /// Opens Settings on its agents with the add-account dialog for `provider`, signing in

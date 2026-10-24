@@ -244,9 +244,6 @@ pub struct Workbench {
     trust_asked: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
     trust_host: Option<String>,
-    /// Plan limits have been asked for. Each lookup runs the agent's CLI, so none runs before
-    /// the person looks for them or sends a message.
-    usage_asked: bool,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
     pub focus: FocusHandle,
     /// The window the store draws, for what is said in it from outside a draw.
@@ -472,6 +469,10 @@ impl Workbench {
             Watch::new("agentCatalog", json!({}), &[]),
         ));
         let _ = asks.send(Ask::Watch(
+            "usage",
+            Watch::new("agentUsages", json!({}), &["usage"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "preferences",
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
@@ -610,7 +611,6 @@ impl Workbench {
             watched_worktree: None,
             trust_asked: HashSet::new(),
             trust_host: None,
-            usage_asked: false,
             peeking: None,
             unpeek: None,
             run_clock: cx.new(|_| crate::tabs::RunClock::default()),
@@ -664,17 +664,9 @@ impl Workbench {
         bench
     }
 
-    /// Reads every account's plan limits again, as they are whenever usage changes.
     /// Reads the plan limits again, as only the person asks: each lookup reaches the agent's
     /// service on their sign-in.
-    pub fn read_usage(&mut self) {
-        if !self.usage_asked {
-            self.usage_asked = true;
-            let _ = self.asks.send(Ask::Watch(
-                "usage",
-                Watch::new("agentUsages", json!({}), &["usage"]),
-            ));
-        }
+    pub fn read_usage(&self) {
         self.call("readAgentUsages", json!({}));
     }
 
@@ -2179,27 +2171,42 @@ impl Workbench {
     pub fn launcher(&self) -> Option<&LauncherInfo> {
         let launchers = self.launchers();
         let chosen = |id: &str| launchers.iter().find(|launcher| launcher.id == id);
+        // An agent picked by its kind alone starts on the account the person chose for it.
+        let of_kind = |kind: &str| {
+            self.accounts
+                .current(kind)
+                .and_then(|account| chosen(&format!("{kind}:{}", account.id)))
+                .or_else(|| launchers.iter().find(|launcher| launcher.provider == kind))
+        };
         let last_kind = self.preferences().last_agent_type;
         self.launcher_choice
             .as_deref()
             .and_then(chosen)
             .or_else(|| self.project()?.launcher.as_deref().and_then(chosen))
-            .or_else(|| {
-                launchers
-                    .iter()
-                    .find(|launcher| last_kind.as_deref() == Some(launcher.provider.as_str()))
-            })
-            .or(launchers.first())
+            .or_else(|| last_kind.as_deref().and_then(of_kind))
+            .or_else(|| of_kind(&launchers.first()?.provider))
+    }
+
+    /// The agent's name in the core's catalog, such as "Claude".
+    pub fn agent_label(&self, provider: &str) -> Option<&str> {
+        self.read("catalog")?
+            .as_array()?
+            .iter()
+            .find(|kind| kind["type"] == provider)?["label"]
+            .as_str()
+    }
+
+    /// The launcher's account's plan usage as the core last read it, or why it has none.
+    pub fn usage_of(&self, launcher: &str) -> Option<&Value> {
+        self.read("usage")?
+            .as_array()?
+            .iter()
+            .find(|account| account["launcher"] == launcher)
     }
 
     /// The most of any window of its plan the launcher's account has used.
     pub fn usage_peak(&self, launcher: &str) -> Option<f64> {
-        let account = self
-            .read("usage")?
-            .as_array()?
-            .iter()
-            .find(|account| account["launcher"] == launcher)?;
-        let windows = account["usage"]["windows"].as_array()?;
+        let windows = self.usage_of(launcher)?["usage"]["windows"].as_array()?;
         windows
             .iter()
             .filter_map(|window| window["usedPercent"].as_f64())
