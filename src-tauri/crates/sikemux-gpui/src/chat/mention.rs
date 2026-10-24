@@ -83,6 +83,8 @@ enum Choice {
         session: String,
         name: Option<String>,
         title: String,
+        /// When the chat last moved on, in Unix milliseconds, for one found by search.
+        active_at: Option<u64>,
     },
     Tracked(Item),
 }
@@ -129,26 +131,26 @@ fn tracked_choices(tracked: Option<&Tracked>, trigger: char, needle: &str) -> Ve
         .collect()
 }
 
-/// What `#` or `!` says while it lists nothing.
+/// What `#` or `!` says while it lists nothing, or none while the list is on its way.
 fn tracked_empty(
     project: Option<&ProjectInfo>,
     tracked: Option<&Tracked>,
     trigger: char,
-) -> String {
+) -> Option<String> {
     let (things, matches) = match trigger {
         '!' => ("pull requests", "No open pull request matches"),
         _ => ("issues", "No open issue matches"),
     };
     let Some(project) = project else {
-        return format!("Open a project to pick its {things}");
+        return Some(format!("Open a project to pick its {things}"));
     };
     if project.code_host.is_none() {
-        return "This project has no remote on a code host".into();
+        return Some("This project has no remote on a code host".into());
     }
     match tracked {
-        Some(Tracked::Failed(why)) => why.to_string(),
-        Some(Tracked::Listed(_)) => matches.into(),
-        _ => format!("Reading the project's {things}…"),
+        Some(Tracked::Failed(why)) => Some(why.to_string()),
+        Some(Tracked::Listed(_)) => Some(matches.into()),
+        _ => None,
     }
 }
 
@@ -169,6 +171,8 @@ struct Found {
     cli: String,
     session_id: String,
     title: String,
+    /// When the chat last moved on, in Unix milliseconds.
+    active_at: Option<u64>,
 }
 
 /// The menu on show: the word it answers, what it offers for it, and the one picked.
@@ -307,7 +311,9 @@ impl Workbench {
             _ => None,
         };
         let empty = matches!(typed.trigger, '#' | '!')
-            .then(|| tracked_empty(self.project(), self.tracked_of(agent), typed.trigger).into());
+            .then(|| tracked_empty(self.project(), self.tracked_of(agent), typed.trigger))
+            .flatten()
+            .map(SharedString::from);
         Menu {
             typed,
             choices,
@@ -376,7 +382,7 @@ impl Workbench {
                     menu.choices =
                         tracked_choices(Some(&tracked), trigger, &menu.typed.needle).into();
                     menu.empty =
-                        Some(tracked_empty(project.as_ref(), Some(&tracked), trigger).into());
+                        tracked_empty(project.as_ref(), Some(&tracked), trigger).map(Into::into);
                     menu.selected = 0;
                 }
                 composing.tracked = Some(tracked);
@@ -494,6 +500,7 @@ impl Workbench {
                     session: closed.session_id,
                     title: closed.title.unwrap_or_default(),
                     name: Some(closed.name),
+                    active_at: None,
                 })
                 .collect();
             let sessions: Vec<String> = named
@@ -520,6 +527,7 @@ impl Workbench {
                     session: found.session_id,
                     name: None,
                     title: found.title,
+                    active_at: found.active_at,
                 })
                 .collect();
             offer(found, cx);
@@ -695,6 +703,7 @@ impl Workbench {
             session,
             name: None,
             title,
+            ..
         } = &choice
         {
             let uri = format!("sikemux://earlier/{cli}/{session}");
@@ -820,7 +829,7 @@ pub fn dock(
     let trigger = menu.typed.trigger;
     let headed = |dock: DockMenu| {
         if trigger == '/' {
-            return dock;
+            return dock.titled("Session commands", "ACP");
         }
         let scopes = SCOPES
             .iter()
@@ -852,8 +861,13 @@ pub fn dock(
             '+' if files.project.is_none() => {
                 Some(DockMenu::empty("Open a project to pick its files"))
             }
-            '+' if files.files.is_empty() => Some(DockMenu::empty("Reading the project's files…")),
+            '+' if files.files.is_empty() => Some(DockMenu::loading()),
             '+' => Some(DockMenu::empty("Nothing in the project matches")),
+            '#' | '!' => Some(
+                menu.empty
+                    .clone()
+                    .map_or_else(DockMenu::loading, DockMenu::empty),
+            ),
             _ => menu.empty.clone().map(DockMenu::empty),
         };
         return empty.map(headed);
@@ -883,16 +897,16 @@ pub fn dock(
                     .then(|| project.clone().map(SharedString::from))
                     .flatten();
                 shown_project = project.as_deref();
+                let row = looked
+                    .upgrade()
+                    .and_then(|bench| bench.read(cx).agent_by_id(id));
                 DockRow::new(format!("@{name}"), choose)
-                    .mark(
-                        (looked.upgrade())
-                            .and_then(|bench| bench.read(cx).agent_by_id(id))
-                            .map_or_else(
-                                || ui::mark(provider, 13.),
-                                |agent| ui::agent_mark(&agent, 13., cx),
-                            ),
-                    )
+                    .mark(row.as_ref().map_or_else(
+                        || ui::mark(provider, 13.),
+                        |agent| ui::agent_mark(agent, 13., cx),
+                    ))
                     .detail(title.clone())
+                    .state(row.and_then(|agent| ui::status_mark(&agent.id, agent.status, cx)))
                     .group(group)
             }
             Choice::Entry { path, folder } => {
@@ -923,7 +937,11 @@ pub fn dock(
                 .detail(description.clone())
                 .aside(hint.clone().map(SharedString::from)),
             Choice::Earlier {
-                cli, name, title, ..
+                cli,
+                name,
+                title,
+                active_at,
+                ..
             } => {
                 let kind = if name.is_some() {
                     "Closed"
@@ -934,7 +952,8 @@ pub fn dock(
                 shown_kind = Some(kind);
                 let row = match name {
                     Some(name) => DockRow::new(format!("@{name}"), choose).detail(title.clone()),
-                    None => DockRow::new(title.clone(), choose),
+                    None => DockRow::new(title.clone(), choose)
+                        .aside(active_at.map(|at| crate::agents::age(at).into())),
                 };
                 row.mark(ui::mark(cli, 13.)).group(group)
             }

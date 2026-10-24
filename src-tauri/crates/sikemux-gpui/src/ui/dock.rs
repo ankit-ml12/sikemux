@@ -4,6 +4,9 @@
 
 use std::rc::Rc;
 
+use gpui_kit::component::skeleton::Skeleton;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::Sizable;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, relative, AnyElement, App, InteractiveElement, IntoElement, MouseButton,
@@ -19,6 +22,8 @@ pub struct DockRow {
     name: SharedString,
     mark: Option<AnyElement>,
     detail: Option<SharedString>,
+    /// How the thing stands, such as an agent at work, drawn after its detail.
+    state: Option<AnyElement>,
     aside: Option<SharedString>,
     /// The heading a run of rows starts under.
     group: Option<SharedString>,
@@ -31,6 +36,7 @@ impl DockRow {
             name: name.into(),
             mark: None,
             detail: None,
+            state: None,
             aside: None,
             group: None,
             choose,
@@ -44,6 +50,11 @@ impl DockRow {
 
     pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
         self.detail = Some(detail.into());
+        self
+    }
+
+    pub fn state(mut self, state: Option<AnyElement>) -> Self {
+        self.state = state;
         self
     }
 
@@ -73,9 +84,20 @@ pub struct DockMenu {
     selected: usize,
     /// What the menu says while it has no rows.
     empty: Option<SharedString>,
-    /// The kinds it can list, and what taking a row does, over its rows.
-    heading: Option<(Vec<DockScope>, SharedString)>,
+    /// What it lists is on its way, so rows the size of real ones hold its height.
+    loading: bool,
+    /// What it lists, as the kinds it can switch between or a title, and what taking a row
+    /// does, over its rows.
+    heading: Option<(Lead, SharedString)>,
 }
+
+enum Lead {
+    Scopes(Vec<DockScope>),
+    Title(SharedString),
+}
+
+/// How wide each loading row's last bar is, as the Mac draws them.
+const LOADING_ROWS: [f32; 3] = [0.72, 0.54, 0.63];
 
 impl DockMenu {
     pub fn new(rows: Vec<DockRow>, selected: usize) -> Self {
@@ -83,22 +105,39 @@ impl DockMenu {
             rows,
             selected,
             empty: None,
+            loading: false,
             heading: None,
+        }
+    }
+
+    /// A menu whose rows are on their way.
+    pub fn loading() -> Self {
+        Self {
+            loading: true,
+            ..Self::new(Vec::new(), 0)
         }
     }
 
     /// A menu with nothing to offer, saying why.
     pub fn empty(text: impl Into<SharedString>) -> Self {
         Self {
-            rows: Vec::new(),
-            selected: 0,
             empty: Some(text.into()),
-            heading: None,
+            ..Self::new(Vec::new(), 0)
         }
     }
 
     pub fn heading(mut self, scopes: Vec<DockScope>, aside: impl Into<SharedString>) -> Self {
-        self.heading = Some((scopes, aside.into()));
+        self.heading = Some((Lead::Scopes(scopes), aside.into()));
+        self
+    }
+
+    /// A heading that names what the menu lists, for one that switches to nothing else.
+    pub fn titled(
+        mut self,
+        title: impl Into<SharedString>,
+        aside: impl Into<SharedString>,
+    ) -> Self {
+        self.heading = Some((Lead::Title(title.into()), aside.into()));
         self
     }
 }
@@ -162,6 +201,7 @@ impl RenderOnce for DockMenu {
                         .text_color(t.text_tertiary)
                         .children(row.detail),
                 )
+                .children(row.state)
                 .children(row.aside.map(|aside| {
                     div()
                         .flex_none()
@@ -173,7 +213,12 @@ impl RenderOnce for DockMenu {
                 .into_any_element();
             heading.into_iter().chain([line])
         });
-        let heading = self.heading.map(|(scopes, aside)| {
+        let loading = self.loading;
+        let heading = self.heading.map(|(lead, aside)| {
+            let (scopes, title) = match lead {
+                Lead::Scopes(scopes) => (scopes, None),
+                Lead::Title(title) => (Vec::new(), Some(title)),
+            };
             div()
                 .min_h(px(26.))
                 .px(px(6.))
@@ -204,13 +249,25 @@ impl RenderOnce for DockMenu {
                             cx.stop_propagation();
                             choose(window, cx);
                         })
-                        .child(
-                            div()
-                                .font_family(theme::MONO)
-                                .text_size(crate::theme::ui_text(9.5))
-                                .child(scope.key),
-                        )
+                        .map(|chip| match loading && scope.on {
+                            true => {
+                                chip.child(Spinner::new().with_size(px(10.)).color(t.text_tertiary))
+                            }
+                            false => chip.child(
+                                div()
+                                    .font_family(theme::MONO)
+                                    .text_size(crate::theme::ui_text(9.5))
+                                    .child(scope.key),
+                            ),
+                        })
                         .child(scope.label)
+                }))
+                .children(title.map(|title| {
+                    div()
+                        .px(px(4.))
+                        .text_size(crate::theme::ui_text(10.5))
+                        .text_color(t.text_tertiary)
+                        .child(title)
                 }))
                 .child(div().flex_1())
                 .child(
@@ -220,6 +277,40 @@ impl RenderOnce for DockMenu {
                         .text_size(crate::theme::ui_text(9.5))
                         .text_color(t.text_disabled)
                         .child(aside),
+                )
+        });
+        let bar = t.text_primary.opacity(0.08);
+        let placeholders = LOADING_ROWS.iter().filter(|_| loading).map(|&width| {
+            div()
+                .min_h(px(30.))
+                .px(px(10.))
+                .py(px(3.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .w(px(16.))
+                        .flex_none()
+                        .flex()
+                        .justify_center()
+                        .child(Skeleton::new().size(px(12.)).rounded_full().bg(bar)),
+                )
+                .child(
+                    Skeleton::new()
+                        .w(px(34.))
+                        .h(px(6.))
+                        .rounded(theme::RADIUS_1)
+                        .bg(bar),
+                )
+                .child(
+                    div().flex_1().min_w_0().child(
+                        Skeleton::new()
+                            .w(relative(width))
+                            .h(px(6.))
+                            .rounded(theme::RADIUS_1)
+                            .bg(bar),
+                    ),
                 )
         });
         let empty = self.empty.map(|text| {
@@ -249,6 +340,7 @@ impl RenderOnce for DockMenu {
             .bg(t.surface_composer)
             .occlude()
             .children(heading)
+            .children(placeholders)
             .children(rows)
             .children(empty)
     }
