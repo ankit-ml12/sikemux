@@ -2,7 +2,7 @@
 //! settings and rail make.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Once};
 
 use serde::{Deserialize, Serialize};
 
@@ -240,7 +240,24 @@ async fn checked(
     }
 }
 
+/// Offers agents afresh and tells every client each time a program whose
+/// check timed out answers in the background.
+fn follow_late_answers(core: &Arc<Core>) {
+    static FOLLOWING: Once = Once::new();
+    FOLLOWING.call_once(|| {
+        let core = core.clone();
+        tokio::spawn(async move {
+            loop {
+                discovery::answered_late().notified().await;
+                refresh_launchers(core.clone()).await;
+                core.changes.changed(Topic::AgentStatus, None, None);
+            }
+        });
+    });
+}
+
 pub(super) async fn availability(core: &Arc<Core>, account: Account) -> CoreResult<Availability> {
+    follow_late_answers(core);
     let (provider, config_path) = (&account.provider, account.config_path.as_deref());
     let spec = core.workspaces.account_spec(provider, config_path);
     let (program, failures) = status::locate(&spec).await;

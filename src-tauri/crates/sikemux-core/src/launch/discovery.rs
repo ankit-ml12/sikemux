@@ -11,7 +11,7 @@ use sikemux_process::sync::Locked;
 use sikemux_process::user_environment;
 use sikemux_pty::user_shell::login_shell_environment;
 use tokio::process::Command;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{Notify, Semaphore, SemaphorePermit};
 
 use crate::agent_catalog::{AgentEntry, AGENTS};
 use crate::flights::{shared, Flights};
@@ -25,19 +25,14 @@ says its own timeout. */
 const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 #[cfg(test)]
 const AGENT_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
-const AGENT_UPDATE_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
-const AGENT_UPDATE_SETTLE_DELAY: Duration = Duration::from_millis(350);
+const AGENT_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
+/// How long after a check timed out it is tried again, each time it times out again.
+const RETRY_AFTER: [Duration; 2] = [Duration::from_secs(15), Duration::from_secs(60)];
 /// How many agent programs are started at once to answer a question, so
 /// listing every agent never starts them all together.
 const PROBE_CONCURRENCY: usize = 4;
 const MAX_PROBED: usize = 128;
 const TIMED_OUT: &str = "version check timed out";
-const AFTER_RETRY: &str = "after update retry";
-
-fn healthy_agent_executables() -> &'static Mutex<HashMap<String, PathBuf>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, PathBuf>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
 
 fn push_agent_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
     if candidate.is_file() && !candidates.contains(&candidate) {
@@ -115,10 +110,26 @@ pub(crate) async fn probe_turn() -> Option<SemaphorePermit<'static>> {
 /// A program file as it is now: when it last changed, and its size.
 type FileStamp = (SystemTime, u64);
 
-/// What a program answered, kept until its file changes.
+/// What a program answered, kept until its file changes. A check that timed
+/// out is no answer: it is tried again in the background, and until then
+/// the program's last good answer stands in for it.
 struct Probed {
-    stamp: FileStamp,
+    stamp: Option<FileStamp>,
     answer: Result<String, String>,
+    good: Option<String>,
+}
+
+impl Probed {
+    fn timed_out(&self) -> bool {
+        matches!(&self.answer, Err(error) if error == TIMED_OUT)
+    }
+
+    fn shown(&self) -> Result<String, String> {
+        match &self.good {
+            Some(good) if self.timed_out() => Ok(good.clone()),
+            _ => self.answer.clone(),
+        }
+    }
 }
 
 fn probed() -> &'static Mutex<HashMap<PathBuf, Probed>> {
@@ -131,81 +142,113 @@ fn stamp(executable: &Path) -> Option<FileStamp> {
     Some((metadata.modified().ok()?, metadata.len()))
 }
 
-/// Forgets the programs that would not start, so each is asked again: what
-/// they need may have been installed since.
+/// Has the programs that failed or timed out asked again on their next look:
+/// what they need may have been installed since.
 pub fn forget_failures() {
-    probed().locked().retain(|_, probed| probed.answer.is_ok());
-}
-
-/// Asks once, and when that times out asks again for longer, since an
-/// updater may be swapping the program.
-async fn probe_settled(def: &AgentEntry, executable: &Path) -> Result<String, String> {
-    match probe_agent_executable_with_timeout(def, executable, AGENT_PROBE_TIMEOUT).await {
-        Err(error) if error == TIMED_OUT => {
-            tokio::time::sleep(AGENT_UPDATE_SETTLE_DELAY).await;
-            probe_agent_executable_with_timeout(def, executable, AGENT_UPDATE_RETRY_TIMEOUT)
-                .await
-                .map_err(|error| format!("{error} {AFTER_RETRY}"))
+    for probed in probed().locked().values_mut() {
+        if probed.answer.is_err() {
+            probed.stamp = None;
         }
-        answer => answer,
     }
 }
 
-/// What the program at `executable` answers, asked again only once its file changes.
-async fn probe_agent_executable(def: &AgentEntry, executable: &Path) -> Result<String, String> {
+/// Wakes once a program whose check timed out has answered in the background.
+pub fn answered_late() -> &'static Notify {
+    static ANSWERED: Notify = Notify::const_new();
+    &ANSWERED
+}
+
+/// Asks the program at `executable` and keeps its answer, once however many
+/// ask together. A first look that times out is tried again later.
+async fn ask(
+    def: &'static AgentEntry,
+    executable: &Path,
+    stamp: Option<FileStamp>,
+    timeout: Duration,
+) -> Result<String, String> {
     static ASKING: LazyLock<Flights<(PathBuf, Option<FileStamp>), Result<String, String>>> =
         LazyLock::new(Flights::default);
-    let stamp = stamp(executable);
-    if let Some(probed) = probed().locked().get(executable) {
-        if Some(probed.stamp) == stamp {
-            return probed.answer.clone();
-        }
-    }
     shared(&ASKING, (executable.to_path_buf(), stamp), async {
-        let _turn = probe_turn().await;
-        let answer = probe_settled(def, executable).await;
-        if let Some(stamp) = stamp {
-            let mut probed = probed().locked();
-            if probed.len() >= MAX_PROBED {
-                probed.clear();
-            }
-            probed.insert(
-                executable.to_path_buf(),
-                Probed {
-                    stamp,
-                    answer: answer.clone(),
-                },
-            );
+        let answer = {
+            let _turn = probe_turn().await;
+            probe_agent_executable_with_timeout(def, executable, timeout).await
+        };
+        let Some(stamp) = stamp else {
+            return answer;
+        };
+        let mut probed = probed().locked();
+        let good = answer
+            .clone()
+            .ok()
+            .or_else(|| probed.get(executable).and_then(|kept| kept.good.clone()));
+        if probed.len() >= MAX_PROBED {
+            probed.clear();
         }
-        answer
+        let kept = Probed {
+            stamp: Some(stamp),
+            answer,
+            good,
+        };
+        if kept.timed_out() && timeout == AGENT_PROBE_TIMEOUT {
+            retry_later(def, executable.to_path_buf(), stamp);
+        }
+        let shown = kept.shown();
+        probed.insert(executable.to_path_buf(), kept);
+        shown
     })
     .await
 }
 
+/// Tries a check that timed out again, off any caller's path, since a busy
+/// machine or an updater swapping the program says nothing about whether it works.
+fn retry_later(def: &'static AgentEntry, executable: PathBuf, stamp: FileStamp) {
+    let still_timed_out = move |executable: &Path| {
+        probed()
+            .locked()
+            .get(executable)
+            .is_some_and(|kept| kept.stamp == Some(stamp) && kept.timed_out())
+    };
+    tokio::spawn(async move {
+        for wait in RETRY_AFTER {
+            tokio::time::sleep(wait).await;
+            if !still_timed_out(&executable) {
+                return;
+            }
+            let _ = ask(def, &executable, Some(stamp), AGENT_RETRY_TIMEOUT).await;
+            if !still_timed_out(&executable) {
+                answered_late().notify_one();
+                return;
+            }
+        }
+    });
+}
+
+/// What the program at `executable` answers, asked again only once its file changes.
+async fn probe_agent_executable(
+    def: &'static AgentEntry,
+    executable: &Path,
+) -> Result<String, String> {
+    let stamp = stamp(executable);
+    if let Some(kept) = probed().locked().get(executable) {
+        if stamp.is_some() && kept.stamp == stamp {
+            return kept.shown();
+        }
+    }
+    ask(def, executable, stamp, AGENT_PROBE_TIMEOUT).await
+}
+
 pub async fn first_healthy(
-    def: &AgentEntry,
+    def: &'static AgentEntry,
     candidates: Vec<PathBuf>,
 ) -> (Option<PathBuf>, Vec<String>) {
     let mut failures = Vec::new();
-    let cached = healthy_agent_executables().locked().get(def.kind).cloned();
-    let mut temporarily_unverified = None;
     for candidate in candidates {
         match probe_agent_executable(def, &candidate).await {
-            Ok(_) => {
-                healthy_agent_executables()
-                    .locked()
-                    .insert(def.kind.to_string(), candidate.clone());
-                return (Some(candidate), failures);
-            }
-            Err(error) => {
-                if error.ends_with(AFTER_RETRY) && cached.as_ref() == Some(&candidate) {
-                    temporarily_unverified = Some(candidate.clone());
-                }
-                failures.push(format!("{}: {error}", candidate.display()));
-            }
+            Ok(_) => return (Some(candidate), failures),
+            Err(error) => failures.push(format!("{}: {error}", candidate.display())),
         }
     }
-    (temporarily_unverified, failures)
+    (None, failures)
 }
 
 /// Where to look for `def`'s program: the path or name `explicit` gives, else
