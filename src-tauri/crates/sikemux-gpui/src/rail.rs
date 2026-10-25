@@ -171,7 +171,7 @@ fn with_menu(
         .id(id.clone())
         .relative()
         .group(HOST_ROW)
-        .context_menu(move |popup, window, cx| menu(popup, window, cx))
+        .context_menu(ui::menu(move |popup, window, cx| menu(popup, window, cx)))
         .child(row)
         .child(
             div()
@@ -190,9 +190,10 @@ fn with_menu(
                         .rounded(RADIUS_2)
                         .bg(t.surface_hover)
                         .child(ui::icon(Icon::More, 12.).text_color(t.text_secondary))
-                        .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
-                            more(popup, window, cx)
-                        }),
+                        .dropdown_menu_with_anchor(
+                            Anchor::TopRight,
+                            ui::menu(move |popup, window, cx| more(popup, window, cx)),
+                        ),
                 ),
         )
         .into_any_element()
@@ -632,7 +633,7 @@ fn project_tree(
         .group(PROJECT_ROW)
         .relative()
         .children(ui::spot(|| format!("project-row-{name}")))
-        .context_menu(menu)
+        .context_menu(ui::menu(menu))
         .child(crate::drag::project(
             Row::new(
                 SharedString::from(format!("project-{}", project.id)),
@@ -1027,9 +1028,9 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                     .find(|known| known.id == space)
                     .map(|known| known.icon.clone())
                     .unwrap_or_default();
-                chip.context_menu(move |popup, window, cx| {
+                chip.context_menu(ui::menu(move |popup, window, cx| {
                     space_menu(popup, window, cx, &bench, &space, &icon)
-                })
+                }))
                 .into_any_element()
             }
             None => chip.into_any_element(),
@@ -1044,7 +1045,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         .border_1()
         .border_color(t.border)
         .rounded(RADIUS_2 + px(3.))
-        .context_menu({
+        .context_menu(ui::menu({
             let bench = cx.entity();
             move |popup, _, _| {
                 let (made, edited) = (bench.clone(), bench.clone());
@@ -1062,7 +1063,7 @@ fn space_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                             }),
                     )
             }
-        })
+        }))
         .child(chip(None, Some(Icon::Stack), "All".into()))
         .children(spaces.iter().map(|space| {
             chip(
@@ -1108,7 +1109,13 @@ fn space_menu(
         .item(item("Rename…", Icon::Pencil, |bench, space, cx| {
             bench.rename_space(space, cx)
         }))
-        .submenu_with_icon(Some(Icon::Pencil.into()), "Change Icon…", window, cx, icons);
+        .submenu_with_icon(
+            Some(Icon::Pencil.into()),
+            "Change Icon…",
+            window,
+            cx,
+            ui::menu(icons),
+        );
     if !icon.is_empty() {
         popup = popup.item(item("Remove Icon", Icon::Trash, |bench, space, _| {
             bench.set_space_icon(&space, "")

@@ -436,60 +436,64 @@ fn menu(
         ("Copy Name", name, "Copied name"),
     ];
     let agent = agent.to_owned();
-    PopupMenu::build(window, cx, move |mut popup, _, _| {
-        let file = kind == FileKind::File;
-        if file && on.here {
-            let (found, bench, agent) = (found.clone(), bench.clone(), agent.clone());
-            popup = popup.item(
-                PopupMenuItem::new("Open on Desk")
-                    .icon(Icon::PanelRight)
-                    .on_click(move |_, _, cx| open_on_desk(&agent, &found, &bench, cx)),
-            );
-        }
-        if file {
-            let (found, bench, on) = (found.clone(), bench.clone(), on.clone());
-            let (label, glyph) = match on.here {
-                true => ("Open in Editor", Icon::Editor),
-                false => ("Open", Icon::File),
-            };
-            popup = popup
-                .item(
-                    PopupMenuItem::new(label)
-                        .icon(glyph)
-                        .on_click(move |_, _, cx| open(&found, kind, &on, &bench, cx)),
-                )
-                .separator();
-        }
-        if on.here {
-            let revealed = found.path.clone();
-            popup = popup.item(
-                PopupMenuItem::new(ui::REVEAL)
-                    .icon(Icon::Folder)
-                    .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
-            );
-            if file {
-                let folder = Path::new(&found.path)
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default();
+    PopupMenu::build(
+        window,
+        cx,
+        ui::menu(move |mut popup, _, _| {
+            let file = kind == FileKind::File;
+            if file && on.here {
+                let (found, bench, agent) = (found.clone(), bench.clone(), agent.clone());
                 popup = popup.item(
-                    PopupMenuItem::new("Open Containing Folder")
-                        .icon(Icon::Folder)
-                        .on_click(move |_, _, cx| cx.reveal_path(&folder)),
+                    PopupMenuItem::new("Open on Desk")
+                        .icon(Icon::PanelRight)
+                        .on_click(move |_, _, cx| open_on_desk(&agent, &found, &bench, cx)),
                 );
             }
-            popup = popup.separator();
-        }
-        for (label, copied, said) in copies.clone() {
-            popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
-                move |_, window, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                    window.push_notification(toast::success(said), cx);
-                },
-            ));
-        }
-        popup
-    })
+            if file {
+                let (found, bench, on) = (found.clone(), bench.clone(), on.clone());
+                let (label, glyph) = match on.here {
+                    true => ("Open in Editor", Icon::Editor),
+                    false => ("Open", Icon::File),
+                };
+                popup = popup
+                    .item(
+                        PopupMenuItem::new(label)
+                            .icon(glyph)
+                            .on_click(move |_, _, cx| open(&found, kind, &on, &bench, cx)),
+                    )
+                    .separator();
+            }
+            if on.here {
+                let revealed = found.path.clone();
+                popup = popup.item(
+                    PopupMenuItem::new(ui::REVEAL)
+                        .icon(Icon::Folder)
+                        .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
+                );
+                if file {
+                    let folder = Path::new(&found.path)
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_default();
+                    popup = popup.item(
+                        PopupMenuItem::new("Open Containing Folder")
+                            .icon(Icon::Folder)
+                            .on_click(move |_, _, cx| cx.reveal_path(&folder)),
+                    );
+                }
+                popup = popup.separator();
+            }
+            for (label, copied, said) in copies.clone() {
+                popup = popup.item(PopupMenuItem::new(label).icon(Icon::Copy).on_click(
+                    move |_, window, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                        window.push_notification(toast::success(said), cx);
+                    },
+                ));
+            }
+            popup
+        }),
+    )
 }
 
 /// Where the menu of a file a message names stands, while it is open.

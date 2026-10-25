@@ -197,9 +197,12 @@ impl Render for SpaceEditor {
                                 Some(glyph) => ui::icon(glyph, 13.).text_color(t.text_primary),
                                 None => ui::icon(Icon::Plus, 11.).text_color(t.text_tertiary),
                             })
-                            .dropdown_menu_with_anchor(Anchor::TopLeft, move |menu, _, _| {
-                                icon_choices(menu, bench.clone(), &picked, &worn)
-                            }),
+                            .dropdown_menu_with_anchor(
+                                Anchor::TopLeft,
+                                ui::menu(move |menu, _, _| {
+                                    icon_choices(menu, bench.clone(), &picked, &worn)
+                                }),
+                            ),
                     )
                     .child(div().flex_1().min_w_0().child(Input::new(&field).small()))
                     .child(

@@ -123,29 +123,32 @@ pub fn picker(
     let on = current.id.clone();
     Some(
         trigger
-            .dropdown_menu_with_anchor(Anchor::BottomRight, move |mut popup, _, _| {
-                popup = popup.min_w(px(280.));
-                for (profile, name, detail, used) in &rows {
-                    let here = profile.id == on;
-                    let item = accounts::popup_item(profile, name, detail.clone(), *used, here);
-                    if here {
-                        popup = popup.item(item);
-                        continue;
+            .dropdown_menu_with_anchor(
+                Anchor::BottomRight,
+                ui::menu(move |mut popup, _, _| {
+                    popup = popup.min_w(px(280.));
+                    for (profile, name, detail, used) in &rows {
+                        let here = profile.id == on;
+                        let item = accounts::popup_item(profile, name, detail.clone(), *used, here);
+                        if here {
+                            popup = popup.item(item);
+                            continue;
+                        }
+                        let (this, agent, chosen) = (this.clone(), agent.clone(), profile.clone());
+                        popup = popup.item(item.on_click(move |_, _, cx| {
+                            this.update(cx, |bench, _| match started {
+                                true => move_chat(bench, &agent, &chosen),
+                                false => bench.start_as(
+                                    &agent,
+                                    serde_json::json!({ "profileId": chosen.id }),
+                                    &chosen.name,
+                                ),
+                            });
+                        }));
                     }
-                    let (this, agent, chosen) = (this.clone(), agent.clone(), profile.clone());
-                    popup = popup.item(item.on_click(move |_, _, cx| {
-                        this.update(cx, |bench, _| match started {
-                            true => move_chat(bench, &agent, &chosen),
-                            false => bench.start_as(
-                                &agent,
-                                serde_json::json!({ "profileId": chosen.id }),
-                                &chosen.name,
-                            ),
-                        });
-                    }));
-                }
-                popup
-            })
+                    popup
+                }),
+            )
             .into_any_element(),
     )
 }

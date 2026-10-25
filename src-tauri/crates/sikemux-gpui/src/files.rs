@@ -567,7 +567,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                         .capture_any_mouse_down(cx.listener(|bench, _: &MouseDownEvent, _, _| {
                             bench.files.menu_row = None
                         }))
-                        .context_menu(move |popup, _, cx| {
+                        .context_menu(ui::menu(move |popup, _, cx| {
                             let row = this
                                 .upgrade()
                                 .and_then(|bench| bench.read(cx).files.menu_row.clone());
@@ -577,7 +577,7 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
                                 }
                                 None => row_menu(popup, &this, &root, true, Some(&root), here, cx),
                             }
-                        })
+                        }))
                         .child(rows)
                         .into_any_element()
                 }
@@ -671,7 +671,7 @@ fn open_files(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEleme
             }));
         div()
             .id(menu_id)
-            .context_menu(menu)
+            .context_menu(ui::menu(menu))
             .child(row)
             .into_any_element()
     });

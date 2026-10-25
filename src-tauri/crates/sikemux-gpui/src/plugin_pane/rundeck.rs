@@ -394,7 +394,7 @@ impl Panel for DeployChip {
                     .max_w(px(260.))
                     .truncate(),
             )
-            .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |popup, _, _| {
+            .dropdown_menu_with_anchor(gpui::Anchor::TopRight, ui::menu(move |popup, _, _| {
                 let target = &menu_target;
                 let mut popup = popup.min_w(px(280.));
                 if target.jobs.len() > 1 {
@@ -491,7 +491,7 @@ impl Panel for DeployChip {
                     popup = popup.separator().label(last.text.clone());
                 }
                 popup
-            })
+            }))
             .into_any_element()
     }
 }

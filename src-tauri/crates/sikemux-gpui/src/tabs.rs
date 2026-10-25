@@ -606,9 +606,10 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
                         .with_transformation(Transformation::rotate(radians(FRAC_PI_2)))
                         .text_color(t.text_tertiary),
                 )
-                .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, window, cx| {
-                    menu.build(popup, window, cx)
-                }),
+                .dropdown_menu_with_anchor(
+                    Anchor::TopRight,
+                    ui::menu(move |popup, window, cx| menu.build(popup, window, cx)),
+                ),
         );
     Some(
         div()
@@ -786,7 +787,7 @@ impl RunMenu {
             "Find tasks with an agent…",
             window,
             cx,
-            move |menu, _, _| {
+            ui::menu(move |menu, _, _| {
                 finders.iter().fold(menu, |menu, choice| {
                     let (bench, to, name) = (bench.clone(), choice.to.clone(), name.clone());
                     menu.item(PopupMenuItem::new(choice.label.clone()).on_click(
@@ -797,7 +798,7 @@ impl RunMenu {
                         },
                     ))
                 })
-            },
+            }),
         )
     }
 }
@@ -1028,7 +1029,7 @@ fn strip_tab(
         .flex()
         .min_w_0()
         .child(shown)
-        .context_menu(menu)
+        .context_menu(ui::menu(menu))
         .into_any_element();
     let index = bench
         .tabs(strip)

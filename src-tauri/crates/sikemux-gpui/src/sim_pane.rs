@@ -1002,32 +1002,35 @@ pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
         .map(|device| device.udid.clone());
     Some(
         trigger
-            .dropdown_menu_with_anchor(gpui::Anchor::TopLeft, move |mut popup, _, _| {
-                let mut group = None;
-                for device in &devices {
-                    let now = device_group(device);
-                    if group != Some(now) {
-                        group = Some(now);
-                        popup = popup.label(match now {
-                            Group::Running => "Running",
-                            Group::IPhone => "iPhone",
-                            Group::IPad => "iPad",
-                        });
+            .dropdown_menu_with_anchor(
+                gpui::Anchor::TopLeft,
+                ui::menu(move |mut popup, _, _| {
+                    let mut group = None;
+                    for device in &devices {
+                        let now = device_group(device);
+                        if group != Some(now) {
+                            group = Some(now);
+                            popup = popup.label(match now {
+                                Group::Running => "Running",
+                                Group::IPhone => "iPhone",
+                                Group::IPad => "iPad",
+                            });
+                        }
+                        let (this, agent, chosen) = (this.clone(), agent.clone(), device.clone());
+                        popup = popup.item(
+                            PopupMenuItem::new(device.name.clone())
+                                .icon(Icon::Phone)
+                                .checked(current.as_deref() == Some(device.udid.as_str()))
+                                .on_click(move |_, _, cx| {
+                                    let _ = this.update(cx, |bench, cx| {
+                                        bench.choose_device(&agent, chosen.clone(), cx)
+                                    });
+                                }),
+                        );
                     }
-                    let (this, agent, chosen) = (this.clone(), agent.clone(), device.clone());
-                    popup = popup.item(
-                        PopupMenuItem::new(device.name.clone())
-                            .icon(Icon::Phone)
-                            .checked(current.as_deref() == Some(device.udid.as_str()))
-                            .on_click(move |_, _, cx| {
-                                let _ = this.update(cx, |bench, cx| {
-                                    bench.choose_device(&agent, chosen.clone(), cx)
-                                });
-                            }),
-                    );
-                }
-                popup
-            })
+                    popup
+                }),
+            )
             .into_any_element(),
     )
 }

@@ -352,7 +352,7 @@ pub(super) fn bar(
                         problem.character + 1
                     );
                     row(this, ("problem", index), at.clone(), &t)
-                        .context_menu(problem_menu(this, at, problem, project))
+                        .context_menu(ui::menu(problem_menu(this, at, problem, project)))
                         .child(
                             div()
                                 .size(px(7.))

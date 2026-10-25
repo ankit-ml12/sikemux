@@ -288,9 +288,9 @@ fn item_of(
             match pull.cloned().filter(|_| !picked.is_empty()) {
                 Some(pull) => drawn
                     .id(SharedString::from(format!("host-row-menu-{at}-{index}")))
-                    .context_menu(move |popup, window, cx| {
+                    .context_menu(crate::ui::menu(move |popup, window, cx| {
                         line_menu(popup, &pull, &file, &picked, window, cx)
-                    })
+                    }))
                     .into_any_element(),
                 None => drawn.into_any_element(),
             }

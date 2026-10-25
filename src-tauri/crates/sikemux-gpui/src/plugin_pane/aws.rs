@@ -1258,7 +1258,7 @@ fn account_switch(
                         .child(said),
                 ),
         )
-        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |mut menu, _, cx| {
+        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, ui::menu(move |mut menu, _, cx| {
             let t = Tokens::get(cx).clone();
             menu = menu
                 .min_w(px(240.))
@@ -1306,7 +1306,7 @@ fn account_switch(
                 );
             }
             menu
-        })
+        }))
         .into_any_element()
 }
 

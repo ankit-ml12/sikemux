@@ -394,9 +394,10 @@ pub fn chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
             .tooltip(about)
             .child(ui::icon(Icon::Plug, 12.).text_color(t.text_tertiary))
             .child(div().text_color(t.text_primary).child(count.to_string()))
-            .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, _, _| {
-                ports_menu(popup, &rows, &desk, &weak)
-            })
+            .dropdown_menu_with_anchor(
+                Anchor::TopRight,
+                ui::menu(move |popup, _, _| ports_menu(popup, &rows, &desk, &weak)),
+            )
             .into_any_element(),
     )
 }

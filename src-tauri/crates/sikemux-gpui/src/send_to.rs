@@ -117,7 +117,7 @@ pub fn submenu(
         label,
         window,
         cx,
-        move |mut menu, _, _| {
+        crate::ui::menu(move |mut menu, _, _| {
             if choices.is_empty() {
                 return menu.item(PopupMenuItem::new("No agents available").disabled(true));
             }
@@ -130,7 +130,7 @@ pub fn submenu(
                 ));
             }
             menu
-        },
+        }),
     )
 }
 

@@ -1514,7 +1514,7 @@ pub fn pane(
                 bench.with_engine(|engine| engine.switch_tab(&switch_agent, &switch_tab));
                 bench.parts.redraw(&bench.parts.stage, cx);
             }))
-            .context_menu(tab_menu(
+            .context_menu(ui::menu(tab_menu(
                 cx.weak_entity(),
                 agent,
                 DeskTab::Page {
@@ -1522,7 +1522,7 @@ pub fn pane(
                     url: page.url.clone(),
                 },
                 None,
-            )),
+            ))),
         );
     }
     for (index, item) in bench
@@ -1577,12 +1577,12 @@ pub fn pane(
                 bench.bring_front(&pick_agent, pick_item.clone());
                 bench.parts.redraw(&bench.parts.stage, cx);
             }))
-            .context_menu(tab_menu(
+            .context_menu(ui::menu(tab_menu(
                 cx.weak_entity(),
                 agent,
                 DeskTab::Item(item.clone()),
                 root.clone(),
-            )),
+            ))),
         );
     }
     let new_agent = agent.to_owned();

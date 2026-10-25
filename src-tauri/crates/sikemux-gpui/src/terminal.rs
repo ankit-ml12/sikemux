@@ -745,7 +745,7 @@ fn draw(
                 .size_full(),
             ),
         )
-        .context_menu(menu)
+        .context_menu(ui::menu(menu))
         .into_any_element()
 }
 

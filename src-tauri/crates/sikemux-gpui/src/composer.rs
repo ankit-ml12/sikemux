@@ -702,7 +702,7 @@ fn picker(
             } else {
                 Anchor::BottomRight
             },
-            move |mut popup, _, _| {
+            ui::menu(move |mut popup, _, _| {
                 for choice in &choices {
                     let (pick, id, value) = (pick.clone(), id.clone(), choice.value.clone());
                     popup = popup.item(
@@ -712,7 +712,7 @@ fn picker(
                     );
                 }
                 popup
-            },
+            }),
         )
         .into_any_element()
 }

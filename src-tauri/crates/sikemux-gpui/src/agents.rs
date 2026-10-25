@@ -452,7 +452,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
     div()
         .id(SharedString::from(format!("recent-menu-{}", recent.id)))
         .child(row)
-        .context_menu(move |popup, _, cx| {
+        .context_menu(ui::menu(move |popup, _, cx| {
             let (label, pin) = pin.clone();
             let pin = PopupMenuItem::new(label)
                 .icon(Icon::Pin)
@@ -484,7 +484,7 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
             popup.separator().item(
                 ui::danger_popup_item("Delete…", Some(Icon::Trash), cx).on_click(on(delete_recent)),
             )
-        })
+        }))
         .into_any_element()
 }
 
@@ -989,10 +989,10 @@ fn agent_row(
         .child(actions)
         .children(lines)
         .children(card.map(|card| div().absolute().top_0().left_0().child(card)))
-        .context_menu(move |popup, _, _| match &menu {
+        .context_menu(ui::menu(move |popup, _, _| match &menu {
             Some(menu) => menu.build(popup),
             None => popup,
-        })
+        }))
 }
 
 /// The hover group of an agent's rail row, whose pin and close buttons show on hover.
@@ -1625,7 +1625,7 @@ fn terminal_rows(
                 div()
                     .id(SharedString::from(format!("terminal-menu-{}", tab.id)))
                     .child(row)
-                    .context_menu(crate::tabs::tab_menu(bench, strip, tab, cx))
+                    .context_menu(ui::menu(crate::tabs::tab_menu(bench, strip, tab, cx)))
                     .into_any_element(),
             );
         }

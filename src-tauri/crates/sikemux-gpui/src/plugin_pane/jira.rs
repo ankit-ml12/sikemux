@@ -1387,7 +1387,7 @@ impl Jira {
                 jira.open(open);
                 cx.notify();
             }))
-            .context_menu(move |popup, _, _| {
+            .context_menu(ui::menu(move |popup, _, _| {
                 let mut popup = popup;
                 for (to, (name, status_ids)) in targets.iter().enumerate() {
                     let (pane, key, site) = (pane.clone(), menu_key.clone(), site.clone());
@@ -1409,7 +1409,7 @@ impl Jira {
                     );
                 }
                 popup
-            })
+            }))
             .into_any_element()
     }
 
@@ -1500,7 +1500,7 @@ impl Jira {
                     .text_color(t.text_primary)
                     .whitespace_normal(),
             )
-            .context_menu(issue_menu(issue, host.bench().clone()));
+            .context_menu(ui::menu(issue_menu(issue, host.bench().clone())));
         let mut style = crate::editor::preview::reading_style(13., &t);
         let pane = cx.weak_entity();
         let (task_key, task_site) = (issue.key.clone(), site.to_owned());
@@ -2385,7 +2385,7 @@ fn issue_row(
             jira.open(Some(key.clone()));
             cx.notify();
         }))
-        .context_menu(issue_menu(issue, host.bench().clone()))
+        .context_menu(ui::menu(issue_menu(issue, host.bench().clone())))
         .into_any_element()
 }
 

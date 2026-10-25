@@ -380,10 +380,13 @@ fn pane_header(
         .h(px(24.))
         .tooltip("More")
         .child(ui::icon(Icon::More, 14.).text_color(t.text_secondary))
-        .dropdown_menu_with_anchor(Anchor::TopRight, move |popup, _, _| match &menu {
-            Some(menu) => menu.build(popup),
-            None => popup,
-        });
+        .dropdown_menu_with_anchor(
+            Anchor::TopRight,
+            ui::menu(move |popup, _, _| match &menu {
+                Some(menu) => menu.build(popup),
+                None => popup,
+            }),
+        );
     let desk_open = bench
         .desk_of(tab, &agent.id)
         .is_some_and(|desk| !bench.panes.desk_shutting(&desk));

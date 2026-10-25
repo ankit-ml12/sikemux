@@ -2419,7 +2419,7 @@ impl Signoz {
         let chosen = self.chosen_lines(line, lines);
         let some_picked = !self.picked.is_empty();
         let pane = cx.weak_entity();
-        let head = head.context_menu(move |popup, window, cx| {
+        let head = head.context_menu(ui::menu(move |popup, window, cx| {
             let count = chosen.len();
             let text = chosen
                 .iter()
@@ -2463,7 +2463,7 @@ impl Signoz {
                 );
             }
             popup
-        });
+        }));
         self.with_detail(head, line, index, expanded, cx)
     }
 

@@ -535,7 +535,7 @@ impl Database {
                 cx.notify();
             },
         ))
-        .context_menu(connection_menu(connection, cx.weak_entity()));
+        .context_menu(ui::menu(connection_menu(connection, cx.weak_entity())));
         rows.push(row.into_any_element());
         if let Some(failed) = self.failed.get(&id) {
             rows.push(note(1, failed.clone(), true, &t));
@@ -591,7 +591,7 @@ impl Database {
                 database.toggle(key.clone());
                 cx.notify();
             }))
-            .context_menu(schema_menu(id, &schema.name, cx.weak_entity()))
+            .context_menu(ui::menu(schema_menu(id, &schema.name, cx.weak_entity())))
             .into_any_element(),
         );
         if !open {
@@ -697,7 +697,7 @@ impl Database {
                 database.show(opening.clone());
                 cx.notify();
             }))
-            .context_menu(move |popup: PopupMenu, _, _| {
+            .context_menu(ui::menu(move |popup: PopupMenu, _, _| {
                 let (show, columns) = (tab.clone(), toggled.clone());
                 let (preview_id, preview_sql) = (connection_id.clone(), preview.clone());
                 let (query_id, query_sql) = (connection_id.clone(), preview.clone());
@@ -743,7 +743,7 @@ impl Database {
                         "the qualified name",
                         &pane,
                     ))
-            })
+            }))
             .into_any_element(),
         );
         if !open {
@@ -773,14 +773,14 @@ impl Database {
                     rows.push(
                         node(column_id, 4, None, false, None, column.name.clone(), cx)
                             .child(detail)
-                            .context_menu(move |popup: PopupMenu, _, _| {
+                            .context_menu(ui::menu(move |popup: PopupMenu, _, _| {
                                 popup.item(copy_item(
                                     "Copy name",
                                     menu.1.clone(),
                                     "the column name",
                                     &menu.0,
                                 ))
-                            })
+                            }))
                             .into_any_element(),
                     );
                 }
@@ -827,7 +827,7 @@ impl Database {
                         cx.notify();
                     },
                 ));
-                div().id(("db-tab-menu", at)).child(tab).context_menu(menu)
+                div().id(("db-tab-menu", at)).child(tab).context_menu(ui::menu(menu))
             }))
             .into_any_element()
     }
