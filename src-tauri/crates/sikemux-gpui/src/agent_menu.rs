@@ -263,13 +263,19 @@ impl AgentMenu {
                 PopupMenuItem::new("Close")
                     .icon(Icon::Close)
                     .action(Box::new(crate::keymap::CloseTab))
-                    .on_click(self.call("closeAgents", json!({ "agentIds": [id] }))),
+                    .on_click(self.on_bench({
+                        let id = id.clone();
+                        move |bench, cx| bench.close_agents(vec![id.clone()], cx)
+                    })),
             )
             .item(
                 PopupMenuItem::new("Close Others")
                     .icon(Icon::Close)
                     .disabled(self.others.is_empty())
-                    .on_click(self.call("closeAgents", json!({ "agentIds": self.others }))),
+                    .on_click(self.on_bench({
+                        let others = self.others.clone();
+                        move |bench, cx| bench.close_agents(others.clone(), cx)
+                    })),
             );
         if self.can_skip_permissions {
             let yolo = agent.permission_mode == "bypass";
@@ -314,6 +320,17 @@ impl AgentMenu {
                     }
                 }),
         )
+    }
+
+    /// A menu item's click that works on the bench.
+    fn on_bench(
+        &self,
+        work: impl Fn(&mut Workbench, &mut Context<Workbench>) + 'static,
+    ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        let bench = self.bench.clone();
+        move |_, _, cx| {
+            let _ = bench.update(cx, |bench, cx| work(bench, cx));
+        }
     }
 
     /// A menu item's click that makes a core call.

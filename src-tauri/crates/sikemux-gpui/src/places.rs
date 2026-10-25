@@ -76,7 +76,7 @@ impl Workbench {
             Strip::Host(_) | Strip::Terminals => {
                 let tabs: Vec<String> =
                     self.tabs(&strip).iter().map(|tab| tab.id.clone()).collect();
-                return self.close_tabs(&strip, &tabs);
+                return self.close_tabs_asking(strip, tabs, cx);
             }
             Strip::Project(id) => self
                 .projects()
@@ -212,35 +212,18 @@ impl Workbench {
             true => bench.close_pane(&strip, &tab_id, &pane),
             false => bench.close_tab(&strip, &tab_id),
         };
-        let mid_turn = (kind == PaneKind::Agent)
-            .then(|| {
-                self.view
-                    .as_ref()?
-                    .chats
-                    .iter()
-                    .find(|chat| chat.agent_id == target)
-                    .filter(|chat| {
-                        matches!(chat.status, AgentStatus::Working | AgentStatus::Blocked)
-                    })
-                    .map(|_| ())
-            })
-            .flatten();
-        let title = self
-            .saved_title(&target)
-            .unwrap_or_else(|| "the agent".to_owned());
-        if mid_turn.is_some() {
-            return self.confirm(
-                format!("Stop {title}?"),
-                "It is in the middle of a turn. Closing stops it.",
-                "Stop and close",
-                true,
-                move |bench, yes, _, _| {
-                    if yes {
-                        close(bench);
-                    }
-                },
-                cx,
+        if kind == PaneKind::Agent {
+            let title = format!(
+                "Close {}?",
+                self.saved_title(&target)
+                    .unwrap_or_else(|| "the agent".to_owned())
             );
+            return self.ask_to_stop(vec![target], title, cx, move |bench, workers| {
+                close(bench);
+                if !workers.is_empty() {
+                    bench.call("closeAgents", json!({ "agentIds": workers }));
+                }
+            });
         }
         if kind == PaneKind::Files
             && self

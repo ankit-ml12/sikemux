@@ -16,6 +16,7 @@ mod board_panels;
 mod boot;
 mod buddy_picker;
 mod chat;
+mod closing;
 pub mod codehost;
 mod command_popup;
 mod commands;

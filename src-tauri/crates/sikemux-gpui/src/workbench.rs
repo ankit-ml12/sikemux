@@ -333,7 +333,15 @@ pub struct RailWidth {
     pub initial: f32,
 }
 
-type Confirmed = Rc<dyn Fn(&mut Workbench, bool, &mut Window, &mut Context<Workbench>)>;
+type Confirmed = Rc<dyn Fn(&mut Workbench, Choice, &mut Window, &mut Context<Workbench>)>;
+
+/// How the person answered a confirm: its main button, its second one, or Cancel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    Yes,
+    Other,
+    No,
+}
 type Typed = Rc<dyn Fn(&mut Workbench, String, &mut Window, &mut Context<Workbench>)>;
 
 /// A question the shell puts to the person over the window, and what its answer does.
@@ -342,6 +350,7 @@ enum Asking {
         title: SharedString,
         body: SharedString,
         yes: SharedString,
+        other: Option<SharedString>,
         destructive: bool,
         then: Confirmed,
     },
@@ -2485,10 +2494,34 @@ impl Workbench {
         then: impl Fn(&mut Workbench, bool, &mut Window, &mut Context<Workbench>) + 'static,
         cx: &mut Context<Self>,
     ) {
+        self.confirm_or(
+            title,
+            body,
+            yes,
+            None,
+            destructive,
+            move |bench, choice, window, cx| then(bench, choice == Choice::Yes, window, cx),
+            cx,
+        );
+    }
+
+    /// Asks as [`Self::confirm`] does, with a second way to go ahead named `other`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn confirm_or(
+        &mut self,
+        title: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        yes: impl Into<SharedString>,
+        other: Option<SharedString>,
+        destructive: bool,
+        then: impl Fn(&mut Workbench, Choice, &mut Window, &mut Context<Workbench>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         self.asking = Some(Asking::Confirm {
             title: title.into(),
             body: body.into(),
             yes: yes.into(),
+            other,
             destructive,
             then: Rc::new(then),
         });
@@ -2540,12 +2573,12 @@ impl Workbench {
     /// The question being asked, as a dialog, making a prompt's field the first time.
     fn asked(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let bench = cx.entity();
-        let answered = move |yes: bool| {
+        let answered = move |choice: Choice| {
             let bench = bench.clone();
             move |window: &mut Window, cx: &mut App| {
                 bench.update(cx, |bench, cx| {
                     if let Some(Asking::Confirm { then, .. }) = bench.take_asking(cx) {
-                        then(bench, yes, window, cx);
+                        then(bench, choice, window, cx);
                     }
                     cx.notify();
                 })
@@ -2585,13 +2618,17 @@ impl Workbench {
                 title,
                 body,
                 yes,
+                other,
                 destructive,
                 ..
             } => crate::ui::Confirm::new(title.clone(), body.clone(), yes.clone())
                 .marked()
                 .destructive(*destructive)
-                .on_yes(answered(true))
-                .on_no(answered(false))
+                .on_yes(answered(Choice::Yes))
+                .on_no(answered(Choice::No))
+                .when_some(other.clone(), |confirm, other| {
+                    confirm.other(other, answered(Choice::Other))
+                })
                 .into_any_element(),
             Asking::Prompt {
                 title,

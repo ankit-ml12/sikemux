@@ -922,9 +922,7 @@ fn agent_row(
         .child(ui::close_button(
             SharedString::from(format!("close-{}", agent.id)),
             format!("Close {}", agent.title),
-            cx.listener(move |bench, _, _, _| {
-                bench.call("closeAgents", serde_json::json!({ "agentIds": [close] }))
-            }),
+            cx.listener(move |bench, _, _, cx| bench.close_agents(vec![close.clone()], cx)),
             cx,
         ));
     div()

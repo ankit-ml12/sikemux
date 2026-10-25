@@ -302,6 +302,7 @@ pub struct Confirm {
     marked: bool,
     on_yes: Answer,
     on_no: Answer,
+    other: Option<(SharedString, Answer)>,
 }
 
 impl Confirm {
@@ -318,11 +319,22 @@ impl Confirm {
             marked: false,
             on_yes: Rc::new(|_, _| {}),
             on_no: Rc::new(|_, _| {}),
+            other: None,
         }
     }
 
     pub fn destructive(mut self, destructive: bool) -> Self {
         self.destructive = destructive;
+        self
+    }
+
+    /// A second way to go ahead, between Cancel and `yes`.
+    pub fn other(
+        mut self,
+        label: impl Into<SharedString>,
+        answer: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.other = Some((label.into(), Rc::new(answer)));
         self
     }
 
@@ -350,6 +362,9 @@ impl RenderOnce for Confirm {
         let fill = if self.destructive { t.danger } else { t.accent };
         let held = hold_focus(window, cx);
         let (on_yes, on_no) = (held.back(self.on_yes), held.back(self.on_no));
+        let other = self
+            .other
+            .map(|(label, answer)| button("confirm-other", label, None, held.back(answer), cx));
         if self.marked {
             let lines = self.body.split('\n').filter(|line| !line.trim().is_empty());
             let body = marked_body()
@@ -364,6 +379,7 @@ impl RenderOnce for Confirm {
                     on_no.clone(),
                     cx,
                 ))
+                .children(other)
                 .child(button(
                     "confirm-yes",
                     self.yes,
@@ -390,6 +406,7 @@ impl RenderOnce for Confirm {
                 on_no.clone(),
                 cx,
             ))
+            .children(other)
             .child(button(
                 "confirm-yes",
                 self.yes,

@@ -969,7 +969,9 @@ fn strip_tab(
             }))
             .on_close(cx.listener({
                 let strip = strip.clone();
-                move |bench, _, _, _| bench.close_tab(&strip, &tab_id)
+                move |bench, _, _, cx| {
+                    bench.close_tabs_asking(strip.clone(), vec![tab_id.clone()], cx)
+                }
             }));
     }
     let view = first_view(&tab.pane);
@@ -1193,7 +1195,9 @@ impl TabMenu {
         }
         let close = {
             let (strip, tab) = (strip.clone(), tab.clone());
-            on_bench(&self.bench, move |bench, _| bench.close_tab(&strip, &tab))
+            on_bench(&self.bench, move |bench, cx| {
+                bench.close_tabs_asking(strip.clone(), vec![tab.clone()], cx)
+            })
         };
         let others = self.others.clone();
         popup = popup
@@ -1207,8 +1211,8 @@ impl TabMenu {
                 PopupMenuItem::new("Close Others")
                     .icon(Icon::Close)
                     .disabled(others.is_empty())
-                    .on_click(on_bench(&self.bench, move |bench, _| {
-                        bench.close_tabs(&strip, &others)
+                    .on_click(on_bench(&self.bench, move |bench, cx| {
+                        bench.close_tabs_asking(strip.clone(), others.clone(), cx)
                     })),
             );
         popup
@@ -1237,8 +1241,8 @@ impl TabMenu {
             PopupMenuItem::new(label)
                 .icon(Icon::Close)
                 .disabled(!always && tabs.is_empty())
-                .on_click(on_bench(&self.bench, move |bench, _| {
-                    bench.close_tabs(&strip, &tabs)
+                .on_click(on_bench(&self.bench, move |bench, cx| {
+                    bench.close_tabs_asking(strip.clone(), tabs.clone(), cx)
                 }))
         };
         let mut popup = popup
