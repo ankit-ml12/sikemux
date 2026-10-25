@@ -1270,6 +1270,13 @@ impl Workbench {
                             }
                             cx.notify();
                         }
+                        if let Some(composing) = bench
+                            .chats
+                            .get_mut(&agent)
+                            .and_then(|chat| chat.composer.as_mut())
+                        {
+                            composing.drop_untagged(window, cx);
+                        }
                         bench.offer(&agent, cx);
                         bench.typed_draft(&agent, cx);
                     }

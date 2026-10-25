@@ -159,6 +159,21 @@ impl Composing {
         });
     }
 
+    /// Takes off the pictures whose tag the person deleted from the draft.
+    pub fn drop_untagged(&mut self, window: &mut Window, cx: &mut App) {
+        loop {
+            let draft = self.draft.read(cx);
+            let untagged = self.attachments.iter().position(|path| {
+                let id = format!("{IMAGE}{}", path.to_string_lossy());
+                is_image(path) && !draft.tokens().iter().any(|span| *span.token().id() == id)
+            });
+            let Some(index) = untagged else {
+                return;
+            };
+            self.detach(index, window, cx);
+        }
+    }
+
     /// Takes attachment `index` off the message with its tags, and counts the later pictures
     /// down so their tags still name them.
     fn detach(&mut self, index: usize, window: &mut Window, cx: &mut App) {
