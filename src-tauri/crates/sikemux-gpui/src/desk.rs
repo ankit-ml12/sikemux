@@ -1875,7 +1875,10 @@ fn kinds(
             0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, _, _, kind, _, _)| cfg!(target_os = "macos") || *kind != DeskKind::Simulator)
+    {
         let named = match count {
             0 => label.to_owned(),
             count => format!("{label} · {count}"),

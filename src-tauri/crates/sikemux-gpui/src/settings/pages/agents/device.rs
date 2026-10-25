@@ -336,16 +336,30 @@ pub fn render(
         ))
         .children(simulator_rows(fields, cx));
 
-    vec![
-        rows::section("Voice", None, None, lit("Voice"), voice, cx),
-        rows::section(
+    let here = |section: &str| crate::settings::index::here(crate::settings::Page::Agents, section);
+    let mut sections = Vec::new();
+    if here("Voice") {
+        sections.push(rows::section("Voice", None, None, lit("Voice"), voice, cx));
+    }
+    if here("Notch") {
+        sections.push(rows::section(
             "Notch",
             None,
             Some("The island over the MacBook notch shows the agents running, what they need from you, and starts new ones.".into()),
             lit("Notch"),
             island,
             cx,
-        ),
-        rows::section("iOS Simulator", None, None, lit("iOS Simulator"), simulator, cx),
-    ]
+        ));
+    }
+    if here("iOS Simulator") {
+        sections.push(rows::section(
+            "iOS Simulator",
+            None,
+            None,
+            lit("iOS Simulator"),
+            simulator,
+            cx,
+        ));
+    }
+    sections
 }

@@ -796,7 +796,7 @@ pub fn render(
         rows::section("Interface", None, None, lit("Interface"), interface, cx),
         rows::section("Buddies", None, None, lit("Buddies"), buddies, cx),
     ];
-    if cfg!(target_os = "macos") {
+    if crate::settings::index::here(crate::settings::Page::Appearance, "Window") {
         sections.push(rows::section(
             "Window",
             None,

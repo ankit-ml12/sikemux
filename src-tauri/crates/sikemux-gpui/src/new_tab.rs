@@ -94,6 +94,7 @@ impl Workbench {
         let rows = CHOICES
             .iter()
             .filter(|choice| cx.build_action(choice.command, None).is_ok())
+            .filter(|choice| cfg!(target_os = "macos") || choice.command != "simulator.new")
             .map(|choice| {
                 let shut = choice.in_project && !in_project;
                 Row::new(choice.command, choice.label)
