@@ -163,6 +163,9 @@ pub(crate) struct Replay {
     history: Option<History>,
     next_index: u64,
     in_turn: bool,
+    /// A prompt the agent was sent has had no turn end since.
+    #[serde(default)]
+    awaiting: bool,
     /// The attempt an agent is retrying a failed request on, 0 when unsaid.
     reconnecting: Option<u32>,
     last_from_user: bool,
@@ -514,6 +517,7 @@ impl Replay {
             history,
             next_index: 0,
             in_turn: false,
+            awaiting: false,
             reconnecting: None,
             last_from_user: false,
             since_point: 0,
@@ -551,7 +555,11 @@ impl Replay {
         }
         match kind {
             ChatEventKind::TurnStarted => self.in_turn = true,
-            ChatEventKind::TurnCompleted | ChatEventKind::Error => self.in_turn = false,
+            ChatEventKind::Prompt => self.awaiting = true,
+            ChatEventKind::TurnCompleted | ChatEventKind::Error => {
+                self.in_turn = false;
+                self.awaiting = false;
+            }
             _ => {}
         }
         self.last_from_user = kind == ChatEventKind::Prompt
@@ -740,13 +748,16 @@ impl Replay {
             self.work.note(payload);
             self.note_retry(payload);
         }
+        let ends_turn = matches!(kind, ChatEventKind::TurnCompleted | ChatEventKind::Error);
         match kind {
             ChatEventKind::TurnStarted => {
                 self.in_turn = true;
                 self.reconnecting = None;
             }
-            ChatEventKind::TurnCompleted | ChatEventKind::Error => {
+            ChatEventKind::Prompt => self.awaiting = true,
+            _ if ends_turn => {
                 self.in_turn = false;
+                self.awaiting = false;
                 self.reconnecting = None;
             }
             _ => {}
@@ -762,6 +773,11 @@ impl Replay {
             on_disk: false,
         });
         self.bytes += bytes;
+        // A turn's end goes to disk at once, so a core that dies right after does not take
+        // the turn for cut short and send its prompt again.
+        if ends_turn {
+            self.settle();
+        }
         self.trim();
         index
     }
@@ -2146,6 +2162,12 @@ impl Feed {
     /// Whether the last turn it holds has not ended.
     pub(crate) fn in_turn(&self) -> bool {
         self.inner.locked().replay.in_turn
+    }
+
+    /// Whether every prompt the agent was sent has had its turn end, and no turn is open.
+    pub(crate) fn settled(&self) -> bool {
+        let inner = self.inner.locked();
+        !inner.replay.in_turn && !inner.replay.awaiting
     }
 
     pub(crate) fn reconnecting(&self) -> Option<u32> {

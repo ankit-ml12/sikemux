@@ -1930,10 +1930,13 @@ fn carry_on(
     mut launch_spec: ChatLaunch,
     kept: &KeptChat,
 ) {
+    // The kept record is written after the feed, so it may still say a turn is at work
+    // whose end the feed has on disk.
+    let working = kept.working && !chat.feed.settled();
     chat.feed.agent_gone();
     chat.end_cut_turn();
     let resumes = kept.reloadable && launch_spec.resume_id.is_some();
-    let (replay, notice) = match (kept.working, resumes) {
+    let (replay, notice) = match (working, resumes) {
         (true, true) => (
             Some(carry_on_prompt("Sikemux restarted while you were working")),
             Some(restart_notice(
