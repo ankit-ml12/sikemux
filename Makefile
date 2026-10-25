@@ -10,7 +10,7 @@ dev: export BITBUCKET_OAUTH_SECRET ?= $(shell sed -n 's/^BITBUCKET_OAUTH_SECRET=
 dev: export JIRA_OAUTH_SECRET ?= $(shell sed -n 's/^JIRA_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: export VERCEL_OAUTH_SECRET ?= $(shell sed -n 's/^VERCEL_OAUTH_SECRET=//p' .env 2>/dev/null)
 dev: icons
-	@node scripts/prune-target.mjs --throttled >/dev/null 2>&1 &
+	@node scripts/prune-target.mjs --throttled >/dev/null 2>&1
 	node scripts/dev-gpui.mjs
 
 # Stops the dev build's core, the terminals and agents it runs, and its notch.
