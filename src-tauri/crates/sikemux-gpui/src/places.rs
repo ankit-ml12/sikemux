@@ -4,7 +4,7 @@
 
 use gpui_kit::{App, Context, Window};
 use serde_json::json;
-use sikemux_wire::protocol::{AgentStatus, Pane, PaneKind};
+use sikemux_wire::protocol::{AgentStatus, Pane, PaneKind, ProjectInfo};
 
 use crate::tabs;
 use crate::workbench::{RailPage, Strip, Workbench};
@@ -84,9 +84,16 @@ impl Workbench {
                 .find(|project| project.id == *id)
                 .cloned(),
         };
-        let Some(project) = project.filter(|_| self.projects().len() > 1) else {
+        if let Some(project) = project {
+            self.close_project(project, cx);
+        }
+    }
+
+    /// Stops offering a project, asking first when agents are at work in it or files are unsaved.
+    pub fn close_project(&mut self, project: ProjectInfo, cx: &mut Context<Self>) {
+        if self.projects().len() < 2 {
             return;
-        };
+        }
         let working = self
             .agents_of(&project.id)
             .iter()

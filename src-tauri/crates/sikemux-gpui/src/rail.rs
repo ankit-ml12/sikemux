@@ -607,8 +607,28 @@ fn project_tree(
     let id = project.id.clone();
     let menu = project_menu(bench, project, cx);
     let name = project.name.clone();
+    let closable = bench.projects().len() > 1;
+    let close = closable.then(|| {
+        let project = project.clone();
+        div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .right(px(4.))
+            .flex()
+            .items_center()
+            .opacity(0.)
+            .group_hover(PROJECT_ROW, |close| close.opacity(1.))
+            .child(ui::close_button(
+                SharedString::from(format!("close-project-{}", project.id)),
+                format!("Close {}", project.name),
+                cx.listener(move |bench, _, _, cx| bench.close_project(project.clone(), cx)),
+                cx,
+            ))
+    });
     let row = div()
         .id(SharedString::from(format!("project-menu-{}", project.id)))
+        .group(PROJECT_ROW)
         .relative()
         .children(ui::spot(|| format!("project-row-{name}")))
         .context_menu(menu)
@@ -622,6 +642,7 @@ fn project_tree(
             .bold(active)
             .chosen(active)
             .padding_right(4.)
+            .when(closable, |row| row.hover_padding(PROJECT_ROW, 28.))
             .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
             .child(faces(&agents, cx))
             .into_any_element(),
@@ -631,7 +652,8 @@ fn project_tree(
             },
             &cx.entity(),
             cx,
-        ));
+        ))
+        .children(close);
     div().flex().flex_col().child(row).when(active, |tree| {
         tree.pb(px(4.)).child(surfaces(
             project,
@@ -644,6 +666,9 @@ fn project_tree(
         ))
     })
 }
+
+/// The hover group of a project's row, whose × shows on hover.
+const PROJECT_ROW: &str = "project-row";
 
 /// What right-clicking a project offers: its settings, and the space the rail lists it under.
 fn project_menu(
