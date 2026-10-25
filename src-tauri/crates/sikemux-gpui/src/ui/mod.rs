@@ -22,7 +22,7 @@ pub use dock::{DockMenu, DockRow, DockScope};
 pub use find_bar::FindBar;
 pub use floats::{float, menu, menu_button, tooltip, MenuRow};
 pub use lists::{close_button, Group, Row, Tab, ROW};
-pub use pane::{pane, PaneHeader, AGENT_INSET};
+pub use pane::{pane, PaneHeader, AGENT_INSET, HEADER_REACH};
 pub use select::{select, Pick};
 pub use state_mark::status_mark;
 

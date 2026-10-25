@@ -13,6 +13,11 @@ use crate::theme::{Tokens, RADIUS_3};
 /// How far an agent pane's contents sit inside its frame, as on the Mac.
 pub const AGENT_INSET: f32 = 6.;
 
+const PILL_HEIGHT: f32 = 32.;
+const HEADER_GAP: f32 = 2.;
+/// How far an agent pane's header reaches down over its contents, which scroll under it.
+pub const HEADER_REACH: f32 = HEADER_GAP + PILL_HEIGHT;
+
 /// A pane's frame. Panes paint no ground of their own: the shell's shows through.
 pub fn pane(cx: &App) -> Div {
     div()
@@ -29,7 +34,7 @@ pub fn pane(cx: &App) -> Div {
 pub fn pill(cx: &App) -> Div {
     let t = Tokens::get(cx);
     div()
-        .h(px(32.))
+        .h(px(PILL_HEIGHT))
         .flex()
         .items_center()
         .border_1()
@@ -117,7 +122,7 @@ impl RenderOnce for PaneHeader {
         let primary = Tokens::get(cx).text_primary;
         div()
             .absolute()
-            .top(px(AGENT_INSET + 2.))
+            .top(px(AGENT_INSET + HEADER_GAP))
             .left(px(AGENT_INSET + 6.))
             .right(px(AGENT_INSET + 4.))
             .flex()

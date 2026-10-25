@@ -1754,11 +1754,12 @@ pub fn pane(
         .flex_1()
         .min_h_0()
         .relative()
-        .child(
+        .child(gpui_native_view::below(
+            px(ui::HEADER_REACH),
             chat.transcript
                 .clone()
                 .cached(StyleRefinement::default().size_full()),
-        )
+        ))
         .children(scrollbar)
         .children(chat.finding.as_ref().map(|finding| {
             let transcript = chat.transcript.read(cx);
