@@ -481,7 +481,7 @@ impl Palette {
 }
 
 /// The lines of a palette whose groups are parted by hairlines: each group in its order,
-/// narrowed to what `query` finds in it and best first, a rule between groups that show.
+/// narrowed to what `query` finds in it and kept in its order, a rule between groups that show.
 fn ruled(rows: &[Row], query: &str) -> Vec<Line> {
     let mut lines = Vec::with_capacity(rows.len() + 2);
     let mut start = 0;
@@ -494,14 +494,16 @@ fn ruled(rows: &[Row], query: &str) -> Vec<Line> {
         let found: Vec<usize> = if query.is_empty() {
             (start..end).collect()
         } else {
-            crate::fuzzy::rank(
+            let mut found: Vec<usize> = crate::fuzzy::rank(
                 query,
                 rows[start..end].iter().map(|row| row.search.as_str()),
                 SHOWN,
             )
             .into_iter()
             .map(|place| start + place)
-            .collect()
+            .collect();
+            found.sort_unstable();
+            found
         };
         if !found.is_empty() && !lines.is_empty() {
             lines.push(Line::Rule);

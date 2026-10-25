@@ -165,7 +165,7 @@ impl Workbench {
         }
         rows.extend(sign_ins);
         let unarmed = |provider: &str| kind_of(provider).is_none_or(|kind| kind["bypass"] != true);
-        let mut pinned_open = Vec::new();
+        let mut taken_up = Vec::new();
         for agent in self.agents_of(project) {
             let handle = agent.name.as_ref().map(|name| format!("@{name}"));
             let pinned = self.chat_of(&agent.id).is_some_and(|chat| chat.pinned);
@@ -177,31 +177,29 @@ impl Workbench {
                 .group(RESUME)
                 .also(handle.as_deref().unwrap_or_default())
                 .also(&agent.provider);
-            match pinned {
-                true => pinned_open.push(row),
-                false => rows.push(row),
-            }
+            taken_up.push((pinned, agent.active_at, row));
         }
-        rows.extend(pinned_open);
         let saved = self
             .saved_chats(project)
             .into_iter()
             .filter(|recent| recent.agent_id.is_none());
-        let (pinned, rest): (Vec<_>, Vec<_>) = saved.partition(|recent| recent.pinned);
-        for chat in pinned.into_iter().chain(rest) {
-            rows.push(
-                Row::new(format!("{RESUME}{}", chat.id), chat.title.clone())
-                    .meta(if chat.active_at == 0 {
-                        String::new()
-                    } else {
-                        crate::agents::age(chat.active_at)
-                    })
-                    .unarmed(unarmed(&chat.provider))
-                    .mark(Mark::Agent(chat.provider.clone()))
-                    .group(RESUME)
-                    .also(&chat.provider),
-            );
+        for chat in saved {
+            let row = Row::new(format!("{RESUME}{}", chat.id), chat.title.clone())
+                .meta(if chat.active_at == 0 {
+                    String::new()
+                } else {
+                    crate::agents::age(chat.active_at)
+                })
+                .unarmed(unarmed(&chat.provider))
+                .mark(Mark::Agent(chat.provider.clone()))
+                .group(RESUME)
+                .also(&chat.provider);
+            taken_up.push((chat.pinned, chat.active_at, row));
         }
+        taken_up.sort_by_key(|(pinned, active_at, _)| {
+            (std::cmp::Reverse(*pinned), std::cmp::Reverse(*active_at))
+        });
+        rows.extend(taken_up.into_iter().map(|(_, _, row)| row));
         rows
     }
 }
