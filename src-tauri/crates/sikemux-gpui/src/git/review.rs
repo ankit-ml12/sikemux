@@ -434,9 +434,9 @@ pub fn review(pane: &mut GitPane, window: &mut Window, cx: &mut Context<GitPane>
     let view = cx.entity();
     let rows = list(pane.review.list(), move |index, _, cx| {
         let cx = &*cx;
-        let review = &view.read(cx).review;
-        match review.items.get(index).copied() {
-            Some(item) => draw(&view, review, item, advance, cx),
+        let pane = view.read(cx);
+        match pane.review.items.get(index).copied() {
+            Some(item) => draw(&view, pane, item, advance, cx),
             None => div().into_any_element(),
         }
     })
@@ -468,18 +468,19 @@ fn pinned_header(pane: &GitPane, view: &Entity<GitPane>, cx: &App) -> Option<Any
             .top_0()
             .left_0()
             .right_0()
-            .child(header(view, review, item.card(), cx))
+            .child(header(view, pane, item.card(), cx))
             .into_any_element(),
     )
 }
 
 fn draw(
     view: &Entity<GitPane>,
-    review: &Review,
+    pane: &GitPane,
     item: Item,
     advance: Pixels,
     cx: &App,
 ) -> AnyElement {
+    let review = &pane.review;
     let t = Tokens::get(cx).clone();
     let body = |inner: Div| {
         div().pr(CARD_GAP).child(
@@ -491,7 +492,7 @@ fn draw(
         )
     };
     match item {
-        Item::Header(card) => header(view, review, card, cx),
+        Item::Header(card) => header(view, pane, card, cx),
         Item::End(_) => div()
             .pr(CARD_GAP)
             .pb(CARD_GAP)
@@ -599,7 +600,10 @@ fn draw(
     }
 }
 
-fn header(view: &Entity<GitPane>, review: &Review, card: usize, cx: &App) -> AnyElement {
+/// Takes the pane rather than reading `view`, since the pinned header draws inside the
+/// pane's own render, where reading it panics.
+fn header(view: &Entity<GitPane>, pane: &GitPane, card: usize, cx: &App) -> AnyElement {
+    let review = &pane.review;
     let t = Tokens::get(cx).clone();
     let path = &review.cards[card].path;
     let file = review.cards[card].file.as_ref();
@@ -686,7 +690,7 @@ fn header(view: &Entity<GitPane>, review: &Review, card: usize, cx: &App) -> Any
                         .child(div().text_color(t.text_primary).child(base)),
                 )
                 .child(div().flex_1())
-                .when(view.read(cx).hovered.as_ref() == Some(&key), |head| {
+                .when(pane.hovered.as_ref() == Some(&key), |head| {
                     head.child(
                         div().flex().gap(px(2.)).pr(px(4.)).children(
                             file.map(|file| super::pane::file_actions(view, file, None, cx))
