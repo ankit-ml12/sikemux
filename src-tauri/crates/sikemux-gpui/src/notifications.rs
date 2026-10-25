@@ -80,14 +80,16 @@ fn follow_clicks(cx: &mut Context<Workbench>) {
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
 mod macos {
+    use std::cell::OnceCell;
     use std::sync::Once;
 
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
     use objc2::{define_class, msg_send, ClassType, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::NSSound;
     use objc2_foundation::{
-        ns_string, NSDictionary, NSObject, NSString, NSUserNotification, NSUserNotificationCenter,
-        NSUserNotificationCenterDelegate,
+        ns_string, NSData, NSDictionary, NSObject, NSString, NSUserNotification,
+        NSUserNotificationCenter, NSUserNotificationCenterDelegate,
     };
 
     define_class!(
@@ -177,7 +179,56 @@ mod macos {
             unsafe { notification.setUserInfo(Some(&info)) };
         }
         center.deliverNotification(&notification);
+        chime(mtm);
     }
+
+    /// A short, soft tone, so a notice is heard whatever macOS's sound settings say.
+    fn chime(mtm: MainThreadMarker) {
+        thread_local! {
+            static TONE: OnceCell<Option<Retained<NSSound>>> = const { OnceCell::new() };
+        }
+        TONE.with(|tone| {
+            let tone = tone.get_or_init(|| {
+                NSSound::initWithData(mtm.alloc::<NSSound>(), &NSData::from_vec(super::tone()))
+            });
+            if let Some(tone) = tone {
+                tone.stop();
+                tone.play();
+            }
+        });
+    }
+}
+
+/// The old app's notice tone as a WAV: 880 Hz for 0.16 s, rising in 10 ms and fading by 150 ms.
+#[cfg(target_os = "macos")]
+fn tone() -> Vec<u8> {
+    const RATE: u32 = 44_100;
+    let samples = RATE * 16 / 100;
+    let level = |at: f32| match at {
+        at if at < 0.01 => 0.0001 * (0.2f32 / 0.0001).powf(at / 0.01),
+        at if at < 0.15 => 0.2 * (0.0001f32 / 0.2).powf((at - 0.01) / 0.14),
+        _ => 0.0,
+    };
+    let bytes = samples * 2;
+    let mut wav = Vec::with_capacity(44 + bytes as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + bytes).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&RATE.to_le_bytes());
+    wav.extend_from_slice(&(RATE * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&bytes.to_le_bytes());
+    for sample in 0..samples {
+        let at = sample as f32 / RATE as f32;
+        let value = (at * 880.0 * std::f32::consts::TAU).sin() * level(at);
+        wav.extend_from_slice(&((value * f32::from(i16::MAX)) as i16).to_le_bytes());
+    }
+    wav
 }
 
 /// Posts what the core said about an agent, while the person is away from Sikemux and
