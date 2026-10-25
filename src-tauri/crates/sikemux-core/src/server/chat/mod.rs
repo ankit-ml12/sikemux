@@ -977,6 +977,7 @@ impl Chat {
             launch: self.relaunch(&self.current_launch())?,
             origin: self.origin.clone(),
             notice: None,
+            unstarted: false,
         })
     }
 
@@ -987,13 +988,15 @@ impl Chat {
             launch: self.current_launch(),
             origin: self.origin.clone(),
             notice: None,
+            unstarted: self.unstarted(),
         })
     }
 
     /// Whether the chat can let go of its agent now. One that cannot, still
-    /// starting or in the middle of a request, holds an update up.
+    /// starting or in the middle of a request, holds an update up. One whose
+    /// agent never started has nothing to lose and waits again after it.
     fn handable(&self) -> bool {
-        self.is_ready() && self.at_rest.load(Ordering::Acquire)
+        self.unstarted() || (self.is_ready() && self.at_rest.load(Ordering::Acquire))
     }
 
     fn flags(&self) -> Flags {
@@ -1012,6 +1015,10 @@ impl Chat {
     /// it cannot.
     async fn hand_over(self: Arc<Self>) -> HandOver {
         let record = self.restart_record();
+        if record.unstarted {
+            Chats::halt(&self);
+            return HandOver::Resume(Box::new(record));
+        }
         let why = if self.handable() {
             match self.release().await {
                 Ok(handed) => return HandOver::Live(Box::new(handed)),
@@ -1165,6 +1172,9 @@ pub(crate) struct ChatRecord {
     /// Why the chat was started again rather than carried over, said in it
     /// once it is back.
     pub notice: Option<String>,
+    /// Its agent never started, so it waits for the person again.
+    #[serde(default)]
+    pub unstarted: bool,
 }
 
 #[derive(Default)]
@@ -1778,6 +1788,10 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
     let notice = record.notice.as_deref().map(update_notice);
     match core.chats.insert(core, record.launch, record.origin, None) {
         Ok((chat, queue)) => {
+            if record.unstarted {
+                chat.feed.wait_for_person();
+                chat.unstarted.store(true, Ordering::Release);
+            }
             chat.keep(kept::Progress::STARTING);
             launch(
                 core,
@@ -1788,6 +1802,10 @@ pub(crate) fn resume(core: &Arc<Core>, record: ChatRecord) {
                     notice,
                 },
             );
+            if chat.unstarted() {
+                native::show_saved(&chat);
+                offer_options(core, &chat);
+            }
         }
         Err(error) => {
             eprintln!("sikemux core: chat {agent_id} was not resumed after the update: {error}")
