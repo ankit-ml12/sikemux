@@ -32,7 +32,7 @@ sudo dnf install ./Sikemux-<version>-1.x86_64.rpm   # Fedora
 chmod +x Sikemux_<version>_amd64.AppImage           # any other distribution
 ```
 
-The Linux build does not update itself yet, so install each new release the same way.
+The AppImage keeps itself up to date. The `.deb` and `.rpm` are updated by the installer: when a new release is out, **Settings → About** shows the line to run.
 
 On a Linux server with no screen, the same line offers to install just the core, for x86_64 or arm64, and sign it in to your account. To skip the question:
 

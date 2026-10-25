@@ -133,25 +133,47 @@ struct Asset {
     url: String,
 }
 
-/// The app bundle this core was started from, when it is a published release
-/// that can replace itself. A build made anywhere else, such as a local build,
-/// never updates, so a release can never take its place.
-fn own_bundle() -> Option<PathBuf> {
-    if !crate::usage::Install::App.published() || !cfg!(target_os = "macos") {
+/// The app an update replaces.
+#[derive(Clone)]
+enum OwnApp {
+    /// The macOS app bundle this core was started from.
+    Bundle(PathBuf),
+    /// The AppImage file the Linux app runs from.
+    AppImage(PathBuf),
+}
+
+/// The app this core runs inside, when it is a published release that can
+/// replace itself. A build made anywhere else, such as a local build, never
+/// updates, so a release can never take its place.
+fn own_app() -> Option<OwnApp> {
+    if !crate::usage::Install::App.published() {
         return None;
     }
-    let core = std::env::current_exe().ok()?;
-    sikemux_process::paths::app_bundle_of_core(&core).map(Path::to_path_buf)
+    if cfg!(target_os = "macos") {
+        let core = std::env::current_exe().ok()?;
+        return sikemux_process::paths::app_bundle_of_core(&core)
+            .map(|bundle| OwnApp::Bundle(bundle.to_path_buf()));
+    }
+    // The AppImage runtime names the file it runs from, and the app's core inherits it.
+    std::env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .filter(|file| cfg!(target_os = "linux") && file.is_file())
+        .map(OwnApp::AppImage)
 }
 
 fn platform() -> String {
-    format!("darwin-{}", std::env::consts::ARCH)
+    let system = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    format!("{system}-{}", std::env::consts::ARCH)
 }
 
-/// A published Linux app is a package the installer put in place, and the
-/// installer updates it.
+/// A published Linux app that is a deb or an rpm was put in place by the
+/// installer, which updates it.
 fn installer_command(channel: UpdateChannel) -> Option<String> {
-    if !cfg!(target_os = "linux") || !crate::usage::Install::App.published() {
+    if !cfg!(target_os = "linux") || !crate::usage::Install::App.published() || own_app().is_some()
+    {
         return None;
     }
     let channel = match channel {
@@ -204,7 +226,7 @@ impl Updates {
 pub(crate) async fn serve(core: Arc<Core>) {
     let by_installer = installer_command(core.preferences.get().update_channel);
     core.updates.edit(&core, |held| {
-        held.status.updates = own_bundle().is_some();
+        held.status.updates = own_app().is_some();
         held.status.current = core.build.version.clone();
         held.status.install_command = by_installer.clone();
     });
@@ -339,8 +361,7 @@ pub(crate) fn install(core: &Arc<Core>, params: InstallParams) -> CoreResult<Upd
     ) {
         return Ok(status);
     }
-    let bundle =
-        own_bundle().ok_or_else(|| CoreError::from("this build does not update itself"))?;
+    let app = own_app().ok_or_else(|| CoreError::from("this build does not update itself"))?;
     let (found, installed) = {
         let held = core.updates.held.locked();
         (held.found.clone(), held.installed)
@@ -360,7 +381,7 @@ pub(crate) fn install(core: &Arc<Core>, params: InstallParams) -> CoreResult<Upd
     let status = core.updates.status();
     let core = core.clone();
     tokio::spawn(async move {
-        if let Err(error) = put_in_place(&core, &bundle, &found, installed).await {
+        if let Err(error) = put_in_place(&core, &app, &found, installed).await {
             core.updates.edit(&core, |held| {
                 held.status.state = UpdateState::Failed;
                 held.status.error = Some(error);
@@ -385,7 +406,7 @@ pub(crate) fn cancel(core: &Core) -> UpdateStatus {
 
 async fn put_in_place(
     core: &Core,
-    bundle: &Path,
+    app: &OwnApp,
     found: &Found,
     installed: bool,
 ) -> Result<(), String> {
@@ -393,8 +414,13 @@ async fn put_in_place(
         return Ok(());
     }
     let key = release_key()?;
-    let archive =
-        std::env::temp_dir().join(format!("sikemux-update-{}.tar.gz", std::process::id()));
+    let archive = match app {
+        OwnApp::Bundle(_) => {
+            std::env::temp_dir().join(format!("sikemux-update-{}.tar.gz", std::process::id()))
+        }
+        // Beside the AppImage, so putting it in place is one rename on the same disk.
+        OwnApp::AppImage(file) => beside(file, "update")?,
+    };
     let mut last = Instant::now();
     let fetched = fetch_verified(
         &found.url,
@@ -418,8 +444,15 @@ async fn put_in_place(
     }
     core.updates
         .edit(core, |held| held.status.state = UpdateState::Installing);
-    let (bundle, unpack) = (bundle.to_path_buf(), archive.clone());
-    let swapped = blocking(move || swap(&bundle, &unpack).map_err(CoreError::from)).await;
+    let (app, unpack) = (app.clone(), archive.clone());
+    let swapped = blocking(move || {
+        match &app {
+            OwnApp::Bundle(bundle) => swap(bundle, &unpack),
+            OwnApp::AppImage(file) => replace_appimage(file, &unpack),
+        }
+        .map_err(CoreError::from)
+    })
+    .await;
     let _ = std::fs::remove_file(&archive);
     swapped.map_err(|error| error.to_string())?;
     core.updates.edit(core, |held| held.installed = true);
@@ -504,6 +537,22 @@ pub(crate) async fn fetch_verified(
     verifier
         .finalize()
         .map_err(|_| "the download does not match the release's signature".to_owned())
+}
+
+/// `.<name>.<suffix>` in the folder `file` is in.
+fn beside(file: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let name = file.file_name().ok_or("the app has no name")?;
+    Ok(file.with_file_name(format!(".{}.{suffix}", name.to_string_lossy())))
+}
+
+/// Puts the AppImage at `download` in place of `file`. The running app keeps
+/// the copy it mounted until it starts again from the new one.
+fn replace_appimage(file: &Path, download: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let cannot =
+        |error: std::io::Error| format!("Sikemux cannot write to {}: {error}", file.display());
+    std::fs::set_permissions(download, std::fs::Permissions::from_mode(0o755)).map_err(cannot)?;
+    std::fs::rename(download, file).map_err(cannot)
 }
 
 /// Puts the app in `archive` in place of `bundle`, keeping the old one until

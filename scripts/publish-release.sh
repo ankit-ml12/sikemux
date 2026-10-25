@@ -49,17 +49,31 @@ SIM="${SIMS[0]}"
 DEB="${DEBS[0]}"
 RPM="${RPMS[0]}"
 APPIMAGE="${APPIMAGES[0]}"
+APPIMAGE_SIG="$APPIMAGE.sig"
 INSTALLER="$ROOT/scripts/install.sh"
-for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$MANIFEST"; do
+for file in "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "$MANIFEST"; do
   [[ -s "$file" ]] || fail "$file is missing or empty"
 done
 [[ "$(node -p "require('$MANIFEST').version")" == "$VERSION" ]] || fail "$MANIFEST is not for v$VERSION"
-for host in "${HOSTS[@]}"; do
-  node scripts/verify-updater-signature.mjs "$host" "$host.sig" || fail "$host is not signed by the updater key"
+for signed in "${HOSTS[@]}" "$APPIMAGE"; do
+  node scripts/verify-updater-signature.mjs "$signed" "$signed.sig" || fail "$signed is not signed by the updater key"
 done
+# The Linux app updates itself only as an AppImage, so only the AppImage joins the
+# feed the macOS build wrote.
+APPIMAGE_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION/$(basename "$APPIMAGE")" \
+  APPIMAGE_SIG="$APPIMAGE_SIG" MANIFEST="$MANIFEST" python3 - <<'PY'
+import json, os, pathlib
+path = pathlib.Path(os.environ["MANIFEST"])
+manifest = json.loads(path.read_text())
+manifest["platforms"]["linux-x86_64"] = {
+    "signature": pathlib.Path(os.environ["APPIMAGE_SIG"]).read_text().strip(),
+    "url": os.environ["APPIMAGE_URL"],
+}
+path.write_text(json.dumps(manifest, indent=2) + "\n")
+PY
 
-STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$MANIFEST")
-NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER")
+STABLE_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG" "$MANIFEST")
+NIGHTLY_GH_CMD=(gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes "$NOTES" --prerelease "$DMG" "$TAR" "$SIG" "$VOICE" "$SIM" "$DEB" "$RPM" "$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}" "$INSTALLER" "$APPIMAGE_SIG")
 POINTER_NOTES="Update feed for the nightly channel.
 
 The installable build for this feed is [v$VERSION](https://github.com/nodelike/sikemux/releases/tag/v$VERSION).

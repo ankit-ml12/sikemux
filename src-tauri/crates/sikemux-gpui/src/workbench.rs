@@ -912,6 +912,11 @@ impl Workbench {
                 }
                 if now && !already {
                     // The core put the update in place of this app; opening the app again starts it.
+                    // An AppImage runs from a mount that goes with this process, so it starts again
+                    // from its file.
+                    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+                        cx.set_restart_path(appimage.into());
+                    }
                     cx.restart();
                 }
             }

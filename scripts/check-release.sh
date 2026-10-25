@@ -46,6 +46,7 @@ const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.j
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
 const linuxBuild = fs.readFileSync("scripts/build-linux.sh", "utf8");
 const installer = fs.readFileSync("scripts/install.sh", "utf8");
+const signHost = fs.readFileSync("scripts/sign-host.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
 const releaseWorkflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
@@ -79,6 +80,9 @@ if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release work
 if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}"')) fail("releases do not publish the Linux host core and its signatures");
 if (!publish.includes('"${HOST_SIGS[@]}" "$INSTALLER"')) fail("releases do not publish the installer made for their files");
 if (!releaseWorkflow.includes("scripts/sign-host.sh")) fail("the Release workflow does not sign the Linux host core");
+if (!signHost.includes('"${HOSTS[@]}" "$APPIMAGE"')) fail("releases do not sign the AppImage with the updater key");
+if (!publish.includes('"$INSTALLER" "$APPIMAGE_SIG"')) fail("releases do not publish the AppImage's update signature");
+if (!publish.includes('manifest["platforms"]["linux-x86_64"]')) fail("the update feed does not offer the AppImage");
 if (!releaseWorkflow.includes("scripts/smoke-host-install.sh")) fail("the Release workflow does not install the host core with its own installer");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-host"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
