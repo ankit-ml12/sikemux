@@ -2971,6 +2971,7 @@ impl Workbench {
             TabRailPage::Files => RailPage::Files,
         };
         self.all_projects = preferences.tab_rail_scope == TabRailScope::All;
+        self.all_harnesses = preferences.tab_rail_all_agents;
         self.recent_commands = preferences
             .recent_command_keys
             .iter()
@@ -3019,6 +3020,7 @@ impl Workbench {
             ("tabRailWidth", json!(self.tab_rail_width)),
             ("tabRailPage", json!(page)),
             ("tabRailScope", json!(scope)),
+            ("tabRailAllAgents", json!(self.all_harnesses)),
             ("recentCommandKeys", json!(recent)),
         ];
         let kept = self.read("preferences");

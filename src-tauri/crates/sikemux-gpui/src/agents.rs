@@ -349,6 +349,7 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
         if choice.is_some() {
             bench.launcher_choice = choice.clone();
         }
+        bench.keep_rails(cx);
         cx.notify();
     }));
     Popover::new("agent-picker")
