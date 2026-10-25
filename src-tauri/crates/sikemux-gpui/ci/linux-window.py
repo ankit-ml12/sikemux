@@ -70,13 +70,22 @@ def page_drawn(run, name, region=None):
     return bool(desk.until(look, 10)), seen[0]
 
 
+# The height a chat gives an agent's page until the page reports its own (chat/page.rs).
+DEFAULT_ROW = 320.0
+
+
 def shown_in_chat(run):
     said = run.prompt("show " + json.dumps({"path": str(run.root / "site/shown.html"), "title": "Kit shown"}))
     row = lambda: next((frame for name, frame in ((run.state() or {}).get("spots") or {}).items()
                         if name.startswith("chat-page-")), None)
-    drawn, seen = page_drawn(run, "L6", row) if desk.until(row, 15) else (False, "no page row in the chat")
+    # The row keeps the chat's default height until the page has loaded and reported its own.
+    asked = time.time()
+    loaded = desk.until(lambda: (row() or [0, 0, 0, DEFAULT_ROW])[3] != DEFAULT_ROW, 40)
+    waited = f"the page reported its height {time.time() - asked:.1f} s after it was shown" if loaded else \
+        "the page never reported its height"
+    drawn, seen = page_drawn(run, "L6", row) if loaded else (False, "")
     run.say("L6", "PASS" if said.startswith("tool answered") and drawn else "FAIL",
-            f"page_show answered {said[:120]!r}; the chat's page row {row()}; {seen}")
+            f"page_show answered {said[:120]!r}; {waited}; the chat's page row {row()}; {seen}")
 
 
 def page_from_tool(run):
