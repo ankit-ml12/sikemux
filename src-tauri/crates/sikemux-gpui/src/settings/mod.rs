@@ -58,6 +58,7 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("down", ResultDown, search),
         KeyBinding::new("enter", OpenResult, search),
     ]);
+    pages::install(cx);
 }
 
 /// Settings while they are open: the page shown, the search, and what each

@@ -3,6 +3,8 @@
 use gpui_kit::{AnyElement, Context, Entity, Window};
 use serde_json::Value;
 
+pub use appearance::install;
+
 use super::{Page, Settings};
 use crate::workbench::Workbench;
 

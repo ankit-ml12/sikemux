@@ -7,9 +7,9 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, uniform_list, AnyElement, AppContext, Context, Entity, InteractiveElement,
-    IntoElement, ParentElement, PathPromptOptions, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    actions, div, px, uniform_list, AnyElement, App, AppContext, Context, Entity,
+    InteractiveElement, IntoElement, KeyBinding, ParentElement, PathPromptOptions, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 use sikemux_wire::theme::{ThemeSource, ThemeSummary};
@@ -22,6 +22,19 @@ use crate::ui;
 use crate::workbench::Workbench;
 
 pub const SECTIONS: &[&str] = &["Theme", "Interface", "Buddies", "Window"];
+const THEME_SEARCH: &str = "ThemeSearch";
+
+actions!(appearance, [PreviousTheme, NextTheme]);
+
+/// Lets ↑ and ↓ in the theme search wear the theme before or after the one worn.
+pub fn install(cx: &mut App) {
+    let search = Some("ThemeSearch > Input");
+    cx.bind_keys([
+        KeyBinding::new("up", PreviousTheme, search),
+        KeyBinding::new("down", NextTheme, search),
+    ]);
+}
+
 const THEME_ROW: f32 = 30.;
 const THEMES_SHOWN: f32 = 340.;
 
@@ -137,6 +150,38 @@ fn make(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>)
 enum Line {
     Group(&'static str, usize),
     Theme(ThemeSummary),
+}
+
+/// Wears the theme `by` places from the one worn in the list as searched, else its first or last.
+fn step(bench: &Workbench, by: isize) {
+    let Some(fields) = bench
+        .settings
+        .as_ref()
+        .and_then(|settings| settings.pages.appearance.as_ref())
+    else {
+        return;
+    };
+    let themes: Vec<ThemeSummary> = bench
+        .read("themes")
+        .and_then(|themes| serde_json::from_value(themes.clone()).ok())
+        .unwrap_or_default();
+    let listed: Vec<String> = lines(&themes, &fields.query, fields.tone)
+        .into_iter()
+        .filter_map(|line| match line {
+            Line::Theme(summary) => Some(summary.id),
+            Line::Group(..) => None,
+        })
+        .collect();
+    let Some(last) = listed.len().checked_sub(1) else {
+        return;
+    };
+    let worn = bench.preferences().theme_id;
+    let next = match listed.iter().position(|id| *id == worn) {
+        Some(at) => at.saturating_add_signed(by).min(last),
+        None if by > 0 => 0,
+        None => last,
+    };
+    crate::settings::set(bench, "themeId", listed[next].clone());
 }
 
 fn lines(themes: &[ThemeSummary], query: &str, tone: Tone) -> Vec<Line> {
@@ -447,6 +492,15 @@ pub fn render(
                 .child(
                     div()
                         .flex_1()
+                        .key_context(THEME_SEARCH)
+                        .on_action(
+                            window.listener_for(this, |bench, _: &PreviousTheme, _, _| {
+                                step(bench, -1)
+                            }),
+                        )
+                        .on_action(
+                            window.listener_for(this, |bench, _: &NextTheme, _, _| step(bench, 1)),
+                        )
                         .child(ui::Field::new(&fields.search).icon(Icon::Search)),
                 )
                 .child(tone),
