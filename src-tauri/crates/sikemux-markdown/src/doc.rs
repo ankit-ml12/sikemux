@@ -1,11 +1,12 @@
 //! A message read as it is written: each new piece of text re-reads only the
 //! blocks at its end, and says what changed as a patch to the tree a client
-//! already holds.
+//! already holds. Markup still open at the end is drawn as if closed until the
+//! message is done.
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{parse, parse_blocks, Element, Options};
+use crate::{mend::mend, parse, parse_blocks, Element, Options};
 
 /// The line being written may still join the block before it, as a table row
 /// or a heading's underline does, so the last two blocks stay open.
@@ -135,6 +136,8 @@ pub struct Doc {
     /// The blocks from `base` on, as last sent.
     open: Vec<Value>,
     whole: bool,
+    /// Whether the last block sent had markup closed that the text leaves open.
+    mended: bool,
 }
 
 impl Doc {
@@ -148,6 +151,7 @@ impl Doc {
             settled: 0,
             open: Vec::new(),
             whole: false,
+            mended: false,
         }
     }
 
@@ -179,14 +183,37 @@ impl Doc {
 
     /// What the tree's clients must change to match the text so far, if anything.
     pub fn patch(&mut self) -> Patch {
+        self.reread(true)
+    }
+
+    /// What the tree's clients must change once the message is done, to draw the markup that
+    /// `patch` closed early as it was written.
+    pub fn exact(&mut self) -> Patch {
+        if !self.mended {
+            return Vec::new();
+        }
+        self.reread(false)
+    }
+
+    fn reread(&mut self, mending: bool) -> Patch {
         let text = self.text.get(self.base..).unwrap_or_default();
-        let (blocks, starts) = parse_blocks(text, self.options);
+        let (mut blocks, starts) = parse_blocks(text, self.options);
+        let last = starts.len().saturating_sub(1);
+        let mended = starts
+            .last()
+            .filter(|_| mending && !matches!(blocks.last(), Some(Element::Pre { .. })))
+            .and_then(|&start| Some((text.get(..start)?, mend(text.get(start..)?)?)));
+        self.mended = mended.is_some();
+        if let Some((before, block)) = mended {
+            blocks.truncate(last);
+            blocks.extend(parse(&(before.to_owned() + &block), self.options, last));
+        }
         let blocks = values(blocks);
         let patch = diff(&self.open, &blocks, self.settled);
         let closed = if self.whole {
             0
         } else {
-            blocks.len().saturating_sub(OPEN_BLOCKS)
+            starts.len().saturating_sub(OPEN_BLOCKS)
         };
         if let Some(start) = starts.get(closed).filter(|_| closed > 0) {
             self.base += start;

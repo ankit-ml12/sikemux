@@ -4,6 +4,7 @@
 
 mod autolink;
 mod doc;
+mod mend;
 pub mod paths;
 mod url;
 

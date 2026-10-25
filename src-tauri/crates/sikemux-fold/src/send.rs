@@ -392,8 +392,23 @@ fn flush_transcript(
     let last = transcript.rows.len().checked_sub(1);
     let open = last.and_then(|last| open_part(transcript, last).map(|part| (last, part)));
     for (position, row) in transcript.rows.iter_mut().enumerate().skip(first) {
+        let ended = row.msg.ended_at.is_some();
         for (at, side) in row.sides.iter_mut().enumerate() {
-            if open != Some((position, at)) {
+            let writing = open == Some((position, at));
+            let Some(doc) = side.doc.as_mut().filter(|_| ended || !writing) else {
+                continue;
+            };
+            let patch = doc.exact();
+            if !patch.is_empty() {
+                out.push(ChatChange::Text {
+                    row: row.msg.id.clone(),
+                    part: row.msg.parts[at].id().to_owned(),
+                    text: String::new(),
+                    md: Some(json!({ "n": doc.units(), "o": patch })),
+                    within: within.clone(),
+                });
+            }
+            if !writing {
                 side.doc = None;
             }
         }
