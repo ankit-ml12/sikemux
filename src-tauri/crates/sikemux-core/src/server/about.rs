@@ -65,13 +65,14 @@ pub(crate) fn introduced(core: &Core, key: &str) -> CoreResult<()> {
     Ok(())
 }
 
-/// The person's shell, and whether git and the plugins' own command-line
-/// tools are on the host.
+/// The person's shell, and whether git, Homebrew and the plugins' own
+/// command-line tools are on the host.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Tools {
     shell: String,
     git: bool,
+    brew: bool,
     aws: bool,
     rnd: bool,
 }
@@ -81,6 +82,7 @@ pub(crate) async fn tools() -> CoreResult<Tools> {
         Ok(Tools {
             shell: sikemux_pty::user_shell::configured_shell(),
             git: find_executable("git").is_some(),
+            brew: find_executable("brew").is_some(),
             aws: find_executable("aws").is_some(),
             rnd: find_executable("rnd").is_some(),
         })

@@ -33,9 +33,12 @@ const KINDS: [&str; 4] = [
     "implementation",
 ];
 
-/// Language servers the core installs with Homebrew: the language, its program and its name.
-const INSTALLABLE: [(&str, &str, &str); 2] =
-    [("go", "gopls", "Go LSP"), ("java", "jdtls", "Java LSP")];
+/// Language servers the core installs: the language, its program, its name, and whether
+/// Homebrew is what installs it.
+const INSTALLABLE: [(&str, &str, &str, bool); 2] = [
+    ("go", "gopls", "Go LSP", false),
+    ("java", "jdtls", "Java LSP", true),
+];
 
 /// A file open with a language server, named as the core keeps it.
 pub(super) struct Served {
@@ -223,15 +226,43 @@ fn report(
     if !bench.editors.lsp_said.insert(format!("{language}:{error}")) {
         return;
     }
-    let missing = INSTALLABLE.into_iter().find(|(name, bin, _)| {
+    let missing = INSTALLABLE.into_iter().find(|(name, bin, _, _)| {
         *name == language
             && error.starts_with("lsp-server-missing:")
             && error.contains(&format!("`{bin}`"))
     });
-    let Some((_, bin, label)) = missing else {
+    let Some((_, bin, label, by_brew)) = missing else {
         bench.notify(toast::error(format!("LSP {language} open: {error}")), cx);
         return;
     };
+    if !by_brew {
+        return offer_install(bench, language, bin, label, path, cx);
+    }
+    let (asks, language) = (bench.asks.clone(), language.to_owned());
+    cx.spawn(async move |bench, cx| {
+        let tools = core::request(&asks, "hostTools", json!({})).await;
+        let brew = tools.is_ok_and(|tools| tools["brew"] == true);
+        let _ = bench.update(cx, |bench, cx| match brew {
+            true => offer_install(bench, &language, bin, label, path, cx),
+            false => bench.notify(
+                toast::error(format!(
+                    "{label} needs {bin}. Install the {bin} package with your system's package manager to enable go-to-definition and references."
+                )),
+                cx,
+            ),
+        });
+    })
+    .detach();
+}
+
+fn offer_install(
+    bench: &mut Workbench,
+    language: &str,
+    bin: &'static str,
+    label: &str,
+    path: PathBuf,
+    cx: &mut Context<Workbench>,
+) {
     let (this, language) = (cx.weak_entity(), language.to_owned());
     let note = toast::error(format!(
         "{label} needs {bin}. Install it to enable go-to-definition and references."
