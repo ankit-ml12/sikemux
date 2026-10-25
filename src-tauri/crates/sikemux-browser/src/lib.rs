@@ -26,7 +26,7 @@ pub mod local_files;
 #[cfg(target_os = "macos")]
 pub mod macos;
 mod manager;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub mod page_view;
 #[cfg(target_os = "macos")]
 mod recording;

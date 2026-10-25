@@ -34,23 +34,64 @@ pub struct Tab {
 
 /// The page's view and its clip window, dropped on the GTK thread whichever thread lets go
 /// last.
-struct Held(Mutex<Option<Page>>);
+pub(crate) struct Held(Mutex<Option<Page>>);
+
+impl Held {
+    pub(crate) fn new(page: Page) -> Self {
+        Self(Mutex::new(Some(page)))
+    }
+
+    /// Runs `act` on the page on the GTK thread, unless it has been closed.
+    pub(crate) fn with(self: &Arc<Self>, act: impl FnOnce(&Page) + Send + 'static) {
+        let held = self.clone();
+        on_gtk(move || {
+            if let Some(page) = held.0.locked().as_ref() {
+                act(page);
+            }
+        });
+    }
+}
 
 /// The page goes before the window it sits in.
-struct Page {
-    view: wry::WebView,
-    clip: Clip,
+pub(crate) struct Page {
+    pub(crate) view: wry::WebView,
+    pub(crate) clip: Clip,
+}
+
+impl Page {
+    /// Shows the part of the page that falls in `shown` (x, y, width, height), the page itself
+    /// being at `page`, both top-down in the app's window.
+    pub(crate) fn place(&self, shown: (f64, f64, f64, f64), page: (f64, f64, f64, f64)) {
+        let (x, y, width, height) = shown;
+        let (x, y) = (x.max(PARKED), y.max(PARKED));
+        let (left, top) = (page.0.max(PARKED), page.1.max(PARKED));
+        self.clip.place(x, y, width, height);
+        let _ = self.view.set_bounds(wry::Rect {
+            position: wry::dpi::LogicalPosition::new(left - x, top - y).into(),
+            size: wry::dpi::LogicalSize::new(page.2, page.3).into(),
+        });
+    }
+
+    pub(crate) fn show(&self, shown: bool) {
+        if shown {
+            self.clip.show(true);
+            let _ = self.view.set_visible(true);
+        } else {
+            let _ = self.view.set_visible(false);
+            self.clip.show(false);
+        }
+    }
 }
 
 /// A window of ours between the app's window and the page's.
-struct Clip {
+pub(crate) struct Clip {
     display: *mut Display,
-    window: c_ulong,
+    pub(crate) window: c_ulong,
 }
 
 impl Clip {
     /// Adds a clip window to `parent`, out of sight. It draws nothing of its own.
-    fn new(parent: c_ulong) -> Result<Self, String> {
+    pub(crate) fn new(parent: c_ulong) -> Result<Self, String> {
         let display = crate::linux_page::xdisplay().ok_or("GTK has no X11 display")?;
         // SAFETY: GTK's live X11 display on the GTK thread, and `parent` is the app's live window.
         let window = unsafe {
@@ -118,7 +159,7 @@ unsafe impl Sync for Held {}
 impl Drop for Held {
     fn drop(&mut self) {
         if let Some(page) = self.0.locked().take() {
-            let held = Held(Mutex::new(Some(page)));
+            let held = Held::new(page);
             on_gtk(move || drop(held));
         }
     }
@@ -179,7 +220,7 @@ fn has_render_node() -> bool {
 }
 
 /// Starts the thread GTK runs on, once, and says whether GTK could start.
-fn gtk_thread() -> Result<(), String> {
+pub(crate) fn gtk_thread() -> Result<(), String> {
     static STARTED: OnceLock<Result<(), String>> = OnceLock::new();
     STARTED
         .get_or_init(|| {
@@ -218,7 +259,7 @@ pub(crate) fn on_gtk(work: impl FnOnce() + Send + 'static) {
 }
 
 /// A window by its X11 id, as wry takes a parent.
-struct X11Parent(c_ulong);
+pub(crate) struct X11Parent(pub(crate) c_ulong);
 
 impl HasWindowHandle for X11Parent {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
@@ -294,7 +335,7 @@ impl Tab {
                 .build_as_child(&X11Parent(clip.window))
                 .map_err(|error| error.to_string())?;
             crate::linux_page::attach(&view.webview(), &agent_id, &tab_id, attached);
-            Ok(Held(Mutex::new(Some(Page { view, clip }))))
+            Ok(Held::new(Page { view, clip }))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         on_gtk(move || {
@@ -314,16 +355,7 @@ impl Tab {
     }
 
     fn with(&self, act: impl FnOnce(&wry::WebView) + Send + 'static) {
-        self.with_page(move |page| act(&page.view));
-    }
-
-    fn with_page(&self, act: impl FnOnce(&Page) + Send + 'static) {
-        let view = self.view.clone();
-        on_gtk(move || {
-            if let Some(page) = view.0.locked().as_ref() {
-                act(page);
-            }
-        });
+        self.view.with(move |page| act(&page.view));
     }
 
     /// Runs `act` on the page on the GTK thread, at once when called there.
@@ -344,17 +376,11 @@ impl Tab {
     }
 
     pub fn show(&self) {
-        self.with_page(|page| {
-            page.clip.show(true);
-            let _ = page.view.set_visible(true);
-        });
+        self.view.with(|page| page.show(true));
     }
 
     pub fn hide(&self) {
-        self.with_page(|page| {
-            let _ = page.view.set_visible(false);
-            page.clip.show(false);
-        });
+        self.view.with(|page| page.show(false));
     }
 
     /// Takes the page out of its window.
@@ -386,15 +412,9 @@ impl Tab {
     /// (left, right) of it cut off.
     pub fn set_bounds(&self, frame: (f64, f64, f64, f64), sides: (f64, f64)) {
         let (x, y, width, height) = frame;
-        let (x, y) = (x.max(PARKED), y.max(PARKED));
         let (left, right) = sides;
-        self.with_page(move |page| {
-            page.clip.place(x + left, y, width - left - right, height);
-            let _ = page.view.set_bounds(wry::Rect {
-                position: wry::dpi::LogicalPosition::new(-left, 0.).into(),
-                size: wry::dpi::LogicalSize::new(width, height).into(),
-            });
-        });
+        self.view
+            .with(move |page| page.place((x + left, y, width - left - right, height), frame));
     }
 
     /// Runs `script` in the page and hands back its value as JSON, or an empty string when it
