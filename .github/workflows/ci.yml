@@ -415,6 +415,7 @@ jobs:
             ${{ runner.temp }}/w
             !${{ runner.temp }}/w/linux/run/app
             !${{ runner.temp }}/w/linux/run/bin
+            !${{ runner.temp }}/w/linux/run/data/agent-*
           if-no-files-found: warn
 
   # Every release also ships Linux packages, so main must keep compiling there,
