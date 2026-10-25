@@ -26,6 +26,7 @@ if report_path.suffix == ".ips":
         sys.exit("the report has no Sikemux image in it")
     image = images[min(ours)]
     part = "core" if image["name"] == "sikemux-host" else "app"
+    uuid = image.get("uuid")
     thread = body["threads"][body["faultingThread"]]
     frames = [
         (index, frame["imageOffset"] if frame.get("imageIndex") in ours else None, frame.get("symbol"))
@@ -37,6 +38,7 @@ else:
     version = panic["version"]
     part = "app" if panic["process"] == "app" else "core"
     load = int(panic["loadAddress"], 16)
+    uuid = panic.get("uuid")
     frames = [(index, int(address, 16) - load, None) for index, address in enumerate(panic["frames"])]
     print(f"{panic['process']} {version} panicked on thread {panic['thread']}: {panic['message']}")
     print(f"at {panic['location']}")
@@ -56,6 +58,12 @@ if not dsym:
     if not found:
         sys.exit(f"no dSYM in {name}")
     dsym = str(found[0])
+
+dsym_uuids = subprocess.run(["dwarfdump", "--uuid", dsym], check=True, capture_output=True, text=True).stdout
+if not uuid:
+    print("warning: the report names no build UUID, so the dSYM cannot be checked against it", file=sys.stderr)
+elif uuid.upper() not in dsym_uuids.upper():
+    sys.exit(f"{dsym} is not the build that crashed: the report's UUID is {uuid}\n{dsym_uuids.strip()}")
 
 offsets = [offset for _, offset, _ in frames if offset is not None]
 names = subprocess.run(
