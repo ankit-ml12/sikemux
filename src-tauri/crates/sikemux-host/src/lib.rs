@@ -12,6 +12,7 @@ pub mod hang_reports;
 #[cfg(unix)]
 pub mod headless;
 pub mod login_item;
+pub mod panic_reports;
 pub mod plugins;
 mod style;
 

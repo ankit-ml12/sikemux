@@ -130,7 +130,7 @@ fn command_help(command: &str) -> Option<&'static str> {
         "enable" => "Usage: sikemux enable\n\nStarts the core at boot and again if it crashes: a systemd user service on Linux,\na LaunchAgent on macOS. On Linux, `loginctl enable-linger` keeps it running\nafter you log out.\n",
         "disable" => "Usage: sikemux disable\n\nStops starting the core at boot. The core keeps running until `sikemux stop`.\n",
         "open" => "Usage: sikemux open [--wait] [--project DIR] <path[:line[:column]]>...\n       sikemux <path[:line[:column]]>...\n\nOpens files, or folders as projects, in the app, starting it when needed.\nLINE and COLUMN are one-based.\n\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Open files that belong to no project in this one\n",
-        "doctor" => "Usage: sikemux doctor\n\nShows the latest report the app wrote when its window stopped answering, and\nwhere the rest of it is. It reads them from disk, so it works while the app is stuck.\n",
+        "doctor" => "Usage: sikemux doctor\n\nShows the latest reports Sikemux wrote when its window stopped answering or a\nprocess panicked, and where the rest of them are. It reads them from disk, so it\nworks while the app is stuck or gone.\n",
         "tool" => "Usage: sikemux tool METHOD [JSON_PARAMS]\n\nCalls one of the tools Sikemux gives agents, such as browser_navigate, as the\nagent in this terminal.\n",
         "core" => "Usage: sikemux core [--socket PATH] [--cli-endpoint PATH] [--data-dir PATH]\n\nRuns the core in the foreground. The service and the app start it this way; to\nmanage it, use `sikemux start`, `stop` and `status` instead.\n",
         _ => return None,
@@ -282,25 +282,51 @@ pub fn window_open() -> Option<bool> {
     probe(&descriptor).ok()
 }
 
-/// Prints the most recent hang autopsy and where to read the rest of it.
+/// Prints the most recent panic and hang autopsies and where to read the rest of them.
 ///
-/// This reads the bundles straight off disk rather than asking the app, so it
+/// This reads the reports straight off disk rather than asking the app, so it
 /// still answers while the app is the thing that is stuck.
 fn doctor() -> Result<i32, String> {
     let directory = crate::hang_reports::autopsy_dir().ok_or("home directory is unavailable")?;
     print!(
         "{}",
-        doctor_report(&directory, &crate::hang_reports::list_reports(&directory))
+        doctor_report(
+            &directory,
+            &crate::panic_reports::list_reports(&directory),
+            &crate::hang_reports::list_reports(&directory)
+        )
     );
     Ok(0)
 }
 
-fn doctor_report(directory: &Path, reports: &[crate::hang_reports::HangReportSummary]) -> String {
+fn doctor_report(
+    directory: &Path,
+    panics: &[(PathBuf, crate::panic_reports::PanicReport)],
+    reports: &[crate::hang_reports::HangReportSummary],
+) -> String {
     let mut out = format!(
         "Sikemux {}\nAutopsies {}\n",
         env!("CARGO_PKG_VERSION"),
         directory.display()
     );
+    if let Some(((path, latest), earlier)) = panics.split_first() {
+        out.push_str(&format!("\nLatest panic {}\n", latest.captured_at));
+        out.push_str(&format!(
+            "  {} {} on thread {}: {}\n",
+            latest.process, latest.version, latest.thread, latest.message
+        ));
+        out.push_str(&format!("  at     {}\n", latest.location));
+        out.push_str(&format!("  report {}\n", path.display()));
+        if !earlier.is_empty() {
+            out.push_str("\nEarlier panics\n");
+            for (_, report) in earlier {
+                out.push_str(&format!(
+                    "  {} {} {}: {}\n",
+                    report.captured_at, report.process, report.location, report.message
+                ));
+            }
+        }
+    }
     let Some((latest, earlier)) = reports.split_first() else {
         out.push_str("\nNo hang has been recorded yet.\n");
         return out;
@@ -770,7 +796,7 @@ mod tests {
             },
         ];
 
-        let rendered = doctor_report(Path::new("/autopsy"), &reports);
+        let rendered = doctor_report(Path::new("/autopsy"), &[], &reports);
         assert!(rendered.contains("Latest hang 2026-09-18T14:22:33.471Z"));
         assert!(rendered.contains("ui froze for 4.2s · focus editor"));
         assert!(rendered.contains("report /autopsy/hang-20260918-142233-471/report.json"));

@@ -12,6 +12,7 @@ use sikemux_host::cli_client;
 fn main() {
     let first = std::env::args_os().nth(1);
     let core = first.as_ref().is_some_and(|arg| arg == "core");
+    sikemux_host::panic_reports::record_panics(if core { "core" } else { "cli" });
     sikemux_keychain::settle(core);
     #[cfg(unix)]
     if let Some(code) = sikemux_core::git_guard::shim::run_if_git() {
