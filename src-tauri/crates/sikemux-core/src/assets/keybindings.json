@@ -457,8 +457,8 @@
     },
     {
         "id": "browser.address",
-        "label": "Focus browser address",
-        "detail": "Focus the embedded browser address bar",
+        "label": "Open browser address",
+        "detail": "Type an address or a search over the page on the desk in front",
         "category": "Browser",
         "mac": "Meta+KeyL",
         "other": "Ctrl+Shift+KeyL"

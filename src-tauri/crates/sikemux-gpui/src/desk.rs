@@ -1,5 +1,7 @@
 //! An agent's desk, beside it in its tab: the pages its browser holds, one in front.
 
+mod address;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -83,8 +85,9 @@ pub struct Desks {
     placed_runs: HashSet<String>,
     /// Whether the runs have been read once; runs going by then join their desks behind.
     runs_read: bool,
-    /// The agent whose address ⌘L asked for, focused once its desk has drawn it.
+    /// The agent whose address ⌘L asked for, floated once its desk has drawn it.
     address_wanted: Option<String>,
+    floating: Option<address::Floating>,
     /// Each desk's tab strip, and the tab it last scrolled into view.
     tab_scrolls: std::cell::RefCell<HashMap<String, (gpui_kit::ScrollHandle, Option<usize>)>>,
     _hearing: Option<gpui_kit::Task<()>>,
@@ -237,6 +240,7 @@ impl Desks {
             placed_runs: HashSet::new(),
             runs_read: false,
             address_wanted: None,
+            floating: None,
             tab_scrolls: Default::default(),
             _hearing: task,
             _activation: activation,
@@ -807,9 +811,14 @@ impl Workbench {
 
     /// The agent whose desk holds the keys.
     fn focused_desk(&self, window: &Window, cx: &App) -> Option<String> {
-        self.desks.pages.iter().find_map(|(agent, page)| {
-            let address = page.address.read(cx).focus_handle(cx);
-            (page.focus.is_focused(window) || address.is_focused(window)).then(|| agent.clone())
+        let floating = (self.desks.floating.as_ref())
+            .filter(|floating| floating.input.read(cx).focus_handle(cx).is_focused(window))
+            .map(|floating| floating.agent.clone());
+        floating.or_else(|| {
+            self.desks.pages.iter().find_map(|(agent, page)| {
+                let address = page.address.read(cx).focus_handle(cx);
+                (page.focus.is_focused(window) || address.is_focused(window)).then(|| agent.clone())
+            })
         })
     }
 
@@ -886,7 +895,7 @@ impl Workbench {
         }
     }
 
-    /// Puts the nearest desk's address in the person's hands, all of it selected to type over,
+    /// Floats the nearest desk's address over its page, all of it selected to type over,
     /// opening the desk on its pages, with a blank one when it has none.
     pub fn focus_front_address(&mut self, cx: &mut Context<Self>) {
         let Some((tab, view, agent)) = self.nearest_agent(cx) else {
@@ -991,6 +1000,23 @@ impl Workbench {
         });
     }
 
+    /// The address of the page in front on the agent's desk.
+    fn front_url(&self, agent: &str) -> Option<&str> {
+        let strip = self.desks.strips.get(agent)?;
+        (strip.tabs.iter())
+            .find(|tab| Some(&tab.id) == strip.active_tab_id.as_ref())
+            .map(|tab| tab.url.as_str())
+    }
+
+    /// Opens what was typed in the agent's address, or reloads the page when it is unchanged.
+    fn go_typed(&self, agent: &str, input: &str) {
+        let unchanged = self.front_url(agent).map(shown_address).as_deref() == Some(input);
+        match input.is_empty() || unchanged {
+            true => self.with_engine(|engine| engine.reload(agent)),
+            false => self.with_engine(|engine| engine.navigate_typed(agent, input)),
+        }
+    }
+
     fn with_engine(&self, act: impl FnOnce(&BrowserManager) -> sikemux_browser::BrowserResult<()>) {
         if let Some(engine) = &self.desks.engine {
             if let Err(error) = act(engine) {
@@ -998,6 +1024,10 @@ impl Workbench {
             }
         }
     }
+}
+
+pub fn install(cx: &mut App) {
+    address::install(cx);
 }
 
 /// Makes the page areas and address bars of the desks the tab in front shows.
@@ -1034,13 +1064,7 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
             move |bench, address, event: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     let input = address.read(cx).value().trim().to_string();
-                    let shown = (bench.desks.strips.get(&typed))
-                        .and_then(|strip| strip.tabs.iter().find(|tab| tab.active))
-                        .map(|tab| shown_address(&tab.url));
-                    match input.is_empty() || shown.as_deref() == Some(input.as_str()) {
-                        true => bench.with_engine(|engine| engine.reload(&typed)),
-                        false => bench.with_engine(|engine| engine.navigate_typed(&typed, &input)),
-                    }
+                    bench.go_typed(&typed, &input);
                     if let Some(page) = bench.desks.pages.get(&typed) {
                         page.focus.focus(window, cx);
                     }
@@ -1061,12 +1085,9 @@ pub fn prepare(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Work
         );
     }
     if let Some(agent) = bench.desks.address_wanted.clone() {
-        if let Some(page) = bench.desks.pages.get(&agent) {
-            page.address.update(cx, |address, cx| {
-                address.focus(window, cx);
-                address.select_all(window, cx);
-            });
+        if bench.desks.pages.contains_key(&agent) {
             bench.desks.address_wanted = None;
+            bench.float_address(agent, window, cx);
         }
     }
     let shown: Vec<(String, String)> = bench
@@ -1112,6 +1133,13 @@ impl Workbench {
         let desk = |agent: &String| {
             let page = desks.pages.get(agent);
             let address = page.map(|page| page.address.read(cx));
+            let floating = desks
+                .floating
+                .as_ref()
+                .filter(|floating| floating.agent == *agent);
+            let floating_focused = floating.is_some_and(|floating| {
+                floating.input.read(cx).focus_handle(cx).is_focused(window)
+            });
             let pages = desks.strips.get(agent).map(|strip| {
                 (strip.tabs.iter())
                     .map(|tab| {
@@ -1140,7 +1168,8 @@ impl Workbench {
                     let bounds = frame.visible;
                     [bounds.left(), bounds.top(), bounds.size.width, bounds.size.height].map(f32::from)
                 }),
-                "addressFocused": address.is_some_and(|address| address.focus_handle(cx).is_focused(window)),
+                "addressFocused": floating_focused || address.is_some_and(|address| address.focus_handle(cx).is_focused(window)),
+                "addressFloating": floating.is_some(),
                 "address": address.map(|address| address.value().to_string()),
             })
         };
@@ -1546,6 +1575,8 @@ pub fn pane(
                 })),
         )
         .children(page.map(|page| {
+            let floating =
+                (bench.desks.floating.as_ref()).is_some_and(|floating| floating.agent == agent);
             let focused = page.address.read(cx).focus_handle(cx).is_focused(window);
             div()
                 .flex_1()
@@ -1569,7 +1600,9 @@ pub fn pane(
                 .when(!focused, |field| {
                     field.hover(move |field| field.bg(t.text_primary.opacity(0.08)))
                 })
-                .child(Input::new(&page.address).appearance(false))
+                .when(!floating, |field| {
+                    field.child(Input::new(&page.address).appearance(false))
+                })
         }));
     if let Some(item) = front_item {
         let shown = match item {
@@ -1622,7 +1655,8 @@ pub fn pane(
                     .text_color(t.text_tertiary)
                     .child(ui::text("No pages yet", 12.5, FontWeight::NORMAL)),
             )
-        });
+        })
+        .children(address::overlay(bench, agent, cx));
     frame(
         bench,
         agent,
