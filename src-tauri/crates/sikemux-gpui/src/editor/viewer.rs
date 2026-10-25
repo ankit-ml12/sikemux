@@ -3,15 +3,19 @@
 //! each names the file and opens or reveals it. Another host's pictures and documents
 //! are shown from a read-only copy brought over to this disk.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use base64::Engine;
+use gpui::PinchEvent;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, uniform_list, AnyElement, App, Context, Entity, FontWeight, ImgResourceLoader,
-    InteractiveElement, IntoElement, ObjectFit, ParentElement, RenderOnce, Resource, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Window,
+    canvas, div, img, px, uniform_list, AnyElement, App, Context, Entity, FontWeight,
+    ImgResourceLoader, InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels,
+    RenderOnce, Resource, SharedString, Size, StatefulInteractiveElement, Styled, StyledImage,
+    Window,
 };
 use serde_json::json;
 
@@ -49,6 +53,8 @@ pub(super) fn not_text(path: &Path) -> bool {
 pub(super) struct Viewer {
     about: Option<About>,
     zoom: Zoom,
+    /// The room a picture is shown in, as last drawn.
+    room: Rc<Cell<Size<Pixels>>>,
     bytes: Option<Vec<u8>>,
     /// Where a picture or document is read from on this disk: the file itself, or
     /// the copy of another host's.
@@ -74,6 +80,7 @@ enum Zoom {
 }
 
 const ZOOM_STEP: f32 = 1.25;
+const ZOOM_RANGE: (f32, f32) = (0.1, 8.);
 
 /// A picture fitted to the pane, or at a scale of its own size.
 #[derive(IntoElement)]
@@ -353,14 +360,28 @@ pub(super) fn pane(
                 path: viewer.local.clone().unwrap_or_else(|| path.to_owned()),
                 zoom: viewer.zoom,
             };
+            let (room, pinched) = (viewer.room.clone(), key.clone());
             div()
-                .id("viewer-image")
                 .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .overflow_scroll()
-                .child(picture)
+                .relative()
+                .child(
+                    canvas(move |bounds, _, _| room.set(bounds.size), |_, _, _, _| {})
+                        .absolute()
+                        .size_full(),
+                )
+                .child(
+                    div()
+                        .id("viewer-image")
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .overflow_scroll()
+                        .on_pinch(cx.listener(move |bench, event: &PinchEvent, window, cx| {
+                            pinch(bench, &pinched, 1. + event.delta, window, cx)
+                        }))
+                        .child(picture),
+                )
                 .into_any_element()
         }
         (None, Some(Kind::Document)) => document(viewer, key, &t),
@@ -374,6 +395,42 @@ pub(super) fn pane(
         .child(bar(this, key, viewer, cx))
         .child(div().flex_1().min_h_0().child(body))
         .into_any_element()
+}
+
+/// Scales the picture by `factor`, starting from the size it is fitted to while it is fitted.
+fn pinch(
+    bench: &mut Workbench,
+    key: &FileKey,
+    factor: f32,
+    window: &mut Window,
+    cx: &mut Context<Workbench>,
+) {
+    let Some(viewer) = bench.editors.viewers.get(key) else {
+        return;
+    };
+    let scale = match viewer.zoom {
+        Zoom::Scale(scale) => scale,
+        Zoom::Fit => {
+            let path = viewer.local.as_deref().unwrap_or(&key.path);
+            let resource = Resource::Path(Arc::from(path));
+            let Some(natural) = window
+                .use_asset::<ImgResourceLoader>(&resource, cx)
+                .and_then(Result::ok)
+                .map(|image| image.size(0))
+            else {
+                return;
+            };
+            let room = viewer.room.get();
+            let wide = f32::from(room.width) / natural.width.0 as f32;
+            let tall = f32::from(room.height) / natural.height.0 as f32;
+            wide.min(tall)
+        }
+    };
+    let (least, most) = ZOOM_RANGE;
+    if let Some(viewer) = bench.editors.viewers.get_mut(key) {
+        viewer.zoom = Zoom::Scale((scale * factor).clamp(least, most));
+    }
+    bench.parts.redraw(&bench.parts.stage, cx);
 }
 
 /// A document in macOS's own viewer, once it is open.
