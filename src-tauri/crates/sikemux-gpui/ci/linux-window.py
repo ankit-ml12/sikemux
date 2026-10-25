@@ -7,7 +7,8 @@ and checks it shows a window with the seeded chat. With --browser, L6 has the fa
 reply with page_show, which must draw in the chat, and L2 has it open a desk browser tab on a local page
 through the agent browser tool; with --input as well, L4 has it type into the page's field,
 press a key there and read the field back, L5 has the page ask a prompt the person sees in a dialog and the agent
-answers, and L3 click a link there, all with the same tools. L7 starts the app again with a sikemux:// link to
+answers, L9 records the tab for a few seconds and checks the video with ffprobe, and L3 clicks a link there, all
+with the same tools. L7 starts the app again with a sikemux:// link to
 the first chat, which must hand it to the running window and quit; L8, on a session bus with the desktop portal,
 turns GNOME's animations off and on and needs the app's reduce-motion to follow. L2 and L4 also need the page drawn in their capture,
 not a black or blank area. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
@@ -123,6 +124,23 @@ def dialog_from_tool(run):
                f"{said[:120]!r}; the page's prompt returned {read.get('result')!r}")
 
 
+def recording_from_tool(run):
+    started = desk.answered(run.prompt(desk.json_tool("browser.record", {"action": "start"})))
+    time.sleep(3)
+    stopped = desk.answered(run.prompt(desk.json_tool("browser.record", {"action": "stop"})))
+    path = stopped.get("path") or ""
+    probe = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-show_entries",
+                            "stream=codec_name,nb_read_frames:format=duration", "-of", "json", path],
+                           capture_output=True, text=True)
+    found = json.loads(probe.stdout or "{}")
+    stream = (found.get("streams") or [{}])[0]
+    seconds = float((found.get("format") or {}).get("duration") or 0)
+    frames = int(stream.get("nb_read_frames") or 0)
+    run.report("L9", bool(started.get("recording")) and seconds >= 2 and frames >= 10,
+               f"browser.record started {started.get('path')!r} and stopped at {path!r}: "
+               f"{stream.get('codec_name')} for {seconds:.1f}s, {frames} frames")
+
+
 def click_from_tool(run):
     said = run.prompt(desk.json_tool("browser.click", {"text": "Go to the second page"}))
     page = desk.until(lambda: (lambda page: page if page.get("url", "").endswith("/page2.html") else None)(desk.active_page(run.desk())), 20) or {}
@@ -189,10 +207,12 @@ def main():
         if options.browser and options.input:
             typing_from_tool(run)
             dialog_from_tool(run)
+            recording_from_tool(run)
             click_from_tool(run)
         else:
             run.leave("L4", "waits for input in the Linux browser (pass --browser --input once keys reach a page)")
             run.leave("L5", "waits for input in the Linux browser (pass --browser --input once dialogs reach the agent)")
+            run.leave("L9", "waits for input in the Linux browser (pass --browser --input to record a tab)")
             run.leave("L3", "waits for input in the Linux browser (pass --browser --input once clicks reach a page)")
         link_handoff(run)
         follows_motion(run)

@@ -28,7 +28,6 @@ pub mod macos;
 mod manager;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub mod page_view;
-#[cfg(target_os = "macos")]
 mod recording;
 mod tab;
 pub mod tools;

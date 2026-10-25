@@ -1267,8 +1267,6 @@ mod native {
         use crate::linux_page::{self as page, World};
         use crate::Tab;
 
-        const NOT_YET: &str = "this is not available on Linux yet";
-
         pub async fn mouse(
             view: &Tab,
             kind: Mouse,
@@ -1297,18 +1295,18 @@ mod native {
         }
 
         pub async fn start_recording(
-            _: &crate::manager::BrowserManager,
-            _: &str,
-            _: Option<String>,
+            manager: &crate::manager::BrowserManager,
+            agent_id: &str,
+            path: Option<String>,
         ) -> Result<serde_json::Value, String> {
-            Err(NOT_YET.into())
+            crate::recording::start(manager, agent_id, path).await
         }
 
         pub async fn stop_recording(
-            _: &crate::manager::BrowserManager,
-            _: &str,
+            manager: &crate::manager::BrowserManager,
+            agent_id: &str,
         ) -> Result<serde_json::Value, String> {
-            Err(NOT_YET.into())
+            crate::recording::stop(manager, agent_id).await
         }
 
         /// An empty error means the script ran out of time.

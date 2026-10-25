@@ -136,15 +136,7 @@ impl BrowserManager {
     }
 
     fn recording(&self, agent_id: &str) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            self.recordings.locked().contains_key(agent_id)
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = agent_id;
-            false
-        }
+        self.recordings.locked().contains_key(agent_id)
     }
 
     fn unload(&self, agent_id: &str, tab_id: &str, now: Instant, pressure: Pressure) {

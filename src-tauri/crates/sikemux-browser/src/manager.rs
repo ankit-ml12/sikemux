@@ -19,7 +19,6 @@ use crate::linux_page as page;
 use crate::macos;
 #[cfg(target_os = "macos")]
 use crate::macos as page;
-#[cfg(target_os = "macos")]
 use crate::recording;
 use crate::{
     address, burst, documents, downloads, favicon, history, local_files, viewport, BrowserBounds,
@@ -237,7 +236,6 @@ pub struct BrowserManager {
     pub(crate) documents: Mutex<HashMap<String, documents::DocumentLog>>,
     pub(crate) stalls: Mutex<HashMap<String, TabStall>>,
     pub(crate) local_files: local_files::LocalFiles,
-    #[cfg(target_os = "macos")]
     pub(crate) recordings: Mutex<HashMap<String, recording::Session>>,
     pub(crate) relieving: AtomicBool,
     pub(crate) host: HostRef,
@@ -653,7 +651,6 @@ impl BrowserManager {
 
     pub fn close_agent(&self, agent_id: &str) -> BrowserResult<()> {
         validate_agent_id(agent_id)?;
-        #[cfg(target_os = "macos")]
         self.recordings.locked().remove(agent_id);
         let views = self
             .agents

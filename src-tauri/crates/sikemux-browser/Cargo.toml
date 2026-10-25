@@ -44,4 +44,6 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 javascriptcore = { package = "javascriptcore-rs", version = "=1.1.2" }
 gdkx11 = "0.18"
 x11 = { version = "2.21", features = ["xlib"] }
+gstreamer = "0.21"
+gstreamer-app = "0.21"
 wry = { version = "0.57", default-features = false, features = ["os-webview", "linux-body", "x11"] }

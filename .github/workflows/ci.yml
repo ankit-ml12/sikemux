@@ -372,8 +372,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev \
             libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev clang pkg-config \
-            libwebkit2gtk-4.1-dev xvfb openbox x11-utils xdotool imagemagick mesa-vulkan-drivers fonts-dejavu-core \
-            xdg-desktop-portal xdg-desktop-portal-gtk dconf-gsettings-backend gsettings-desktop-schemas libglib2.0-bin
+            libwebkit2gtk-4.1-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            xvfb openbox x11-utils xdotool imagemagick mesa-vulkan-drivers fonts-dejavu-core \
+            xdg-desktop-portal xdg-desktop-portal-gtk dconf-gsettings-backend gsettings-desktop-schemas libglib2.0-bin \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly ffmpeg
 
       - name: Build dependencies with light optimisation
         run: mkdir -p "${CARGO_HOME:-$HOME/.cargo}" && printf '[profile.dev.package."*"]\nopt-level = %s\n' "$DEPS_OPT_LEVEL" >>"${CARGO_HOME:-$HOME/.cargo}/config.toml"
@@ -443,7 +445,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file \
-            libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev clang pkg-config
+            libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev clang pkg-config \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
