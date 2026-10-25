@@ -96,6 +96,9 @@ pub struct Workbench {
     _keys_settle: [Subscription; 3],
     /// What the person just opened, which takes the keyboard once it shows.
     takes_keys: Cell<Option<PendingKeys>>,
+    window_active: bool,
+    /// The agents last told to the core as on screen, and whether the window was in front.
+    on_screen: Option<(Vec<String>, bool)>,
     /// The project the per-project watches were last made for, by path.
     pub(crate) watched_project: Option<String>,
     /// The host whose core those watches went to.
@@ -557,6 +560,8 @@ impl Workbench {
                 bench.dictated(heard, window, cx)
             }),
             cx.observe_window_activation(window, |bench, window, cx| {
+                bench.window_active = window.is_window_active();
+                bench.publish_on_screen();
                 match window.is_window_active() {
                     true => crate::accounts::check_on_return(bench, cx),
                     false => bench.voice.update(cx, |voice, cx| voice.abandon_hold(cx)),
@@ -604,6 +609,8 @@ impl Workbench {
                 }),
             ],
             takes_keys: Cell::new(None),
+            window_active: window.is_window_active(),
+            on_screen: None,
             watched_project: None,
             watched_place: crate::hosts::Place::This,
             watched_ci: None,
@@ -751,6 +758,7 @@ impl Workbench {
                 self.version = version;
                 self.lost = None;
                 self.stopped = false;
+                self.on_screen = None;
                 for (agent, chat) in &self.chats {
                     self.ask_chat(ChatAsk::Attach {
                         agent: agent.clone(),
@@ -774,6 +782,7 @@ impl Workbench {
                     self.open_chat(cx);
                     self.front_moved(cx);
                 }
+                self.publish_on_screen();
             }
             Update::HostReach(host, reached) => {
                 if reached {
@@ -838,6 +847,7 @@ impl Workbench {
                 self.close_chats(cx);
                 self.open_chat(cx);
                 self.front_moved(cx);
+                self.publish_on_screen();
             }
             Update::Chat(agent, news) => {
                 let Some(chat) = self.chats.get_mut(&agent) else {
@@ -3881,6 +3891,24 @@ impl Workbench {
             self.activate_project(&project);
             self.activate_tab(&strip, &tab.id);
         }
+    }
+
+    /// Tells this host's core which of its agents the person is looking at, so the ones read
+    /// lose their unread mark.
+    fn publish_on_screen(&mut self) {
+        let agent_ids = match self.place() {
+            Place::This => self.agent().map(|agent| agent.id).into_iter().collect(),
+            Place::Account(_) => Vec::new(),
+        };
+        let shown = (agent_ids, self.window_active);
+        if self.on_screen.as_ref() == Some(&shown) {
+            return;
+        }
+        let _ = self.asks.send(Ask::OnScreen {
+            agent_ids: shown.0.clone(),
+            focused: shown.1,
+        });
+        self.on_screen = Some(shown);
     }
 
     /// The agent the tab in front shows.

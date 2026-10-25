@@ -251,6 +251,12 @@ pub enum Ask {
     Follow(&'static str),
     /// Makes this window the one the core hands its calls to, as when it comes to the front.
     RegisterWindow,
+    /// The agents the window shows, and whether the person is looking at it, so the core
+    /// stops marking them unread.
+    OnScreen {
+        agent_ids: Vec<String>,
+        focused: bool,
+    },
     AnswerWindow(CallId, WindowAnswer),
     /// Every tab a waiting `sikemux open` opened has closed.
     WindowOpenClosed(CallId),
@@ -1151,6 +1157,12 @@ async fn run(
                                     if let Err(error) = client.register_window().await {
                                         eprintln!("sikemux: the core would not hand this window its calls: {error}");
                                     }
+                                });
+                            }
+                            Some(Ask::OnScreen { agent_ids, focused }) => {
+                                let client = client.clone();
+                                tokio::spawn(async move {
+                                    report("tell the core which agent is on screen", client.publish_on_screen(agent_ids, focused).await);
                                 });
                             }
                             Some(Ask::AnswerWindow(call_id, answer)) => client.answer_window(call_id, answer),
