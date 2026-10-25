@@ -454,6 +454,7 @@ impl Core {
     fn new(build: BuildIdentity, data_dir: Option<&Path>) -> Result<Arc<Self>, ServerError> {
         if let Some(dir) = data_dir {
             data_format::upgrade(dir);
+            crate::sessions::index::open(dir);
         }
         let detection = ManifestRegistry::bundled()
             .map_err(|error| ServerError::Manifests(error.to_string()))?;

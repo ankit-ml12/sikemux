@@ -8,6 +8,7 @@ pub mod context;
 pub mod delete;
 mod grok;
 mod hermes;
+pub mod index;
 mod muse;
 mod omp;
 mod opencode;
@@ -19,18 +20,14 @@ pub mod roots;
 pub mod search;
 pub mod transcript;
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sikemux_process::clock::epoch_ms_of;
-use sikemux_process::sync::Locked;
 use tokio::process::Command;
 
 use crate::agent_catalog::AgentKind;
@@ -113,11 +110,11 @@ pub fn session_at(
     config_path: Option<&str>,
 ) -> Option<AgentSession> {
     let found = match agent {
-        AgentKind::Claude => return claude::claude_session(place, title_cache_stamp(place)),
+        AgentKind::Claude => return claude::claude_session(place, file_stamp(place)),
         AgentKind::Codex => return codex::codex_session_at(place, cwd, config_path),
         AgentKind::Grok => return grok::grok_session(place, cwd),
-        AgentKind::Pi => pi::pi_session(place),
-        AgentKind::Omp => omp::omp_session(place),
+        AgentKind::Pi => pi::pi_session(place, file_stamp(place)),
+        AgentKind::Omp => omp::omp_session(place, file_stamp(place)),
         AgentKind::Hermes | AgentKind::Opencode | AgentKind::Muse => None,
     };
     found
@@ -147,15 +144,15 @@ fn mtime_of(path: &Path) -> u64 {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct TitleCacheStamp {
+struct FileStamp {
     modified_ns: u128,
     len: u64,
 }
 
-impl TitleCacheStamp {
+impl FileStamp {
     /// A stamp for a session kept in a database, which changes when its last write does.
     fn at_secs(secs: u64) -> Self {
-        TitleCacheStamp {
+        FileStamp {
             modified_ns: u128::from(secs) * 1_000_000_000,
             len: 0,
         }
@@ -171,11 +168,11 @@ impl TitleCacheStamp {
 }
 
 /// Stats each transcript once and hands back the newest first, which is all the
-/// ordering, the mtime and the cache keys need.
-fn stamped_transcripts(paths: impl Iterator<Item = PathBuf>) -> Vec<(PathBuf, TitleCacheStamp)> {
-    let mut stamped: Vec<(PathBuf, TitleCacheStamp)> = paths
+/// ordering, the mtime and the index need.
+fn stamped_transcripts(paths: impl Iterator<Item = PathBuf>) -> Vec<(PathBuf, FileStamp)> {
+    let mut stamped: Vec<(PathBuf, FileStamp)> = paths
         .map(|path| {
-            let stamp = title_cache_stamp(&path);
+            let stamp = file_stamp(&path);
             (path, stamp)
         })
         .collect();
@@ -183,9 +180,9 @@ fn stamped_transcripts(paths: impl Iterator<Item = PathBuf>) -> Vec<(PathBuf, Ti
     stamped
 }
 
-fn title_cache_stamp(path: &Path) -> TitleCacheStamp {
+fn file_stamp(path: &Path) -> FileStamp {
     let metadata = fs::metadata(path).ok();
-    TitleCacheStamp {
+    FileStamp {
         modified_ns: metadata
             .as_ref()
             .and_then(|value| value.modified().ok())
@@ -220,68 +217,8 @@ fn text_from_content(content: &Value) -> Option<String> {
     })
 }
 
-/// Cached answer per transcript: `path -> (high-resolution stamp, answer, last use)`.
-type TitleCache = HashMap<PathBuf, (TitleCacheStamp, Option<String>, u64)>;
-const MAX_TITLE_CACHE_ENTRIES: usize = 2_048;
 const MAX_AGENT_TRANSCRIPT_PATHS: usize = 20_000;
 const MAX_AGENT_TRANSCRIPTS_INSPECTED: usize = 5_000;
-
-fn next_title_cache_access() -> u64 {
-    static ACCESS: AtomicU64 = AtomicU64::new(1);
-    ACCESS.fetch_add(1, Ordering::Relaxed)
-}
-
-/// What was read from each transcript, keyed by a high-resolution file stamp. Transcripts
-/// only ever grow, so an unchanged nanosecond timestamp and file length means an unchanged
-/// answer. Length prevents same-tick appends from preserving a cached empty answer on
-/// coarse filesystems. This turns a cold scan of every session into a one-time cost:
-/// later scans re-read only the sessions that have actually changed.
-struct FileCache(OnceLock<Mutex<TitleCache>>);
-
-impl FileCache {
-    const fn new() -> Self {
-        FileCache(OnceLock::new())
-    }
-
-    /// The cached answer for `path` when its stamp matches, otherwise `compute`'s, stored
-    /// even when it is `None` so a file without one is not read again.
-    fn get_or<F>(&self, path: &Path, stamp: TitleCacheStamp, compute: F) -> Option<String>
-    where
-        F: FnOnce() -> Option<String>,
-    {
-        let cache = self.0.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Some((cached_stamp, value, access)) = cache.locked().get_mut(path) {
-            if *cached_stamp == stamp {
-                *access = next_title_cache_access();
-                return value.clone();
-            }
-        }
-        let value = compute();
-        let mut cache = cache.locked();
-        if cache.len() >= MAX_TITLE_CACHE_ENTRIES && !cache.contains_key(path) {
-            if let Some(oldest) = cache
-                .iter()
-                .min_by_key(|(_, (_, _, access))| *access)
-                .map(|(path, _)| path.clone())
-            {
-                cache.remove(&oldest);
-            }
-        }
-        cache.insert(
-            path.to_path_buf(),
-            (stamp, value.clone(), next_title_cache_access()),
-        );
-        value
-    }
-}
-
-fn cached_title<F>(path: &Path, stamp: TitleCacheStamp, compute: F) -> Option<String>
-where
-    F: FnOnce() -> Option<String>,
-{
-    static TITLES: FileCache = FileCache::new();
-    TITLES.get_or(path, stamp, compute)
-}
 
 /// A message's text blocks, or its content when that is plain text, leaving
 /// out text the CLI wrote itself in tags.
@@ -323,7 +260,8 @@ fn read_suffix(file: &mut fs::File, start: u64) -> Option<String> {
 }
 
 fn is_jsonl(path: &Path) -> bool {
-    path.extension().is_some_and(|extension| extension == "jsonl")
+    path.extension()
+        .is_some_and(|extension| extension == "jsonl")
 }
 
 /// Codex compresses a session's rollout with zstd once the session closes.

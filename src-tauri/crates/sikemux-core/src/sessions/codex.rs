@@ -11,16 +11,17 @@ use sikemux_process::sync::Locked;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
 use tokio::process::{ChildStdin, Command};
 
+use super::index::{indexed, Indexed};
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::roots::agent_config_root;
 use super::search::Prose;
 use super::AgentSession;
 use super::{apply_login_environment, apply_process_config};
 use super::{
-    cached_title, collect_transcripts, condense, is_compressed, is_jsonl, next_title_cache_access,
-    stamped_transcripts, title_cache_stamp, transcript_lines, TitleCacheStamp,
-    MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    collect_transcripts, condense, file_stamp, is_compressed, is_jsonl, stamped_transcripts,
+    transcript_lines, FileStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
+use crate::agent_catalog::AgentKind;
 
 // ---- codex — ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl[.zst] ----------
 
@@ -37,11 +38,11 @@ fn codex_index_cache() -> &'static Mutex<CodexIndexCache> {
 }
 
 type CodexTitles = HashMap<String, String>;
-type CodexIndexCache = HashMap<PathBuf, (TitleCacheStamp, Arc<CodexTitles>)>;
+type CodexIndexCache = HashMap<PathBuf, (FileStamp, Arc<CodexTitles>)>;
 
 fn codex_indexed_titles(root: &Path) -> Arc<CodexTitles> {
     let path = root.join("session_index.jsonl");
-    let stamp = title_cache_stamp(&path);
+    let stamp = file_stamp(&path);
     if let Some((cached, titles)) = codex_index_cache().locked().get(&path) {
         if *cached == stamp {
             return titles.clone();
@@ -84,61 +85,32 @@ fn read_codex_index(path: &Path) -> CodexTitles {
     titles
 }
 
-/// What the first line of a rollout says about the conversation in it.
-#[derive(Clone)]
-struct CodexRollout {
-    id: String,
-    cwd: String,
+/// Which conversation a rollout holds, from its first line, and the person's first message in it.
+fn read_rollout(path: &Path) -> Indexed {
+    let Some(mut lines) = transcript_lines(path).map(|reader| reader.lines().map_while(Result::ok))
+    else {
+        return Indexed::default();
+    };
+    let Some(header) = lines.next().and_then(|first| rollout_header(&first)) else {
+        return Indexed::default();
+    };
+    Indexed {
+        title: lines.take(199).find_map(|line| codex_user_message(&line)),
+        ..header
+    }
 }
 
-type CodexHeaderCache = HashMap<PathBuf, (TitleCacheStamp, Option<Arc<CodexRollout>>, u64)>;
-const MAX_CODEX_HEADER_ENTRIES: usize = 8_192;
-
-/// Which conversation each rollout holds, so a listing only opens rollouts it
-/// has not read. A rollout's first line is never rewritten, so one that only
-/// grew is not opened again.
-fn codex_header_cache() -> &'static Mutex<CodexHeaderCache> {
-    static CACHE: OnceLock<Mutex<CodexHeaderCache>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn read_codex_rollout(path: &Path) -> Option<CodexRollout> {
-    let mut first = String::new();
-    transcript_lines(path)?.read_line(&mut first).ok()?;
-    let value = serde_json::from_str::<Value>(first.trim()).ok()?;
+fn rollout_header(line: &str) -> Option<Indexed> {
+    let value = serde_json::from_str::<Value>(line.trim()).ok()?;
     if value.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
         return None;
     }
     let payload = value.get("payload")?;
-    Some(CodexRollout {
-        id: payload.get("id").and_then(|i| i.as_str())?.to_string(),
-        cwd: payload.get("cwd").and_then(|c| c.as_str())?.to_string(),
+    Some(Indexed {
+        id: Some(payload.get("id").and_then(|i| i.as_str())?.to_string()),
+        cwd: Some(payload.get("cwd").and_then(|c| c.as_str())?.to_string()),
+        title: None,
     })
-}
-
-fn cached_codex_rollout(path: &Path, stamp: TitleCacheStamp) -> Option<Arc<CodexRollout>> {
-    if let Some((cached, rollout, access)) = codex_header_cache().locked().get_mut(path) {
-        if *cached == stamp || (rollout.is_some() && cached.len <= stamp.len) {
-            *access = next_title_cache_access();
-            return rollout.clone();
-        }
-    }
-    let rollout = read_codex_rollout(path).map(Arc::new);
-    let mut cache = codex_header_cache().locked();
-    if cache.len() >= MAX_CODEX_HEADER_ENTRIES && !cache.contains_key(path) {
-        if let Some(oldest) = cache
-            .iter()
-            .min_by_key(|(_, (_, _, access))| *access)
-            .map(|(path, _)| path.clone())
-        {
-            cache.remove(&oldest);
-        }
-    }
-    cache.insert(
-        path.to_path_buf(),
-        (stamp, rollout.clone(), next_title_cache_access()),
-    );
-    rollout
 }
 
 pub(super) fn codex_sessions(cwd: &str, config_path: Option<&str>) -> Vec<AgentSession> {
@@ -169,8 +141,7 @@ pub(super) fn codex_session_at(
 ) -> Option<AgentSession> {
     let root = agent_config_root("codex", config_path)?;
     let indexed_titles = codex_indexed_titles(&root);
-    codex_session(path, title_cache_stamp(path), &indexed_titles, Some(cwd))
-        .map(|found| found.session)
+    codex_session(path, file_stamp(path), &indexed_titles, Some(cwd)).map(|found| found.session)
 }
 
 /// Rollouts for every project share one folder, so the page lists them all
@@ -185,7 +156,7 @@ pub(super) fn codex_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Ve
     let listed = paths
         .into_iter()
         .map(|path| {
-            let stamp = title_cache_stamp(&path);
+            let stamp = file_stamp(&path);
             Listed {
                 at_ms: stamp.unix_millis(),
                 key: path.to_string_lossy().into_owned(),
@@ -201,24 +172,26 @@ pub(super) fn codex_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> Ve
 /// The session in one rollout, when it ran in `project` or no project is asked for.
 fn codex_session(
     path: &Path,
-    stamp: TitleCacheStamp,
+    stamp: FileStamp,
     indexed_titles: &CodexTitles,
     project: Option<&str>,
 ) -> Option<Found> {
-    let rollout = cached_codex_rollout(path, stamp)?;
-    if project.is_some_and(|project| project != rollout.cwd) {
+    let read = indexed(AgentKind::Codex, path, stamp, || read_rollout(path));
+    let (Some(id), Some(cwd)) = (&read.id, &read.cwd) else {
+        return None;
+    };
+    if project.is_some_and(|project| project != cwd) {
         return None;
     }
-    let id = rollout.id.as_str();
     let title = indexed_titles
         .get(id)
+        .or(read.title.as_ref())
         .cloned()
-        .or_else(|| cached_title(path, stamp, || codex_title(path)))
         .unwrap_or_else(|| id.chars().take(8).collect());
     Some(Found {
-        project: rollout.cwd.clone(),
+        project: cwd.clone(),
         session: AgentSession {
-            id: id.to_string(),
+            id: id.clone(),
             title,
             mtime: stamp.unix_secs(),
         },
@@ -226,27 +199,21 @@ fn codex_session(
     })
 }
 
-fn codex_title(path: &Path) -> Option<String> {
-    for line in transcript_lines(path)?.lines().take(200).map_while(Result::ok) {
-        let Ok(v) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        if v.get("type").and_then(|t| t.as_str()) != Some("event_msg") {
-            continue;
-        }
-        let payload = v.get("payload");
-        if payload.and_then(|p| p.get("type")).and_then(|t| t.as_str()) != Some("user_message") {
-            continue;
-        }
-        let msg = payload
-            .and_then(|p| p.get("message"))
-            .and_then(|m| m.as_str())
-            .unwrap_or("");
-        if let Some(t) = condense(msg) {
-            return Some(t);
-        }
+fn codex_user_message(line: &str) -> Option<String> {
+    let v = serde_json::from_str::<Value>(line).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("event_msg") {
+        return None;
     }
-    None
+    let payload = v.get("payload")?;
+    if payload.get("type").and_then(|t| t.as_str()) != Some("user_message") {
+        return None;
+    }
+    condense(
+        payload
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or(""),
+    )
 }
 
 const CODEX_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -383,12 +350,17 @@ pub(super) fn codex_prose(line: &str, prose: &mut Prose) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        cached_codex_rollout, cached_title, codex_indexed_titles, codex_sessions, codex_title,
-        title_cache_stamp,
-    };
+    use super::{codex_indexed_titles, codex_sessions, file_stamp, indexed, read_rollout};
+    use crate::agent_catalog::AgentKind;
+    use crate::sessions::index::Indexed;
+    use crate::sessions::FileStamp;
     use std::io::Write;
+    use std::path::Path;
     use std::sync::Arc;
+
+    fn read(path: &Path, stamp: FileStamp) -> Arc<Indexed> {
+        indexed(AgentKind::Codex, path, stamp, || read_rollout(path))
+    }
 
     #[test]
     fn codex_title_reads_the_current_user_message_shape() {
@@ -406,7 +378,7 @@ mod tests {
         transcript.flush().unwrap();
 
         assert_eq!(
-            codex_title(transcript.path()).as_deref(),
+            read_rollout(transcript.path()).title.as_deref(),
             Some("Explain this codebase")
         );
     }
@@ -475,19 +447,18 @@ mod tests {
         )
         .unwrap();
 
-        let stamp = title_cache_stamp(&rollout);
-        let first = cached_codex_rollout(&rollout, stamp).unwrap();
-        assert_eq!(first.cwd, "/repo");
-        let again = cached_codex_rollout(&rollout, stamp).unwrap();
-        assert!(Arc::ptr_eq(&first, &again));
+        let stamp = file_stamp(&rollout);
+        let first = read(&rollout, stamp);
+        assert_eq!(first.cwd.as_deref(), Some("/repo"));
+        assert!(Arc::ptr_eq(&first, &read(&rollout, stamp)));
 
         std::fs::remove_file(&rollout).unwrap();
-        assert!(cached_codex_rollout(&rollout, stamp).is_some());
-        assert!(cached_codex_rollout(&rollout, title_cache_stamp(&rollout)).is_none());
+        assert!(read(&rollout, stamp).cwd.is_some());
+        assert!(read(&rollout, file_stamp(&rollout)).cwd.is_none());
     }
 
     #[test]
-    fn title_cache_rechecks_a_transcript_after_a_same_tick_append() {
+    fn the_index_rereads_a_transcript_after_a_same_tick_append() {
         let mut transcript = tempfile::NamedTempFile::new().unwrap();
         writeln!(
             transcript,
@@ -495,13 +466,8 @@ mod tests {
         )
         .unwrap();
         transcript.flush().unwrap();
-        let first_stamp = title_cache_stamp(transcript.path());
-        assert_eq!(
-            cached_title(transcript.path(), first_stamp, || codex_title(
-                transcript.path()
-            )),
-            None
-        );
+        let first_stamp = file_stamp(transcript.path());
+        assert_eq!(read(transcript.path(), first_stamp).title, None);
 
         writeln!(
             transcript,
@@ -509,13 +475,10 @@ mod tests {
         )
         .unwrap();
         transcript.flush().unwrap();
-        let second_stamp = title_cache_stamp(transcript.path());
+        let second_stamp = file_stamp(transcript.path());
         assert_ne!(first_stamp.len, second_stamp.len);
         assert_eq!(
-            cached_title(transcript.path(), second_stamp, || codex_title(
-                transcript.path()
-            ))
-            .as_deref(),
+            read(transcript.path(), second_stamp).title.as_deref(),
             Some("Hello")
         );
     }

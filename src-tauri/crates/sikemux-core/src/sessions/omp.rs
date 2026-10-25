@@ -8,14 +8,16 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
 use super::claude::{CLAUDE_HEAD_BYTES, CLAUDE_TAIL_BYTES};
+use super::index::{indexed, Indexed};
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::now_iso8601;
 use super::roots::{omp_agent_root, omp_session_dirs};
 use super::AgentSession;
 use super::{
-    cached_title, collect_transcripts, condense, is_jsonl, mtime_of, read_prefix, read_suffix, text_from_content,
-    title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    collect_transcripts, condense, file_stamp, is_jsonl, read_prefix, read_suffix,
+    stamped_transcripts, text_from_content, FileStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
+use crate::agent_catalog::AgentKind;
 
 pub(super) fn omp_sessions(cwd: &str) -> Vec<AgentSession> {
     omp_sessions_from_dirs(cwd, omp_session_dirs())
@@ -26,14 +28,15 @@ fn omp_sessions_from_dirs(cwd: &str, roots: Vec<PathBuf>) -> Vec<AgentSession> {
     for root in roots {
         collect_transcripts(&root, is_jsonl, &mut files, 0);
     }
-    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    files.sort_unstable();
     files.dedup();
+    let mut files = stamped_transcripts(files.into_iter());
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
     let mut out: Vec<AgentSession> = files
         .par_iter()
-        .filter_map(|path| {
-            omp_session(path)
+        .filter_map(|(path, stamp)| {
+            omp_session(path, *stamp)
                 .filter(|found| found.project == cwd)
                 .map(|found| found.session)
         })
@@ -51,51 +54,64 @@ pub(super) fn omp_recent(scan: &PageScan<'_>) -> Vec<Hit> {
     files.dedup();
     let listed = files
         .into_iter()
-        .map(|path| Listed {
-            at_ms: title_cache_stamp(&path).unix_millis(),
-            key: path.to_string_lossy().into_owned(),
-            item: path,
+        .map(|path| {
+            let stamp = file_stamp(&path);
+            Listed {
+                at_ms: stamp.unix_millis(),
+                key: path.to_string_lossy().into_owned(),
+                item: (path, stamp),
+            }
         })
         .collect();
-    scan.collect(listed, |path| omp_session(path))
+    scan.collect(listed, |(path, stamp)| omp_session(path, *stamp))
 }
 
 /// The session in one transcript and the project its header names.
-pub(super) fn omp_session(path: &Path) -> Option<Found> {
-    let file = fs::File::open(path).ok()?;
-    let header = BufReader::new(file)
-        .lines()
-        .take(40)
-        .map_while(Result::ok)
-        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
-        .find(|value| value.get("type").and_then(Value::as_str) == Some("session"))?;
-    let project = header.get("cwd").and_then(Value::as_str)?.to_string();
-    let mtime = mtime_of(path);
-    let title = cached_title(path, title_cache_stamp(path), || omp_title(path))
-        .or_else(|| {
-            header
-                .get("title")
-                .and_then(Value::as_str)
-                .and_then(condense)
-        })
-        .or_else(|| header.get("id").and_then(Value::as_str).and_then(condense))
-        .unwrap_or_else(|| {
-            path.file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("session")
-                .chars()
-                .take(13)
-                .collect()
-        });
+pub(super) fn omp_session(path: &Path, stamp: FileStamp) -> Option<Found> {
+    let read = indexed(AgentKind::Omp, path, stamp, || read_omp(path));
+    let project = read.cwd.clone()?;
+    let title = read.title.clone().unwrap_or_else(|| {
+        path.file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("session")
+            .chars()
+            .take(13)
+            .collect()
+    });
     Some(Found {
         project,
         session: AgentSession {
             id: path.to_string_lossy().into_owned(),
             title,
-            mtime,
+            mtime: stamp.unix_secs(),
         },
         place: Some(path.to_path_buf()),
     })
+}
+
+fn read_omp(path: &Path) -> Indexed {
+    let header = fs::File::open(path).ok().and_then(|file| {
+        BufReader::new(file)
+            .lines()
+            .take(40)
+            .map_while(Result::ok)
+            .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+            .find(|value| value.get("type").and_then(Value::as_str) == Some("session"))
+    });
+    let Some(header) = header else {
+        return Indexed::default();
+    };
+    let named = |key: &str| header.get(key).and_then(Value::as_str).and_then(condense);
+    Indexed {
+        id: None,
+        cwd: header
+            .get("cwd")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        title: omp_title(path)
+            .or_else(|| named("title"))
+            .or_else(|| named("id")),
+    }
 }
 
 fn scan_omp_line(line: &str, named: &mut Option<String>, first_user: &mut Option<String>) {

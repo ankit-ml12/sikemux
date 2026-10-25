@@ -16,8 +16,8 @@ use sikemux_process::sync::Locked;
 
 use super::recent::{provider_hits, Hit, PageScan, RecentProvider};
 use super::{
-    claude, codex, grok, hermes, is_compressed, muse, opencode, pi, title_cache_stamp,
-    transcript_lines, TitleCacheStamp,
+    claude, codex, file_stamp, grok, hermes, is_compressed, muse, opencode, pi, transcript_lines,
+    FileStamp,
 };
 use crate::agent_catalog::AgentKind;
 
@@ -558,10 +558,10 @@ fn prose_of(hit: &Hit) -> Option<Arc<str>> {
     let place = found.place.as_deref();
     let id = found.session.id.as_str();
     let stamp = match agent {
-        AgentKind::Grok => grok::grok_transcript(place?).map(|path| title_cache_stamp(&path))?,
+        AgentKind::Grok => grok::grok_transcript(place?).map(|path| file_stamp(&path))?,
         AgentKind::Hermes => hermes::hermes_stamp(id)?,
-        AgentKind::Opencode | AgentKind::Muse => TitleCacheStamp::at_secs(found.session.mtime),
-        _ => title_cache_stamp(place?),
+        AgentKind::Opencode | AgentKind::Muse => FileStamp::at_secs(found.session.mtime),
+        _ => file_stamp(place?),
     };
     let key = format!("{}\u{0}{id}", hit.agent);
     if let Some(prose) = cache().get(&key, stamp) {
@@ -585,7 +585,7 @@ fn prose_of(hit: &Hit) -> Option<Arc<str>> {
 }
 
 struct Kept {
-    stamp: TitleCacheStamp,
+    stamp: FileStamp,
     prose: Arc<str>,
     used: u64,
 }
@@ -601,7 +601,7 @@ struct ProseCache {
 struct SharedCache(Mutex<ProseCache>);
 
 impl SharedCache {
-    fn get(&self, key: &str, stamp: TitleCacheStamp) -> Option<Arc<str>> {
+    fn get(&self, key: &str, stamp: FileStamp) -> Option<Arc<str>> {
         let mut cache = self.0.locked();
         cache.uses += 1;
         let uses = cache.uses;
@@ -610,7 +610,7 @@ impl SharedCache {
         Some(kept.prose.clone())
     }
 
-    fn put(&self, key: String, stamp: TitleCacheStamp, prose: Arc<str>) {
+    fn put(&self, key: String, stamp: FileStamp, prose: Arc<str>) {
         let mut cache = self.0.locked();
         cache.uses += 1;
         let used = cache.uses;

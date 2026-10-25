@@ -1,20 +1,21 @@
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 use serde_json::Value;
 
+use super::index::{indexed, Indexed};
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::append_line;
 use super::roots::agent_config_root;
 use super::search::Prose;
 use super::AgentSession;
 use super::{
-    cached_title, condense, push_texts, read_prefix, read_suffix, stamped_transcripts,
-    text_from_content, title_cache_stamp, FileCache, TitleCacheStamp,
-    MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    condense, file_stamp, push_texts, read_prefix, read_suffix, stamped_transcripts,
+    text_from_content, FileStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
+use crate::agent_catalog::AgentKind;
 
 // ---- claude — ~/.claude/projects/<cwd-dashed>/<uuid>.jsonl --------------
 const MAX_PROJECT_DIR_NAME: usize = 200;
@@ -73,9 +74,9 @@ pub(super) fn claude_sessions(cwd: &str, config_path: Option<&str>) -> Vec<Agent
     out
 }
 
-pub(super) fn claude_session(path: &Path, stamp: TitleCacheStamp) -> Option<AgentSession> {
+pub(super) fn claude_session(path: &Path, stamp: FileStamp) -> Option<AgentSession> {
     let id = path.file_stem().and_then(|s| s.to_str())?;
-    let title = cached_title(path, stamp, || claude_title(path))?;
+    let title = claude_read(path, stamp).title.clone()?;
     Some(AgentSession {
         id: id.to_string(),
         title,
@@ -109,7 +110,7 @@ pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> V
             .map(|entry| entry.path())
             .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("jsonl"))
         {
-            let stamp = title_cache_stamp(&path);
+            let stamp = file_stamp(&path);
             listed.push(Listed {
                 at_ms: stamp.unix_millis(),
                 key: path.to_string_lossy().into_owned(),
@@ -119,11 +120,9 @@ pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> V
     }
     scan.collect(listed, |(path, stamp, project)| {
         let id = path.file_stem().and_then(|s| s.to_str())?;
-        let title = cached_title(path, *stamp, || claude_title(path))?;
-        let project = match project {
-            Some(project) => project.clone(),
-            None => claude_cwd(path, *stamp)?,
-        };
+        let read = claude_read(path, *stamp);
+        let title = read.title.clone()?;
+        let project = project.clone().or_else(|| read.cwd.clone())?;
         Some(Found {
             project,
             session: AgentSession {
@@ -136,24 +135,8 @@ pub(super) fn claude_recent(scan: &PageScan<'_>, config_path: Option<&str>) -> V
     })
 }
 
-/// The folder a session ran in, which its project folder's name keeps only lossily.
-fn claude_cwd(path: &Path, stamp: TitleCacheStamp) -> Option<String> {
-    static FOLDERS: FileCache = FileCache::new();
-    FOLDERS.get_or(path, stamp, || {
-        let file = fs::File::open(path).ok()?;
-        BufReader::new(file)
-            .lines()
-            .take(40)
-            .map_while(Result::ok)
-            .filter(|line| line.contains("\"cwd\""))
-            .find_map(|line| {
-                serde_json::from_str::<Value>(&line)
-                    .ok()?
-                    .get("cwd")?
-                    .as_str()
-                    .map(str::to_owned)
-            })
-    })
+fn claude_read(path: &Path, stamp: FileStamp) -> Arc<Indexed> {
+    indexed(AgentKind::Claude, path, stamp, || claude_index(path))
 }
 
 #[derive(Default)]
@@ -240,18 +223,27 @@ pub(super) fn rename_claude_session(
 pub(super) const CLAUDE_HEAD_BYTES: u64 = 128 * 1024;
 pub(super) const CLAUDE_TAIL_BYTES: u64 = 128 * 1024;
 
-fn claude_title(path: &Path) -> Option<String> {
-    // Cheap substring guards keep us from JSON-parsing every line.
-    let mut file = fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
+/// Its title, and the folder it ran in, which its project folder's name keeps only lossily.
+fn claude_index(path: &Path) -> Indexed {
+    let Ok(mut file) = fs::File::open(path) else {
+        return Indexed::default();
+    };
+    let len = file.metadata().map_or(0, |metadata| metadata.len());
 
     let mut titles = ClaudeTitles::default();
+    let mut cwd = None;
 
     // Head: captures the first user prompt and any early title. For small
     // transcripts this covers the whole file, keeping the result exact.
-    let head = read_prefix(&mut file, CLAUDE_HEAD_BYTES.min(len))?;
+    // Cheap substring guards keep us from JSON-parsing every line.
+    let head = read_prefix(&mut file, CLAUDE_HEAD_BYTES.min(len)).unwrap_or_default();
     for line in head.lines() {
         scan_claude_line(line, &mut titles);
+        if cwd.is_none() && line.contains("\"cwd\"") {
+            cwd = serde_json::from_str::<Value>(line)
+                .ok()
+                .and_then(|value| value.get("cwd")?.as_str().map(str::to_owned));
+        }
     }
 
     // Tail: the freshest title lives at the end of large transcripts. Skip the
@@ -264,7 +256,11 @@ fn claude_title(path: &Path) -> Option<String> {
         }
     }
 
-    titles.resolve()
+    Indexed {
+        id: None,
+        cwd,
+        title: titles.resolve(),
+    }
 }
 
 /// Lines the CLI wrote itself: injected context, subagents' turns, the summary

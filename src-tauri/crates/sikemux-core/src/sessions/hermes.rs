@@ -10,7 +10,7 @@ use super::apply_login_environment;
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::search::Prose;
 use super::AgentSession;
-use super::TitleCacheStamp;
+use super::FileStamp;
 
 // ---- hermes — `sessions` table in ~/.hermes/state.db (SQLite) -----------
 fn hermes_db() -> Option<Connection> {
@@ -121,7 +121,7 @@ pub(super) async fn rename_hermes_session(
 }
 
 /// Changes whenever a message is added to the session.
-pub(super) fn hermes_stamp(session_id: &str) -> Option<TitleCacheStamp> {
+pub(super) fn hermes_stamp(session_id: &str) -> Option<FileStamp> {
     let conn = hermes_db()?;
     let (last, count) = conn
         .query_row(
@@ -130,7 +130,7 @@ pub(super) fn hermes_stamp(session_id: &str) -> Option<TitleCacheStamp> {
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
         .ok()?;
-    Some(TitleCacheStamp {
+    Some(FileStamp {
         modified_ns: last.max(0) as u128,
         len: count.max(0) as u64,
     })

@@ -7,12 +7,13 @@ use serde_json::Value;
 
 use crate::agent_catalog::AgentKind;
 
+use super::index::{indexed, Indexed};
 use super::recent::{Found, Hit, Listed, PageScan};
 use super::rename::{append_line, now_iso8601};
 use super::search::Prose;
 use super::{
-    cached_title, collect_transcripts, condense, is_jsonl, mtime_of, push_texts, read_suffix, text_from_content,
-    title_cache_stamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
+    collect_transcripts, condense, file_stamp, is_jsonl, push_texts, read_suffix,
+    stamped_transcripts, text_from_content, FileStamp, MAX_AGENT_TRANSCRIPTS_INSPECTED,
 };
 
 const PI_TAIL_BYTES: u64 = 128 * 1024;
@@ -31,13 +32,13 @@ pub(super) fn pi_sessions(cwd: &str) -> Vec<AgentSession> {
     };
     let mut files = Vec::new();
     collect_transcripts(&root, is_jsonl, &mut files, 0);
-    files.sort_unstable_by_key(|path| std::cmp::Reverse(mtime_of(path)));
+    let mut files = stamped_transcripts(files.into_iter());
     files.truncate(MAX_AGENT_TRANSCRIPTS_INSPECTED);
 
     let mut out: Vec<AgentSession> = files
         .par_iter()
-        .filter_map(|path| {
-            pi_session(path)
+        .filter_map(|(path, stamp)| {
+            pi_session(path, *stamp)
                 .filter(|found| found.project == cwd)
                 .map(|found| found.session)
         })
@@ -54,32 +55,23 @@ pub(super) fn pi_recent(scan: &PageScan<'_>) -> Vec<Hit> {
     collect_transcripts(&root, is_jsonl, &mut files, 0);
     let listed = files
         .into_iter()
-        .map(|path| Listed {
-            at_ms: title_cache_stamp(&path).unix_millis(),
-            key: path.to_string_lossy().into_owned(),
-            item: path,
+        .map(|path| {
+            let stamp = file_stamp(&path);
+            Listed {
+                at_ms: stamp.unix_millis(),
+                key: path.to_string_lossy().into_owned(),
+                item: (path, stamp),
+            }
         })
         .collect();
-    scan.collect(listed, |path| pi_session(path))
+    scan.collect(listed, |(path, stamp)| pi_session(path, *stamp))
 }
 
 /// The session in one transcript and the project its header names.
-pub(super) fn pi_session(path: &Path) -> Option<Found> {
-    let file = fs::File::open(path).ok()?;
-    let mut first = String::new();
-    BufReader::new(file).read_line(&mut first).ok()?;
-    let v = serde_json::from_str::<Value>(first.trim()).ok()?;
-    if v.get("type").and_then(|t| t.as_str()) != Some("session") {
-        return None;
-    }
-    let project = v.get("cwd").and_then(|c| c.as_str())?.to_string();
-    let id = path.to_string_lossy().to_string();
-    let mtime = mtime_of(path);
-    let title = cached_title(path, title_cache_stamp(path), || {
-        pi_latest_name(path).or_else(|| pi_title(path))
-    })
-    .or_else(|| v.get("id").and_then(|i| i.as_str()).and_then(condense))
-    .unwrap_or_else(|| {
+pub(super) fn pi_session(path: &Path, stamp: FileStamp) -> Option<Found> {
+    let read = indexed(AgentKind::Pi, path, stamp, || read_pi(path));
+    let project = read.cwd.clone()?;
+    let title = read.title.clone().unwrap_or_else(|| {
         path.file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("session")
@@ -89,9 +81,35 @@ pub(super) fn pi_session(path: &Path) -> Option<Found> {
     });
     Some(Found {
         project,
-        session: AgentSession { id, title, mtime },
+        session: AgentSession {
+            id: path.to_string_lossy().to_string(),
+            title,
+            mtime: stamp.unix_secs(),
+        },
         place: Some(path.to_path_buf()),
     })
+}
+
+fn read_pi(path: &Path) -> Indexed {
+    let header = fs::File::open(path).ok().and_then(|file| {
+        let mut first = String::new();
+        BufReader::new(file).read_line(&mut first).ok()?;
+        let header = serde_json::from_str::<Value>(first.trim()).ok()?;
+        (header.get("type").and_then(|t| t.as_str()) == Some("session")).then_some(header)
+    });
+    let Some(header) = header else {
+        return Indexed::default();
+    };
+    Indexed {
+        id: None,
+        cwd: header
+            .get("cwd")
+            .and_then(|c| c.as_str())
+            .map(str::to_string),
+        title: pi_latest_name(path)
+            .or_else(|| pi_title(path))
+            .or_else(|| header.get("id").and_then(|i| i.as_str()).and_then(condense)),
+    }
 }
 
 fn pi_title(path: &Path) -> Option<String> {
