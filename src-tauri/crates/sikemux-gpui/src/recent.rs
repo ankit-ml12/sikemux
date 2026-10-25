@@ -16,13 +16,14 @@ pub const PALETTE_PAGE: usize = 100;
 /// How long typing in the filter settles before the core is asked.
 const SETTLE: Duration = Duration::from_millis(150);
 
-/// Saved chats of `project` the core answered, those matching `query`, and where the
-/// next page starts.
+/// Saved chats of `project` the core answered, those matching `query`, where the next page
+/// starts, and whether a page is on its way.
 pub struct OlderChats {
     pub project: String,
     pub query: String,
     pub chats: Vec<RecentInfo>,
     pub next: Option<Value>,
+    loading: bool,
 }
 
 impl Workbench {
@@ -38,13 +39,14 @@ impl Workbench {
             .older
             .as_ref()
             .is_some_and(|older| older.project == project && older.query == query);
-        let cursor = match (same, more) {
-            (true, false) => return,
-            (true, true) => match self.older.as_ref().and_then(|older| older.next.clone()) {
-                Some(cursor) => Some(cursor),
-                None => return,
-            },
-            (false, _) => None,
+        let cursor = match (same, more, self.older.as_mut()) {
+            (true, false, _) => return,
+            (true, true, Some(older)) if !older.loading && older.next.is_some() => {
+                older.loading = true;
+                older.next.clone()
+            }
+            (true, _, _) => return,
+            (false, _, _) => None,
         };
         if !same {
             self.older = Some(OlderChats {
@@ -52,22 +54,18 @@ impl Workbench {
                 query: query.clone(),
                 chats: Vec::new(),
                 next: None,
+                loading: true,
             });
         }
         let params =
             json!({ "project": project, "query": query, "cursor": cursor, "limit": limit });
-        let answer = self.target().request("recentChats", params);
+        let target = self.target();
         let settle = !same && !query.is_empty();
         self._older = Some(cx.spawn(async move |this, cx| {
             if settle {
                 cx.background_executor().timer(SETTLE).await;
             }
-            let Ok(page) = answer.await else {
-                return;
-            };
-            let chats: Vec<RecentInfo> =
-                serde_json::from_value(page["chats"].clone()).unwrap_or_default();
-            let next = Some(page["next"].clone()).filter(|next| !next.is_null());
+            let page = target.request("recentChats", params).await.ok();
             let _ = this.update(cx, |bench, cx| {
                 let Some(older) = bench
                     .older
@@ -76,8 +74,14 @@ impl Workbench {
                 else {
                     return;
                 };
-                older.chats.extend(chats);
-                older.next = next;
+                older.loading = false;
+                older.next = None;
+                if let Some(page) = page {
+                    let chats: Vec<RecentInfo> =
+                        serde_json::from_value(page["chats"].clone()).unwrap_or_default();
+                    older.chats.extend(chats);
+                    older.next = Some(page["next"].clone()).filter(|next| !next.is_null());
+                }
                 bench.refill_agent_palette(cx);
                 cx.notify();
             });

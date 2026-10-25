@@ -110,10 +110,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .map(|recent| recent_row(bench, recent, cx))
         .collect();
     if bench.has_older() && !recent.is_empty() {
-        let older = new_row("older-chats", Icon::Clock, "Older chats", "", cx).on_click(
-            cx.listener(|bench, _, _, cx| bench.look_for_older(true, crate::recent::PAGE, cx)),
-        );
-        recent.push(older.into_any_element());
+        recent.push(older_when_seen(bench, cx));
     }
     let empty = (rows.is_empty() && pinned.is_empty() && recent.is_empty()).then(|| {
         let shown = (project.zip(other_host(bench)))
@@ -206,6 +203,7 @@ fn page_panel(bench: &Workbench, page: RailPage, cx: &mut Context<Workbench>) ->
         .child(
             div()
                 .id("tab-rail-scroll")
+                .track_scroll(&bench.rail_scroll)
                 .flex_1()
                 .min_h_0()
                 .pt(px(8.))
@@ -488,6 +486,26 @@ fn recent_row(bench: &Workbench, recent: &RecentInfo, cx: &mut Context<Workbench
             )
         })
         .into_any_element()
+}
+
+/// The foot of Recent, which brings the next page of older chats once it scrolls into view.
+fn older_when_seen(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
+    let (scroll, this) = (bench.rail_scroll.clone(), cx.weak_entity());
+    canvas(
+        move |bounds, _, cx| {
+            if bounds.top() <= scroll.bounds().bottom() {
+                cx.defer(move |cx| {
+                    let _ = this.update(cx, |bench, cx| {
+                        bench.look_for_older(true, crate::recent::PAGE, cx)
+                    });
+                });
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .w_full()
+    .h(px(1.))
+    .into_any_element()
 }
 
 /// Asks for a recent chat's new title, and renames it in its CLI's own history.
