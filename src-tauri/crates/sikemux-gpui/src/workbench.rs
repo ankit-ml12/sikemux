@@ -277,6 +277,8 @@ pub struct Workbench {
     pub watched_worktree: Option<(String, String, crate::hosts::Place)>,
     /// The core's trust questions already put to the person, by id.
     trust_asked: HashSet<String>,
+    /// The skills agents saved in their own folders that the person was told of, by path.
+    pub(crate) skills_offered: HashSet<String>,
     /// The account host whose trust questions `host-trust` holds, asked beside this host's.
     trust_host: Option<String>,
     /// Holds the keyboard while nothing in the window does, so the window's shortcuts reach it.
@@ -531,6 +533,10 @@ impl Workbench {
             Watch::new("agentUsages", json!({}), &["usage"]),
         ));
         let _ = asks.send(Ask::Watch(
+            "skills-added",
+            Watch::new("skillsAdded", json!({}), &["skills"]),
+        ));
+        let _ = asks.send(Ask::Watch(
             "preferences",
             Watch::new("preferences", json!({}), &["preferences"]),
         ));
@@ -691,6 +697,7 @@ impl Workbench {
             sharing: None,
             watched_worktree: None,
             trust_asked: HashSet::new(),
+            skills_offered: HashSet::new(),
             trust_host: None,
             peeking: None,
             unpeek: None,
@@ -946,6 +953,7 @@ impl Workbench {
                 }
                 return;
             }
+            Update::Read("skills-added", value) => return self.offer_skills(&value, cx),
             Update::Read("plugins", value) => {
                 self.reads.insert("plugins", value);
                 self.watch_ci();
