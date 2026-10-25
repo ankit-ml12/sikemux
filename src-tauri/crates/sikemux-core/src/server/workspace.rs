@@ -161,6 +161,13 @@ struct Recent {
     active_at: u64,
 }
 
+impl Published {
+    /// The launchers of chat agents, then of those that run only in their own terminal.
+    fn every_launcher(&self) -> impl Iterator<Item = &Launcher> {
+        self.launchers.iter().chain(&self.terminals)
+    }
+}
+
 #[derive(Default)]
 struct Published {
     saved: Saved,
@@ -475,8 +482,7 @@ fn choice_of(
         .as_ref()
         .map(|book| format!("{}:{}", chat.provider, book.chosen(&chat.provider)));
     let launcher = published
-        .launchers
-        .iter()
+        .every_launcher()
         .filter(|launcher| launcher.agent.provider == chat.provider)
         .find(|launcher| {
             launcher.id == chat.launcher
@@ -485,8 +491,7 @@ fn choice_of(
         .or_else(|| {
             chat.launcher.is_empty().then(|| {
                 published
-                    .launchers
-                    .iter()
+                    .every_launcher()
                     .find(|launcher| launcher.agent.provider == chat.provider)
             })?
         })
@@ -801,8 +806,7 @@ impl Workspaces {
         let agent = AgentKind::from_name(&chat.provider)
             .ok_or_else(|| CoreError::from(format!("{} keeps no saved chats", chat.provider)))?;
         let launcher = published
-            .launchers
-            .iter()
+            .every_launcher()
             .find(|launcher| launcher.id == chat.launcher);
         Ok(RecentSession {
             agent,
@@ -1432,7 +1436,7 @@ impl Workspaces {
     }
 
     /// How to look for a page of saved chats in the project `asked` names, or in every
-    /// project, with the launcher that finds each agent's.
+    /// project, with the launcher that finds each agent's, terminal agents' too.
     fn page_request(&self, asked: RecentChatsParams) -> CoreResult<(Vec<String>, RecentRequest)> {
         let published = self.published.locked();
         let saved = &published.saved;
@@ -1445,7 +1449,9 @@ impl Workspaces {
                 .into_owned()],
             None => recent_projects(saved),
         };
-        let (launchers, providers) = recent_providers(&published).into_iter().unzip();
+        let (launchers, providers) = recent_providers(published.every_launcher(), &published.saved)
+            .into_iter()
+            .unzip();
         let request = RecentRequest {
             providers,
             projects,
@@ -1469,11 +1475,12 @@ impl Workspaces {
         shown(&published, found.iter(), open)
     }
 
-    /// What to look for recent chats with: each launcher's account once, in every project.
+    /// What to look for recent chats with: each chat agent's account once, in every project.
+    /// Phones read these, and they start only chats.
     fn recent_requests(&self) -> Vec<(String, RecentRequest)> {
         let published = self.published.locked();
         let projects = recent_projects(&published.saved);
-        recent_providers(&published)
+        recent_providers(published.launchers.iter(), &published.saved)
             .into_iter()
             .map(|(launcher, provider)| {
                 let request = RecentRequest {
@@ -2270,10 +2277,13 @@ fn recent_projects(saved: &Saved) -> Vec<String> {
 
 /// Each agent's saved chats are looked for once, on the account the person chose for it,
 /// with the launcher that starts it there.
-fn recent_providers(published: &Published) -> Vec<(String, RecentProvider)> {
-    let selected = published.saved.accounts.as_ref().map(|book| &book.selected);
+fn recent_providers<'a>(
+    launchers: impl Iterator<Item = &'a Launcher>,
+    saved: &Saved,
+) -> Vec<(String, RecentProvider)> {
+    let selected = saved.accounts.as_ref().map(|book| &book.selected);
     let mut providers: Vec<(String, RecentProvider)> = Vec::new();
-    for launcher in &published.launchers {
+    for launcher in launchers {
         let Some(agent) = AgentKind::from_name(&launcher.agent.provider) else {
             continue;
         };
