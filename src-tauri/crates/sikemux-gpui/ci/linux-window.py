@@ -7,16 +7,21 @@ and checks it shows a window with the seeded chat. With --browser, L6 has the fa
 reply with page_show, which must draw in the chat, and L2 has it open a desk browser tab on a local page
 through the agent browser tool; with --input as well, L4 has it type into the page's field,
 press a key there and read the field back, L5 has the page ask a prompt the person sees in a dialog and the agent
-answers, and L3 click a link there, all with the same tools. L2 and L4 also need the page drawn in their capture,
+answers, and L3 click a link there, all with the same tools. L7 starts the app again with a sikemux:// link to
+the first chat, which must hand it to the running window and quit; L8, on a session bus with the desktop portal,
+turns GNOME's animations off and on and needs the app's reduce-motion to follow. L2 and L4 also need the page drawn in their capture,
 not a black or blank area. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
 """
 
 import argparse
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -124,6 +129,45 @@ def click_from_tool(run):
     run.report("L3", bool(page), f"browser.click answered {said[:160]!r}; the desk's page after it {page.get('url')}")
 
 
+def link_handoff(run):
+    first = run.agents[0] if run.agents else None
+    chats = (json.loads(path.read_text()) for path in (run.root / "data/chats").glob("*.json"))
+    launch = next((chat["launch"] for chat in chats if (chat.get("launch") or {}).get("agentId") == first), None)
+    if not launch:
+        run.report("L7", False, f"no saved chat for the first seeded agent {first}")
+        return
+    link = f"sikemux://agent/{launch['provider']}/{launch['resumeId']}?project={urllib.parse.quote(launch['cwd'])}"
+    before = run.strip().get("active")
+    log = open(run.root / "second-start.log", "w")
+    second = subprocess.Popen([run.app_exe, link], env={**run.env, "SIKEMUX_CORE_SOCKET": str(run.socket)}, stdout=log, stderr=subprocess.STDOUT)
+    try:
+        code = second.wait(10)
+    except subprocess.TimeoutExpired:
+        second.kill()
+        code = None
+    followed = desk.until(lambda: run.strip().get("active") == f"agent:{first}", 10)
+    run.report("L7", code == 0 and before != f"agent:{first}" and bool(followed),
+               f"the second start with {link} {'was still running after 10 s' if code is None else f'exited {code}'}; "
+               f"the front tab went from {before!r} to {run.strip().get('active')!r}, wanted 'agent:{first}'")
+
+
+def follows_motion(run):
+    if not (shutil.which("gsettings") and os.environ.get("DBUS_SESSION_BUS_ADDRESS")):
+        run.leave("L8", "needs a session bus with the desktop portal and gsettings")
+        return
+    motion = lambda: ((run.state() or {}).get("sky") or {}).get("reduceMotion")
+    animations = lambda on: subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "enable-animations", on],
+                                           capture_output=True, text=True).stderr.strip()
+    before = motion()
+    off = animations("false")
+    still = desk.until(lambda: motion() is True, 10)
+    on = animations("true")
+    moving = desk.until(lambda: motion() is False, 10)
+    run.report("L8", before is False and bool(still) and bool(moving),
+               f"reduceMotion {before} at the start, {'true' if still else 'unchanged'} with animations off{f' ({off})' if off else ''}, "
+               f"{'false again' if moving else 'unchanged'} with them on{f' ({on})' if on else ''}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     for name in ("app", "core", "agent", "seed", "out"):
@@ -150,6 +194,8 @@ def main():
             run.leave("L4", "waits for input in the Linux browser (pass --browser --input once keys reach a page)")
             run.leave("L5", "waits for input in the Linux browser (pass --browser --input once dialogs reach the agent)")
             run.leave("L3", "waits for input in the Linux browser (pass --browser --input once clicks reach a page)")
+        link_handoff(run)
+        follows_motion(run)
     finally:
         run.tear_down()
     (run.out / "results.json").write_text(json.dumps(run.results, indent=1))

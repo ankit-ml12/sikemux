@@ -106,6 +106,9 @@ class Run:
         self.sockets = Path(tempfile.mkdtemp(prefix="desk-", dir="/tmp"))
         self.socket = self.sockets / "core.sock"
         self.drive_socket = self.sockets / "drive.sock"
+        if sys.platform != "darwin":
+            # A second start finds the running app by a socket in here, so it must not reach a real session's app.
+            self.env["XDG_RUNTIME_DIR"] = str(self.sockets)
         core = subprocess.Popen([self.core_exe, "--socket", self.socket, "--data-dir", self.root / "data"],
                                 env=self.env, stdout=open(self.root / "core.log", "w"), stderr=subprocess.STDOUT)
         self.processes.append(core)
