@@ -16,7 +16,7 @@ use gpui_kit::{
     actions, div, img, list, px, relative, AnyElement, App, AppContext, Context, Div, Entity,
     FocusHandle, Focusable, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding,
     KeyDownEvent, ListAlignment, ListState, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, StyledText, Subscription, Task, Window,
+    StatefulInteractiveElement, Styled, StyledText, Subscription, Task, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use sikemux_core::server::search::{
@@ -30,6 +30,7 @@ use crate::syntax::{self, LineRuns};
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::toast;
 use crate::ui;
+use crate::workbench::Workbench;
 
 /// Brings the project's Search tab forward with its query in hand, opening one when it
 /// has none.
@@ -97,6 +98,8 @@ struct Shown {
 pub struct SearchPane {
     core: Target,
     pub project: String,
+    /// The window's workbench, whose editors hold edits a replace must not write under.
+    bench: WeakEntity<Workbench>,
     fields: Option<Fields>,
     options: SearchOptions,
     replace_open: bool,
@@ -130,10 +133,16 @@ impl SearchPane {
         self.core.place()
     }
 
-    pub fn new(core: Target, project: String, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        core: Target,
+        project: String,
+        bench: WeakEntity<Workbench>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self {
             core,
             project,
+            bench,
             fields: None,
             options: SearchOptions::default(),
             replace_open: false,
@@ -454,6 +463,12 @@ impl SearchPane {
             return;
         }
         let dry_run = self.previewed.is_none();
+        if !dry_run {
+            if let Some(refused) = self.unsaved_in_replace(cx) {
+                window.push_notification(toast::error(refused), cx);
+                return;
+            }
+        }
         self.replacing = true;
         let params = json!({ "project": self.project, "query": self.query, "replace": self.replace, "options": self.options, "dryRun": dry_run });
         let answer = self.core.request("searchReplace", params);
@@ -482,6 +497,32 @@ impl SearchPane {
         })
         .detach();
         cx.notify();
+    }
+
+    /// Why the replace must wait, when files it changes have unsaved edits in an editor.
+    fn unsaved_in_replace(&self, cx: &App) -> Option<String> {
+        let previewed = self.previewed.as_ref()?;
+        let bench = self.bench.upgrade()?;
+        let root = Path::new(&self.project);
+        let unsaved: Vec<String> = (bench.read(cx).editors)
+            .unsaved_under(self.place(), root)
+            .filter(|path| (previewed.files.iter()).any(|file| root.join(&file.path) == *path))
+            .map(|path| {
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        let (shown, more) = match unsaved.len() {
+            0 => return None,
+            count if count > 3 => (&unsaved[..3], format!(" and {} more", count - 3)),
+            _ => (&unsaved[..], String::new()),
+        };
+        Some(format!(
+            "Save or close unsaved files before replacing: {}{more}",
+            shown.join(", ")
+        ))
     }
 
     fn replaced_with(&mut self, results: ReplaceResults) {

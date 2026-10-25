@@ -208,14 +208,17 @@ impl Editors {
         self.open.get(key).is_some_and(|document| document.dirty)
     }
 
-    /// How many files under `root` on `place` have changes not saved.
-    pub fn dirty_under(&self, place: &Host, root: &Path) -> usize {
-        self.open
-            .iter()
-            .filter(|(key, document)| {
+    /// The files under `root` on `place` with changes not saved.
+    pub fn unsaved_under<'a>(
+        &'a self,
+        place: &'a Host,
+        root: &'a Path,
+    ) -> impl Iterator<Item = &'a Path> + 'a {
+        (self.open.iter())
+            .filter(move |(key, document)| {
                 document.dirty && key.place == *place && key.path.starts_with(root)
             })
-            .count()
+            .map(|(key, _)| key.path.as_path())
     }
 
     /// The files on `place` its core keeps watching for changes on disk.
@@ -943,28 +946,7 @@ fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
         state.set_highlighter_factory(factory, cx);
         state
     });
-    let watched = key.clone();
-    let changes = cx.subscribe(&state, move |bench, state, event: &InputEvent, cx| {
-        if !matches!(event, InputEvent::Change) {
-            return;
-        }
-        let asks = bench.asks.clone();
-        let Some(document) = bench.editors.open.get_mut(&watched) else {
-            return;
-        };
-        let text = state.read(cx).value();
-        let dirty = text.len() != document.saved.len() || text.as_ref() != document.saved;
-        lsp::changed(document, &asks, cx);
-        if dirty != document.dirty {
-            document.dirty = dirty;
-            cx.notify();
-        }
-        if dirty {
-            keep_preview(bench, &watched.path);
-        }
-        gutter::changed(&watched, bench, cx);
-        blame::typed(bench, &watched, cx);
-    });
+    let changes = follow_edits(&state, key.clone(), cx);
     let target = Target::new(&bench.asks, key.place.clone());
     bench.editors.open.insert(
         key.clone(),
@@ -989,6 +971,84 @@ fn open(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
     );
     show_files(bench, &key.place);
     read(bench, key, window, cx);
+}
+
+/// Keeps the file `key`'s unsaved mark, language server, gutter and blame in step with its
+/// edits.
+fn follow_edits(
+    state: &Entity<EditorState>,
+    watched: FileKey,
+    cx: &mut Context<Workbench>,
+) -> Subscription {
+    cx.subscribe(state, move |bench, state, event: &InputEvent, cx| {
+        if !matches!(event, InputEvent::Change) {
+            return;
+        }
+        let asks = bench.asks.clone();
+        let Some(document) = bench.editors.open.get_mut(&watched) else {
+            return;
+        };
+        let text = state.read(cx).value();
+        let dirty = text.len() != document.saved.len() || text.as_ref() != document.saved;
+        lsp::changed(document, &asks, cx);
+        if dirty != document.dirty {
+            document.dirty = dirty;
+            cx.notify();
+        }
+        if dirty {
+            keep_preview(bench, &watched.path);
+        }
+        gutter::changed(&watched, bench, cx);
+        blame::typed(bench, &watched, cx);
+    })
+}
+
+/// Moves the editors of `from` on `place`, or of the files under it, to the same names under
+/// `to`, with their unsaved edits.
+pub fn renamed(
+    bench: &mut Workbench,
+    place: &Host,
+    from: &Path,
+    to: &Path,
+    cx: &mut Context<Workbench>,
+) {
+    let moved: Vec<(FileKey, FileKey)> = (bench.editors.open.keys())
+        .filter(|key| key.place == *place)
+        .filter_map(|key| {
+            let rest = key.path.strip_prefix(from).ok()?;
+            Some((key.clone(), FileKey::new(place.clone(), to.join(rest))))
+        })
+        .collect();
+    if moved.is_empty() {
+        return;
+    }
+    for (old, new) in &moved {
+        let Some(mut document) = bench.editors.open.remove(old) else {
+            continue;
+        };
+        lsp::closed(&document, &bench.asks);
+        document.served = None;
+        document._changes = follow_edits(&document.state, new.clone(), cx);
+        bench.editors.open.insert(new.clone(), document);
+    }
+    show_files(bench, place);
+    let Some(window) = bench.editors.window else {
+        return;
+    };
+    cx.spawn(async move |this, cx| {
+        let _ = window.update(cx, |_, window, cx| {
+            let _ = this.update(cx, |bench, cx| {
+                for (_, key) in moved {
+                    if key.place == Host::This {
+                        lsp::attach(bench, key.path.clone(), window, cx);
+                    }
+                    gutter::read_base(bench, &key, cx);
+                    blame::read(bench, &key, cx);
+                }
+            });
+        });
+    })
+    .detach();
 }
 
 /// Tells the core of `place` which files to watch: every one of its files open in an editor.
@@ -1224,8 +1284,8 @@ fn keep_preview(bench: &Workbench, path: &Path) {
     }
 }
 
-/// Lets go of every file with no unsaved edits that no tab shows any more.
-pub fn keep(bench: &mut Workbench) {
+/// Every file a tab or desk shows, once for each view of it.
+fn shown(bench: &Workbench) -> Vec<FileKey> {
     let mut shown = Vec::new();
     let views = bench.view.iter().map(|view| (Host::This, view)).chain(
         bench
@@ -1249,6 +1309,77 @@ pub fn keep(bench: &mut Workbench) {
             .desk_files()
             .map(|path| FileKey::new(place.clone(), path.clone())),
     );
+    shown
+}
+
+/// Closes what hides the files `closing`, asking first when that loses unsaved edits nothing
+/// else shows, and letting those edits go once the person says so.
+pub fn close_unsaved(
+    bench: &mut Workbench,
+    closing: Vec<FileKey>,
+    close: impl Fn(&mut Workbench, &mut Context<Workbench>) + 'static,
+    cx: &mut Context<Workbench>,
+) {
+    let mut left = shown(bench);
+    for key in &closing {
+        if let Some(at) = left.iter().position(|shown| shown == key) {
+            left.swap_remove(at);
+        }
+    }
+    let mut lost: Vec<FileKey> = Vec::new();
+    for key in closing {
+        if bench.editors.is_dirty(&key) && !left.contains(&key) && !lost.contains(&key) {
+            lost.push(key);
+        }
+    }
+    let (title, body) = match lost.as_slice() {
+        [] => return close(bench, cx),
+        [one] => (
+            format!("Close {} without saving?", name_of(&one.path)),
+            "Its unsaved changes are lost.",
+        ),
+        many => (
+            format!("Close {} files without saving?", many.len()),
+            "Their unsaved changes are lost.",
+        ),
+    };
+    bench.confirm(
+        title,
+        body,
+        "Close",
+        true,
+        move |bench, yes, _, cx| {
+            if !yes {
+                return;
+            }
+            for key in &lost {
+                if let Some(document) = bench.editors.open.get_mut(key) {
+                    document.dirty = false;
+                }
+            }
+            close(bench, cx);
+            keep(bench);
+        },
+        cx,
+    );
+}
+
+/// The files in `pane`, its own or every one of its splits'.
+pub fn files_of(place: &Host, pane: &Pane) -> Vec<FileKey> {
+    let mut found = Vec::new();
+    files_in(place, pane, &mut found);
+    found
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name()
+        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy())
+        .into_owned()
+}
+
+/// Lets go of every file with no unsaved edits that no tab shows any more.
+pub fn keep(bench: &mut Workbench) {
+    let shown = shown(bench);
     let closed: Vec<FileKey> = bench
         .editors
         .viewers

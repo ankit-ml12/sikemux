@@ -1062,9 +1062,11 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Moves the editor tabs of `from`, or of the files under it, to the same names under
-    /// `to`, each in its own place in the strip, leaving the tab in front where it was.
-    fn follow_rename(&self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+    /// Moves the editors and tabs of `from`, or of the files under it, to the same names under
+    /// `to`, each tab in its own place in the strip, leaving the tab in front where it was.
+    fn follow_rename(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+        crate::editor::renamed(self, &self.place(), from, to, cx);
+        self.rename_desk_files(from, to);
         let Some(strip) = self.strip() else {
             return;
         };

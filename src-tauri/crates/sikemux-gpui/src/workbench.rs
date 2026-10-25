@@ -3421,7 +3421,8 @@ impl Workbench {
         }) {
             return;
         }
-        self.search = Some(cx.new(|cx| SearchPane::new(target, project, cx)));
+        let bench = cx.weak_entity();
+        self.search = Some(cx.new(|cx| SearchPane::new(target, project, bench, cx)));
     }
 
     /// Keeps a pane for each plugin view of the strip in front, so a plugin's tab keeps what
@@ -3643,7 +3644,8 @@ impl Workbench {
         }) {
             Some(search) => search.clone(),
             None => {
-                let search = cx.new(|cx| SearchPane::new(target, path, cx));
+                let bench = cx.weak_entity();
+                let search = cx.new(|cx| SearchPane::new(target, path, bench, cx));
                 self.search = Some(search.clone());
                 search
             }

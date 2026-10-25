@@ -99,7 +99,10 @@ impl Workbench {
             .iter()
             .filter(|agent| matches!(agent.status, AgentStatus::Working | AgentStatus::Blocked))
             .count();
-        let unsaved = self.editors.dirty_under(&self.place(), &project.path);
+        let unsaved = self
+            .editors
+            .unsaved_under(&self.place(), &project.path)
+            .count();
         let path = project.path.to_string_lossy().into_owned();
         let close =
             move |bench: &mut Workbench| bench.call("removeProject", json!({ "path": path }));
@@ -207,6 +210,18 @@ impl Workbench {
         let Some((pane, kind, target)) = shown.cloned() else {
             return;
         };
+        let place = self.place();
+        let closing = match split {
+            true => crate::editor::files_of(
+                &place,
+                &Pane::View {
+                    id: pane.clone(),
+                    kind,
+                    target: target.clone(),
+                },
+            ),
+            false => crate::editor::files_of(&place, &tab.pane),
+        };
         let tab_id = tab.id.clone();
         let close = move |bench: &mut Workbench| match split {
             true => bench.close_pane(&strip, &tab_id, &pane),
@@ -225,29 +240,7 @@ impl Workbench {
                 }
             });
         }
-        if kind == PaneKind::Files
-            && self
-                .editors
-                .is_dirty(&crate::editor::FileKey::new(self.place(), &target))
-        {
-            let name = std::path::Path::new(&target).file_name().map_or_else(
-                || target.clone(),
-                |name| name.to_string_lossy().into_owned(),
-            );
-            return self.confirm(
-                format!("Close {name} without saving?"),
-                "Its unsaved changes are lost.",
-                "Close",
-                true,
-                move |bench, yes, _, _| {
-                    if yes {
-                        close(bench);
-                    }
-                },
-                cx,
-            );
-        }
-        close(self);
+        crate::editor::close_unsaved(self, closing, move |bench, _| close(bench), cx);
     }
 
     fn saved_title(&self, agent: &str) -> Option<String> {

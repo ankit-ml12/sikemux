@@ -20,27 +20,33 @@ impl Workbench {
         });
     }
 
-    /// Closes tabs of `strip`, asking first about the agents in them.
+    /// Closes tabs of `strip`, asking first about the agents and unsaved files in them.
     pub fn close_tabs_asking(&mut self, strip: Strip, tabs: Vec<String>, cx: &mut Context<Self>) {
-        let mut agents = Vec::new();
+        let place = self.place();
+        let (mut agents, mut files) = (Vec::new(), Vec::new());
         for tab in self
             .tabs(&strip)
             .iter()
             .filter(|tab| tabs.contains(&tab.id))
         {
             agents_in(&tab.pane, &mut agents);
+            files.extend(crate::editor::files_of(&place, &tab.pane));
         }
         let title = match (tabs.len(), agents.as_slice()) {
             (1, [one]) => format!("Close {}?", self.label_of(one, false)),
             (1, _) => "Close this tab?".to_owned(),
             (count, _) => format!("Close {count} tabs?"),
         };
-        self.ask_to_stop(agents, title, cx, move |bench, workers| {
-            bench.close_tabs(&strip, &tabs);
-            if !workers.is_empty() {
-                bench.call("closeAgents", json!({ "agentIds": workers }));
-            }
-        });
+        let close = move |bench: &mut Workbench, cx: &mut Context<Workbench>| {
+            let (strip, tabs) = (strip.clone(), tabs.clone());
+            bench.ask_to_stop(agents.clone(), title.clone(), cx, move |bench, workers| {
+                bench.close_tabs(&strip, &tabs);
+                if !workers.is_empty() {
+                    bench.call("closeAgents", json!({ "agentIds": workers }));
+                }
+            });
+        };
+        crate::editor::close_unsaved(self, files, close, cx);
     }
 
     /// Runs `close` with the workers to stop too. When these agents started others, one

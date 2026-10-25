@@ -680,6 +680,21 @@ impl Workbench {
         }
     }
 
+    /// Takes an item off the agent's desk, asking first when that loses a file's unsaved edits.
+    fn close_desk_item(&mut self, agent: &str, item: DeskItem, cx: &mut Context<Self>) {
+        let closing = match &item {
+            DeskItem::File(path) => vec![crate::editor::FileKey::new(self.place(), path)],
+            DeskItem::Terminal { .. } => Vec::new(),
+        };
+        let agent = agent.to_owned();
+        crate::editor::close_unsaved(
+            self,
+            closing,
+            move |bench, _| bench.take_off_desk(&agent, &item),
+            cx,
+        );
+    }
+
     /// Takes an item off the agent's desk; the last one left comes to the front, else its pages.
     fn take_off_desk(&mut self, agent: &str, item: &DeskItem) {
         let Some(items) = self.desks.items.get_mut(agent) else {
@@ -746,6 +761,21 @@ impl Workbench {
                 continue;
             }
             self.put_on_desk(&agent, DeskItem::Terminal { session, title }, front);
+        }
+    }
+
+    /// Points the desks' files at `from`, or under it, to the same names under `to`.
+    pub(crate) fn rename_desk_files(&mut self, from: &Path, to: &Path) {
+        let desks = &mut self.desks;
+        let held = (desks.items.values_mut().flatten())
+            .chain(desks.front.values_mut())
+            .chain(desks.last_front.values_mut());
+        for item in held {
+            if let DeskItem::File(path) = item {
+                if let Ok(rest) = path.strip_prefix(from) {
+                    *path = to.join(rest);
+                }
+            }
         }
     }
 
@@ -907,7 +937,7 @@ impl Workbench {
 
     /// Closes what the desk holding the keys shows, its page or its simulator, and says whether
     /// it had one to close; elsewhere, ⌘W closes the tab as it would anywhere else.
-    pub fn close_shown_page(&mut self, window: &Window, cx: &App) -> bool {
+    pub fn close_shown_page(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
         let file_desk = self.front_agent().and_then(|(tab, _, agent)| {
             let desk = self.desk_of(&tab, &agent)?;
             let keys_in_file = matches!(self.desks.front.get(&agent),
@@ -916,7 +946,7 @@ impl Workbench {
         });
         if let Some(agent) = file_desk {
             if let Some(item) = self.desks.front.get(&agent).cloned() {
-                self.take_off_desk(&agent, &item);
+                self.close_desk_item(&agent, item, cx);
                 return true;
             }
         }
@@ -1529,7 +1559,7 @@ pub fn pane(
                 ui::spot(|| format!("desk-close-{agent}-{label}")),
                 cx.listener(move |bench, _, _, cx| {
                     cx.stop_propagation();
-                    bench.take_off_desk(&close_agent, &close_item);
+                    bench.close_desk_item(&close_agent, close_item.clone(), cx);
                     bench.parts.redraw(&bench.parts.stage, cx);
                 }),
                 cx,
@@ -1908,7 +1938,7 @@ fn tab_menu(
                     let _ = bench.update(cx, |bench, cx| {
                         match &tab {
                             Err(page) => bench.with_engine(|engine| engine.close_tab(&agent, page)),
-                            Ok(item) => bench.take_off_desk(&agent, item),
+                            Ok(item) => bench.close_desk_item(&agent, item.clone(), cx),
                         }
                         bench.parts.redraw(&bench.parts.stage, cx);
                     });
