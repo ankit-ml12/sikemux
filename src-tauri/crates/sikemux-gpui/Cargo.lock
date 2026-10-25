@@ -9200,7 +9200,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-gpui"
-version = "0.5.4-nightly.8"
+version = "0.6.0-nightly.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -9253,7 +9253,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-host"
-version = "0.5.4-nightly.8"
+version = "0.6.0-nightly.1"
 dependencies = [
  "hex",
  "libc",
@@ -9382,7 +9382,7 @@ dependencies = [
 
 [[package]]
 name = "sikemux-voice"
-version = "0.5.4-nightly.8"
+version = "0.6.0-nightly.1"
 dependencies = [
  "hex",
  "objc2-foundation 0.3.2",
