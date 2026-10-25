@@ -7,13 +7,14 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use gpui_kit::base::{Button as BaseButton, Popover, PopoverState};
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, img, list, px, radians, relative, Action, Anchor, AnyElement, App, AppContext,
-    ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable, FontWeight, Hsla,
+    ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, FontWeight, Hsla,
     InteractiveElement, IntoElement, KeyDownEvent, ListAlignment, ListState, ParentElement, Render,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
     Transformation, WeakEntity, Window,
@@ -40,7 +41,7 @@ use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
 use crate::toast;
 use crate::track::{self, Scrolled, Slide};
-use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Menu, MenuItem, Prompt};
+use crate::ui::{self, Cheatsheet, Choice, Choices, Confirm, Prompt};
 use crate::workbench::{AgentRow, Workbench};
 
 /// Brings the project's Git tab to the front, opening one when it has none.
@@ -2769,22 +2770,16 @@ fn head(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         )
 }
 
-/// A line of one of the head's menus, doing `act` to the pane and closing the menu.
+/// A line of one of the head's menus, doing `act` to the pane.
 fn menu_line(
     view: &Entity<GitPane>,
-    popover: &Entity<PopoverState>,
-    id: impl Into<SharedString>,
-    label: impl Into<SharedString>,
-    icon: Icon,
+    row: ui::MenuRow,
     act: impl Fn(&mut GitPane, &mut Context<GitPane>) + 'static,
-) -> MenuItem {
-    let (view, popover) = (view.clone(), popover.clone());
-    MenuItem::new(ElementId::Name(id.into()), label)
-        .icon(icon)
-        .on_click(move |_, window, cx| {
-            view.update(cx, |pane, cx| act(pane, cx));
-            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-        })
+    cx: &App,
+) -> PopupMenuItem {
+    let view = view.clone();
+    row.item(cx)
+        .on_click(move |_, _, cx| view.update(cx, |pane, cx| act(pane, cx)))
 }
 
 /// The branch in the head, which opens a menu to make, find or switch to a branch.
@@ -2799,94 +2794,81 @@ fn branch_switch(pane: &GitPane, branch: String, cx: &mut Context<GitPane>) -> i
             .collect(),
         _ => Vec::new(),
     };
-    Popover::new("git-branch-switch")
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(
-            BaseButton::new("git-switch")
-                .accessibility_label("Switch branch")
-                .tooltip(ui::tooltip("Switch branch"))
-                .h(px(26.))
-                .px(px(6.))
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .rounded(RADIUS_2)
-                .text_color(t.text_primary)
-                .hover(move |style| style.bg(t.surface_hover))
-                .child(ui::icon(Icon::Git, 13.).text_color(t.text_tertiary))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(crate::theme::ui_text(12.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(branch),
-                )
-                .child(
-                    ui::icon(Icon::Chevron, 9.)
-                        .text_color(t.text_tertiary)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
-                ),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let mut menu = Menu::new()
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "switch-new",
-                        "New branch…",
-                        Icon::Plus,
-                        |pane, cx| pane.new_branch(None, cx),
-                    )
-                    .hint("N"),
-                )
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "switch-by-name",
-                        "Check out by name…",
-                        Icon::Checkout,
-                        |pane, cx| pane.checkout_by_name(cx),
-                    )
-                    .hint("c"),
-                )
-                .child(
-                    menu_line(
-                        &view,
-                        &popover,
-                        "switch-all",
-                        "Show all branches",
-                        Icon::Git,
-                        |pane, cx| pane.turn(Page::Branches, cx),
-                    )
-                    .hint("3"),
-                )
-                .separator(cx);
+    ui::menu_button(
+        "git-branch-switch",
+        Anchor::TopLeft,
+        BaseButton::new("git-switch")
+            .accessibility_label("Switch branch")
+            .tooltip(ui::tooltip("Switch branch"))
+            .h(px(26.))
+            .px(px(6.))
+            .min_w_0()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(RADIUS_2)
+            .text_color(t.text_primary)
+            .hover(move |style| style.bg(t.surface_hover))
+            .child(ui::icon(Icon::Git, 13.).text_color(t.text_tertiary))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(crate::theme::ui_text(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(branch),
+            )
+            .child(
+                ui::icon(Icon::Chevron, 9.)
+                    .text_color(t.text_tertiary)
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
+            ),
+        move |mut popup, _, cx| {
+            popup = popup
+                .item(menu_line(
+                    &view,
+                    ui::MenuRow::new("New branch…").icon(Icon::Plus).hint("N"),
+                    |pane, cx| pane.new_branch(None, cx),
+                    cx,
+                ))
+                .item(menu_line(
+                    &view,
+                    ui::MenuRow::new("Check out by name…")
+                        .icon(Icon::Checkout)
+                        .hint("c"),
+                    |pane, cx| pane.checkout_by_name(cx),
+                    cx,
+                ))
+                .item(menu_line(
+                    &view,
+                    ui::MenuRow::new("Show all branches")
+                        .icon(Icon::Git)
+                        .hint("3"),
+                    |pane, cx| pane.turn(Page::Branches, cx),
+                    cx,
+                ))
+                .separator();
             for (name, current, upstream) in &branches {
                 let checked = name.clone();
-                let mut line = menu_line(
-                    &view,
-                    &popover,
-                    format!("switch:{name}"),
-                    name.clone(),
-                    Icon::Git,
-                    move |pane, cx| pane.checkout(checked.clone(), cx),
-                )
-                .disabled(*current);
-                if *current {
-                    line = line.hint("current");
-                } else if let Some(upstream) = upstream {
-                    line = line.hint(upstream.clone());
-                }
-                menu = menu.child(line);
+                let hint = match current {
+                    true => Some("current".to_owned()),
+                    false => upstream.clone(),
+                };
+                popup = popup.item(
+                    menu_line(
+                        &view,
+                        ui::MenuRow::new(name.clone())
+                            .icon(Icon::Git)
+                            .when_some(hint, ui::MenuRow::hint),
+                        move |pane, cx| pane.checkout(checked.clone(), cx),
+                        cx,
+                    )
+                    .disabled(*current),
+                );
             }
-            menu
-        })
+            popup
+        },
+    )
 }
 
 /// The project's code host account, lent by its areas: the person's face and its menu, or
@@ -2913,133 +2895,110 @@ fn more_menu(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {
         .bench
         .upgrade()
         .and_then(|bench| bench.read(cx).host.clone());
-    Popover::new("git-more")
-        .anchor(Anchor::TopRight)
-        .offset(px(4.))
-        .trigger(
-            ui::IconButton::new("git-more-button", Icon::More, "Remotes, stashes and more")
-                .glyph(13.),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let mut menu = Menu::new();
+    ui::menu_button(
+        "git-more",
+        Anchor::TopRight,
+        ui::IconButton::new("git-more-button", Icon::More, "Remotes, stashes and more").glyph(13.),
+        move |mut popup, _, cx| {
             if let Some(host) = host.clone() {
-                let picking = popover.clone();
-                menu = menu
-                    .child(
-                        MenuItem::new("more-repo", "Choose another repository…")
+                popup = popup
+                    .item(
+                        ui::MenuRow::new("Choose another repository…")
                             .icon(Icon::Git)
+                            .item(cx)
                             .on_click(move |_, window, cx| {
-                                picking.update(cx, |popover, cx| popover.dismiss(window, cx));
                                 host.update(cx, |area, cx| area.pick_repo(window, cx));
                             }),
                     )
-                    .separator(cx);
+                    .separator();
             }
-            menu.child(
-                menu_line(
+            popup
+                .item(menu_line(
                     &view,
-                    &popover,
-                    "more-fetch",
-                    "Fetch all remotes",
-                    Icon::Fetch,
+                    ui::MenuRow::new("Fetch all remotes")
+                        .icon(Icon::Fetch)
+                        .hint("F"),
                     GitPane::fetch,
-                )
-                .hint("F"),
-            )
-            .child(menu_line(
-                &view,
-                &popover,
-                "more-remote",
-                "Add remote…",
-                Icon::Plus,
-                GitPane::add_remote,
-            ))
-            .separator(cx)
-            .child(
-                menu_line(
+                    cx,
+                ))
+                .item(menu_line(
                     &view,
-                    &popover,
-                    "more-stash",
-                    "Stash changes…",
-                    Icon::Stack,
-                    GitPane::stash_menu,
+                    ui::MenuRow::new("Add remote…").icon(Icon::Plus),
+                    GitPane::add_remote,
+                    cx,
+                ))
+                .separator()
+                .item(
+                    menu_line(
+                        &view,
+                        ui::MenuRow::new("Stash changes…")
+                            .icon(Icon::Stack)
+                            .hint("s"),
+                        GitPane::stash_menu,
+                        cx,
+                    )
+                    .disabled(!changed),
                 )
-                .hint("s")
-                .disabled(!changed),
-            )
-            .child(
-                menu_line(
-                    &view,
-                    &popover,
-                    "more-discard",
-                    "Discard unstaged changes…",
-                    Icon::Discard,
-                    GitPane::discard_all,
+                .item(
+                    menu_line(
+                        &view,
+                        ui::MenuRow::new("Discard unstaged changes…")
+                            .icon(Icon::Discard)
+                            .danger(true),
+                        GitPane::discard_all,
+                        cx,
+                    )
+                    .disabled(!unstaged),
                 )
-                .danger(true)
-                .disabled(!unstaged),
-            )
-            .child(
-                menu_line(
-                    &view,
-                    &popover,
-                    "more-stashes",
-                    if stashes > 0 {
-                        format!("Stashes ({stashes})…")
-                    } else {
-                        "No stashes".to_owned()
-                    },
-                    Icon::Stack,
-                    GitPane::stashes_menu,
+                .item(
+                    menu_line(
+                        &view,
+                        ui::MenuRow::new(if stashes > 0 {
+                            format!("Stashes ({stashes})…")
+                        } else {
+                            "No stashes".to_owned()
+                        })
+                        .icon(Icon::Stack),
+                        GitPane::stashes_menu,
+                        cx,
+                    )
+                    .disabled(stashes == 0),
                 )
-                .disabled(stashes == 0),
-            )
-            .separator(cx)
-            .child(
-                menu_line(
+                .separator()
+                .item(menu_line(
                     &view,
-                    &popover,
-                    "more-refresh",
-                    "Refresh",
-                    Icon::Refresh,
+                    ui::MenuRow::new("Refresh").icon(Icon::Refresh).hint("r"),
                     GitPane::refresh,
-                )
-                .hint("r"),
-            )
-            .child(
-                menu_line(
+                    cx,
+                ))
+                .item(menu_line(
                     &view,
-                    &popover,
-                    "more-log",
-                    if commands_open {
+                    ui::MenuRow::new(if commands_open {
                         "Hide command log"
                     } else {
                         "Show command log"
-                    },
-                    Icon::LogLines,
+                    })
+                    .icon(Icon::LogLines)
+                    .hint("@"),
                     |pane, cx| {
                         pane.commands_open = !pane.commands_open;
                         cx.notify();
                     },
-                )
-                .hint("@"),
-            )
-            .child(
-                menu_line(
+                    cx,
+                ))
+                .item(menu_line(
                     &view,
-                    &popover,
-                    "more-keys",
-                    "Keyboard shortcuts",
-                    Icon::Keyboard,
+                    ui::MenuRow::new("Keyboard shortcuts")
+                        .icon(Icon::Keyboard)
+                        .hint("?"),
                     |pane, cx| {
                         pane.asking = Some(Asking::Keys);
                         cx.notify();
                     },
-                )
-                .hint("?"),
-            )
-        })
+                    cx,
+                ))
+        },
+    )
 }
 
 /// A page's filter: what to find, and how many there are when the page counts them.
@@ -3136,58 +3095,52 @@ fn writer_picker(pane: &GitPane, cx: &mut Context<GitPane>) -> impl IntoElement 
     let view = cx.entity();
     let writers = pane.writers.clone();
     let current = pane.writer().map(|(kind, _, model)| (kind, model));
-    Popover::new("git-writer")
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(
-            BaseButton::new("git-writer-pick")
-                .accessibility_label("Pick the agent and model")
-                .tooltip(ui::tooltip("Pick the agent and model"))
-                .size(px(28.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .border_1()
-                .border_color(t.border)
-                .hover(move |style| style.bg(t.surface_hover).border_color(t.border_strong))
-                .child(
-                    ui::icon(Icon::Chevron, 9.)
-                        .text_color(t.text_tertiary)
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
-                ),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let mut menu = Menu::new();
+    ui::menu_button(
+        "git-writer",
+        Anchor::TopLeft,
+        BaseButton::new("git-writer-pick")
+            .accessibility_label("Pick the agent and model")
+            .tooltip(ui::tooltip("Pick the agent and model"))
+            .size(px(28.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_1()
+            .border_color(t.border)
+            .hover(move |style| style.bg(t.surface_hover).border_color(t.border_strong))
+            .child(
+                ui::icon(Icon::Chevron, 9.)
+                    .text_color(t.text_tertiary)
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
+            ),
+        move |mut popup, _, cx| {
             for (index, (kind, label, models)) in writers.iter().enumerate() {
                 if index > 0 {
-                    menu = menu.separator(cx);
+                    popup = popup.separator();
                 }
                 for model in models {
                     let picked = Some((kind.clone(), model.clone()));
                     let checked = picked == current;
-                    let (view, popover, picked) = (view.clone(), popover.clone(), picked.clone());
-                    menu = menu.child(
-                        MenuItem::new(
-                            ElementId::Name(format!("writer:{kind}:{model}").into()),
-                            format!("{label} · {model}"),
-                        )
-                        .mark(ui::mark(kind, 13.))
-                        .checked(checked)
-                        .on_click(move |_, window, cx| {
-                            let picked = picked.clone();
-                            view.update(cx, |pane, cx| {
-                                pane.writer = picked;
-                                cx.notify();
-                            });
-                            popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                        }),
+                    let (view, kind) = (view.clone(), kind.clone());
+                    popup = popup.item(
+                        ui::MenuRow::new(format!("{label} · {model}"))
+                            .mark(move || ui::mark(&kind, 13.))
+                            .item(cx)
+                            .checked(checked)
+                            .on_click(move |_, _, cx| {
+                                let picked = picked.clone();
+                                view.update(cx, |pane, cx| {
+                                    pane.writer = picked;
+                                    cx.notify();
+                                });
+                            }),
                     );
                 }
             }
-            menu
-        })
+            popup
+        },
+    )
 }
 
 fn composer(pane: &mut GitPane, cx: &mut Context<GitPane>) -> impl IntoElement {

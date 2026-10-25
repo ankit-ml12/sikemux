@@ -1,11 +1,10 @@
 //! The Branches page: the local branches, then each remote with its branches while open,
 //! what can be done with each, and the card that heads a branch's review.
 
-use gpui_kit::base::Popover;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, list, px, Anchor, AnyElement, App, Context, Div, Entity, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
+    div, list, px, Anchor, AnyElement, App, Context, Div, Entity, FontWeight, HoverListenerMode,
+    Hsla, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
     Styled,
 };
 use std::collections::HashMap;
@@ -20,7 +19,7 @@ use crate::codehost::Area;
 use crate::icons::Icon;
 use crate::motion;
 use crate::theme::{self, Tokens, RADIUS_2};
-use crate::ui::{self, Menu, MenuItem};
+use crate::ui;
 
 #[derive(Clone, PartialEq)]
 pub(super) enum BranchEntry {
@@ -646,37 +645,30 @@ impl MoreItem {
 /// A popover menu of what can be done with an entry, opened from its "More" button.
 fn more(id: SharedString, view: &Entity<GitPane>, items: Vec<MoreItem>) -> impl IntoElement {
     let view = view.clone();
-    Popover::new(id.clone())
-        .anchor(Anchor::TopRight)
-        .offset(px(4.))
-        .trigger(
-            ui::IconButton::new(SharedString::from(format!("{id}-more")), Icon::More, "More")
-                .glyph(13.),
-        )
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            let mut menu = Menu::new();
-            for (index, line) in items.iter().enumerate() {
+    ui::menu_button(
+        id.clone(),
+        Anchor::TopRight,
+        ui::IconButton::new(SharedString::from(format!("{id}-more")), Icon::More, "More")
+            .glyph(13.),
+        move |mut popup, _, cx| {
+            for line in &items {
                 if line.separated {
-                    menu = menu.separator(cx);
+                    popup = popup.separator();
                 }
-                let (view, popover, act) = (view.clone(), popover.clone(), line.act.clone());
-                let mut item = MenuItem::new(("more", index), line.label.clone())
-                    .icon(line.icon)
-                    .danger(line.danger)
-                    .disabled(line.disabled)
-                    .on_click(move |_, window, cx| {
-                        let act = act.clone();
-                        view.update(cx, |pane, cx| act(pane, cx));
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    });
-                if let Some(hint) = line.hint {
-                    item = item.hint(hint);
-                }
-                menu = menu.child(item);
+                let (view, act) = (view.clone(), line.act.clone());
+                popup = popup.item(
+                    ui::MenuRow::new(line.label.clone())
+                        .icon(line.icon)
+                        .danger(line.danger)
+                        .when_some(line.hint, ui::MenuRow::hint)
+                        .item(cx)
+                        .disabled(line.disabled)
+                        .on_click(move |_, _, cx| view.update(cx, |pane, cx| act(pane, cx))),
+                );
             }
-            menu
-        })
+            popup
+        },
+    )
 }
 
 /// The Branches page: its list, then the button that makes a branch.
@@ -768,6 +760,7 @@ fn branch_row(
         })
         .hover(move |row| row.bg(t.surface_hover))
         .on_hover(super::hover(view, key))
+        .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
         .on_click(move |_, window, cx| {
             choosing.update(cx, |pane, cx| {
                 window.focus(&pane.focus, cx);

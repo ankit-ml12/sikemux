@@ -4,7 +4,6 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::Popover;
 use gpui_kit::component::WindowExt;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
@@ -612,46 +611,39 @@ fn commit_foot(commit: &GitCommit, cx: &mut Context<GitPane>) -> Div {
                 cx.listener(move |pane, _, _, cx| pane.branch_from(branched.clone(), cx)),
             ),
         )
-        .child(
-            Popover::new("commit-undo")
-                .anchor(Anchor::BottomLeft)
-                .offset(px(4.))
-                .trigger(
-                    foot_button("commit-undo-button", Icon::Discard, "Undo this commit").child(
-                        ui::icon(Icon::Chevron, 9.)
-                            .text_color(t.text_tertiary)
-                            .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
-                    ),
-                )
-                .content(move |_, _, cx| {
-                    let popover = cx.entity();
-                    let (resetting, reverting) = (view.clone(), view.clone());
-                    let (closing, closed) = (popover.clone(), popover);
-                    let (reset, reverted) = (reset.clone(), reverted.clone());
-                    ui::Menu::new()
-                        .child(
-                            ui::MenuItem::new("commit-reset", "Reset to here…")
-                                .icon(Icon::Discard)
-                                .hint("r")
-                                .on_click(move |_, window, cx| {
-                                    closing.update(cx, |popover, cx| popover.dismiss(window, cx));
-                                    resetting
-                                        .update(cx, |pane, cx| pane.reset_to(reset.clone(), cx));
-                                }),
-                        )
-                        .child(
-                            ui::MenuItem::new("commit-revert", "Revert…")
-                                .icon(Icon::Discard)
-                                .hint("v")
-                                .danger(true)
-                                .on_click(move |_, window, cx| {
-                                    closed.update(cx, |popover, cx| popover.dismiss(window, cx));
-                                    reverting
-                                        .update(cx, |pane, cx| pane.revert(reverted.clone(), cx));
-                                }),
-                        )
-                }),
-        )
+        .child(ui::menu_button(
+            "commit-undo",
+            Anchor::BottomLeft,
+            foot_button("commit-undo-button", Icon::Discard, "Undo this commit").child(
+                ui::icon(Icon::Chevron, 9.)
+                    .text_color(t.text_tertiary)
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2))),
+            ),
+            move |popup, _, cx| {
+                let (resetting, reverting) = (view.clone(), view.clone());
+                let (reset, reverted) = (reset.clone(), reverted.clone());
+                popup
+                    .item(
+                        ui::MenuRow::new("Reset to here…")
+                            .icon(Icon::Discard)
+                            .hint("r")
+                            .item(cx)
+                            .on_click(move |_, _, cx| {
+                                resetting.update(cx, |pane, cx| pane.reset_to(reset.clone(), cx));
+                            }),
+                    )
+                    .item(
+                        ui::MenuRow::new("Revert…")
+                            .icon(Icon::Discard)
+                            .hint("v")
+                            .danger(true)
+                            .item(cx)
+                            .on_click(move |_, _, cx| {
+                                reverting.update(cx, |pane, cx| pane.revert(reverted.clone(), cx));
+                            }),
+                    )
+            },
+        ))
 }
 
 /// An agent a commit's signed footer names, as the core's `commitOwners` answers.
