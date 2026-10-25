@@ -9,9 +9,7 @@ fn main() {
     let (handed, opened) = tokio::sync::mpsc::unbounded_channel();
     let app = gpui_kit::application().with_assets(icons::Icons);
     app.on_open_urls(move |urls| {
-        for url in urls {
-            let _ = handed.send(url);
-        }
+        let _ = handed.send(urls);
     });
     app.run(move |cx| {
         gpui_kit::init(cx);
