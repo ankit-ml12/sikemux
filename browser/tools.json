@@ -613,7 +613,7 @@
       "name": "browser_record",
       "row": {"verb": "record", "kind": "execute", "icon": "record", "target": ["{action}"], "detail": ["{path}"]},
       "method": "browser.record",
-      "description": "Record this tab to MP4 (WebM on Linux without an H.264 encoder), or stop recording.",
+      "description": "Record this tab to MP4, or stop recording.",
       "properties": {
         "action": {
           "enum": [
