@@ -35,6 +35,8 @@ mod files;
 mod finder;
 mod fuzzy;
 pub mod git;
+#[cfg(target_os = "linux")]
+pub mod handoff;
 mod home;
 pub mod hosts;
 pub mod icons;

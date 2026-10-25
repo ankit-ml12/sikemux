@@ -290,7 +290,7 @@ impl Workbench {
             .map(|project| project.id.clone())
     }
 
-    fn bring_window_forward(&self, cx: &mut Context<Self>) {
+    pub(crate) fn bring_window_forward(&self, cx: &mut Context<Self>) {
         cx.activate(true);
         let _ = self
             .window

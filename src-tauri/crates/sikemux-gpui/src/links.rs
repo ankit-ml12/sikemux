@@ -54,8 +54,9 @@ fn parse(link: &str) -> Option<Resume> {
 
 /// Takes what the system hands this app to open: each `sikemux://` link, such as one clicked
 /// in another app, brings the window to the front for it, and files and folders, such as
-/// from Finder's Open With, open as `sikemux open` would. What is handed over while the app
-/// is still opening waits for its window.
+/// from Finder's Open With, open as `sikemux open` would; a start with nothing to open, as
+/// Linux hands over, brings the window forward. What is handed over while the app is still
+/// opening waits for its window.
 pub fn follow_opened(
     bench: Entity<Workbench>,
     mut opened: tokio::sync::mpsc::UnboundedReceiver<Vec<String>>,
@@ -70,11 +71,13 @@ pub fn follow_opened(
                 .filter_map(|file| Url::parse(file).ok()?.to_file_path().ok())
                 .collect();
             bench.update(cx, |bench, cx| {
+                let mut forward = files.is_empty() && links.is_empty();
                 bench.open_handed_paths(paths, cx);
                 for link in links {
-                    if follow(bench, &link, cx) {
-                        cx.activate(true);
-                    }
+                    forward |= follow(bench, &link, cx);
+                }
+                if forward {
+                    bench.bring_window_forward(cx);
                 }
             });
         }

@@ -6,8 +6,12 @@ use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
     console::install();
-    let link = core::start(core::Home::default());
     let (handed, opened) = tokio::sync::mpsc::unbounded_channel();
+    #[cfg(target_os = "linux")]
+    if !sikemux_gpui::handoff::take_over(handed.clone()) {
+        return;
+    }
+    let link = core::start(core::Home::default());
     let app = gpui_kit::application();
     #[cfg(target_os = "linux")]
     let app = app.with_windowing(gpui_kit::WindowingRequest::Windowed(x11_session()));
