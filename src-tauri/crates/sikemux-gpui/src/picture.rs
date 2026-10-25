@@ -52,6 +52,20 @@ impl Remote {
     fn fetch(&self) -> impl std::future::Future<Output = Result<Value, String>> {
         crate::core::request(&self.asks, "remoteImage", json!({ "url": self.url }))
     }
+
+    fn image(&self) -> impl std::future::Future<Output = Result<Arc<Image>, ImageCacheError>> {
+        let fetched = self.fetch();
+        async move {
+            let answer = fetched
+                .await
+                .map_err(|error| ImageCacheError::Asset(error.into()))?;
+            decode(
+                answer["mime"].as_str().unwrap_or_default(),
+                answer["data"].as_str().unwrap_or_default(),
+            )
+            .ok_or_else(|| ImageCacheError::Asset("Couldn't load the picture".into()))
+        }
+    }
 }
 
 impl Hash for Remote {
@@ -72,17 +86,10 @@ impl Asset for Fetched {
         remote: Remote,
         cx: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        let (renderer, fetched) = (cx.svg_renderer(), remote.fetch());
+        let (renderer, image) = (cx.svg_renderer(), remote.image());
         async move {
-            let answer = fetched
-                .await
-                .map_err(|error| ImageCacheError::Asset(error.into()))?;
-            let image = decode(
-                answer["mime"].as_str().unwrap_or_default(),
-                answer["data"].as_str().unwrap_or_default(),
-            )
-            .ok_or_else(|| ImageCacheError::Asset("Couldn't load the picture".into()))?;
             image
+                .await?
                 .to_image_data(renderer)
                 .map_err(|error| ImageCacheError::Other(Arc::new(error)))
         }
@@ -101,6 +108,7 @@ struct Thumb {
 enum Shrunk {
     File(PathBuf),
     Sent(Arc<Image>),
+    Remote(Remote),
 }
 
 /// GPUI's loader for a thumbnail, which decodes the picture once and keeps only its
@@ -117,33 +125,43 @@ impl Asset for Thumbnail {
 
     fn load(
         thumb: Thumb,
-        _: &mut App,
+        cx: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        shrink_when_free(thumb)
+        let renderer = cx.svg_renderer();
+        async move {
+            let unreadable = |error: String| ImageCacheError::Asset(error.into());
+            let image = match thumb.picture {
+                Shrunk::File(path) => {
+                    let _decoding = DECODING.acquire().await;
+                    let read =
+                        std::fs::read(path).map_err(|error| unreadable(error.to_string()))?;
+                    return shrink(&read, thumb.longest).map_err(unreadable);
+                }
+                Shrunk::Sent(image) => image,
+                Shrunk::Remote(remote) => {
+                    let image = remote.image().await?;
+                    if !shrinks(image.format) {
+                        return image
+                            .to_image_data(renderer)
+                            .map_err(|error| ImageCacheError::Other(Arc::new(error)));
+                    }
+                    image
+                }
+            };
+            let _decoding = DECODING.acquire().await;
+            shrink(&image.bytes, thumb.longest).map_err(unreadable)
+        }
     }
 }
 
-/// Shrinks `thumb` once fewer than the most allowed are decoding.
-async fn shrink_when_free(thumb: Thumb) -> Result<Arc<RenderImage>, ImageCacheError> {
-    let _decoding = DECODING.acquire().await;
-    shrink(&thumb).map_err(|error| ImageCacheError::Asset(error.into()))
-}
-
-fn shrink(thumb: &Thumb) -> Result<Arc<RenderImage>, String> {
-    let read;
-    let bytes = match &thumb.picture {
-        Shrunk::File(path) => {
-            read = std::fs::read(path).map_err(|error| error.to_string())?;
-            read.as_slice()
-        }
-        Shrunk::Sent(image) => image.bytes.as_slice(),
-    };
-    let decoded = match jpeg_near(bytes, thumb.longest) {
+/// The picture in `bytes` no larger than `longest` along its longer side.
+fn shrink(bytes: &[u8], longest: u32) -> Result<Arc<RenderImage>, String> {
+    let decoded = match jpeg_near(bytes, longest) {
         Some(decoded) => decoded,
         None => image::load_from_memory(bytes).map_err(|error| error.to_string())?,
     };
-    let fitted = match decoded.width().max(decoded.height()) > thumb.longest {
-        true => decoded.thumbnail(thumb.longest, thumb.longest),
+    let fitted = match decoded.width().max(decoded.height()) > longest {
+        true => decoded.thumbnail(longest, longest),
         false => decoded,
     };
     let mut pixels = fitted.into_rgba8();
@@ -257,6 +275,7 @@ impl Picture {
                 Shrunk::File(path.clone())
             }
             Picture::Sent { image, .. } if shrinks(image.format) => Shrunk::Sent(image.clone()),
+            Picture::Remote(remote) => Shrunk::Remote(remote.clone()),
             _ => return self.source(),
         };
         let thumb = Thumb {
@@ -292,7 +311,11 @@ impl Picture {
             Picture::Remote(remote) => {
                 let remote = remote.clone();
                 ImageSource::Custom(Arc::new(move |window, cx| {
-                    window.use_asset::<Fetched>(&remote, cx)
+                    let image = window.use_asset::<Fetched>(&remote, cx);
+                    if let Some(Ok(image)) = &image {
+                        cx.decoded_image_drawn::<Fetched>(&remote, image);
+                    }
+                    image
                 }))
             }
         }
