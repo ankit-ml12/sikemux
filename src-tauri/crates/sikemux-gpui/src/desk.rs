@@ -391,20 +391,6 @@ impl PageFiles {
             .and_then(Weak::upgrade)
             .ok_or_else(|| "the browser has stopped".into())
     }
-
-    /// Closes the tabs showing the agent's draft, once the page it drafted is kept.
-    fn close_draft(&self, agent: &str) {
-        let (Some(folder), Ok(engine)) = (&self.folder, self.engine()) else {
-            return;
-        };
-        let draft = folder.join(format!("{}.html", draft_name(agent)));
-        let (Ok(url), Ok(strip)) = (engine.local_file_url(&draft), engine.snapshot(agent)) else {
-            return;
-        };
-        for tab in strip.tabs.into_iter().filter(|tab| tab.url == url) {
-            let _ = engine.close_tab(agent, &tab.id);
-        }
-    }
 }
 
 /// One draft per agent, which each `page_preview` replaces.
@@ -2168,8 +2154,7 @@ impl Workbench {
         }
     }
 
-    /// A page an agent kept: its draft's tab has done its job, and an agent in a terminal
-    /// sees the page on its desk.
+    /// A page an agent kept, which an agent in a terminal sees on its desk.
     fn show_page(
         &self,
         request: HarnessRequest,
@@ -2186,7 +2171,6 @@ impl Workbench {
             .then(|| crate::core::request(&self.asks, "page", json!({ "id": id })));
         let files = self.desks.page_files.clone();
         spawn(async move {
-            files.close_draft(&agent);
             let Some(page) = page else {
                 return answer(Ok(json!({})));
             };

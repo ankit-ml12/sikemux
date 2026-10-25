@@ -52,13 +52,13 @@ pub fn execute(manager: &BrowserManager, request: &HarnessRequest) -> Result<Val
         .agent_id
         .as_deref()
         .ok_or("browser tools need the agent's id")?;
-    let acts_on_a_tab = request.method != "browser.tab.close";
+    let acts_on_a_tab = !matches!(
+        request.method.as_str(),
+        "browser.tab.close" | "browser.page"
+    );
     let mut marks = Vec::new();
     if acts_on_a_tab {
-        /* A draft page is checked for the agent alone; the person sees it once it is shown. */
-        if request.method != "browser.page" {
-            manager.announce_acting(agent_id);
-        }
+        manager.announce_acting(agent_id);
         let reloading = manager.reloading(agent_id);
         marks.extend(manager.mark_acting(agent_id));
         if reloading {
@@ -699,38 +699,33 @@ async fn run(
                 .await
                 .map_err(|error| error.to_string())??;
             let url = manager.host().page_url(agent_id, &html)?;
-            let showing = tab_ids(manager, agent_id).into_iter().find(|tab_id| {
-                manager
-                    .page(agent_id, tab_id)
-                    .is_some_and(|page| page.url == url)
-            });
-            if let Some(tab_id) = &showing {
-                manager
-                    .switch_tab(agent_id, tab_id)
-                    .map_err(|error| error.to_string())?;
-            }
-            let navigate = json!({ "url": url, "newTab": showing.is_none(), "report": "outcome" });
-            Box::pin(run(manager, agent_id, "browser.navigate", &navigate)).await?;
-            let viewport = json!({ "width": width, "height": PAGE_VIEWPORT_HEIGHT });
-            Box::pin(run(manager, agent_id, "browser.viewport", &viewport)).await?;
-            let (tab_id, view) = active(manager, agent_id)?;
-            let content_height = call(&view, "contentHeight", &[]).await?;
-            let console = read_records(&view, "console", &[Value::Null, json!(false)]).await?;
-            let shot = Box::pin(run(
-                manager,
+            let mut preview = crate::preview::Preview::open(
+                manager.host(),
                 agent_id,
-                "browser.screenshot",
-                &json!({ "fullPage": true }),
-            ))
-            .await?;
-            Ok(json!({
-                "tabId": tab_id,
+                &url,
+                (width as f64, PAGE_VIEWPORT_HEIGHT as f64),
+            )?;
+            preview.loaded(LOAD_TIMEOUT).await?;
+            tokio::time::sleep(SETTLE).await;
+            let view = preview.view();
+            let content_height = call(view, "contentHeight", &[]).await?;
+            let console = read_records(view, "console", &[Value::Null, json!(false)]).await?;
+            let page_height = call(view, "pageHeight", &[])
+                .await?
+                .as_f64()
+                .ok_or("the page did not report its height")?;
+            let image = screenshot(view, Some(page_height), None).await?;
+            let mut result = json!({
                 "width": width,
                 "contentHeight": content_height,
                 "console": console,
-                "mimeType": shot["mimeType"],
-                "data": shot["data"],
-            }))
+                "mimeType": "image/jpeg",
+                "data": base64_encode(&image),
+            });
+            if page_height > MAX_PAGE_HEIGHT {
+                result["cutAt"] = json!(MAX_PAGE_HEIGHT);
+            }
+            Ok(result)
         }
         _ => Err("unknown browser method".into()),
     }

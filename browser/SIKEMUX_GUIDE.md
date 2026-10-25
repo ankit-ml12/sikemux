@@ -279,8 +279,8 @@ working after the files move. Remote `https` scripts, such as a
 chart library from a CDN, load as they are. Pass absolute paths to the tools.
 
 1. Write the file anywhere, such as the system temp folder.
-2. `page_preview` opens it in a tab on your desk at the reply's width (756
-   px; pass `width: 390` to check a phone) and returns a screenshot, the
+2. `page_preview` draws it off screen at the reply's width (756 px; pass
+   `width: 390` to check a phone), opening no tab, and returns a screenshot, the
    `contentHeight` it needs and its console, errors included. Fix and preview
    again until it is right. Editing the file and previewing again is cheaper
    than writing it anew.
