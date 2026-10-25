@@ -11,11 +11,10 @@ use crate::icons::Icon;
 use crate::settings::rows;
 use crate::toast;
 use crate::ui;
+use crate::whats_new::RELEASES;
 use crate::workbench::Workbench;
 
 pub const SECTIONS: &[&str] = &["Updates", "Privacy", "Help"];
-
-const RELEASES: &str = "https://github.com/nodelike/sikemux/releases";
 
 pub fn render(
     bench: &Workbench,

@@ -276,6 +276,124 @@ pub fn rail_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyEl
     )
 }
 
+pub const RELEASES: &str = "https://github.com/nodelike/sikemux/releases";
+
+/// Covers the window while the accounts server no longer works with this build, which keeps
+/// remote access and the account off; the ways on are updating and quitting.
+pub fn required(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement> {
+    let required = bench.remote.as_ref()?.update_required.as_ref()?;
+    let t = Tokens::get(cx).clone();
+    let update = bench.read("update");
+    let found = pending(bench);
+    let in_app = update.is_some_and(|update| update["updates"] == true);
+    let problem = match found {
+        Some(found) if found["state"] == "failed" => found["error"].as_str(),
+        Some(_) => None,
+        None => update.and_then(|update| update["checked"]["error"].as_str()),
+    };
+    let nothing_newer = found.is_none()
+        && update.is_some_and(|update| {
+            update["checked"].is_object() && update["checked"]["error"].is_null()
+        });
+    let channel = update
+        .and_then(|update| update["checked"]["channel"].as_str())
+        .unwrap_or("stable");
+    let note = |text: String| {
+        div()
+            .text_size(theme::ui_text(13.))
+            .line_height(theme::ui_text(13. * 1.5))
+            .text_color(t.text_secondary)
+            .child(text)
+    };
+    let releases = |id: &'static str, label: &'static str, variant: ui::Variant| {
+        ui::Button::new(id, label, variant).on_click(|_, _, cx| cx.open_url(RELEASES))
+    };
+    let go_on = match found {
+        _ if !in_app => releases(
+            "required-download",
+            "Download the new version",
+            ui::Variant::Primary,
+        ),
+        Some(found) => {
+            let (label, pressable) = install_button(found);
+            let label = match found["state"].as_str() {
+                Some("idle") => format!(
+                    "Update to v{}",
+                    found["available"]["version"].as_str().unwrap_or_default()
+                ),
+                _ => label,
+            };
+            ui::Button::new("required-update", label, ui::Variant::Primary)
+                .disabled(!pressable)
+                .on_click(cx.listener(|bench, _, _, _| install(bench, false)))
+        }
+        None => ui::Button::new("required-check", "Check for updates", ui::Variant::Primary)
+            .on_click(cx.listener(|bench, _, _, _| {
+                let _ = bench.asks.send(Ask::Call {
+                    method: "updateCheck",
+                    params: json!({}),
+                });
+            })),
+    };
+    Some(
+        div()
+            .id("update-required")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(Hsla {
+                a: 0.82,
+                ..t.surface_sunken
+            })
+            .occlude()
+            .child(
+                div()
+                    .w(px(420.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(
+                        div()
+                            .text_size(theme::ui_text(18.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(t.text_primary)
+                            .child("Update Sikemux"),
+                    )
+                    .child(note(format!(
+                        "This version, {}, is older than Sikemux's servers work with now. Remote access and your account stay off until you update to {} or later.",
+                        required.current, required.minimum
+                    )))
+                    .when_some(problem, |column, problem| {
+                        column.child(ui::meta(problem.to_owned(), cx).whitespace_normal())
+                    })
+                    .when(nothing_newer, |column| {
+                        column.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(note(format!("No newer version on the {channel} channel yet.")))
+                                .child(releases("required-releases", "See every release", ui::Variant::Outline)),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(8.))
+                            .child(
+                                ui::Button::new("required-quit", "Quit Sikemux", ui::Variant::Outline)
+                                    .on_click(|_, _, cx| cx.quit()),
+                            )
+                            .child(go_on),
+                    ),
+            )
+            .into_any_element(),
+    )
+}
+
 fn install(bench: &Workbench, force: bool) {
     let _ = bench.asks.send(Ask::Call {
         method: "updateInstall",

@@ -1189,6 +1189,10 @@ impl Workbench {
                     .update(cx, |voice, cx| voice.network_changed(change, cx));
             }
             Update::Remote(status) => {
+                let was_required = self.remote.as_ref().map(|remote| &remote.update_required);
+                if was_required != Some(&status.update_required) {
+                    cx.notify();
+                }
                 self.remote = Some(*status);
                 crate::settings::remote_moved(self, cx);
                 crate::pairing::remote_moved(self, cx);
@@ -4839,6 +4843,7 @@ impl Render for Workbench {
             .children(crate::share::view(self, cx))
             .children(crate::boot::reconnecting(self, cx))
             .children(crate::boot::stopped(self, cx))
+            .children(crate::whats_new::required(self, cx))
             .children(crate::boot::opening(self, cx))
             .when(
                 self.finder.is_some() || self.palette.is_some() || self.switcher.is_some(),
