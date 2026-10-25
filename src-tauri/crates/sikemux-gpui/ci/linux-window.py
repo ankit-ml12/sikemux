@@ -6,8 +6,8 @@ The arguments are desk-checks.py's, run under an X server and a window manager (
 and checks it shows a window with the seeded chat. With --browser, L2 has the fake agent open a desk browser
 tab on a local page through the agent browser tool; with --input as well, L4 has it type into the page's field,
 press a key there and read the field back, L5 has the page ask a prompt the person sees in a dialog and the agent
-answers, and L3 click a link there, all with the same tools. Each leaves a capture of the window in DIR. Exits 1
-when any check fails.
+answers, and L3 click a link there, all with the same tools. L2 and L4 also need the page drawn in their capture,
+not a black or blank area. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
 """
 
 import argparse
@@ -37,18 +37,51 @@ def launch(run):
     run.report("L1", bool(shown) and bool(pane), f"X windows of the app: {shown or 'none'}; chat pane {pane or 'not drawn'}; window {state.get('window')}")
 
 
+def spread(shot, box):
+    """The mean and standard deviation of a box's grey levels in a capture, from 0 to 1."""
+    width, height, x, y = box
+    said = subprocess.run(["convert", shot, "-crop", f"{width}x{height}+{x}+{y}", "+repage", "-colorspace", "Gray",
+                           "-format", "%[fx:mean] %[fx:standard_deviation]", "info:"], capture_output=True, text=True).stdout.split()
+    return tuple(map(float, said)) if len(said) == 2 else (0.0, 0.0)
+
+
+def page_drawn(run, name):
+    """Captures the window as `name` until the desk's page area shows the page: varied over the whole area and
+    in the band its heading sits in. Says whether it did, and what the area held."""
+    seen = ["no page on the desk"]
+
+    def look():
+        bounds = run.desk().get("pageBounds")
+        run.capture(name)
+        shot = run.out / f"{name}.png"
+        if not bounds or not shot.exists():
+            return None
+        pixels = subprocess.run(["identify", "-format", "%w", shot], capture_output=True, text=True).stdout
+        scale = int(pixels) / (run.state() or {}).get("window", [pixels])[0]
+        x, y, width, height = (round(value * scale) for value in bounds)
+        mean, whole = spread(shot, (width, height, x, y))
+        _, heading = spread(shot, (width, min(height, round(80 * scale)), x, y))
+        seen[0] = f"page area {width}x{height}+{x}+{y}: mean {mean:.2f}, spread {whole:.3f}, heading band spread {heading:.3f}"
+        return whole > 0.01 and heading > 0.05
+
+    return bool(desk.until(look, 10)), seen[0]
+
+
 def page_from_tool(run):
     said = run.prompt(desk.json_tool("browser.navigate", {"url": f"{run.site}/page.html"}))
     page = desk.until(lambda: (lambda page: page if page.get("url", "").endswith("/page.html") and not page.get("loading") else None)(desk.active_page(run.desk())), 20) or {}
-    run.report("L2", bool(page), f"browser.navigate answered {said[:160]!r}; the desk's page {page.get('url')} titled {page.get('title')!r}")
+    drawn, seen = page_drawn(run, "L2")
+    run.say("L2", "PASS" if page and drawn else "FAIL",
+            f"browser.navigate answered {said[:160]!r}; the desk's page {page.get('url')} titled {page.get('title')!r}; {seen}")
 
 
 def typing_from_tool(run):
     typed = desk.answered(run.prompt(desk.json_tool("browser.type", {"selector": "input", "text": "hello linux"})))
     run.prompt(desk.json_tool("browser.press", {"key": "Backspace"}))
     read = desk.answered(run.prompt(desk.json_tool("browser.evaluate", {"script": "document.querySelector('input').value"})))
-    run.report("L4", typed.get("value") == "hello linux" and read.get("result") == "hello linu",
-               f"browser.type left {typed.get('value')!r}; after Backspace the field holds {read.get('result')!r}")
+    drawn, seen = page_drawn(run, "L4")
+    run.say("L4", "PASS" if typed.get("value") == "hello linux" and read.get("result") == "hello linu" and drawn else "FAIL",
+            f"browser.type left {typed.get('value')!r}; after Backspace the field holds {read.get('result')!r}; {seen}")
 
 
 def dialog_from_tool(run):
