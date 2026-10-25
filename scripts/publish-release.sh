@@ -61,16 +61,24 @@ for signed in "${HOSTS[@]}" "$APPIMAGE"; do
   node scripts/verify-updater-signature.mjs "$signed" "$signed.sig" || fail "$signed is not signed by the updater key"
 done
 # The Linux app updates itself only as an AppImage, so only the AppImage joins the
-# feed the macOS build wrote.
-APPIMAGE_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION/$(basename "$APPIMAGE")" \
-  APPIMAGE_SIG="$APPIMAGE_SIG" MANIFEST="$MANIFEST" python3 - <<'PY'
-import json, os, pathlib
+# feed the macOS build wrote, beside each host core, which root installs on a host.
+RELEASE_URL="https://github.com/nodelike/sikemux/releases/download/v$VERSION" \
+  APPIMAGE="$APPIMAGE" MANIFEST="$MANIFEST" python3 - "${HOSTS[@]}" <<'PY'
+import json, os, pathlib, re, sys
 path = pathlib.Path(os.environ["MANIFEST"])
 manifest = json.loads(path.read_text())
-manifest["platforms"]["linux-x86_64"] = {
-    "signature": pathlib.Path(os.environ["APPIMAGE_SIG"]).read_text().strip(),
-    "url": os.environ["APPIMAGE_URL"],
-}
+
+def entry(file):
+    file = pathlib.Path(file)
+    return {
+        "signature": pathlib.Path(f"{file}.sig").read_text().strip(),
+        "url": f'{os.environ["RELEASE_URL"]}/{file.name}',
+    }
+
+manifest["platforms"]["linux-x86_64"] = entry(os.environ["APPIMAGE"])
+for host in sys.argv[1:]:
+    arch = re.search(r"-linux-([a-z0-9_]+)\.tar\.gz$", host).group(1)
+    manifest["platforms"][f"host-linux-{arch}"] = entry(host)
 path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY
 
