@@ -475,7 +475,9 @@ pub(crate) fn spawn_session(core: &Arc<Core>, launch: PreparedLaunch) -> CoreRes
     // SAFETY: `dup_fd` was just created and checked above and nothing else
     // holds it, so the File is its only owner and closes it exactly once.
     let io_file = unsafe { File::from_raw_fd(dup_fd) };
-    let io = AsyncFd::new(io_file)?;
+    // SAFETY: `io_file` owns `dup_fd` and the AsyncFd owns `io_file`, so the fd
+    // stays open and the same until the AsyncFd is dropped.
+    let io = unsafe { AsyncFd::register(io_file) }.map_err(std::io::Error::from)?;
 
     let id = core.next_session_id.fetch_add(1, Ordering::Relaxed);
     if owner.wants_rail_number(kind) {
