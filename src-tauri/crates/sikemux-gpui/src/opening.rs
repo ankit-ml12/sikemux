@@ -123,10 +123,12 @@ impl Workbench {
                 };
                 let opening = self.open_targets(vec![target], !focus);
                 cx.background_spawn(async move {
-                    let (outcome, _) = opening.await;
+                    let (outcome, tabs) = opening.await;
                     answer(match outcome.failed.into_iter().next() {
                         Some(failed) => Err(failed.message),
-                        None => Ok(json!({ "kind": kind, "path": path })),
+                        None => Ok(
+                            json!({ "kind": kind, "path": path, "windowId": tabs.into_iter().next() }),
+                        ),
                     });
                 })
                 .detach();
@@ -153,7 +155,11 @@ impl Workbench {
                 };
                 let opened = crate::core::request(&self.asks, "openTab", tab);
                 cx.background_spawn(async move {
-                    answer(opened.await.map(|_| json!({ "kind": kind })));
+                    answer(
+                        opened
+                            .await
+                            .map(|tab| json!({ "kind": kind, "windowId": tab })),
+                    );
                 })
                 .detach();
             }
