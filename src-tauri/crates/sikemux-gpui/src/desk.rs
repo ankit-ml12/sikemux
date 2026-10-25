@@ -10,7 +10,8 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
-use gpui_kit::component::WindowExt;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::{Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, AppContext, ClipboardItem, Context, Entity, FocusHandle, Focusable,
@@ -1474,11 +1475,15 @@ pub fn pane(
             front_pill = Some(pill_count);
         }
         pill_count += 1;
-        let mark = match page
+        let favicon = page
             .favicon
             .as_deref()
-            .and_then(|icon| bench.desks.favicon(icon))
-        {
+            .and_then(|icon| bench.desks.favicon(icon));
+        let mark = match favicon {
+            _ if page.loading => Spinner::new()
+                .with_size(px(13.))
+                .color(Tokens::get(cx).text_tertiary)
+                .into_any_element(),
             Some(icon) => gpui_kit::img(icon)
                 .size(px(13.))
                 .flex_none()
