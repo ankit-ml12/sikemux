@@ -55,6 +55,8 @@ pub struct Simulators {
     listing: bool,
     /// The devices starting up, by udid.
     booting: HashSet<String>,
+    /// The devices shutting down, by udid.
+    stopping: HashSet<String>,
     /// Why the last listing or start of a device failed.
     problem: Option<SharedString>,
     acting: HashSet<String>,
@@ -170,6 +172,7 @@ impl Simulators {
             devices: None,
             listing: false,
             booting: HashSet::new(),
+            stopping: HashSet::new(),
             problem: None,
             acting: HashSet::new(),
             progress: None,
@@ -406,7 +409,7 @@ impl Workbench {
                                 device.booted = true;
                             }
                         }
-                        bench.sims.devices = None;
+                        bench.list_devices(cx);
                         bench.sims.problem = None;
                     }
                     Some(Err(error)) => bench.sims.problem = Some(error.into()),
@@ -417,6 +420,99 @@ impl Workbench {
         })
         .detach();
         self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Shuts down the device on the agent's desk, asking first when an agent is using it.
+    fn shut_down_device(&mut self, agent: &str, cx: &mut Context<Self>) {
+        let Some(device) = self.sims.attached.get(agent).cloned() else {
+            return;
+        };
+        let holder = self
+            .sims
+            .engine
+            .attachments()
+            .into_iter()
+            .find(|held| held.udid == device.udid);
+        let Some(holder) = holder else {
+            return self.shut_down(device.udid, cx);
+        };
+        let who = self
+            .agent_by_id(&holder.agent_id)
+            .and_then(|row| row.name)
+            .unwrap_or_else(|| "An agent".to_owned());
+        self.confirm(
+            format!("Shut down {}?", device.name),
+            format!("{who} is using this device."),
+            "Shut down",
+            true,
+            move |bench, yes, _, cx| {
+                if yes {
+                    bench.shut_down(device.udid.clone(), cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn shut_down(&mut self, udid: String, cx: &mut Context<Self>) {
+        if !self.sims.stopping.insert(udid.clone()) {
+            return;
+        }
+        let showing: Vec<String> = self
+            .sims
+            .attached
+            .iter()
+            .filter(|(_, device)| device.udid == udid)
+            .map(|(agent, _)| agent.clone())
+            .collect();
+        for agent in &showing {
+            self.stop_screen(agent);
+        }
+        let engine = Arc::clone(&self.sims.engine);
+        cx.spawn(async move |bench, cx| {
+            let asked = request("shutdown", &udid, Map::new());
+            let stopped = crate::desk::run(async move { engine.window_call(asked).await }).await;
+            let _ = bench.update(cx, |bench, cx| {
+                bench.sims.stopping.remove(&udid);
+                match stopped {
+                    Some(Ok(_)) => {
+                        for device in bench.sims.attached.values_mut() {
+                            if device.udid == udid {
+                                device.booted = false;
+                            }
+                        }
+                        bench.list_devices(cx);
+                        bench.sims.problem = None;
+                    }
+                    Some(Err(error)) => bench.notify(crate::toast::error(error), cx),
+                    None => {}
+                }
+                bench.parts.redraw(&bench.parts.stage, cx);
+            });
+        })
+        .detach();
+        self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Saves the device's screen as a picture on the Desktop.
+    fn screenshot(&self, agent: &str, cx: &mut Context<Self>) {
+        let Some(device) = self.sims.attached.get(agent) else {
+            return;
+        };
+        let path = screenshot_path(&device.name);
+        let asked = request("screenshot", &device.udid, fields([("path", path.into())]));
+        let engine = Arc::clone(&self.sims.engine);
+        cx.spawn(async move |bench, cx| {
+            let saved = crate::desk::run(async move { engine.window_call(asked).await }).await;
+            let _ = bench.update(cx, |bench, cx| match saved {
+                Some(Ok(_)) => {
+                    bench.notify(crate::toast::success("Screenshot saved to the Desktop"), cx)
+                }
+                Some(Err(error)) => bench.notify(crate::toast::error(error), cx),
+                None => {}
+            });
+        })
+        .detach();
     }
 
     fn stop_screen(&mut self, agent: &str) {
@@ -936,6 +1032,21 @@ pub fn picker(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Op
     )
 }
 
+/// Where a screenshot of `device` goes: the Desktop, named by the device and the time.
+fn screenshot_path(device: &str) -> String {
+    let name: String = device
+        .chars()
+        .map(|c| match c.is_alphanumeric() || " ._()-".contains(c) {
+            true => c,
+            false => '-',
+        })
+        .collect();
+    let name = name.trim_start_matches([' ', '.', '-']).trim();
+    let name = if name.is_empty() { "Device" } else { name };
+    let stamp = chrono::Utc::now().format("%Y-%m-%dT%H-%M-%S");
+    format!("~/Desktop/Simulator {name} {stamp}.png")
+}
+
 fn fields<const N: usize>(pairs: [(&str, Value); N]) -> Map<String, Value> {
     pairs
         .into_iter()
@@ -1000,6 +1111,40 @@ pub fn tools(bench: &Workbench, agent: &str, cx: &mut Context<Workbench>) -> Any
                 .glyph(13.)
                 .disabled(acting)
                 .on_click(cx.listener(move |bench, _, _, cx| bench.turn_device(&turning, cx)))
+        })
+        .child({
+            let shooting = agent.to_owned();
+            IconButton::new("sim-screenshot", Icon::Camera, "Screenshot to the Desktop")
+                .glyph(13.)
+                .disabled(!bench.sims.live(agent))
+                .on_click(cx.listener(move |bench, _, _, cx| bench.screenshot(&shooting, cx)))
+        })
+        .child(div().w(px(6.)))
+        .child({
+            let udid = bench
+                .sims
+                .attached
+                .get(agent)
+                .map(|device| device.udid.as_str());
+            let starting = udid.is_some_and(|udid| bench.sims.booting.contains(udid));
+            let stopping = udid.is_some_and(|udid| bench.sims.stopping.contains(udid));
+            let live = bench.sims.live(agent);
+            let label = match (starting, stopping, live) {
+                (true, _, _) => "Starting…",
+                (_, true, _) => "Shutting down…",
+                (_, _, true) => "Shut down",
+                _ => "Start",
+            };
+            let switching = agent.to_owned();
+            IconButton::new("sim-power", Icon::Power, label)
+                .glyph(13.)
+                .disabled(udid.is_none() || starting || stopping)
+                .on_click(
+                    cx.listener(move |bench, _, _, cx| match bench.sims.live(&switching) {
+                        true => bench.shut_down_device(&switching, cx),
+                        false => bench.boot_device(&switching, cx),
+                    }),
+                )
         })
         .into_any_element()
 }
