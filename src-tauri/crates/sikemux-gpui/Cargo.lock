@@ -9238,9 +9238,11 @@ dependencies = [
 name = "sikemux-simulator"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "libc",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "sikemux-core",
  "sikemux-process",
  "tempfile",
