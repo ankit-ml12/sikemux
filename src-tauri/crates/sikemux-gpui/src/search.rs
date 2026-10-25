@@ -1383,7 +1383,7 @@ fn window_lines(shown: &Shown, hit: &SearchHit, t: &Tokens) -> AnyElement {
 
 fn foot(cx: &App) -> Div {
     let t = Tokens::get(cx);
-    let hint = |keys: &'static str, what: &'static str| {
+    let hint = |keys: SharedString, what: &'static str| {
         div()
             .flex()
             .items_center()
@@ -1401,8 +1401,8 @@ fn foot(cx: &App) -> Div {
         .border_color(t.border)
         .text_size(crate::theme::ui_text(10.5))
         .text_color(t.text_tertiary)
-        .child(hint("⏎", "open"))
-        .child(hint("tab", "replace"))
-        .child(hint("⌘⏎", "replace all"))
-        .child(hint("⌘⇧F", "focus"))
+        .child(hint("⏎".into(), "open"))
+        .child(hint("tab".into(), "replace"))
+        .child(hint("⌘⏎".into(), "replace all"))
+        .children(crate::keymap::hint("search.global", cx).map(|keys| hint(keys, "focus")))
 }

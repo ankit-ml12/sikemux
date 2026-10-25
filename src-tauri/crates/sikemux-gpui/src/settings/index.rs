@@ -198,6 +198,7 @@ pub const ENTRIES: &[Entry] = &[
     row(Agents, "Sessions", "Notify when an agent needs you", "notification alert badge dock permission finished"),
     row(Agents, "Sessions", "Test notification", "notification sound permission send try"),
     row(Agents, "Sessions", "Rail density", "compact comfortable sidebar"),
+    row(Agents, "Sessions", "Agent names", "name theme anime nature naruto one piece characters words"),
     row(Agents, "Sessions", "Sending while an agent works", "steer queue interrupt enter"),
     row(Agents, "Sessions", "Idle chats", "sleep memory process agents"),
     section(Agents, "Voice", "dictation microphone speech talk transcribe"),
