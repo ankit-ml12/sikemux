@@ -387,6 +387,7 @@ pub fn from_picture(
             .background_executor()
             .spawn(async move { wallpaper::pixels(&path) })
             .await;
+        let unread = read.is_none();
         let theme = match read {
             Some((name, pixels)) => {
                 let name = match picture {
@@ -405,6 +406,13 @@ pub fn from_picture(
                 .and_then(|settings| settings.pages.appearance.as_mut())
             {
                 appearance.reading = None;
+            }
+            if unread {
+                let note = match picture {
+                    Picture::Wallpaper => "This wallpaper's format can't be read.",
+                    Picture::PaneImage => "This pane image's format can't be read.",
+                };
+                bench.notify(crate::toast::error(note), cx);
             }
             if let Some(original) = theme {
                 let mut draft = original.clone();
