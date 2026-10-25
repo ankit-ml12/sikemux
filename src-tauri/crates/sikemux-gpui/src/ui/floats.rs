@@ -1,14 +1,17 @@
 use std::rc::Rc;
 
-use gpui_kit::base::Button as BaseButton;
-use gpui_kit::component::menu::PopupMenuItem;
+use gpui_kit::base::{Button as BaseButton, Selectable};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::Side;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::TestSupportExt as _;
 use gpui_kit::{
-    div, px, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
-    ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, Anchor, AnimationExt, AnyElement, AnyView, App, AppContext, ClickEvent, Context, Div,
+    ElementId, FontWeight, Hsla, InteractiveElement, Interactivity, IntoElement, ParentElement,
+    Render, RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement,
+    Styled, Window,
 };
+
 use smallvec::SmallVec;
 
 use super::controls::OnClick;
@@ -30,6 +33,159 @@ pub fn float(cx: &App) -> Div {
         .rounded(RADIUS_4)
         .shadow(t.shadow_float())
         .backdrop_blur(px(20.))
+}
+
+/// Kit's menu with the Mac's measure: at least 196 wide, a choice's tick at the end of its row.
+pub fn menu(
+    items: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    move |popup, window, cx| items(popup.min_w(px(196.)).check_side(Side::Right), window, cx)
+}
+
+/// Opens Kit's menu of `items` from one of our own buttons, as Kit's `dropdown_menu` does
+/// from its own, below the button and lined up on `anchor`'s side.
+pub fn menu_button<T: Selectable + IntoElement + 'static>(
+    id: impl Into<ElementId>,
+    anchor: Anchor,
+    trigger: T,
+    items: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+) -> impl IntoElement {
+    MenuTrigger {
+        frame: div().id(id),
+        trigger,
+    }
+    .dropdown_menu_with_anchor(anchor, menu(items))
+}
+
+#[derive(IntoElement)]
+struct MenuTrigger<T: Selectable + IntoElement + 'static> {
+    frame: Stateful<Div>,
+    trigger: T,
+}
+
+impl<T: Selectable + IntoElement + 'static> Styled for MenuTrigger<T> {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.frame.style()
+    }
+}
+
+impl<T: Selectable + IntoElement + 'static> InteractiveElement for MenuTrigger<T> {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.frame.interactivity()
+    }
+}
+
+impl<T: Selectable + IntoElement + 'static> Selectable for MenuTrigger<T> {
+    fn selected(mut self, selected: bool) -> Self {
+        self.trigger = self.trigger.selected(selected);
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.trigger.is_selected()
+    }
+}
+
+impl<T: Selectable + IntoElement + 'static> RenderOnce for MenuTrigger<T> {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        self.frame.child(self.trigger)
+    }
+}
+
+impl<T: Selectable + IntoElement + 'static> DropdownMenu for MenuTrigger<T> {}
+
+/// A menu row with what Kit's own rows lack: a mark in its own colours where the icon goes,
+/// words at its end, and the danger colour for a choice that deletes or discards.
+pub struct MenuRow {
+    label: SharedString,
+    icon: Option<Icon>,
+    mark: Option<Rc<dyn Fn() -> AnyElement>>,
+    hint: Option<SharedString>,
+    danger: bool,
+}
+
+impl FluentBuilder for MenuRow {}
+
+impl MenuRow {
+    pub fn new(label: impl Into<SharedString>) -> Self {
+        Self {
+            label: label.into(),
+            icon: None,
+            mark: None,
+            hint: None,
+            danger: false,
+        }
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn mark<E: IntoElement>(mut self, mark: impl Fn() -> E + 'static) -> Self {
+        self.mark = Some(Rc::new(move || mark().into_any_element()));
+        self
+    }
+
+    pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
+        self
+    }
+
+    pub fn item(self, cx: &App) -> PopupMenuItem {
+        let t = Tokens::get(cx);
+        let ink = self
+            .danger
+            .then(|| crate::theme::mix(t.danger, t.text_secondary, 0.85));
+        let icon = self.icon.map(|glyph| {
+            let icon = gpui_kit::component::Icon::from(glyph);
+            match ink {
+                Some(ink) => icon.text_color(ink),
+                None => icon,
+            }
+        });
+        let Self {
+            label, mark, hint, ..
+        } = self;
+        let item = if mark.is_none() && hint.is_none() && ink.is_none() {
+            PopupMenuItem::new(label)
+        } else {
+            PopupMenuItem::element(move |_, cx| {
+                let hint_ink = Tokens::get(cx).text_tertiary;
+                div()
+                    .id(ElementId::Name(label.clone()))
+                    .aria_label(label.clone())
+                    .test_support()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .children(mark.as_ref().map(|mark| mark()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .when_some(ink, |label, ink| label.text_color(ink))
+                            .child(label.clone()),
+                    )
+                    .children(
+                        hint.clone()
+                            .map(|hint| text(hint, 10.5, FontWeight::NORMAL).text_color(hint_ink)),
+                    )
+            })
+        };
+        match icon {
+            Some(icon) => item.icon(icon),
+            None => item,
+        }
+    }
 }
 
 /// A float of choices.

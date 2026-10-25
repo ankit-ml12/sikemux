@@ -3,14 +3,14 @@
 use std::f32::consts::FRAC_PI_2;
 use std::rc::Rc;
 
-use gpui_kit::base::{Button as BaseButton, Popover};
+use gpui_kit::base::Button as BaseButton;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, Anchor, AnyElement, App, InteractiveElement, IntoElement, ParentElement,
     SharedString, Styled, Transformation, Window,
 };
 
-use super::{icon, Menu, MenuItem};
+use super::{icon, menu_button, MenuRow};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_2};
 
@@ -79,29 +79,20 @@ pub fn select(
     if disabled {
         return trigger.into_any_element();
     }
-    let (picks, on_pick) = (Rc::new(picks), Rc::new(on_pick));
-    Popover::new(id.clone())
-        .anchor(Anchor::TopLeft)
-        .offset(px(4.))
-        .trigger(trigger)
-        .content(move |_, _, cx| {
-            let popover = cx.entity();
-            div()
-                .w(px(260.))
-                .child(Menu::new().children(picks.iter().map(|pick| {
-                    let (on_pick, popover, key) =
-                        (on_pick.clone(), popover.clone(), pick.key.clone());
-                    MenuItem::new(
-                        SharedString::from(format!("pick-{key}")),
-                        pick.label.clone(),
-                    )
+    let on_pick = Rc::new(on_pick);
+    menu_button(id, Anchor::TopLeft, trigger, move |mut popup, _, cx| {
+        popup = popup.min_w(px(260.));
+        for pick in &picks {
+            let (on_pick, key) = (on_pick.clone(), pick.key.clone());
+            popup = popup.item(
+                MenuRow::new(pick.label.clone())
+                    .when_some(pick.hint.clone(), MenuRow::hint)
+                    .item(cx)
                     .checked(chosen.as_ref() == Some(&pick.key))
-                    .when_some(pick.hint.clone(), |item, hint| item.hint(hint))
-                    .on_click(move |_, window, cx| {
-                        on_pick(&key, window, cx);
-                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
-                    })
-                })))
-        })
-        .into_any_element()
+                    .on_click(move |_, window, cx| on_pick(&key, window, cx)),
+            );
+        }
+        popup
+    })
+    .into_any_element()
 }
