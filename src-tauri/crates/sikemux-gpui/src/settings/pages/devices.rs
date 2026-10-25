@@ -476,10 +476,21 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
         true => "connected now".to_owned(),
         false => seen(link["lastSeen"].as_u64()),
     };
-    let line = format!(
-        "{} · {seen}",
-        platform_name(link["platform"].as_str().unwrap_or_default())
-    );
+    let updates = this
+        .read(cx)
+        .host_views
+        .get(&id)
+        .and_then(crate::hosts::host_updates)
+        .cloned();
+    let line = [
+        Some(platform_name(link["platform"].as_str().unwrap_or_default()).to_owned()),
+        Some(seen),
+        updates.as_ref().and_then(crate::hosts::updates_label),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
     let title: AnyElement = match &fields.renaming {
         Some((renaming, input, _)) if *renaming == id => div()
             .w(px(240.))
@@ -506,6 +517,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
         }
     };
     let (rename_this, remove_this, approve_this) = (this.clone(), this.clone(), this.clone());
+    let (update_this, update_id) = (this.clone(), id.clone());
     let approval = fields.approvals.get(&id).copied().flatten();
     let menu = ui::menu_button(
         SharedString::from(format!("host-menu-{id}")),
@@ -520,7 +532,7 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
             let (rename_id, remove_id, approve_id) = (id.clone(), id.clone(), id.clone());
             let (rename_name, remove_name) = (name.clone(), name.clone());
             let approve_this = approve_this.clone();
-            popup
+            let popup = popup
                 .item(PopupMenuItem::new("Rename").icon(Icon::Pencil).on_click(
                     move |_, window, cx| {
                         let (id, name) = (rename_id.clone(), rename_name.clone());
@@ -538,16 +550,26 @@ fn host_row(link: &Value, fields: &Fields, this: &Entity<Workbench>, cx: &App) -
                                 set_host_approval(bench, host, approval != Some(true), cx)
                             });
                         }),
-                )
-                .item(
-                    PopupMenuItem::new("Remove from account")
-                        .icon(Icon::Trash)
-                        .on_click(move |_, window, cx| {
-                            let (id, name) = (remove_id.clone(), remove_name.clone());
-                            remove_this
-                                .update(cx, |bench, cx| remove_host(bench, id, name, window, cx));
-                        }),
-                )
+                );
+            let popup = match &updates {
+                Some(updates) => {
+                    let (this, host) = (update_this.clone(), update_id.clone());
+                    crate::hosts::updates_items(popup, updates, move |on, cx| {
+                        let host = host.clone();
+                        this.update(cx, |bench, cx| bench.set_host_updates(host, on, cx));
+                    })
+                }
+                None => popup,
+            };
+            popup.item(
+                PopupMenuItem::new("Remove from account")
+                    .icon(Icon::Trash)
+                    .on_click(move |_, window, cx| {
+                        let (id, name) = (remove_id.clone(), remove_name.clone());
+                        remove_this
+                            .update(cx, |bench, cx| remove_host(bench, id, name, window, cx));
+                    }),
+            )
         },
     );
     div()

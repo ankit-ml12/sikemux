@@ -241,6 +241,12 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 .and_then(|view| view.load.as_ref())
                 .filter(|_| reach == "connected")
                 .map(crate::hosts::load_label);
+            let updates = host["id"]
+                .as_str()
+                .and_then(|id| bench.host_views.get(id))
+                .and_then(crate::hosts::host_updates)
+                .filter(|_| reach == "connected")
+                .cloned();
             let detail = match reach {
                 "away" if linked => Some("out of reach".to_owned()),
                 "connecting" if linked => Some("connecting".to_owned()),
@@ -296,10 +302,16 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                 )
                 .quiet()
                 .when_some(
-                    match (load, detail) {
-                        (Some(load), Some(detail)) => Some(format!("{load} · {detail}")),
-                        (Some(load), None) => Some(load.to_string()),
-                        (None, detail) => detail,
+                    {
+                        let parts: Vec<String> = [
+                            load.map(|load| load.to_string()),
+                            detail,
+                            updates.as_ref().and_then(crate::hosts::updates_label),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                        (!parts.is_empty()).then(|| parts.join(" · "))
                     },
                     |row, detail| row.detail(detail),
                 )
@@ -383,7 +395,7 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                         }
                     };
                     let named = name.clone();
-                    popup
+                    let popup = popup
                         .item(
                             PopupMenuItem::new("New chat here")
                                 .icon(Icon::Plus)
@@ -405,7 +417,19 @@ fn hosts(bench: &Workbench, cx: &mut Context<Workbench>) -> Vec<AnyElement> {
                                 })),
                         )
                         .separator()
-                        .item(approval_item(bench.clone(), Some(key.clone()), approval))
+                        .item(approval_item(bench.clone(), Some(key.clone()), approval));
+                    let popup = match &updates {
+                        Some(updates) => {
+                            let (bench, key) = (bench.clone(), key.clone());
+                            crate::hosts::updates_items(popup, updates, move |on, cx| {
+                                let host = key.clone();
+                                let _ = bench
+                                    .update(cx, |bench, cx| bench.set_host_updates(host, on, cx));
+                            })
+                        }
+                        None => popup,
+                    };
+                    popup
                         .item(PopupMenuItem::new("Rename").icon(Icon::Pencil).on_click({
                             let (bench, key, named) = (bench.clone(), key.clone(), named.clone());
                             move |_, _, cx| {

@@ -3,11 +3,13 @@
 
 use std::path::Path;
 
+use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::WindowExt;
-use gpui_kit::{Context, SharedString};
+use gpui_kit::{App, Context, SharedString};
 use serde_json::{json, Value};
 
 use crate::core;
+use crate::icons::Icon;
 use crate::toast;
 use crate::workbench::{Strip, Workbench};
 
@@ -282,6 +284,20 @@ impl Workbench {
         .detach();
     }
 
+    /// Turns the account host `host`'s own updates on or off; its view then says which.
+    pub fn set_host_updates(&self, host: String, on: bool, cx: &mut Context<Self>) {
+        let set = core::Target::new(&self.asks, Place::Account(host))
+            .request("setHostUpdates", json!({ "on": on }));
+        cx.spawn(async move |bench, cx| {
+            if let Err(error) = set.await {
+                let _ = bench.update(cx, |bench, cx| {
+                    bench.notify(toast::error(format!("Update automatically: {error}")), cx)
+                });
+            }
+        })
+        .detach();
+    }
+
     /// A new chat on the account host `host`, in the project in front there, with the agent the
     /// rail is set to, and the person moved there to see it.
     pub fn new_chat_on(&mut self, host: &str, cx: &mut Context<Self>) {
@@ -518,4 +534,42 @@ fn sent_summary(sent: &Value, sending: &Sending) -> String {
         None => {}
     }
     said
+}
+
+/// A host's update status, from its view, when it updates itself.
+pub fn host_updates(view: &sikemux_wire::protocol::DeviceView) -> Option<&Value> {
+    view.updates
+        .as_ref()
+        .filter(|updates| updates["automatic"].is_boolean())
+}
+
+/// How a host's row sums up its updates: under way, failed, else the version it runs.
+pub fn updates_label(updates: &Value) -> Option<String> {
+    Some(match updates["state"].as_str() {
+        Some("failed") => "update failed".to_owned(),
+        Some("downloading" | "installing" | "waiting" | "ready") => "updating".to_owned(),
+        _ => updates["current"].as_str()?.to_owned(),
+    })
+}
+
+/// "Update automatically" on a host that updates itself, ticked while it does, and why its
+/// last update failed when it did. `set` turns it on or off.
+pub fn updates_items(
+    popup: PopupMenu,
+    updates: &Value,
+    set: impl Fn(bool, &mut App) + 'static,
+) -> PopupMenu {
+    let on = updates["automatic"] == Value::Bool(true);
+    let popup = popup.item(
+        PopupMenuItem::new("Update automatically")
+            .icon(Icon::Refresh)
+            .checked(on)
+            .on_click(move |_, _, cx| set(!on, cx)),
+    );
+    match (updates["state"].as_str(), updates["error"].as_str()) {
+        (Some("failed"), Some(error)) => popup.item(PopupMenuItem::label(format!(
+            "The last update failed: {error}"
+        ))),
+        _ => popup,
+    }
 }

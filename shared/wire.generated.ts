@@ -29,6 +29,12 @@ export interface DeviceView {
     faceStyle: FaceStyle;
     /** How busy this host is, while a client that shows it is attached. */
     load?: HostLoad;
+    /**
+     * How this host keeps its core current, as the core's update status, on
+     * a host that updates itself. Kept as JSON so a change to its shape
+     * reaches phones over the air.
+     */
+    updates?: UpdateStatus;
 }
 
 export interface Workspace {
@@ -763,6 +769,86 @@ export interface HostLoad {
     cpu: number;
     /** Memory in use, in bytes, where the host says. */
     memoryUsed: number | null;
+}
+
+export interface UpdateStatus {
+    /** This build updates itself: a release running inside its app. */
+    updates: boolean;
+    current: string;
+    checked: UpdateCheck | null;
+    available: UpdateRelease | null;
+    state: UpdateState;
+    error: string | null;
+    blockers: UpdateBlocker[];
+    downloadedBytes: number;
+    totalBytes: number | null;
+    /**
+     * The person chose to stop the chats rather than wait, which the window
+     * that starts again tells the next core.
+     */
+    forced: boolean;
+    /**
+     * What to run in a terminal to install `available`, for an app that its
+     * installer updates rather than itself.
+     */
+    installCommand: string | null;
+    /**
+     * Whether this host puts updates in place by itself, which only the
+     * person turns off; none on anything but a host's core.
+     */
+    automatic: boolean | null;
+}
+
+/** The last check, kept because a failed one has nowhere else to show. */
+export interface UpdateCheck {
+    /** Unix milliseconds. */
+    at: number;
+    channel: UpdateChannel;
+    error: string | null;
+}
+
+export type UpdateChannel = "stable" | "nightly";
+
+/** The newest release on the person's channel. */
+export interface UpdateRelease {
+    version: string;
+    notes: string | null;
+    date: string | null;
+    credits: ReleaseCredits | null;
+}
+
+/** Credits a release carries in its update manifest, so they show without asking GitHub. */
+export interface ReleaseCredits {
+    commits: number;
+    compare: string;
+    contributors: Contributor[];
+    /** `data:` URLs keyed by each contributor's avatar address. */
+    avatars: Record<string, string>;
+}
+
+export interface Contributor {
+    login: string;
+    name: string;
+    commits: number;
+    avatar: string;
+}
+
+/** Where an update stands, as every client shows it. */
+export type UpdateState = "idle" | "waiting" | "downloading" | "installing" | "ready" | "failed";
+
+/**
+ * A chat whose agent is at work, which an update now would stop and
+ * start again on its session.
+ */
+export interface UpdateBlocker {
+    agentId: string;
+    provider: string;
+    title: string | null;
+    /**
+     * `starting` while the agent is still starting, `busy` while the
+     * chat is in the middle of a request.
+     */
+    reason: string;
 }
 
 /**
@@ -1556,8 +1642,6 @@ export type NotchFullScreen = "needsYou" | "always" | "never";
 
 export type NotchPeeks = "all" | "needsYou" | "never";
 
-export type UpdateChannel = "stable" | "nightly";
-
 export type RailDensity = "comfortable" | "compact";
 
 /** The page the tab rail shows. */
@@ -2193,84 +2277,6 @@ export type DiffKind = "add" | "mod" | "del";
 export interface Draft {
     text: string;
     extra?: unknown;
-}
-
-export interface UpdateStatus {
-    /** This build updates itself: a release running inside its app. */
-    updates: boolean;
-    current: string;
-    checked: UpdateCheck | null;
-    available: UpdateRelease | null;
-    state: UpdateState;
-    error: string | null;
-    blockers: UpdateBlocker[];
-    downloadedBytes: number;
-    totalBytes: number | null;
-    /**
-     * The person chose to stop the chats rather than wait, which the window
-     * that starts again tells the next core.
-     */
-    forced: boolean;
-    /**
-     * What to run in a terminal to install `available`, for an app that its
-     * installer updates rather than itself.
-     */
-    installCommand: string | null;
-    /**
-     * Whether this host puts updates in place by itself, which only the
-     * person turns off; none on anything but a host's core.
-     */
-    automatic: boolean | null;
-}
-
-/** The last check, kept because a failed one has nowhere else to show. */
-export interface UpdateCheck {
-    /** Unix milliseconds. */
-    at: number;
-    channel: UpdateChannel;
-    error: string | null;
-}
-
-/** The newest release on the person's channel. */
-export interface UpdateRelease {
-    version: string;
-    notes: string | null;
-    date: string | null;
-    credits: ReleaseCredits | null;
-}
-
-/** Credits a release carries in its update manifest, so they show without asking GitHub. */
-export interface ReleaseCredits {
-    commits: number;
-    compare: string;
-    contributors: Contributor[];
-    /** `data:` URLs keyed by each contributor's avatar address. */
-    avatars: Record<string, string>;
-}
-
-export interface Contributor {
-    login: string;
-    name: string;
-    commits: number;
-    avatar: string;
-}
-
-/** Where an update stands, as every client shows it. */
-export type UpdateState = "idle" | "waiting" | "downloading" | "installing" | "ready" | "failed";
-
-/**
- * A chat whose agent is at work, which an update now would stop and
- * start again on its session.
- */
-export interface UpdateBlocker {
-    agentId: string;
-    provider: string;
-    title: string | null;
-    /**
-     * `starting` while the agent is still starting, `busy` while the
-     * chat is in the middle of a request.
-     */
-    reason: string;
 }
 
 /** What the core's `Preferences::default()` serializes to. */

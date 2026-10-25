@@ -970,6 +970,7 @@ impl Core {
                 *self.shown_load.locked() = Some(load::shown(&load));
                 load
             }),
+            updates: updates::host_view(self),
         };
         let frame = encode_control(&ServerMessage::Event {
             event: Event::DeviceView {

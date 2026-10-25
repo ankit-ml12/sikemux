@@ -212,6 +212,9 @@ impl Updates {
     fn edit(&self, core: &Core, change: impl FnOnce(&mut Held)) {
         change(&mut self.held.locked());
         core.changes.changed(Topic::Update, None, None);
+        if is_host() {
+            core.view_changed();
+        }
     }
 
     /// Checks again now, as after the person changes channel.
@@ -449,6 +452,13 @@ async fn restart_into_installed(core: &Arc<Core>) {
         held.status.state = UpdateState::Failed;
         held.status.error = Some(format!("could not restart into it: {error}"));
     });
+}
+
+/// What a host's devices show of its updates; none on anything but a host.
+pub(crate) fn host_view(core: &Core) -> Option<serde_json::Value> {
+    is_host()
+        .then(|| serde_json::to_value(core.updates.status()).ok())
+        .flatten()
 }
 
 /// `sikemux update` on a host: puts the newest release in place now, without

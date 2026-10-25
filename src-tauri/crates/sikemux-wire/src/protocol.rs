@@ -1975,6 +1975,11 @@ pub struct DeviceView {
     /// How busy this host is, while a client that shows it is attached.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load: Option<HostLoad>,
+    /// How this host keeps its core current, as the core's update status, on
+    /// a host that updates itself. Kept as JSON so a change to its shape
+    /// reaches phones over the air.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updates: Option<Value>,
 }
 
 /// The Sikemux account this host is signed in to, as clients show it.
@@ -2373,6 +2378,7 @@ mod tests {
             account: None,
             face_style: Box::default(),
             load: None,
+            updates: None,
         })
         .unwrap();
         view.as_object_mut().unwrap().remove("recent");

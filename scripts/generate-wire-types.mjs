@@ -355,6 +355,7 @@ const RENAMES = {
 /** Fields the Rust keeps as JSON so phones read changes over the air, and the type that JSON has. */
 const JSON_FIELDS = {
   "DeviceView.inbox": "Inbox",
+  "DeviceView.updates": "UpdateStatus",
 };
 
 const TS_ROOTS = [
@@ -762,9 +763,11 @@ function parse(item) {
     for (const field of fields) {
       const json = JSON_FIELDS[`${name}.${field.name}`];
       if (json) {
-        if (field.type.kind !== "json")
-          fail(`${name}.${field.name} is not JSON`);
-        field.type = { kind: "named", name: json };
+        const optional = field.type.kind === "option";
+        const inner = optional ? field.type.of : field.type;
+        if (inner.kind !== "json") fail(`${name}.${field.name} is not JSON`);
+        const named = { kind: "named", name: json };
+        field.type = optional ? { kind: "option", of: named } : named;
       }
     }
     return { name, docs: item.docs, kind: "struct", fields };
