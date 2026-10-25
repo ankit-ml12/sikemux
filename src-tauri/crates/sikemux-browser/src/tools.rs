@@ -1259,67 +1259,133 @@ mod native {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     mod platform {
+        use super::super::on_tab;
         use super::Mouse;
+        use crate::linux_input as input;
+        use crate::linux_page::{self as page, World};
         use crate::Tab;
 
-        const UNSUPPORTED: &str = "browser input is not available on this platform yet";
-
-        pub async fn mouse(_: &Tab, _: Mouse, _: f64, _: f64, _: isize) -> Result<(), String> {
-            Err(UNSUPPORTED.into())
+        pub async fn mouse(
+            view: &Tab,
+            kind: Mouse,
+            x: f64,
+            y: f64,
+            clicks: isize,
+        ) -> Result<(), String> {
+            let kind = match kind {
+                Mouse::Move => input::Mouse::Move,
+                Mouse::Down => input::Mouse::Down,
+                Mouse::Drag => input::Mouse::Drag,
+                Mouse::Up => input::Mouse::Up,
+            };
+            on_tab(view, move |tab| input::mouse(tab, kind, x, y, clicks)).await
         }
 
-        pub async fn key(_: &Tab, _: &str) -> Result<(), String> {
-            Err(UNSUPPORTED.into())
+        pub async fn key(view: &Tab, name: &str) -> Result<(), String> {
+            crate::keys::parse(name)?;
+            let name = name.to_owned();
+            on_tab(view, move |tab| input::key(tab, &name)).await
         }
 
-        pub async fn insert_text(_: &Tab, _: &str) -> Result<(), String> {
-            Err(UNSUPPORTED.into())
-        }
-
-        pub async fn run_script(
-            _: &Tab,
-            _: &str,
-            _: std::time::Duration,
-        ) -> Result<String, String> {
-            Err(UNSUPPORTED.into())
-        }
-
-        pub async fn reload_from_origin(_: &Tab) -> Result<(), String> {
-            Err(UNSUPPORTED.into())
-        }
-
-        pub async fn probe_responsiveness(_: &Tab) -> Result<(), String> {
-            Ok(())
-        }
-
-        pub async fn run_helper(_: &Tab, _: &str) -> Result<String, String> {
-            Err(UNSUPPORTED.into())
+        pub async fn insert_text(view: &Tab, text: &str) -> Result<(), String> {
+            let text = text.to_owned();
+            on_tab(view, move |tab| input::insert_text(tab, &text)).await
         }
 
         pub async fn start_recording(
-            _: &crate::manager::BrowserManager,
-            _: &str,
-            _: Option<String>,
+            manager: &crate::manager::BrowserManager,
+            agent_id: &str,
+            path: Option<String>,
         ) -> Result<serde_json::Value, String> {
-            Err(UNSUPPORTED.into())
+            crate::recording::start(manager, agent_id, path).await
         }
 
         pub async fn stop_recording(
-            _: &crate::manager::BrowserManager,
-            _: &str,
+            manager: &crate::manager::BrowserManager,
+            agent_id: &str,
         ) -> Result<serde_json::Value, String> {
-            Err(UNSUPPORTED.into())
+            crate::recording::stop(manager, agent_id).await
+        }
+
+        /// An empty error means the script ran out of time.
+        pub async fn run_script(
+            view: &Tab,
+            body: &str,
+            limit: std::time::Duration,
+        ) -> Result<String, String> {
+            run_in(view, body, World::Page, limit)
+                .await
+                .map_err(Option::unwrap_or_default)
+        }
+
+        pub async fn probe_responsiveness(view: &Tab) -> Result<(), String> {
+            on_tab(view, input::probe_responsiveness).await
+        }
+
+        pub async fn reload_from_origin(view: &Tab) -> Result<(), String> {
+            on_tab(view, |webview| {
+                webkit2gtk::WebViewExt::reload_bypass_cache(webview);
+                Ok(())
+            })
+            .await
+        }
+
+        pub async fn run_helper(view: &Tab, body: &str) -> Result<String, String> {
+            match run_in(view, body, World::Helper, super::super::EVAL_TIMEOUT).await {
+                Err(None) => Err("the page took too long to answer".into()),
+                other => other.map_err(Option::unwrap_or_default),
+            }
+        }
+
+        /// `Err(None)` when the script ran out of time.
+        async fn run_in(
+            view: &Tab,
+            body: &str,
+            world: World,
+            limit: std::time::Duration,
+        ) -> Result<String, Option<String>> {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            let body = body.to_owned();
+            view.run(move |webview| {
+                page::call_async(
+                    webview,
+                    &body,
+                    world,
+                    Box::new(move |result| {
+                        let _ = sender.send(result);
+                    }),
+                );
+            });
+            let mut receiver = receiver;
+            match tokio::time::timeout(super::super::SLOW_ANSWER.min(limit), &mut receiver).await {
+                Ok(Ok(result)) => return result.map_err(Some),
+                Ok(Err(_)) => return Err(Some("the tab went away".into())),
+                Err(_) => {
+                    let _ = super::probe_responsiveness(view).await;
+                }
+            }
+            match tokio::time::timeout(limit.saturating_sub(super::super::SLOW_ANSWER), receiver)
+                .await
+            {
+                Ok(Ok(result)) => result.map_err(Some),
+                Ok(Err(_)) => Err(Some("the tab went away".into())),
+                Err(_) => Err(None),
+            }
         }
 
         pub async fn answer_dialog(
-            _: &Tab,
-            _: &str,
-            _: bool,
-            _: Option<String>,
+            view: &Tab,
+            tab_id: &str,
+            accept: bool,
+            text: Option<String>,
         ) -> Result<(), String> {
-            Err(UNSUPPORTED.into())
+            let tab_id = tab_id.to_owned();
+            on_tab(view, move |_| {
+                crate::linux_dialogs::answer(&tab_id, accept, text.as_deref())
+            })
+            .await
         }
     }
 
@@ -1389,11 +1455,15 @@ mod native {
     }
 }
 
-/// Runs `act` against the tab's native view on the main thread.
 #[cfg(target_os = "macos")]
+type PageView = objc2_web_kit::WKWebView;
+#[cfg(target_os = "linux")]
+type PageView = webkit2gtk::WebView;
+
+/// Runs `act` against the tab's native view on the thread that owns it.
 async fn on_tab<T: Send + 'static>(
     view: &Tab,
-    act: impl FnOnce(&objc2_web_kit::WKWebView) -> Result<T, String> + Send + 'static,
+    act: impl FnOnce(&PageView) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     match tokio::time::timeout(EVAL_TIMEOUT, view.ask(act)).await {
         Ok(Ok(result)) => result,
@@ -1628,33 +1698,28 @@ async fn screenshot(
     height: Option<f64>,
     area: Option<(f64, f64, f64, f64)>,
 ) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "linux")]
+    use crate::linux_page as page;
     #[cfg(target_os = "macos")]
-    {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let sender = std::sync::Mutex::new(Some(sender));
-        view.run(move |webview| {
-            let done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send> = Box::new(move |result| {
-                if let Some(sender) = sender.locked().take() {
-                    let _ = sender.send(result);
-                }
-            });
-            match height {
-                Some(height) => {
-                    crate::macos::full_page_jpeg(webview, height, MAX_PAGE_HEIGHT, done)
-                }
-                None => crate::macos::snapshot_jpeg(webview, area, done),
+    use crate::macos as page;
+
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let sender = std::sync::Mutex::new(Some(sender));
+    view.run(move |webview| {
+        let done: Box<dyn FnOnce(Result<Vec<u8>, String>) + Send> = Box::new(move |result| {
+            if let Some(sender) = sender.locked().take() {
+                let _ = sender.send(result);
             }
         });
-        match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err("screenshot was abandoned".into()),
-            Err(_) => Err("screenshot took too long".into()),
+        match height {
+            Some(height) => page::full_page_jpeg(webview, height, MAX_PAGE_HEIGHT, done),
+            None => page::snapshot_jpeg(webview, area, done),
         }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (view, height, area);
-        Err("screenshots are not available on this platform yet".into())
+    });
+    match tokio::time::timeout(EVAL_TIMEOUT, receiver).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("screenshot was abandoned".into()),
+        Err(_) => Err("screenshot took too long".into()),
     }
 }
 

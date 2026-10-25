@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, relative, AnyElement, App, Context, Entity, FocusHandle, FontWeight, Hsla, Image,
-    ImageFormat, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, img, px, relative, AnyElement, App, ClipboardItem, Context, Entity, FocusHandle,
+    FontWeight, Hsla, Image, ImageFormat, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_transcript::{Markdown, Pen, Style};
 use serde::Deserialize;
@@ -153,9 +153,25 @@ pub fn opened(bench: &mut Workbench, cx: &mut Context<Workbench>) {
 
 /// The update the core found for this app, while one is there to install.
 fn pending(bench: &Workbench) -> Option<&Value> {
-    bench
-        .read("update")
-        .filter(|update| update["updates"] == true && !update["available"].is_null())
+    bench.read("update").filter(|update| {
+        (update["updates"] == true || update["installCommand"].is_string())
+            && !update["available"].is_null()
+    })
+}
+
+/// The update's version and the command that installs it, for an app its installer updates.
+pub fn by_installer(update: &Value) -> Option<(String, String)> {
+    let version = update["available"]["version"].as_str()?;
+    let command = update["installCommand"].as_str()?;
+    Some((version.to_owned(), command.to_owned()))
+}
+
+pub fn copy_install_command(bench: &mut Workbench, command: &str, cx: &mut Context<Workbench>) {
+    cx.write_to_clipboard(ClipboardItem::new_string(command.to_owned()));
+    bench.notify(
+        crate::toast::success("Copied. Run it in a terminal to install the update."),
+        cx,
+    );
 }
 
 fn waiting_label(count: usize) -> String {
@@ -721,11 +737,25 @@ fn main(
                     None => div().into_any_element(),
                 })
                 .children(update.map(|update| {
-                    let (label, pressable) = install_button(update);
                     let this = this.clone();
-                    ui::Button::new("whats-new-install", label, ui::Variant::Primary)
-                        .disabled(!pressable)
-                        .on_click(move |_, _, cx| this.update(cx, |bench, _| install(bench, false)))
+                    match by_installer(update) {
+                        Some((_, command)) => ui::Button::new(
+                            "whats-new-install",
+                            "Copy install command",
+                            ui::Variant::Primary,
+                        )
+                        .on_click(move |_, _, cx| {
+                            this.update(cx, |bench, cx| copy_install_command(bench, &command, cx))
+                        }),
+                        None => {
+                            let (label, pressable) = install_button(update);
+                            ui::Button::new("whats-new-install", label, ui::Variant::Primary)
+                                .disabled(!pressable)
+                                .on_click(move |_, _, cx| {
+                                    this.update(cx, |bench, _| install(bench, false))
+                                })
+                        }
+                    }
                 })),
         )
 }

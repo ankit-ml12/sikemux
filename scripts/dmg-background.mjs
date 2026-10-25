@@ -1,17 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const OUT = join(ROOT, "src-tauri/dmg/background.tiff");
-const config = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri/tauri.macos.conf.json"), "utf8"),
-).bundle.macOS.dmg;
-const { width, height } = config.windowSize;
-const app = config.appPosition;
-const folder = config.applicationFolderPosition;
+const [width, height] = [660, 440];
+const app = { x: 180, y: 180 };
+const folder = { x: 480, y: 180 };
 
 // Finder counts the title bar in the window height and covers that much of the picture.
 const visibleHeight = height - 32;

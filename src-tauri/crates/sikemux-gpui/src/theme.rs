@@ -48,7 +48,12 @@ pub fn set_text_scale(scale: f32, cx: &mut App) {
 pub const MONO: &str = "JetBrainsMono NFM";
 /// The Nerd Font icon glyphs, which mono text falls back to.
 pub const MONO_ICONS: &str = "JetBrainsMono NFM Icons";
-pub const KBD: &str = ".SystemUIFont";
+/// Key caps in the Mac's own system font, which has the ⌘ ⌥ ⇧ ⌃ glyphs; elsewhere the UI's.
+pub const KBD: &str = if cfg!(target_os = "macos") {
+    ".SystemUIFont"
+} else {
+    UI
+};
 
 pub const RADIUS_1: Pixels = px(4.);
 pub const RADIUS_2: Pixels = px(5.);
@@ -432,6 +437,17 @@ fn from_oklab([l, a, b]: [f32; 3]) -> Rgba {
 
 /// The window's colours and fonts as the custom properties pages style against.
 /// `ground` is what the page draws behind itself; with none it lets what is under it show.
+/// The window's ground where a page sits, which a page with nothing behind it draws itself.
+pub fn page_ground(t: &Tokens) -> Hsla {
+    Hsla { a: 1., ..t.surface }
+}
+
+/// The same, as the red, green and blue a native window is painted with.
+pub fn page_ground_rgb(t: &Tokens) -> [u8; 3] {
+    let rgba = page_ground(t).to_rgb();
+    [rgba.r, rgba.g, rgba.b].map(|channel| (channel * 255.).round() as u8)
+}
+
 pub fn page_rule(t: &Tokens, ground: Option<Hsla>) -> String {
     let css = |color: Hsla| {
         let rgba = color.to_rgb();

@@ -22,6 +22,7 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
         downloadedBytes: 0,
         totalBytes: null,
         forced: false,
+        installCommand: null,
         ...overrides,
     };
 }

@@ -13,9 +13,12 @@ use sikemux_process::sync::Locked;
 use url::Url;
 
 use crate::host::{BrowserResult, Error, Host, HostRef};
+#[cfg(target_os = "linux")]
+use crate::linux_page as page;
 #[cfg(target_os = "macos")]
 use crate::macos;
 #[cfg(target_os = "macos")]
+use crate::macos as page;
 use crate::recording;
 use crate::{
     address, burst, documents, downloads, favicon, history, local_files, viewport, BrowserBounds,
@@ -233,7 +236,6 @@ pub struct BrowserManager {
     pub(crate) documents: Mutex<HashMap<String, documents::DocumentLog>>,
     pub(crate) stalls: Mutex<HashMap<String, TabStall>>,
     pub(crate) local_files: local_files::LocalFiles,
-    #[cfg(target_os = "macos")]
     pub(crate) recordings: Mutex<HashMap<String, recording::Session>>,
     pub(crate) relieving: AtomicBool,
     pub(crate) host: HostRef,
@@ -649,7 +651,6 @@ impl BrowserManager {
 
     pub fn close_agent(&self, agent_id: &str) -> BrowserResult<()> {
         validate_agent_id(agent_id)?;
-        #[cfg(target_os = "macos")]
         self.recordings.locked().remove(agent_id);
         let views = self
             .agents
@@ -773,26 +774,18 @@ impl BrowserManager {
             ));
         }
         let (_, view) = self.active_view(agent_id)?;
-        #[cfg(target_os = "macos")]
-        {
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            view.run(move |webview| {
-                macos::still_jpeg(
-                    webview,
-                    Box::new(move |jpeg| {
-                        let _ = sender.send(jpeg);
-                    }),
-                )
-            });
-            match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
-                Ok(Ok(Some(jpeg))) => Ok(jpeg),
-                _ => Err(Error::Window("the page could not be captured".into())),
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = view;
-            Err(Error::Window("page stills are only taken on macOS".into()))
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        view.run(move |webview| {
+            page::still_jpeg(
+                webview,
+                Box::new(move |jpeg| {
+                    let _ = sender.send(jpeg);
+                }),
+            )
+        });
+        match tokio::time::timeout(STILL_TIMEOUT, receiver).await {
+            Ok(Ok(Some(jpeg))) => Ok(jpeg),
+            _ => Err(Error::Window("the page could not be captured".into())),
         }
     }
 
@@ -804,17 +797,7 @@ impl BrowserManager {
 
     pub fn history(&self, agent_id: &str, delta: i32) -> BrowserResult<()> {
         let (_, view) = self.active_view(agent_id)?;
-        #[cfg(target_os = "macos")]
-        view.run(move |webview| macos::history(webview, delta));
-        #[cfg(not(target_os = "macos"))]
-        crate::spawn(async move {
-            let script = if delta < 0 {
-                "history.back()"
-            } else {
-                "history.forward()"
-            };
-            let _ = view.eval(script).await;
-        });
+        view.run(move |webview| page::history(webview, delta));
         Ok(())
     }
 
@@ -842,13 +825,10 @@ impl BrowserManager {
             view
         };
         view.set_zoom(1.0);
-        #[cfg(target_os = "macos")]
-        {
-            let agent = fixed
-                .and_then(|fixed| fixed.user_agent())
-                .unwrap_or(USER_AGENT);
-            view.run(move |webview| macos::introduce_as(webview, agent));
-        }
+        let agent = fixed
+            .and_then(|fixed| fixed.user_agent())
+            .unwrap_or(USER_AGENT);
+        view.run(move |webview| page::introduce_as(webview, agent));
         self.relayout(agent_id);
         Ok(())
     }
@@ -994,13 +974,12 @@ impl BrowserManager {
         if self.shortcuts_installed.swap(true, Ordering::AcqRel) {
             return;
         }
+        let host = self.host.0.clone();
         #[cfg(target_os = "macos")]
-        {
-            let host = self.host.0.clone();
-            dispatch2::DispatchQueue::main().exec_async(move || {
-                macos::install_shortcuts(move |shortcut| host.shortcut(shortcut))
-            });
-        }
+        dispatch2::DispatchQueue::main()
+            .exec_async(move || page::install_shortcuts(move |shortcut| host.shortcut(shortcut)));
+        #[cfg(target_os = "linux")]
+        page::install_shortcuts(move |shortcut| host.shortcut(shortcut));
     }
 
     /// Where pages' downloads wait until the person keeps them, so a page can never
@@ -1296,21 +1275,21 @@ pub(crate) fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
 /// Elsewhere a fixed viewport can only be had by zooming the page.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn place(view: &Tab, layout: viewport::Layout, _awake: bool) {
-    let (frame, zoom) = match layout {
+    let (frame, sides, zoom) = match layout {
         viewport::Layout::Shown { frame, page } => (
             (frame.x, frame.y, frame.width, frame.height),
+            (frame.clip_left, frame.clip_right),
             page.map_or(1.0, |(page_width, _)| frame.width / page_width),
         ),
         viewport::Layout::Parked {
             page: (width, height),
-        } => ((PARKED_ORIGIN, PARKED_ORIGIN, width, height), 1.0),
+        } => ((PARKED_ORIGIN, PARKED_ORIGIN, width, height), (0., 0.), 1.0),
     };
     view.set_zoom(zoom);
-    view.set_bounds(frame);
+    view.set_bounds(frame, sides);
 }
 
 const MAX_HOLES: usize = 32;
-#[cfg(target_os = "macos")]
 const STILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub(crate) fn validate_bounds(bounds: &BrowserBounds) -> BrowserResult<()> {

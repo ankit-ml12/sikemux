@@ -452,26 +452,59 @@ pub struct Home {
 
 impl Default for Home {
     fn default() -> Self {
-        let library = sikemux_process::paths::home().map(|home| home.join("Library"));
-        let support = library
-            .as_ref()
-            .map(|library| library.join("Application Support").join(IDENTIFIER));
+        let folders = Folders::of_this_system();
         let socket = sikemux_core::default_socket_path().unwrap_or_default();
         let launch = cli_paths::cli_executable_path().map(|binary| CoreLaunch {
             binary,
             socket: socket.clone(),
-            log: library
-                .map_or_else(std::env::temp_dir, |library| {
-                    library.join("Logs").join(IDENTIFIER)
-                })
+            log: folders
+                .as_ref()
+                .map_or_else(std::env::temp_dir, |folders| folders.logs.clone())
                 .join("core.log"),
-            args: login_item::core_args(support.clone()),
+            args: login_item::core_args(folders.as_ref().map(|folders| folders.data.clone())),
         });
         Self {
             socket,
             launch,
-            manifest_dir: support.map(|support| support.join("agent-detection")),
+            manifest_dir: folders.map(|folders| folders.config.join("agent-detection")),
         }
+    }
+}
+
+/// Where the app keeps its data, its settings and its logs: the folders the Tauri app used on
+/// each system, so an install's data carries over.
+struct Folders {
+    data: PathBuf,
+    config: PathBuf,
+    logs: PathBuf,
+}
+
+impl Folders {
+    #[cfg(target_os = "macos")]
+    fn of_this_system() -> Option<Self> {
+        let library = sikemux_process::paths::home()?.join("Library");
+        let support = library.join("Application Support").join(IDENTIFIER);
+        Some(Self {
+            data: support.clone(),
+            config: support,
+            logs: library.join("Logs").join(IDENTIFIER),
+        })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn of_this_system() -> Option<Self> {
+        let home = sikemux_process::paths::home()?;
+        let base = |variable: &str, fallback: &str| {
+            sikemux_process::paths::env_path(variable)
+                .filter(|path| path.is_absolute())
+                .unwrap_or_else(|| home.join(fallback))
+        };
+        let data = base("XDG_DATA_HOME", ".local/share").join(IDENTIFIER);
+        Some(Self {
+            logs: data.join("logs"),
+            config: base("XDG_CONFIG_HOME", ".config").join(IDENTIFIER),
+            data,
+        })
     }
 }
 
@@ -565,8 +598,9 @@ pub fn request_on(
 /// Where this app's key on the network is kept.
 const DEVICE_KEY: &str = "sikemux-device";
 
-/// What the account calls this app, before " on <host>".
-const DEVICE_NAME: &str = if cfg!(debug_assertions) {
+/// This app's name: what the account calls it, before " on <host>", and the desktop on its
+/// notifications.
+pub const NAME: &str = if cfg!(debug_assertions) {
     "Sikemux Dev"
 } else {
     "Sikemux"
@@ -621,7 +655,7 @@ async fn reach_hosts(
         .await
         .and_then(|network| network::usable_relays(&network))
         .unwrap_or_default();
-    match Linked::bind(key, relays, DEVICE_NAME, "macos").await {
+    match Linked::bind(key, relays, NAME, std::env::consts::OS).await {
         Ok(linked) => Some(linked),
         Err(error) => {
             unavailable(error.to_string());

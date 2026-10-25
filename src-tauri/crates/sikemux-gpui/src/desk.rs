@@ -182,6 +182,11 @@ impl Desks {
                     .map(desk_theme)
                     .unwrap_or_default(),
             ),
+            ground: Mutex::new(
+                cx.try_global::<Tokens>()
+                    .map(crate::theme::page_ground_rgb)
+                    .unwrap_or_default(),
+            ),
             engine: OnceLock::new(),
         });
         let engine = window_pointer(window).map(|view| {
@@ -197,7 +202,10 @@ impl Desks {
         }
         let theming = cx.observe_global::<Tokens>({
             let page_files = page_files.clone();
-            move |_, cx| *page_files.theme.locked() = desk_theme(Tokens::get(cx))
+            move |_, cx| {
+                *page_files.theme.locked() = desk_theme(Tokens::get(cx));
+                *page_files.ground.locked() = crate::theme::page_ground_rgb(Tokens::get(cx));
+            }
         });
         let task = engine.is_some().then(|| {
             cx.spawn_in(window, async move |this, cx| {
@@ -268,13 +276,18 @@ fn window_pointer(window: &Window) -> Option<usize> {
         .map(|view| gpui_native_view::Retained::as_ptr(&view) as usize)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn window_pointer(window: &Window) -> Option<usize> {
+    gpui_native_view::window_x11(window).map(|window| window as usize)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn window_pointer(_: &Window) -> Option<usize> {
     None
 }
 
 struct DeskHost {
-    /// GPUI's own view of the window, which outlives the engine; only used on the main thread.
+    /// GPUI's own view of the window on macOS, its X11 id on Linux; it outlives the engine.
     view: usize,
     heard: mpsc::UnboundedSender<Heard>,
     home: Option<PathBuf>,
@@ -283,7 +296,8 @@ struct DeskHost {
 
 impl Host for DeskHost {
     fn window(&self) -> Result<ParentView, String> {
-        Ok(ParentView::beneath(self.view as *mut std::ffi::c_void))
+        let ground = *self.pages.ground.locked();
+        Ok(ParentView::beneath(self.view as *mut std::ffi::c_void).with_ground(ground))
     }
 
     fn state_dir(&self) -> Option<PathBuf> {
@@ -323,6 +337,8 @@ impl Host for DeskHost {
 struct PageFiles {
     folder: Option<PathBuf>,
     theme: Mutex<String>,
+    /// What a tab's page shows until it draws, on Linux.
+    ground: Mutex<[u8; 3]>,
     engine: OnceLock<Weak<BrowserManager>>,
 }
 
@@ -369,7 +385,7 @@ fn draft_name(agent: &str) -> String {
 
 /// A tab has nothing behind it, so its pages draw the window's surface themselves.
 fn desk_theme(t: &Tokens) -> String {
-    crate::theme::page_rule(t, Some(Hsla { a: 1., ..t.surface }))
+    crate::theme::page_rule(t, Some(crate::theme::page_ground(t)))
 }
 
 /// Where a desk's page shows: the engine lays the agent's tab in front over the frame.
@@ -1801,7 +1817,7 @@ fn tab_menu(
                     )
                     .separator()
                     .item(
-                        PopupMenuItem::new("Reveal in Finder")
+                        PopupMenuItem::new(ui::REVEAL)
                             .icon(Icon::Folder)
                             .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
                     )
@@ -1875,7 +1891,10 @@ fn kinds(
             0,
             false,
         ),
-    ] {
+    ]
+    .into_iter()
+    .filter(|(_, _, _, kind, _, _)| cfg!(target_os = "macos") || *kind != DeskKind::Simulator)
+    {
         let named = match count {
             0 => label.to_owned(),
             count => format!("{label} · {count}"),

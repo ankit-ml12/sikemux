@@ -77,7 +77,7 @@
     "test:sim": "swift test --package-path src-tauri/sim",
     "build:mac": "./scripts/build-mac.sh",
     "build:windows": "pnpm build:sidecar && tauri build --bundles nsis --config src-tauri/tauri.sidecar.conf.json",
-    "build:linux": "pnpm build:sidecar && tauri build --bundles deb,rpm,appimage --config src-tauri/tauri.sidecar.conf.json",
+    "build:linux": "scripts/build-linux.sh",
     "prepush": "./scripts/pre-push.sh",
     "perf": "node scripts/perf.mjs"
   },

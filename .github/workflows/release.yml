@@ -542,13 +542,10 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
-      - name: Install the Tauri Linux packages
+      - name: Install what the app builds and packs with
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+          sudo apt-get install -y build-essential pkg-config libwebkit2gtk-4.1-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libwayland-dev libfontconfig-dev libfreetype-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good dpkg-dev rpm patchelf file
 
       - name: Build the deb, rpm and AppImage
         env:
@@ -614,9 +611,9 @@ jobs:
           path: src-tauri/target/host/*.tar.gz
 
   sign-host:
-    name: Sign the Linux host cores
-    needs: [plan, build-host]
-    if: ${{ !cancelled() && needs.build-host.result == 'success' }}
+    name: Sign the Linux host cores and the AppImage
+    needs: [plan, build-host, build-linux]
+    if: ${{ !cancelled() && needs.build-host.result == 'success' && needs.build-linux.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
@@ -640,6 +637,12 @@ jobs:
           merge-multiple: true
           path: src-tauri/target/host
 
+      - name: Fetch the Linux packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sikemux-linux-${{ github.ref_name }}
+          path: src-tauri/target/release/bundle
+
       - name: Sign them
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -652,6 +655,13 @@ jobs:
           name: host-signatures-${{ github.ref_name }}
           if-no-files-found: error
           path: src-tauri/target/host/*.tar.gz.sig
+
+      - name: Keep the AppImage's signature on the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: appimage-signature-${{ github.ref_name }}
+          if-no-files-found: error
+          path: src-tauri/target/release/bundle/appimage/*.AppImage.sig
 
   publish:
     name: Publish
@@ -695,6 +705,12 @@ jobs:
         with:
           name: host-signatures-${{ github.ref_name }}
           path: src-tauri/target/host
+
+      - name: Fetch the AppImage's signature
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: appimage-signature-${{ github.ref_name }}
+          path: src-tauri/target/release/bundle/appimage
 
       - name: Publish
         env:

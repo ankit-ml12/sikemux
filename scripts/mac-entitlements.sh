@@ -6,7 +6,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 TEAM=D577WD6Z5U
-APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+APP_IDENTIFIER="$(node scripts/app-metadata.mjs identifier)"
 case "${1:-}" in
   app) APPLICATION="$TEAM.$APP_IDENTIFIER" ;;
   core) APPLICATION="$TEAM.$APP_IDENTIFIER.core" ;;

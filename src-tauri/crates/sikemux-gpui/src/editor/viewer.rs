@@ -9,7 +9,7 @@ use std::sync::Arc;
 use base64::Engine;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, img, px, uniform_list, AnyElement, App, Context, Entity, ImgResourceLoader,
+    div, img, px, uniform_list, AnyElement, App, Context, Entity, FontWeight, ImgResourceLoader,
     InteractiveElement, IntoElement, ObjectFit, ParentElement, RenderOnce, Resource, SharedString,
     StatefulInteractiveElement, Styled, StyledImage, Window,
 };
@@ -107,7 +107,7 @@ impl RenderOnce for Picture {
 #[derive(PartialEq)]
 enum Kind {
     Image,
-    /// A document macOS's PDF or Quick Look viewer shows.
+    /// A document macOS's PDF or Quick Look viewer shows, and elsewhere a card opens.
     Document,
     /// What the window cannot play yet: sound and video.
     Elsewhere,
@@ -337,11 +337,8 @@ pub(super) fn pane(
                 .child(picture)
                 .into_any_element()
         }
-        (None, Some(Kind::Document)) => document(viewer, path, &t),
-        (None, Some(Kind::Elsewhere)) => message(
-            "This kind of file opens in its own app from here for now.".into(),
-            &t,
-        ),
+        (None, Some(Kind::Document)) => document(viewer, key, &t),
+        (None, Some(Kind::Elsewhere)) => card(viewer, key, &t),
         (None, Some(Kind::Bytes)) => bytes(viewer.bytes.clone().unwrap_or_default(), &t),
     };
     div()
@@ -354,12 +351,12 @@ pub(super) fn pane(
 }
 
 /// A document in macOS's own viewer, once it is open.
-fn document(viewer: &Viewer, path: &Path, t: &Tokens) -> AnyElement {
+fn document(viewer: &Viewer, key: &FileKey, t: &Tokens) -> AnyElement {
     #[cfg(target_os = "macos")]
     match &viewer.document {
         Some(Some((_, surface, focus))) => {
             return gpui_native_view::native_view(
-                SharedString::from(format!("document-{}", path.display())),
+                SharedString::from(format!("document-{}", key.path.display())),
                 surface,
             )
             .track_focus(focus)
@@ -369,10 +366,61 @@ fn document(viewer: &Viewer, path: &Path, t: &Tokens) -> AnyElement {
         Some(None) => {}
         None => return message("Opening…".into(), t),
     }
-    let _ = (viewer, path);
-    message(
-        "This kind of file opens in its own app from here.".into(),
-        t,
+    card(viewer, key, t)
+}
+
+/// A file the window does not draw: its name, size and type, and the app the system opens
+/// it with.
+fn card(viewer: &Viewer, key: &FileKey, t: &Tokens) -> AnyElement {
+    let about = viewer
+        .about
+        .as_ref()
+        .map(|about| format!("{} · {}", size(about.size), about.mime));
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .child(ui::icon(Icon::File, 28.).text_color(t.text_tertiary))
+        .child(
+            ui::text(name_of(&key.path), 13., FontWeight::MEDIUM)
+                .mt(px(4.))
+                .text_color(t.text_primary),
+        )
+        .children(about.map(|about| {
+            div()
+                .text_size(crate::theme::ui_text(12.))
+                .text_color(t.text_tertiary)
+                .child(about)
+        }))
+        .children(openable(viewer, key).map(|open| {
+            div().mt(px(8.)).child(
+                ui::Button::new(
+                    "viewer-open-default",
+                    "Open in default app",
+                    ui::Variant::Outline,
+                )
+                .icon(Icon::Share)
+                .on_click(move |_, _, cx| cx.open_with_system(&open)),
+            )
+        }))
+        .into_any_element()
+}
+
+/// Where the system can open the file from: its copy here, or the file itself on this host.
+fn openable(viewer: &Viewer, key: &FileKey) -> Option<PathBuf> {
+    viewer
+        .local
+        .clone()
+        .or_else(|| (key.place == Host::This).then(|| key.path.clone()))
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
     )
 }
 
@@ -443,10 +491,7 @@ fn bar(
 ) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let path = key.path.as_path();
-    let name = path.file_name().map_or_else(
-        || path.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    );
+    let name = name_of(path);
     let about = viewer.about.as_ref();
     let zoom = |id: &'static str, label: &'static str, to: fn(Zoom) -> Zoom| {
         let (this, key) = (this.clone(), key.clone());
@@ -468,10 +513,7 @@ fn bar(
     };
     let image = about.is_some_and(|about| kind_of(&about.mime) == Kind::Image);
     let reload = key.clone();
-    let open = viewer
-        .local
-        .clone()
-        .or_else(|| (key.place == Host::This).then(|| path.to_owned()));
+    let open = openable(viewer, key);
     let reveal = (key.place == Host::This).then(|| path.to_owned());
     let this_reload = this.clone();
     div()
@@ -514,7 +556,7 @@ fn bar(
                 .on_click(move |_, _, cx| cx.open_with_system(&open))
         }))
         .children(reveal.map(|reveal| {
-            ui::IconButton::new("viewer-reveal", Icon::Folder, "Show in Finder")
+            ui::IconButton::new("viewer-reveal", Icon::Folder, ui::SHOW_IN_FILES)
                 .small()
                 .on_click(move |_, _, cx| cx.reveal_path(&reveal))
         }))

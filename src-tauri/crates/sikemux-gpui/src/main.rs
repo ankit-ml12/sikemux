@@ -1,19 +1,30 @@
 use gpui_kit::{
-    point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowOptions,
+    point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowDecorations,
+    WindowOptions,
 };
 use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    sikemux_browser::choose_page_rendering();
     console::install();
-    let link = core::start(core::Home::default());
     let (handed, opened) = tokio::sync::mpsc::unbounded_channel();
-    let app = gpui_kit::application().with_assets(icons::Icons);
+    #[cfg(target_os = "linux")]
+    if !sikemux_gpui::handoff::take_over(handed.clone()) {
+        return;
+    }
+    let link = core::start(core::Home::default());
+    let app = gpui_kit::application();
+    #[cfg(target_os = "linux")]
+    let app = app.with_windowing(gpui_kit::WindowingRequest::Windowed(x11_session()));
+    let app = app.with_assets(icons::Icons);
     app.on_open_urls(move |urls| {
         let _ = handed.send(urls);
     });
     app.run(move |cx| {
         gpui_kit::init(cx);
         theme::install(cx);
+        cx.set_app_identity(core::IDENTIFIER, core::NAME);
         let behind = std::env::var_os(sikemux_process::vars::LAUNCH_BEHIND).is_some();
         #[cfg(feature = "drive")]
         let behind = behind || sikemux_gpui::drive::stays_behind();
@@ -23,10 +34,12 @@ fn main() {
             window_min_size: Some(size(px(860.), px(540.))),
             titlebar: Some(TitlebarOptions {
                 title: Some("Sikemux".into()),
-                appears_transparent: true,
+                appears_transparent: cfg!(target_os = "macos"),
                 // The top of the 14 pt lights, which centres them in the 36 pt top bar.
-                traffic_light_position: Some(point(px(16.), px(11.))),
+                traffic_light_position: cfg!(target_os = "macos").then(|| point(px(16.), px(11.))),
             }),
+            window_decorations: Some(WindowDecorations::Server),
+            app_id: Some(core::IDENTIFIER.into()),
             focus: !behind,
             ..Default::default()
         };
@@ -51,4 +64,15 @@ fn main() {
             cx.activate(true);
         }
     });
+}
+
+/// Browser pages are X11 windows inside the app's, so in a Wayland session the app takes
+/// XWayland's display when there is one.
+#[cfg(target_os = "linux")]
+fn x11_session() -> gpui_kit::GraphicalEnvironment {
+    let mut session = gpui_kit::GraphicalEnvironment::detect();
+    if session.x11_display.is_some() {
+        session.wayland_display = None;
+    }
+    session
 }

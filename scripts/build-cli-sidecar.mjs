@@ -4,7 +4,6 @@ import {
   chmodSync,
   copyFileSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -13,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { appMetadata } from "./app-metadata.mjs";
 import { smokeBrowserSidecar } from "./smoke-browser-sidecar.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,9 +83,7 @@ function bundleCore(binary) {
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(join(contents, "MacOS"), { recursive: true });
   mkdirSync(join(contents, "Resources"), { recursive: true });
-  const config = JSON.parse(
-    readFileSync(join(tauriDir, "tauri.conf.json"), "utf8"),
-  );
+  const config = appMetadata();
   const appInfo = JSON.parse(
     run(
       "plutil",

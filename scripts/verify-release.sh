@@ -21,8 +21,8 @@ fail() {
 [[ "$NOTARIZED" == "0" || "$NOTARIZED" == "1" ]] || fail "RELEASE_NOTARIZED must be 0 or 1"
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
-APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+APP_NAME="$(node scripts/app-metadata.mjs name)"
+APP_IDENTIFIER="$(node scripts/app-metadata.mjs identifier)"
 TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"
 SIG="$TAR.sig"
 APP="$BUNDLE/macos/${APP_NAME}.app"

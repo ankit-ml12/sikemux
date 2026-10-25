@@ -1,9 +1,20 @@
 [package]
 name = "sikemux-gpui"
-version = "0.5.4-nightly.6"
+version = "0.5.4-nightly.8"
 edition = "2021"
 publish = false
 description = "The desktop UI on GPUI, a client of the core"
+
+# How the app is named and known to the system, for the release scripts and the core. The
+# app's version is this package's.
+[package.metadata.sikemux]
+name = "Sikemux"
+description = "The IDE for you and your coding agents"
+identifier = "com.nodelike.sikemux"
+dev-name = "Sikemux Dev"
+dev-identifier = "com.nodelike.sikemux.dev"
+minimum-macos = "11.0"
+updater-key = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5NDQ0RDU4NDA4ODY0NEYKUldSUFpJaEFXRTFFaVhCRmkrNmFmZDNNb1djWmNvbkdYMXkxT1Z4cUJlb1VWNzJCMnE5blJkMkMK"
 
 # Its own workspace, so GPUI stays out of the app's lockfile and workspace-hack.
 [workspace]
@@ -67,6 +78,10 @@ raw-window-handle = "0.6"
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSDockTile", "NSScreen", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSURL", "NSUserNotification"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Already in the build through GPUI's Linux platform.
+zbus = "5"
 
 [build-dependencies]
 # The same naga as GPUI's wgpu, only to translate the shaders while building.
@@ -178,23 +193,23 @@ opt-level = 3
 
 # GPUI from our fork of sonorahq/gpui, published under the gpui-pre names GPUI Kit pins.
 [patch.crates-io]
-gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
-gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "1e1498a6219cadf1750af1c407bb1f50ba1a62c4" }
+gpui-pre = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-apple = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-collections = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-derive-refineable = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-http-client = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-linux = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-macos = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-macros = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-platform = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-refineable = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-scheduler = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-shared-string = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-sum-tree = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-util = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-wgpu = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-windows = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-ztracing = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
+gpui-pre-ztracing-macro = { git = "https://github.com/sikemux/gpui", rev = "d0d8d20a044f42c17ab7f9fd2b79b04fbb5908fb" }
 # irosashi with C Oniguruma and Shiki's injection rules, until frostybee/irosashi takes them.
 irosashi = { git = "https://github.com/sikemux/irosashi", rev = "8ddf7a2ddbae78ec13c1db43e4c6bdaf09e7269a" }

@@ -238,13 +238,31 @@ pub fn install(cx: &mut App) {
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+    if cfg!(target_os = "macos") {
+        cx.bind_keys([
+            KeyBinding::new("cmd-q", Quit, None),
+            KeyBinding::new("cmd-h", Hide, None),
+            KeyBinding::new("alt-cmd-h", HideOthers, None),
+            KeyBinding::new("alt-cmd-q", QuitAndStopEverything, None),
+            KeyBinding::new("cmd-m", Minimize, None),
+            KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+        ]);
+    } else {
+        cx.bind_keys([
+            KeyBinding::new("ctrl-q", Quit, None),
+            KeyBinding::new("ctrl-alt-q", QuitAndStopEverything, None),
+            KeyBinding::new("f11", ToggleFullScreen, None),
+        ]);
+        // With no menu bar or dock to come back from, a closed window would leave the app
+        // running unseen.
+        cx.on_window_closed(|cx, _| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+    }
     cx.bind_keys([
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-h", Hide, None),
-        KeyBinding::new("alt-cmd-h", HideOthers, None),
-        KeyBinding::new("alt-cmd-q", QuitAndStopEverything, None),
-        KeyBinding::new("cmd-m", Minimize, None),
-        KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
         KeyBinding::new("left", EdgeLeft, Some("RailResizer")),
         KeyBinding::new("right", EdgeRight, Some("RailResizer")),
         KeyBinding::new("shift-left", EdgeFarLeft, Some("RailResizer")),

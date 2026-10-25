@@ -44,17 +44,10 @@ impl sikemux_browser::Host for AppHost {
             let view = window.ns_view().map_err(|error| error.to_string())?;
             Ok(ParentView::on_top(view))
         }
-        #[cfg(target_os = "linux")]
-        {
-            use gtk::glib::translate::ToGlibPtr;
-            let container = window.default_vbox().map_err(|error| error.to_string())?;
-            let pointer: *mut gtk::ffi::GtkBox = container.to_glib_none().0;
-            Ok(ParentView::on_top(pointer.cast()))
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(not(target_os = "macos"))]
         {
             let _ = window;
-            Err("browser tabs need macOS or Linux".into())
+            Err("browser tabs need macOS here; on Linux they are in the new app".into())
         }
     }
 

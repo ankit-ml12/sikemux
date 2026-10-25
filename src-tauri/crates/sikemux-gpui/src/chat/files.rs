@@ -23,6 +23,7 @@ use crate::hosts::Place;
 use crate::icons::Icon;
 use crate::retry::Backoff;
 use crate::toast;
+use crate::ui;
 use crate::workbench::Workbench;
 
 /// How long the names a screenful asks about are gathered before they go out as one ask.
@@ -462,7 +463,7 @@ fn menu(
         if on.here {
             let revealed = found.path.clone();
             popup = popup.item(
-                PopupMenuItem::new("Reveal in Finder")
+                PopupMenuItem::new(ui::REVEAL)
                     .icon(Icon::Folder)
                     .on_click(move |_, _, cx| cx.reveal_path(Path::new(&revealed))),
             );

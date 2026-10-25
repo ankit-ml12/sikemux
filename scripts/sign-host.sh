@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sign the Linux host cores with the updater key, so a host updating itself
-# installs only a core Sikemux signed. It runs only a pinned Tauri CLI, never
+# Sign the Linux host cores and the AppImage with the updater key, so a host or
+# an AppImage updating itself installs only what Sikemux signed. It runs only a pinned Tauri CLI, never
 # the build's dependencies, and never runs what it signs.
 set -euo pipefail
 
@@ -23,6 +23,8 @@ shopt -s nullglob
 HOSTS=("$ROOT"/src-tauri/target/host/sikemux-host-"$VERSION"-linux-*.tar.gz)
 shopt -u nullglob
 [[ ${#HOSTS[@]} -eq 2 ]] || fail "expected the x86_64 and aarch64 host cores, found ${#HOSTS[@]}"
+APPIMAGE="$ROOT/src-tauri/target/release/bundle/appimage/Sikemux_${VERSION}_amd64.AppImage"
+[[ -s "$APPIMAGE" ]] || fail "missing $APPIMAGE"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -33,8 +35,8 @@ curl -fsSL --retry 3 -o "$WORK/tauri-cli.tgz" \
   fail "the Tauri CLI download does not match its pinned hash"
 tar -xzf "$WORK/tauri-cli.tgz" -C "$WORK" cargo-tauri
 
-for host in "${HOSTS[@]}"; do
-  rm -f "$host.sig"
-  "$WORK/cargo-tauri" signer sign --app-version "$VERSION" "$host" >/dev/null
-  node "$ROOT/scripts/verify-updater-signature.mjs" "$host" "$host.sig"
+for signed in "${HOSTS[@]}" "$APPIMAGE"; do
+  rm -f "$signed.sig"
+  "$WORK/cargo-tauri" signer sign --app-version "$VERSION" "$signed" >/dev/null
+  node "$ROOT/scripts/verify-updater-signature.mjs" "$signed" "$signed.sig"
 done

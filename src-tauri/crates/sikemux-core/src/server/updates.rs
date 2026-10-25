@@ -36,9 +36,9 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const BLOCKERS_EVERY: Duration = Duration::from_secs(2);
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
-/// The release scripts check updates against the key in the app's config, so
-/// the core reads the same one.
-const APP_CONFIG: &str = include_str!("../../../../tauri.conf.json");
+/// The release scripts check updates against the key the app's Cargo.toml
+/// names, so the core reads the same one.
+const APP_MANIFEST: &str = include_str!("../../../sikemux-gpui/Cargo.toml");
 
 /// Where an update stands, as every client shows it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -92,6 +92,9 @@ pub struct UpdateStatus {
     /// The person chose to stop the chats rather than wait, which the window
     /// that starts again tells the next core.
     pub forced: bool,
+    /// What to run in a terminal to install `available`, for an app that its
+    /// installer updates rather than itself.
+    pub install_command: Option<String>,
 }
 
 /// Where to fetch the release `available` names.
@@ -130,19 +133,56 @@ struct Asset {
     url: String,
 }
 
-/// The app bundle this core was started from, when it is a published release
-/// that can replace itself. A build made anywhere else, such as a local build,
-/// never updates, so a release can never take its place.
-fn own_bundle() -> Option<PathBuf> {
-    if !crate::usage::Install::App.published() || !cfg!(target_os = "macos") {
+/// The app an update replaces.
+#[derive(Clone)]
+enum OwnApp {
+    /// The macOS app bundle this core was started from.
+    Bundle(PathBuf),
+    /// The AppImage file the Linux app runs from.
+    AppImage(PathBuf),
+}
+
+/// The app this core runs inside, when it is a published release that can
+/// replace itself. A build made anywhere else, such as a local build, never
+/// updates, so a release can never take its place.
+fn own_app() -> Option<OwnApp> {
+    if !crate::usage::Install::App.published() {
         return None;
     }
-    let core = std::env::current_exe().ok()?;
-    sikemux_process::paths::app_bundle_of_core(&core).map(Path::to_path_buf)
+    if cfg!(target_os = "macos") {
+        let core = std::env::current_exe().ok()?;
+        return sikemux_process::paths::app_bundle_of_core(&core)
+            .map(|bundle| OwnApp::Bundle(bundle.to_path_buf()));
+    }
+    // The AppImage runtime names the file it runs from, and the app's core inherits it.
+    std::env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .filter(|file| cfg!(target_os = "linux") && file.is_file())
+        .map(OwnApp::AppImage)
 }
 
 fn platform() -> String {
-    format!("darwin-{}", std::env::consts::ARCH)
+    let system = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    format!("{system}-{}", std::env::consts::ARCH)
+}
+
+/// A published Linux app that is a deb or an rpm was put in place by the
+/// installer, which updates it.
+fn installer_command(channel: UpdateChannel) -> Option<String> {
+    if !cfg!(target_os = "linux") || !crate::usage::Install::App.published() || own_app().is_some()
+    {
+        return None;
+    }
+    let channel = match channel {
+        UpdateChannel::Stable => "",
+        UpdateChannel::Nightly => "SIKEMUX_CHANNEL=nightly ",
+    };
+    Some(format!(
+        "curl -fsSL https://sikemux.com/install | {channel}sh -s -- --app"
+    ))
 }
 
 fn feeds(channel: UpdateChannel) -> &'static [&'static str] {
@@ -155,10 +195,14 @@ fn feeds(channel: UpdateChannel) -> &'static [&'static str] {
 
 /// The key every release is signed with.
 fn release_key() -> Result<PublicKey, String> {
-    let config: Value = serde_json::from_str(APP_CONFIG).map_err(|error| error.to_string())?;
-    let encoded = config["plugins"]["updater"]["pubkey"]
-        .as_str()
-        .ok_or("the app's config has no update key")?;
+    let manifest: toml::Value = toml::from_str(APP_MANIFEST).map_err(|error| error.to_string())?;
+    let encoded = manifest
+        .get("package")
+        .and_then(|package| package.get("metadata"))
+        .and_then(|metadata| metadata.get("sikemux"))
+        .and_then(|app| app.get("updater-key"))
+        .and_then(toml::Value::as_str)
+        .ok_or("the app's Cargo.toml has no update key")?;
     let text = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|error| error.to_string())?;
@@ -184,11 +228,13 @@ impl Updates {
 /// Checks a little after the core starts and every half hour after, while the
 /// core runs in an app that can update.
 pub(crate) async fn serve(core: Arc<Core>) {
+    let by_installer = installer_command(core.preferences.get().update_channel);
     core.updates.edit(&core, |held| {
-        held.status.updates = own_bundle().is_some();
+        held.status.updates = own_app().is_some();
         held.status.current = core.build.version.clone();
+        held.status.install_command = by_installer.clone();
     });
-    if !core.updates.status().updates {
+    if !core.updates.status().updates && by_installer.is_none() {
         return;
     }
     tokio::time::sleep(FIRST_CHECK).await;
@@ -222,7 +268,9 @@ async fn read_feed(url: &'static str) -> Result<(Version, Feed, Value), String> 
 /// that does not answer must not hide a release the other one offers.
 pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     let status = core.updates.status();
-    if !status.updates {
+    let channel = core.preferences.get().update_channel;
+    let by_installer = installer_command(channel);
+    if !status.updates && by_installer.is_none() {
         return Err("this build does not update itself".into());
     }
     if matches!(
@@ -234,7 +282,6 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     ) {
         return Ok(status);
     }
-    let channel = core.preferences.get().update_channel;
     let current =
         Version::parse(&status.current).map_err(|error| CoreError::from(error.to_string()))?;
     let reads: Vec<_> = feeds(channel)
@@ -262,11 +309,13 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     let release = newest
         .filter(|(version, _, _)| *version > current)
         .and_then(|(_, feed, raw)| {
-            let asset = feed.platforms.get(&platform())?;
-            let found = Found {
+            let found = feed.platforms.get(&platform()).map(|asset| Found {
                 url: asset.url.clone(),
                 signature: asset.signature.clone(),
-            };
+            });
+            if status.updates && found.is_none() {
+                return None;
+            }
             let credits = bundled_credits(&raw);
             Some((
                 UpdateRelease {
@@ -288,7 +337,8 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
             return;
         }
         held.status.available = release.as_ref().map(|(release, _)| release.clone());
-        held.found = release.map(|(_, found)| found);
+        held.status.install_command = by_installer;
+        held.found = release.and_then(|(_, found)| found);
         held.status.error = None;
         held.status.state = UpdateState::Idle;
     });
@@ -315,8 +365,7 @@ pub(crate) fn install(core: &Arc<Core>, params: InstallParams) -> CoreResult<Upd
     ) {
         return Ok(status);
     }
-    let bundle =
-        own_bundle().ok_or_else(|| CoreError::from("this build does not update itself"))?;
+    let app = own_app().ok_or_else(|| CoreError::from("this build does not update itself"))?;
     let (found, installed) = {
         let held = core.updates.held.locked();
         (held.found.clone(), held.installed)
@@ -336,7 +385,7 @@ pub(crate) fn install(core: &Arc<Core>, params: InstallParams) -> CoreResult<Upd
     let status = core.updates.status();
     let core = core.clone();
     tokio::spawn(async move {
-        if let Err(error) = put_in_place(&core, &bundle, &found, installed).await {
+        if let Err(error) = put_in_place(&core, &app, &found, installed).await {
             core.updates.edit(&core, |held| {
                 held.status.state = UpdateState::Failed;
                 held.status.error = Some(error);
@@ -361,7 +410,7 @@ pub(crate) fn cancel(core: &Core) -> UpdateStatus {
 
 async fn put_in_place(
     core: &Core,
-    bundle: &Path,
+    app: &OwnApp,
     found: &Found,
     installed: bool,
 ) -> Result<(), String> {
@@ -369,8 +418,13 @@ async fn put_in_place(
         return Ok(());
     }
     let key = release_key()?;
-    let archive =
-        std::env::temp_dir().join(format!("sikemux-update-{}.tar.gz", std::process::id()));
+    let archive = match app {
+        OwnApp::Bundle(_) => {
+            std::env::temp_dir().join(format!("sikemux-update-{}.tar.gz", std::process::id()))
+        }
+        // Beside the AppImage, so putting it in place is one rename on the same disk.
+        OwnApp::AppImage(file) => beside(file, "update")?,
+    };
     let mut last = Instant::now();
     let fetched = fetch_verified(
         &found.url,
@@ -394,8 +448,15 @@ async fn put_in_place(
     }
     core.updates
         .edit(core, |held| held.status.state = UpdateState::Installing);
-    let (bundle, unpack) = (bundle.to_path_buf(), archive.clone());
-    let swapped = blocking(move || swap(&bundle, &unpack).map_err(CoreError::from)).await;
+    let (app, unpack) = (app.clone(), archive.clone());
+    let swapped = blocking(move || {
+        match &app {
+            OwnApp::Bundle(bundle) => swap(bundle, &unpack),
+            OwnApp::AppImage(file) => replace_appimage(file, &unpack),
+        }
+        .map_err(CoreError::from)
+    })
+    .await;
     let _ = std::fs::remove_file(&archive);
     swapped.map_err(|error| error.to_string())?;
     core.updates.edit(core, |held| held.installed = true);
@@ -480,6 +541,22 @@ pub(crate) async fn fetch_verified(
     verifier
         .finalize()
         .map_err(|_| "the download does not match the release's signature".to_owned())
+}
+
+/// `.<name>.<suffix>` in the folder `file` is in.
+fn beside(file: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let name = file.file_name().ok_or("the app has no name")?;
+    Ok(file.with_file_name(format!(".{}.{suffix}", name.to_string_lossy())))
+}
+
+/// Puts the AppImage at `download` in place of `file`. The running app keeps
+/// the copy it mounted until it starts again from the new one.
+fn replace_appimage(file: &Path, download: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let cannot =
+        |error: std::io::Error| format!("Sikemux cannot write to {}: {error}", file.display());
+    std::fs::set_permissions(download, std::fs::Permissions::from_mode(0o755)).map_err(cannot)?;
+    std::fs::rename(download, file).map_err(cannot)
 }
 
 /// Puts the app in `archive` in place of `bundle`, keeping the old one until

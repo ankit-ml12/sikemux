@@ -106,6 +106,20 @@ pub struct Entry {
     pub shortcut: Option<&'static str>,
 }
 
+/// Sections only the Mac has: its window effects, dictation, the notch and the iOS Simulator.
+/// Other systems neither show them nor find them.
+const MAC_ONLY: &[(Page, &str)] = &[
+    (Page::Appearance, "Window"),
+    (Page::Agents, "Voice"),
+    (Page::Agents, "Notch"),
+    (Page::Agents, "iOS Simulator"),
+];
+
+/// Whether `section` of `page` is on this system.
+pub fn here(page: Page, section: &str) -> bool {
+    cfg!(target_os = "macos") || !MAC_ONLY.contains(&(page, section))
+}
+
 const fn section(page: Page, title: &'static str, keywords: &'static str) -> Entry {
     Entry {
         page,
@@ -244,6 +258,7 @@ pub fn search(query: &str, cx: &App) -> Vec<Entry> {
     });
     let mut found: Vec<(usize, usize, Entry)> = ENTRIES
         .iter()
+        .filter(|entry| here(entry.page, entry.section))
         .map(|entry| (*entry, String::new()))
         .chain(shortcuts)
         .enumerate()

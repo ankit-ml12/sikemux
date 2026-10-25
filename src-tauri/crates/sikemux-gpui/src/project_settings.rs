@@ -418,7 +418,7 @@ pub fn pane(
         .children(nav)
         .child(div().flex_1())
         .child(
-            Button::new("project-reveal", "Reveal in Finder", Variant::Outline)
+            Button::new("project-reveal", ui::REVEAL, Variant::Outline)
                 .icon(Icon::Folder)
                 .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
         );

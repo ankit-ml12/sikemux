@@ -3,7 +3,7 @@ title: Updates
 description: "Stable and nightly channels, and how Sikemux updates itself."
 ---
 
-On a Mac, Sikemux keeps itself up to date. Choose how new in **Settings → About → Updates**:
+On a Mac, and from the AppImage on Linux, Sikemux keeps itself up to date. Choose how new in **Settings → About → Updates**:
 
 | Channel | What you get |
 |---|---|
@@ -14,4 +14,12 @@ On a Mac, Sikemux keeps itself up to date. Choose how new in **Settings → Abou
 
 ## Linux
 
-Linux builds do not update themselves yet. Install each new release from [GitHub Releases](https://github.com/nodelike/sikemux/releases) the same way you installed the first.
+The AppImage updates itself like the Mac app.
+
+The `.deb` and `.rpm` are updated by the installer that put them in place. When a new release is out, **Settings → About** shows it with **Copy command**. Run the copied line in a terminal:
+
+```bash
+curl -fsSL https://sikemux.com/install | sh -s -- --app
+```
+
+On the nightly channel, the line sets `SIKEMUX_CHANNEL=nightly` before `sh`.

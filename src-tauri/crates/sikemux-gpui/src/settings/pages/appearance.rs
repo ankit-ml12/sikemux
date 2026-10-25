@@ -408,7 +408,9 @@ pub fn render(
                             .child(worn.name.clone()),
                     ),
             )
-            .child(from(Picture::Wallpaper, "From wallpaper"))
+            .when(super::theme_editor::wallpaper_offered(), |row| {
+                row.child(from(Picture::Wallpaper, "From wallpaper"))
+            })
             .when(has_pane_image, |row| {
                 row.child(from(Picture::PaneImage, "From pane image"))
             })
@@ -796,7 +798,7 @@ pub fn render(
         rows::section("Interface", None, None, lit("Interface"), interface, cx),
         rows::section("Buddies", None, None, lit("Buddies"), buddies, cx),
     ];
-    if cfg!(target_os = "macos") {
+    if crate::settings::index::here(crate::settings::Page::Appearance, "Window") {
         sections.push(rows::section(
             "Window",
             None,

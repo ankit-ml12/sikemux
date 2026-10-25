@@ -2201,6 +2201,11 @@ export interface UpdateStatus {
      * that starts again tells the next core.
      */
     forced: boolean;
+    /**
+     * What to run in a terminal to install `available`, for an app that its
+     * installer updates rather than itself.
+     */
+    installCommand: string | null;
 }
 
 /** The last check, kept because a failed one has nowhere else to show. */

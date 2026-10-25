@@ -2,26 +2,27 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import { appMetadata } from "./app-metadata.mjs";
+
 function fail(message) {
   console.error(`Updater signature verification failed: ${message}`);
   process.exit(1);
 }
 
-const [artifactPath, signaturePath, configPath = "src-tauri/tauri.conf.json"] =
-  process.argv.slice(2);
+const [artifactPath, signaturePath, keyArgument] = process.argv.slice(2);
 if (!artifactPath || !signaturePath) {
   fail(
-    "usage: verify-updater-signature.mjs <artifact> <signature> [tauri.conf.json]",
+    "usage: verify-updater-signature.mjs <artifact> <signature> [base64 public key]",
   );
 }
 
 let publicKeyText;
 let signatureText;
 try {
-  const config = JSON.parse(readFileSync(configPath, "utf8"));
-  publicKeyText = Buffer.from(config.plugins.updater.pubkey, "base64").toString(
-    "utf8",
-  );
+  publicKeyText = Buffer.from(
+    keyArgument ?? appMetadata()["updater-key"],
+    "base64",
+  ).toString("utf8");
   signatureText = Buffer.from(
     readFileSync(signaturePath, "utf8").trim(),
     "base64",

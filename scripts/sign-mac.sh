@@ -43,8 +43,8 @@ UPDATER_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD
 unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH
 
-APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
-APP_IDENTIFIER="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+APP_NAME="$(node scripts/app-metadata.mjs name)"
+APP_IDENTIFIER="$(node scripts/app-metadata.mjs identifier)"
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
 APP="$BUNDLE/macos/${APP_NAME}.app"
 TAR="$BUNDLE/macos/${APP_NAME}.app.tar.gz"

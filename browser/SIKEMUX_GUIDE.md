@@ -555,7 +555,9 @@ size. Pass an absolute `path` ending in `.mp4`, or it is saved in the
 person's Movies folder under Sikemux, named after the page. It follows you
 across tabs, includes your pointer, boxes and captions, and stops by itself
 after ten minutes. Narrate with `browser_annotate` captions as you go; a
-recording of a tab the person is not looking at still works.
+recording of a tab the person is not looking at still works. On Linux the
+video is WebM instead when the system has no H.264 encoder; the returned
+`path` always says where it went.
 
 ## browser-debugging: Network, console and scripts
 

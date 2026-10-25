@@ -72,15 +72,19 @@ class Run:
         self.port = serve(site)
         self.site = f"http://127.0.0.1:{self.port}"
 
-        # An unsigned core inside an app bundle trusts that bundle as its app, as a release's does,
-        # and a dev core trusts examples/remote beside it, which seeds the chats.
-        bundle = self.root / "Sikemux GPUI Test.app"
-        (bundle / "Contents/MacOS").mkdir(parents=True)
-        (bundle / "Contents/Info.plist").write_text(plist())
-        self.app_exe = bundle / "Contents/MacOS/sikemux"
-        shutil.copy(self.options.app, self.app_exe)
-        helpers = bundle / "Contents/Helpers/Sikemux Core.app/Contents/MacOS"
+        # An unsigned core inside an app bundle trusts that bundle as its app, as a release's does; on
+        # Linux it trusts the `sikemux` beside it. A dev core trusts examples/remote beside it, which seeds the chats.
+        if sys.platform == "darwin":
+            bundle = self.root / "Sikemux GPUI Test.app"
+            (bundle / "Contents/MacOS").mkdir(parents=True)
+            (bundle / "Contents/Info.plist").write_text(plist())
+            self.app_exe = bundle / "Contents/MacOS/sikemux"
+            helpers = bundle / "Contents/Helpers/Sikemux Core.app/Contents/MacOS"
+        else:
+            helpers = self.root / "app"
+            self.app_exe = helpers / "sikemux"
         (helpers / "examples").mkdir(parents=True)
+        shutil.copy(self.options.app, self.app_exe)
         self.core_exe = helpers / "sikemux-host"
         shutil.copy(self.options.core, self.core_exe)
         self.seed_exe = helpers / "examples/remote"
@@ -102,6 +106,9 @@ class Run:
         self.sockets = Path(tempfile.mkdtemp(prefix="desk-", dir="/tmp"))
         self.socket = self.sockets / "core.sock"
         self.drive_socket = self.sockets / "drive.sock"
+        if sys.platform != "darwin":
+            # A second start finds the running app by a socket in here, so it must not reach a real session's app.
+            self.env["XDG_RUNTIME_DIR"] = str(self.sockets)
         core = subprocess.Popen([self.core_exe, "--socket", self.socket, "--data-dir", self.root / "data"],
                                 env=self.env, stdout=open(self.root / "core.log", "w"), stderr=subprocess.STDOUT)
         self.processes.append(core)
@@ -241,6 +248,17 @@ class Run:
 
     def capture(self, name):
         if self.options.behind:
+            return
+        if sys.platform != "darwin":
+            window = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(self.app.pid)], capture_output=True, text=True).stdout.split()
+            crop = []
+            if window:
+                info = subprocess.run(["xwininfo", "-id", window[-1]], capture_output=True, text=True).stdout
+                box = dict(line.strip().split(":", 1) for line in info.splitlines() if ":" in line)
+                number = lambda key: int(box[key].strip())
+                crop = ["-crop", f"{number('Width')}x{number('Height')}+{number('Absolute upper-left X')}+{number('Absolute upper-left Y')}"]
+            # The page is a child window in another visual, which a capture of the app's own window leaves black.
+            subprocess.run(["import", "-window", "root", *crop, "+repage", self.out / f"{name}.png"])
             return
         number = subprocess.run(["swift", HERE / "window-number.swift", str(self.app.pid)], capture_output=True, text=True).stdout.strip()
         if number:

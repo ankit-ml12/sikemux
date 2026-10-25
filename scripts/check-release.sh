@@ -6,14 +6,9 @@ cd "$(dirname "$0")/.."
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-if command -v pnpm >/dev/null 2>&1; then
-  PNPM=(pnpm)
-else
-  PNPM=(corepack pnpm)
-fi
-
 bash -n scripts/build-mac.sh scripts/release.sh scripts/sign-helper.sh scripts/sign-mac.sh scripts/mac-entitlements.sh scripts/verify-release.sh scripts/publish-release.sh scripts/sign-host.sh scripts/icons.sh scripts/check-release.sh
 node --check scripts/verify-updater-signature.mjs
+node --check scripts/app-metadata.mjs
 node --check scripts/release-credits.mjs
 node --check scripts/build-cli-sidecar.mjs
 node --check scripts/smoke-browser-sidecar.mjs
@@ -39,40 +34,50 @@ fi
 node - <<'NODE'
 const fs = require("node:fs");
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-const config = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-const macConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
+const app = JSON.parse(require("node:child_process").execFileSync("node", ["scripts/app-metadata.mjs"], { encoding: "utf8" }));
 const windowsConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
-const linuxConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.linux.conf.json", "utf8"));
 const sidecarConfig = JSON.parse(fs.readFileSync("src-tauri/tauri.sidecar.conf.json", "utf8"));
 const macBuild = fs.readFileSync("scripts/build-mac.sh", "utf8");
+const linuxBuild = fs.readFileSync("scripts/build-linux.sh", "utf8");
+const installer = fs.readFileSync("scripts/install.sh", "utf8");
+const signHost = fs.readFileSync("scripts/sign-host.sh", "utf8");
 const sidecarBuild = fs.readFileSync("scripts/build-cli-sidecar.mjs", "utf8");
 const publish = fs.readFileSync("scripts/publish-release.sh", "utf8");
 const releaseWorkflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
 const fail = (message) => { throw new Error(message); };
 
-if (pkg.version !== config.version) fail("package.json and tauri.conf.json versions differ");
-if (config.bundle?.createUpdaterArtifacts !== true) fail("updater artifacts are not enabled");
-if (config.app?.macOSPrivateApi !== true) fail("shared macOS private API feature flag is missing");
+if (pkg.version !== app.version) fail("package.json and the GPUI app's versions differ");
+if (app.name !== "Sikemux" || app.identifier !== "com.nodelike.sikemux") fail("the app's name or identifier changed");
+if (app["dev-name"] !== "Sikemux Dev" || app["dev-identifier"] !== "com.nodelike.sikemux.dev") fail("the dev app's name or identifier changed");
 if (!macBuild.includes("cargo build --release --locked --bin sikemux")) fail("macOS build does not build the GPUI app");
 if (!macBuild.includes('/usr/bin/hdiutil convert "$LAYOUT.rw.dmg" -format ULMO')) fail("macOS build does not pack the DMG");
 if (!macBuild.includes('"$ROOT/src-tauri/icons/build/Assets.car" "$APP_PATH/Contents/Resources/Assets.car"')) fail("Assets.car is not bundled");
 if (!macBuild.includes('-c "Merge $ROOT/src-tauri/Info.plist"')) fail("pre-signing Info.plist merge is not configured");
-if (macConfig.bundle?.macOS?.minimumSystemVersion !== "11.0") fail("unexpected minimum macOS version");
+if (app["minimum-macos"] !== "11.0") fail("unexpected minimum macOS version");
+if (!app.description) fail("the app has no description for its Linux packages");
 if (!macBuild.includes('--entitlements "$ROOT/src-tauri/Entitlements.plist"')) fail("microphone entitlement is not configured");
 if (JSON.stringify(windowsConfig.bundle?.targets) !== JSON.stringify(["nsis"])) fail("Windows bundle target must be NSIS");
 if (windowsConfig.bundle?.createUpdaterArtifacts !== false) fail("unsigned Windows builds must not require updater credentials");
 if (!windowsConfig.bundle?.icon?.includes("icons/icon.ico")) fail("Windows icon is not configured");
 if (windowsConfig.bundle?.windows?.nsis?.installMode !== "currentUser") fail("unexpected Windows install mode");
-if (JSON.stringify(linuxConfig.bundle?.targets) !== JSON.stringify(["deb", "rpm", "appimage"])) fail("Linux bundle targets must be deb, rpm and appimage");
-if (linuxConfig.bundle?.createUpdaterArtifacts !== false) fail("Linux builds must not require updater credentials");
-if (!pkg.scripts?.["build:linux"]?.includes("build:sidecar")) fail("Linux build does not build sidecars");
-if (!pkg.scripts?.["build:linux"]?.includes("tauri.sidecar.conf.json")) fail("Linux build does not bundle the CLI sidecar");
+if (pkg.scripts?.["build:linux"] !== "scripts/build-linux.sh") fail("pnpm build:linux does not run scripts/build-linux.sh");
+if (!linuxBuild.includes("node scripts/build-cli-sidecar.mjs")) fail("Linux build does not build the core");
+if (!linuxBuild.includes("cargo build --release --locked --bin sikemux")) fail("Linux build does not build the GPUI app");
+for (const name of ["Sikemux_${VERSION}_amd64.deb", "Sikemux-${VERSION}-1.x86_64.rpm", "Sikemux_${VERSION}_amd64.AppImage"]) {
+  if (!linuxBuild.includes(name)) fail(`Linux build does not make ${name}`);
+  if (!installer.includes(name)) fail(`the installer does not download ${name}`);
+}
+if (!linuxBuild.includes("sha256sum -c")) fail("Linux build runs packaging tools it has not checked");
+if (/TAURI_SIGNING|signer sign/.test(linuxBuild)) fail("Linux builds must not require updater credentials");
 if (!releaseWorkflow.includes("run: pnpm build:linux")) fail("the Release workflow does not build the Linux packages");
 if (!publish.includes('"$DEB" "$RPM" "$APPIMAGE"')) fail("releases do not publish the Linux packages");
 if (!releaseWorkflow.includes("scripts/package-host.sh")) fail("the Release workflow does not build the Linux host core");
 if (!publish.includes('"$APPIMAGE" "${HOSTS[@]}" "${HOST_SIGS[@]}"')) fail("releases do not publish the Linux host core and its signatures");
 if (!publish.includes('"${HOST_SIGS[@]}" "$INSTALLER"')) fail("releases do not publish the installer made for their files");
 if (!releaseWorkflow.includes("scripts/sign-host.sh")) fail("the Release workflow does not sign the Linux host core");
+if (!signHost.includes('"${HOSTS[@]}" "$APPIMAGE"')) fail("releases do not sign the AppImage with the updater key");
+if (!publish.includes('"$INSTALLER" "$APPIMAGE_SIG"')) fail("releases do not publish the AppImage's update signature");
+if (!publish.includes('manifest["platforms"]["linux-x86_64"]')) fail("the update feed does not offer the AppImage");
 if (!releaseWorkflow.includes("scripts/smoke-host-install.sh")) fail("the Release workflow does not install the host core with its own installer");
 if (JSON.stringify(sidecarConfig.bundle?.externalBin) !== JSON.stringify(["binaries/sikemux-host"])) fail("sidecar bundle mapping is incomplete");
 if (!macBuild.includes("build-voice-helper.mjs")) fail("macOS build does not build the voice helper");
@@ -98,11 +103,12 @@ for (const [name, text] of [["scripts/build-mac.sh", macBuild], ["scripts/build-
 if (!macBuild.includes("this test kit has no answer for that") || !macBuild.includes("window driver could not listen")) {
     fail("macOS build no longer refuses a binary built with a test kit's feature");
 }
-const endpoints = config.plugins?.updater?.endpoints;
-if (!Array.isArray(endpoints) || endpoints.length !== 1 || endpoints[0] !== "https://github.com/nodelike/sikemux/releases/latest/download/latest.json") {
-  fail("updater endpoint is not the expected HTTPS latest.json URL");
+const updates = fs.readFileSync("src-tauri/crates/sikemux-core/src/server/updates.rs", "utf8");
+if (!updates.includes('"https://github.com/nodelike/sikemux/releases/latest/download/latest.json"')) {
+  fail("the stable update feed is not the expected HTTPS latest.json URL");
 }
-const publicKeyText = Buffer.from(config.plugins.updater.pubkey, "base64").toString("utf8").trim();
+if (!updates.includes('include_str!("../../../sikemux-gpui/Cargo.toml")')) fail("the core does not take the updater key from the GPUI app's Cargo.toml");
+const publicKeyText = Buffer.from(app["updater-key"], "base64").toString("utf8").trim();
 const publicLines = publicKeyText.split("\n");
 if (publicLines.length !== 2 || !publicLines[0].startsWith("untrusted comment:")) fail("invalid updater public-key envelope");
 const packet = Buffer.from(publicLines[1], "base64");
@@ -170,9 +176,9 @@ CARGO_METADATA="$(cargo metadata --manifest-path src-tauri/Cargo.toml --offline 
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"
 CARGO_VERSION="$(node -e '
   const metadata = JSON.parse(require("fs").readFileSync(0, "utf8"));
-  const root = metadata.packages.find((pkg) => pkg.manifest_path === metadata.workspace_root + "/Cargo.toml");
-  if (!root) process.exit(1);
-  process.stdout.write(root.version);
+  const host = metadata.packages.find((pkg) => pkg.name === "sikemux-host");
+  if (!host) process.exit(1);
+  process.stdout.write(host.version);
 ' <<<"$CARGO_METADATA")"
 [[ "$PACKAGE_VERSION" == "$CARGO_VERSION" ]] || {
   echo "package.json and Cargo package versions differ" >&2
@@ -180,17 +186,37 @@ CARGO_VERSION="$(node -e '
 }
 
 # Exercise the verifier against a fresh ephemeral key and prove that changing
-# the signed bytes is rejected. No project signing key or network is used.
+# the signed bytes, or signing with another key, is rejected. The fixture signs
+# as minisign does for the updater: Ed25519 over the file's BLAKE2b-512, then
+# over that signature and its trusted comment. No project key or network is used.
 printf 'offline updater verifier fixture\n' >"$TMP/artifact.tar.gz"
-CI=true "${PNPM[@]}" tauri signer generate --password '' --write-keys "$TMP/test.key" >"$TMP/generate.out" 2>"$TMP/generate.err"
-"${PNPM[@]}" tauri signer sign --private-key-path "$TMP/test.key" --password '' "$TMP/artifact.tar.gz" >"$TMP/sign.out" 2>"$TMP/sign.err"
-node -e '
-  const fs = require("node:fs");
-  fs.writeFileSync(process.argv[2], JSON.stringify({ plugins: { updater: { pubkey: fs.readFileSync(process.argv[1], "utf8").trim() } } }));
-' "$TMP/test.key.pub" "$TMP/config.json"
-node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/artifact.tar.gz.sig" "$TMP/config.json" >/dev/null
+node - "$TMP" <<'NODE'
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const dir = process.argv[2];
+const artifact = fs.readFileSync(`${dir}/artifact.tar.gz`);
+const minisign = (name) => {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const id = crypto.randomBytes(8);
+  const raw = Buffer.from(publicKey.export({ format: "jwk" }).x, "base64url");
+  const signature = crypto.sign(null, crypto.createHash("blake2b512").update(artifact).digest(), privateKey);
+  const trusted = "timestamp:0\tfile:artifact.tar.gz";
+  const global = crypto.sign(null, Buffer.concat([signature, Buffer.from(trusted)]), privateKey);
+  const pub = `untrusted comment: minisign public key\n${Buffer.concat([Buffer.from("Ed"), id, raw]).toString("base64")}\n`;
+  const sig = `untrusted comment: signature\n${Buffer.concat([Buffer.from("ED"), id, signature]).toString("base64")}\ntrusted comment: ${trusted}\n${global.toString("base64")}\n`;
+  fs.writeFileSync(`${dir}/${name}.pub`, Buffer.from(pub).toString("base64"));
+  fs.writeFileSync(`${dir}/${name}.sig`, Buffer.from(sig).toString("base64"));
+};
+minisign("test");
+minisign("other");
+NODE
+node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/test.sig" "$(cat "$TMP/test.pub")" >/dev/null
+if node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/other.sig" "$(cat "$TMP/test.pub")" >"$TMP/other.out" 2>&1; then
+  echo "updater verifier accepted an artifact signed with another key" >&2
+  exit 1
+fi
 printf 'tampered\n' >>"$TMP/artifact.tar.gz"
-if node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/artifact.tar.gz.sig" "$TMP/config.json" >"$TMP/tamper.out" 2>&1; then
+if node scripts/verify-updater-signature.mjs "$TMP/artifact.tar.gz" "$TMP/test.sig" "$(cat "$TMP/test.pub")" >"$TMP/tamper.out" 2>&1; then
   echo "updater verifier accepted a modified artifact" >&2
   exit 1
 fi

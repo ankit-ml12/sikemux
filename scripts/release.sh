@@ -130,25 +130,24 @@ if [[ "$STAGE" != "helpers" ]]; then
 fi
 
 PKG_VER="$(node -p "require('./package.json').version")"
-TAURI_VER="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 if ! CARGO_METADATA="$(cargo metadata --manifest-path src-tauri/Cargo.toml --locked --no-deps --format-version 1)"; then
   fail "Cargo.lock is missing or out of date"
 fi
-root_version() {
-  node -e '
+package_version() {
+  PACKAGE="$1" node -e '
     const metadata = JSON.parse(require("fs").readFileSync(0, "utf8"));
-    const root = metadata.packages.find((pkg) => pkg.manifest_path === metadata.workspace_root + "/Cargo.toml");
-    if (!root) process.exit(1);
-    process.stdout.write(root.version);
+    const found = metadata.packages.find((pkg) => pkg.name === process.env.PACKAGE);
+    if (!found) process.exit(1);
+    process.stdout.write(found.version);
   '
 }
-CARGO_VER="$(root_version <<<"$CARGO_METADATA")" || fail "could not read the Cargo package version"
+CARGO_VER="$(package_version sikemux-host <<<"$CARGO_METADATA")" || fail "could not read the core's version"
 if ! GPUI_METADATA="$(cargo metadata --manifest-path src-tauri/crates/sikemux-gpui/Cargo.toml --locked --no-deps --format-version 1)"; then
   fail "the GPUI app's Cargo.lock is missing or out of date"
 fi
-GPUI_VER="$(root_version <<<"$GPUI_METADATA")" || fail "could not read the GPUI app's version"
-[[ "$PKG_VER" == "$TAURI_VER" && "$PKG_VER" == "$CARGO_VER" && "$PKG_VER" == "$GPUI_VER" ]] || \
-  fail "current versions disagree (package=$PKG_VER tauri=$TAURI_VER cargo=$CARGO_VER gpui=$GPUI_VER)"
+GPUI_VER="$(package_version sikemux-gpui <<<"$GPUI_METADATA")" || fail "could not read the GPUI app's version"
+[[ "$PKG_VER" == "$CARGO_VER" && "$PKG_VER" == "$GPUI_VER" ]] || \
+  fail "current versions disagree (package=$PKG_VER cargo=$CARGO_VER gpui=$GPUI_VER)"
 CURRENT_VERSION="$PKG_VER" NEXT_VERSION="$VERSION" node - <<'NODE' || fail "version must not be less than $PKG_VER"
 const parse = (value) => {
   const [, major, minor, patch, prerelease] = value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([^+]+))?(?:\+.*)?$/);
@@ -213,7 +212,7 @@ else
   echo "✓ Preflight passed; bumping version to $VERSION"
 fi
 BACKUP="$(mktemp -d)"
-FILES=(package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+FILES=(package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
   src-tauri/crates/sikemux-gpui/Cargo.toml src-tauri/crates/sikemux-gpui/Cargo.lock latest.json)
 for file in "${FILES[@]}"; do
   if [[ -e "$file" ]]; then mkdir -p "$BACKUP/$(dirname "$file")"; cp "$file" "$BACKUP/$file"; fi
@@ -251,11 +250,10 @@ trap restore_on_failure EXIT INT TERM
 VERSION="$VERSION" python3 - <<'PY'
 import json, os, pathlib, re
 version = os.environ["VERSION"]
-for name in ("package.json", "src-tauri/tauri.conf.json"):
-    path = pathlib.Path(name)
-    data = json.loads(path.read_text())
-    data["version"] = version
-    path.write_text(json.dumps(data, indent=2) + "\n")
+path = pathlib.Path("package.json")
+data = json.loads(path.read_text())
+data["version"] = version
+path.write_text(json.dumps(data, indent=2) + "\n")
 for name in ("src-tauri/Cargo.toml", "src-tauri/crates/sikemux-gpui/Cargo.toml"):
     path = pathlib.Path(name)
     text = path.read_text()
@@ -275,7 +273,7 @@ fi
 snapshot_expected
 
 BUNDLE="$ROOT/src-tauri/target/release/bundle"
-APP_NAME="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
+APP_NAME="$(node scripts/app-metadata.mjs name)"
 APP="$BUNDLE/macos/${APP_NAME}.app"
 HOST="$(rustc -vV | sed -n 's/^host: //p')"
 VOICE="$ROOT/src-tauri/binaries/sikemux-voice-$HOST"

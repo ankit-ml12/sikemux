@@ -338,7 +338,7 @@ pub fn render(
             .gap(px(8.))
             .child(button(
                 format!("skill-reveal-{name}"),
-                "Show in Finder",
+                ui::SHOW_IN_FILES,
                 ui::Variant::Outline,
                 false,
                 this,

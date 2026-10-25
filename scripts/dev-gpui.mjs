@@ -6,7 +6,6 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -15,6 +14,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { appMetadata } from "./app-metadata.mjs";
 import {
   signalProcessTree,
   stopProcessTree,
@@ -108,9 +109,11 @@ function built(name) {
 // Contents/Helpers: the core tells the window from an agent's `sikemux` command by the bundle
 // each runs from, which would be the same bundle if the core sat beside the window.
 function assemble() {
-  const dev = JSON.parse(
-    readFileSync(join(root, "src-tauri", "tauri.dev.conf.json"), "utf8"),
-  );
+  const app = appMetadata();
+  const dev = {
+    identifier: app["dev-identifier"],
+    productName: app["dev-name"],
+  };
   const resources = join(contents, "Resources");
   mkdirSync(macos, { recursive: true });
   mkdirSync(resources, { recursive: true });

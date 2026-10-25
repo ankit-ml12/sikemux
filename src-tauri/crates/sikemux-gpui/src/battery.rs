@@ -11,13 +11,98 @@ pub struct Battery {
 #[cfg(target_os = "macos")]
 pub use mac::{read, watch};
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+pub use linux::{read, watch};
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn read() -> Option<Battery> {
     None
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn watch(_changed: impl Fn() + 'static) {}
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn watch(_changed: impl Fn() + Send + 'static) {}
+
+/// UPower's summary of the batteries, which it keeps on the system bus.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::sync::Mutex;
+
+    use sikemux_process::sync::Locked;
+    use zbus::blocking::proxy::Builder;
+    use zbus::blocking::{Connection, Proxy};
+    use zbus::proxy::CacheProperties;
+
+    use super::Battery;
+
+    const UPOWER: &str = "org.freedesktop.UPower";
+    const DISPLAY_DEVICE: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
+    const BATTERY_TYPE: u32 = 2;
+    const DISCHARGING_STATES: [u32; 3] = [2, 3, 6];
+
+    static LAST: Mutex<Option<Battery>> = Mutex::new(None);
+
+    pub fn read() -> Option<Battery> {
+        *LAST.locked()
+    }
+
+    /// Calls `changed`, from a thread of its own, whenever the battery reads differently.
+    pub fn watch(changed: impl Fn() + Send + 'static) {
+        let _ = std::thread::Builder::new()
+            .name("battery".into())
+            .spawn(move || {
+                let _ = follow(changed);
+            });
+    }
+
+    fn follow(changed: impl Fn()) -> zbus::Result<()> {
+        let bus = Connection::system()?;
+        let device: Proxy = Builder::new(&bus)
+            .destination(UPOWER)?
+            .path(DISPLAY_DEVICE)?
+            .interface("org.freedesktop.UPower.Device")?
+            .cache_properties(CacheProperties::No)
+            .build()?;
+        let properties = Proxy::new(
+            &bus,
+            UPOWER,
+            DISPLAY_DEVICE,
+            "org.freedesktop.DBus.Properties",
+        )?;
+        let mut changes = properties.receive_signal("PropertiesChanged")?;
+        loop {
+            let now = battery(&device);
+            if std::mem::replace(&mut *LAST.locked(), now) != now {
+                changed();
+            }
+            if changes.next().is_none() {
+                return Ok(());
+            }
+        }
+    }
+
+    fn battery(device: &Proxy) -> Option<Battery> {
+        let present: bool = device.get_property("IsPresent").ok()?;
+        let kind: u32 = device.get_property("Type").ok()?;
+        if !present || kind != BATTERY_TYPE {
+            return None;
+        }
+        let percent: f64 = device.get_property("Percentage").ok()?;
+        let state: u32 = device.get_property("State").ok()?;
+        let charging = !DISCHARGING_STATES.contains(&state);
+        let seconds: i64 = device
+            .get_property(if charging {
+                "TimeToFull"
+            } else {
+                "TimeToEmpty"
+            })
+            .unwrap_or(0);
+        Some(Battery {
+            percent: percent.round().clamp(0., 100.) as u8,
+            charging,
+            minutes: (seconds > 0).then_some((seconds / 60) as u32),
+        })
+    }
+}
 
 #[cfg(target_os = "macos")]
 mod mac {
