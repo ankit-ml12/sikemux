@@ -1,7 +1,6 @@
-# 0.1.0-nightly.27
+# 0.2.0-nightly.1
 
-• A new chat picks its model and effort first, and its first message shows at once.
-• Chat actions show at once, and undo if your host refuses them.
-• Messages from other agents read as markdown.
-• Turning buddies off shows every agent's logo again.
+• Works with hosts on the new Sikemux nightly. Update your host to the nightly to use it with this app.
+• Phone apps from before this one, 0.1.0 and its nightlies, keep working with stable hosts only.
+• A nightly host and a stable host can't link until the new Sikemux ships stable.
 • Keeps the app in step with the latest Sikemux on your host.
