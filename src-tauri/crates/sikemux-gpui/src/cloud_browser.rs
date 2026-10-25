@@ -1,7 +1,7 @@
 //! The browser Settings › Cloud names for single sign-on: cloud sign-in pages open there, after
 //! the shortcut that brings forward the desktop space it lives on.
 
-use std::process::Command;
+use sikemux_process::user_environment::command;
 
 /// Opens `url` in `app`, first activating it and pressing `shortcut`, such as `ctrl+3`.
 pub fn open(url: &str, app: &str, shortcut: &str) {
@@ -19,12 +19,8 @@ pub fn open(url: &str, app: &str, shortcut: &str) {
             quoted(app)
         ));
     }
-    let _ = Command::new("/usr/bin/osascript")
-        .args(["-e", &script])
-        .status();
-    let _ = Command::new("/usr/bin/open")
-        .args(["-a", app, url])
-        .status();
+    let _ = command("/usr/bin/osascript").args(["-e", &script]).status();
+    let _ = command("/usr/bin/open").args(["-a", app, url]).status();
 }
 
 fn quoted(text: &str) -> String {

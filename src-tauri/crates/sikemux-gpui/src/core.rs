@@ -1944,16 +1944,16 @@ impl Streams {
     }
 }
 
+type WatchGenerations = Arc<Mutex<HashMap<&'static str, u64>>>;
+type FailedWatches = Arc<Mutex<HashSet<&'static str>>>;
+
 /// Reads `key`'s watch, noting in `failed` when it was refused, so it is read again once the
 /// network is back.
 fn read(
     client: &Arc<CoreClient>,
     key: &'static str,
     watch: &Watch,
-    (current, failed): (
-        &Arc<Mutex<HashMap<&'static str, u64>>>,
-        &Arc<Mutex<HashSet<&'static str>>>,
-    ),
+    (current, failed): (&WatchGenerations, &FailedWatches),
     updates: &mpsc::UnboundedSender<Update>,
 ) {
     let (client, updates, watch, current, failed) = (

@@ -574,7 +574,7 @@ impl Host {
         let browser = self.bench.upgrade().and_then(|bench| {
             let preferences = bench.read(cx).preferences();
             let app = preferences.cloud_browser.trim().to_owned();
-            (!app.is_empty()).then(|| (app, preferences.cloud_browser_shortcut))
+            (!app.is_empty()).then_some((app, preferences.cloud_browser_shortcut))
         });
         self.stream_sign_in(method, params, browser, cx);
     }
