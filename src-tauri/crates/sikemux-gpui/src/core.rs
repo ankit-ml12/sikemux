@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -994,6 +994,7 @@ async fn run(
     let mut linked: Option<Arc<Linked>> = None;
     let mut heard: Option<mpsc::UnboundedReceiver<Happened>> = None;
     let current = Arc::new(Mutex::new(HashMap::<&'static str, u64>::new()));
+    let failed = Arc::new(Mutex::new(HashSet::<&'static str>::new()));
     let mut reconnect = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
     loop {
         if let Some(launch) = &home.launch {
@@ -1033,7 +1034,7 @@ async fn run(
                     .map(|status| status.enabled);
                 start_at_login(&home, remote_on);
                 for (key, watch) in &watches {
-                    read(&client, key, watch, &current, &updates);
+                    read(&client, key, watch, (&current, &failed), &updates);
                 }
                 if linked.is_none() {
                     if let Some((reached, events)) = reach_hosts(&client, &updates).await {
@@ -1083,6 +1084,12 @@ async fn run(
                                 let _ = updates.send(Update::FocusAgent(agent_id));
                             }
                             Some(ClientEvent::Event(Event::Network { change })) => {
+                                if change != NetworkChange::Offline {
+                                    let again: Vec<&'static str> = failed.lock().expect("failed watches").drain().collect();
+                                    for (key, watch) in watches.iter().filter(|(key, _)| again.contains(key)) {
+                                        read(&client, key, watch, (&current, &failed), &updates);
+                                    }
+                                }
                                 let _ = updates.send(Update::Network(change));
                             }
                             Some(ClientEvent::Event(Event::AccountDevice { key, name, .. })) => {
@@ -1116,7 +1123,7 @@ async fn run(
                             Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
                                 stopping |= topic == "stopping";
                                 for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
-                                    read(&client, key, watch, &current, &updates);
+                                    read(&client, key, watch, (&current, &failed), &updates);
                                 }
                                 if followed.contains(&topic.as_str()) {
                                     let _ = updates.send(Update::Changed { topic, project, paths });
@@ -1194,7 +1201,7 @@ async fn run(
                                 for table in host_watches.values_mut() {
                                     table.remove(key);
                                 }
-                                read(&client, key, &watch, &current, &updates);
+                                read(&client, key, &watch, (&current, &failed), &updates);
                                 watches.insert(key, watch);
                             }
                             Some(Ask::Unwatch(key)) => {
@@ -1904,24 +1911,34 @@ impl Streams {
     }
 }
 
+/// Reads `key`'s watch, noting in `failed` when it was refused, so it is read again once the
+/// network is back.
 fn read(
     client: &Arc<CoreClient>,
     key: &'static str,
     watch: &Watch,
-    current: &Arc<Mutex<HashMap<&'static str, u64>>>,
+    (current, failed): (
+        &Arc<Mutex<HashMap<&'static str, u64>>>,
+        &Arc<Mutex<HashSet<&'static str>>>,
+    ),
     updates: &mpsc::UnboundedSender<Update>,
 ) {
-    let (client, updates, watch, current) = (
+    let (client, updates, watch, current, failed) = (
         client.clone(),
         updates.clone(),
         watch.clone(),
         current.clone(),
+        failed.clone(),
     );
     tokio::spawn(async move {
         let value = match client.call(watch.method, watch.params).await {
             Ok(value) => value,
-            Err(error) => return eprintln!("sikemux: the core refused {}: {error}", watch.method),
+            Err(error) => {
+                failed.lock().expect("failed watches").insert(key);
+                return eprintln!("sikemux: the core refused {}: {error}", watch.method);
+            }
         };
+        failed.lock().expect("failed watches").remove(key);
         if current.lock().expect("watch generations").get(key) == Some(&watch.generation) {
             #[cfg(feature = "drive")]
             crate::drive::trace(format_args!("link read {key}"));
