@@ -16,7 +16,10 @@ use super::text;
 use crate::theme::{self, Tokens, RADIUS_2, RADIUS_3};
 
 /// Where a service's sign-in says the token it takes is kept.
+#[cfg(target_os = "macos")]
 pub const KEPT: &str = "Sikemux keeps your sign-in in the macOS Keychain.";
+#[cfg(not(target_os = "macos"))]
+pub const KEPT: &str = "Sikemux keeps your sign-in where only Sikemux can read it.";
 
 const COLUMN: f32 = 340.;
 const TILE: f32 = 56.;
