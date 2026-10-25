@@ -12,9 +12,12 @@ pub mod history;
 mod host;
 #[cfg(target_os = "macos")]
 pub mod input;
+mod keys;
 mod layout;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_input;
 #[cfg(target_os = "linux")]
 mod linux_page;
 pub mod local_files;

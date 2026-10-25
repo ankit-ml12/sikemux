@@ -599,52 +599,47 @@ pub fn insert_text(webview: &WKWebView, text: &str) -> Result<(), String> {
 }
 
 pub fn parse_key(name: &str) -> Result<KeyStroke, String> {
+    use crate::keys::{Key, Named};
+
+    let chord = crate::keys::parse(name)?;
+    let held = chord.modifiers;
     let mut flags = NSEventModifierFlags::empty();
-    let mut rest = name;
-    while let Some((modifier, tail)) = rest.split_once('+').filter(|(_, tail)| !tail.is_empty()) {
-        flags |= match modifier.to_ascii_lowercase().as_str() {
-            "meta" | "cmd" | "command" => NSEventModifierFlags::Command,
-            "control" | "ctrl" => NSEventModifierFlags::Control,
-            "alt" | "option" => NSEventModifierFlags::Option,
-            "shift" => NSEventModifierFlags::Shift,
-            _ => return Err(format!("unknown modifier \"{modifier}\" in \"{name}\"")),
-        };
-        rest = tail;
-    }
-    let named =
-        |code: u16, character: char| Some((code, character.to_string(), character.to_string()));
-    let (code, characters, unmodified) = match rest {
-        "Enter" | "Return" => named(36, '\r'),
-        "Tab" => named(48, '\t'),
-        "Escape" | "Esc" => named(53, '\u{1b}'),
-        "Backspace" => named(51, '\u{7f}'),
-        "Delete" => named(117, '\u{F728}'),
-        "Space" | " " => named(49, ' '),
-        "ArrowUp" => named(126, '\u{F700}'),
-        "ArrowDown" => named(125, '\u{F701}'),
-        "ArrowLeft" => named(123, '\u{F702}'),
-        "ArrowRight" => named(124, '\u{F703}'),
-        "Home" => named(115, '\u{F729}'),
-        "End" => named(119, '\u{F72B}'),
-        "PageUp" => named(116, '\u{F72C}'),
-        "PageDown" => named(121, '\u{F72D}'),
-        _ => {
-            let mut chars = rest.chars();
-            match (chars.next(), chars.next()) {
-                (Some(character), None) => {
-                    let lower = character.to_lowercase().collect::<String>();
-                    let shown = if flags.contains(NSEventModifierFlags::Shift) {
-                        character.to_uppercase().collect()
-                    } else {
-                        character.to_string()
-                    };
-                    Some((key_code(&lower), shown, lower))
-                }
-                _ => None,
-            }
+    for (on, flag) in [
+        (held.meta, NSEventModifierFlags::Command),
+        (held.control, NSEventModifierFlags::Control),
+        (held.alt, NSEventModifierFlags::Option),
+        (held.shift, NSEventModifierFlags::Shift),
+    ] {
+        if on {
+            flags |= flag;
         }
     }
-    .ok_or_else(|| format!("unknown key \"{rest}\"; use a single character or a name like Enter, Tab, Escape, ArrowDown"))?;
+    let named = |code: u16, character: char| (code, character.to_string(), character.to_string());
+    let (code, characters, unmodified) = match chord.key {
+        Key::Named(Named::Enter) => named(36, '\r'),
+        Key::Named(Named::Tab) => named(48, '\t'),
+        Key::Named(Named::Escape) => named(53, '\u{1b}'),
+        Key::Named(Named::Backspace) => named(51, '\u{7f}'),
+        Key::Named(Named::Delete) => named(117, '\u{F728}'),
+        Key::Named(Named::Space) => named(49, ' '),
+        Key::Named(Named::ArrowUp) => named(126, '\u{F700}'),
+        Key::Named(Named::ArrowDown) => named(125, '\u{F701}'),
+        Key::Named(Named::ArrowLeft) => named(123, '\u{F702}'),
+        Key::Named(Named::ArrowRight) => named(124, '\u{F703}'),
+        Key::Named(Named::Home) => named(115, '\u{F729}'),
+        Key::Named(Named::End) => named(119, '\u{F72B}'),
+        Key::Named(Named::PageUp) => named(116, '\u{F72C}'),
+        Key::Named(Named::PageDown) => named(121, '\u{F72D}'),
+        Key::Char(character) => {
+            let lower = character.to_lowercase().collect::<String>();
+            let shown = if held.shift {
+                character.to_uppercase().collect()
+            } else {
+                character.to_string()
+            };
+            (key_code(&lower), shown, lower)
+        }
+    };
     Ok(KeyStroke {
         code,
         characters,
