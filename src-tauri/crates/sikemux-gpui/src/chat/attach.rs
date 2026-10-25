@@ -587,8 +587,8 @@ pub fn tiles(
             .flex_wrap()
             .items_end()
             .gap(px(7.))
-            .px(px(6.))
-            .pt(px(6.))
+            .px(px(10.))
+            .pt(px(10.))
             .children(tiles)
             .children(chips),
     )

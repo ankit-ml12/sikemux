@@ -235,7 +235,7 @@ impl RenderOnce for Composer {
         let mut bar = div()
             .min_h(px(34.))
             .pt(px(8.))
-            .px(px(2.))
+            .px(px(3.))
             .pb(px(1.))
             .flex()
             .items_center()
@@ -324,11 +324,11 @@ impl RenderOnce for Composer {
                     .bg(fill)
                     .children(
                         self.answering
-                            .map(|answering| div().px(px(6.)).pt(px(6.)).flex().child(answering)),
+                            .map(|answering| div().px(px(10.)).pt(px(10.)).flex().child(answering)),
                     )
                     .children(tiles)
                     .child(
-                        div().px(px(12.)).py(px(10.)).child(
+                        div().py(px(2.)).child(
                             Textarea::new(&self.draft)
                                 .appearance(false)
                                 .text_size(px(14.5 * self.text_scale))
@@ -345,7 +345,7 @@ impl RenderOnce for Composer {
                     )
                     .children(self.heard.map(|heard| {
                         div()
-                            .px(px(4.))
+                            .px(px(10.))
                             .pb(px(4.))
                             .text_size(px(14.5 * self.text_scale))
                             .text_color(t.text_disabled)
