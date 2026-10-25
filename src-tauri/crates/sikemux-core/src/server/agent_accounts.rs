@@ -313,7 +313,20 @@ pub(super) fn forget(core: &Arc<Core>, forget: Forget) {
 }
 
 pub(super) fn mark_signed_out(core: &Core, account: Account) {
-    let (provider, config_path) = (&account.provider, account.config_path.as_deref());
+    signed_out(core, &account.provider, account.config_path.as_deref());
+}
+
+/// A chat on `account`, one of the person's profiles or the default one when absent, was
+/// refused for sign-in: the account is signed out now, whatever its CLI last said.
+pub(crate) fn chat_refused(core: &Core, provider: &str, account: Option<&str>) {
+    let book = core.workspaces.accounts().unwrap_or_default();
+    let config_path = account
+        .and_then(|id| book.profile(id))
+        .and_then(|profile| profile.config_path.clone());
+    signed_out(core, provider, config_path.as_deref());
+}
+
+fn signed_out(core: &Core, provider: &str, config_path: Option<&str>) {
     let signed_out = status::AgentStatus::SignedOut;
     core.workspaces
         .note_status(provider, config_path, &signed_out);

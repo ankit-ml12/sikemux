@@ -26,6 +26,7 @@ use super::super::rebind::{
 };
 use super::super::{reset, stall_later, Asked, Chat, ChatCommand, Delivery, Respond};
 use super::process::{AgentRecord, Lines, Process, Released, Writer};
+use crate::server::agent_accounts;
 
 /// What the person sent, for the agent to read in its own form.
 #[derive(Clone)]
@@ -683,6 +684,11 @@ pub(crate) async fn run<B: Backend>(
                     chat.emit(ChatEventKind::TurnCompleted, response);
                 }
                 chat.emit(ChatEventKind::Error, failure);
+                if let (FailureKind::SignIn, Some(core)) =
+                    (failed.failure.kind, chat.core.upgrade())
+                {
+                    agent_accounts::chat_refused(&core, &provider, current.as_deref());
+                }
                 state.failed_prompt = state.last_prompt.take();
                 if failed.failure.kind == FailureKind::Network && state.failed_prompt.is_some() {
                     chat.offline_failed.store(true, Ordering::Release);
