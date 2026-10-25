@@ -150,6 +150,9 @@ struct Recent {
     provider: String,
     session_id: String,
     title: String,
+    /// The project it belongs to.
+    project: PathBuf,
+    /// The folder it ran in: the project, or a worktree of it.
     cwd: PathBuf,
     active_at: u64,
 }
@@ -159,6 +162,8 @@ struct Published {
     saved: Saved,
     launchers: Vec<Launcher>,
     recent: Vec<Recent>,
+    /// The project each pinned chat's folder belongs to, when that folder is a worktree.
+    pin_homes: HashMap<PathBuf, PathBuf>,
     texture: bool,
     image: Option<BackdropImage>,
 }
@@ -357,6 +362,8 @@ pub(crate) struct ChatChoice {
     pub effort: Option<String>,
     /// The provider's session to load instead of opening a new one.
     pub resume_id: Option<String>,
+    /// The worktree of the project it resumes in, when it ran in one.
+    pub cwd: Option<PathBuf>,
 }
 
 /// An agent's session a client takes up again, named by its agent and the project it ran in.
@@ -389,24 +396,44 @@ pub(crate) struct ResumeChoice {
 
 /// The recent chat named `recent`, or the pinned one when it left the recent ones.
 fn recent_or_pinned(published: &Published, recent: &str) -> Option<Recent> {
-    let saved = &published.saved;
-    let pinned = saved.pinned.iter().find_map(|pin| {
-        let chat = Recent {
-            launcher: String::new(),
-            provider: pin.provider.clone(),
-            session_id: pin.session_id.clone(),
-            title: pin.title.clone(),
-            cwd: pin.project.clone(),
-            active_at: 0,
-        };
-        (recent_id(&chat) == recent).then_some(chat)
-    });
+    let pinned = published
+        .saved
+        .pinned
+        .iter()
+        .map(|pin| pinned_chat(published, pin))
+        .find(|chat| recent_id(chat) == recent);
     published
         .recent
         .iter()
         .find(|chat| recent_id(chat) == recent)
         .cloned()
         .or(pinned)
+}
+
+/// A pinned chat as a recent one that keeps no launcher.
+fn pinned_chat(published: &Published, pin: &PinnedChat) -> Recent {
+    Recent {
+        launcher: String::new(),
+        provider: pin.provider.clone(),
+        session_id: pin.session_id.clone(),
+        title: pin.title.clone(),
+        project: published
+            .pin_homes
+            .get(&pin.project)
+            .unwrap_or(&pin.project)
+            .clone(),
+        cwd: pin.project.clone(),
+        active_at: 0,
+    }
+}
+
+/// The project among `projects` that `folder` lies in, a worktree of one counting as in it.
+fn home_of(folder: &Path, projects: &[PathBuf]) -> Option<PathBuf> {
+    let home = PathBuf::from(project_of(folder, projects));
+    projects
+        .iter()
+        .find(|project| std::fs::canonicalize(project).as_deref().unwrap_or(project) == home)
+        .cloned()
 }
 
 /// How to start `chat` again on the launcher it last ran on, or the account the person
@@ -424,7 +451,7 @@ fn choice_of(
     let project = saved
         .projects
         .iter()
-        .find(|project| project.path == chat.cwd)
+        .find(|project| project.path == chat.project)
         .ok_or_else(|| CoreError::from("that chat's project is not on this host"))?;
     // A chat that left the recent ones keeps no launcher, so it starts on
     // the account the person chose for its agent.
@@ -458,6 +485,7 @@ fn choice_of(
         model: choice.model,
         effort: choice.effort,
         resume_id: Some(chat.session_id.clone()),
+        cwd: (chat.cwd != chat.project).then(|| chat.cwd.clone()),
     })
 }
 
@@ -723,7 +751,9 @@ impl Workspaces {
         self.change(|saved| {
             saved.pinned = pinned;
             Ok(())
-        })
+        })?;
+        self.recent_stale();
+        Ok(())
     }
 
     /// Pins or unpins the recent chat named `recent`, as `recent` lists it.
@@ -1376,14 +1406,7 @@ impl Workspaces {
                     .iter()
                     .any(|chat| chat.provider == pin.provider && chat.session_id == pin.session_id)
             })
-            .map(|pin| Recent {
-                launcher: String::new(),
-                provider: pin.provider.clone(),
-                session_id: pin.session_id.clone(),
-                title: pin.title.clone(),
-                cwd: pin.project.clone(),
-                active_at: 0,
-            })
+            .map(|pin| pinned_chat(&published, pin))
             .collect();
         published
             .recent
@@ -1393,7 +1416,7 @@ impl Workspaces {
                 let project = saved
                     .projects
                     .iter()
-                    .find(|project| project.path == chat.cwd)?;
+                    .find(|project| project.path == chat.project)?;
                 Some(RecentInfo {
                     id: recent_id(chat),
                     provider: chat.provider.clone(),
@@ -1452,11 +1475,30 @@ impl Workspaces {
         requests
     }
 
-    fn set_recent(&self, recent: Vec<Recent>) -> bool {
+    fn set_recent(&self, recent: Vec<Recent>, pin_homes: HashMap<PathBuf, PathBuf>) -> bool {
         let mut published = self.published.locked();
-        let changed = published.recent != recent;
+        let changed = published.recent != recent || published.pin_homes != pin_homes;
         published.recent = recent;
+        published.pin_homes = pin_homes;
         changed
+    }
+
+    /// The folders of pinned chats that are not a project's own, such as worktrees.
+    fn pinned_away(&self) -> Vec<PathBuf> {
+        let published = self.published.locked();
+        let saved = &published.saved;
+        saved
+            .pinned
+            .iter()
+            .map(|pin| &pin.project)
+            .filter(|folder| {
+                !saved
+                    .projects
+                    .iter()
+                    .any(|project| &project.path == *folder)
+            })
+            .cloned()
+            .collect()
     }
 
     /// How to start the recent chat a device chose, the way it would start a new one.
@@ -1486,6 +1528,7 @@ impl Workspaces {
             provider: session.provider,
             session_id: session.session_id,
             title: String::new(),
+            project: session.project.clone(),
             cwd: session.project,
             active_at: 0,
         });
@@ -2145,9 +2188,18 @@ pub(crate) async fn recents(core: Arc<Core>) {
     loop {
         tokio::time::sleep(RECENT_SETTLE).await;
         let requests = core.workspaces.recent_requests();
-        let found = blocking(move || Ok(newest(requests))).await;
-        if let Ok(found) = found {
-            if core.workspaces.set_recent(found) {
+        let pins = core.workspaces.pinned_away();
+        let projects = core.workspaces.project_paths();
+        let found = blocking(move || {
+            let homes = pins
+                .into_iter()
+                .filter_map(|pin| Some((pin.clone(), home_of(&pin, &projects)?)))
+                .collect();
+            Ok((newest(requests), homes))
+        })
+        .await;
+        if let Ok((found, homes)) = found {
+            if core.workspaces.set_recent(found, homes) {
                 core.view_changed();
             }
         }
@@ -2160,13 +2212,19 @@ fn newest(requests: Vec<(String, RecentRequest)>) -> Vec<Recent> {
         .into_iter()
         .flat_map(|(launcher, request)| {
             let page = saved_chats::recent_page(request).ok()?;
-            Some(page.sessions.into_iter().map(move |session| Recent {
-                launcher: launcher.clone(),
-                provider: session.agent.to_owned(),
-                session_id: session.id,
-                title: session.title.chars().take(MAX_TITLE_CHARS).collect(),
-                cwd: session.cwd.unwrap_or(session.project).into(),
-                active_at: session.mtime * 1000,
+            Some(page.sessions.into_iter().map(move |session| {
+                Recent {
+                    launcher: launcher.clone(),
+                    provider: session.agent.to_owned(),
+                    session_id: session.id,
+                    title: session.title.chars().take(MAX_TITLE_CHARS).collect(),
+                    cwd: session
+                        .cwd
+                        .unwrap_or_else(|| session.project.clone())
+                        .into(),
+                    project: session.project.into(),
+                    active_at: session.mtime * 1000,
+                }
             }))
         })
         .flatten()
@@ -2298,6 +2356,7 @@ mod tests {
             model: Some("opus".into()),
             effort: None,
             resume_id: None,
+            cwd: None,
         }
     }
 
@@ -2307,6 +2366,7 @@ mod tests {
             provider: "claude".into(),
             session_id: session_id.into(),
             title: "Fix the login flake".into(),
+            project: cwd.into(),
             cwd: cwd.into(),
             active_at: 1_000,
         }
@@ -2377,11 +2437,14 @@ mod tests {
     fn a_device_sees_recent_chats_in_open_projects_with_the_agent_holding_each() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces.set_recent(vec![
-            recent("s1", "/Users/me/sikemux"),
-            recent("s2", "/Users/me/sikemux"),
-            recent("s3", "/Users/me/closed"),
-        ]);
+        workspaces.set_recent(
+            vec![
+                recent("s1", "/Users/me/sikemux"),
+                recent("s2", "/Users/me/sikemux"),
+                recent("s3", "/Users/me/closed"),
+            ],
+            HashMap::new(),
+        );
         let running = workspaces.listed(Vec::new());
         let shown = workspaces.recent(&running);
         assert_eq!(
@@ -2434,7 +2497,7 @@ mod tests {
     fn a_recent_chat_resumes_with_its_launcher_in_its_project() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")]);
+        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")], HashMap::new());
         let choice = workspaces
             .resume_choice(resuming("claude:s1"), &[])
             .unwrap();
@@ -2449,18 +2512,18 @@ mod tests {
     fn only_a_published_recent_chat_resumes() {
         let workspaces = Workspaces::new(None);
         offer(&workspaces, vec![launcher()]);
-        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")]);
+        workspaces.set_recent(vec![recent("s1", "/Users/me/sikemux")], HashMap::new());
         assert!(workspaces
             .resume_choice(resuming("claude:other"), &[])
             .is_err());
         assert!(workspaces.resume_choice(resuming("s1"), &[]).is_err());
-        workspaces.set_recent(Vec::new());
+        workspaces.set_recent(Vec::new(), HashMap::new());
         assert!(workspaces
             .resume_choice(resuming("claude:s1"), &[])
             .is_err());
         let mut elsewhere = recent("s2", "/Users/me/sikemux");
         elsewhere.launcher = "codex".into();
-        workspaces.set_recent(vec![elsewhere]);
+        workspaces.set_recent(vec![elsewhere], HashMap::new());
         assert!(workspaces
             .resume_choice(resuming("claude:s2"), &[])
             .is_err());

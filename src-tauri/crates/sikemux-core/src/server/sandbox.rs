@@ -259,6 +259,16 @@ pub(crate) async fn at(params: AtParams) -> CoreResult<Option<AgentWorktree>> {
     blocking(move || Ok(read_back(&params.cwd))).await
 }
 
+/// Where a saved chat that ran in `cwd`, a worktree of `project`, resumes: back in that
+/// worktree while it is there, otherwise in the project.
+pub(crate) fn resumed_in(cwd: PathBuf, project: PathBuf) -> (PathBuf, Option<AgentWorktree>) {
+    if !cwd.is_dir() {
+        return (project, None);
+    }
+    let worktree = read_back(&cwd);
+    (cwd, worktree)
+}
+
 fn read_back(cwd: &Path) -> Option<AgentWorktree> {
     let path = PathBuf::from(
         git(

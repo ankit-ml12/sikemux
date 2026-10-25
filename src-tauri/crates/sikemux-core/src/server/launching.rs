@@ -16,7 +16,7 @@ use crate::protocol::{
     ChatAccount, ChatLaunch, ChatStart, Continuation, Event, RequestId, Response, SessionId,
     SpawnTarget, TerminalSpawn, WAKE_WAIT,
 };
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sikemux_process::vars;
 use sikemux_pty::launch::{PtyAgentProfile, PtyContext, PtyDirectCommand};
 
@@ -367,10 +367,15 @@ async fn start_new(
         .next()
         .unwrap_or_default()
         .to_owned();
+    let project = core.workspaces.project_path(&choice.project)?;
+    let (cwd, worktree) = match choice.cwd {
+        Some(cwd) => blocking(move || Ok(super::sandbox::resumed_in(cwd, project))).await?,
+        None => (project, None),
+    };
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
-        cwd: core.workspaces.project_path(&choice.project)?,
+        cwd,
         permission_mode: choice.permission_mode,
         model: choice.model,
         model_provider: None,
@@ -382,6 +387,11 @@ async fn start_new(
         waits_for_person: true,
     };
     let started = start(core, client, chosen).await?;
+    if let Some(worktree) = worktree {
+        let patch = Map::from_iter([("worktree".to_owned(), serde_json::to_value(worktree)?)]);
+        core.workspaces.update_agent(&agent_id, patch)?;
+        core.view_changed();
+    }
     remember_kind(core, &kind);
     if started.unstarted() {
         let start = ChatStart {
