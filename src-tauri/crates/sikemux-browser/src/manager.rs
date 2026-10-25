@@ -1278,17 +1278,18 @@ pub(crate) fn place(view: &Tab, layout: viewport::Layout, awake: bool) {
 /// Elsewhere a fixed viewport can only be had by zooming the page.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn place(view: &Tab, layout: viewport::Layout, _awake: bool) {
-    let (frame, zoom) = match layout {
+    let (frame, sides, zoom) = match layout {
         viewport::Layout::Shown { frame, page } => (
             (frame.x, frame.y, frame.width, frame.height),
+            (frame.clip_left, frame.clip_right),
             page.map_or(1.0, |(page_width, _)| frame.width / page_width),
         ),
         viewport::Layout::Parked {
             page: (width, height),
-        } => ((PARKED_ORIGIN, PARKED_ORIGIN, width, height), 1.0),
+        } => ((PARKED_ORIGIN, PARKED_ORIGIN, width, height), (0., 0.), 1.0),
     };
     view.set_zoom(zoom);
-    view.set_bounds(frame);
+    view.set_bounds(frame, sides);
 }
 
 const MAX_HOLES: usize = 32;

@@ -91,13 +91,14 @@ pub fn give_keyboard_back() {
         return;
     }
     crate::linux::on_gtk(|| {
-        if let Some(app) = HOLDING.take().and_then(parent_of) {
+        // The page's window sits in its clip window, which sits in the app's.
+        if let Some(app) = HOLDING.take().and_then(parent_of).and_then(parent_of) {
             focus(app);
         }
     });
 }
 
-fn xdisplay() -> Option<*mut x11::xlib::Display> {
+pub(crate) fn xdisplay() -> Option<*mut x11::xlib::Display> {
     let display = gdk::Display::default()?
         .downcast::<gdkx11::X11Display>()
         .ok()?;

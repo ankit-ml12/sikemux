@@ -1,5 +1,9 @@
 //! A tab's page on Linux: WebKitGTK through wry, in an X11 window of its own inside the app's
 //! window. GTK runs on a thread of its own, which every call into a page goes to.
+//!
+//! Each page sits in a clip window of ours, as wide as the part of the page that shows, so a
+//! page reaching past the stage's edge is cut there. The app's own drawing cuts the clip
+//! window where its menus show over the page.
 
 use std::num::NonZeroU32;
 use std::os::raw::c_ulong;
@@ -13,6 +17,7 @@ use raw_window_handle::{
 use sikemux_process::sync::Locked;
 use webkit2gtk::WebView;
 use wry::WebViewExtUnix;
+use x11::xlib::{self, Display};
 
 use crate::tab::{ParentView, TabSpec};
 use crate::{PageLoad, TabEvents};
@@ -27,8 +32,83 @@ pub struct Tab {
     view: Arc<Held>,
 }
 
-/// The page's view, dropped on the GTK thread whichever thread lets go last.
-struct Held(Mutex<Option<wry::WebView>>);
+/// The page's view and its clip window, dropped on the GTK thread whichever thread lets go
+/// last.
+struct Held(Mutex<Option<Page>>);
+
+/// The page goes before the window it sits in.
+struct Page {
+    view: wry::WebView,
+    clip: Clip,
+}
+
+/// A window of ours between the app's window and the page's.
+struct Clip {
+    display: *mut Display,
+    window: c_ulong,
+}
+
+impl Clip {
+    /// Adds a clip window to `parent`, out of sight. It draws nothing of its own.
+    fn new(parent: c_ulong) -> Result<Self, String> {
+        let display = crate::linux_page::xdisplay().ok_or("GTK has no X11 display")?;
+        // SAFETY: GTK's live X11 display on the GTK thread, and `parent` is the app's live window.
+        let window = unsafe {
+            let window = xlib::XCreateSimpleWindow(
+                display,
+                parent,
+                PARKED as i32,
+                PARKED as i32,
+                1,
+                1,
+                0,
+                0,
+                0,
+            );
+            xlib::XSetWindowBackgroundPixmap(display, window, 0);
+            xlib::XFlush(display);
+            window
+        };
+        Ok(Self { display, window })
+    }
+
+    fn place(&self, x: f64, y: f64, width: f64, height: f64) {
+        // SAFETY: our live window on GTK's display, on the GTK thread.
+        unsafe {
+            xlib::XMoveResizeWindow(
+                self.display,
+                self.window,
+                x as i32,
+                y as i32,
+                width.max(1.) as u32,
+                height.max(1.) as u32,
+            );
+            xlib::XFlush(self.display);
+        }
+    }
+
+    fn show(&self, shown: bool) {
+        // SAFETY: as above.
+        unsafe {
+            if shown {
+                xlib::XMapWindow(self.display, self.window);
+            } else {
+                xlib::XUnmapWindow(self.display, self.window);
+            }
+            xlib::XFlush(self.display);
+        }
+    }
+}
+
+impl Drop for Clip {
+    fn drop(&mut self) {
+        // SAFETY: as above; nothing uses the window after this.
+        unsafe {
+            xlib::XDestroyWindow(self.display, self.window);
+            xlib::XFlush(self.display);
+        }
+    }
+}
 
 // SAFETY: the view inside is only touched on the GTK thread: through `on_gtk`, and in
 // `Drop`, which sends it there.
@@ -37,8 +117,8 @@ unsafe impl Sync for Held {}
 
 impl Drop for Held {
     fn drop(&mut self) {
-        if let Some(view) = self.0.locked().take() {
-            let held = Held(Mutex::new(Some(view)));
+        if let Some(page) = self.0.locked().take() {
+            let held = Held(Mutex::new(Some(page)));
             on_gtk(move || drop(held));
         }
     }
@@ -83,7 +163,7 @@ pub(crate) fn on_gtk(work: impl FnOnce() + Send + 'static) {
     }
 }
 
-/// The app's window, by its X11 id, as wry takes a parent.
+/// A window by its X11 id, as wry takes a parent.
 struct X11Parent(c_ulong);
 
 impl HasWindowHandle for X11Parent {
@@ -118,6 +198,8 @@ impl Tab {
                 events.clone(),
             );
             let attached = events.clone();
+            let clip = Clip::new(c_ulong::from(window))?;
+            clip.place(PARKED, PARKED, size.0, size.1);
             let view = wry::WebViewBuilder::new()
                 .with_url(&url)
                 .with_user_agent(&user_agent)
@@ -126,7 +208,7 @@ impl Tab {
                 .with_visible(false)
                 .with_hotkeys_zoom(true)
                 .with_bounds(wry::Rect {
-                    position: wry::dpi::LogicalPosition::new(PARKED, PARKED).into(),
+                    position: wry::dpi::LogicalPosition::new(0., 0.).into(),
                     size: wry::dpi::LogicalSize::new(size.0, size.1).into(),
                 })
                 .with_navigation_handler(move |url| events.may_load(&url))
@@ -155,10 +237,10 @@ impl Tab {
                 .with_download_completed_handler(move |url, _, saved| {
                     finished.download_finished(url, saved)
                 })
-                .build_as_child(&X11Parent(c_ulong::from(window)))
+                .build_as_child(&X11Parent(clip.window))
                 .map_err(|error| error.to_string())?;
             crate::linux_page::attach(&view.webview(), &agent_id, &tab_id, attached);
-            Ok(Held(Mutex::new(Some(view))))
+            Ok(Held(Mutex::new(Some(Page { view, clip }))))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         on_gtk(move || {
@@ -178,10 +260,14 @@ impl Tab {
     }
 
     fn with(&self, act: impl FnOnce(&wry::WebView) + Send + 'static) {
+        self.with_page(move |page| act(&page.view));
+    }
+
+    fn with_page(&self, act: impl FnOnce(&Page) + Send + 'static) {
         let view = self.view.clone();
         on_gtk(move || {
-            if let Some(webview) = view.0.locked().as_ref() {
-                act(webview);
+            if let Some(page) = view.0.locked().as_ref() {
+                act(page);
             }
         });
     }
@@ -204,14 +290,16 @@ impl Tab {
     }
 
     pub fn show(&self) {
-        self.with(|webview| {
-            let _ = webview.set_visible(true);
+        self.with_page(|page| {
+            page.clip.show(true);
+            let _ = page.view.set_visible(true);
         });
     }
 
     pub fn hide(&self) {
-        self.with(|webview| {
-            let _ = webview.set_visible(false);
+        self.with_page(|page| {
+            let _ = page.view.set_visible(false);
+            page.clip.show(false);
         });
     }
 
@@ -240,13 +328,16 @@ impl Tab {
         });
     }
 
-    /// Puts the page at `frame` (x, y, width, height), top-down in the window.
-    pub fn set_bounds(&self, frame: (f64, f64, f64, f64)) {
+    /// Puts the page at `frame` (x, y, width, height), top-down in the window, with `sides`
+    /// (left, right) of it cut off.
+    pub fn set_bounds(&self, frame: (f64, f64, f64, f64), sides: (f64, f64)) {
         let (x, y, width, height) = frame;
         let (x, y) = (x.max(PARKED), y.max(PARKED));
-        self.with(move |webview| {
-            let _ = webview.set_bounds(wry::Rect {
-                position: wry::dpi::LogicalPosition::new(x, y).into(),
+        let (left, right) = sides;
+        self.with_page(move |page| {
+            page.clip.place(x + left, y, width - left - right, height);
+            let _ = page.view.set_bounds(wry::Rect {
+                position: wry::dpi::LogicalPosition::new(-left, 0.).into(),
                 size: wry::dpi::LogicalSize::new(width, height).into(),
             });
         });

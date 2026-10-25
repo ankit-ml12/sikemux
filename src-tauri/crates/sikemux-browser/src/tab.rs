@@ -293,7 +293,7 @@ impl Tab {
         match self.0 {}
     }
 
-    pub fn set_bounds(&self, _frame: (f64, f64, f64, f64)) {
+    pub fn set_bounds(&self, _frame: (f64, f64, f64, f64), _sides: (f64, f64)) {
         match self.0 {}
     }
 
