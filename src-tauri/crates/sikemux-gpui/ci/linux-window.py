@@ -1,11 +1,11 @@
 """The GPUI app on Linux in a real X window, on a throwaway core with fake agents only.
 
-python3 -I ci/linux-window.py --app APP --core CORE --agent FAKE_AGENT --seed FAKE_CHAT --out DIR [--browser]
+python3 -I ci/linux-window.py --app APP --core CORE --agent FAKE_AGENT --seed FAKE_CHAT --out DIR [--browser [--input]]
 
 The arguments are desk-checks.py's, run under an X server and a window manager (DISPLAY set). L1 opens the app
 and checks it shows a window with the seeded chat. With --browser, L2 has the fake agent open a desk browser
-tab on a local page through the agent browser tool, and L3 has it click a link there with the same tools. Each
-leaves a capture of the window in DIR. Exits 1 when any check fails.
+tab on a local page through the agent browser tool; with --input as well, L3 has it click a link there with the
+same tools. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
 """
 
 import argparse
@@ -52,6 +52,7 @@ def main():
     for name in ("app", "core", "agent", "seed", "out"):
         parser.add_argument(f"--{name}", required=True)
     parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--input", action="store_true")
     options = parser.parse_args()
     options.only, options.window, options.behind = "", None, False
     run = desk.Run(options)
@@ -60,9 +61,12 @@ def main():
         launch(run)
         if options.browser:
             page_from_tool(run)
+        else:
+            run.leave("L2", "waits for the Linux browser (pass --browser once it draws a page)")
+        if options.browser and options.input:
             click_from_tool(run)
         else:
-            run.leave("L2, L3", "the browser checks wait for the Linux browser (pass --browser once it draws a page)")
+            run.leave("L3", "waits for input in the Linux browser (pass --browser --input once clicks reach a page)")
     finally:
         run.tear_down()
     (run.out / "results.json").write_text(json.dumps(run.results, indent=1))

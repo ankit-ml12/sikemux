@@ -248,7 +248,13 @@ class Run:
             return
         if sys.platform != "darwin":
             window = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(self.app.pid)], capture_output=True, text=True).stdout.split()
-            subprocess.run(["import", "-window", window[-1] if window else "root", self.out / f"{name}.png"])
+            crop = []
+            if window:
+                shell = subprocess.run(["xdotool", "getwindowgeometry", "--shell", window[-1]], capture_output=True, text=True).stdout
+                box = dict(line.split("=", 1) for line in shell.split() if "=" in line)
+                crop = ["-crop", f"{box['WIDTH']}x{box['HEIGHT']}+{box['X']}+{box['Y']}"]
+            # The page is a child window in another visual, which a capture of the app's own window leaves black.
+            subprocess.run(["import", "-window", "root", *crop, self.out / f"{name}.png"])
             return
         number = subprocess.run(["swift", HERE / "window-number.swift", str(self.app.pid)], capture_output=True, text=True).stdout.strip()
         if number:
