@@ -1,7 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::Duration;
 
 use gpui::Anchor;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -13,8 +12,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, radians, AnyElement, App, ClickEvent, ClipboardItem, Context, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Task, Transformation, WeakEntity, Window,
-    WindowControlArea,
+    StatefulInteractiveElement, Styled, Transformation, WeakEntity, Window, WindowControlArea,
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
@@ -624,13 +622,12 @@ fn run_chip(bench: &Workbench, cx: &mut Context<Workbench>) -> Option<AnyElement
     )
 }
 
-/// How long the person's task has run, counted on the Run chip each second. It keeps its own
-/// clock and draws itself again in place, leaving the bar around it as it was.
+/// How long the person's task has run, counted on the Run chip each second. The app's clock
+/// draws it again in place, leaving the bar around it as it was.
 #[derive(Default)]
 pub struct RunClock {
     /// When the task started, in milliseconds, while it counts.
     started_at: Option<Option<i64>>,
-    _ticking: Option<Task<()>>,
 }
 
 impl RunClock {
@@ -640,21 +637,16 @@ impl RunClock {
         if next == self.started_at {
             return;
         }
-        self._ticking = counting.then(|| {
-            cx.spawn(async move |this, cx| loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this.update(cx, |_, cx| cx.repaint()).is_err() {
-                    break;
-                }
-            })
-        });
         self.started_at = next;
         cx.notify();
     }
 }
 
 impl Render for RunClock {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.started_at.is_some() {
+            crate::ui::clock::second(window, cx);
+        }
         let t = Tokens::get(cx);
         let since = seconds_since(self.started_at.flatten());
         div()

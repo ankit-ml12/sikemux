@@ -33,39 +33,68 @@ pub fn follow(window: &mut Window, cx: &mut Context<Workbench>) {
 /// Has the clock draw the view `cx` draws again on its next tick, or once the window is back
 /// when it is behind others or out of sight; answers whether the view moves now.
 pub fn tick<V: 'static>(window: &Window, cx: &mut Context<V>) -> bool {
+    beat(
+        window,
+        cx,
+        |clock| &mut clock.frames,
+        Duration::from_millis(1000 / FRAMES_PER_SECOND),
+    )
+}
+
+/// As `tick`, for a view that changes once a second, such as a count of seconds.
+pub fn second<V: 'static>(window: &Window, cx: &mut Context<V>) -> bool {
+    beat(
+        window,
+        cx,
+        |clock| &mut clock.seconds,
+        Duration::from_secs(1),
+    )
+}
+
+fn beat<V: 'static>(
+    window: &Window,
+    cx: &mut Context<V>,
+    of: fn(&mut Clock) -> &mut Beat,
+    every: Duration,
+) -> bool {
     let view = AnyWeakEntity::from(cx.weak_entity());
     let clock = cx.default_global::<Clock>();
     if !(window.is_window_active() && window.is_visible()) {
         add(&mut clock.resting, view);
         return false;
     }
-    add(&mut clock.drawn, view);
-    if clock.ticking.is_some() {
+    let beat = of(clock);
+    add(&mut beat.drawn, view);
+    if beat.ticking.is_some() {
         return true;
     }
-    let tick = cx.spawn(async |_, cx| {
-        cx.background_executor()
-            .timer(Duration::from_millis(1000 / FRAMES_PER_SECOND))
-            .await;
+    let tick = cx.spawn(async move |_, cx| {
+        cx.background_executor().timer(every).await;
         cx.update(|cx| {
-            let clock = cx.default_global::<Clock>();
-            clock.ticking = None;
-            let drawn = std::mem::take(&mut clock.drawn);
+            let beat = of(cx.default_global::<Clock>());
+            beat.ticking = None;
+            let drawn = std::mem::take(&mut beat.drawn);
             for view in drawn.iter().filter_map(AnyWeakEntity::upgrade) {
                 cx.repaint(view.entity_id());
             }
         });
     });
-    cx.default_global::<Clock>().ticking = Some(tick);
+    of(cx.default_global::<Clock>()).ticking = Some(tick);
     true
 }
 
-/// The views drawn since the clock last moved them, those resting until the window is back,
-/// and its next move.
+/// The views resting until the window is back, and for each pace, the views drawn since it
+/// last moved them and its next move.
 #[derive(Default)]
 struct Clock {
-    drawn: Vec<AnyWeakEntity>,
+    frames: Beat,
+    seconds: Beat,
     resting: Vec<AnyWeakEntity>,
+}
+
+#[derive(Default)]
+struct Beat {
+    drawn: Vec<AnyWeakEntity>,
     ticking: Option<Task<()>>,
 }
 

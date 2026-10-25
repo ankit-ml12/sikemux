@@ -2,12 +2,12 @@
 //! runs, why the last turn failed and what can be done about it, and a session that
 //! dropped.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     div, px, AnyElement, App, Context, Div, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Task, WeakEntity, Window,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use serde_json::json;
 use sikemux_wire::chat::{ChatConnection, ChatPart, FailureKind, ToolAction};
@@ -21,15 +21,14 @@ use crate::ui::{self, Button, Variant};
 use crate::workbench::{AgentRow, Workbench};
 
 /// The line under the last row while a turn runs: what the agent is doing, and for how
-/// long. It keeps its own clock, and each second draws this line again in place, leaving the
-/// chat around it as it was.
+/// long. Each second the app's clock draws this line again in place, leaving the chat around
+/// it as it was.
 pub struct Activity {
     provider: String,
     /// The chat's agent as the pane last drew it, whose face the line wears.
     agent: Option<AgentRow>,
     label: Option<SharedString>,
     since: Instant,
-    _ticking: Option<Task<()>>,
 }
 
 impl Activity {
@@ -39,7 +38,6 @@ impl Activity {
             agent: None,
             label: None,
             since: Instant::now(),
-            _ticking: None,
         }
     }
 
@@ -60,24 +58,17 @@ impl Activity {
         if self.label.is_none() {
             self.since = Instant::now();
         }
-        self._ticking = label.is_some().then(|| {
-            cx.spawn(async move |this, cx| loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this.update(cx, |_, cx| cx.repaint()).is_err() {
-                    break;
-                }
-            })
-        });
         self.label = label;
         cx.notify();
     }
 }
 
 impl Render for Activity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(label) = self.label.clone() else {
             return div().into_any_element();
         };
+        ui::clock::second(window, cx);
         let t = Tokens::get(cx).clone();
         let seconds = self.since.elapsed().as_secs();
         centred(
