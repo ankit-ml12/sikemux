@@ -165,6 +165,8 @@ struct Recent {
 struct Published {
     saved: Saved,
     launchers: Vec<Launcher>,
+    /// The agents found that run only in their own terminal.
+    terminals: Vec<Launcher>,
     recent: Vec<Recent>,
     /// Older chats a device paged or searched to, newest looked up first, which it may take up
     /// again as it does a recent one.
@@ -1174,8 +1176,8 @@ impl Workspaces {
             .unwrap_or_default()
     }
 
-    /// Each chat agent on each of the person's accounts, in the mode they
-    /// start agents in: one launcher per profile, or one for an agent with none.
+    /// Each agent on each of the person's accounts, in the mode they start agents in:
+    /// one launcher per profile, or one for an agent with none.
     fn offered(&self) -> Vec<Launcher> {
         let published = self.published.locked();
         let saved = &published.saved;
@@ -1185,7 +1187,7 @@ impl Workspaces {
             .map(|book| book.profiles.as_slice())
             .unwrap_or_default();
         let mut offered = Vec::new();
-        for def in AGENTS.iter().filter(|def| def.chat.is_some()) {
+        for def in AGENTS.iter() {
             let permission_mode = match saved.permission_mode.as_deref() {
                 Some(mode) if def.bypass => mode,
                 None if def.bypass => PermissionMode::Bypass.as_str(),
@@ -1222,8 +1224,23 @@ impl Workspaces {
     }
 
     fn set_launchers(&self, launchers: Vec<Launcher>) {
-        self.published.locked().launchers = launchers;
+        let (chats, terminals) = launchers
+            .into_iter()
+            .partition(|launcher| is_chat_provider(&launcher.agent.provider));
+        let mut published = self.published.locked();
+        (published.launchers, published.terminals) = (chats, terminals);
+        drop(published);
         self.wake.now();
+    }
+
+    /// The launcher `id` names when its agent runs only in its own terminal.
+    pub(crate) fn terminal_launcher(&self, id: &str) -> Option<Launcher> {
+        self.published
+            .locked()
+            .terminals
+            .iter()
+            .find(|launcher| launcher.id == id)
+            .cloned()
     }
 
     /// Keeps what the core last heard of an account's sign-in on the
@@ -1685,27 +1702,12 @@ impl Workspaces {
             launchers: published
                 .launchers
                 .iter()
-                .map(|launcher| {
-                    let config_options = saved
-                        .launcher_options
-                        .get(&launcher.id)
-                        .cloned()
-                        .unwrap_or(Value::Null);
-                    let (model, effort) = pickers::pickers(&config_options);
-                    LauncherInfo {
-                        id: launcher.id.clone(),
-                        provider: launcher.agent.provider.clone(),
-                        label: launcher.label.clone(),
-                        permission_mode: launcher.permission_mode.clone(),
-                        config_options,
-                        status: launcher
-                            .status
-                            .as_ref()
-                            .map(|status| status.state().to_owned()),
-                        model,
-                        effort,
-                    }
-                })
+                .map(|launcher| launcher_info(saved, launcher))
+                .collect(),
+            terminal_launchers: published
+                .terminals
+                .iter()
+                .map(|launcher| launcher_info(saved, launcher))
                 .collect(),
             palette: BTreeMap::new(),
             backdrop: Backdrop {
@@ -1713,6 +1715,29 @@ impl Workspaces {
                 image: published.image.as_ref().map(|image| image.id.clone()),
             },
         }
+    }
+}
+
+/// A launcher as devices see it, with the models and effort its last session offered.
+fn launcher_info(saved: &Saved, launcher: &Launcher) -> LauncherInfo {
+    let config_options = saved
+        .launcher_options
+        .get(&launcher.id)
+        .cloned()
+        .unwrap_or(Value::Null);
+    let (model, effort) = pickers::pickers(&config_options);
+    LauncherInfo {
+        id: launcher.id.clone(),
+        provider: launcher.agent.provider.clone(),
+        label: launcher.label.clone(),
+        permission_mode: launcher.permission_mode.clone(),
+        config_options,
+        status: launcher
+            .status
+            .as_ref()
+            .map(|status| status.state().to_owned()),
+        model,
+        effort,
     }
 }
 

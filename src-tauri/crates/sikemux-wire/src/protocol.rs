@@ -1433,6 +1433,10 @@ pub struct Workspace {
     #[serde(default)]
     pub disabled_plugins: Vec<String>,
     pub launchers: Vec<LauncherInfo>,
+    /// Agents that run only in their own terminal, such as Pi, which the app on a host starts
+    /// there; phones start only chats.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_launchers: Vec<LauncherInfo>,
     /// DESIGN's colour tokens for the person's theme, by name.
     pub palette: BTreeMap<String, String>,
     pub backdrop: Backdrop,

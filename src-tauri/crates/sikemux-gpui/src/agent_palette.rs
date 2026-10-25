@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use gpui_kit::{Context, SharedString, Window};
 use serde_json::{json, Value};
-use sikemux_wire::protocol::AgentStatus;
+use sikemux_wire::protocol::{AgentStatus, LauncherInfo};
 
 use crate::icons::Icon;
 use crate::palette::{Choice, Mark, Row, Spec};
@@ -54,10 +54,7 @@ impl Workbench {
             move |row, bench, window, cx| {
                 let key: &str = &row.key;
                 if let Some(launcher) = key.strip_prefix(NEW) {
-                    let provider = bench
-                        .launchers()
-                        .iter()
-                        .find(|known| known.id == launcher)
+                    let provider = launcher_of(bench, launcher)
                         .map(|known| known.provider.clone())
                         .unwrap_or_default();
                     let can_skip =
@@ -119,7 +116,7 @@ impl Workbench {
         let kind_of = |provider: &str| kind_of(self, provider);
         let mut rows = Vec::new();
         let mut sign_ins = Vec::new();
-        for launcher in self.launchers() {
+        for launcher in self.launchers().iter().chain(self.terminal_launchers()) {
             let kind = kind_of(&launcher.provider);
             let field = |name: &str| {
                 kind.as_ref()
@@ -209,6 +206,15 @@ impl Workbench {
     }
 }
 
+/// The launcher `id` names, of a chat agent or one that runs only in its terminal.
+fn launcher_of<'a>(bench: &'a Workbench, id: &str) -> Option<&'a LauncherInfo> {
+    bench
+        .launchers()
+        .iter()
+        .chain(bench.terminal_launchers())
+        .find(|known| known.id == id)
+}
+
 /// What the core's catalog says of the agent `provider`.
 fn kind_of(bench: &Workbench, provider: &str) -> Option<Value> {
     bench
@@ -226,12 +232,7 @@ fn sign_in(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(provider) = bench
-        .launchers()
-        .iter()
-        .find(|known| known.id == launcher)
-        .map(|known| known.provider.clone())
-    else {
+    let Some(provider) = launcher_of(bench, launcher).map(|known| known.provider.clone()) else {
         return;
     };
     if SIGNS_IN.contains(&provider.as_str()) {
@@ -262,12 +263,7 @@ fn install(
     window: &mut Window,
     cx: &mut Context<Workbench>,
 ) {
-    let Some(launcher) = bench
-        .launchers()
-        .iter()
-        .find(|known| known.id == launcher)
-        .cloned()
-    else {
+    let Some(launcher) = launcher_of(bench, launcher).cloned() else {
         return;
     };
     let command = bench

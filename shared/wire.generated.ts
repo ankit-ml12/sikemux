@@ -41,6 +41,11 @@ export interface Workspace {
     /** The plugins the person switched off, by id. */
     disabledPlugins: string[];
     launchers: LauncherInfo[];
+    /**
+     * Agents that run only in their own terminal, such as Pi, which the app on a host starts
+     * there; phones start only chats.
+     */
+    terminalLaunchers?: LauncherInfo[];
     /** DESIGN's colour tokens for the person's theme, by name. */
     palette: Record<string, string>;
     backdrop: Backdrop;

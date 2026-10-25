@@ -2375,6 +2375,12 @@ impl Workbench {
             .map_or(&[], |view| view.workspace.launchers.as_slice())
     }
 
+    /// The agents the host has that run only in their own terminal, such as Pi.
+    pub fn terminal_launchers(&self) -> &[LauncherInfo] {
+        self.shown()
+            .map_or(&[], |view| view.workspace.terminal_launchers.as_slice())
+    }
+
     /// Whether agents of `provider` have the built-in chat, as the core's catalog says; any agent
     /// does until the catalog is read.
     pub fn has_chat(&self, provider: &str) -> bool {

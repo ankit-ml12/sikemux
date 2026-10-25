@@ -397,6 +397,31 @@ async fn start_new(
         Some(cwd) => blocking(move || Ok(super::sandbox::resumed_in(cwd, project))).await?,
         None => (project, None),
     };
+    if let Some(launcher) = core.workspaces.terminal_launcher(&choice.launcher) {
+        let agent = json!({
+            "id": agent_id,
+            "provider": kind,
+            "project": choice.project,
+            "cwd": cwd,
+            "title": kind,
+            "permissionMode": choice.permission_mode.unwrap_or(launcher.permission_mode),
+            "profileId": launcher.id.strip_prefix(&format!("{kind}:")),
+            "resumeId": choice.resume_id,
+            "worktree": worktree,
+            "terminal": true,
+        });
+        let Value::Object(agent) = agent else {
+            unreachable!("an object literal")
+        };
+        core.workspaces.put_agent(agent)?;
+        let size = super::spare::opening_size(core);
+        if let Err(error) = start_terminal(core, &agent_id, size, None).await {
+            super::workspace::close_gone(core, std::slice::from_ref(&agent_id));
+            return Err(error);
+        }
+        remember_kind(core, &kind);
+        return Ok((agent_id, not_started()));
+    }
     let chosen = Launch {
         agent_id: agent_id.clone(),
         launcher: choice.launcher,
@@ -419,12 +444,7 @@ async fn start_new(
     }
     remember_kind(core, &kind);
     if started.unstarted() {
-        let start = ChatStart {
-            session_id: String::new(),
-            capabilities: Value::Null,
-            setup: Value::Null,
-        };
-        return Ok((agent_id, start));
+        return Ok((agent_id, not_started()));
     }
     match chat::until_started(core, started).await {
         Ok(start) => Ok((agent_id, start)),
@@ -432,6 +452,16 @@ async fn start_new(
             super::workspace::close_gone(core, &[agent_id]);
             Err(error)
         }
+    }
+}
+
+/// What a client starting an agent hears before its chat session has begun, or of an
+/// agent that runs in its terminal.
+fn not_started() -> ChatStart {
+    ChatStart {
+        session_id: String::new(),
+        capabilities: Value::Null,
+        setup: Value::Null,
     }
 }
 
