@@ -173,6 +173,11 @@ impl Sink {
         self.quiet.load(Ordering::Acquire)
     }
 
+    /// What the agent says until [`Sink::loaded`] is history the chat already shows.
+    pub fn hush(&self) {
+        self.quiet.store(true, Ordering::Release);
+    }
+
     /// The session has loaded, so what the agent says from now on is new to
     /// the chat.
     pub fn loaded(&self) {

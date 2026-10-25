@@ -240,6 +240,22 @@ async fn list_turns(rpc: &Rpc, thread_id: &str) -> Result<Vec<Value>, String> {
     Ok(data(pages))
 }
 
+/// Whether Codex refused to resume a thread because it has no such thread any more.
+fn thread_gone(error: &str) -> bool {
+    let error = error.to_lowercase();
+    error.contains("thread")
+        && [
+            "not found",
+            "unknown thread",
+            "no such thread",
+            "does not exist",
+            "missing thread",
+            "no rollout",
+        ]
+        .iter()
+        .any(|said| error.contains(said))
+}
+
 /// The turns of `thread_id` after `latest`, oldest first, read from the newest back; none when
 /// the thread no longer holds `latest`.
 async fn turns_since(rpc: &Rpc, thread_id: &str, latest: &str) -> Result<Vec<Value>, String> {
@@ -620,18 +636,30 @@ impl Backend for Codex {
             .as_object()
             .map(|servers| servers.keys().cloned().collect())
             .unwrap_or_default();
+        let start_thread = || {
+            rpc.request(
+                "thread/start",
+                json!({ "cwd": cwd, "config": session_config }),
+            )
+        };
+        let mut lost = false;
         let opened = match &launch.resume_id {
             Some(thread_id) => {
-                rpc.request(
-                    "thread/resume",
-                    json!({ "threadId": thread_id, "cwd": cwd, "config": session_config, "excludeTurns": true }),
-                )
-                .await
+                let resumed = rpc
+                    .request(
+                        "thread/resume",
+                        json!({ "threadId": thread_id, "cwd": cwd, "config": session_config, "excludeTurns": true }),
+                    )
+                    .await;
+                match resumed {
+                    Err(error) if thread_gone(&error) => {
+                        lost = true;
+                        start_thread().await
+                    }
+                    resumed => resumed,
+                }
             }
-            None => {
-                rpc.request("thread/start", json!({ "cwd": cwd, "config": session_config }))
-                    .await
-            }
+            None => start_thread().await,
         }
         .map_err(failed)?;
         let thread = &opened["thread"];
@@ -682,7 +710,16 @@ impl Backend for Codex {
                 servers,
             },
         };
-        if launch.resume_id.is_some() {
+        if lost {
+            codex.driver.sink.loaded();
+            codex.driver.sink.update(
+                &codex.kept.thread_id,
+                super::super::restart_notice(
+                    "Codex no longer had this conversation",
+                    "It started a new one. The chat above stays, but Codex does not remember it.",
+                ),
+            );
+        } else if launch.resume_id.is_some() {
             codex.replay_history(thread).await?;
         }
         codex.offer_commands().await;

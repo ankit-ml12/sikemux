@@ -9,8 +9,8 @@ use std::time::Duration;
 use agent_client_protocol::schema::v1::{
     CancelNotification, Error as AcpError, Implementation, InitializeRequest, InitializeResponse,
     LoadSessionRequest, McpServer, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionResponse, SelectedPermissionOutcome, SetSessionConfigOptionRequest,
-    SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
+    RequestPermissionResponse, ResumeSessionRequest, SelectedPermissionOutcome,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use serde::{Deserialize, Serialize};
@@ -204,6 +204,16 @@ struct AcpState {
     kept: Kept,
 }
 
+/// How an agent takes up a session it ran before.
+#[derive(Clone, Copy)]
+enum Reopens {
+    /// `session/load`, replaying its history.
+    Load,
+    /// `session/resume`, without its history.
+    Resume,
+    No,
+}
+
 pub(crate) struct Acp {
     process: Process,
     driver: Driver,
@@ -236,25 +246,43 @@ impl Acp {
     }
 
     /// Opens the chat's session: the one it resumes, or a new one. A loaded
-    /// session replays its history before it answers.
+    /// session replays its history before it answers. An agent that cannot load one may
+    /// still take it up again without its history, which the chat already shows; anything
+    /// it replays is not shown again.
     async fn open(
         driver: &Driver,
         launch: &ChatLaunch,
-        can_load: bool,
+        reopens: Reopens,
     ) -> Result<(String, Value), String> {
         let servers = servers::tool_servers(launch);
         let Some(existing) = launch.resume_id.clone() else {
             return Self::open_new(driver, launch, servers).await;
         };
-        if !can_load {
-            return Err("This agent cannot load existing sessions".into());
-        }
-        let load = LoadSessionRequest::new(existing.clone(), &launch.cwd)
-            .mcp_servers(servers.clone())
-            .meta(native::session_meta(&launch.provider));
+        let (method, request) = match reopens {
+            Reopens::Load => (
+                AGENT_METHOD_NAMES.session_load,
+                params(
+                    LoadSessionRequest::new(existing.clone(), &launch.cwd)
+                        .mcp_servers(servers.clone())
+                        .meta(native::session_meta(&launch.provider)),
+                )?,
+            ),
+            Reopens::Resume => {
+                driver.sink.hush();
+                (
+                    AGENT_METHOD_NAMES.session_resume,
+                    params(
+                        ResumeSessionRequest::new(existing.clone(), &launch.cwd)
+                            .mcp_servers(servers.clone())
+                            .meta(native::session_meta(&launch.provider)),
+                    )?,
+                )
+            }
+            Reopens::No => return Err("This agent cannot load existing sessions".into()),
+        };
         let loaded = driver
             .rpc
-            .start(AGENT_METHOD_NAMES.session_load, params(load)?)
+            .start(method, request)
             .map_err(|error| describe(&error))?
             .answer(None)
             .await;
@@ -398,11 +426,20 @@ impl Backend for Acp {
         let steering = air::steering_supported(&params(&initialized.meta)?);
         capabilities["steering"] = json!(steering);
         capabilities["signInMethods"] = json!(sign_in);
-        let can_load = initialized.agent_capabilities.load_session;
+        let reopens = if initialized.agent_capabilities.load_session {
+            Reopens::Load
+        } else if initialized
+            .agent_capabilities
+            .session_capabilities
+            .resume
+            .is_some()
+        {
+            Reopens::Resume
+        } else {
+            Reopens::No
+        };
 
-        let (session_id, setup) = Self::open(&driver, launch, can_load)
-            .await
-            .map_err(failed)?;
+        let (session_id, setup) = Self::open(&driver, launch, reopens).await.map_err(failed)?;
         driver.sink.loaded();
 
         let mut acp = Self {
@@ -419,7 +456,7 @@ impl Backend for Acp {
                     .agent_capabilities
                     .prompt_capabilities
                     .embedded_context,
-                can_load,
+                can_load: !matches!(reopens, Reopens::No),
             },
         };
 
