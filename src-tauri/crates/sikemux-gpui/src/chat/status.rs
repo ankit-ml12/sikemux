@@ -83,7 +83,8 @@ impl Render for Activity {
         centred(
             div()
                 .px(px(22.))
-                .py(px(6.))
+                .pt(px(6.))
+                .pb(px(16.))
                 .flex()
                 .items_center()
                 .gap(px(8.))
