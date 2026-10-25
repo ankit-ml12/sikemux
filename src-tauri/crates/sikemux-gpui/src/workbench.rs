@@ -976,7 +976,10 @@ impl Workbench {
                 self.watch_ci();
             }
             Update::Read("update", value) => {
-                let ready = |value: &Value| value["state"] == "ready";
+                let ready = |value: &Value| {
+                    value["state"] == "ready"
+                        && value["available"]["version"] != env!("CARGO_PKG_VERSION")
+                };
                 let already = self.read("update").is_some_and(ready);
                 let now = ready(&value);
                 self.reads.insert("update", value);
@@ -996,7 +999,8 @@ impl Workbench {
                     {
                         crate::core::force_next_core_update();
                     }
-                    cx.restart();
+                    // Restarting runs the restart hooks, which update this workbench.
+                    cx.defer(|cx| cx.restart());
                 }
             }
             Update::Read(key @ ("questions" | "host-questions"), value) => {
