@@ -48,7 +48,12 @@ pub fn set_text_scale(scale: f32, cx: &mut App) {
 pub const MONO: &str = "JetBrainsMono NFM";
 /// The Nerd Font icon glyphs, which mono text falls back to.
 pub const MONO_ICONS: &str = "JetBrainsMono NFM Icons";
-pub const KBD: &str = ".SystemUIFont";
+/// Key caps in the Mac's own system font, which has the ⌘ ⌥ ⇧ ⌃ glyphs; elsewhere the UI's.
+pub const KBD: &str = if cfg!(target_os = "macos") {
+    ".SystemUIFont"
+} else {
+    UI
+};
 
 pub const RADIUS_1: Pixels = px(4.);
 pub const RADIUS_2: Pixels = px(5.);
