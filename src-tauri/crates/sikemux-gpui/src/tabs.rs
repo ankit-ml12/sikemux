@@ -88,6 +88,9 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 .children(bench.plugin_bars.values().cloned())
                 .children(
                     git_chip(bench, cx)
+                        .map(|chip| {
+                            crate::settings::leaves(div().child(chip), cx).into_any_element()
+                        })
                         .map(|chip| [Some(chip), ci_glyph(bench, cx), Some(separator(cx))])
                         .into_iter()
                         .flatten()
@@ -143,7 +146,7 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                     .flex()
                     .children(copy)
                     .child(
-                        div()
+                        crate::settings::leaves(div(), cx)
                             .on_children_prepainted(glide.keep_items(0))
                             .id("tab-strip")
                             .h_full()

@@ -801,6 +801,7 @@ impl Workbench {
                     self.close_chats(cx);
                     self.open_chat(cx);
                     self.front_moved(cx);
+                    crate::settings::front_moved(self, cx);
                 }
                 self.publish_on_screen();
             }
@@ -869,6 +870,7 @@ impl Workbench {
                 self.close_chats(cx);
                 self.open_chat(cx);
                 self.front_moved(cx);
+                crate::settings::front_moved(self, cx);
                 self.publish_on_screen();
             }
             Update::Chat(agent, news) => {
@@ -4397,9 +4399,10 @@ impl Workbench {
             Edge::Start => (&self.parts.rail, self.side_rail_width),
             Edge::End => (&self.parts.tabs, self.tab_rail_width),
         };
-        let rail = part
-            .clone()
-            .cached(StyleRefinement::default().w(px(width)).h_full().flex_none());
+        let rail = crate::settings::leaves(div().h_full().flex_none(), cx).child(
+            part.clone()
+                .cached(StyleRefinement::default().w(px(width)).h_full().flex_none()),
+        );
         let drawer = div()
             .flex_none()
             .h_full()
@@ -4465,8 +4468,10 @@ impl Workbench {
                         }))
                         .opacity(shown)
                         .child(
-                            part.clone()
-                                .cached(StyleRefinement::default().w(px(width)).h_full()),
+                            crate::settings::leaves(div().h_full(), cx).child(
+                                part.clone()
+                                    .cached(StyleRefinement::default().w(px(width)).h_full()),
+                            ),
                         ),
                 )
             });

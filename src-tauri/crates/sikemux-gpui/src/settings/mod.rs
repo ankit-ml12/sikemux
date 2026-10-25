@@ -8,8 +8,8 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     actions, div, px, AnyElement, App, AppContext, Context, Entity, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    IntoElement, KeyBinding, MouseButton, MouseDownEvent, ParentElement, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Subscription, Window,
 };
 use serde_json::{json, Value};
 
@@ -17,7 +17,7 @@ use crate::core::Ask;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
 use crate::ui;
-use crate::workbench::Workbench;
+use crate::workbench::{Strip, Workbench};
 
 mod index;
 mod pages;
@@ -71,7 +71,17 @@ pub struct Settings {
     flash: Option<(&'static str, Instant)>,
     scroll: ScrollHandle,
     pages: pages::State,
+    /// What was in front behind Settings when they opened.
+    behind: Behind,
     _typing: Subscription,
+}
+
+/// Whose core, which strip and which of its tabs is in front.
+type Behind = (crate::hosts::Place, Option<Strip>, Option<String>);
+
+fn behind(bench: &Workbench) -> Behind {
+    let tab = bench.tab().map(|tab| tab.id.clone());
+    (bench.place(), bench.strip(), tab)
 }
 
 /// Opens settings on `page`, or shows `page` when they are open.
@@ -99,6 +109,7 @@ pub fn open(bench: &mut Workbench, page: Page, window: &mut Window, cx: &mut Con
         flash: None,
         scroll: ScrollHandle::new(),
         pages: pages::State::default(),
+        behind: behind(bench),
         _typing: typing,
     });
     cx.notify();
@@ -112,6 +123,12 @@ pub fn toggle(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workb
 }
 
 pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>) {
+    leave(bench, cx);
+    bench.focus.focus(window, cx);
+}
+
+/// Closes Settings, leaving the keyboard to whatever the stage gives it next.
+fn leave(bench: &mut Workbench, cx: &mut Context<Workbench>) {
     let editing = bench
         .settings
         .as_ref()
@@ -121,8 +138,29 @@ pub fn close(bench: &mut Workbench, window: &mut Window, cx: &mut Context<Workbe
         pages::theme_editor::wear_picked(bench);
     }
     bench.settings = None;
-    bench.focus.focus(window, cx);
     cx.notify();
+}
+
+/// Settings stand in for the place in front, so they close once it changes behind them, by any
+/// means.
+pub fn front_moved(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    if bench
+        .settings
+        .as_ref()
+        .is_some_and(|settings| settings.behind != behind(bench))
+    {
+        leave(bench, cx);
+    }
+}
+
+/// Closes Settings on a press inside `element`, as rows of the rails, tabs and the Git chip take
+/// the person somewhere even when it is already in front.
+pub fn leaves<E: InteractiveElement>(element: E, cx: &mut Context<Workbench>) -> E {
+    element.capture_any_mouse_down(cx.listener(|bench, event: &MouseDownEvent, window, cx| {
+        if event.button == MouseButton::Left && bench.settings.is_some() {
+            close(bench, window, cx);
+        }
+    }))
 }
 
 /// What a shortcut does first while Settings covers the window, as on the Mac: most close
