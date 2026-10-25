@@ -356,6 +356,8 @@ pub enum Picture {
     PaneImage,
 }
 
+pub use wallpaper::offered as wallpaper_offered;
+
 /// Works out a theme from the colours of the desktop wallpaper or the pane image, and opens
 /// it to edit.
 pub fn from_picture(
@@ -745,6 +747,14 @@ mod wallpaper {
     /// How many pixels across the wallpaper is shrunk to before its colours are read.
     const SIZE: u32 = 160;
 
+    /// Whether this desktop says where its wallpaper is: the Mac does, and on Linux GNOME.
+    pub fn offered() -> bool {
+        cfg!(target_os = "macos")
+            || (cfg!(target_os = "linux")
+                && std::env::var("XDG_CURRENT_DESKTOP")
+                    .is_ok_and(|desktop| desktop.split(':').any(|name| name == "GNOME")))
+    }
+
     /// Where the main screen's wallpaper is.
     pub fn path() -> Option<PathBuf> {
         #[cfg(target_os = "macos")]
@@ -755,8 +765,65 @@ mod wallpaper {
             let url = NSWorkspace::sharedWorkspace().desktopImageURLForScreen(&screen)?;
             Some(PathBuf::from(url.path()?.to_string()))
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        {
+            gnome::path()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         None
+    }
+
+    /// GNOME keeps a light and a dark wallpaper, worn by the colour scheme it is set to.
+    #[cfg(target_os = "linux")]
+    mod gnome {
+        use std::path::PathBuf;
+
+        fn setting(schema: &str, key: &str) -> Option<String> {
+            let output = sikemux_process::user_environment::command("gsettings")
+                .args(["get", schema, key])
+                .output()
+                .ok()?;
+            output.status.success().then(|| {
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .trim_matches('\'')
+                    .to_owned()
+            })
+        }
+
+        pub fn path() -> Option<PathBuf> {
+            let dark = setting("org.gnome.desktop.interface", "color-scheme").as_deref()
+                == Some("prefer-dark");
+            let key = if dark {
+                "picture-uri-dark"
+            } else {
+                "picture-uri"
+            };
+            let uri = setting("org.gnome.desktop.background", key)?;
+            let path = url::Url::parse(&uri).ok()?.to_file_path().ok()?;
+            Some(first_slide(path))
+        }
+
+        /// A wallpaper that changes through the day is an XML list of pictures; its first one
+        /// stands for it.
+        fn first_slide(path: PathBuf) -> PathBuf {
+            if path.extension().is_none_or(|extension| extension != "xml") {
+                return path;
+            }
+            let Ok(list) = std::fs::read_to_string(&path) else {
+                return path;
+            };
+            list.split("<file>")
+                .nth(1)
+                .and_then(|file| file.split("</file>").next())
+                .and_then(|file| {
+                    file.split(['<', '>'])
+                        .map(str::trim)
+                        .find(|part| part.starts_with('/'))
+                })
+                .map(PathBuf::from)
+                .unwrap_or(path)
+        }
     }
 
     /// An aerial wallpaper is a `.madesktop` plist; its still frame lives at `thumbnailPath`.
@@ -778,15 +845,23 @@ mod wallpaper {
             .unwrap_or_else(|| path.to_owned())
     }
 
-    /// The wallpaper's name and its pixels, shrunk, as base64 RGBA. macOS wallpapers are
-    /// often HEIC, so `sips` turns them into a small PNG first.
+    /// The picture's name and its pixels, shrunk, as base64 RGBA.
     pub fn pixels(path: &Path) -> Option<(String, String)> {
         let path = still(path);
         let name = path.file_stem()?.to_string_lossy().into_owned();
+        let image = shrunk(&path)?;
+        let pixels = base64::engine::general_purpose::STANDARD.encode(image.as_raw());
+        Some((name, pixels))
+    }
+
+    /// macOS wallpapers are often HEIC, which only `sips` reads, so it turns them into a small
+    /// PNG first.
+    #[cfg(target_os = "macos")]
+    fn shrunk(path: &Path) -> Option<image::RgbaImage> {
         let out = tempfile::Builder::new().suffix(".png").tempfile().ok()?;
         let shrunk = sikemux_process::user_environment::command("/usr/bin/sips")
             .args(["-s", "format", "png", "-Z", &SIZE.to_string()])
-            .arg(&path)
+            .arg(path)
             .arg("--out")
             .arg(out.path())
             .stdout(std::process::Stdio::null())
@@ -796,8 +871,11 @@ mod wallpaper {
         if !shrunk.success() {
             return None;
         }
-        let image = image::open(out.path()).ok()?.to_rgba8();
-        let pixels = base64::engine::general_purpose::STANDARD.encode(image.as_raw());
-        Some((name, pixels))
+        Some(image::open(out.path()).ok()?.to_rgba8())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn shrunk(path: &Path) -> Option<image::RgbaImage> {
+        Some(image::open(path).ok()?.thumbnail(SIZE, SIZE).to_rgba8())
     }
 }

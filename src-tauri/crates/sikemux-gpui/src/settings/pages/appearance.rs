@@ -408,7 +408,9 @@ pub fn render(
                             .child(worn.name.clone()),
                     ),
             )
-            .child(from(Picture::Wallpaper, "From wallpaper"))
+            .when(super::theme_editor::wallpaper_offered(), |row| {
+                row.child(from(Picture::Wallpaper, "From wallpaper"))
+            })
             .when(has_pane_image, |row| {
                 row.child(from(Picture::PaneImage, "From pane image"))
             })
