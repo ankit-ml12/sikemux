@@ -16,7 +16,8 @@
 //! - `tool METHOD JSON` calls one of Sikemux's agent tools, as the agent, and
 //!   says the answer;
 //! - `show JSON` shows a page with Sikemux's page_show tool, as a tool call
-//!   whose output is the tool's answer, so the reply carries the page;
+//!   whose output is the tool's answer, so the reply carries the page, and
+//!   says the answer;
 //! - anything else is echoed back.
 //!
 //! A message wrapped as one from another agent is read from its first line
@@ -392,16 +393,19 @@ fn run_turn(agent: &Agent, session_id: &str, text: &str) -> &'static str {
                 session_id,
                 json!({ "sessionUpdate": "tool_call", "toolCallId": "show-1", "title": "mcp__sikemux-tools__page_show", "kind": "other", "status": "in_progress" }),
             );
-            let answer = tool_answer(&session, "page.show", params);
-            let (status, output) = match &answer {
-                Ok(answer) => ("completed", answer.clone()),
-                Err(error) => ("failed", error.clone()),
+            let (status, output, said) = match tool_answer(&session, "page.show", params) {
+                Ok(answer) => (
+                    "completed",
+                    answer.clone(),
+                    format!("tool answered: {answer}"),
+                ),
+                Err(error) => ("failed", error.clone(), format!("tool failed: {error}")),
             };
             agent.update(
                 session_id,
                 json!({ "sessionUpdate": "tool_call_update", "toolCallId": "show-1", "status": status, "rawOutput": output }),
             );
-            say(if answer.is_ok() { "shown" } else { "not shown" });
+            say(&said);
             "end_turn"
         }
         "tool" => {

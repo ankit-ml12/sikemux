@@ -3,8 +3,9 @@
 python3 -I ci/linux-window.py --app APP --core CORE --agent FAKE_AGENT --seed FAKE_CHAT --out DIR [--browser [--input]]
 
 The arguments are desk-checks.py's, run under an X server and a window manager (DISPLAY set). L1 opens the app
-and checks it shows a window with the seeded chat. With --browser, L2 has the fake agent open a desk browser
-tab on a local page through the agent browser tool; with --input as well, L4 has it type into the page's field,
+and checks it shows a window with the seeded chat. With --browser, L6 has the fake agent show a page in its
+reply with page_show, which must draw in the chat, and L2 has it open a desk browser tab on a local page
+through the agent browser tool; with --input as well, L4 has it type into the page's field,
 press a key there and read the field back, L5 has the page ask a prompt the person sees in a dialog and the agent
 answers, and L3 click a link there, all with the same tools. L2 and L4 also need the page drawn in their capture,
 not a black or blank area. Each leaves a capture of the window in DIR. Exits 1 when any check fails.
@@ -45,13 +46,15 @@ def spread(shot, box):
     return tuple(map(float, said)) if len(said) == 2 else (0.0, 0.0)
 
 
-def page_drawn(run, name):
-    """Captures the window as `name` until the desk's page area shows the page: varied over the whole area and
-    in the band its heading sits in. Says whether it did, and what the area held."""
+def page_drawn(run, name, region=None):
+    """Captures the window as `name` until a page area, the desk's unless `region` gives another, shows the
+    page: varied over the whole area and in the band its heading sits in. Says whether it did, and what the
+    area held."""
     seen = ["no page on the desk"]
+    region = region or (lambda: run.desk().get("pageBounds"))
 
     def look():
-        bounds = run.desk().get("pageBounds")
+        bounds = region()
         run.capture(name)
         shot = run.out / f"{name}.png"
         if not bounds or not shot.exists():
@@ -65,6 +68,15 @@ def page_drawn(run, name):
         return whole > 0.01 and heading > 0.05
 
     return bool(desk.until(look, 10)), seen[0]
+
+
+def shown_in_chat(run):
+    said = run.prompt("show " + json.dumps({"path": str(run.root / "site/shown.html"), "title": "Kit shown"}))
+    row = lambda: next((frame for name, frame in ((run.state() or {}).get("spots") or {}).items()
+                        if name.startswith("chat-page-")), None)
+    drawn, seen = page_drawn(run, "L6", row) if desk.until(row, 15) else (False, "no page row in the chat")
+    run.say("L6", "PASS" if said.startswith("tool answered") and drawn else "FAIL",
+            f"page_show answered {said[:120]!r}; the chat's page row {row()}; {seen}")
 
 
 def page_from_tool(run):
@@ -116,8 +128,10 @@ def main():
         run.set_up()
         launch(run)
         if options.browser:
+            shown_in_chat(run)
             page_from_tool(run)
         else:
+            run.leave("L6", "waits for the Linux browser (pass --browser once it draws a page)")
             run.leave("L2", "waits for the Linux browser (pass --browser once it draws a page)")
         if options.browser and options.input:
             typing_from_tool(run)
