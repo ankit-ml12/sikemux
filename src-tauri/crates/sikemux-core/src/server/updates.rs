@@ -92,6 +92,9 @@ pub struct UpdateStatus {
     /// The person chose to stop the chats rather than wait, which the window
     /// that starts again tells the next core.
     pub forced: bool,
+    /// What to run in a terminal to install `available`, for an app that its
+    /// installer updates rather than itself.
+    pub install_command: Option<String>,
 }
 
 /// Where to fetch the release `available` names.
@@ -145,6 +148,21 @@ fn platform() -> String {
     format!("darwin-{}", std::env::consts::ARCH)
 }
 
+/// A published Linux app is a package the installer put in place, and the
+/// installer updates it.
+fn installer_command(channel: UpdateChannel) -> Option<String> {
+    if !cfg!(target_os = "linux") || !crate::usage::Install::App.published() {
+        return None;
+    }
+    let channel = match channel {
+        UpdateChannel::Stable => "",
+        UpdateChannel::Nightly => "SIKEMUX_CHANNEL=nightly ",
+    };
+    Some(format!(
+        "curl -fsSL https://sikemux.com/install | {channel}sh -s -- --app"
+    ))
+}
+
 fn feeds(channel: UpdateChannel) -> &'static [&'static str] {
     match channel {
         UpdateChannel::Stable => &[STABLE_FEED],
@@ -184,11 +202,13 @@ impl Updates {
 /// Checks a little after the core starts and every half hour after, while the
 /// core runs in an app that can update.
 pub(crate) async fn serve(core: Arc<Core>) {
+    let by_installer = installer_command(core.preferences.get().update_channel);
     core.updates.edit(&core, |held| {
         held.status.updates = own_bundle().is_some();
         held.status.current = core.build.version.clone();
+        held.status.install_command = by_installer.clone();
     });
-    if !core.updates.status().updates {
+    if !core.updates.status().updates && by_installer.is_none() {
         return;
     }
     tokio::time::sleep(FIRST_CHECK).await;
@@ -222,7 +242,9 @@ async fn read_feed(url: &'static str) -> Result<(Version, Feed, Value), String> 
 /// that does not answer must not hide a release the other one offers.
 pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     let status = core.updates.status();
-    if !status.updates {
+    let channel = core.preferences.get().update_channel;
+    let by_installer = installer_command(channel);
+    if !status.updates && by_installer.is_none() {
         return Err("this build does not update itself".into());
     }
     if matches!(
@@ -234,7 +256,6 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     ) {
         return Ok(status);
     }
-    let channel = core.preferences.get().update_channel;
     let current =
         Version::parse(&status.current).map_err(|error| CoreError::from(error.to_string()))?;
     let reads: Vec<_> = feeds(channel)
@@ -262,11 +283,13 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     let release = newest
         .filter(|(version, _, _)| *version > current)
         .and_then(|(_, feed, raw)| {
-            let asset = feed.platforms.get(&platform())?;
-            let found = Found {
+            let found = feed.platforms.get(&platform()).map(|asset| Found {
                 url: asset.url.clone(),
                 signature: asset.signature.clone(),
-            };
+            });
+            if status.updates && found.is_none() {
+                return None;
+            }
             let credits = bundled_credits(&raw);
             Some((
                 UpdateRelease {
@@ -288,7 +311,8 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
             return;
         }
         held.status.available = release.as_ref().map(|(release, _)| release.clone());
-        held.found = release.map(|(_, found)| found);
+        held.status.install_command = by_installer;
+        held.found = release.and_then(|(_, found)| found);
         held.status.error = None;
         held.status.state = UpdateState::Idle;
     });

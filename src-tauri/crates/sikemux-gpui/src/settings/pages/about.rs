@@ -46,7 +46,9 @@ pub fn render(
         })
     };
     let status = bench.read("update");
-    let updates: AnyElement = match status.is_some_and(|status| status["updates"] == true) {
+    let checks = status
+        .is_some_and(|status| status["updates"] == true || status["installCommand"].is_string());
+    let updates: AnyElement = match checks {
         true => {
             let status = status.cloned().unwrap_or_default();
             let busy = matches!(
@@ -76,6 +78,24 @@ pub fn render(
                     .disabled(busy)
                     .on_click(move |_, _, cx| this.update(cx, check_now))
             };
+            let by_hand = crate::whats_new::by_installer(&status).map(|(version, command)| {
+                let this = this.clone();
+                let about = format!("Run this in a terminal to install it: {command}");
+                let copy =
+                    ui::Button::new("update-copy-command", "Copy command", ui::Variant::Outline)
+                        .on_click(move |_, _, cx| {
+                            this.update(cx, |bench, cx| {
+                                crate::whats_new::copy_install_command(bench, &command, cx)
+                            })
+                        });
+                rows::row_with(
+                    None,
+                    format!("Update v{version}"),
+                    Some(about.into()),
+                    copy,
+                    cx,
+                )
+            });
             div()
                 .child(rows::row(
                     "Channel",
@@ -84,6 +104,7 @@ pub fn render(
                     cx,
                 ))
                 .child(rows::row_with(None, "Last checked", Some(last), check, cx))
+                .children(by_hand)
                 .into_any_element()
         }
         false => {
@@ -167,6 +188,9 @@ fn check_now(bench: &mut Workbench, cx: &mut Context<Workbench>) {
                 let channel = status["checked"]["channel"].as_str().unwrap_or("stable");
                 match status["available"]["version"].as_str() {
                     None => toast::info(format!("Sikemux is up to date on the {channel} channel.")),
+                    Some(version) if status["installCommand"].is_string() => toast::success(
+                        format!("Update v{version} is out. Settings → About has the command that installs it."),
+                    ),
                     Some(version) if status["state"] == "idle" => {
                         toast::success(format!("Update v{version} is ready to install."))
                     }
