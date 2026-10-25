@@ -1353,6 +1353,9 @@ impl Chats {
         for chat in self.all() {
             chat.feed.unsubscribe(client);
         }
+        for resting in self.resting.locked().iter() {
+            resting.feed.unsubscribe(client);
+        }
     }
 
     /// Whether `chat` was the agent's current one, which this removes.
@@ -2157,6 +2160,10 @@ pub(crate) fn tool_detail(
 pub(crate) fn detach(core: &Core, client: ClientId, agent_id: &str) {
     if let Some(chat) = core.chats.get(agent_id) {
         chat.feed.unsubscribe(client);
+    }
+    let resting = core.chats.resting.locked();
+    if let Some(resting) = resting.iter().find(|resting| resting.agent_id == agent_id) {
+        resting.feed.unsubscribe(client);
     }
 }
 

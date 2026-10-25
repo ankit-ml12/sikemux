@@ -465,6 +465,44 @@ async fn a_chat_at_work_is_not_stopped_by_a_stop_meant_for_idle_chats() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_client_watching_a_chat_that_sleeps_hears_it_wake() {
+    let core = TestCore::start();
+    let (client, mut chat) = core.connect("agent-w").await;
+    client
+        .acp_start(chat_launch("agent-w", "workspace-write"))
+        .await
+        .expect("start");
+    client
+        .acp_prompt(
+            "agent-w".into(),
+            None,
+            "stream 2".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("prompt");
+    chat.turn_ended().await;
+    let slept = client
+        .call("stopChatIfIdle", json!({ "agentId": "agent-w" }))
+        .await
+        .expect("sleep");
+    assert_eq!(slept["stopped"], true);
+
+    client
+        .acp_prompt(
+            "agent-w".into(),
+            None,
+            "stream 3".into(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .await
+        .expect("a send wakes the chat");
+    chat.until_said("w2 ").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_agent_that_dies_carries_on_until_it_has_died_too_often() {
     const RESTARTED: &str = "This agent stopped while it was working, and was started again";
     const CARRIED_ON: &str = "Your process stopped while you were working";
