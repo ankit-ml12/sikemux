@@ -18,6 +18,7 @@ use gpui_kit::{
 };
 use serde_json::Value;
 use sikemux_wire::protocol::{Pane, PaneKind, Tab as LayoutTab};
+use sikemux_wire::pty::shell_protocol::SshLink;
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
@@ -1011,7 +1012,10 @@ fn strip_tab(
                     t.text_tertiary
                 },
             ))
-            .tail(unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)))
+            .tail(match ssh_link(bench, kind, target) {
+                Some(link) => Some(ui::dot(link, cx)),
+                None => unsaved.then(|| div().size(px(6.)).rounded_full().bg(t.warn)),
+            })
         }
         None => base,
     };
@@ -1041,6 +1045,20 @@ fn strip_tab(
         .as_ref()
         .filter(|reorder| reorder.strip == *strip && cx.has_active_drag());
     crate::drag::tab(drawn, dragged, index, reorder, &cx.entity()).into_any_element()
+}
+
+/// How an SSH terminal's connection stands, for its tab's dot.
+fn ssh_link(bench: &Workbench, kind: PaneKind, target: &str) -> Option<ui::Tone> {
+    let session = bench
+        .session(target)
+        .filter(|_| kind == PaneKind::Terminal)?;
+    session.ssh_alias.as_ref()?;
+    Some(match session.ssh {
+        Some(SshLink::Connected) => ui::Tone::Ok,
+        Some(SshLink::Connecting) => ui::Tone::Pending,
+        Some(SshLink::Disconnected) => ui::Tone::Failed,
+        None => ui::Tone::Idle,
+    })
 }
 
 /// What right-clicking a tab offers, wherever it is listed: an agent's menu for an

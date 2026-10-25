@@ -21,6 +21,7 @@ use sikemux_wire::protocol::{
     LaunchIdentity, NetworkChange, RemoteStatus, Request, Response, SessionId, SpawnTarget,
     StreamId, TerminalSpawn, WindowAnswer, WindowCall,
 };
+use sikemux_wire::pty::shell_protocol::{PtyShellMetadataEvent, ShellMetadataSnapshot};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::hosts::Place;
@@ -129,6 +130,9 @@ pub enum Screenful {
     Lines(Lines),
     Copied(String),
     Found(FindResult),
+    /// Where the shell is and how its last command went, as it stood on attaching.
+    Shell(ShellMetadataSnapshot),
+    ShellChanged(PtyShellMetadataEvent<SessionId>),
 }
 
 /// What the window asks of one terminal.
@@ -1121,6 +1125,9 @@ async fn run(
                             Some(ClientEvent::WindowCall { call_id, call }) => {
                                 let _ = updates.send(Update::WindowCall(call_id, call));
                             }
+                            Some(ClientEvent::Event(Event::ShellMetadata(event))) => {
+                                let _ = updates.send(Update::Terminal(event.pty_id, Screenful::ShellChanged(event)));
+                            }
                             Some(_) => {}
                             None => break,
                         },
@@ -1151,6 +1158,10 @@ async fn run(
                                 }
                                 ClientEvent::Event(Event::DeviceView { view }) => {
                                     let _ = updates.send(Update::HostView(host, view));
+                                }
+                                ClientEvent::Event(Event::ShellMetadata(event)) => {
+                                    let news = Update::Terminal(event.pty_id, Screenful::ShellChanged(event));
+                                    let _ = updates.send(Update::From(host, Box::new(news)));
                                 }
                                 ClientEvent::Event(Event::Changed { topic, project, paths }) => {
                                     let changed = host_watches
@@ -1771,6 +1782,9 @@ impl Streams {
             Settled::Attached(session, attached) => {
                 self.sessions.insert(attached.stream, session);
                 self.streams.insert(session, attached.stream);
+                if let Some(shell) = attached.shell {
+                    self.send(session, Screenful::Shell(shell));
+                }
                 self.frame(attached.stream, attached.frame);
                 for bytes in self.early.remove(&attached.stream).unwrap_or_default() {
                     self.frame(attached.stream, bytes);

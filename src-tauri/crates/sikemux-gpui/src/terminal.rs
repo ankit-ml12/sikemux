@@ -26,8 +26,10 @@ use sikemux_wire::grid::{
     Screen, TerminalInput,
 };
 use sikemux_wire::protocol::{
-    SessionId, DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE, MIN_TERMINAL_FONT_SIZE,
+    SessionId, SessionInfo, DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE,
+    MIN_TERMINAL_FONT_SIZE,
 };
+use sikemux_wire::pty::shell_protocol::{ShellBoundary, ShellMetadataSnapshot, ShellPhase};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::core::{Ask, Screenful, TerminalAsk};
@@ -125,7 +127,8 @@ impl Render for TerminalView {
         let Some(bench) = self.bench.upgrade() else {
             return div().into_any_element();
         };
-        draw(bench.read(cx), &bench, self.id, window)
+        let cx: &App = cx;
+        draw(bench.read(cx), &bench, self.id, window, cx)
     }
 }
 
@@ -146,6 +149,8 @@ struct Terminal {
     /// What an input method is composing.
     marked: Option<String>,
     find: Option<Find>,
+    /// Where the shell says it is and how its last command went, when it says.
+    shell: Option<ShellMetadataSnapshot>,
     /// When the cursor last came back into view: typing and focus restart its blink.
     blink_from: Instant,
     _focus_changes: [Subscription; 2],
@@ -371,6 +376,7 @@ impl Terminal {
         self.top = None;
         self.selection = None;
         self.acked = 0;
+        self.shell = None;
     }
 }
 
@@ -439,6 +445,31 @@ impl Terminals {
                 }
             }
             Screenful::Copied(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
+            Screenful::Shell(shell) => {
+                if terminal
+                    .shell
+                    .as_ref()
+                    .is_none_or(|current| current.revision <= shell.revision)
+                {
+                    terminal.shell = Some(shell);
+                }
+            }
+            Screenful::ShellChanged(event) => {
+                let current = terminal.shell.as_ref();
+                if current.is_some_and(|current| event.revision <= current.revision) {
+                    return;
+                }
+                let last_exit_code = match event.boundary {
+                    ShellBoundary::CommandFinished => event.exit_code,
+                    _ => current.and_then(|current| current.last_exit_code),
+                };
+                terminal.shell = Some(ShellMetadataSnapshot {
+                    revision: event.revision,
+                    cwd: event.cwd,
+                    phase: event.phase,
+                    last_exit_code,
+                });
+            }
             Screenful::Found(found) => {
                 let rows = u64::from(terminal.screen.header.rows);
                 let current = found
@@ -547,10 +578,17 @@ pub fn pane(
         .into_any_element()
 }
 
-fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Window) -> AnyElement {
+fn draw(
+    bench: &Workbench,
+    this: &Entity<Workbench>,
+    id: TermKey,
+    window: &Window,
+    cx: &App,
+) -> AnyElement {
     let this = this.clone();
     let mut pane = div()
         .id(("terminal", id.session))
+        .group(CHIP_GROUP)
         .key_context(CONTEXT)
         .size_full()
         .p(px(8.))
@@ -678,6 +716,11 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         if let Some(find) = &terminal.find {
             pane = pane.child(find_bar(&this, id, find));
         }
+        let over_ssh =
+            || session_info(bench, id).is_some_and(|session| session.ssh_alias.is_some());
+        if let Some(shell) = terminal.shell.as_ref().filter(|_| !over_ssh()) {
+            pane = pane.child(shell_chip(shell, cx));
+        }
     }
     let menu = terminal_menu(this.downgrade(), id);
     pane.relative()
@@ -710,6 +753,77 @@ fn draw(bench: &Workbench, this: &Entity<Workbench>, id: TermKey, window: &Windo
         .context_menu(menu)
         .into_any_element()
 }
+
+/// The terminal's session as its host's view lists it.
+fn session_info(bench: &Workbench, id: TermKey) -> Option<&SessionInfo> {
+    let view = match bench.terminals.place(id) {
+        Place::This => bench.view.as_ref()?,
+        Place::Account(host) => bench.host_views.get(&host)?,
+    };
+    view.sessions
+        .iter()
+        .find(|session| session.id == id.session)
+}
+
+/// The shell's folder and how its last command went, faint in the corner until the pointer
+/// is over the terminal.
+fn shell_chip(shell: &ShellMetadataSnapshot, cx: &App) -> impl IntoElement {
+    let t = Tokens::get(cx);
+    let folder = shell.cwd.as_deref().map(|cwd| {
+        std::path::Path::new(cwd).file_name().map_or_else(
+            || cwd.to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+    });
+    let phase = match (shell.phase, shell.last_exit_code) {
+        (ShellPhase::Finished, Some(0)) => Some("done".to_owned()),
+        (ShellPhase::Finished, Some(code)) => Some(format!("exit {code}")),
+        (ShellPhase::Unknown, _) => None,
+        (ShellPhase::Prompt, _) => Some("prompt".to_owned()),
+        (ShellPhase::Input, _) => Some("input".to_owned()),
+        (ShellPhase::Running, _) => Some("running".to_owned()),
+        (ShellPhase::Finished, None) => Some("finished".to_owned()),
+    };
+    let dot = match shell.phase {
+        ShellPhase::Running | ShellPhase::Input => t.live,
+        ShellPhase::Finished => t.warn,
+        ShellPhase::Prompt | ShellPhase::Unknown => t.ink_faint,
+    };
+    div()
+        .absolute()
+        .right(px(13.))
+        .bottom(px(6.))
+        .max_w(px(360.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .px(px(6.))
+        .py(px(2.))
+        .rounded_full()
+        .border_1()
+        .border_color(t.line)
+        .bg(t.surface)
+        .font_family(theme::MONO)
+        .text_size(px(9.))
+        .text_color(t.text_secondary)
+        .opacity(0.58)
+        .group_hover(CHIP_GROUP, |chip| chip.opacity(0.9))
+        .child(div().flex_none().size(px(5.)).rounded_full().bg(dot))
+        .when_some(folder, |chip, folder| {
+            chip.child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(t.text_secondary)
+                    .child(folder),
+            )
+        })
+        .when_some(phase, |chip, phase| {
+            chip.child(div().flex_none().text_color(t.text_tertiary).child(phase))
+        })
+}
+
+const CHIP_GROUP: &str = "terminal";
 
 /// Attaches the terminal the first time, fits it to its bounds, acknowledges
 /// the frame about to be drawn, asks for history lines scrolled into view,
@@ -761,6 +875,7 @@ fn layout(
             link: None,
             marked: None,
             find: None,
+            shell: None,
             blink_from: Instant::now(),
             _focus_changes: [
                 cx.on_focus_in(&focus, window, move |bench, _, cx| {
@@ -1713,7 +1828,12 @@ fn send_selection(
     else {
         return;
     };
-    let heading = bench.session(&id.session.to_string()).map_or_else(
+    let folder = bench
+        .terminals
+        .open
+        .get(&id)
+        .and_then(|terminal| terminal.shell.as_ref()?.cwd.clone());
+    let heading = session_info(bench, id).map_or_else(
         || "From a terminal:".to_owned(),
         |session| {
             let name = session
@@ -1721,7 +1841,7 @@ fn send_selection(
                 .clone()
                 .or_else(|| session.window_title.clone())
                 .unwrap_or_else(|| "Terminal".to_owned());
-            match &session.project {
+            match folder.as_ref().or(session.project.as_ref()) {
                 Some(folder) => format!("From the terminal \"{name}\" in {folder}:"),
                 None => format!("From the terminal \"{name}\":"),
             }
