@@ -40,14 +40,22 @@ const CLOSE_SETTINGS: [&str; 2] = ["pane.close", "session.close"];
 /// the editor and everything else.
 const PAGE_ONLY: [&str; 3] = ["browser.reload", "browser.back", "browser.forward"];
 
-/// Where the shortcut of command `id` works: the welcome takes even the palettes' keys.
-fn context(id: &str) -> &'static str {
-    if PAGE_ONLY.contains(&id) {
+/// Where the shortcut of command `id` works: the welcome takes even the palettes' keys. Keys
+/// held with Option alone stay with a terminal or text field being typed in, since shells read
+/// Option as Meta and other keyboard layouts type with it.
+fn context(id: &str, keys: &str) -> String {
+    let place = if PAGE_ONLY.contains(&id) {
         "BrowserPage"
     } else if OVER_MODALS.contains(&id) {
         "Workbench && !Onboarding"
     } else {
         "Workbench && !Modal"
+    };
+    let held: Vec<&str> = keys.split('+').collect();
+    let option_only = held.contains(&"Alt") && !held.contains(&"Meta") && !held.contains(&"Ctrl");
+    match option_only {
+        true => format!("{place} && !Terminal && !Input"),
+        false => place.to_owned(),
     }
 }
 
@@ -204,7 +212,11 @@ pub fn bind_project_actions(actions: &[(String, String, String)], cx: &mut App) 
             id: id.clone(),
             label: label.clone(),
         };
-        bindings.push(KeyBinding::new(&gpui_keys, action, Some(context(id))));
+        bindings.push(KeyBinding::new(
+            &gpui_keys,
+            action,
+            Some(&context(id, keys)),
+        ));
         bound.insert(id.clone(), keys.clone());
     }
     if bound == keymap.actions {
@@ -299,7 +311,7 @@ pub fn bind(overrides: &BTreeMap<String, Option<String>>, cx: &mut App) {
         let Ok(action) = cx.build_action(shortcut.id, None) else {
             continue;
         };
-        let context = KeyBindingContextPredicate::parse(context(shortcut.id))
+        let context = KeyBindingContextPredicate::parse(&context(shortcut.id, &keys))
             .ok()
             .map(Rc::new);
         if let Ok(binding) = KeyBinding::load(
