@@ -1820,6 +1820,7 @@ pub fn pane(
     groups.extend(live::tasks(agent, chat, cx));
     groups.extend(live::queued(&agent.id, chat, cx));
     let stack = live::stack(groups, Tokens::get(cx));
+    let covered = stack.is_some();
     let empty = chat
         .composer
         .as_ref()
@@ -1848,9 +1849,13 @@ pub fn pane(
         .children(assumed)
         .children(stack)
         .children(chat.composer.as_ref().map(|composing| {
-            composing
-                .view
-                .update(cx, |view, _| view.agent = Some(agent.clone()));
+            composing.view.update(cx, |view, cx| {
+                view.agent = Some(agent.clone());
+                if view.covered != covered {
+                    view.covered = covered;
+                    cx.notify();
+                }
+            });
             composing.view.clone().into_element().isolated()
         }))
         .when(composing, |pane| pane.child(attach::drop_hint(cx)));
@@ -2772,6 +2777,8 @@ pub struct ComposerView {
     pub bench: WeakEntity<Workbench>,
     /// The chat's agent as the stage last drew it.
     pub agent: Option<AgentRow>,
+    /// Whether the stage docked questions, subagents, tasks or queued messages on the composer.
+    pub covered: bool,
 }
 
 impl gpui::Render for ComposerView {
@@ -2779,10 +2786,11 @@ impl gpui::Render for ComposerView {
         let Some(agent) = self.agent.clone() else {
             return div().into_any_element();
         };
+        let covered = self.covered;
         self.bench
             .update(cx, |bench, cx| {
                 let chat = bench.chats.get(&agent.id)?;
-                mounted_composer(bench, &agent, chat, cx)
+                mounted_composer(bench, &agent, chat, covered, cx)
             })
             .ok()
             .flatten()
@@ -2796,11 +2804,13 @@ fn mounted_composer(
     bench: &Workbench,
     agent: &AgentRow,
     chat: &Chat,
+    covered: bool,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
     let id = &agent.id;
     composer(bench, agent, chat, cx)
         .map(|(composer, offering)| {
+            let composer = composer.covered(covered);
             div()
                 .key_context("ChatComposer")
                 .capture_action(select_chip(id, cx))

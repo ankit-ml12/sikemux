@@ -1315,7 +1315,11 @@ impl Workbench {
             cx.new(|cx| crate::voice::MicButton::new(voice, agent, toggle, cx))
         };
         let bench = cx.weak_entity();
-        let view = cx.new(|_| crate::chat::ComposerView { bench, agent: None });
+        let view = cx.new(|_| crate::chat::ComposerView {
+            bench,
+            agent: None,
+            covered: false,
+        });
         chat.composer = Some(Composing {
             draft,
             view,

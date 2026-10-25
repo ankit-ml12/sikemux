@@ -55,6 +55,8 @@ pub struct Composer {
     provider: String,
     agent_label: SharedString,
     strip: Option<Strip>,
+    /// Something is docked on the strip, which then meets it square rather than rounding.
+    covered: bool,
     ready: bool,
     running: bool,
     steers: bool,
@@ -95,6 +97,7 @@ impl Composer {
             provider: provider.to_owned(),
             agent_label: agent_label.into(),
             strip: None,
+            covered: false,
             ready: false,
             running: false,
             steers: true,
@@ -116,6 +119,11 @@ impl Composer {
 
     pub fn strip(mut self, strip: Option<Strip>) -> Self {
         self.strip = strip;
+        self
+    }
+
+    pub fn covered(mut self, covered: bool) -> Self {
+        self.covered = covered;
         self
     }
 
@@ -309,7 +317,10 @@ impl RenderOnce for Composer {
                     strip: if has_strip { drawn.strip } else { 0. },
                 });
             })
-            .children(self.strip.map(|strip| project_strip(strip, fill, cx)))
+            .children(
+                self.strip
+                    .map(|strip| project_strip(strip, self.covered, fill, cx)),
+            )
             .child(
                 div()
                     .relative()
@@ -367,7 +378,7 @@ impl RenderOnce for Composer {
     }
 }
 
-fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
+fn project_strip(strip: Strip, covered: bool, fill: Hsla, cx: &App) -> impl IntoElement {
     let t = Tokens::get(cx).clone();
     let name = |chevron: bool| {
         div()
@@ -433,7 +444,7 @@ fn project_strip(strip: Strip, fill: Hsla, cx: &App) -> impl IntoElement {
         .border_l_1()
         .border_r_1()
         .border_color(t.border)
-        .rounded_t(theme::RADIUS_3)
+        .when(!covered, |row| row.rounded_t(theme::RADIUS_3))
         .bg(fill)
         .child(
             div()
