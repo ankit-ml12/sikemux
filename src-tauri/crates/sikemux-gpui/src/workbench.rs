@@ -586,7 +586,7 @@ impl Workbench {
                 }
             }),
         ];
-        let bench = Self {
+        let mut bench = Self {
             version: String::new(),
             view: None,
             reads: HashMap::new(),
@@ -730,6 +730,7 @@ impl Workbench {
         };
         bench.focus.focus(window, cx);
         bench.wait_patiently(cx);
+        crate::handover::follow(&mut bench, cx);
         bench
     }
 
@@ -823,6 +824,7 @@ impl Workbench {
             Update::View(view) => {
                 crate::ui::moving_face::set_on(view.face_style.motion, cx);
                 self.view = Some(*view);
+                self.forget_departed();
                 self.settle_closing();
                 // The core finds its agents a moment after it starts, so the plan limits are
                 // read once it lists them.

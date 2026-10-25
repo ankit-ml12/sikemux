@@ -72,6 +72,8 @@ pub struct Desks {
     known: HashMap<String, HashSet<String>>,
     /// What each agent's desk shows: its pages, or its simulator.
     kinds: HashMap<String, DeskKind>,
+    /// The agents in the view as last heard, so those that leave it are let go.
+    present: HashSet<String>,
     page_files: Arc<PageFiles>,
     /// The files and task terminals on each agent's desk, beside its pages, in the order they came.
     items: HashMap<String, Vec<DeskItem>>,
@@ -232,6 +234,7 @@ impl Desks {
             pages: HashMap::new(),
             known: HashMap::new(),
             kinds: HashMap::new(),
+            present: HashSet::new(),
             page_files,
             items: HashMap::new(),
             front: HashMap::new(),
@@ -246,6 +249,27 @@ impl Desks {
             _activation: activation,
             _theming: theming,
         }
+    }
+
+    pub fn engine(&self) -> Option<&Arc<BrowserManager>> {
+        self.engine.as_ref()
+    }
+
+    /// Agents whose pages or device came back from before an update's restart, let go on the
+    /// first view if they are no longer in it.
+    pub fn expect(&mut self, agents: impl IntoIterator<Item = String>) {
+        self.present.extend(agents);
+    }
+
+    fn forget(&mut self, agent: &str) {
+        self.strips.remove(agent);
+        self.pages.remove(agent);
+        self.known.remove(agent);
+        self.kinds.remove(agent);
+        self.items.remove(agent);
+        self.front.remove(agent);
+        self.last_front.retain(|(held, _), _| held != agent);
+        self.tab_scrolls.borrow_mut().remove(agent);
     }
 }
 
@@ -455,6 +479,32 @@ impl Workbench {
             }
         }
         self.parts.redraw(&self.parts.stage, cx);
+    }
+
+    /// Closes the pages and lets go of the device of each agent that left the view, and lets go
+    /// of the device of each agent that went to sleep, so another agent can take it up.
+    pub(crate) fn forget_departed(&mut self) {
+        let Some(view) = &self.view else {
+            return;
+        };
+        let agents = &view.workspace.agents;
+        let present: HashSet<String> = agents.iter().map(|agent| agent.id.clone()).collect();
+        let asleep: Vec<String> = agents
+            .iter()
+            .filter(|agent| agent.asleep && self.sims.holds(&agent.id))
+            .map(|agent| agent.id.clone())
+            .collect();
+        let departed: Vec<String> = self.desks.present.difference(&present).cloned().collect();
+        self.desks.present = present;
+        for agent in &departed {
+            if let Some(engine) = &self.desks.engine {
+                let _ = engine.close_agent(agent);
+            }
+            self.desks.forget(agent);
+        }
+        for agent in departed.iter().chain(&asleep) {
+            self.sims.engine().forget_agent(agent);
+        }
     }
 
     /// Reads every agent's tabs again, and brings out the desk of an agent that opened one.

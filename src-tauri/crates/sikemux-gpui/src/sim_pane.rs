@@ -165,6 +165,17 @@ impl Simulators {
         &self.engine
     }
 
+    /// Takes up the devices the engine gave back to agents after an update's restart.
+    pub fn restored(&mut self) {
+        for held in self.engine.attachments() {
+            let device = Device {
+                udid: held.udid,
+                name: held.name,
+            };
+            self.attached.insert(held.agent_id, device);
+        }
+    }
+
     /// Whether the agent has a device on its desk.
     pub fn holds(&self, agent: &str) -> bool {
         self.attached.contains_key(agent)

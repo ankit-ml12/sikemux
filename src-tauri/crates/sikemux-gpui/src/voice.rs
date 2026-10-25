@@ -133,6 +133,13 @@ impl Dictation {
         }
     }
 
+    /// Stops the helper and the model's download, as the app quits.
+    pub fn shutdown(&mut self) {
+        if let Some(voice) = &self.voice {
+            voice.shutdown();
+        }
+    }
+
     fn prepare(&mut self, cx: &mut Context<Self>) {
         let Some(voice) = &self.voice else {
             return;
