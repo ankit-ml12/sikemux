@@ -22,9 +22,9 @@ use sikemux_wire::jira::{
 };
 
 use super::{after, listen, Host, Panel, PluginPane};
-use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
+use crate::toast;
 use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
 use crate::workbench::Workbench;
 
@@ -1144,10 +1144,11 @@ impl Jira {
                     .child(
                         ui::text(board.name.clone(), 15., FontWeight::SEMIBOLD)
                             .text_color(t.text_primary)
+                            .min_w_0()
                             .truncate(),
                     )
                     .child(tag(&board.kind, cx))
-                    .children(sprint)
+                    .children(sprint.map(|sprint| sprint.min_w_0().truncate()))
                     .child(div().flex_1())
                     .child(
                         IconButton::new("jira-board-refresh", Icon::Refresh, "Refresh the board")
@@ -1238,7 +1239,9 @@ impl Jira {
                     .min_h_0()
                     .overflow_scroll()
                     .p(px(12.))
-                    .child(body),
+                    .flex()
+                    .items_start()
+                    .child(div().flex_none().child(body)),
             )
             .into_any_element()
     }
@@ -1357,7 +1360,10 @@ impl Jira {
             .hover(move |card| card.border_color(t.border_strong))
             .child(
                 ui::text(issue.summary.clone(), 12.5, FontWeight::NORMAL)
-                    .text_color(t.text_primary),
+                    .text_color(t.text_primary)
+                    .whitespace_normal()
+                    .text_ellipsis()
+                    .line_clamp(3),
             )
             .children(chips)
             .child(
@@ -1491,7 +1497,8 @@ impl Jira {
             )
             .child(
                 ui::text(issue.summary.clone(), 15., FontWeight::SEMIBOLD)
-                    .text_color(t.text_primary),
+                    .text_color(t.text_primary)
+                    .whitespace_normal(),
             )
             .context_menu(issue_menu(issue, host.bench().clone()));
         let mut style = crate::editor::preview::reading_style(13., &t);
@@ -1717,6 +1724,7 @@ impl Jira {
         let plain = |text: String| {
             ui::text(text, 12.5, FontWeight::NORMAL)
                 .text_color(t.text_primary)
+                .whitespace_normal()
                 .into_any_element()
         };
         let mut facts = div()
@@ -2244,9 +2252,11 @@ fn said(
                         .gap(px(8.))
                         .child(
                             ui::text(author.to_owned(), 12.5, FontWeight::SEMIBOLD)
-                                .text_color(t.text_primary),
+                                .text_color(t.text_primary)
+                                .min_w_0()
+                                .truncate(),
                         )
-                        .child(ui::meta(ago(at), cx)),
+                        .child(ui::meta(ago(at), cx).flex_none()),
                 )
                 .child(body),
         )
@@ -2343,7 +2353,13 @@ fn issue_row(
                 .child(ui::mono(issue.key.clone(), 11., cx).text_color(t.text_secondary))
                 .child(status_chip(&issue.status, &issue.status_category, cx)),
         )
-        .child(ui::text(issue.summary.clone(), 12.5, FontWeight::MEDIUM).text_color(t.text_primary))
+        .child(
+            ui::text(issue.summary.clone(), 12.5, FontWeight::MEDIUM)
+                .text_color(t.text_primary)
+                .whitespace_normal()
+                .text_ellipsis()
+                .line_clamp(2),
+        )
         .child(
             div()
                 .flex()
@@ -2359,10 +2375,10 @@ fn issue_row(
                     issue
                         .sprint
                         .clone()
-                        .map(|sprint| ui::meta(sprint, cx).truncate()),
+                        .map(|sprint| ui::meta(sprint, cx).min_w_0().truncate()),
                 )
                 .child(div().flex_1())
-                .child(ui::meta(who.to_owned(), cx).truncate())
+                .child(ui::meta(who.to_owned(), cx).min_w_0().truncate())
                 .child(host.face(who, avatar, 18., cx)),
         )
         .on_click(listen::<Jira, _>(cx, move |jira, _, _, _, cx| {
@@ -2428,10 +2444,7 @@ fn send_to_board(bench: &WeakEntity<Workbench>, view: &IssueView, cx: &mut App) 
         .map(|project| (project.path.clone(), project.name.clone()))
     else {
         bench.update(cx, |bench, cx| {
-            bench.notify(
-                toast::error("Open a project to put this on its board"),
-                cx,
-            )
+            bench.notify(toast::error("Open a project to put this on its board"), cx)
         });
         return;
     };
