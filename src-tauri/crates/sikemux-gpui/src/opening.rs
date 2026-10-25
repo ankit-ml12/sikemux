@@ -10,6 +10,7 @@ use gpui_kit::{AppContext, Context};
 use serde_json::{json, Value};
 use sikemux_core::cli::protocol::{
     CliOpenFailure, CliOpenOutcome, CliOpenRequest, CliOpenTarget, CliTargetKind, HarnessRequest,
+    MAX_CLI_TARGETS,
 };
 use sikemux_wire::protocol::CallId;
 
@@ -50,6 +51,47 @@ impl Workbench {
                     bench.settle_open_waits();
                 });
             }
+        })
+        .detach();
+    }
+
+    /// Opens the files and folders the system handed this app, such as from Finder's Open With,
+    /// as `sikemux open` would, saying which could not open.
+    pub(crate) fn open_handed_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let targets: Vec<CliOpenTarget> = paths
+            .into_iter()
+            .filter_map(|path| {
+                let kind = match std::fs::metadata(&path) {
+                    Ok(metadata) if metadata.is_dir() => CliTargetKind::Directory,
+                    Ok(metadata) if metadata.is_file() => CliTargetKind::File,
+                    _ => return None,
+                };
+                let project_root = sikemux_host::cli_client::project_root(&path, kind);
+                Some((path, kind, project_root))
+            })
+            .take(MAX_CLI_TARGETS)
+            .enumerate()
+            .map(|(index, (path, kind, project_root))| CliOpenTarget {
+                id: format!("handed-{index}"),
+                kind,
+                path: path.to_string_lossy().into_owned(),
+                project_root: project_root.to_string_lossy().into_owned(),
+                line: None,
+                column: None,
+            })
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        self.bring_window_forward(cx);
+        let opening = self.open_targets(targets, false);
+        cx.spawn(async move |bench, cx| {
+            let (outcome, _) = opening.await;
+            let _ = bench.update(cx, |bench, cx| {
+                for failure in outcome.failed {
+                    bench.notify(crate::toast::error(failure.message), cx);
+                }
+            });
         })
         .detach();
     }

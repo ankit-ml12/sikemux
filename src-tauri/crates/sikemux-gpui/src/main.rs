@@ -7,10 +7,15 @@ use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 fn main() {
     console::install();
     let link = core::start(core::Home::default());
+    let (handed, opened) = tokio::sync::mpsc::unbounded_channel();
     let app = gpui_kit::application();
     #[cfg(target_os = "linux")]
     let app = app.with_windowing(gpui_kit::WindowingRequest::Windowed(x11_session()));
-    app.with_assets(icons::Icons).run(move |cx| {
+    let app = app.with_assets(icons::Icons);
+    app.on_open_urls(move |urls| {
+        let _ = handed.send(urls);
+    });
+    app.run(move |cx| {
         gpui_kit::init(cx);
         theme::install(cx);
         cx.set_app_identity(core::IDENTIFIER, core::NAME);
@@ -32,7 +37,7 @@ fn main() {
             focus: !behind,
             ..Default::default()
         };
-        let (window, _bench) = gpui_kit::open_window(options, cx, |window, cx| {
+        let (window, bench) = gpui_kit::open_window(options, cx, |window, cx| {
             if let Err(error) = window.enable_scene_overlay() {
                 eprintln!("sikemux: pages will cover menus, with no overlay plane: {error}");
             }
@@ -46,8 +51,9 @@ fn main() {
                 root.style().background = Some(gpui_kit::transparent_black().into());
             });
         }
+        sikemux_gpui::follow_opened(bench.clone(), opened, cx);
         #[cfg(feature = "drive")]
-        sikemux_gpui::drive::listen(window, _bench, cx);
+        sikemux_gpui::drive::listen(window, bench, cx);
         if !behind {
             cx.activate(true);
         }

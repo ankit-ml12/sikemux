@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Entity, Window};
 use serde_json::json;
 use url::Url;
 
@@ -50,6 +50,36 @@ fn parse(link: &str) -> Option<Resume> {
         session,
         project,
     })
+}
+
+/// Takes what the system hands this app to open: each `sikemux://` link, such as one clicked
+/// in another app, brings the window to the front for it, and files and folders, such as
+/// from Finder's Open With, open as `sikemux open` would. What is handed over while the app
+/// is still opening waits for its window.
+pub fn follow_opened(
+    bench: Entity<Workbench>,
+    mut opened: tokio::sync::mpsc::UnboundedReceiver<Vec<String>>,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        while let Some(urls) = opened.recv().await {
+            let (files, links): (Vec<_>, Vec<_>) =
+                urls.into_iter().partition(|url| url.starts_with("file:"));
+            let paths = files
+                .iter()
+                .filter_map(|file| Url::parse(file).ok()?.to_file_path().ok())
+                .collect();
+            bench.update(cx, |bench, cx| {
+                bench.open_handed_paths(paths, cx);
+                for link in links {
+                    if follow(bench, &link, cx) {
+                        cx.activate(true);
+                    }
+                }
+            });
+        }
+    })
+    .detach();
 }
 
 /// Follows a `sikemux://` link, and says whether it was one this app understands. A link it
