@@ -144,7 +144,10 @@ fn kind_of(mime: &str) -> Kind {
 
 /// Asks the core what the file is, and reads the bytes a byte view shows.
 pub(super) fn load(bench: &mut Workbench, key: FileKey, cx: &mut Context<Workbench>) {
-    bench.editors.viewers.entry(key.clone()).or_default();
+    if !bench.editors.viewers.contains_key(&key) {
+        bench.editors.viewers.insert(key.clone(), Viewer::default());
+        super::show_files(bench, &key.place);
+    }
     let target = Target::new(&bench.asks, key.place.clone());
     cx.spawn(async move |bench, cx| {
         let name = key.path.to_string_lossy().into_owned();
@@ -270,6 +273,20 @@ pub(super) fn reopen(bench: &mut Workbench, keys: &[FileKey], cx: &mut Context<W
             load(bench, key.clone(), cx);
         }
     }
+    let pictures: Vec<&FileKey> = (keys.iter())
+        .filter(|key| key.place == Host::This)
+        .filter(|key| {
+            (bench.editors.viewers.get(*key))
+                .and_then(|viewer| viewer.about.as_ref())
+                .is_some_and(|about| kind_of(&about.mime) == Kind::Image)
+        })
+        .collect();
+    for key in &pictures {
+        forget_picture(&key.path, cx);
+    }
+    if !pictures.is_empty() {
+        bench.parts.redraw(&bench.parts.stage, cx);
+    }
     #[cfg(target_os = "macos")]
     for key in keys.iter().filter(|key| key.place == Host::This) {
         if let Some((document, _, _)) = bench
@@ -281,6 +298,15 @@ pub(super) fn reopen(bench: &mut Workbench, keys: &[FileKey], cx: &mut Context<W
             document.open(&key.path);
         }
     }
+}
+
+/// Drops the picture drawn from `path`, so the next frame reads the file again.
+fn forget_picture(path: &Path, cx: &mut App) {
+    let resource = Resource::Path(Arc::from(path));
+    if let Some(Ok(drawn)) = cx.fetch_asset::<ImgResourceLoader>(&resource) {
+        cx.drop_image(drawn, None);
+    }
+    cx.remove_asset::<ImgResourceLoader>(&resource);
 }
 
 /// A document's viewer, and the surface its element places.

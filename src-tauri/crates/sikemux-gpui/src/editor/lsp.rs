@@ -45,6 +45,9 @@ pub(super) struct Served {
     project: String,
     language: String,
     path: String,
+    /// What the core knows this window's hold on the open file by, to claim it back
+    /// after reconnecting.
+    handle: String,
     version: u32,
     /// Sends the text to the server once typing pauses.
     sync: Task<()>,
@@ -157,10 +160,13 @@ fn attach_trusted(
             "content": content,
             "languageId": language_id,
         });
-        if let Err(error) = core::request(&asks, "lsp.open", opened).await {
-            let _ = bench.update(cx, |bench, cx| report(bench, &language, error, path, cx));
-            return;
-        }
+        let handle = match core::request(&asks, "lsp.open", opened).await {
+            Ok(opened) => opened["handle"].as_str().unwrap_or_default().to_owned(),
+            Err(error) => {
+                let _ = bench.update(cx, |bench, cx| report(bench, &language, error, path, cx));
+                return;
+            }
+        };
         let _ = bench.update(cx, |bench, cx| {
             let Some(document) = bench
                 .editors
@@ -173,6 +179,7 @@ fn attach_trusted(
                 project,
                 language,
                 path: name,
+                handle,
                 version: 1,
                 sync: Task::ready(()),
                 hovered: Rc::new(Cell::new(None)),
@@ -316,6 +323,50 @@ fn install(
                     bench.notify(toast::error(format!("{bin} install failed: {error}")), cx)
                 }
             }
+        });
+    })
+    .detach();
+}
+
+/// Claims back the files this window had open with language servers, as the core lets go
+/// of those not claimed soon after a connection drops, and opens again any it no longer has.
+pub(super) fn claim(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let handles: Vec<String> = (bench.editors.open.values())
+        .filter_map(|document| Some(document.served.as_ref()?.handle.clone()))
+        .collect();
+    if handles.is_empty() {
+        return;
+    }
+    let asks = bench.asks.clone();
+    cx.spawn(async move |bench, cx| {
+        let claimed = core::request(&asks, "lsp.claim", json!({ "handles": handles })).await;
+        let claimed: Vec<String> = claimed
+            .ok()
+            .and_then(|claimed| serde_json::from_value(claimed).ok())
+            .unwrap_or_default();
+        let _ = bench.update(cx, |bench, cx| {
+            let mut lost = Vec::new();
+            for (key, document) in &mut bench.editors.open {
+                if (document.served.as_ref())
+                    .is_some_and(|served| !claimed.contains(&served.handle))
+                {
+                    document.served = None;
+                    lost.push(key.path.clone());
+                }
+            }
+            let Some(window) = bench.editors.window else {
+                return;
+            };
+            cx.spawn(async move |this, cx| {
+                let _ = window.update(cx, |_, window, cx| {
+                    let _ = this.update(cx, |bench, cx| {
+                        for path in lost {
+                            attach(bench, path, window, cx);
+                        }
+                    });
+                });
+            })
+            .detach();
         });
     })
     .detach();

@@ -220,8 +220,8 @@ impl Editors {
 
     /// The files on `place` its core keeps watching for changes on disk.
     fn watched(&self, place: &Host) -> Vec<String> {
-        self.open
-            .keys()
+        (self.open.keys())
+            .chain(self.viewers.keys())
             .filter(|key| key.place == *place)
             .map(|key| key.path.to_string_lossy().into_owned())
             .collect()
@@ -999,6 +999,28 @@ fn show_files(bench: &Workbench, place: &Host) {
     );
 }
 
+/// Tells the cores again which files to watch and claims back the files open with language
+/// servers, as a core forgets both for a connection that drops.
+pub fn reconnected(bench: &mut Workbench, cx: &mut Context<Workbench>) {
+    let mut places: Vec<Host> = Vec::new();
+    for key in (bench.editors.open.keys()).chain(bench.editors.viewers.keys()) {
+        if !places.contains(&key.place) {
+            places.push(key.place.clone());
+        }
+    }
+    for place in places {
+        show_files(bench, &place);
+    }
+    lsp::claim(bench, cx);
+}
+
+/// Tells an account host again which of its files to watch, once it is back in reach.
+pub fn host_reached(bench: &Workbench, place: &Host) {
+    if !bench.editors.watched(place).is_empty() {
+        show_files(bench, place);
+    }
+}
+
 /// Reads the whole file in the pieces the core gives, starting again when it
 /// changes under the read.
 async fn read_file(target: &Target, path: String) -> Result<(String, String), String> {
@@ -1074,7 +1096,6 @@ fn read(bench: &mut Workbench, key: FileKey, window: &mut Window, cx: &mut Conte
                 }
                 Err(error) if error.starts_with("not-text:") => {
                     bench.editors.open.remove(&key);
-                    show_files(bench, &key.place);
                     viewer::load(bench, key, cx);
                     return;
                 }
@@ -1235,9 +1256,13 @@ pub fn keep(bench: &mut Workbench) {
         .filter(|key| !shown.contains(*key))
         .cloned()
         .collect();
+    let mut places: Vec<Host> = Vec::new();
     for key in closed {
         bench.editors.viewers.remove(&key);
         bench.editors.copies.forget(&key);
+        if !places.contains(&key.place) {
+            places.push(key.place);
+        }
     }
     let gone: Vec<FileKey> = bench
         .editors
@@ -1246,7 +1271,6 @@ pub fn keep(bench: &mut Workbench) {
         .filter(|(key, document)| !document.dirty && !shown.contains(*key))
         .map(|(key, _)| key.clone())
         .collect();
-    let mut places: Vec<Host> = Vec::new();
     for key in gone {
         if let Some(document) = bench.editors.open.remove(&key) {
             lsp::closed(&document, &bench.asks);

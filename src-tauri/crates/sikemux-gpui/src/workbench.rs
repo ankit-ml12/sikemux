@@ -777,6 +777,7 @@ impl Workbench {
                 }
                 self.terminals.reattach(&self.asks);
                 self.files.relist_shown(&self.target());
+                crate::editor::reconnected(self, cx);
             }
             Update::From(_, update) if matches!(*update, Update::Chat(..)) => {
                 self.apply(*update, cx)
@@ -797,6 +798,7 @@ impl Workbench {
             Update::HostReach(host, reached) => {
                 if reached {
                     self.hosts_reached.insert(host.clone());
+                    crate::editor::host_reached(self, &Place::Account(host.clone()));
                     self.read_approval(Some(host.clone()), cx);
                 } else {
                     self.hosts_reached.remove(&host);
