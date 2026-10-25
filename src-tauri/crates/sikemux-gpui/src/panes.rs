@@ -1001,22 +1001,23 @@ impl Workbench {
         self.parts.redraw(&self.parts.stage, cx);
     }
 
-    /// Puts a view of `kind` showing `target` beside the view `pane` of `tab`.
+    /// Puts a view of `kind` showing `target` to the right of the view `pane` of `tab`.
     pub fn split_pane(
         &self,
         strip: &Strip,
         tab: &str,
         pane: &str,
-        side: &str,
         kind: PaneKind,
         target: &str,
+        keep_front: bool,
     ) {
         let params = json!({
             "tab": tab,
             "pane": pane,
-            "side": side,
+            "side": "right",
             "kind": kind,
             "target": target,
+            "keepFront": keep_front,
         });
         self.call("splitPane", strip.with(params));
     }

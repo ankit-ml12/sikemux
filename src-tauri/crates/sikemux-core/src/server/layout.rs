@@ -1140,19 +1140,23 @@ pub(crate) struct SplitPane {
     target: Option<String>,
     /// A tab of the same strip whose pane moves into the split, closing the tab.
     from_tab: Option<String>,
+    /// Leaves the strip's tab in front where it is, for a split the person did not ask for.
+    #[serde(default)]
+    keep_front: bool,
 }
 
 /// Puts a view beside one of a tab's views: a new view of `kind` showing
-/// `target`, or the pane of `from_tab`. Brings the tab to the front and
-/// answers the id of the view it added, or of the first moved one.
+/// `target`, or the pane of `from_tab`. Brings the tab to the front unless
+/// `keep_front`, and answers the id of the view it added, or of the first moved one.
 pub(crate) fn split_pane(core: &Core, params: SplitPane) -> CoreResult<String> {
     edit(core, |layout| {
         if let (None, Some(PaneKind::Desk), Some(agent)) =
             (&params.from_tab, params.kind, &params.target)
         {
             if let Some((project, tab, view)) = desk_of(layout, agent) {
-                if let Some(strip) = layout.projects.get_mut(&project) {
-                    strip.active = Some(tab);
+                match layout.projects.get_mut(&project) {
+                    Some(strip) if !params.keep_front => strip.active = Some(tab),
+                    _ => {}
                 }
                 return Ok(view);
             }
@@ -1190,7 +1194,9 @@ pub(crate) fn split_pane(core: &Core, params: SplitPane) -> CoreResult<String> {
         if !insert_beside(&mut tab.pane, &params.pane, dir, after, &mut new) {
             return Err("that view is not in the tab".into());
         }
-        strip.active = Some(params.tab.clone());
+        if !params.keep_front {
+            strip.active = Some(params.tab.clone());
+        }
         Ok(added)
     })
 }

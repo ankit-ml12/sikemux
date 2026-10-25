@@ -558,7 +558,7 @@ impl Workbench {
 
     fn reveal_desk(&self, agent: &str) {
         if let Some((strip, tab, view)) = self.agent_place(agent) {
-            self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, agent);
+            self.split_pane(&strip, &tab, &view, PaneKind::Desk, agent, true);
         }
     }
 
@@ -806,7 +806,7 @@ impl Workbench {
             }
             Some(desk) => self.shut_desk(strip, tab.to_owned(), desk, cx),
             None => {
-                self.split_pane(&strip, tab, view, "right", PaneKind::Desk, agent);
+                self.split_pane(&strip, tab, view, PaneKind::Desk, agent, false);
                 self.open_first_page(agent);
             }
         }
@@ -909,7 +909,7 @@ impl Workbench {
         };
         self.show_kind(&agent, DeskKind::Pages);
         if let (None, Some(strip)) = (self.desk_of(&tab, &agent), self.strip()) {
-            self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
+            self.split_pane(&strip, &tab, &view, PaneKind::Desk, &agent, false);
         }
         self.new_page(&agent);
         self.parts.redraw(&self.parts.stage, cx);
@@ -971,7 +971,7 @@ impl Workbench {
         };
         self.show_kind(&agent, DeskKind::Pages);
         if let (None, Some(strip)) = (self.desk_of(&tab, &agent), self.strip()) {
-            self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
+            self.split_pane(&strip, &tab, &view, PaneKind::Desk, &agent, false);
         }
         self.open_first_page(&agent);
         self.desks.address_wanted = Some(agent);
