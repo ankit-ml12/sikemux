@@ -1658,11 +1658,36 @@ fn scope_switch(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElem
         ),
         (Icon::Stack, SharedString::from("All projects")),
     ];
-    Segmented::new("scope", scope, usize::from(bench.all_projects)).on_select(cx.listener(
-        |bench, all: &usize, _, cx| {
+    Segmented::new("scope", scope, usize::from(bench.all_projects))
+        .waiting(1, waiting_elsewhere(bench))
+        .on_select(cx.listener(|bench, all: &usize, _, cx| {
             bench.all_projects = *all == 1;
             bench.keep_rails(cx);
             cx.notify();
-        },
-    ))
+        }))
+}
+
+/// How many things in other projects wait on the person.
+fn waiting_elsewhere(bench: &Workbench) -> usize {
+    let (Some(view), Some(here)) = (bench.shown(), bench.project()) else {
+        return 0;
+    };
+    let path = here.path.to_string_lossy();
+    view.inbox["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|item| item["tier"] == "needs")
+        .filter(|item| {
+            let agent = item["agentId"]
+                .as_str()
+                .and_then(|id| view.workspace.agents.iter().find(|agent| agent.id == id));
+            match agent {
+                Some(agent) => agent.project != here.id,
+                None => item["project"]
+                    .as_str()
+                    .is_some_and(|project| project != here.id && project != path),
+            }
+        })
+        .count()
 }

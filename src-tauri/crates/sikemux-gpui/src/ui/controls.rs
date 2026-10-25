@@ -430,6 +430,8 @@ pub struct Segmented {
     on_select: Option<OnSelect>,
     /// Why it cannot be changed now, shown over it; none while it can.
     disabled: Option<SharedString>,
+    /// A choice that holds things waiting on the person, and how many.
+    waiting: Option<(usize, usize)>,
 }
 
 impl Segmented {
@@ -450,6 +452,7 @@ impl Segmented {
             fill: false,
             on_select: None,
             disabled: None,
+            waiting: None,
         }
     }
 
@@ -471,6 +474,7 @@ impl Segmented {
             fill: false,
             on_select: None,
             disabled: None,
+            waiting: None,
         }
     }
 
@@ -491,6 +495,12 @@ impl Segmented {
         self
     }
 
+    /// Counts what waits on the person under the choice at `index`, in the warning colour.
+    pub fn waiting(mut self, index: usize, count: usize) -> Self {
+        self.waiting = (count > 0).then_some((index, count));
+        self
+    }
+
     pub fn disabled_because(mut self, reason: Option<impl Into<SharedString>>) -> Self {
         self.disabled = reason.map(Into::into);
         self
@@ -501,7 +511,7 @@ impl RenderOnce for Segmented {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Tokens::get(cx).clone();
         let on_select = self.on_select.filter(|_| self.disabled.is_none());
-        let (pill, fill) = (self.pill, self.fill);
+        let (pill, fill, waiting) = (self.pill, self.fill, self.waiting);
         div()
             .id(self.id)
             .flex()
@@ -579,6 +589,23 @@ impl RenderOnce for Segmented {
                                 text(count.to_string(), 10., FontWeight::NORMAL)
                                     .font_features(crate::theme::tabular())
                                     .text_color(t.text_tertiary)
+                            }))
+                            .children(waiting.filter(|(at, _)| *at == index).map(|(_, count)| {
+                                div()
+                                    .flex_none()
+                                    .min_w(px(15.))
+                                    .h(px(15.))
+                                    .px(px(4.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(8.))
+                                    .bg(t.warn.opacity(0.2))
+                                    .child(
+                                        text(count.to_string(), 10., FontWeight::MEDIUM)
+                                            .font_features(crate::theme::tabular())
+                                            .text_color(t.warn),
+                                    )
                             }))
                     }),
             )

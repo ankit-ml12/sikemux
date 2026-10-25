@@ -10,7 +10,7 @@ use gpui_kit::{
     Styled, WeakEntity, Window,
 };
 use serde_json::{json, Value};
-use sikemux_wire::protocol::{AccountInfo, PaneKind, ProjectInfo};
+use sikemux_wire::protocol::{AccountInfo, AgentStatus, PaneKind, ProjectInfo};
 
 use crate::codehost::{Area, OpenArea};
 use crate::hosts::HostChoice;
@@ -645,6 +645,7 @@ fn project_tree(
             .when(closable, |row| row.hover_padding(PROJECT_ROW, 28.))
             .on_click(cx.listener(move |bench, _, _, _| bench.activate_project(&id)))
             .child(faces(&agents, cx))
+            .status(rollup(bench, &project.id, cx))
             .into_any_element(),
             crate::drag::DraggedProject {
                 id: project.id.clone(),
@@ -770,23 +771,50 @@ fn project_menu(
     }
 }
 
-/// Up to five agents' faces, each overlapping the one before by 6px.
+/// Up to five agents' faces, each overlapping the one before by 6px, then how many more.
 fn faces(agents: &[AgentRow], cx: &App) -> impl IntoElement {
     let shown = agents.len().min(5);
+    let more = agents.len() - shown;
+    let t = Tokens::get(cx);
     div()
-        .relative()
+        .flex()
         .flex_none()
-        .h(px(20.))
-        .w(px(if shown == 0 {
-            0.
-        } else {
-            20. + 14. * (shown - 1) as f32
-        }))
-        .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
-            ui::mark_box(20., ui::agent_mark(agent, 20., cx))
-                .absolute()
-                .left(px(14. * index as f32))
-        }))
+        .items_center()
+        .gap(px(3.))
+        .child(
+            div()
+                .relative()
+                .flex_none()
+                .h(px(20.))
+                .w(px(if shown == 0 {
+                    0.
+                } else {
+                    20. + 14. * (shown - 1) as f32
+                }))
+                .children(agents.iter().take(shown).enumerate().map(|(index, agent)| {
+                    ui::mark_box(20., ui::agent_mark(agent, 20., cx))
+                        .absolute()
+                        .left(px(14. * index as f32))
+                })),
+        )
+        .when(more > 0, |faces| {
+            faces.child(
+                ui::text(format!("+{more}"), 10., FontWeight::MEDIUM)
+                    .font_features(crate::theme::tabular())
+                    .text_color(t.text_tertiary),
+            )
+        })
+}
+
+/// How a project's open agents stand together, as the core rolls them up; none while all are idle.
+fn rollup(bench: &Workbench, project: &str, cx: &App) -> Option<gpui_kit::AnyElement> {
+    let status = match bench.shown()?.inbox["projects"][project]["group"].as_str()? {
+        "blocked" => AgentStatus::Blocked,
+        "working" => AgentStatus::Working,
+        "done" => AgentStatus::Done,
+        _ => return None,
+    };
+    ui::status_mark(&format!("project:{project}"), status, cx)
 }
 
 /// What a project opens, in the order the rail lists them: its own surfaces,
