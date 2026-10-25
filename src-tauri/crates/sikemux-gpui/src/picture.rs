@@ -8,10 +8,10 @@ use std::sync::Arc;
 use base64::Engine;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{
-    div, img, App, Asset, Context, CursorStyle, Div, ElementId, FontWeight, Hsla, Image,
-    ImageCacheError, ImageFormat, ImageSource, InteractiveElement, IntoElement, ObjectFit,
-    ParentElement, Pixels, RenderImage, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, WeakEntity, Window,
+    div, img, px, size, App, Asset, Context, CursorStyle, Div, ElementId, FontWeight, Hsla, Image,
+    ImageCacheError, ImageFormat, ImageSource, ImgResourceLoader, InteractiveElement, IntoElement,
+    ObjectFit, ParentElement, Pixels, RenderImage, SharedString, Size, StatefulInteractiveElement,
+    Styled, StyledImage, WeakEntity, Window,
 };
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -269,6 +269,19 @@ impl Picture {
         }))
     }
 
+    /// The picture's own size, once it has loaded.
+    fn size(&self, window: &mut Window, cx: &mut App) -> Option<Size<Pixels>> {
+        let loaded = match self {
+            Picture::File(path) => window
+                .use_asset::<ImgResourceLoader>(&path.clone().into(), cx)?
+                .ok(),
+            Picture::Sent { image, .. } => image.clone().use_render_image(window, cx),
+            Picture::Remote(remote) => window.use_asset::<Fetched>(remote, cx)?.ok(),
+        }?;
+        let pixels = loaded.size(0);
+        Some(size(px(pixels.width.0 as f32), px(pixels.height.0 as f32)))
+    }
+
     pub fn source(&self) -> ImageSource {
         match self {
             Picture::File(path) => path.clone().into(),
@@ -331,6 +344,11 @@ pub fn thumb(
     div().flex().child(clickable)
 }
 
+/// Room the picture viewer keeps beside the picture, and above and below it for its
+/// name, its buttons and the gaps between.
+const VIEWER_SIDES: Pixels = px(16.);
+const VIEWER_CHROME: Pixels = px(8. + 24. + 12. + 12. + 32. + 16. + 2.);
+
 impl Workbench {
     /// Shows `picture` over the window until Esc, a click outside it, or ✕.
     pub fn show_picture(
@@ -342,7 +360,7 @@ impl Workbench {
         let picture = picture.into();
         let name = picture.name();
         let this = cx.weak_entity();
-        window.open_dialog(cx, move |dialog, window, _| {
+        window.open_dialog(cx, move |dialog, window, cx| {
             let room = window.viewport_size();
             let save = {
                 let (this, picture) = (this.clone(), picture.clone());
@@ -353,20 +371,52 @@ impl Workbench {
                             .ok();
                     })
             };
+            let most = size(
+                room.width * 0.9 - VIEWER_SIDES * 2.,
+                room.height * 0.9 - VIEWER_CHROME,
+            );
+            let shown = picture.size(window, cx).map_or(most, |natural| {
+                let scale = (most.width / natural.width)
+                    .min(most.height / natural.height)
+                    .min(1.);
+                size(natural.width * scale, natural.height * scale)
+            });
+            let height = shown.height + VIEWER_CHROME;
             dialog
-                .w(room.width * 0.9)
-                .max_w(room.width * 0.9)
-                .margin_top(room.height * 0.04)
-                .title(name.clone())
+                .w((shown.width + VIEWER_SIDES * 2.).max(px(360.)))
+                .pt(px(8.))
+                .pb(px(16.))
+                .margin_top(((room.height - height) / 2.).max(px(0.)))
                 .child(
-                    div().flex().justify_center().child(
-                        img(picture.source())
-                            .max_w_full()
-                            .max_h(room.height * 0.78)
-                            .object_fit(ObjectFit::Contain),
-                    ),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(
+                            div()
+                                .h(px(24.))
+                                .pr(px(24.))
+                                .flex()
+                                .items_center()
+                                .child(ui::text(name.clone(), 13., FontWeight::SEMIBOLD)),
+                        )
+                        .child(
+                            div().flex().justify_center().child(
+                                img(picture.source())
+                                    .w(shown.width)
+                                    .h(shown.height)
+                                    .object_fit(ObjectFit::Contain),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .h(px(32.))
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .child(save),
+                        ),
                 )
-                .footer(div().flex().justify_end().child(save))
         });
     }
 

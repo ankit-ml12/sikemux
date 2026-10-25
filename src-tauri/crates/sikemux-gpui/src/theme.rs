@@ -293,6 +293,7 @@ pub fn apply(palette: &Palette, cx: &mut App) {
     kit.foreground = tokens.text_primary;
     kit.muted_foreground = tokens.text_tertiary;
     kit.popover = tokens.surface_overlay;
+    kit.overlay = gpui_kit::black().opacity(0.55);
     kit.popover_foreground = tokens.text_primary;
     kit.border = tokens.border;
     kit.input = tokens.border;
