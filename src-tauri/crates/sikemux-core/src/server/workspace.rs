@@ -1655,6 +1655,11 @@ impl Workspaces {
     }
 
     /// Whether the agent is in the workspace, and if so whether it is asleep.
+    /// Whether the agent runs in its CLI's own terminal rather than as a chat.
+    pub(crate) fn in_terminal(&self, agent_id: &str) -> bool {
+        self.agent(agent_id).is_some_and(|agent| agent.terminal)
+    }
+
     pub(crate) fn published(&self, agent_id: &str) -> Option<bool> {
         self.agent(agent_id).map(|agent| agent.asleep)
     }

@@ -189,6 +189,7 @@ async fn launch_terminal(
     let patch = Map::from_iter([
         ("ptyId".to_owned(), Value::from(id)),
         ("terminal".to_owned(), Value::Bool(true)),
+        ("asleep".to_owned(), Value::Bool(false)),
     ]);
     core.workspaces.update_agent(agent_id, patch)?;
     core.view_changed();
@@ -337,6 +338,20 @@ pub(crate) async fn start_saved(
         return Ok(());
     }
     chat::until_started(core, started).await.map(drop)
+}
+
+/// Wakes an agent on its saved session: in its terminal for one that runs there, otherwise
+/// its chat, answering once it is ready.
+pub(crate) async fn wake(core: &Arc<Core>, agent_id: String) -> CoreResult<()> {
+    if core
+        .workspaces
+        .agent(&agent_id)
+        .is_some_and(|agent| agent.terminal)
+    {
+        let size = super::spare::opening_size(core);
+        return start_terminal(core, &agent_id, size, None).await.map(drop);
+    }
+    wake_chat(core, agent_id).await.map(drop)
 }
 
 /// Wakes an agent's chat and answers once it is ready, so a client taking it

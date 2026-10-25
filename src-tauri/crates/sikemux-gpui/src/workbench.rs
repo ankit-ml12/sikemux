@@ -2984,6 +2984,12 @@ impl Workbench {
             .is_some_and(|kept| kept.terminal || kept.pty_id.is_some())
     }
 
+    /// Whether the agent is asleep with its terminal ended, to start again on its session.
+    pub fn terminal_asleep(&self, agent: &str) -> bool {
+        self.kept_agent(agent)
+            .is_some_and(|kept| kept.terminal && kept.asleep && kept.pty_id.is_none())
+    }
+
     fn kept_agent(&self, agent: &str) -> Option<&sikemux_wire::protocol::WorkspaceAgent> {
         self.view
             .as_ref()?

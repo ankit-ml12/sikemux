@@ -829,7 +829,10 @@ async fn run_requests(
                 paths,
                 context,
             } => {
-                if chat::stopped(&core, &agent_id) || chat::mentions::wakes(&context) {
+                if core.workspaces.in_terminal(&agent_id) {
+                    let result = super::messages::from_person(&core, &agent_id, text);
+                    client.respond(request_id, result.map(|()| Response::Done));
+                } else if chat::stopped(&core, &agent_id) || chat::mentions::wakes(&context) {
                     tokio::spawn(async move {
                         let mut context = context;
                         let result =
@@ -864,6 +867,17 @@ async fn run_requests(
                     };
                     client.respond(request_id, result.map(|()| Response::Done));
                 });
+            }
+            Request::AcpSteer {
+                agent_id,
+                text,
+                paths,
+                context,
+            } if core.workspaces.in_terminal(&agent_id) => {
+                let _ = (paths, context);
+                let result = super::messages::from_person(&core, &agent_id, text);
+                let outcome = "queued".to_owned();
+                client.respond(request_id, result.map(|()| Response::Steered { outcome }));
             }
             Request::AcpSteer {
                 agent_id,

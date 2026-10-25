@@ -16,7 +16,7 @@ use sikemux_process::clock::epoch_ms;
 use sikemux_process::sync::Locked;
 
 use crate::cli::protocol::HarnessRequest;
-use crate::protocol::{AgentStatus, ChatState};
+use crate::protocol::{AgentStatus, ChatState, WorkspaceAgent};
 
 use self::log::{Entry, MessageLog, Outcome};
 use super::chat::{self, Delivery};
@@ -25,7 +25,7 @@ use super::kept::Kept;
 use super::names::project_of;
 use super::session::{self, Session};
 use super::wake::{sooner, Wake};
-use super::{agent, launching, Core};
+use super::{agent, launching, Core, CoreResult};
 
 mod log;
 
@@ -731,6 +731,29 @@ pub(crate) fn listed(core: &Core) -> Vec<Listed> {
             rank,
             reach: Reach::Terminal,
             agent_id,
+        });
+    }
+    let away: Vec<WorkspaceAgent> = core
+        .workspaces
+        .agent_ids()
+        .into_iter()
+        .filter(|agent_id| !agents.iter().any(|listed| &listed.agent_id == agent_id))
+        .filter_map(|agent_id| core.workspaces.agent(&agent_id))
+        .filter(|agent| agent.terminal)
+        .collect();
+    for agent in away {
+        let (project, parent) = place(&agent.id, Some(&agent.cwd));
+        agents.push(Listed {
+            name: core.names.get(&agent.id).map(|named| named.name),
+            project,
+            title: core.workspaces.title(&agent.id),
+            cli: agent.provider,
+            status: AgentStatus::Asleep,
+            parent,
+            active_at: None,
+            rank: u32::MAX,
+            reach: Reach::Asleep,
+            agent_id: agent.id,
         });
     }
     agents.sort_by_key(|agent| agent.rank);
@@ -1530,17 +1553,21 @@ async fn handed(
     }
     let mut woke = "";
     let mut held = None;
+    let mut reach = target.reach;
     let notice = letter.kind == Kind::Notice;
     match target.reach {
         Reach::Chat | Reach::Terminal => {}
         Reach::Asleep if notice => held = Some("is asleep"),
         Reach::Asleep if !core.window.is_open() => held = Some("is asleep while Sikemux is closed"),
         Reach::Asleep => {
-            launching::wake_chat(core, target.agent_id.clone())
+            launching::wake(core, target.agent_id.clone())
                 .await
                 .map_err(|error| format!("{name} is asleep and did not wake: {error}"))?;
             mailbox.state.locked().wake_failed.remove(&target.agent_id);
             woke = " Sikemux woke it first.";
+            if core.agent_session(&target.agent_id).is_some() {
+                reach = Reach::Terminal;
+            }
         }
         Reach::Stopped if letter.answers.is_some() || letter.kind == Kind::Report => {
             held = Some("has stopped")
@@ -1563,7 +1590,7 @@ async fn handed(
     }
     if held.is_none() {
         let delivered =
-            match target.reach {
+            match reach {
                 Reach::Terminal => ready_terminal(core, &target.agent_id).map(|terminal| {
                     paste(core, &target.agent_id, terminal, vec![queued.clone()]);
                     Outcome::Typed
@@ -1729,6 +1756,17 @@ fn unpasted(core: &Core, agent_id: &str) {
     log(core, agent_id, returned.iter().flatten(), Outcome::Returned);
 }
 
+/// Types what the person wrote to a terminal agent into its terminal once its CLI takes a
+/// prompt, waking it on its saved session first when its terminal has ended.
+pub(crate) fn from_person(core: &Arc<Core>, agent_id: &str, text: String) -> CoreResult<()> {
+    let text = session::typable(&text).ok_or("there is nothing to send")?;
+    worked(core, agent_id);
+    let mailbox = &core.harness.mailbox;
+    mailbox.wait(agent_id, Queued { text, origin: None });
+    mailbox.wake.now();
+    Ok(())
+}
+
 /// The agent did something besides messaging other agents, which ends any
 /// loop it was in: the messages held between it and another agent go on.
 pub(crate) fn worked(core: &Core, agent_id: &str) {
@@ -1874,7 +1912,11 @@ pub(crate) fn settle(core: &Arc<Core>) {
                     }
                 }
             }
-        } else if core.workspaces.published(&agent_id) == Some(true) {
+        } else if core
+            .workspaces
+            .agent(&agent_id)
+            .is_some_and(|agent| agent.asleep || agent.terminal)
+        {
             if !core.window.is_open() {
                 continue;
             }
@@ -1916,7 +1958,7 @@ fn deliver_later(core: &Arc<Core>, agent_id: String, pending: Pending) {
                 }
             }
             Pending::Asleep => {
-                let woke = launching::wake_chat(&core, agent_id.clone()).await;
+                let woke = launching::wake(&core, agent_id.clone()).await;
                 let mut state = mailbox.state.locked();
                 match woke {
                     Ok(_) => state.wake_failed.remove(&agent_id),

@@ -99,12 +99,13 @@ pub fn agent_view(
             .children(header)
             .into_any_element();
     }
-    if agent
-        .as_ref()
-        .is_some_and(|agent| bench.in_terminal(&agent.id))
-    {
+    if let Some(agent) = agent.as_ref().filter(|agent| bench.in_terminal(&agent.id)) {
+        let asleep = bench
+            .terminal_asleep(&agent.id)
+            .then(|| asleep_in_terminal(bench, agent, cx));
         return ui::pane(cx)
             .p(px(ui::AGENT_INSET))
+            .children(asleep)
             .children(header)
             .into_any_element();
     }
@@ -173,6 +174,31 @@ fn empty_stage(cx: &mut Context<Workbench>) -> impl IntoElement {
                             cx.notify();
                         })),
                 ),
+        )
+}
+
+/// A terminal agent put to sleep: its CLI starts again on its saved session when woken.
+fn asleep_in_terminal(bench: &Workbench, agent: &AgentRow, cx: &mut Context<Workbench>) -> Div {
+    let t = Tokens::get(cx).clone();
+    let label = bench
+        .agent_label(&agent.provider)
+        .unwrap_or(&agent.provider)
+        .to_owned();
+    let id = agent.id.clone();
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(12.))
+        .child(
+            ui::text(format!("{label} is asleep"), 12.5, FontWeight::NORMAL)
+                .text_color(t.text_secondary),
+        )
+        .child(
+            Button::new("wake-terminal-agent", "Wake", Variant::Outline)
+                .on_click(cx.listener(move |bench, _, _, _| bench.switch_view(&id, true))),
         )
 }
 
