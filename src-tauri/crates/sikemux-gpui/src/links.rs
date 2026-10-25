@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Entity, Window};
 use serde_json::json;
 use url::Url;
 
@@ -50,6 +50,26 @@ fn parse(link: &str) -> Option<Resume> {
         session,
         project,
     })
+}
+
+/// Follows each `sikemux://` link the system hands this app, such as one clicked in another
+/// app, and brings the window to the front for it. Links handed over while the app was still
+/// opening wait for its window.
+pub fn follow_opened(
+    bench: Entity<Workbench>,
+    mut opened: tokio::sync::mpsc::UnboundedReceiver<String>,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        while let Some(link) = opened.recv().await {
+            bench.update(cx, |bench, cx| {
+                if follow(bench, &link, cx) {
+                    cx.activate(true);
+                }
+            });
+        }
+    })
+    .detach();
 }
 
 /// Follows a `sikemux://` link, and says whether it was one this app understands. A link it
