@@ -437,6 +437,7 @@ async fn start_new(
         waits_for_person: true,
     };
     let started = start(core, client, chosen).await?;
+    super::workspace::retitle(core, &agent_id, choice.title, false);
     if let Some(worktree) = worktree {
         let patch = Map::from_iter([("worktree".to_owned(), serde_json::to_value(worktree)?)]);
         core.workspaces.update_agent(&agent_id, patch)?;

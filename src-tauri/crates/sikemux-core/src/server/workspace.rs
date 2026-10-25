@@ -373,6 +373,8 @@ pub(crate) struct ChatChoice {
     pub resume_id: Option<String>,
     /// The worktree of the project it resumes in, when it ran in one.
     pub cwd: Option<PathBuf>,
+    /// The title the chat it resumes already had.
+    pub title: Option<String>,
 }
 
 /// An agent's session a client takes up again, named by its agent and the project it ran in.
@@ -499,6 +501,7 @@ fn choice_of(
         effort: choice.effort,
         resume_id: Some(chat.session_id.clone()),
         cwd: (chat.cwd != chat.project).then(|| chat.cwd.clone()),
+        title: Some(chat.title.clone()).filter(|title| !title.trim().is_empty()),
     })
 }
 
@@ -2505,6 +2508,7 @@ mod tests {
             effort: None,
             resume_id: None,
             cwd: None,
+            title: None,
         }
     }
 

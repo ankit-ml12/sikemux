@@ -1076,6 +1076,7 @@ async fn run_requests(
                     effort,
                     resume_id: None,
                     cwd: None,
+                    title: None,
                 };
                 super::launching::start_chat(&core, &client, request_id, choice);
             }
