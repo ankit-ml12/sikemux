@@ -349,7 +349,9 @@ fn pane_header(
             Some(menu) => menu.build(popup),
             None => popup,
         });
-    let desk_open = bench.desk_of(tab, &agent.id).is_some();
+    let desk_open = bench
+        .desk_of(tab, &agent.id)
+        .is_some_and(|desk| !bench.panes.desk_shutting(&desk));
     let (tab, view, agent_id) = (tab.to_owned(), view.to_owned(), agent.id.clone());
     let views = vec![
         (Icon::Agent, SharedString::from("GUI")),
@@ -476,6 +478,7 @@ fn pane_header(
                 },
             )
             .glyph(13.)
+            .pressed(desk_open)
             .on_click(
                 cx.listener(move |bench, _, _, cx| bench.toggle_desk(&tab, &view, &agent_id, cx)),
             ),
