@@ -1377,9 +1377,9 @@ impl Workbench {
         }
     }
 
-    /// Hands `agent` text from elsewhere in the app, such as a terminal's selection: it goes
-    /// at the end of the draft after a blank line, and the agent's tab comes to the front
-    /// with the draft focused.
+    /// Hands `agent` text from elsewhere in the app, such as a terminal's selection, and brings
+    /// its tab to the front: typed into its CLI when it runs in a terminal, else at the end of
+    /// its chat's draft after a blank line, with the draft focused.
     pub fn deliver(
         &mut self,
         agent: &str,
@@ -1400,6 +1400,14 @@ impl Workbench {
                 "openTab",
                 json!({ "project": project, "kind": "agent", "target": agent }),
             );
+        }
+        if let Some(session) = self.agent_terminal(agent) {
+            let key = self.terminals.key(&Place::This, session);
+            crate::terminal::hand_to(self, key, text, cx);
+            if let Some(focus) = self.terminals.focus(key) {
+                window.focus(focus, cx);
+            }
+            return;
         }
         let Some(draft) = self
             .chats

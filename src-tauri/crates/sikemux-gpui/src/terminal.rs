@@ -110,6 +110,8 @@ pub struct Terminals {
     blinking: Option<Task<()>>,
     /// Each terminal drawn on its own, so its output and cursor redraw only it.
     views: RefCell<HashMap<TermKey, Entity<TerminalView>>>,
+    /// Text handed to a terminal before its first screen came, typed once it does.
+    held: HashMap<TermKey, String>,
 }
 
 /// One terminal as a view of its own, which the stage keeps as last drawn until it changes.
@@ -776,6 +778,13 @@ fn layout(
         }
     });
     terminal.origin = bounds.origin;
+    if terminal.screen.header.rows > 0 && bench.terminals.held.contains_key(&id) {
+        cx.defer_in(window, move |bench, _, cx| {
+            if let Some(text) = bench.terminals.held.remove(&id) {
+                type_text(bench, id, text, cx);
+            }
+        });
+    }
     let size = metrics.fit(bounds.size);
     if size != terminal.asked_size {
         terminal.asked_size = size;
@@ -1035,6 +1044,25 @@ impl Grid for View<'_> {
 /// The terminal holding the keyboard, if one does.
 pub fn focused(bench: &Workbench) -> Option<TermKey> {
     bench.terminals.focused
+}
+
+/// Types `text` into terminal `id` as [`type_text`] does, once it shows its first screen.
+pub fn hand_to(bench: &mut Workbench, id: TermKey, text: String, cx: &mut App) {
+    let ready = bench
+        .terminals
+        .open
+        .get(&id)
+        .is_some_and(|terminal| terminal.screen.header.rows > 0);
+    if ready {
+        type_text(bench, id, text, cx);
+        return;
+    }
+    bench
+        .terminals
+        .held
+        .entry(id)
+        .and_modify(|held| *held = format!("{held}\n\n{text}"))
+        .or_insert(text);
 }
 
 /// Types `text` into terminal `id` as one paste, as dictation does: between paste markers
