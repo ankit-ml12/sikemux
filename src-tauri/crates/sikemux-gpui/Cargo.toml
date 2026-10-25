@@ -78,6 +78,7 @@ raw-window-handle = "0.6"
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSDockTile", "NSScreen", "NSSound", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSDictionary", "NSObject", "NSString", "NSURL", "NSUserNotification"] }
+objc2-metal = { version = "0.3", default-features = false, features = ["std", "MTLDevice"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Already in the build through GPUI's Linux platform.

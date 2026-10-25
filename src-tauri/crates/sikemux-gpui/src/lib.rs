@@ -48,6 +48,7 @@ pub mod icons;
 pub mod install_pane;
 mod keymap;
 mod links;
+pub mod memory;
 pub use links::follow_opened;
 pub mod model_picker;
 mod motion;

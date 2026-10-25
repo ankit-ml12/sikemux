@@ -36,7 +36,7 @@ use gpui_transcript::Row as _;
 use serde_json::{json, Value};
 use sikemux_client::client::CoreClient;
 use sikemux_gpui::workbench::Workbench;
-use sikemux_gpui::{core, icons, theme, WINDOW_SIZE};
+use sikemux_gpui::{core, icons, memory, theme, WINDOW_SIZE};
 use sikemux_wire::protocol::{ChatAttachment, LaunchIdentity, Pane, SpawnTarget, TerminalSpawn};
 
 const FRAME: Duration = Duration::from_micros(8_333);
@@ -183,26 +183,8 @@ fn rss_mb(pid: u32) -> Option<f64> {
     Some(kb / 1024.)
 }
 
-/// Memory a process has written, in MB, counting what macOS compressed or swapped out: what
-/// Activity Monitor shows, which resident memory understates once pages are compressed.
-#[cfg(target_os = "macos")]
 fn footprint_mb(pid: u32) -> Option<f64> {
-    // SAFETY: an all-zero rusage_info_v2 is valid, and proc_pid_rusage writes at most one.
-    let (read, info) = unsafe {
-        let mut info: libc::rusage_info_v2 = std::mem::zeroed();
-        let read = libc::proc_pid_rusage(
-            pid as libc::c_int,
-            libc::RUSAGE_INFO_V2,
-            (&mut info as *mut libc::rusage_info_v2).cast(),
-        );
-        (read, info)
-    };
-    (read == 0).then(|| info.ri_phys_footprint as f64 / 1_048_576.)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn footprint_mb(_: u32) -> Option<f64> {
-    None
+    memory::footprint(pid).map(|bytes| bytes as f64 / 1_048_576.)
 }
 
 fn core_pid(socket: &str) -> Option<u32> {
@@ -1317,6 +1299,7 @@ fn main() -> anyhow::Result<()> {
     cx.update(|cx| {
         gpui_kit::init(cx);
         theme::install(cx);
+        memory::log(cx);
     });
     let held = Rc::new(RefCell::new(None));
     let kept = held.clone();

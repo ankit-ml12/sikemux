@@ -2,7 +2,7 @@ use gpui_kit::{
     point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowDecorations,
     WindowOptions,
 };
-use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
+use sikemux_gpui::{console, core, icons, memory, theme, workbench, WINDOW_SIZE};
 
 fn main() {
     sikemux_host::panic_reports::record_panics("app");
@@ -25,6 +25,7 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         theme::install(cx);
+        memory::log(cx);
         cx.set_app_identity(core::IDENTIFIER, core::NAME);
         let behind = std::env::var_os(sikemux_process::vars::LAUNCH_BEHIND).is_some();
         #[cfg(feature = "drive")]
