@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -288,6 +289,19 @@ impl Session {
             .as_ref()
             .and_then(|shell| shell.ssh_reach());
         Some((host, link))
+    }
+
+    /// The folder its shell last reported, else the project it was started in.
+    pub(crate) fn cwd(&self) -> Option<PathBuf> {
+        let reported = self
+            .screen
+            .locked()
+            .shell
+            .as_ref()
+            .and_then(|shell| shell.snapshot().cwd);
+        reported
+            .or_else(|| self.owner.project.clone())
+            .map(PathBuf::from)
     }
 
     pub(crate) fn rail_number(&self) -> Option<u32> {
