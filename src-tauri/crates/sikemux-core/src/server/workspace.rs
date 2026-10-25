@@ -2133,6 +2133,10 @@ pub(crate) fn close_agent(core: &Core, agent_id: String) -> CoreResult<()> {
 }
 
 pub(crate) fn close(core: &Core, agent_ids: &[String]) -> CoreResult<()> {
+    for agent in agent_ids.iter().filter_map(|id| core.workspaces.agent(id)) {
+        core.names
+            .note_look(&agent.id, agent.buddy.clone(), named(&agent));
+    }
     let before = core.workspaces.agent_ids();
     core.workspaces.close_agents(agent_ids)?;
     agents_closed(core, before);

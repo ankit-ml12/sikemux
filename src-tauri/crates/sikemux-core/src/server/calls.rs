@@ -13,7 +13,7 @@ use super::attachments;
 use super::changed::Topic;
 use super::connection::{blocking, ClientConn};
 use super::edits::{self, Edit, Filter, Owners};
-use super::names::{project_of, AgentName, ClosedAgent, NameTheme, Starting};
+use super::names::{project_of, AgentName, ClosedAgent, NameTheme};
 use super::workspace;
 use super::{
     agent_accounts, agent_sign_in, board, inbox, messages, model_providers, plugins, questions,
@@ -988,14 +988,7 @@ async fn name_agent(core: &Arc<Core>, params: NameAgentParams) -> CoreResult<Nam
     }
     let core = core.clone();
     blocking(move || {
-        let starting = Starting {
-            agent_id: &params.agent_id,
-            project: project_of(&params.cwd, &core.workspaces.project_paths()),
-            provider: params.provider.as_deref(),
-            resume_id: params.resume_id.as_deref(),
-        };
-        let kept = core.names.reopen(&starting, core.open_agents());
-        let named = core.name_agent(
+        let (named, kept) = core.name_agent(
             &params.agent_id,
             &params.cwd,
             params.provider.as_deref(),

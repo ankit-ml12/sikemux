@@ -657,29 +657,32 @@ impl Core {
         open
     }
 
-    /// The agent's name, given now when it has none. Reads and writes the
-    /// disk, so it belongs on a blocking thread.
+    /// The agent's name, given now when it has none. An agent taking up a closed agent's
+    /// chat again takes back the name the person gave that one and the buddy it wore, which
+    /// it answers too. Reads and writes the disk, so it belongs on a blocking thread.
     pub(crate) fn name_agent(
         &self,
         agent_id: &str,
         cwd: &Path,
         provider: Option<&str>,
         resume_id: Option<&str>,
-    ) -> names::AgentName {
-        let project = names::project_of(cwd, &self.workspaces.project_paths());
-        let (named, changed) = self.names.give(
-            names::Starting {
-                agent_id,
-                project,
-                provider,
-                resume_id,
-            },
-            self.open_agents(),
-        );
-        if changed {
+    ) -> (names::AgentName, Option<Option<serde_json::Value>>) {
+        let starting = names::Starting {
+            agent_id,
+            project: names::project_of(cwd, &self.workspaces.project_paths()),
+            provider,
+            resume_id,
+        };
+        let reopened = self.names.reopen(&starting, self.open_agents());
+        if let Some(Some(buddy)) = &reopened {
+            let patch = serde_json::Map::from_iter([("buddy".to_owned(), buddy.clone())]);
+            let _ = self.workspaces.update_agent(agent_id, patch);
+        }
+        let (named, changed) = self.names.give(starting, self.open_agents());
+        if changed || reopened.is_some() {
             self.view_changed();
         }
-        named
+        (named, reopened)
     }
 
     /// Each ssh terminal's config host and how it reaches it.

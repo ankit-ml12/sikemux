@@ -8,9 +8,7 @@ use serde_json::{json, Value};
 
 use crate::protocol::ChatContext;
 use crate::server::connection::blocking;
-use crate::server::names::Starting;
-use crate::server::{display, launching, saved, CoreError, CoreResult};
-use crate::server::{names, Core};
+use crate::server::{display, launching, saved, Core, CoreError, CoreResult};
 
 const AGENT_URI: &str = "sikemux://agent/";
 /// An earlier chat of the project, as `<cli>/<session id>`, to open again for the message.
@@ -97,23 +95,11 @@ async fn woken(
         let (owner, agent_id, cwd) = (core.clone(), agent.id.clone(), agent.cwd.clone());
         let (provider, resume) = (found.cli.clone(), found.session_id.clone());
         blocking(move || {
-            let starting = Starting {
-                agent_id: &agent_id,
-                project: names::project_of(&cwd, &owner.workspaces.project_paths()),
-                provider: Some(&provider),
-                resume_id: Some(&resume),
-            };
-            let kept = owner.names.reopen(&starting, owner.open_agents());
-            let named = owner.name_agent(&agent_id, &cwd, Some(&provider), Some(&resume));
+            let (named, kept) = owner.name_agent(&agent_id, &cwd, Some(&provider), Some(&resume));
             Ok((named.name, kept))
         })
         .await?
     };
-    if let Some(Some(buddy)) = &kept {
-        let mut patch = serde_json::Map::new();
-        patch.insert("buddy".into(), buddy.clone());
-        core.workspaces.update_agent(&agent.id, patch)?;
-    }
     core.view_changed();
     {
         let (core, agent_id) = (core.clone(), agent.id.clone());
