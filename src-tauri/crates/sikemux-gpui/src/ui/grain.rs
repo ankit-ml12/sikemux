@@ -272,6 +272,16 @@ fn clock(speed: f32, cx: &App) -> (f32, f32) {
 /// the power allows.
 pub fn animate(window: &mut Window, cx: &mut Context<Workbench>) {
     follow_reduced_motion(cx);
+    #[cfg(target_os = "linux")]
+    cx.spawn(async move |bench, cx| {
+        let mut changes = linux::watch_motion();
+        while changes.recv().await.is_some() {
+            if bench.update(cx, |_, cx| follow_reduced_motion(cx)).is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
     let ticking = Rc::new(RefCell::new(None));
     let restart = |ticking: Rc<RefCell<Option<Task<()>>>>| {
         move |_: &mut Workbench, window: &mut Window, cx: &mut Context<Workbench>| {
@@ -342,8 +352,8 @@ pub fn drive_state(window: &Window, cx: &App) -> serde_json::Value {
     })
 }
 
-/// Takes macOS's ask for less motion again. It is changed in System Settings, so reading it
-/// each time the window comes back to the front follows it.
+/// Takes the system's ask for less motion again. macOS changes it in System Settings, so reading
+/// it each time the window comes back to the front follows it; Linux also says when it changes.
 fn follow_reduced_motion(cx: &mut App) {
     let reduce = test_motion().unwrap_or_else(system_reduces_motion);
     if cx.reduce_motion() != reduce {
@@ -377,7 +387,89 @@ fn system_reduces_motion() -> bool {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn system_reduces_motion() -> bool {
+    linux::reduces_motion()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn system_reduces_motion() -> bool {
     false
+}
+
+/// The desktop's animation setting, read through the desktop portal: GNOME's "enable
+/// animations" switch, or KDE's animation speed set to instant.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use tokio::sync::mpsc;
+    use zbus::blocking::{Connection, Proxy};
+    use zbus::zvariant::{OwnedValue, Value};
+
+    const GNOME: (&str, &str) = ("org.gnome.desktop.interface", "enable-animations");
+    const KDE: (&str, &str) = ("org.kde.kdeglobals.KDE", "AnimationDurationFactor");
+
+    static REDUCES: AtomicBool = AtomicBool::new(false);
+
+    pub(super) fn reduces_motion() -> bool {
+        REDUCES.load(Ordering::Relaxed)
+    }
+
+    /// Says each time the setting has been read, once at the start and then on every change.
+    pub(super) fn watch_motion() -> mpsc::UnboundedReceiver<()> {
+        let (changed, changes) = mpsc::unbounded_channel();
+        let _ = std::thread::Builder::new()
+            .name("reduce-motion".into())
+            .spawn(move || {
+                let _ = watch(changed);
+            });
+        changes
+    }
+
+    /// KDE's portal hands its settings over as the text they are kept in.
+    fn number(value: &Value) -> Option<f64> {
+        f64::try_from(value)
+            .ok()
+            .or_else(|| <&str>::try_from(value).ok()?.trim().parse().ok())
+    }
+
+    fn watch(changed: mpsc::UnboundedSender<()>) -> zbus::Result<()> {
+        let bus = Connection::session()?;
+        let portal = Proxy::new(
+            &bus,
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+        )?;
+        let mut changes = portal.receive_signal("SettingChanged")?;
+        let read = |(namespace, key): (&str, &str)| {
+            portal
+                .call::<_, _, OwnedValue>("ReadOne", &(namespace, key))
+                .ok()
+        };
+        let mut gnome = read(GNOME);
+        let mut kde = read(KDE);
+        loop {
+            let still = gnome.as_deref().and_then(|on| bool::try_from(on).ok()) == Some(false)
+                || kde.as_deref().and_then(number) == Some(0.);
+            REDUCES.store(still, Ordering::Relaxed);
+            if changed.send(()).is_err() {
+                return Ok(());
+            }
+            let Some(message) = changes.next() else {
+                return Ok(());
+            };
+            let Ok((namespace, key, value)) =
+                message.body().deserialize::<(String, String, OwnedValue)>()
+            else {
+                continue;
+            };
+            match (namespace.as_str(), key.as_str()) {
+                GNOME => gnome = Some(value),
+                KDE => kde = Some(value),
+                _ => {}
+            }
+        }
+    }
 }
