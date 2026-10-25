@@ -1226,7 +1226,7 @@ pub(crate) fn avatar(bench: &Workbench, account: &AccountInfo, size: f32, t: &To
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(t.text_secondary)
         .map(|face| match bench.picture() {
-            Some(picture) => face.child(gpui_kit::img(picture).size_full()),
+            Some(picture) => face.child(gpui_kit::img(picture).size_full().rounded_full()),
             None => face.child(initials),
         })
 }
