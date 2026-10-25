@@ -2821,6 +2821,7 @@ mod tests {
                 "claude:home",
                 "codex:cx",
                 "hermes",
+                "pi",
                 "opencode",
                 "omp",
                 "grok",
