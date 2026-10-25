@@ -476,7 +476,9 @@ fn pane_header(
                 },
             )
             .glyph(13.)
-            .on_click(cx.listener(move |bench, _, _, _| bench.toggle_desk(&tab, &view, &agent_id))),
+            .on_click(
+                cx.listener(move |bench, _, _, cx| bench.toggle_desk(&tab, &view, &agent_id, cx)),
+            ),
         )
 }
 

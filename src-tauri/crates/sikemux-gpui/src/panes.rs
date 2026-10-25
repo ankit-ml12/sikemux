@@ -3,19 +3,20 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    canvas, div, px, AnyElement, App, AppContext, Bounds, Context, CursorStyle, DragMoveEvent,
-    EmptyView, Focusable, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, div, px, relative, AnyElement, App, AppContext, Bounds, Context, CursorStyle,
+    DragMoveEvent, EmptyView, Focusable, Hsla, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::json;
 use sikemux_wire::protocol::{Pane, PaneKind, SessionId, SplitDir, Tab};
 
 use crate::drag::DraggedTab;
 use crate::workbench::{Strip, TakesKeys, Workbench};
-use crate::{desk, home, terminal, ui};
+use crate::{desk, home, motion, terminal, ui};
 
 /// The room between two panes, which is also where a divider is dragged.
 pub const GAP: f32 = 10.;
@@ -49,6 +50,41 @@ pub struct Panes {
     pub zoomed: Option<String>,
     /// Where each view of the tab in front was last drawn, by id.
     drawn: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
+    /// Desks sliding open or shut, by view id.
+    desk_slides: RefCell<HashMap<String, DeskSlide>>,
+    /// The desks each tab held when last drawn, so a desk new to its tab slides open.
+    desks_seen: RefCell<HashMap<String, Vec<String>>>,
+}
+
+/// A desk coming out from the window's edge or going back, as a docked rail does.
+#[derive(Clone, Copy)]
+struct DeskSlide {
+    from: f32,
+    open: bool,
+    since: Instant,
+    over: Duration,
+}
+
+impl DeskSlide {
+    fn target(self) -> f32 {
+        if self.open {
+            1.
+        } else {
+            0.
+        }
+    }
+
+    fn done(self, now: Instant) -> bool {
+        now - self.since >= self.over
+    }
+
+    fn at(self, now: Instant) -> f32 {
+        if self.done(now) {
+            return self.target();
+        }
+        let t = (now - self.since).as_secs_f32() / self.over.as_secs_f32();
+        self.from + (self.target() - self.from) * motion::RAIL_DRAWER.at(t)
+    }
 }
 
 /// A tab dragged over a view: the side of the view it would take, which the view lights.
@@ -114,6 +150,75 @@ struct Divider {
 }
 
 impl Panes {
+    /// Slides the desk `view` open or shut from wherever it shows now, answering how long that
+    /// takes.
+    pub(crate) fn slide_desk(&self, view: &str, open: bool) -> Duration {
+        let now = Instant::now();
+        let mut slides = self.desk_slides.borrow_mut();
+        let from = match slides.get(view) {
+            Some(slide) => slide.at(now),
+            None if open => 0.,
+            None => 1.,
+        };
+        let ease = motion::RAIL_DRAWER;
+        let over = ease
+            .duration
+            .mul_f32((f32::from(open) - from).abs())
+            .max(motion::RAIL_DRAWER_SHORTEST);
+        slides.insert(
+            view.to_owned(),
+            DeskSlide {
+                from,
+                open,
+                since: now,
+                over,
+            },
+        );
+        over
+    }
+
+    /// Whether the desk `view` is on its way shut.
+    pub(crate) fn desk_shutting(&self, view: &str) -> bool {
+        self.desk_slides
+            .borrow()
+            .get(view)
+            .is_some_and(|slide| !slide.open)
+    }
+
+    /// How far out the view `id` is drawn: below 1 only for a desk sliding open or shut.
+    fn desk_shown(&self, id: &str, window: &Window) -> f32 {
+        let now = Instant::now();
+        let mut slides = self.desk_slides.borrow_mut();
+        let Some(slide) = slides.get(id).copied() else {
+            return 1.;
+        };
+        if !slide.done(now) {
+            window.request_animation_frame();
+        } else if slide.open {
+            slides.remove(id);
+        }
+        slide.at(now)
+    }
+
+    /// Slides open each desk new to `tab` since it was last drawn.
+    fn note_desks(&self, tab: &Tab, still: bool) {
+        let mut desks = Vec::new();
+        desk_views(&tab.pane, &mut desks);
+        let before = self
+            .desks_seen
+            .borrow_mut()
+            .insert(tab.id.clone(), desks.clone());
+        if let Some(before) = before.filter(|_| !still) {
+            for desk in desks.iter().filter(|desk| !before.contains(desk)) {
+                self.slide_desk(desk, true);
+            }
+        }
+        let now = Instant::now();
+        self.desk_slides
+            .borrow_mut()
+            .retain(|id, slide| desks.contains(id) || !slide.done(now));
+    }
+
     /// The sizes to draw `split` at: the core's, or a drag's while the core has not answered it.
     fn sizes<'a>(&'a self, split: &str, kept: &'a [u16]) -> &'a [u16] {
         match &self.resizing {
@@ -130,12 +235,25 @@ pub fn tab(
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     bench.panes.drawn.borrow_mut().clear();
+    bench.panes.note_desks(tab, cx.reduce_motion());
     let zoomed = bench
         .panes
         .zoomed
         .as_deref()
         .and_then(|id| view_in(&tab.pane, id));
     pane(bench, &tab.id, zoomed.unwrap_or(&tab.pane), window, cx)
+}
+
+fn desk_views(pane: &Pane, found: &mut Vec<String>) {
+    match pane {
+        Pane::View {
+            id,
+            kind: PaneKind::Desk,
+            ..
+        } => found.push(id.clone()),
+        Pane::View { .. } => {}
+        Pane::Split { panes, .. } => panes.iter().for_each(|pane| desk_views(pane, found)),
+    }
 }
 
 fn view_in<'a>(pane: &'a Pane, view: &str) -> Option<&'a Pane> {
@@ -512,16 +630,74 @@ fn split(
                 cx.listener(|bench, _, _, _| bench.finish_resize()),
             );
     }
-    for (at, (child, share)) in panes.iter().zip(sizes.iter().copied()).enumerate() {
+    let shown: Vec<f32> = panes
+        .iter()
+        .map(|child| match child {
+            Pane::View { id, .. } => bench.panes.desk_shown(id, window),
+            Pane::Split { .. } => 1.,
+        })
+        .collect();
+    let mut grows: Vec<f32> = sizes
+        .iter()
+        .map(|share| f32::from((*share).max(1)))
+        .collect();
+    let mut reach = vec![(0., true); panes.len()];
+    for (at, out) in shown
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, out)| *out < 1.)
+    {
+        let beside = if at > 0 { at - 1 } else { at + 1 };
+        if beside < panes.len() {
+            grows[beside] += grows[at] * (1. - out);
+            reach[beside] = (GAP * (1. - out), beside < at);
+        }
+        grows[at] *= out;
+    }
+    for (at, child) in panes.iter().enumerate() {
         if at > 0 {
             row = row.child(divider(tab, id, at - 1, across));
         }
         let mut cell = div().flex().min_w_0().min_h_0().flex_basis(px(0.));
-        cell.style().flex_grow = Some(f32::from(share.max(1)));
+        cell.style().flex_grow = Some(grows[at]);
+        let drawn = pane(bench, tab, child, window, cx);
+        // A sliding desk keeps its full width and shows only what its cell has room for, and
+        // the view beside it covers the gap the desk will close, so neither lays out again.
+        let (reach, toward_end) = reach[at];
+        let drawn = if shown[at] < 1. {
+            let full = relative(1. / shown[at].max(0.001));
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .when(across, |slid| slid.bottom_0().w(full))
+                .when(!across, |slid| slid.right_0().h(full))
+                .flex()
+                .child(drawn)
+                .into_any_element()
+        } else if reach > 0. {
+            let reach = px(-reach);
+            div()
+                .absolute()
+                .inset_0()
+                .when(across && toward_end, |over| over.right(reach))
+                .when(across && !toward_end, |over| over.left(reach))
+                .when(!across && toward_end, |over| over.bottom(reach))
+                .when(!across && !toward_end, |over| over.top(reach))
+                .flex()
+                .child(drawn)
+                .into_any_element()
+        } else {
+            drawn
+        };
+        let sliding = shown[at] < 1. || reach > 0.;
         row = row.child(
             cell.when(across, |cell| cell.h_full())
                 .when(!across, |cell| cell.w_full())
-                .child(pane(bench, tab, child, window, cx)),
+                .when(sliding, |cell| cell.relative())
+                .when(shown[at] < 1., |cell| cell.overflow_hidden())
+                .child(drawn),
         );
     }
     row.into_any_element()

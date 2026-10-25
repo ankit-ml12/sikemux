@@ -724,17 +724,39 @@ impl Workbench {
     }
 
     /// Opens the agent's desk beside its view, or closes it when it is open.
-    pub fn toggle_desk(&mut self, tab: &str, view: &str, agent: &str) {
+    pub fn toggle_desk(&mut self, tab: &str, view: &str, agent: &str, cx: &mut Context<Self>) {
         let Some(strip) = self.strip() else {
             return;
         };
         match self.desk_of(tab, agent) {
-            Some(desk) => self.close_pane(&strip, tab, &desk),
+            Some(desk) if self.panes.desk_shutting(&desk) => {
+                self.panes.slide_desk(&desk, true);
+                self.parts.redraw(&self.parts.stage, cx);
+            }
+            Some(desk) => self.shut_desk(strip, tab.to_owned(), desk, cx),
             None => {
                 self.split_pane(&strip, tab, view, "right", PaneKind::Desk, agent);
                 self.open_first_page(agent);
             }
         }
+    }
+
+    /// Slides the desk back to the window's edge, then closes it unless it was opened again.
+    fn shut_desk(&mut self, strip: Strip, tab: String, desk: String, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return self.close_pane(&strip, &tab, &desk);
+        }
+        let lasts = self.panes.slide_desk(&desk, false);
+        self.parts.redraw(&self.parts.stage, cx);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(lasts).await;
+            let _ = this.update(cx, |bench, _| {
+                if bench.panes.desk_shutting(&desk) {
+                    bench.close_pane(&strip, &tab, &desk);
+                }
+            });
+        })
+        .detach();
     }
 
     /// The agent in the pane the person last used, else the tab's first agent, with its view.
@@ -793,7 +815,7 @@ impl Workbench {
 
     pub fn toggle_front_desk(&mut self, cx: &mut Context<Self>) {
         if let Some((tab, view, agent)) = self.nearest_agent(cx) {
-            self.toggle_desk(&tab, &view, &agent);
+            self.toggle_desk(&tab, &view, &agent, cx);
         }
     }
 
