@@ -516,8 +516,8 @@ impl Backend for Claude {
         if let Some(wanted) = wanted.as_deref().filter(|_| routed) {
             config::provider_model(&mut models, wanted);
         }
-        // Without a choice of its own the chat runs what the person's Claude
-        // settings name, and the pickers say so.
+        // A resumed chat goes on with the model it last ran, unless the person chose one;
+        // without either it runs what the person's Claude settings name, and the pickers say so.
         let settings = running
             .control
             .request(json!({ "subtype": "get_settings" }))
@@ -530,8 +530,8 @@ impl Backend for Claude {
             .and_then(Value::as_str)
             .and_then(|named| config::settings_model(&mut models, named));
         let chosen = wanted.filter(|model| config::offers_model(&models, model));
-        let resumed = match (&chosen, &from_settings, &launch.resume_id) {
-            (None, None, Some(id)) => {
+        let resumed = match (&chosen, &launch.resume_id) {
+            (None, Some(id)) => {
                 let (launch, id) = (launch.clone(), id.clone());
                 tokio::task::spawn_blocking(move || saved_model(&launch, &id))
                     .await
@@ -541,12 +541,10 @@ impl Backend for Claude {
             _ => None,
         }
         .and_then(|resolved| config::row_for_resolved(&models, &resolved));
-        let switch_to = (chosen.is_none() && from_settings.is_none())
-            .then(|| resumed.clone())
-            .flatten();
+        let switch_to = resumed.clone().filter(|_| chosen.is_none());
         let model = chosen
-            .or(from_settings)
             .or(resumed)
+            .or(from_settings)
             .unwrap_or_else(|| config::DEFAULT.to_owned());
         let levels = config::effort_levels(&models, &model);
         let chosen_effort = launch
