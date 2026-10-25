@@ -946,6 +946,26 @@ pub fn start(home: Home) -> Link {
     Link { updates, asks }
 }
 
+/// Where the person's choice to force an update waits for the app it restarts into, which then
+/// moves the core to the new build even while chats there cannot be carried over.
+fn forced_update_marker() -> Option<PathBuf> {
+    Folders::of_this_system().map(|folders| folders.logs.join("core-update-forced"))
+}
+
+/// Has the app the update restarts into stop what holds the core on its old build.
+pub fn force_next_core_update() {
+    let Some(marker) = forced_update_marker() else {
+        return;
+    };
+    let written = marker
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&marker, b""));
+    if let Err(error) = written {
+        eprintln!("sikemux: the core will wait for its chats before it updates: {error}");
+    }
+}
+
 /// Keeps the core starting at login while remote access is on, so phones reach this host
 /// after a restart, and stops it starting then once remote access is off.
 fn start_at_login(home: &Home, remote_on: Option<bool>) {
@@ -973,7 +993,9 @@ async fn run(
     let mut reconnect = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
     loop {
         if let Some(launch) = &home.launch {
-            match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), false)
+            let force =
+                forced_update_marker().is_some_and(|marker| std::fs::remove_file(marker).is_ok());
+            match core_start::start(IDENTIFIER, launch, &sikemux_host::build_identity(), force)
                 .await
             {
                 Ok(()) | Err(StartError::Unreachable(_)) => {}

@@ -958,6 +958,12 @@ impl Workbench {
                     if let Some(appimage) = std::env::var_os("APPIMAGE") {
                         cx.set_restart_path(appimage.into());
                     }
+                    if self
+                        .read("update")
+                        .is_some_and(|update| update["forced"] == true)
+                    {
+                        crate::core::force_next_core_update();
+                    }
                     cx.restart();
                 }
             }
