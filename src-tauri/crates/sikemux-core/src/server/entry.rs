@@ -99,6 +99,8 @@ pub fn main(args: impl Iterator<Item = String>, build: BuildIdentity) -> i32 {
         // Nothing else runs yet, so the process environment is safe to change.
         std::env::set_var("PATH", path);
     }
+    #[cfg(unix)]
+    raise_open_file_limit();
     let args = match parse_args(args) {
         Ok(args) => args,
         Err(message) => {
@@ -185,6 +187,37 @@ fn with_system_path(path: &str) -> Option<String> {
         }
     }
     (parts.len() != before).then(|| parts.join(":"))
+}
+
+/// Lifts the open-file limit, which launchd sets to 256: every terminal, language server,
+/// watcher and socket holds files, and past the limit git, new terminals and file reads all
+/// fail with "Too many open files". The terminals and agents started here inherit it.
+#[cfg(unix)]
+fn raise_open_file_limit() {
+    // SAFETY: `rlimit` is a plain C struct, valid as zeroes, and both calls only touch it.
+    unsafe {
+        let mut limit = std::mem::zeroed::<libc::rlimit>();
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+            return;
+        }
+        // macOS refuses a limit above its per-process ceiling, so smaller ones are tried next.
+        for wanted in [131_072, 65_536, 16_384, 10_240] {
+            let wanted = match limit.rlim_max {
+                libc::RLIM_INFINITY => wanted,
+                hard => wanted.min(hard),
+            };
+            if wanted <= limit.rlim_cur {
+                return;
+            }
+            let raised = libc::rlimit {
+                rlim_cur: wanted,
+                rlim_max: limit.rlim_max,
+            };
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &raised) == 0 {
+                return;
+            }
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
