@@ -19,6 +19,9 @@ GTK_PLUGIN_URL=https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-
 GTK_PLUGIN_SHA256=b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171
 APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
 APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+# The program at the start of every AppImage, which appimagetool would otherwise download unpinned.
+RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+RUNTIME_SHA256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
 
 # Libraries the app opens while it runs rather than links, which no dependency scan finds.
 DEB_OPENED="libvulkan1, libegl1, libwayland-client0, libx11-6, libxext6"
@@ -163,6 +166,7 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 fetch "$LINUXDEPLOY_URL" "$LINUXDEPLOY_SHA256" linuxdeploy
 fetch "$GTK_PLUGIN_URL" "$GTK_PLUGIN_SHA256" linuxdeploy-plugin-gtk.sh
 fetch "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" appimagetool
+fetch "$RUNTIME_URL" "$RUNTIME_SHA256" runtime
 APPDIR="$WORK/Sikemux.AppDir"
 mkdir -p "$APPDIR/usr/bin"
 install -m 755 "$APP" "$APPDIR/usr/bin/sikemux"
@@ -205,7 +209,7 @@ chmod 755 "$APPDIR/AppRun"
 (
   cd "$TOOLS"
   export ARCH=x86_64 VERSION
-  ./appimagetool --no-appstream "$APPDIR" "$BUNDLE/appimage/Sikemux_${VERSION}_amd64.AppImage"
+  ./appimagetool --no-appstream --runtime-file "$TOOLS/runtime" "$APPDIR" "$BUNDLE/appimage/Sikemux_${VERSION}_amd64.AppImage"
 )
 
 for package in "$BUNDLE/deb/Sikemux_${VERSION}_amd64.deb" "$BUNDLE/rpm/Sikemux-${VERSION}-1.x86_64.rpm" "$BUNDLE/appimage/Sikemux_${VERSION}_amd64.AppImage"; do
