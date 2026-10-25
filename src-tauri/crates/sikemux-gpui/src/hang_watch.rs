@@ -20,38 +20,45 @@ const REPORTS_KEPT: usize = 5;
 static STARTED: OnceLock<Instant> = OnceLock::new();
 /// When the window last answered, in milliseconds since [`STARTED`].
 static BEAT: AtomicU64 = AtomicU64::new(0);
-/// Whether the window was in front when it last answered. One behind other apps can be put to
-/// sleep by the system, which is not it being stuck.
+/// Whether the window is in front. One behind other apps can be put to sleep by the system,
+/// which is not it being stuck, so it goes unwatched and nothing wakes it.
 static WATCHED: AtomicBool = AtomicBool::new(false);
+static WATCHER: OnceLock<std::thread::Thread> = OnceLock::new();
 
 fn now() -> u64 {
     STARTED.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
-pub fn start(window: &mut Window, cx: &mut App) {
+/// Watches the window while it is in front: a thread of its own asks it to answer every
+/// [`BEAT_EVERY`], and the answer only notes the time, so nothing redraws.
+pub fn start(window: &Window, cx: &mut App) {
     if !cfg!(target_os = "macos") || STARTED.get().is_some() {
         return;
     }
     let Some(directory) = autopsy_dir() else {
         return;
     };
-    BEAT.store(now(), Ordering::Relaxed);
-    window
-        .spawn(cx, async move |cx| loop {
-            let Ok(active) = cx.update(|window, _| window.is_window_active()) else {
-                break;
-            };
-            WATCHED.store(active, Ordering::Relaxed);
+    let (ask, mut asked) = tokio::sync::mpsc::unbounded_channel::<()>();
+    cx.spawn(async move |_| {
+        while asked.recv().await.is_some() {
             BEAT.store(now(), Ordering::Relaxed);
-            cx.background_executor().timer(BEAT_EVERY).await;
-        })
-        .detach();
-    let _ = std::thread::Builder::new()
+        }
+    })
+    .detach();
+    let watcher = std::thread::Builder::new()
         .name("hang-watch".into())
         .spawn(move || {
             let mut stuck = false;
             let mut last_report: Option<Instant> = None;
             loop {
+                if !WATCHED.load(Ordering::Relaxed) {
+                    stuck = false;
+                    std::thread::park();
+                    continue;
+                }
+                if ask.send(()).is_err() {
+                    return;
+                }
                 std::thread::sleep(BEAT_EVERY);
                 let silent =
                     Duration::from_millis(now().saturating_sub(BEAT.load(Ordering::Relaxed)));
@@ -67,6 +74,19 @@ pub fn start(window: &mut Window, cx: &mut App) {
                 }
             }
         });
+    if let Ok(watcher) = watcher {
+        let _ = WATCHER.set(watcher.thread().clone());
+    }
+    in_front(window.is_window_active());
+}
+
+/// Called as the window comes to the front and leaves it.
+pub fn in_front(active: bool) {
+    BEAT.store(now(), Ordering::Relaxed);
+    WATCHED.store(active, Ordering::Relaxed);
+    if let Some(watcher) = WATCHER.get().filter(|_| active) {
+        watcher.unpark();
+    }
 }
 
 /// Samples this process's threads into a new report folder, and keeps only the newest few.

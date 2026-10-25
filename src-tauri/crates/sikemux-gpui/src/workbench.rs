@@ -596,6 +596,7 @@ impl Workbench {
             }),
             cx.observe_window_activation(window, |bench, window, cx| {
                 bench.window_active = window.is_window_active();
+                crate::hang_watch::in_front(bench.window_active);
                 bench.publish_on_screen();
                 match window.is_window_active() {
                     true => crate::accounts::check_on_return(bench, cx),
