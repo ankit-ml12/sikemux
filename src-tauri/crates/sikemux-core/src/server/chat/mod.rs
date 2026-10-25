@@ -1311,6 +1311,15 @@ impl Chats {
         self.all().iter().all(|chat| chat.handable())
     }
 
+    /// How many chats are in a turn, waiting on the person or unable to hand
+    /// their agent over, which an update nobody asked for waits on.
+    pub(crate) fn in_turn(&self) -> usize {
+        self.all()
+            .iter()
+            .filter(|chat| !chat.handable() || matches!(chat.state_now(), "working" | "blocked"))
+            .count()
+    }
+
     /// The chats at work that an update now would stop and start again
     /// rather than carry over.
     pub(crate) fn blockers(&self) -> Vec<Blocker> {

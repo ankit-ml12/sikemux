@@ -88,20 +88,8 @@ pub(crate) async fn answer(
 }
 
 async fn upgrade(core: &Arc<Core>, binary: PathBuf, force: bool, writer: &mut FrameWriter) {
-    if core
-        .upgrading
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        reply(writer, &refused("the core is already updating")).await;
-        return;
-    }
-    let own = core.build.clone();
-    let checked = binary.clone();
-    let preflight = blocking(move || check_binary(&checked, &own).map_err(Into::into)).await;
-    if let Err(error) = preflight {
-        core.upgrading.store(false, Ordering::Release);
-        reply(writer, &refused(error.to_string())).await;
+    if let Err(error) = begin(core, &binary).await {
+        reply(writer, &refused(error)).await;
         return;
     }
     if !core.chats.all_handable() {
@@ -113,10 +101,7 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, force: bool, writer: &mut Fr
         )
         .await;
         drop_writer(writer).await;
-        let deadline = tokio::time::Instant::now() + HANDOVER_SETTLE;
-        while !core.chats.all_handable() && (!force || tokio::time::Instant::now() < deadline) {
-            tokio::time::sleep(HANDOVER_POLL).await;
-        }
+        settle_chats(core, force).await;
         core.frozen.send_replace(true);
     } else {
         // Frozen before the answer goes out, so a client that hears it never
@@ -124,9 +109,50 @@ async fn upgrade(core: &Arc<Core>, binary: PathBuf, force: bool, writer: &mut Fr
         core.frozen.send_replace(true);
         reply(writer, &FrozenReply::Accepted).await;
     }
+    finish(core, binary).await;
+}
+
+/// Replaces this core with `binary` once every chat can hand its agent over,
+/// as an update the app asks for does. Returns only if that failed.
+pub(crate) async fn replace_with(core: &Arc<Core>, binary: PathBuf) -> String {
+    if let Err(error) = begin(core, &binary).await {
+        return error;
+    }
+    settle_chats(core, false).await;
+    core.frozen.send_replace(true);
+    finish(core, binary).await
+}
+
+async fn begin(core: &Arc<Core>, binary: &Path) -> Result<(), String> {
+    if core
+        .upgrading
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Err("the core is already updating".into());
+    }
+    let own = core.build.clone();
+    let checked = binary.to_owned();
+    let preflight = blocking(move || check_binary(&checked, &own).map_err(Into::into)).await;
+    if let Err(error) = preflight {
+        core.upgrading.store(false, Ordering::Release);
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+async fn settle_chats(core: &Arc<Core>, force: bool) {
+    let deadline = tokio::time::Instant::now() + HANDOVER_SETTLE;
+    while !core.chats.all_handable() && (!force || tokio::time::Instant::now() < deadline) {
+        tokio::time::sleep(HANDOVER_POLL).await;
+    }
+}
+
+async fn finish(core: &Arc<Core>, binary: PathBuf) -> String {
     let error = hand_over(core, binary).await;
     eprintln!("sikemux core: UPDATE FAILED, carrying on as before: {error}");
     thaw(core);
+    error
 }
 
 /// The client that asked for a deferred update has its answer and need not

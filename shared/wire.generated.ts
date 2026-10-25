@@ -2216,6 +2216,11 @@ export interface UpdateStatus {
      * installer updates rather than itself.
      */
     installCommand: string | null;
+    /**
+     * Whether this host puts updates in place by itself, which only the
+     * person turns off; none on anything but a host's core.
+     */
+    automatic: boolean | null;
 }
 
 /** The last check, kept because a failed one has nowhere else to show. */

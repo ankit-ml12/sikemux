@@ -98,6 +98,7 @@ impl Core {
         self.harness.mailbox.wake.now();
         self.harness.questions.wake.now();
         self.boards.wake.now();
+        self.updates.chats_changed();
         self.view_changed();
     }
 

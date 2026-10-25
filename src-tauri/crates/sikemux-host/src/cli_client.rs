@@ -98,6 +98,7 @@ This host
   restart      Restart the core, as an update needs
   enable       Start the core at boot
   disable      Stop starting the core at boot
+  update       Update the core to the newest release       [--on|--off]
 
 Files and projects
   open         Open files, or folders as projects, in the app
@@ -129,6 +130,7 @@ fn command_help(command: &str) -> Option<&'static str> {
         "restart" => "Usage: sikemux restart\n\nStops the core and starts it again, so an updated sikemux takes over. Its terminals\nend; chats pick up where they were.\n",
         "enable" => "Usage: sikemux enable\n\nStarts the core at boot and again if it crashes: a systemd user service on Linux,\na LaunchAgent on macOS. On Linux, `loginctl enable-linger` keeps it running\nafter you log out.\n",
         "disable" => "Usage: sikemux disable\n\nStops starting the core at boot. The core keeps running until `sikemux stop`.\n",
+        "update" => "Usage: sikemux update [--on | --off]\n\nOn a Linux host, installs the newest signed release on its channel, stable or\nnightly, and restarts the core into it, keeping its terminals and chats. The\nhost also does this by itself once no chat is in a turn. Only you can turn that\noff or back on, so agents cannot: from the host's ⋯ in Sikemux, or with\n`sudo sikemux update --off` or `--on`. While updates are off, nothing installs,\nnot even with `sikemux update`.\n",
         "open" => "Usage: sikemux open [--wait] [--project DIR] <path[:line[:column]]>...\n       sikemux <path[:line[:column]]>...\n\nOpens files, or folders as projects, in the app, starting it when needed.\nLINE and COLUMN are one-based.\n\n  -w, --wait         Wait until every opened file tab is closed\n  -p, --project DIR  Open files that belong to no project in this one\n",
         "doctor" => "Usage: sikemux doctor\n\nShows the latest reports Sikemux wrote when its window stopped answering or a\nprocess panicked, and where the rest of them are. It reads them from disk, so it\nworks while the app is stuck or gone.\n",
         "tool" => "Usage: sikemux tool METHOD [JSON_PARAMS]\n\nCalls one of the tools Sikemux gives agents, such as browser_navigate, as the\nagent in this terminal.\n",

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use sikemux_core::client::{
     probe, wait_for_core, ClientError, ClientEvent, CoreClient, ProbeError,
 };
@@ -17,7 +17,7 @@ use sikemux_core::waiting;
 use crate::login_item::{self, CoreLaunch, IDENTIFIER};
 use crate::style;
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
 /// What `status` exits with while the core is not running, as `systemctl status` does.
 const NOT_RUNNING: i32 = 3;
@@ -42,6 +42,7 @@ pub fn run(command: &str, args: &[String]) -> i32 {
         "plugins" => plugins(args),
         #[cfg(target_os = "linux")]
         "update" if args == ["--install"] => return crate::update::root::serve(),
+        "update" => crate::update::run(args),
         _ => Err(format!("no command named {command}")),
     };
     match result {
@@ -58,11 +59,11 @@ enum Work {
     Logout,
 }
 
-fn launch() -> Result<CoreLaunch, String> {
+pub(crate) fn launch() -> Result<CoreLaunch, String> {
     login_item::headless_launch().ok_or_else(|| "HOME is not set".into())
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, String> {
+pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, String> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -103,7 +104,7 @@ fn start() -> Result<PathBuf, String> {
 }
 
 /// The core's socket, starting the core first when none runs.
-fn running() -> Result<PathBuf, String> {
+pub(crate) fn running() -> Result<PathBuf, String> {
     let socket = launch()?.socket;
     if running_pid(&socket).is_some() {
         return Ok(socket);
@@ -278,6 +279,8 @@ struct Status {
     devices: usize,
     connected: usize,
     waiting: usize,
+    /// How this host keeps its core current, on a host that updates itself.
+    updates: Option<Value>,
 }
 
 fn status(json: bool) -> i32 {
@@ -289,7 +292,9 @@ fn status(json: bool) -> i32 {
     let about = hello
         .as_ref()
         .and_then(|_| runtime().ok()?.block_on(about(&launch.socket)).ok());
-    let (remote, name) = about.map_or((None, None), |(remote, name)| (Some(remote), Some(name)));
+    let (remote, name, updates) = about.map_or((None, None, None), |(remote, name, updates)| {
+        (Some(remote), Some(name), updates)
+    });
     let status = Status {
         running: hello.is_some(),
         pid: hello.as_ref().map(|hello| hello.pid),
@@ -318,6 +323,7 @@ fn status(json: bool) -> i32 {
         devices: remote.as_ref().map_or(0, |remote| remote.devices.len()),
         connected: remote.as_ref().map_or(0, |remote| remote.connected.len()),
         waiting: remote.as_ref().map_or(0, |remote| remote.pending.len()),
+        updates,
     };
     if json {
         println!(
@@ -377,6 +383,49 @@ fn print_status(status: &Status) {
                 if enabled { "on" } else { "off" }
             ),
         );
+    }
+    if let Some(updates) = &status.updates {
+        row("Updates", updates_row(updates));
+    }
+}
+
+/// How the core's update status reads in one line.
+fn updates_row(updates: &Value) -> String {
+    let text = |key: &str| updates[key].as_str().unwrap_or_default().to_owned();
+    if updates["automatic"] == Value::Bool(false) {
+        return format!(
+            "off, staying on {}; only you turn them on, in Sikemux or with `sudo sikemux update --on`",
+            text("current")
+        );
+    }
+    let newest = updates["available"]["version"].as_str();
+    let state = match (updates["state"].as_str(), newest) {
+        (Some("downloading" | "installing"), Some(newest)) => format!("installing {newest}"),
+        (Some("waiting"), Some(newest)) => {
+            let chats = updates["blockers"].as_array().map_or(0, Vec::len);
+            format!("{newest} waits for {chats} chat(s) to finish what they are doing")
+        }
+        (Some("ready"), Some(newest)) => format!("restarting into {newest}"),
+        (Some("failed"), _) => format!("the last update failed: {}", text("error")),
+        (_, Some(newest)) => format!("{newest} installs once no chat is in a turn"),
+        (_, None) => match (
+            updates["checked"]["at"].as_u64(),
+            updates["checked"]["error"].as_str(),
+        ) {
+            (Some(_), Some(error)) => format!("the last check failed: {error}"),
+            (Some(at), None) => format!("up to date, checked {}", ago(at)),
+            (None, _) => "not checked yet".to_owned(),
+        },
+    };
+    format!("automatic, {}; {state}", text("current"))
+}
+
+fn ago(at_ms: u64) -> String {
+    let minutes = sikemux_process::clock::epoch_ms().saturating_sub(at_ms) / 60_000;
+    match minutes {
+        0 => "just now".to_owned(),
+        1..=59 => format!("{minutes} min ago"),
+        _ => format!("{}h ago", minutes / 60),
     }
 }
 
@@ -454,8 +503,9 @@ async fn plugin_login(socket: &Path, plugin: &str) -> Result<(), String> {
     }
 }
 
-/// What the core says of remote access, and the host's own name.
-async fn about(socket: &Path) -> Result<(RemoteStatus, String), String> {
+/// What the core says of remote access, the host's own name, and how it
+/// updates when it updates itself.
+async fn about(socket: &Path) -> Result<(RemoteStatus, String, Option<Value>), String> {
     let (core, _events) = CoreClient::connect(socket)
         .await
         .map_err(|error| error.to_string())?;
@@ -468,7 +518,14 @@ async fn about(socket: &Path) -> Result<(RemoteStatus, String), String> {
         .await
         .map_err(|error| error.to_string())?
     {
-        Response::Host { host } => Ok((remote, host.name)),
+        Response::Host { host } => {
+            let updates = core
+                .call("updateStatus", json!({}))
+                .await
+                .ok()
+                .filter(|updates| updates["automatic"].is_boolean());
+            Ok((remote, host.name, updates))
+        }
         _ => Err("the core answered with something else".into()),
     }
 }

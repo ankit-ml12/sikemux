@@ -2,7 +2,9 @@
 //! checks the release feeds, downloads the newest build while checking its
 //! signature, and puts it in place of the app. Once no chat would lose work it
 //! says the update is ready, the windows start again into it, and the new
-//! build takes over this core with its agents still running.
+//! build takes over this core with its agents still running. A Linux host's
+//! core has no app around it: root puts the new core in place, once no chat
+//! is in a turn, and the core hands itself over to it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,16 +18,22 @@ use tokio::sync::Notify;
 
 use super::changed::Topic;
 use super::connection::blocking;
-use super::{Core, CoreError, CoreResult};
+use super::{upgrade, Core, CoreError, CoreResult};
 use crate::frozen::UpdateBlocker;
-use crate::protocol::UpdateChannel;
-use crate::release_feed::{self, platform, Newest};
+use crate::host_update::{self, HostUpdate, UpdateStep, INSTALLED_CORE};
+use crate::protocol::{BuildChannel, UpdateChannel};
+use crate::release_feed::{self, Newest};
 use crate::releases::{bundled_credits, ReleaseCredits};
 
 const FIRST_CHECK: Duration = Duration::from_secs(4);
 const CHECK_EVERY: Duration = Duration::from_secs(30 * 60);
 const BLOCKERS_EVERY: Duration = Duration::from_secs(2);
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
+/// How long a host's core waits after `sikemux update` hears what root put in
+/// place, so the answer reaches it before the core hands itself over.
+const ANSWER_GRACE: Duration = Duration::from_secs(1);
+const UPDATES_OFF: &str =
+    "updates are off for this host; turn them on in Sikemux, or with `sudo sikemux update --on`";
 
 /// Where an update stands, as every client shows it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -82,6 +90,9 @@ pub struct UpdateStatus {
     /// What to run in a terminal to install `available`, for an app that its
     /// installer updates rather than itself.
     pub install_command: Option<String>,
+    /// Whether this host puts updates in place by itself, which only the
+    /// person turns off; none on anything but a host's core.
+    pub automatic: Option<bool>,
 }
 
 /// Where to fetch the release `available` names.
@@ -104,6 +115,9 @@ pub(crate) struct Updates {
     held: std::sync::Mutex<Held>,
     /// Rings for a check out of turn, such as when the person changes channel.
     wake: Notify,
+    /// Rings when a chat may have come to rest, for a host waiting for a quiet
+    /// moment to update.
+    quiet: Notify,
 }
 
 /// The app an update replaces.
@@ -113,12 +127,17 @@ enum OwnApp {
     Bundle(PathBuf),
     /// The AppImage file the Linux app runs from.
     AppImage(PathBuf),
+    /// The core a Linux host's installer put in place, which root replaces.
+    Host,
 }
 
 /// The app this core runs inside, when it is a published release that can
 /// replace itself. A build made anywhere else, such as a local build, never
 /// updates, so a release can never take its place.
 fn own_app() -> Option<OwnApp> {
+    if crate::usage::Install::Host.published() {
+        return installed_host().then_some(OwnApp::Host);
+    }
     if !crate::usage::Install::App.published() {
         return None;
     }
@@ -132,6 +151,41 @@ fn own_app() -> Option<OwnApp> {
         .map(PathBuf::from)
         .filter(|file| cfg!(target_os = "linux") && file.is_file())
         .map(OwnApp::AppImage)
+}
+
+/// Whether this core runs from where the installer puts a host's core,
+/// settled as it starts, before an update replaces that file.
+fn installed_host() -> bool {
+    static INSTALLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *INSTALLED.get_or_init(|| {
+        cfg!(target_os = "linux")
+            && std::env::current_exe().is_ok_and(|exe| exe == Path::new(INSTALLED_CORE))
+    })
+}
+
+fn is_host() -> bool {
+    matches!(own_app(), Some(OwnApp::Host))
+}
+
+/// The channel to update on: the person's, or nightly on a nightly build,
+/// which the person installed on purpose and a stable release would not pass.
+fn channel(core: &Core) -> UpdateChannel {
+    match (
+        core.preferences.get().update_channel,
+        BuildChannel::of_release(&core.build.version),
+    ) {
+        (UpdateChannel::Stable, BuildChannel::Nightly) if is_host() => UpdateChannel::Nightly,
+        (channel, _) => channel,
+    }
+}
+
+/// What this core's release is called in a feed's platforms.
+fn own_platform() -> String {
+    if is_host() {
+        release_feed::host_platform()
+    } else {
+        release_feed::platform()
+    }
 }
 
 /// A published Linux app that is a deb or an rpm was put in place by the
@@ -164,32 +218,77 @@ impl Updates {
     pub(crate) fn check_soon(&self) {
         self.wake.notify_one();
     }
+
+    /// A chat may have come to rest.
+    pub(crate) fn chats_changed(&self) {
+        self.quiet.notify_waiters();
+    }
 }
 
 /// Checks a little after the core starts and every half hour after, while the
 /// core runs in an app that can update.
 pub(crate) async fn serve(core: Arc<Core>) {
     let by_installer = installer_command(core.preferences.get().update_channel);
+    let automatic = match is_host() {
+        true => Some(blocking(|| Ok(read_switch())).await.unwrap_or(true)),
+        false => None,
+    };
     core.updates.edit(&core, |held| {
         held.status.updates = own_app().is_some();
         held.status.current = core.build.version.clone();
         held.status.install_command = by_installer.clone();
+        held.status.automatic = automatic;
     });
     if !core.updates.status().updates && by_installer.is_none() {
         return;
     }
     tokio::time::sleep(FIRST_CHECK).await;
     loop {
-        let _ = check(&core).await;
+        if check(&core).await.is_ok() {
+            update_host_when_quiet(&core).await;
+        }
         let _ = tokio::time::timeout(CHECK_EVERY, core.updates.wake.notified()).await;
     }
+}
+
+/// Whether this person's host updates by itself. A switch that cannot be read
+/// counts as on, as it is until the person turns it off.
+fn read_switch() -> bool {
+    sikemux_keychain::read(host_update::SWITCH_SERVICE, host_update::SWITCH_ACCOUNT)
+        .map_or(true, |switch| {
+            switch.as_deref() != Some(host_update::SWITCH_OFF)
+        })
+}
+
+/// A host puts the release `check` found in place by itself, once no chat is
+/// in a turn. It waits at most until the next check.
+async fn update_host_when_quiet(core: &Arc<Core>) {
+    let status = core.updates.status();
+    if !is_host()
+        || status.automatic != Some(true)
+        || status.available.is_none()
+        || status.state != UpdateState::Idle
+    {
+        return;
+    }
+    let until = tokio::time::Instant::now() + CHECK_EVERY;
+    loop {
+        let rested = core.updates.quiet.notified();
+        if core.chats.in_turn() == 0 {
+            break;
+        }
+        if tokio::time::timeout_at(until, rested).await.is_err() {
+            return;
+        }
+    }
+    let _ = install(core, InstallParams { force: false });
 }
 
 /// Looks for a release newer than this one on the person's channel. One feed
 /// that does not answer must not hide a release the other one offers.
 pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     let status = core.updates.status();
-    let channel = core.preferences.get().update_channel;
+    let channel = channel(core);
     let by_installer = installer_command(channel);
     if !status.updates && by_installer.is_none() {
         return Err("this build does not update itself".into());
@@ -211,7 +310,7 @@ pub(crate) async fn check(core: &Core) -> CoreResult<UpdateStatus> {
     };
     let release = newest.filter(|newest| newest.version > current).and_then(
         |Newest { feed, raw, .. }| {
-            let found = feed.platforms.get(&platform()).map(|asset| Found {
+            let found = feed.platforms.get(&own_platform()).map(|asset| Found {
                 url: asset.url.clone(),
                 signature: asset.signature.clone(),
             });
@@ -296,8 +395,137 @@ pub(crate) fn install(core: &Arc<Core>, params: InstallParams) -> CoreResult<Upd
             return;
         }
         wait_for_chats(&core).await;
+        if matches!(app, OwnApp::Host) && core.updates.status().state == UpdateState::Ready {
+            restart_into_installed(&core).await;
+        }
     });
     Ok(status)
+}
+
+/// Asks root to put the newest release in place of this host's core, and
+/// answers with what it did and the version now in place, when that is not
+/// the one running.
+async fn ask_root(core: &Core) -> (Vec<UpdateStep>, Option<String>) {
+    let mut steps = Vec::new();
+    let last = host_update::ask_root(channel(core), |step| {
+        if let UpdateStep::Downloaded { bytes, .. } = step {
+            core.updates.edit(core, |held| {
+                held.status.downloaded_bytes = *bytes;
+                held.status.total_bytes = Some(*bytes);
+                held.status.state = UpdateState::Installing;
+            });
+        }
+        steps.push(step.clone());
+    })
+    .await;
+    if last == UpdateStep::Off {
+        core.updates
+            .edit(core, |held| held.status.automatic = Some(false));
+    }
+    let in_place = match &last {
+        UpdateStep::Installed { version, .. } | UpdateStep::Current { version } => {
+            Some(version.clone()).filter(|version| *version != core.build.version)
+        }
+        _ => None,
+    };
+    steps.push(last);
+    (steps, in_place)
+}
+
+fn refusal(steps: &[UpdateStep]) -> String {
+    match steps.last() {
+        Some(UpdateStep::Failed { message }) => message.clone(),
+        Some(UpdateStep::Off) => UPDATES_OFF.into(),
+        _ => "the update service found no newer release yet".into(),
+    }
+}
+
+/// Hands this core over to the one root put in place, keeping its terminals
+/// and chats. Returns only if that failed.
+async fn restart_into_installed(core: &Arc<Core>) {
+    let error = upgrade::replace_with(core, PathBuf::from(INSTALLED_CORE)).await;
+    core.updates.edit(core, |held| {
+        held.status.state = UpdateState::Failed;
+        held.status.error = Some(format!("could not restart into it: {error}"));
+    });
+}
+
+/// `sikemux update` on a host: puts the newest release in place now, without
+/// waiting for a quiet moment, then hands over to it once no chat is in the
+/// middle of a request.
+pub(crate) async fn update_host(core: &Arc<Core>) -> CoreResult<HostUpdate> {
+    if !is_host() {
+        return Err("this core was not put in place by Sikemux's installer, so it does not update itself; rerun the installer".into());
+    }
+    let _ = check(core).await;
+    if !matches!(
+        core.updates.status().state,
+        UpdateState::Idle | UpdateState::Failed
+    ) {
+        return Err("this host is already updating".into());
+    }
+    core.updates.edit(core, |held| {
+        held.status.state = UpdateState::Installing;
+        held.status.error = None;
+    });
+    let (steps, in_place) = ask_root(core).await;
+    let failed = matches!(steps.last(), Some(UpdateStep::Failed { .. }));
+    core.updates.edit(core, |held| {
+        held.installed = in_place.is_some();
+        held.status.state = match (&in_place, failed) {
+            (Some(_), _) => UpdateState::Waiting,
+            (None, true) => UpdateState::Failed,
+            (None, false) => UpdateState::Idle,
+        };
+        held.status.error = failed.then(|| refusal(&steps));
+    });
+    if in_place.is_some() {
+        let core = core.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(ANSWER_GRACE).await;
+            wait_for_chats(&core).await;
+            if core.updates.status().state == UpdateState::Ready {
+                restart_into_installed(&core).await;
+            }
+        });
+    }
+    Ok(HostUpdate {
+        steps,
+        handing_over: in_place,
+    })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SwitchParams {
+    on: bool,
+}
+
+/// Turns a host's own updates on or off, for the person this core runs as.
+pub(crate) async fn set_automatic(
+    core: &Arc<Core>,
+    params: SwitchParams,
+) -> CoreResult<UpdateStatus> {
+    if !is_host() {
+        return Err("only a host's core updates itself by itself".into());
+    }
+    let on = params.on;
+    blocking(move || {
+        let stored = if on {
+            sikemux_keychain::delete(host_update::SWITCH_SERVICE, host_update::SWITCH_ACCOUNT)
+        } else {
+            sikemux_keychain::write(
+                host_update::SWITCH_SERVICE,
+                host_update::SWITCH_ACCOUNT,
+                host_update::SWITCH_OFF,
+            )
+        };
+        stored.map_err(|error| CoreError::from(error.to_string()))
+    })
+    .await?;
+    core.updates
+        .edit(core, |held| held.status.automatic = Some(on));
+    core.updates.check_soon();
+    Ok(core.updates.status())
 }
 
 /// Stops waiting on chats; the update stays in place for later.
@@ -320,6 +548,14 @@ async fn put_in_place(
     if installed {
         return Ok(());
     }
+    if let OwnApp::Host = app {
+        let (steps, in_place) = ask_root(core).await;
+        if in_place.is_none() {
+            return Err(refusal(&steps));
+        }
+        core.updates.edit(core, |held| held.installed = true);
+        return Ok(());
+    }
     let key = release_feed::release_key()?;
     let archive = match app {
         OwnApp::Bundle(_) => {
@@ -327,6 +563,7 @@ async fn put_in_place(
         }
         // Beside the AppImage, so putting it in place is one rename on the same disk.
         OwnApp::AppImage(file) => beside(file, "update")?,
+        OwnApp::Host => unreachable!("root puts a host's core in place"),
     };
     let mut last = Instant::now();
     let fetched = release_feed::fetch_verified(
@@ -357,6 +594,7 @@ async fn put_in_place(
         match &app {
             OwnApp::Bundle(bundle) => swap(bundle, &unpack),
             OwnApp::AppImage(file) => replace_appimage(file, &unpack),
+            OwnApp::Host => unreachable!("root puts a host's core in place"),
         }
         .map_err(CoreError::from)
     })

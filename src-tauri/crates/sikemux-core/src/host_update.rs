@@ -43,6 +43,15 @@ impl UpdateStep {
     }
 }
 
+/// What `sikemux update` hears: what root did, and the version the core now
+/// hands itself over to, if any.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostUpdate {
+    pub steps: Vec<UpdateStep>,
+    pub handing_over: Option<String>,
+}
+
 /// The file a release publishes for a host on `arch`.
 pub fn host_asset(version: &Version, arch: &str) -> String {
     format!("sikemux-host-{version}-linux-{arch}.tar.gz")
