@@ -3,6 +3,10 @@
   "allowedRustWarnings": {
     "RUSTSEC-2024-0370": "Build-time macro dependency reached only through Tauri's Linux GTK3 graph; no supported bundle includes it.",
     "RUSTSEC-2024-0429": "Unsound GLib iterator is in Tauri's Linux-only GTK3 graph; no supported macOS or Windows bundle links GLib.",
-    "RUSTSEC-2024-0436": "Unmaintained build-time macro reached only through iroh's Linux network monitor (netlink); the macOS bundle does not compile it."
+    "RUSTSEC-2024-0436": "Unmaintained build-time macro reached only through iroh's Linux network monitor (netlink); the macOS bundle does not compile it.",
+    "RUSTSEC-2026-0374": "Unmaintained TOML parser behind askama in uniffi_bindgen, which is in the lockfile only as an optional dependency of uniffi's bindgen feature; no crate we build enables it, so no binary compiles it.",
+    "RUSTSEC-2026-0370": "zvariant, merged into zbus 6, reached only through the Tauri shell's Linux notification and single-instance plugins (zbus 5); it leaves with the Tauri shell.",
+    "RUSTSEC-2026-0371": "zbus_names, merged into zbus 6, reached only through the Tauri shell's Linux notification and single-instance plugins (zbus 5); it leaves with the Tauri shell.",
+    "RUSTSEC-2026-0372": "zvariant_derive, merged into zbus 6, reached only through the Tauri shell's Linux notification and single-instance plugins (zbus 5); it leaves with the Tauri shell."
   }
 }
