@@ -39,4 +39,6 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = ["st
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
-wry = { version = "0.57", default-features = false, features = ["os-webview", "linux-body"] }
+raw-window-handle = "0.6"
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+wry = { version = "0.57", default-features = false, features = ["os-webview", "linux-body", "x11"] }

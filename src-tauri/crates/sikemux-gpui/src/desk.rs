@@ -268,13 +268,18 @@ fn window_pointer(window: &Window) -> Option<usize> {
         .map(|view| gpui_native_view::Retained::as_ptr(&view) as usize)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn window_pointer(window: &Window) -> Option<usize> {
+    gpui_native_view::window_x11(window).map(|window| window as usize)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn window_pointer(_: &Window) -> Option<usize> {
     None
 }
 
 struct DeskHost {
-    /// GPUI's own view of the window, which outlives the engine; only used on the main thread.
+    /// GPUI's own view of the window on macOS, its X11 id on Linux; it outlives the engine.
     view: usize,
     heard: mpsc::UnboundedSender<Heard>,
     home: Option<PathBuf>,

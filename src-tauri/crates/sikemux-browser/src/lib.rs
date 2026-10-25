@@ -13,6 +13,10 @@ mod host;
 #[cfg(target_os = "macos")]
 pub mod input;
 mod layout;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+mod linux_page;
 pub mod local_files;
 #[cfg(target_os = "macos")]
 pub mod macos;

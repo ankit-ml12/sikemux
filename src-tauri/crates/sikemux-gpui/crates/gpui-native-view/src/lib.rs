@@ -16,6 +16,8 @@
 
 #[cfg(target_os = "macos")]
 pub mod document;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -28,6 +30,8 @@ use gpui::{
     Window,
 };
 
+#[cfg(target_os = "linux")]
+pub use linux::window_x11;
 #[cfg(target_os = "macos")]
 pub use macos::{window_view, OwnedView};
 #[cfg(target_os = "macos")]
