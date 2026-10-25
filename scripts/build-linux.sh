@@ -17,6 +17,8 @@ LINUXDEPLOY_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/1-a
 LINUXDEPLOY_SHA256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
 GTK_PLUGIN_URL=https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/7a3fbc31a9e5075073ff8790f26effbac5f84453/linuxdeploy-plugin-gtk.sh
 GTK_PLUGIN_SHA256=b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171
+GSTREAMER_PLUGIN_URL=https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/432af639725bc8b99df12351e86bb2e8a6b3585f/linuxdeploy-plugin-gstreamer.sh
+GSTREAMER_PLUGIN_SHA256=d1cf90701047aa9583c274bb66dd82db352255374fbfb8f3c4c89a05fe23bce0
 APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
 APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
 # The program at the start of every AppImage, which appimagetool would otherwise download unpinned.
@@ -26,6 +28,15 @@ RUNTIME_SHA256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
 # Libraries the app opens while it runs rather than links, which no dependency scan finds.
 DEB_OPENED="libvulkan1, libegl1, libwayland-client0, libx11-6, libxext6"
 RPM_OPENED=(libvulkan.so.1 libEGL.so.1 libwayland-client.so.0 libX11.so.6 libXext.so.6)
+# GStreamer plugins browser recording loads by name: appsrc, videoconvert, the queue and caps
+# elements, VP8 in WebM, and MP4. Packages ask for the sets holding them, and suggest the one
+# with an H.264 encoder, without which a recording is WebM; the AppImage carries just these.
+DEB_PLUGINS="gstreamer1.0-plugins-base, gstreamer1.0-plugins-good"
+DEB_H264=gstreamer1.0-plugins-ugly
+RPM_PLUGINS=("(gstreamer1-plugins-base or gstreamer-plugins-base)" "(gstreamer1-plugins-good or gstreamer-plugins-good)")
+RPM_H264="(gstreamer1-plugins-ugly or gstreamer-plugins-ugly)"
+GSTREAMER_PLUGINS=(coreelements app videoconvertscale vpx matroska isomp4)
+GSTREAMER_DIR=/usr/lib/x86_64-linux-gnu/gstreamer-1.0
 
 fail() {
   echo "Linux packaging failed: $*" >&2
@@ -33,7 +44,7 @@ fail() {
 }
 
 [[ "$(uname -s)-$(uname -m)" == "Linux-x86_64" ]] || fail "Linux x86_64 is required"
-for command in cargo node dpkg-deb dpkg-shlibdeps rpmbuild curl sha256sum; do
+for command in cargo node dpkg-deb dpkg-shlibdeps rpmbuild patchelf curl sha256sum; do
   command -v "$command" >/dev/null || fail "missing required command: $command"
 done
 
@@ -113,7 +124,8 @@ Maintainer: nodelike
 Section: devel
 Priority: optional
 Installed-Size: $(du -sk --exclude=DEBIAN "$DEB_ROOT" | cut -f1)
-Depends: $LINKED, $DEB_OPENED
+Depends: $LINKED, $DEB_OPENED, $DEB_PLUGINS
+Recommends: $DEB_H264
 Description: $SUMMARY
 CONTROL
 install -m 755 "$POSTINST" "$DEB_ROOT/DEBIAN/postinst"
@@ -133,6 +145,8 @@ BuildArch: x86_64
 AutoReqProv: yes
 SPEC
   for library in "${RPM_OPENED[@]}"; do echo "Requires: $library()(64bit)"; done
+  for plugins in "${RPM_PLUGINS[@]}"; do echo "Requires: $plugins"; done
+  echo "Recommends: $RPM_H264"
   cat <<SPEC
 %global debug_package %{nil}
 %global __strip /bin/true
@@ -165,6 +179,7 @@ echo "→ Packing the AppImage"
 export APPIMAGE_EXTRACT_AND_RUN=1
 fetch "$LINUXDEPLOY_URL" "$LINUXDEPLOY_SHA256" linuxdeploy
 fetch "$GTK_PLUGIN_URL" "$GTK_PLUGIN_SHA256" linuxdeploy-plugin-gtk.sh
+fetch "$GSTREAMER_PLUGIN_URL" "$GSTREAMER_PLUGIN_SHA256" linuxdeploy-plugin-gstreamer.sh
 fetch "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" appimagetool
 fetch "$RUNTIME_URL" "$RUNTIME_SHA256" runtime
 APPDIR="$WORK/Sikemux.AppDir"
@@ -181,15 +196,20 @@ mkdir -p "$APPDIR$WEBKIT_DIR"
 for part in WebKitWebProcess WebKitNetworkProcess WebKitGPUProcess injected-bundle; do
   [[ -e "$WEBKIT_DIR/$part" ]] && cp -a "$WEBKIT_DIR/$part" "$APPDIR$WEBKIT_DIR/"
 done
+mkdir -p "$WORK/gstreamer"
+for plugin in "${GSTREAMER_PLUGINS[@]}"; do
+  [[ -f "$GSTREAMER_DIR/libgst$plugin.so" ]] || fail "GStreamer's $plugin plugin is not installed"
+  cp "$GSTREAMER_DIR/libgst$plugin.so" "$WORK/gstreamer/"
+done
 (
   cd "$TOOLS"
-  export DEPLOY_GTK_VERSION=3 NO_STRIP=1
+  export DEPLOY_GTK_VERSION=3 NO_STRIP=1 GSTREAMER_PLUGINS_DIR="$WORK/gstreamer"
   ./linuxdeploy --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/sikemux" --executable "$APPDIR/usr/bin/sikemux-host" \
     --deploy-deps-only "$APPDIR$WEBKIT_DIR" \
     --desktop-file "$APPDIR/usr/share/applications/com.nodelike.sikemux.desktop" \
     --icon-file "$APPDIR/usr/share/icons/hicolor/512x512/apps/sikemux.png" \
-    --plugin gtk
+    --plugin gtk --plugin gstreamer
 )
 # The same length keeps the libraries intact, and turns the processes' /usr/lib/… into
 # lib/…, found from usr/ inside the AppImage, which AppRun starts in.
