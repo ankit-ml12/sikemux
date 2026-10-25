@@ -1557,11 +1557,17 @@ impl Chat {
         })
     }
 
-    /// The command `text` starts with when this session lists commands and not that one.
+    /// The command `text` starts with when this session lists commands and not that one. Only a
+    /// first word like `/name` counts, so a path such as `/usr/bin` goes to the agent as text.
     pub fn unknown_command<'a>(&self, text: &'a str) -> Option<&'a str> {
         let commands = &self.state.as_ref()?.commands;
-        let name = text.strip_prefix('/')?.split_whitespace().next()?;
-        (!commands.is_empty() && !commands.iter().any(|command| command.name == name))
+        let word = text.strip_prefix('/')?;
+        let name = &word[..word.find(char::is_whitespace).unwrap_or(word.len())];
+        let named = !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+        (named && !commands.is_empty() && !commands.iter().any(|command| command.name == name))
             .then_some(name)
     }
 
