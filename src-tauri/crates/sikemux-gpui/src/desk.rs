@@ -912,6 +912,7 @@ impl Workbench {
             self.split_pane(&strip, &tab, &view, "right", PaneKind::Desk, &agent);
         }
         self.new_page(&agent);
+        self.parts.redraw(&self.parts.stage, cx);
     }
 
     /// The front agent, while its desk is open on its pages.
@@ -1055,11 +1056,13 @@ impl Workbench {
         true
     }
 
-    fn new_page(&self, agent: &str) {
+    /// Opens a blank page on the agent's desk with its address floating, ready to type.
+    fn new_page(&mut self, agent: &str) {
         let Some(engine) = self.desks.engine.clone() else {
             return;
         };
         let agent = agent.to_owned();
+        self.desks.address_wanted = Some(agent.clone());
         runtime().spawn(async move {
             if let Err(error) = engine.open_tab(&agent, None).await {
                 eprintln!("sikemux: the desk could not open a page: {error}");
@@ -1337,6 +1340,11 @@ fn shown_address(url: &str) -> String {
     }
 }
 
+/// WebKit paints a blank page white, so the desk leaves it off and shows its own ground.
+fn idle_blank(tab: &sikemux_browser::BrowserTab) -> bool {
+    tab.url == sikemux_browser::BLANK_URL && !tab.loading
+}
+
 fn desks_in(pane: &Pane, found: &mut Vec<String>) {
     match pane {
         Pane::View {
@@ -1608,7 +1616,10 @@ pub fn pane(
                         .glyph(13.)
                         .width(24.)
                         .height(24.)
-                        .on_click(cx.listener(move |bench, _, _, _| bench.new_page(&new_agent))),
+                        .on_click(cx.listener(move |bench, _, _, cx| {
+                            bench.new_page(&new_agent);
+                            bench.parts.redraw(&bench.parts.stage, cx);
+                        })),
                 ),
             )
         });
@@ -1711,12 +1722,20 @@ pub fn pane(
         .relative()
         .key_context("BrowserPage")
         .children(page.map(|page| {
-            native_view(
-                SharedString::from(format!("desk-page-{agent}")),
-                &page.surface,
-            )
-            .track_focus(&page.focus)
-            .size_full()
+            if front.is_some_and(idle_blank) {
+                div()
+                    .track_focus(&page.focus)
+                    .size_full()
+                    .into_any_element()
+            } else {
+                native_view(
+                    SharedString::from(format!("desk-page-{agent}")),
+                    &page.surface,
+                )
+                .track_focus(&page.focus)
+                .size_full()
+                .into_any_element()
+            }
         }))
         .when(strip.is_none_or(|strip| strip.tabs.is_empty()), |body| {
             body.child(
