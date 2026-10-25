@@ -185,6 +185,7 @@ fn rss_mb(pid: u32) -> Option<f64> {
 
 /// Memory a process has written, in MB, counting what macOS compressed or swapped out: what
 /// Activity Monitor shows, which resident memory understates once pages are compressed.
+#[cfg(target_os = "macos")]
 fn footprint_mb(pid: u32) -> Option<f64> {
     // SAFETY: an all-zero rusage_info_v2 is valid, and proc_pid_rusage writes at most one.
     let (read, info) = unsafe {
@@ -197,6 +198,11 @@ fn footprint_mb(pid: u32) -> Option<f64> {
         (read, info)
     };
     (read == 0).then(|| info.ri_phys_footprint as f64 / 1_048_576.)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn footprint_mb(_: u32) -> Option<f64> {
+    None
 }
 
 fn core_pid(socket: &str) -> Option<u32> {
@@ -1279,6 +1285,7 @@ fn main() -> anyhow::Result<()> {
     // The app's main thread runs at this priority; without it a busy machine can put the
     // window's thread on its slower cores and make every number several times larger.
     // SAFETY: it only changes the calling thread's own scheduling class.
+    #[cfg(target_os = "macos")]
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0)
     };

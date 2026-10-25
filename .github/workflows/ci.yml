@@ -428,20 +428,28 @@ jobs:
       - name: Setup Rust
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
-      - name: Install the Tauri Linux packages
+      # The Tauri app's, then GPUI's, as Zed's script/linux lists them.
+      - name: Install the Linux packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev build-essential file \
+            libasound2-dev libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev clang pkg-config
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/crates/sikemux-gpui
           cache-on-failure: true
 
       - name: Check the app compiles on Linux
         run: cargo check --workspace --all-targets --locked
         working-directory: src-tauri
+
+      - name: Check the GPUI app on Linux
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        working-directory: src-tauri/crates/sikemux-gpui
 
       - name: Run the core's tests on Linux
         run: cargo test --locked -p sikemux-core -p sikemux-pty -p sikemux-process -p sikemux-wire -p sikemux-client -p sikemux-keychain -p sikemux-host

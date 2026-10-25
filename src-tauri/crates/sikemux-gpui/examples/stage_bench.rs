@@ -133,6 +133,7 @@ fn main() -> anyhow::Result<()> {
     // The app's main thread runs at this priority; without it a busy machine can put the bench
     // on its slower cores and make every number several times larger.
     // SAFETY: it only changes the calling thread's own scheduling class.
+    #[cfg(target_os = "macos")]
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0)
     };

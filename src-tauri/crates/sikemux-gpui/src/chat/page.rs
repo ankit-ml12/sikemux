@@ -77,12 +77,9 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
     };
     let answer = target.request("page", json!({ "id": page.id }));
     let theme = theme::page_rule(Tokens::get(cx), None);
-    let (id, reader, bench, agent) = (
-        page.id.clone(),
-        looks.reader.clone(),
-        looks.bench.clone(),
-        looks.agent.clone(),
-    );
+    let (id, reader) = (page.id.clone(), looks.reader.clone());
+    #[cfg(target_os = "macos")]
+    let (bench, agent) = (looks.bench.clone(), looks.agent.clone());
     window
         .spawn(cx, async move |cx| {
             let Ok(answer) = answer.await else {
@@ -101,6 +98,7 @@ fn fetch(page: &PageRef, looks: &Looks, window: &mut Window, cx: &mut App) {
                 reader.update(cx, |_, cx| cx.notify());
             });
             while let Some(event) = heard.recv().await {
+                #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
                 let applied = cx.update(|_, cx| match event {
                     #[cfg(target_os = "macos")]
                     sikemux_browser::page_view::PageEvent::Height(height) => {

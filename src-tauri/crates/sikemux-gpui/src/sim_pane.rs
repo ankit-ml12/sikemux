@@ -17,6 +17,7 @@ use gpui_kit::{
     MouseUpEvent, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::{json, Map, Value};
+#[cfg(target_os = "macos")]
 use sikemux_process::sync::Locked;
 use sikemux_simulator::{tools, Host, SimulatorManager, WATCH_ENDED_EVENT};
 use tokio::sync::mpsc;
@@ -62,6 +63,7 @@ struct Device {
 
 /// One device's live screen and the person's input to it.
 struct Screen {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     picture: Picture,
     watch: Arc<AtomicU64>,
     /// The device's size in points as it is turned, which touches are measured in.
