@@ -220,7 +220,7 @@ impl Panel for Aws {
             return choose_profile(&account, cx);
         };
         if host.signed_in(cx) == Some(false) {
-            return sign_in(&profile, cx);
+            return sign_in(host, &profile, cx);
         }
         let main = match self.tail.is_some() {
             true => self.tail_page(cx),
@@ -1137,7 +1137,7 @@ fn read<T: DeserializeOwned + 'static>(
     match host.view(method, params, cx).read::<T>() {
         Ok(Some(view)) => Ok(view),
         Ok(None) => Err(super::loading(cx)),
-        Err(failure) if lapsed(&failure) => Err(sign_in(profile, cx)),
+        Err(failure) if lapsed(&failure) => Err(sign_in(host, profile, cx)),
         Err(failure) => Err(super::failure(&failure, cx)),
     }
 }
@@ -1354,32 +1354,19 @@ fn choose_profile(account: &Account, cx: &mut Context<PluginPane>) -> AnyElement
         .into_any_element()
 }
 
-fn sign_in(profile: &str, cx: &mut Context<PluginPane>) -> AnyElement {
-    let t = Tokens::get(cx).clone();
+fn sign_in(host: &Host, profile: &str, cx: &mut Context<PluginPane>) -> AnyElement {
     let named = profile.to_owned();
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(10.))
-        .child(
-            ui::text(format!("Sign in to {profile}"), 14., FontWeight::SEMIBOLD)
-                .text_color(t.text_primary),
-        )
-        .child(
-            ui::text("Its AWS sign-in has run out.", 12., FontWeight::NORMAL)
-                .text_color(t.text_tertiary),
-        )
-        .child(
-            Button::new("aws-sign-in", "Sign in with the browser", Variant::Primary)
-                .icon(Icon::LogIn)
-                .on_click(cx.listener(move |pane, _, _, cx| {
-                    let params = json!({ "profile": named });
-                    pane.host.cloud_sign_in("signIn", params, cx);
-                })),
-        )
+    let ink = Tokens::get(cx).text_primary;
+    ui::sign_in::Screen::new("aws-sign-in-page", ui::picture(Icon::Aws, 28., ink), format!("Sign in to {profile}"))
+        .lede("Its AWS sign-in has run out.")
+        .child(super::browser_sign_in(
+            host,
+            "aws-sign-in",
+            Icon::LogIn,
+            "Sign in with the browser",
+            move |host, cx| host.cloud_sign_in("signIn", json!({ "profile": named }), cx),
+            cx,
+        ))
         .into_any_element()
 }
 

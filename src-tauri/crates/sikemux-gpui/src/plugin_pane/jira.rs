@@ -25,7 +25,7 @@ use super::{after, listen, Host, Panel, PluginPane};
 use crate::icons::Icon;
 use crate::theme::{Tokens, RADIUS_1, RADIUS_2};
 use crate::toast;
-use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
+use crate::ui::{self, sign_in, Button, IconButton, Segmented, Toggle, Variant};
 use crate::workbench::Workbench;
 
 const API_TOKENS_PAGE: &str = "https://id.atlassian.com/manage-profile/security/api-tokens";
@@ -209,7 +209,7 @@ impl Panel for Jira {
             .filter_map(|site| site["host"].as_str().map(str::to_owned))
             .collect();
         if host.signed_in(cx) == Some(false) || sites.is_empty() {
-            return self.sign_in(&status, window, cx);
+            return self.sign_in(host, &status, window, cx);
         }
         self.form = None;
         let site = if sites.contains(&self.site) {
@@ -418,12 +418,12 @@ impl Jira {
 
     fn sign_in(
         &mut self,
+        host: &Host,
         status: &Value,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let t = Tokens::get(cx).clone();
-        if self.form.is_none() {
+                if self.form.is_none() {
             let mut made = Vec::new();
             for (placeholder, masked) in [
                 ("your-team.atlassian.net", false),
@@ -453,86 +453,54 @@ impl Jira {
         let filled = [&form.site, &form.email, &form.token]
             .iter()
             .all(|input| !input.read(cx).value().trim().is_empty());
-        let labelled = |label: &'static str, input: &Entity<InputState>| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(ui::meta(label, cx))
-                .child(ui::Field::new(input))
-        };
         let browser = status["browserSignIn"] == Value::Bool(true);
         let message = status["message"].as_str().map(str::to_owned);
-        div()
-            .id("jira-sign-in")
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .justify_center()
-            .child(
-                div()
-                    .w(px(380.))
-                    .py(px(40.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .child(ui::icon(Icon::Jira, 26.).text_color(jira_blue()))
-                    .child(
-                        ui::text("Sign in to Jira", 15., FontWeight::SEMIBOLD)
-                            .text_color(t.text_primary),
-                    )
-                    .child(
-                        ui::text(
-                            "The tickets you are working on, beside the code, and tools for your agents to read and update them.",
-                            12.5,
-                            FontWeight::NORMAL,
-                        )
-                        .text_color(t.text_secondary),
-                    )
-                    .children(message.map(|message| {
-                        ui::text(message, 12., FontWeight::NORMAL).text_color(t.danger)
-                    }))
-                    .when(browser, |page| {
-                        page.child(
-                            Button::new("jira-browser", "Continue with Atlassian", Variant::Primary)
-                                .icon(Icon::Jira)
-                                .on_click(listen::<Jira, _>(cx, |_, host, _, _, cx| {
-                                    host.sign_in_with_browser(cx)
-                                })),
-                        )
-                        .child(ui::meta("Or use an API token", cx).mt(px(8.)))
-                    })
-                    .child(labelled("Jira site", &form.site))
-                    .child(labelled("Atlassian account email", &form.email))
-                    .child(labelled("API token", &form.token))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
-                                Button::new(
-                                    "jira-token-sign-in",
-                                    if form.busy { "Signing in…" } else { "Sign in" },
-                                    if browser {
-                                        Variant::Outline
-                                    } else {
-                                        Variant::Primary
-                                    },
-                                )
-                                .disabled(!filled || form.busy)
-                                .on_click(listen::<Jira, _>(cx, |jira, host, _, _, cx| {
-                                    jira.sign_in_with_token(host, cx)
-                                })),
-                            )
-                            .child(
-                                Button::new("jira-make-token", "Create an API token", Variant::Outline)
-                                    .icon(Icon::Globe)
-                                    .on_click(|_, _, cx| cx.open_url(API_TOKENS_PAGE)),
-                            ),
-                    ),
+        sign_in::Screen::new(
+            "jira-sign-in",
+            ui::icon(Icon::Jira, 28.).text_color(jira_blue()),
+            "Sign in to Jira",
+        )
+        .lede("The tickets you are working on, beside the code, and tools for your agents to read and update them.")
+        .foot(ui::sign_in::KEPT)
+        .when(browser, |screen| {
+            screen
+                .child(super::browser_sign_in(
+                    host,
+                    "jira-browser",
+                    Icon::Jira,
+                    "Continue with Atlassian",
+                    |host, cx| host.sign_in_with_browser(cx),
+                    cx,
+                ))
+                .child(sign_in::or("or use an API token", cx))
+        })
+        .child(sign_in::Field::new("Jira site", &form.site))
+        .child(sign_in::Field::new("Atlassian account email", &form.email))
+        .child(sign_in::Field::new("API token", &form.token).mono())
+        .child(
+            Button::new(
+                "jira-token-sign-in",
+                if form.busy { "Signing in…" } else { "Sign in" },
+                if browser {
+                    Variant::Outline
+                } else {
+                    Variant::Primary
+                },
             )
-            .into_any_element()
+            .wide()
+            .disabled(!filled || form.busy)
+            .on_click(listen::<Jira, _>(cx, |jira, host, _, _, cx| {
+                jira.sign_in_with_token(host, cx)
+            })),
+        )
+        .children(message.map(|message| sign_in::error(message, cx)))
+        .child(
+            sign_in::links().child(
+                sign_in::link("jira-make-token", "Create an API token", cx)
+                    .on_click(|_, _, cx| cx.open_url(API_TOKENS_PAGE)),
+            ),
+        )
+        .into_any_element()
     }
 
     fn sign_in_with_token(&mut self, host: &Host, cx: &mut Context<PluginPane>) {

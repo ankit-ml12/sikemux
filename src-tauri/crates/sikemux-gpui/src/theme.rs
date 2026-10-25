@@ -203,14 +203,28 @@ impl Tokens {
         cx.global::<Self>()
     }
 
+    /// DESIGN.md's `--shadow-2`, for a tile raised off the surface it sits on.
+    pub fn shadow_raised(&self) -> Vec<BoxShadow> {
+        vec![
+            BoxShadow {
+                color: black(0.32),
+                offset: gpui_kit::point(px(0.), px(2.)),
+                blur_radius: px(4.),
+                spread_radius: px(-2.),
+                inset: false,
+            },
+            BoxShadow {
+                color: black(0.34),
+                offset: gpui_kit::point(px(0.), px(4.)),
+                blur_radius: px(10.),
+                spread_radius: px(-3.),
+                inset: false,
+            },
+        ]
+    }
+
     /// DESIGN.md's `--shadow-4`, for anything that floats.
     pub fn shadow_float(&self) -> Vec<BoxShadow> {
-        let black = |alpha: f32| Hsla {
-            h: 0.,
-            s: 0.,
-            l: 0.,
-            a: alpha,
-        };
         vec![
             BoxShadow {
                 color: black(0.44),
@@ -227,6 +241,15 @@ impl Tokens {
                 inset: false,
             },
         ]
+    }
+}
+
+fn black(alpha: f32) -> Hsla {
+    Hsla {
+        h: 0.,
+        s: 0.,
+        l: 0.,
+        a: alpha,
     }
 }
 

@@ -114,7 +114,7 @@ impl Panel for Vercel {
             Err(failure) => return super::failure(&failure, cx),
         };
         if !status.ok || status.account.is_none() {
-            return self.sign_in(&status, window, cx);
+            return self.sign_in(host, &status, window, cx);
         }
         let team = status.team.clone().unwrap_or_default();
         let projects = host
@@ -530,11 +530,11 @@ impl Vercel {
 
     fn sign_in(
         &mut self,
+        host: &Host,
         status: &Status,
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let t = Tokens::get(cx).clone();
         let token = match &self.token {
             Some(token) => token.clone(),
             None => {
@@ -555,64 +555,41 @@ impl Vercel {
                 token
             }
         };
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .w(px(420.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .child(
-                        ui::text("Connect Vercel", 14., FontWeight::SEMIBOLD)
-                            .text_color(t.text_primary),
-                    )
-                    .child(
-                        ui::text(
-                            "Your projects and their deployments beside the code, to roll back, promote or hand a failed build to an agent.",
-                            12.,
-                            FontWeight::NORMAL,
-                        )
-                        .text_color(t.text_secondary),
-                    )
-                    .children(status.message.clone().filter(|_| status.account.is_some()).map(
-                        |message| ui::text(message, 12., FontWeight::NORMAL).text_color(t.danger),
+        let failed = status.message.clone().filter(|_| status.account.is_some());
+        let ink = Tokens::get(cx).text_primary;
+        ui::sign_in::Screen::new("vercel-sign-in", ui::picture(Icon::Vercel, 26., ink), "Connect Vercel")
+            .lede("Your projects and their deployments beside the code, to roll back, promote or hand a failed build to an agent.")
+            .foot(ui::sign_in::KEPT)
+            .when(status.browser_sign_in, |screen| {
+                screen
+                    .child(super::browser_sign_in(
+                        host,
+                        "vercel-browser",
+                        Icon::LogIn,
+                        "Continue with Vercel",
+                        |host, cx| host.sign_in_with_browser(cx),
+                        cx,
                     ))
-                    .when(status.browser_sign_in, |form| {
-                        form.child(
-                            ui::Button::new(
-                                "vercel-browser",
-                                "Continue with Vercel",
-                                ui::Variant::Primary,
-                            )
-                            .icon(Icon::LogIn)
-                            .on_click(listen::<Vercel, ClickEvent>(cx, |_, host, _, _, cx| {
-                                host.sign_in_with_browser(cx)
-                            })),
-                        )
-                    })
-                    .child(
-                        ui::text("Or an access token", 12., FontWeight::MEDIUM)
-                            .text_color(t.text_secondary),
-                    )
-                    .child(ui::Field::new(&token).mono())
-                    .child(
-                        div().flex().gap(px(8.)).child(
-                            ui::Button::new(
-                                "vercel-token-sign-in",
-                                if self.busy { "Signing in…" } else { "Sign in" },
-                                ui::Variant::Outline,
-                            )
-                            .disabled(self.busy)
-                            .on_click(listen::<Vercel, ClickEvent>(cx, |vercel, host, _, _, cx| {
-                                vercel.sign_in_with_token(host, cx)
-                            })),
-                        ),
-                    ),
+                    .child(ui::sign_in::or("or an access token", cx))
+            })
+            .child(ui::sign_in::Field::new("Access token", &token).mono())
+            .child(
+                ui::Button::new(
+                    "vercel-token-sign-in",
+                    if self.busy { "Signing in…" } else { "Sign in" },
+                    if status.browser_sign_in {
+                        ui::Variant::Outline
+                    } else {
+                        ui::Variant::Primary
+                    },
+                )
+                .wide()
+                .disabled(self.busy)
+                .on_click(listen::<Vercel, ClickEvent>(cx, |vercel, host, _, _, cx| {
+                    vercel.sign_in_with_token(host, cx)
+                })),
             )
+            .children(failed.map(|message| ui::sign_in::error(message, cx)))
             .into_any_element()
     }
 

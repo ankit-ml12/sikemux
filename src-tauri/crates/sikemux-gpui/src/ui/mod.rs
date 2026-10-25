@@ -14,6 +14,7 @@ mod pane;
 mod select;
 pub mod selectable;
 pub mod shimmer;
+pub mod sign_in;
 mod state_mark;
 
 pub use controls::{Button, Field, IconButton, Segmented, Toggle, Variant};
@@ -270,6 +271,16 @@ pub fn dot(tone: Tone, cx: &App) -> Div {
 /// A ring `size` across, filled clockwise from the top in its tint as far as the percent,
 /// over a full track; only the track without a fill.
 pub fn ring(filled: Option<(f64, Hsla)>, size: f32, stroke: f32, track: Hsla) -> impl IntoElement {
+    let filled = filled.and_then(|(percent, tint)| {
+        let turn = (percent / 100.).clamp(0., 0.999) as f32;
+        (turn > 0.005).then_some((0., turn, tint))
+    });
+    arcs(filled, size, stroke, track)
+}
+
+/// A ring `size` across: a full track, with an arc over it in its tint from one turn to the
+/// other, measured clockwise from the top.
+fn arcs(over: Option<(f32, f32, Hsla)>, size: f32, stroke: f32, track: Hsla) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
@@ -299,12 +310,9 @@ pub fn ring(filled: Option<(f64, Hsla)>, size: f32, stroke: f32, track: Hsla) ->
                     window.paint_path(path, track);
                 }
             }
-            if let Some((percent, tint)) = filled {
-                let turn = (percent / 100.).clamp(0., 0.999) as f32;
-                if turn > 0.005 {
-                    if let Some(path) = arc(0., turn) {
-                        window.paint_path(path, tint);
-                    }
+            if let Some((from, to, tint)) = over {
+                if let Some(path) = arc(from, to) {
+                    window.paint_path(path, tint);
                 }
             }
         },

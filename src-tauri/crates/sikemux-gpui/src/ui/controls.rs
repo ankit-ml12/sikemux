@@ -241,6 +241,7 @@ pub struct Button {
     lead: Option<AnyElement>,
     trail: Option<AnyElement>,
     tooltip: Option<SharedString>,
+    wide: bool,
 }
 
 /// A button can open a popover; it looks the same open or closed.
@@ -268,7 +269,14 @@ impl Button {
             lead: None,
             trail: None,
             tooltip: None,
+            wide: false,
         }
+    }
+
+    /// Across the whole column and taller, its words centred, as a sign-in form's buttons.
+    pub fn wide(mut self) -> Self {
+        self.wide = true;
+        self
     }
 
     pub fn icon(mut self, icon: Icon) -> Self {
@@ -357,10 +365,10 @@ impl RenderOnce for Button {
                 ))
                 .bg(fade(
                     "tint",
-                    if lit {
-                        t.surface_hover
-                    } else {
-                        t.surface_hover.opacity(0.)
+                    match (lit, self.wide) {
+                        (true, _) => t.surface_hover,
+                        (false, true) => t.surface_hover.opacity(0.5),
+                        (false, false) => t.surface_hover.opacity(0.),
                     },
                 )),
             Variant::Primary => base
@@ -385,6 +393,13 @@ impl RenderOnce for Button {
                     if lit { t.text_primary } else { t.text_tertiary },
                 )),
         };
+        let base = base.when(self.wide, |button| {
+            button
+                .w_full()
+                .h(px(34.))
+                .justify_center()
+                .text_size(crate::theme::ui_text(13.))
+        });
         let (glyph, rest) = match self.variant {
             Variant::Primary => (13., t.on_accent),
             Variant::Outline => (11., t.text_secondary),

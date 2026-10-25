@@ -7,8 +7,8 @@ use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, Anchor, AnyElement, App, Context, Entity, IntoElement, ParentElement, SharedString,
-    Styled, Window,
+    div, px, Anchor, AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use sikemux_core::agent_accounts::Profile;
 
@@ -16,7 +16,7 @@ use crate::accounts::{self, SignIn, Status};
 use crate::icons::Icon;
 use crate::settings::rows;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, dialog};
+use crate::ui::{self, dialog, sign_in};
 use crate::workbench::Workbench;
 
 /// What the account is called: a built-in one still under its agent's name goes by
@@ -373,14 +373,14 @@ pub fn render(
     )
 }
 
-/// The add-account dialog while it is open.
+/// The add-account dialog while it is open: a name, then the agent's own login in the
+/// browser, then who it signed in as.
 pub fn dialog(
     bench: &Workbench,
     this: &Entity<Workbench>,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
     let open = bench.accounts.dialog.as_ref()?;
-    let t = Tokens::get(cx).clone();
     let label = super::label(bench, &open.provider);
     let account = open
         .account
@@ -390,12 +390,25 @@ pub fn dialog(
         .account
         .as_deref()
         .and_then(|id| bench.accounts.signing.get(id));
+    let brand = super::kind(bench, &open.provider)
+        .and_then(|kind| kind["brand"].as_str())
+        .unwrap_or("#8b8898")
+        .to_owned();
     let close: dialog::Answer = {
         let this = this.clone();
         Rc::new(move |_, cx| this.update(cx, accounts::close_dialog))
     };
-    let (title, body): (String, AnyElement) = match (account, signing) {
+    let cancel = || {
+        sign_in::links().child(
+            sign_in::link("account-dialog-cancel", "Cancel", cx)
+                .on_click(on(this, |bench, _, cx| accounts::close_dialog(bench, cx))),
+        )
+    };
+    let mark = ui::mark(&open.provider, 34.);
+    let screen = match (account, signing) {
         (None, _) => {
+            let brand = brand.clone();
+            let empty = open.name.read(cx).value().trim().is_empty();
             let signed_out: Vec<&Profile> = bench
                 .accounts
                 .of(&open.provider)
@@ -407,72 +420,139 @@ pub fn dialog(
                 })
                 .collect();
             let again = (!signed_out.is_empty()).then(|| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .text_size(crate::theme::ui_text(11.5))
-                            .text_color(t.text_tertiary)
-                            .child("or sign in again"),
-                    )
-                    .children(signed_out.into_iter().map(|profile| {
-                        let (this, id) = (this.clone(), profile.id.clone());
-                        ui::Button::new(
-                            SharedString::from(format!("sign-in-again-{id}")),
-                            format!("{} · Signed out", profile.name),
-                            ui::Variant::Outline,
-                        )
-                        .on_click(move |_, _, cx| {
-                            let id = id.clone();
-                            this.update(cx, |bench, cx| accounts::sign_in_again(bench, &id, cx))
+                sign_in::choices().children(signed_out.into_iter().map(|profile| {
+                    let id = profile.id.clone();
+                    let again = {
+                        let id = id.clone();
+                        on(this, move |bench, _, cx| {
+                            accounts::sign_in_again(bench, &id, cx)
                         })
-                    }))
+                    };
+                    div()
+                        .flex()
+                        .gap(px(6.))
+                        .child(
+                            sign_in::choice(
+                                SharedString::from(format!("sign-in-again-{id}")),
+                                accounts::avatar(profile, &profile.name, 18.),
+                                profile.name.clone(),
+                                "Signed out",
+                                cx,
+                            )
+                            .on_click(again),
+                        )
+                        .when(!profile.id.starts_with("builtin-"), |row| {
+                            let remove = {
+                                let id = id.clone();
+                                on(this, move |bench, _, cx| accounts::remove(bench, &id, cx))
+                            };
+                            row.child(
+                                sign_in::choice_beside(
+                                    SharedString::from(format!("sign-in-remove-{id}")),
+                                    Icon::Trash,
+                                    format!("Remove {}", profile.name),
+                                    cx,
+                                )
+                                .on_click(remove),
+                            )
+                        })
+                }))
             });
-            (
-                format!("Add a {label} account"),
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(format!("Sign in with {label}'s own login in your browser."))
-                    .child(ui::Field::new(&open.name))
-                    .children(again)
-                    .into_any_element(),
-            )
+            sign_in::Screen::new("account-dialog", mark, format!("Add a {label} account"))
+                .lede(format!("Sign in with {label}'s own login in your browser."))
+                .foot(FOOT)
+                .child(sign_in::Field::new("Name", &open.name))
+                .child(
+                    ui::Button::new(
+                        "account-dialog-go",
+                        format!("Continue with {label}"),
+                        ui::Variant::Primary,
+                    )
+                    .wide()
+                    .disabled(open.busy || empty)
+                    .on_click(on(this, move |bench, _, cx| {
+                        accounts::add(bench, brand.clone(), cx)
+                    })),
+                )
+                .when_some(again, |screen, again| {
+                    screen
+                        .child(sign_in::or("or sign in again", cx))
+                        .child(again)
+                })
+                .child(cancel())
         }
-        (Some(profile), Some(_)) => (
-            format!("Sign in to {}", profile.name),
-            signing_body(bench, &profile.id, this, cx),
-        ),
-        (Some(profile), None) => {
-            let status = accounts::status(bench, profile).and_then(|status| status.as_ref().ok());
-            let who = status
-                .and_then(|status| status.email.clone().or_else(|| status.name.clone()))
-                .unwrap_or_else(|| "Signed in".into());
-            (
-                format!("{} is signed in", profile.name),
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .child(accounts::avatar(profile, &profile.name, 28.))
-                    .child(who)
-                    .into_any_element(),
+        (Some(profile), Some(SignIn::Waiting { url, code })) => {
+            let id = profile.id.clone();
+            let help = url.clone().map(|url| match code {
+                Some(field) => {
+                    let id = id.clone();
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(sign_in::Field::new("Code from the page", field).mono())
+                        .child(
+                            ui::Button::new("sign-in-send-code", "Send code", ui::Variant::Outline)
+                                .wide()
+                                .on_click(on(this, move |bench, _, cx| {
+                                    accounts::submit_code(bench, &id, cx)
+                                })),
+                        )
+                }
+                None => sign_in::links()
+                    .child(
+                        sign_in::link("sign-in-page", "Open the page again", cx)
+                            .on_click(move |_, _, cx| cx.open_url(&url)),
+                    )
+                    .child(
+                        sign_in::link("sign-in-code", "Paste a code", cx)
+                            .on_click(on(this, move |bench, window, cx| {
+                                accounts::ask_code(bench, &id, window, cx)
+                            })),
+                    ),
+            });
+            sign_in::Screen::new(
+                "account-dialog",
+                mark,
+                format!("Sign in to {}", profile.name),
             )
+            .lede(format!("Sign in with {label}'s own login in your browser."))
+            .foot(FOOT)
+            .child(sign_in::waiting(
+                "account-dialog-waiting",
+                "Finish signing in in your browser",
+                on(this, |bench, _, cx| accounts::close_dialog(bench, cx)),
+                cx,
+            ))
+            .children(help)
         }
+        (Some(profile), Some(SignIn::Failed(message))) => {
+            let id = profile.id.clone();
+            sign_in::Screen::new(
+                "account-dialog",
+                mark,
+                format!("Sign in to {}", profile.name),
+            )
+            .lede(format!("Sign in with {label}'s own login in your browser."))
+            .foot(FOOT)
+            .child(sign_in::error(message.clone(), cx))
+            .child(
+                ui::Button::new("sign-in-retry", "Try again", ui::Variant::Primary)
+                    .wide()
+                    .on_click(on(this, move |bench, _, cx| {
+                        accounts::dismiss_failure(bench, &id);
+                        accounts::sign_in(bench, &id, cx);
+                    })),
+            )
+            .child(cancel())
+        }
+        (Some(profile), None) => signed_in(bench, profile, mark, this),
     };
-    let naming = account.is_none();
-    let done = account.is_some() && signing.is_none();
-    let busy = open.busy;
-    let empty = open.name.read(cx).value().trim().is_empty();
-    let brand = super::kind(bench, &open.provider)
-        .and_then(|kind| kind["brand"].as_str())
-        .unwrap_or("#8b8898")
-        .to_owned();
     let go: dialog::Answer = {
         let this = this.clone();
+        let naming = account.is_none();
+        let done = account.is_some() && signing.is_none();
         Rc::new(move |_, cx| {
             let brand = brand.clone();
             this.update(cx, |bench, cx| {
@@ -484,57 +564,82 @@ pub fn dialog(
             })
         })
     };
-    let foot = div()
-        .when(!done, |foot| {
-            foot.child(dialog::button(
-                "account-dialog-cancel",
-                "Cancel".into(),
-                None,
-                close.clone(),
-                cx,
-            ))
-        })
-        .when(naming || done, |foot| {
-            let word: SharedString = if naming {
-                format!("Continue with {label}").into()
-            } else {
-                "Done".into()
-            };
-            foot.child(
-                div()
-                    .when(naming && (busy || empty), |button| button.opacity(0.5))
-                    .child(dialog::button(
-                        "account-dialog-go",
-                        word,
-                        Some(t.accent),
-                        go.clone(),
-                        cx,
-                    )),
-            )
-        });
-    let body = div()
-        .px(px(20.))
-        .pt(px(8.))
-        .text_size(crate::theme::ui_text(13.))
-        .text_color(t.text_secondary)
-        .child(body)
-        .child(
-            div()
-                .pt(px(10.))
-                .text_size(crate::theme::ui_text(11.5))
-                .text_color(t.text_tertiary)
-                .child("Each account keeps its sign-in in a folder of its own. Chats and settings are shared between them."),
-        )
-        .into_any_element();
-    Some(dialog::sheet(title.into(), body, foot, go, close, cx).into_any_element())
+    let body = div().px(px(4.)).pt(px(4.)).child(screen);
+    Some(dialog::floating(px(440.), body, go, close, cx).into_any_element())
 }
 
-/// The dialog's body while an account signs in, or after its sign-in failed.
-fn signing_body(bench: &Workbench, id: &str, this: &Entity<Workbench>, cx: &App) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .children(signing(bench, id, this, cx))
-        .into_any_element()
+const FOOT: &str =
+    "Each account keeps its sign-in in a folder of its own. Chats and settings are shared between them.";
+
+/// Who the account signed in as, with the way to start using it while another is in use.
+fn signed_in(
+    bench: &Workbench,
+    profile: &Profile,
+    mark: AnyElement,
+    this: &Entity<Workbench>,
+) -> sign_in::Screen {
+    let status = accounts::status(bench, profile).and_then(|status| status.as_ref().ok());
+    let named = name(bench, profile, status);
+    let lede = match status {
+        None => "Checking who signed in…".to_owned(),
+        Some(status) if !status.signed_in => "It is not signed in yet.".to_owned(),
+        Some(status) => [
+            status.email.clone().or_else(|| status.organization.clone()),
+            status.plan.as_deref().map(plan),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · "),
+    };
+    let screen = sign_in::Screen::new("account-dialog", mark, format!("{named} is signed in"))
+        .when(!lede.is_empty(), |screen| screen.lede(lede));
+    let close = || on(this, |bench, _, cx| accounts::close_dialog(bench, cx));
+    match bench
+        .accounts
+        .current(&profile.provider)
+        .filter(|current| current.id != profile.id)
+    {
+        Some(current) => {
+            let current_status =
+                accounts::status(bench, current).and_then(|status| status.as_ref().ok());
+            let switch_to = profile.clone();
+            screen
+                .child(
+                    ui::Button::new(
+                        "account-dialog-switch",
+                        format!("Switch to {named}"),
+                        ui::Variant::Primary,
+                    )
+                    .wide()
+                    .on_click(on(this, move |bench, _, cx| {
+                        accounts::select(bench, &switch_to, cx);
+                        accounts::close_dialog(bench, cx);
+                    })),
+                )
+                .child(
+                    ui::Button::new(
+                        "account-dialog-keep",
+                        format!("Keep using {}", name(bench, current, current_status)),
+                        ui::Variant::Outline,
+                    )
+                    .wide()
+                    .on_click(close()),
+                )
+        }
+        None => screen.child(
+            ui::Button::new("account-dialog-done", "Done", ui::Variant::Primary)
+                .wide()
+                .on_click(close()),
+        ),
+    }
+}
+
+/// A click that runs `run` on the workbench.
+fn on(
+    this: &Entity<Workbench>,
+    run: impl Fn(&mut Workbench, &mut Window, &mut Context<Workbench>) + 'static,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let this = this.clone();
+    move |_, window, cx| this.update(cx, |bench, cx| run(bench, window, cx))
 }

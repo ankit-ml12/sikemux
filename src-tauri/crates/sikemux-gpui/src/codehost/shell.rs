@@ -19,7 +19,7 @@ use crate::core::Ask;
 use crate::icons::Icon;
 use crate::palette::{Mark, Row, Spec};
 use crate::theme::{Tokens, RADIUS_2};
-use crate::ui::{self, Button, Choice, Variant};
+use crate::ui::{self, sign_in, Button, Choice, Variant};
 
 /// Who is signed in to the host, as its plugin says.
 #[derive(Clone, Default, Deserialize)]
@@ -445,6 +445,15 @@ impl HostArea {
         signing.busy = true;
         signing.refused = None;
         signing.browser = Some(waiting);
+        cx.notify();
+    }
+
+    /// Stops the browser sign-in on its way, leaving the form as it was.
+    fn cancel_browser_sign_in(&mut self, cx: &mut Context<Self>) {
+        if let Some(signing) = &mut self.signing {
+            signing.busy = false;
+            signing.browser = None;
+        }
         cx.notify();
     }
 
@@ -1043,134 +1052,104 @@ pub fn sign_in(area: &mut HostArea, window: &mut Window, cx: &mut Context<HostAr
         _ => None,
     }
     .filter(|_| area.host.host == "github" && !signing.adding);
-    let mut column = div()
-        .w(px(380.))
-        .flex()
-        .flex_col()
-        .gap(px(12.))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(ui::icon(Icon::Git, 18.).text_color(t.text_primary))
-                .child(
-                    ui::text(
-                        if signing.adding {
-                            format!("Add another {host} account")
-                        } else {
-                            format!("Sign in to {host}")
-                        },
-                        15.,
-                        FontWeight::SEMIBOLD,
-                    )
-                    .text_color(t.text_primary),
-                ),
-        )
-        .child(ui::meta(form.lede, cx));
+    let mark = match area.host.host.as_str() {
+        "github" => Icon::Github,
+        _ => Icon::Git,
+    };
+    let tokens_too = borrowed.is_some() || status.browser_sign_in;
+    let mut screen = sign_in::Screen::new(
+        "host-sign-in-page",
+        ui::picture(mark, 26., t.text_primary),
+        if signing.adding {
+            format!("Add another {host} account")
+        } else {
+            format!("Sign in to {host}")
+        },
+    )
+    .lede(form.lede)
+    .foot(sign_in::KEPT);
     if let Some((label, note)) = borrowed {
-        column = column.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .child(
-                    Button::new("host-borrowed", label, Variant::Primary)
-                        .disabled(busy)
-                        .on_click(cx.listener(|area, _, _, cx| area.sign_in_borrowed(cx))),
-                )
-                .child(ui::meta(note, cx)),
-        );
+        screen = screen
+            .child(
+                Button::new("host-borrowed", label, Variant::Primary)
+                    .wide()
+                    .disabled(busy)
+                    .on_click(cx.listener(|area, _, _, cx| area.sign_in_borrowed(cx))),
+            )
+            .child(sign_in::note(note, cx));
     }
     if status.browser_sign_in {
-        column = column.child(
-            Button::new(
+        screen = screen.child(match signing.browser.is_some() {
+            true => sign_in::waiting(
                 "host-browser",
-                if signing.browser.is_some() {
-                    "Waiting for the browser…".to_owned()
-                } else {
-                    format!("Continue with {host}")
-                },
+                "Finish signing in in your browser",
+                cx.listener(|area, _, _, cx| area.cancel_browser_sign_in(cx)),
+                cx,
+            )
+            .into_any_element(),
+            false => Button::new(
+                "host-browser",
+                format!("Continue with {host}"),
                 Variant::Primary,
             )
+            .wide()
+            .icon(mark)
             .disabled(busy)
-            .on_click(cx.listener(|area, _, _, cx| area.sign_in_with_browser(cx))),
-        );
+            .on_click(cx.listener(|area, _, _, cx| area.sign_in_with_browser(cx)))
+            .into_any_element(),
+        });
     }
-    for (index, (field, input)) in form.fields.iter().zip(&signing.fields).enumerate() {
-        column = column.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(ui::meta(field.label, cx))
-                .child(
-                    div()
-                        .id(("host-field", index))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .rounded(RADIUS_2)
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.surface)
-                        .text_size(crate::theme::ui_text(12.5))
-                        .child(Input::new(input).appearance(false)),
-                ),
-        );
+    if tokens_too {
+        screen = screen.child(sign_in::or("or paste a token", cx));
     }
+    for (field, input) in form.fields.iter().zip(&signing.fields) {
+        let typed = sign_in::Field::new(field.label, input);
+        screen = screen.child(if field.secret { typed.mono() } else { typed });
+    }
+    screen = screen.child(
+        Button::new(
+            "host-sign-in",
+            if busy {
+                "Signing in…"
+            } else {
+                "Sign in with token"
+            },
+            if tokens_too {
+                Variant::Outline
+            } else {
+                Variant::Primary
+            },
+        )
+        .wide()
+        .disabled(busy)
+        .on_click(cx.listener(|area, _, _, cx| area.sign_in_with_token(cx))),
+    );
     if let Some(refused) = &signing.refused {
-        column = column.child(ui::meta(refused.clone(), cx).text_color(t.danger));
+        screen = screen.child(sign_in::error(refused.clone(), cx));
     }
     if let Some(message) = status
         .message
         .as_ref()
         .filter(|_| signing.refused.is_none())
     {
-        column = column.child(ui::meta(message.clone(), cx));
+        screen = screen.child(sign_in::note(message.clone(), cx));
     }
-    column = column.child(
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .child(
-                Button::new("host-token-page", "Create a token", Variant::Outline)
-                    .icon(Icon::Globe)
-                    .on_click(move |_, _, cx| cx.open_url(&page)),
-            )
-            .child(div().flex_1())
-            .when(signing.adding, |row| {
-                row.child(
-                    Button::new("host-sign-in-cancel", "Cancel", Variant::Outline).on_click(
+    screen
+        .child(
+            sign_in::links()
+                .child(
+                    sign_in::link("host-token-page", "Create a token", cx)
+                        .on_click(move |_, _, cx| cx.open_url(&page)),
+                )
+                .when(signing.adding, |links| {
+                    links.child(sign_in::link("host-sign-in-cancel", "Cancel", cx).on_click(
                         cx.listener(|area, _, _, cx| {
                             area.signing = None;
                             cx.notify();
                         }),
-                    ),
-                )
-            })
-            .child(
-                Button::new(
-                    "host-sign-in",
-                    if busy {
-                        "Signing in…"
-                    } else {
-                        "Sign in with token"
-                    },
-                    Variant::Primary,
-                )
-                .disabled(busy)
-                .on_click(cx.listener(|area, _, _, cx| area.sign_in_with_token(cx))),
-            ),
-    );
-    div()
-        .id("host-sign-in-page")
-        .size_full()
-        .overflow_y_scroll()
-        .flex()
-        .justify_center()
-        .pt(px(48.))
-        .child(column)
+                    ))
+                }),
+        )
         .into_any_element()
 }
 

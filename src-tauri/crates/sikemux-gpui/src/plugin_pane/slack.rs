@@ -319,7 +319,6 @@ impl Slack {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let t = Tokens::get(cx).clone();
         let connect: Typed = |slack, host, cx| slack.connect(host, cx);
         let token = field(
             &mut self.token,
@@ -334,70 +333,33 @@ impl Slack {
             .message
             .clone()
             .filter(|_| !status.workspaces.is_empty());
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
+        let ink = Tokens::get(cx).text_primary;
+        ui::sign_in::Screen::new("slack-sign-in", ui::picture(Icon::Slack, 26., ink), "Connect Slack")
+            .lede("Read a thread beside your code, hand it to an agent, and let the agent reply in it when the work is done.")
+            .foot(ui::sign_in::KEPT)
             .child(
-                div()
-                    .w(px(440.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .child(
-                        ui::text("Connect Slack", 14., FontWeight::SEMIBOLD)
-                            .text_color(t.text_primary),
-                    )
-                    .child(
-                        ui::text(
-                            "Read a thread beside your code, hand it to an agent, and let the agent reply in it when the work is done.",
-                            12.,
-                            FontWeight::NORMAL,
-                        )
-                        .text_color(t.text_secondary),
-                    )
-                    .child(
-                        ui::text("User OAuth Token", 12., FontWeight::MEDIUM)
-                            .text_color(t.text_secondary),
-                    )
-                    .child(ui::Field::new(&token).mono())
-                    .child(
-                        ui::text(
-                            "Make a Slack app, add the user scopes channels:history, groups:history, im:history, mpim:history, channels:read, groups:read, im:read, mpim:read, chat:write, users:read, users:read.email and search:read, install it to your workspace, and copy the User OAuth Token from OAuth & Permissions.",
-                            11.5,
-                            FontWeight::NORMAL,
-                        )
-                        .text_color(t.text_tertiary),
-                    )
-                    .children(failed.map(|message| {
-                        ui::text(message, 12., FontWeight::NORMAL).text_color(t.danger)
-                    }))
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(8.))
-                            .child(
-                                ui::Button::new(
-                                    "slack-connect",
-                                    self.busy.unwrap_or("Connect"),
-                                    ui::Variant::Primary,
-                                )
-                                .disabled(self.busy.is_some())
-                                .on_click(listen::<Slack, ClickEvent>(cx, |slack, host, _, _, cx| {
-                                    slack.connect(host, cx)
-                                })),
-                            )
-                            .child(
-                                ui::Button::new(
-                                    "slack-make-app",
-                                    "Make a Slack app",
-                                    ui::Variant::Outline,
-                                )
-                                .icon(Icon::Globe)
-                                .on_click(|_, _, cx| cx.open_url(SLACK_APPS_PAGE)),
-                            ),
-                    ),
+                ui::sign_in::Field::new("User OAuth Token", &token)
+                    .mono()
+                    .hint("Make a Slack app, add the user scopes channels:history, groups:history, im:history, mpim:history, channels:read, groups:read, im:read, mpim:read, chat:write, users:read, users:read.email and search:read, install it to your workspace, and copy the User OAuth Token from OAuth & Permissions."),
+            )
+            .child(
+                ui::Button::new(
+                    "slack-connect",
+                    self.busy.unwrap_or("Connect"),
+                    ui::Variant::Primary,
+                )
+                .wide()
+                .disabled(self.busy.is_some())
+                .on_click(listen::<Slack, ClickEvent>(cx, |slack, host, _, _, cx| {
+                    slack.connect(host, cx)
+                })),
+            )
+            .children(failed.map(|message| ui::sign_in::error(message, cx)))
+            .child(
+                ui::sign_in::links().child(
+                    ui::sign_in::link("slack-make-app", "Make a Slack app", cx)
+                        .on_click(|_, _, cx| cx.open_url(SLACK_APPS_PAGE)),
+                ),
             )
             .into_any_element()
     }

@@ -190,6 +190,33 @@ fn framed(
     cx: &mut App,
 ) -> AlertDialog {
     let t = Tokens::get(cx).clone();
+    let content = div().flex().flex_col().child(head).child(body).child(
+        foot.flex()
+            .items_center()
+            .justify_end()
+            .gap(px(8.))
+            .mt(px(6.))
+            .pt(px(12.))
+            .pr(px(12.))
+            .pb(px(12.))
+            .pl(px(16.))
+            .border_t_1()
+            .border_color(t.border)
+            .bg(t.surface_sunken),
+    );
+    floating(width, content, yes, no, cx)
+}
+
+/// A dialog drawn wholly by what it shows, with no title or foot of the sheet's: the scrim,
+/// the float, and Escape and Enter answering it as a sheet's do.
+pub(crate) fn floating(
+    width: Pixels,
+    content: impl IntoElement,
+    yes: Answer,
+    no: Answer,
+    cx: &mut App,
+) -> AlertDialog {
+    let t = Tokens::get(cx).clone();
     AlertDialog::new(cx)
         .open(true)
         .close_on_escape(true)
@@ -228,22 +255,7 @@ fn framed(
                 .border_color(t.border)
                 .rounded(RADIUS_4)
                 .shadow(t.shadow_float())
-                .child(head)
-                .child(body)
-                .child(
-                    foot.flex()
-                        .items_center()
-                        .justify_end()
-                        .gap(px(8.))
-                        .mt(px(6.))
-                        .pt(px(12.))
-                        .pr(px(12.))
-                        .pb(px(12.))
-                        .pl(px(16.))
-                        .border_t_1()
-                        .border_color(t.border)
-                        .bg(t.surface_sunken),
-                )
+                .child(content)
                 .with_animation(
                     "dialog-in",
                     motion::entrance(motion::DIALOG_IN),

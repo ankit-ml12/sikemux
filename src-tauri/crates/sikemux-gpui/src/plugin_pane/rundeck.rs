@@ -26,7 +26,7 @@ use super::{after, listen, Failure, Host, Panel, PluginPane, Streamed};
 use crate::toast;
 use crate::icons::Icon;
 use crate::theme::{self, Tokens};
-use crate::ui::{self, Button, IconButton, Segmented, Toggle, Variant};
+use crate::ui::{self, sign_in, Button, IconButton, Segmented, Toggle, Variant};
 
 const PITCH: &str = "Your jobs and deploys, beside the code.";
 const TREE_WIDTH: f32 = 240.;
@@ -3730,7 +3730,6 @@ impl Rundeck {
         window: &mut Window,
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
-        let t = Tokens::get(cx).clone();
         if self.sign_in.is_none() {
             let mut make = |placeholder: &str, masked: bool, cx: &mut Context<PluginPane>| {
                 let placeholder = placeholder.to_owned();
@@ -3771,14 +3770,6 @@ impl Rundeck {
             } else {
                 !value(&form.user).is_empty() && !value(&form.password).is_empty()
             };
-        let labelled = |label: &'static str, input: &Entity<InputState>| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(ui::meta(label, cx))
-                .child(ui::Field::new(input))
-        };
         let mode = Segmented::words(
             "rundeck-sign-in-mode",
             vec![
@@ -3793,72 +3784,49 @@ impl Rundeck {
             }
             cx.notify();
         }));
-        div()
-            .id("rundeck-sign-in")
-            .size_full()
-            .overflow_y_scroll()
-            .flex()
-            .justify_center()
+        let ink = Tokens::get(cx).text_primary;
+        sign_in::Screen::new("rundeck-sign-in", ui::picture(Icon::Rundeck, 26., ink), "Sign in to Rundeck")
+            .lede(PITCH)
+            .foot(ui::sign_in::KEPT)
+            .child(sign_in::Field::new("Rundeck address", &form.url).mono())
+            .child(div().w_full().child(mode.fill()))
+            .when(form.with_token, |screen| {
+                screen.child(sign_in::Field::new("API token", &form.token).mono())
+            })
+            .when(!form.with_token, |screen| {
+                screen
+                    .child(sign_in::Field::new("Username", &form.user))
+                    .child(sign_in::Field::new("Password", &form.password))
+            })
             .child(
-                div()
-                    .w(px(380.))
-                    .py(px(40.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(12.))
-                    .child(ui::icon(Icon::Rundeck, 26.).text_color(t.text_primary))
-                    .child(
-                        ui::text("Sign in to Rundeck", 15., FontWeight::SEMIBOLD)
-                            .text_color(t.text_primary),
+                div().w_full().flex().child(
+                    Toggle::new(
+                        "rundeck-insecure",
+                        "Allow plain HTTP on a private network",
+                        form.insecure,
                     )
-                    .child(ui::text(PITCH, 12.5, FontWeight::NORMAL).text_color(t.text_secondary))
-                    .children(message.map(|message| {
-                        ui::text(message, 12., FontWeight::NORMAL)
-                            .text_color(t.danger)
-                            .whitespace_normal()
-                    }))
-                    .child(labelled("Rundeck address", &form.url))
-                    .child(mode)
-                    .when(form.with_token, |page| {
-                        page.child(labelled("API token", &form.token))
-                    })
-                    .when(!form.with_token, |page| {
-                        page.child(labelled("Username", &form.user))
-                            .child(labelled("Password", &form.password))
-                    })
-                    .child(
-                        div().flex().child(Toggle::new(
-                            "rundeck-insecure",
-                            "Allow plain HTTP on a private network",
-                            form.insecure,
-                        )
-                        .on_click(listen::<Rundeck, ClickEvent>(
-                            cx,
-                            |rd, _, _, _, cx| {
-                                if let Some(form) = &mut rd.sign_in {
-                                    form.insecure = !form.insecure;
-                                }
-                                cx.notify();
-                            },
-                        ))),
-                    )
-                    .child(
-                        Button::new(
-                            "rundeck-sign-in-go",
-                            if form.busy {
-                                "Signing in…"
-                            } else {
-                                "Sign in"
-                            },
-                            Variant::Primary,
-                        )
-                        .icon(Icon::LogIn)
-                        .disabled(!filled || form.busy)
-                        .on_click(listen::<Rundeck, ClickEvent>(cx, |rd, host, _, _, cx| {
-                            rd.sign_in_now(host, cx)
-                        })),
-                    ),
+                    .on_click(listen::<Rundeck, ClickEvent>(cx, |rd, _, _, _, cx| {
+                        if let Some(form) = &mut rd.sign_in {
+                            form.insecure = !form.insecure;
+                        }
+                        cx.notify();
+                    })),
+                ),
             )
+            .child(
+                Button::new(
+                    "rundeck-sign-in-go",
+                    if form.busy { "Signing in…" } else { "Sign in" },
+                    Variant::Primary,
+                )
+                .wide()
+                .icon(Icon::LogIn)
+                .disabled(!filled || form.busy)
+                .on_click(listen::<Rundeck, ClickEvent>(cx, |rd, host, _, _, cx| {
+                    rd.sign_in_now(host, cx)
+                })),
+            )
+            .children(message.map(|message| sign_in::error(message, cx)))
             .into_any_element()
     }
 

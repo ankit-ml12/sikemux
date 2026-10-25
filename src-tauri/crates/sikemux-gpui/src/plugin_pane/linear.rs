@@ -79,7 +79,7 @@ impl Panel for Linear {
         cx: &mut Context<PluginPane>,
     ) -> AnyElement {
         if host.signed_in(cx) == Some(false) {
-            return super::signed_out("Linear", PITCH, cx);
+            return super::signed_out(host, Icon::Linear, "Linear", PITCH, cx);
         }
         let picked = self.picked(window, cx);
         let (query, open) = {
@@ -91,7 +91,7 @@ impl Panel for Linear {
             .read::<IssueList>();
         if let Err(failure) = &list {
             if failure.signed_out() {
-                return super::signed_out("Linear", PITCH, cx);
+                return super::signed_out(host, Icon::Linear, "Linear", PITCH, cx);
             }
         }
         let column = self.list(list, &picked, open.as_deref(), cx);

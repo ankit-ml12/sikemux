@@ -240,6 +240,8 @@ pub struct Host {
     kept: HashMap<(String, String), Kept>,
     asks: u64,
     status: Option<(Option<bool>, Kept)>,
+    /// The browser sign-in on its way, which dropping stops.
+    signing: Option<Task<()>>,
     pub faces: crate::avatars::Avatars,
 }
 
@@ -559,18 +561,13 @@ impl Host {
     }
 
     /// Signs in through the plugin's own browser sign-in, opening the page it names.
-    pub fn sign_in_with_browser(&self, cx: &mut Context<PluginPane>) {
-        self.sign_in_through("signInWithBrowser", json!({}), cx);
+    pub fn sign_in_with_browser(&mut self, cx: &mut Context<PluginPane>) {
+        self.stream_sign_in("signInWithBrowser", json!({}), None, cx);
     }
 
-    /// Signs in through the plugin's streamed `method`, opening any page it names.
-    pub fn sign_in_through(&self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
-        self.stream_sign_in(method, params, None, cx);
-    }
-
-    /// Signs in to a cloud as `sign_in_through` does, opening its pages in the browser
-    /// Settings › Cloud names for single sign-on, else the default one.
-    pub fn cloud_sign_in(&self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
+    /// Signs in to a cloud through the plugin's streamed `method`, opening its pages in the
+    /// browser Settings › Cloud names for single sign-on, else the default one.
+    pub fn cloud_sign_in(&mut self, method: &str, params: Value, cx: &mut Context<PluginPane>) {
         let browser = self.bench.upgrade().and_then(|bench| {
             let preferences = bench.read(cx).preferences();
             let app = preferences.cloud_browser.trim().to_owned();
@@ -579,8 +576,17 @@ impl Host {
         self.stream_sign_in(method, params, browser, cx);
     }
 
+    /// Whether a browser sign-in is on its way.
+    pub fn signing_in(&self) -> bool {
+        self.signing.is_some()
+    }
+
+    pub fn cancel_sign_in(&mut self) {
+        self.signing = None;
+    }
+
     fn stream_sign_in(
-        &self,
+        &mut self,
         method: &str,
         params: Value,
         browser: Option<(String, String)>,
@@ -591,7 +597,7 @@ impl Host {
             json!({ "plugin": self.plugin, "method": method, "params": params }),
         );
         let bench = self.bench.clone();
-        cx.spawn(async move |_, cx| {
+        self.signing = Some(cx.spawn(async move |pane, cx| {
             let mut failed = None;
             while let Some(part) = streaming.parts.recv().await {
                 for item in part.items {
@@ -606,14 +612,18 @@ impl Host {
                     break;
                 }
             }
+            let _ = pane.update(cx, |pane, cx| {
+                pane.host.signing = None;
+                cx.notify();
+            });
             if let Some(failed) = failed {
                 let _ = bench.update(cx, |bench, cx| {
                     let note = toast::error(format!("Sign-in did not finish: {}", failed.message));
                     bench.notify(note, cx);
                 });
             }
-        })
-        .detach();
+        }));
+        cx.notify();
     }
 
     /// The agents the pane can hand text to.
@@ -661,6 +671,7 @@ impl PluginPane {
                 kept: HashMap::new(),
                 asks: 0,
                 status: None,
+                signing: None,
                 faces: Default::default(),
             },
         }
@@ -772,32 +783,57 @@ pub fn failure(failure: &Failure, cx: &App) -> AnyElement {
 
 /// Asks the person to sign in to the plugin through its browser sign-in.
 pub fn signed_out(
+    host: &Host,
+    mark: Icon,
     name: &'static str,
     detail: &'static str,
     cx: &mut Context<PluginPane>,
 ) -> AnyElement {
-    let t = Tokens::get(cx).clone();
-    div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(10.))
-        .child(
-            ui::text(format!("Sign in to {name}"), 14., FontWeight::SEMIBOLD)
-                .text_color(t.text_primary),
+    let ink = Tokens::get(cx).text_primary;
+    ui::sign_in::Screen::new(
+        "plugin-sign-in-page",
+        ui::picture(mark, 26., ink),
+        format!("Sign in to {name}"),
+    )
+    .lede(detail)
+    .foot(ui::sign_in::KEPT)
+    .child(browser_sign_in(
+        host,
+        "plugin-sign-in",
+        Icon::LogIn,
+        "Sign in with the browser",
+        |host, cx| host.sign_in_with_browser(cx),
+        cx,
+    ))
+    .into_any_element()
+}
+
+/// The button that starts the plugin's browser sign-in, or, while it runs, the row that waits
+/// for it with the way to stop it.
+pub fn browser_sign_in(
+    host: &Host,
+    id: &'static str,
+    mark: Icon,
+    label: impl Into<SharedString>,
+    start: impl Fn(&mut Host, &mut Context<PluginPane>) + 'static,
+    cx: &mut Context<PluginPane>,
+) -> AnyElement {
+    if host.signing_in() {
+        return ui::sign_in::waiting(
+            id,
+            "Finish signing in in your browser",
+            cx.listener(|pane, _, _, cx| {
+                pane.host.cancel_sign_in();
+                cx.notify();
+            }),
+            cx,
         )
-        .child(ui::text(detail, 12., FontWeight::NORMAL).text_color(t.text_tertiary))
-        .child(
-            ui::Button::new(
-                "plugin-sign-in",
-                "Sign in with the browser",
-                ui::Variant::Primary,
-            )
-            .icon(Icon::LogIn)
-            .on_click(cx.listener(|pane, _, _, cx| pane.host.sign_in_with_browser(cx))),
-        )
+        .into_any_element();
+    }
+    ui::Button::new(id, label, ui::Variant::Primary)
+        .wide()
+        .icon(mark)
+        .on_click(cx.listener(move |pane, _, _, cx| start(&mut pane.host, cx)))
         .into_any_element()
 }
 
