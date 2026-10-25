@@ -17,6 +17,8 @@ mod layout;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+mod linux_dialogs;
+#[cfg(target_os = "linux")]
 mod linux_input;
 #[cfg(target_os = "linux")]
 mod linux_page;
@@ -49,6 +51,10 @@ pub use tab::{ParentView, Tab, TabSpec};
 pub(crate) use sikemux_core::runtime::spawn;
 
 pub const BLANK_URL: &str = "about:blank";
+/// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered
+/// with Cancel unseen, the way browsers offer to stop a page's dialogs.
+pub(crate) const DIALOG_LIMIT: usize = 3;
+pub(crate) const DIALOG_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
 /// Parked pages sit outside the window, since a hidden view still takes file
 /// drops over the spot it last covered. They are hidden too once they are idle.
 pub const PARKED_ORIGIN: f64 = -100_000.0;

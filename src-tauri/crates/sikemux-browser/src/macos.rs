@@ -9,7 +9,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Once, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -49,10 +49,6 @@ const URL_KEY_PATH: &str = "URL";
 const TITLE_KEY_PATH: &str = "title";
 /// WebKit's own verdict on whether the page's process still answers input.
 const RESPONSIVE_KEY_PATH: &str = "_webProcessIsResponsive";
-/// Past this many dialogs in `DIALOG_WINDOW`, a page's dialogs are answered
-/// with Cancel unseen, the way browsers offer to stop a page's dialogs.
-const DIALOG_LIMIT: usize = 3;
-const DIALOG_WINDOW: Duration = Duration::from_secs(10);
 
 struct NativeTab {
     agent_id: String,
@@ -1664,7 +1660,7 @@ impl TabUiDelegate {
     fn new(mtm: MainThreadMarker, tab_id: String, events: Arc<dyn TabEvents>) -> Retained<Self> {
         let delegate = mtm.alloc::<TabUiDelegate>().set_ivars(TabUiDelegateIvars {
             tab_id,
-            dialogs: RefCell::new(Burst::new(DIALOG_LIMIT, DIALOG_WINDOW)),
+            dialogs: RefCell::new(Burst::new(crate::DIALOG_LIMIT, crate::DIALOG_WINDOW)),
             events,
         });
         // SAFETY: `delegate` is freshly allocated with its ivars set, and NSObject's `init`

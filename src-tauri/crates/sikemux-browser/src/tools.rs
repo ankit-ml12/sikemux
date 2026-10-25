@@ -1378,12 +1378,16 @@ mod native {
         }
 
         pub async fn answer_dialog(
-            _: &Tab,
-            _: &str,
-            _: bool,
-            _: Option<String>,
+            view: &Tab,
+            tab_id: &str,
+            accept: bool,
+            text: Option<String>,
         ) -> Result<(), String> {
-            Err(NOT_YET.into())
+            let tab_id = tab_id.to_owned();
+            on_tab(view, move |_| {
+                crate::linux_dialogs::answer(&tab_id, accept, text.as_deref())
+            })
+            .await
         }
     }
 
