@@ -197,7 +197,8 @@ pub struct Workbench {
     files_retry: crate::retry::Retry,
     /// The Git pane takes the keyboard once it shows, as when ⌘⌥3 opens it.
     pub project_files: ProjectFiles,
-    /// The agent the rail was switched to, else the one the project last started.
+    /// The kind of agent the rail was switched to, such as "claude"; its account is the one the
+    /// person chose for that kind.
     pub launcher_choice: Option<String>,
     /// The plan limits are to be read once the core lists its agents, as the app starts.
     usage_wanted: bool,
@@ -2280,20 +2281,30 @@ impl Workbench {
     pub fn launcher(&self) -> Option<&LauncherInfo> {
         let launchers = self.launchers();
         let chosen = |id: &str| launchers.iter().find(|launcher| launcher.id == id);
-        // An agent picked by its kind alone starts on the account the person chose for it.
-        let of_kind = |kind: &str| {
-            self.accounts
-                .current(kind)
-                .and_then(|account| chosen(&format!("{kind}:{}", account.id)))
-                .or_else(|| launchers.iter().find(|launcher| launcher.provider == kind))
-        };
+        let of_kind = |kind: &str| self.launcher_of_kind(kind);
         let last_kind = self.preferences().last_agent_type;
         self.launcher_choice
             .as_deref()
-            .and_then(chosen)
-            .or_else(|| self.project()?.launcher.as_deref().and_then(chosen))
+            .and_then(of_kind)
+            .or_else(|| {
+                let project = self.project()?.launcher.as_deref().and_then(chosen)?;
+                of_kind(&project.provider)
+            })
             .or_else(|| last_kind.as_deref().and_then(of_kind))
             .or_else(|| of_kind(&launchers.first()?.provider))
+    }
+
+    /// The launcher that starts the kind of agent on the account the person chose for it.
+    pub fn launcher_of_kind(&self, kind: &str) -> Option<&LauncherInfo> {
+        let launchers = self.launchers();
+        self.accounts
+            .current(kind)
+            .and_then(|account| {
+                let id = format!("{kind}:{}", account.id);
+                launchers.iter().find(|launcher| launcher.id == id)
+            })
+            .or_else(|| launchers.iter().find(|launcher| launcher.id == kind))
+            .or_else(|| launchers.iter().find(|launcher| launcher.provider == kind))
     }
 
     /// The agent's name in the core's catalog, such as "Claude".

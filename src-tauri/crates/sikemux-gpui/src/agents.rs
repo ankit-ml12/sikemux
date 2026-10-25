@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 use serde_json::Value;
 use sikemux_core::agent_accounts::Profile;
-use sikemux_wire::protocol::{PaneKind, RecentInfo};
+use sikemux_wire::protocol::{LauncherInfo, PaneKind, RecentInfo};
 
 use crate::agent_menu::AgentMenu;
 use crate::icons::Icon;
@@ -304,7 +304,10 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                 .into_any_element(),
             "All harnesses".to_owned(),
         ),
-        Some(launcher) => (ui::mark(&launcher.provider, 16.), launcher.label.clone()),
+        Some(launcher) => (
+            ui::mark(&launcher.provider, 16.),
+            harness_label(bench, launcher),
+        ),
         None => {
             return ui::text("Agents", 13., FontWeight::SEMIBOLD)
                 .text_color(t.text_primary)
@@ -314,7 +317,20 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let name = ui::text(label, 13., FontWeight::SEMIBOLD)
         .letter_spacing(-0.015)
         .text_color(t.text_primary);
-    if bench.launchers().len() < 2 {
+    let mut options: Vec<(String, String, Option<f64>)> = Vec::new();
+    for launcher in bench.launchers() {
+        if options.iter().all(|(kind, ..)| *kind != launcher.provider) {
+            let current = bench
+                .launcher_of_kind(&launcher.provider)
+                .unwrap_or(launcher);
+            options.push((
+                launcher.provider.clone(),
+                harness_label(bench, current),
+                bench.usage_peak(&current.id),
+            ));
+        }
+    }
+    if options.len() < 2 {
         return div()
             .flex()
             .items_center()
@@ -326,20 +342,8 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
     let chosen = if bench.all_harnesses {
         None
     } else {
-        launcher.map(|launcher| launcher.id.clone())
+        launcher.map(|launcher| launcher.provider.clone())
     };
-    let options: Vec<_> = bench
-        .launchers()
-        .iter()
-        .map(|launcher| {
-            (
-                launcher.id.clone(),
-                launcher.provider.clone(),
-                launcher.label.clone(),
-                bench.usage_peak(&launcher.id),
-            )
-        })
-        .collect();
     let choose = Rc::new(cx.listener(|bench, choice: &Option<String>, _, cx| {
         bench.all_harnesses = choice.is_none();
         if choice.is_some() {
@@ -386,18 +390,26 @@ fn picker(bench: &Workbench, cx: &mut Context<Workbench>) -> AnyElement {
                         item("all-harnesses".into(), "All harnesses".into(), None)
                             .icon(Icon::Inbox),
                     )
-                    .children(options.iter().map(|(id, provider, label, peak)| {
+                    .children(options.iter().map(|(kind, label, peak)| {
                         item(
-                            SharedString::from(format!("launcher-{id}")),
+                            SharedString::from(format!("harness-{kind}")),
                             label.clone(),
-                            Some(id.clone()),
+                            Some(kind.clone()),
                         )
-                        .mark(ui::mark(provider, 14.))
+                        .mark(ui::mark(kind, 14.))
                         .when_some(*peak, |item, peak| item.hint(format!("{}%", peak.round())))
                     })),
             )
         })
         .into_any_element()
+}
+
+/// The agent's own name, such as "Claude", whichever account it starts on.
+fn harness_label(bench: &Workbench, launcher: &LauncherInfo) -> String {
+    bench
+        .agent_label(&launcher.provider)
+        .unwrap_or(&launcher.label)
+        .to_owned()
 }
 
 /// A saved chat no agent holds, to take up again: how long ago it ran, or a pin when it is
