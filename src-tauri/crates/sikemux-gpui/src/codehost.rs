@@ -284,7 +284,10 @@ impl HostArea {
             pulls::KEY => self.pulls.list = Some(answer(value)),
             pull::VIEW => {
                 if let Some(opened) = &mut self.pull {
-                    opened.take_view(Some(answer(value)));
+                    if opened.take_view(Some(answer(value))) {
+                        let number = opened.number;
+                        self.read_pull_extras(number, cx);
+                    }
                 }
             }
             pull::FILES => {
@@ -294,7 +297,10 @@ impl HostArea {
             }
             runs::LIST => self.runs.list = Some(answer(value)),
             releases::KEY => self.releases.list = Some(answer(value)),
-            issues::KEY => self.issues.list = Some(answer(value)),
+            issues::KEY => {
+                self.issues.list = Some(answer(value));
+                self.follow_open_issue(cx);
+            }
             runs::RUN => {
                 if self.take_run(value) {
                     self.watch();

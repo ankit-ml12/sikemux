@@ -97,6 +97,8 @@ pub struct Workbench {
     /// What the person just opened, which takes the keyboard once it shows.
     takes_keys: Cell<Option<PendingKeys>>,
     window_active: bool,
+    /// Whether any of the window shows: not minimised, hidden or wholly behind another window.
+    window_shown: bool,
     /// The agents last told to the core as on screen, and whether the window was in front.
     on_screen: Option<(Vec<String>, bool)>,
     /// The project the per-project watches were last made for, by path.
@@ -597,7 +599,9 @@ impl Workbench {
                 }
                 crate::terminal::keep_blinking(bench, cx);
             }),
-            cx.observe_window_visibility(window, |bench, _, _, cx| {
+            cx.observe_window_visibility(window, |bench, _, window, cx| {
+                bench.window_shown = window.is_visible();
+                bench.watch_ci();
                 crate::terminal::keep_blinking(bench, cx)
             }),
             cx.observe(&voice, |bench, _, cx| {
@@ -639,6 +643,7 @@ impl Workbench {
             ],
             takes_keys: Cell::new(None),
             window_active: window.is_window_active(),
+            window_shown: window.is_visible(),
             on_screen: None,
             watched_project: None,
             watched_place: crate::hosts::Place::This,
@@ -1246,7 +1251,7 @@ impl Workbench {
                     crate::accounts::statuses_moved(self, cx);
                 }
                 if topic == "git" {
-                    crate::editor::git_changed(self, paths.as_deref(), cx);
+                    crate::editor::git_changed(self, project.as_deref(), paths.as_deref(), cx);
                 }
                 return;
             }
@@ -2030,9 +2035,10 @@ impl Workbench {
         }
     }
 
-    /// Keeps the core checking the CI of the repository in front while its host is signed in.
+    /// Keeps the core checking the CI of the repository in front while its host is signed in
+    /// and the window shows; a hidden window has it check none.
     fn watch_ci(&mut self) {
-        let shown = self.ci_repo();
+        let shown = self.ci_repo().filter(|_| self.window_shown);
         if shown == self.watched_ci {
             return;
         }

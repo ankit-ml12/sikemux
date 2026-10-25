@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -190,6 +190,28 @@ impl Watch {
             params,
             topics,
             generation: 0,
+        }
+    }
+
+    /// Whether `topic` changing for the project folder `project`, or for every project when
+    /// none, could move what this watch reads. Git and code host changes name the folder
+    /// that moved, so a watch on another project's folder lets them pass.
+    fn moved_by(&self, topic: &str, project: Option<&str>) -> bool {
+        if !self.topics.contains(&topic) {
+            return false;
+        }
+        let folder = match topic {
+            "git" => self.params["project"]
+                .as_str()
+                .or(self.params["repo"].as_str()),
+            "codeHost" => self.params["project"].as_str(),
+            _ => None,
+        };
+        match (folder, project) {
+            (Some(folder), Some(project)) => {
+                Path::new(folder).starts_with(project) || Path::new(project).starts_with(folder)
+            }
+            _ => true,
         }
     }
 }
@@ -1122,7 +1144,7 @@ async fn run(
                             }
                             Some(ClientEvent::Event(Event::Changed { topic, project, paths })) => {
                                 stopping |= topic == "stopping";
-                                for (key, watch) in watches.iter().filter(|(_, watch)| watch.topics.contains(&topic.as_str())) {
+                                for (key, watch) in watches.iter().filter(|(_, watch)| watch.moved_by(&topic, project.as_deref())) {
                                     read(&client, key, watch, (&current, &failed), &updates);
                                 }
                                 if followed.contains(&topic.as_str()) {
@@ -1175,7 +1197,7 @@ async fn run(
                                         .get(&host)
                                         .into_iter()
                                         .flatten()
-                                        .filter(|(_, watch)| watch.topics.contains(&topic.as_str()));
+                                        .filter(|(_, watch)| watch.moved_by(&topic, project.as_deref()));
                                     for (key, watch) in changed {
                                         read_on(&linked, &host, key, watch, &current, &updates);
                                     }

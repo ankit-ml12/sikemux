@@ -93,7 +93,14 @@ impl Opened {
         }
     }
 
-    pub fn take_view(&mut self, view: Read<OpenPull>) {
+    /// Takes the pull request as the core read it again, saying whether its head or its
+    /// conversation moved since the last reading.
+    pub fn take_view(&mut self, view: Read<OpenPull>) -> bool {
+        let mark = |view: &Read<OpenPull>| {
+            let pull = &view.as_ref()?.as_ref().ok()?.pull;
+            Some((pull.head_sha.clone(), pull.updated_at.clone()))
+        };
+        let moved = matches!((mark(&self.view), mark(&view)), (Some(was), Some(now)) if was != now);
         if let Some(Ok(view)) = &view {
             let pull = &view.pull;
             if self.opening.as_ref().map(|(body, _)| body) != Some(&pull.body) {
@@ -109,6 +116,7 @@ impl Opened {
             }
         }
         self.view = view;
+        moved
     }
 
     pub fn take_files(&mut self, files: Result<Vec<serde_json::Value>, SharedString>) {
@@ -142,7 +150,7 @@ impl HostArea {
         cx.notify();
     }
 
-    fn read_pull_extras(&self, number: u64, cx: &mut Context<Self>) {
+    pub(super) fn read_pull_extras(&self, number: u64, cx: &mut Context<Self>) {
         let commits = self.plugin("pullCommits", json!({ "number": number }));
         let timeline = self.plugin("timeline", json!({ "number": number, "of": "pull" }));
         cx.spawn(async move |area, cx| {

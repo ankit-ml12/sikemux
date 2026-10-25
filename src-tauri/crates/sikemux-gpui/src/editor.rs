@@ -1432,14 +1432,21 @@ fn files_in(place: &Host, pane: &Pane, found: &mut Vec<FileKey>) {
     }
 }
 
-/// Reads again what open files were at their last commit, when the
-/// repository moved: `paths` from its root, `.git` for its head, or none for anything.
-pub fn git_changed(bench: &mut Workbench, paths: Option<&[String]>, cx: &mut Context<Workbench>) {
+/// Reads again what open files were at their last commit, when the repository of the
+/// project folder `project` moved, or any when none: `paths` from its root, `.git` for its
+/// head, or none for anything.
+pub fn git_changed(
+    bench: &mut Workbench,
+    project: Option<&str>,
+    paths: Option<&[String]>,
+    cx: &mut Context<Workbench>,
+) {
     let open: Vec<FileKey> = bench
         .editors
         .open
         .keys()
         .filter(|key| key.place == Host::This)
+        .filter(|key| project.is_none_or(|project| key.path.starts_with(project)))
         .filter(|key| {
             paths.is_none_or(|paths| {
                 paths

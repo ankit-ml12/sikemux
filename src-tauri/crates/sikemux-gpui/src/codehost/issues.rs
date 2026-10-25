@@ -115,8 +115,25 @@ impl HostArea {
         cx.notify();
     }
 
+    /// Reads the open issue again when the list the core keeps fresh shows it changed since.
+    pub(super) fn follow_open_issue(&self, cx: &mut Context<Self>) {
+        let Some(open) = &self.issues.open else {
+            return;
+        };
+        let Some(Ok(read)) = &open.issue else {
+            return;
+        };
+        let listed = match &self.issues.list {
+            Some(Ok(list)) => list.issues.iter().find(|issue| issue.number == open.number),
+            _ => None,
+        };
+        if listed.is_some_and(|listed| listed.updated_at != read.updated_at) {
+            self.read_issue(open.number, cx);
+        }
+    }
+
     /// Reads the open issue and its conversation from the host.
-    fn read_issue(&self, number: u64, cx: &mut Context<Self>) {
+    pub(super) fn read_issue(&self, number: u64, cx: &mut Context<Self>) {
         let issue = self.plugin("issue", json!({ "number": number }));
         let timeline = self.plugin("timeline", json!({ "number": number, "of": "issue" }));
         cx.spawn(async move |area, cx| {
