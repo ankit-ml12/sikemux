@@ -367,6 +367,8 @@ enum Asking {
 /// An agent's title while it is edited in place, in a field holding it.
 pub struct Retitling {
     pub agent: String,
+    /// Edited in its tab rail row rather than its header.
+    pub in_rail: bool,
     pub input: Entity<InputState>,
     title: String,
     _events: Subscription,
@@ -2467,9 +2469,15 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Swaps an agent's title in its header for a field holding it, which Enter or
-    /// clicking away saves and Escape leaves unchanged.
-    pub fn retitle(&mut self, agent: &str, window: &mut Window, cx: &mut Context<Self>) {
+    /// Swaps an agent's title in its header, or its tab rail row when `in_rail`, for a field
+    /// holding it, which Enter or clicking away saves and Escape leaves unchanged.
+    pub fn retitle(
+        &mut self,
+        agent: &str,
+        in_rail: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(title) = self.view.as_ref().and_then(|view| {
             view.workspace
                 .agents
@@ -2491,11 +2499,13 @@ impl Workbench {
         });
         self.retitling = Some(Retitling {
             agent: agent.to_owned(),
+            in_rail,
             input,
             title,
             _events: events,
         });
         self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw(&self.parts.rail, cx);
     }
 
     pub fn finish_retitle(&mut self, save: bool, cx: &mut Context<Self>) {
@@ -2517,6 +2527,7 @@ impl Workbench {
             );
         }
         self.parts.redraw(&self.parts.stage, cx);
+        self.parts.redraw(&self.parts.rail, cx);
     }
 
     /// Asks the person whether something goes ahead; `then` hears yes or no.

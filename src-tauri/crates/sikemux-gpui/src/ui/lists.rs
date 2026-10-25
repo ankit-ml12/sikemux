@@ -26,6 +26,8 @@ pub struct Row {
     mark: Option<AnyElement>,
     slot: f32,
     title: SharedString,
+    /// What shows in place of the title, such as a field while it is edited.
+    title_view: Option<AnyElement>,
     quiet: bool,
     bold: bool,
     chosen: bool,
@@ -50,6 +52,7 @@ impl Row {
             mark: None,
             slot: 22.,
             title: title.into(),
+            title_view: None,
             quiet: false,
             bold: false,
             chosen: false,
@@ -102,6 +105,11 @@ impl Row {
 
     pub fn subtitle(mut self, subtitle: impl IntoElement) -> Self {
         self.subtitle = Some(subtitle.into_any_element());
+        self
+    }
+
+    pub fn title_view(mut self, view: Option<impl IntoElement>) -> Self {
+        self.title_view = view.map(IntoElement::into_any_element);
         self
     }
 
@@ -237,7 +245,10 @@ impl RenderOnce for Row {
                                     FontWeight::MEDIUM
                                 })
                                 .when(!self.quiet, |title| title.text_color(t.text_primary))
-                                .child(self.title),
+                                .map(|title| match self.title_view {
+                                    Some(view) => title.flex_1().child(view),
+                                    None => title.child(self.title),
+                                }),
                         ),
                     )
                     .children(self.subtitle),

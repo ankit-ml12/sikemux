@@ -148,7 +148,7 @@ impl AgentMenu {
                         if in_front {
                             window.defer(cx, move |window, cx| {
                                 let _ = bench
-                                    .update(cx, |bench, cx| bench.retitle(&retitled, window, cx));
+                                    .update(cx, |bench, cx| bench.retitle(&retitled, false, window, cx));
                             });
                             return;
                         }

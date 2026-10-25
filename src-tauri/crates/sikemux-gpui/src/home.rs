@@ -402,28 +402,12 @@ fn pane_header(
     let editing = bench
         .retitling
         .as_ref()
-        .filter(|retitling| retitling.agent == agent.id)
-        .map(|retitling| {
-            div()
-                .key_context("Retitle")
-                .min_w(px(160.))
-                .on_action(
-                    cx.listener(|bench, _: &crate::keymap::CancelRetitle, _, cx| {
-                        bench.finish_retitle(false, cx)
-                    }),
-                )
-                .child(
-                    Input::new(&retitling.input)
-                        .appearance(false)
-                        .p_0()
-                        .text_size(crate::theme::ui_text(13.))
-                        .text_color(t.text_primary),
-                )
-        });
+        .filter(|retitling| retitling.agent == agent.id && !retitling.in_rail)
+        .map(|retitling| retitle_field(retitling, 13., cx).min_w(px(160.)));
     PaneHeader::new(agent.title.clone())
         .title_view(editing)
         .on_title_double_click(
-            cx.listener(move |bench, _, window, cx| bench.retitle(&id, window, cx)),
+            cx.listener(move |bench, _, window, cx| bench.retitle(&id, false, window, cx)),
         )
         .mark(match agent.face.is_some() {
             true => {
@@ -935,4 +919,27 @@ pub(crate) fn duration(ms: f64) -> String {
         0 => format!("{hours}h"),
         rest => format!("{hours}h {rest}m"),
     }
+}
+
+/// The field an agent's title is edited in, at `size`; Escape leaves the title as it was.
+pub fn retitle_field(
+    retitling: &crate::workbench::Retitling,
+    size: f32,
+    cx: &mut Context<Workbench>,
+) -> gpui_kit::Div {
+    let t = Tokens::get(cx).clone();
+    div()
+        .key_context("Retitle")
+        .on_action(
+            cx.listener(|bench, _: &crate::keymap::CancelRetitle, _, cx| {
+                bench.finish_retitle(false, cx)
+            }),
+        )
+        .child(
+            Input::new(&retitling.input)
+                .appearance(false)
+                .p_0()
+                .text_size(crate::theme::ui_text(size))
+                .text_color(t.text_primary),
+        )
 }
