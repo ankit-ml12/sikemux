@@ -1665,6 +1665,7 @@ fn rested(core: &Core, agent_id: &str) -> bool {
 async fn hand(core: &Core, agent_id: &str, text: &str) -> Result<Delivery, &'static str> {
     let chat = core.chats.get(agent_id).ok_or("is not running")?;
     if !chat.is_ready() {
+        chat.start_agent();
         return Err("is still starting");
     }
     if !chat.turn_running() && !rested(core, agent_id) {
@@ -1890,7 +1891,11 @@ pub(crate) fn settle(core: &Arc<Core>) {
     let mut next = None;
     for agent_id in due {
         if let Some(chat) = core.chats.get(&agent_id) {
-            if !chat.is_ready() || chat.turn_running() {
+            if !chat.is_ready() {
+                chat.start_agent();
+                continue;
+            }
+            if chat.turn_running() {
                 continue;
             }
             match rests_until(core, &agent_id) {
