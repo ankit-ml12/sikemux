@@ -803,6 +803,7 @@ impl Workbench {
                     self.close_chats(cx);
                     self.open_chat(cx);
                     self.front_moved(cx);
+                    self.files.reveal(self.front_file(), &self.target());
                     crate::settings::front_moved(self, cx);
                 }
                 self.publish_on_screen();
@@ -872,6 +873,7 @@ impl Workbench {
                 self.close_chats(cx);
                 self.open_chat(cx);
                 self.front_moved(cx);
+                self.files.reveal(self.front_file(), &self.target());
                 crate::settings::front_moved(self, cx);
                 self.publish_on_screen();
             }

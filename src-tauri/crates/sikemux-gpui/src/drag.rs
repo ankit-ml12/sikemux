@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
-    div, px, AnimationExt, AnyElement, App, AppContext, Context, Entity, ExternalPaths,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, AnimationExt, AnyElement, App, AppContext, Context, Div, Entity, ExternalPaths,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, WeakEntity, Window,
 };
 use serde_json::json;
 
@@ -255,8 +255,8 @@ pub fn project(
 }
 
 /// A row of the file tree that can be dragged onto a folder, a chat or a
-/// terminal. A folder's row takes a row dropped on it, which moves into it,
-/// and files dropped from outside, which are copied into it.
+/// terminal. A row takes a row dropped on it, which moves into its folder (the
+/// row's own for a folder), and files dropped from outside, which are copied there.
 pub fn tree_row(
     row: AnyElement,
     path: &Path,
@@ -264,8 +264,6 @@ pub fn tree_row(
     this: &Entity<Workbench>,
     cx: &App,
 ) -> AnyElement {
-    let t = Tokens::get(cx);
-    let hover = t.surface_hover;
     let dragged = DraggedPath {
         path: path.to_owned(),
     };
@@ -275,49 +273,44 @@ pub fn tree_row(
             ghost(name_of(&dragged.path), cx)
         })
         .child(row);
-    if !folder {
+    let into = match folder {
+        true => Some(path),
+        false => path.parent(),
+    };
+    let Some(into) = into else {
         return draggable.into_any_element();
-    }
-    let (into, into_outside, this, outside) =
-        (path.to_owned(), path.to_owned(), this.clone(), this.clone());
-    draggable
-        .can_drop({
-            let folder = path.to_owned();
+    };
+    let hover = Tokens::get(cx).surface_hover;
+    takes_drops(draggable, into.to_owned(), this.downgrade())
+        .drag_over::<DraggedPath>(move |style, _, _, _| style.bg(hover))
+        .drag_over::<ExternalPaths>(move |style, _, _, _| style.bg(hover))
+        .into_any_element()
+}
+
+/// Moves tree rows dropped on `element` into `folder`, and copies files dropped from
+/// outside into it.
+pub fn takes_drops(
+    element: Stateful<Div>,
+    folder: PathBuf,
+    bench: WeakEntity<Workbench>,
+) -> Stateful<Div> {
+    let (into, into_outside, outside) = (folder.clone(), folder.clone(), bench.clone());
+    element
+        .can_drop(
             move |value, _, _| match value.downcast_ref::<DraggedPath>() {
                 Some(dragged) => {
                     !folder.starts_with(&dragged.path)
                         && dragged.path.parent() != Some(folder.as_path())
                 }
                 None => value.downcast_ref::<ExternalPaths>().is_some(),
-            }
-        })
-        .drag_over::<DraggedPath>(move |style, _, _, _| style.bg(hover))
-        .drag_over::<ExternalPaths>(move |style, _, _, _| style.bg(hover))
+            },
+        )
         .on_drop(move |dropped: &DraggedPath, _, cx| {
-            let Some(name) = dropped.path.file_name() else {
-                return;
-            };
-            let params = json!({
-                "from": dropped.path.to_string_lossy(),
-                "to": into.join(name).to_string_lossy(),
-            });
-            this.update(cx, |bench, _| {
-                let _ = bench.asks.send(Ask::Call {
-                    method: "files.rename",
-                    params,
-                });
-            })
+            let (from, into) = (dropped.path.clone(), into.clone());
+            let _ = bench.update(cx, |bench, cx| bench.move_entry(from, into, cx));
         })
         .on_drop(move |dropped: &ExternalPaths, _, cx| {
-            let dir = into_outside.to_string_lossy().into_owned();
-            outside.update(cx, |bench, _| {
-                for from in dropped.paths() {
-                    let _ = bench.asks.send(Ask::Call {
-                        method: "files.copyInto",
-                        params: json!({ "from": from.to_string_lossy(), "dir": dir }),
-                    });
-                }
-            })
+            let (from, into) = (dropped.paths().to_vec(), into_outside.clone());
+            let _ = outside.update(cx, |bench, cx| bench.copy_in(from, into, cx));
         })
-        .into_any_element()
 }

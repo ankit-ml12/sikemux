@@ -72,6 +72,8 @@ pub struct FileTree {
     /// Where the keyed row was last drawn, for its menu to open there.
     keyed_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     scroll: UniformListScrollHandle,
+    /// The file in front the tree last opened its folders to.
+    revealed: Option<PathBuf>,
 }
 
 actions!(
@@ -249,6 +251,41 @@ impl FileTree {
     /// Lists `dir` again, as after something was made in it.
     pub fn reload(&mut self, dir: &Path, core: &Target) {
         self.relist(vec![dir.to_owned()], core);
+    }
+
+    /// Opens the folders down to `file` once it comes to the front.
+    pub fn reveal(&mut self, file: Option<PathBuf>, core: &Target) {
+        if file == self.revealed {
+            return;
+        }
+        if let Some(folder) = file.as_deref().and_then(Path::parent) {
+            self.open_down_to(folder, core);
+        }
+        self.revealed = file;
+    }
+
+    /// Opens the folders down to `dir`, from the project's folder, listing any not yet listed.
+    pub fn open_down_to(&mut self, dir: &Path, core: &Target) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Ok(rest) = dir.strip_prefix(&root) else {
+            return;
+        };
+        let mut folder = root;
+        let mut unlisted = Vec::new();
+        for part in rest.components() {
+            folder.push(part);
+            if self.expanded.insert(folder.clone()) {
+                self.rows.take();
+            }
+            if !self.listed.contains_key(&folder) {
+                unlisted.push(folder.clone());
+            }
+        }
+        if !unlisted.is_empty() {
+            self.relist(unlisted, core);
+        }
     }
 
     /// Where the row typing a name goes, how deep, and whether it stands in for the row of
@@ -526,22 +563,23 @@ pub fn page(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoElement 
             match bench.files.root.clone() {
                 Some(root) => {
                     let (this, here) = (cx.weak_entity(), matches!(bench.files.place, Place::This));
-                    tree.capture_any_mouse_down(
-                        cx.listener(|bench, _: &MouseDownEvent, _, _| bench.files.menu_row = None),
-                    )
-                    .context_menu(move |popup, _, cx| {
-                        let row = this
-                            .upgrade()
-                            .and_then(|bench| bench.read(cx).files.menu_row.clone());
-                        match row {
-                            Some((path, dir)) => {
-                                row_menu(popup, &this, &path, dir, Some(&root), here, cx)
+                    crate::drag::takes_drops(tree, root.clone(), this.clone())
+                        .capture_any_mouse_down(cx.listener(|bench, _: &MouseDownEvent, _, _| {
+                            bench.files.menu_row = None
+                        }))
+                        .context_menu(move |popup, _, cx| {
+                            let row = this
+                                .upgrade()
+                                .and_then(|bench| bench.read(cx).files.menu_row.clone());
+                            match row {
+                                Some((path, dir)) => {
+                                    row_menu(popup, &this, &path, dir, Some(&root), here, cx)
+                                }
+                                None => row_menu(popup, &this, &root, true, Some(&root), here, cx),
                             }
-                            None => row_menu(popup, &this, &root, true, Some(&root), here, cx),
-                        }
-                    })
-                    .child(rows)
-                    .into_any_element()
+                        })
+                        .child(rows)
+                        .into_any_element()
                 }
                 None => tree.child(rows).into_any_element(),
             }
@@ -1150,6 +1188,74 @@ impl Workbench {
             },
             cx,
         );
+    }
+
+    /// Moves `from` into the folder `into` on the host in front, taking its open editors and
+    /// tabs along.
+    pub fn move_entry(&mut self, from: PathBuf, into: PathBuf, cx: &mut Context<Self>) {
+        let Some(name) = from.file_name() else {
+            return;
+        };
+        let to = into.join(name);
+        let moved = (self.target()).request("files.rename", json!({ "from": from, "to": to }));
+        cx.spawn(async move |bench, cx| {
+            let moved = moved.await;
+            bench
+                .update(cx, |bench, cx| {
+                    match moved {
+                        Ok(_) => {
+                            let core = bench.target();
+                            if let Some(parent) = from.parent() {
+                                bench.files.reload(parent, &core);
+                            }
+                            bench.files.reload(&into, &core);
+                            bench.files.open_down_to(&into, &core);
+                            bench.follow_rename(&from, &to, cx);
+                        }
+                        Err(error) => bench.notify(toast::error(error), cx),
+                    }
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Copies files from this disk into the folder `into`; another host's core cannot reach
+    /// them, so a drop there is refused.
+    pub fn copy_in(&mut self, from: Vec<PathBuf>, into: PathBuf, cx: &mut Context<Self>) {
+        if self.place() != crate::hosts::Place::This {
+            return self.notify(
+                toast::error(
+                    "Files from this device can't be dropped into another host's project.",
+                ),
+                cx,
+            );
+        }
+        let core = self.target();
+        let copies: Vec<_> = (from.iter())
+            .map(|from| core.request("files.copyInto", json!({ "from": from, "dir": into })))
+            .collect();
+        cx.spawn(async move |bench, cx| {
+            let mut failed = None;
+            for copied in copies {
+                if let Err(error) = copied.await {
+                    failed = Some(error);
+                }
+            }
+            bench
+                .update(cx, |bench, cx| {
+                    let core = bench.target();
+                    bench.files.reload(&into, &core);
+                    bench.files.open_down_to(&into, &core);
+                    if let Some(error) = failed {
+                        bench.notify(toast::error(error), cx);
+                    }
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
     }
 }
 
