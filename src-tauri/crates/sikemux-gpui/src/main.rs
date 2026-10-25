@@ -1,5 +1,6 @@
 use gpui_kit::{
-    point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowOptions,
+    point, px, size, AppContext, Bounds, Styled, TitlebarOptions, WindowBounds, WindowDecorations,
+    WindowOptions,
 };
 use sikemux_gpui::{console, core, icons, theme, workbench, WINDOW_SIZE};
 
@@ -20,10 +21,13 @@ fn main() {
                 window_min_size: Some(size(px(860.), px(540.))),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Sikemux".into()),
-                    appears_transparent: true,
+                    appears_transparent: cfg!(target_os = "macos"),
                     // The top of the 14 pt lights, which centres them in the 36 pt top bar.
-                    traffic_light_position: Some(point(px(16.), px(11.))),
+                    traffic_light_position: cfg!(target_os = "macos")
+                        .then(|| point(px(16.), px(11.))),
                 }),
+                window_decorations: Some(WindowDecorations::Server),
+                app_id: Some(core::IDENTIFIER.into()),
                 focus: !behind,
                 ..Default::default()
             };

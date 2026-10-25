@@ -73,7 +73,9 @@ pub fn top_bar(bench: &Workbench, cx: &mut Context<Workbench>) -> impl IntoEleme
                 bar.update(cx, |_, cx| cx.notify());
             }
         }))
-        .child(div().w(px(80.)).flex_none())
+        .when(cfg!(target_os = "macos"), |bar| {
+            bar.child(div().w(px(80.)).flex_none())
+        })
         .child(div().flex_1())
         .child(crate::top_place::view(bench, cx))
         .child(
