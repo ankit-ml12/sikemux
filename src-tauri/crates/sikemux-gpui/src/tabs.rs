@@ -1339,6 +1339,10 @@ pub fn view_label(bench: &Workbench, pane: &Pane) -> SharedString {
                     .or_else(|| session.title.clone())
             })
             .map_or_else(|| "Terminal".into(), SharedString::from),
+        Some((PaneKind::Files, target)) => Path::new(target).file_name().map_or_else(
+            || "Files".into(),
+            |name| SharedString::from(name.to_string_lossy().into_owned()),
+        ),
         Some((PaneKind::Plugin, target)) => {
             let id = crate::plugin_pane::parts(target).0;
             bench
